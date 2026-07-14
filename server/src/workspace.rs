@@ -54,6 +54,14 @@ pub struct TextDocument {
     pub size: usize,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: EntryKind,
+    pub size: u64,
+}
+
 pub struct WorkspaceService {
     root: PathBuf,
     database: Mutex<Connection>,
@@ -197,6 +205,54 @@ impl WorkspaceService {
             }
         }
         Ok(())
+    }
+
+    pub fn list_entries(
+        &self,
+        project_id: &str,
+        relative: &str,
+    ) -> Result<Vec<FileEntry>, WorkspaceError> {
+        let project_root = self.project_root(project_id)?;
+        let relative = normalize_relative(relative, true)?;
+        let directory = project_root.join(&relative).canonicalize()?;
+        ensure_contained_or_same(
+            &project_root,
+            &directory,
+            relative.to_string_lossy().into_owned(),
+        )?;
+        if !directory.is_dir() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+
+        let mut entries = Vec::new();
+        for result in fs::read_dir(directory)? {
+            let entry = result?;
+            if entry.file_name() == STATE_DIRECTORY {
+                continue;
+            }
+            let canonical = match entry.path().canonicalize() {
+                Ok(path) if path.starts_with(&project_root) => path,
+                _ => continue,
+            };
+            let metadata = canonical.metadata()?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            entries.push(FileEntry {
+                path: path_string(&relative.join(&name)),
+                name,
+                kind: if metadata.is_dir() {
+                    EntryKind::Directory
+                } else {
+                    EntryKind::File
+                },
+                size: metadata.len(),
+            });
+        }
+        entries.sort_by(|left, right| {
+            entry_kind_rank(&left.kind)
+                .cmp(&entry_kind_rank(&right.kind))
+                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+        });
+        Ok(entries)
     }
 
     pub fn read_text(
@@ -437,4 +493,11 @@ fn revision(bytes: &[u8]) -> String {
 
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+fn entry_kind_rank(kind: &EntryKind) -> u8 {
+    match kind {
+        EntryKind::Directory => 0,
+        EntryKind::File => 1,
+    }
 }

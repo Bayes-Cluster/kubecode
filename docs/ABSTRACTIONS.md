@@ -9,6 +9,12 @@ revision-checked atomic writes for editable UTF-8 files. API handlers and Agent
 adapters must pass Project IDs through this abstraction instead of accepting an
 arbitrary cwd from the browser.
 
+`AppState` exposes that service to Axum handlers below `${NB_PREFIX}/api/v1`.
+The unprefixed surface is limited to health probes. API failures use structured
+`{ code, message }` responses; stale editor writes are reported as HTTP 409 so
+the browser never silently overwrites a Terminal or Agent change. The server
+also owns SPA fallback routing below the same base path.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy
