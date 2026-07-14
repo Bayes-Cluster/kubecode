@@ -15,6 +15,13 @@ The unprefixed surface is limited to health probes. API failures use structured
 the browser never silently overwrites a Terminal or Agent change. The server
 also owns SPA fallback routing below the same base path.
 
+`TerminalManager` owns PTYs independently of WebSocket connections. A terminal
+is keyed by UUID and bound to one registered Project cwd. Its 2 MiB byte ring
+buffer exposes monotonic cursors, allowing a refreshed browser to request only
+missing output and detect when it needs a truncated snapshot. Disconnecting a
+socket never closes a PTY; only the explicit delete endpoint, process exit, or
+Pod termination ends it. The default limit is eight terminals per Project.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy

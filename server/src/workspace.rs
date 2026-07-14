@@ -100,6 +100,10 @@ impl WorkspaceService {
         &self.root
     }
 
+    pub fn project_path(&self, project_id: &str) -> Result<PathBuf, WorkspaceError> {
+        self.project_root(project_id)
+    }
+
     pub fn create_project(&self, parent: &str, name: &str) -> Result<Project, WorkspaceError> {
         let name_path = normalize_relative(name, false)?;
         if name_path.components().count() != 1 {

@@ -185,3 +185,40 @@ async fn serves_the_spa_only_below_the_configured_base_path() {
         .expect("root response");
     assert_eq!(root_response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn creates_lists_and_explicitly_closes_terminals_over_http() {
+    let (_temp, app) = app();
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "parent":".", "name":"terminal-api"}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let terminals_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals");
+
+    let (status, terminal) = json_request(
+        &app,
+        Method::POST,
+        &terminals_uri,
+        json!({"cols":100, "rows":30}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let terminal_id = terminal["id"].as_str().expect("terminal id");
+
+    let (status, terminals) = json_request(&app, Method::GET, &terminals_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(terminals.as_array().expect("terminals").len(), 1);
+
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/terminals/{terminal_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
