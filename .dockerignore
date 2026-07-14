@@ -1,0 +1,12 @@
+.git
+.github
+.husky
+.vscode
+dist
+node_modules
+server/target
+src-tauri/target
+test-results
+tests
+docs
+site

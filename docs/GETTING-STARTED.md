@@ -1,5 +1,35 @@
 # Getting Started
 
+## Kubecode web server
+
+The active product runs as a web server. For local development:
+
+```bash
+pnpm install
+pnpm build
+PERSISTENT_DIR=/tmp/kubecode-workspace \
+KUBECODE_STATIC_DIR=dist \
+NB_PREFIX=/user/local/kubecode \
+PORT=8888 \
+cargo run --manifest-path server/Cargo.toml
+```
+
+Open `http://127.0.0.1:8888/user/local/kubecode`. Project content is created
+below `PERSISTENT_DIR`; registry, Agent events, and CLI state belong below its
+excluded `.state` subtree.
+
+Build the Kubeflow image from the repository root:
+
+```bash
+docker build -f deploy/Dockerfile -t kubecode:local .
+```
+
+`deploy/kubeflow-notebook.yaml` is an example PVC and Notebook resource. Change
+the image and `NB_PREFIX` values for the target namespace/Notebook name. The
+container listens on port 8888, exposes unprefixed `/healthz` and `/readyz`, and
+uses s6 to link Claude Code, Codex, and OpenCode configuration into the mounted
+PVC at `/home/jovyan/srv/.state`.
+
 How to navigate the codebase, run the app, and find what you need.
 
 ## Prerequisites

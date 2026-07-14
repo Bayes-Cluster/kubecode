@@ -1,0 +1,25 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+PERSISTENT_STATE_DIR="${PERSISTENT_STATE_DIR:-${PERSISTENT_DIR}/.state}"
+mkdir -p "${PERSISTENT_DIR}" "${PERSISTENT_STATE_DIR}"
+
+link_persistent_dir() {
+  local home_path="$1"
+  local state_path="$2"
+  mkdir -p "$(dirname "${home_path}")" "${state_path}"
+  if [ -d "${home_path}" ] && [ ! -L "${home_path}" ] && [ -z "$(find "${state_path}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    cp -a "${home_path}/." "${state_path}/"
+  fi
+  if [ -e "${home_path}" ] || [ -L "${home_path}" ]; then
+    rm -rf "${home_path}"
+  fi
+  ln -s "${state_path}" "${home_path}"
+}
+
+link_persistent_dir "${HOME}/.claude" "${PERSISTENT_DIR}/.state/claude"
+link_persistent_dir "${HOME}/.codex" "${PERSISTENT_DIR}/.state/codex"
+link_persistent_dir "${HOME}/.local/share/opencode" "${PERSISTENT_DIR}/.state/opencode/data"
+link_persistent_dir "${HOME}/.config/opencode" "${PERSISTENT_DIR}/.state/opencode/config"
+link_persistent_dir "${HOME}/.cache/opencode" "${PERSISTENT_DIR}/.state/opencode/cache"
+link_persistent_dir "${HOME}/.local/state/opencode" "${PERSISTENT_DIR}/.state/opencode/state"
