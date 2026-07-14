@@ -956,6 +956,7 @@ function mcpBridgeInfoPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [react(), tailwindcss(), vaultApiPlugin(), mcpBridgeInfoPlugin()],
   cacheDir: process.env.TOLARIA_VITE_CACHE_DIR,
 

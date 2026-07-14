@@ -1,0 +1,247 @@
+.kubecode-app {
+  background: var(--surface-app);
+  color: var(--text-primary);
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.kubecode-topbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) auto;
+  padding: 0 12px;
+}
+
+.kubecode-brand {
+  align-items: center;
+  display: flex;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.kubecode-brand > span {
+  align-items: center;
+  background: var(--accent-blue);
+  border-radius: 7px;
+  color: white;
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.kubecode-project-path {
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(420px, 1fr) minmax(300px, 360px);
+  min-height: 0;
+}
+
+.kubecode-sidebar,
+.kubecode-agent-panel {
+  background: var(--surface-sidebar);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kubecode-sidebar {
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+}
+
+.kubecode-agent-panel {
+  border-left: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.kubecode-section-heading,
+.kubecode-panel-header,
+.kubecode-terminal-tabs {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.kubecode-section-heading {
+  min-height: 34px;
+  padding: 0 6px;
+}
+
+.kubecode-files-heading {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.kubecode-project-list,
+.kubecode-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.kubecode-file-list { flex: 1; }
+
+.kubecode-list-button {
+  justify-content: flex-start;
+  min-height: 30px;
+  overflow: hidden;
+  padding-left: 8px;
+  padding-right: 8px;
+  width: 100%;
+}
+
+.kubecode-list-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kubecode-center {
+  display: grid;
+  grid-template-rows: minmax(280px, 2fr) minmax(180px, 1fr);
+  min-height: 0;
+}
+
+.kubecode-editor-pane,
+.kubecode-terminal-pane {
+  display: grid;
+  min-height: 0;
+}
+
+.kubecode-editor-pane { grid-template-rows: 40px minmax(0, 1fr); }
+.kubecode-terminal-pane {
+  border-top: 1px solid var(--border-subtle);
+  grid-template-rows: 34px minmax(0, 1fr);
+}
+
+.kubecode-panel-header {
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.kubecode-editor-actions,
+.kubecode-mode-switch,
+.kubecode-terminal-tabs {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.kubecode-editor-actions > span {
+  color: var(--accent-orange);
+  font-size: 12px;
+}
+
+.kubecode-code-editor,
+.kubecode-code-editor > .cm-editor,
+.kubecode-terminal-view {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kubecode-terminal-tabs {
+  background: var(--surface-sidebar);
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 0 8px;
+}
+
+.kubecode-terminal-view { background: #171717; padding: 6px; }
+.kubecode-terminal-view .xterm { height: 100%; }
+
+.kubecode-empty,
+.kubecode-empty-editor,
+.kubecode-empty-small {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: center;
+}
+
+.kubecode-empty-editor {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kubecode-empty-small {
+  font-size: 12px;
+  min-height: 60px;
+  padding: 12px;
+  text-align: center;
+}
+
+.kubecode-agent-output {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.kubecode-agent-text {
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.kubecode-agent-thinking {
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding-left: 8px;
+  white-space: pre-wrap;
+}
+
+.kubecode-agent-status {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.kubecode-agent-tool {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  font-size: 12px;
+  padding: 8px;
+}
+
+.kubecode-agent-tool pre {
+  margin: 6px 0 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.kubecode-agent-compose {
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.kubecode-inline-error {
+  color: var(--feedback-error-text);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+@media (max-width: 980px) {
+  .kubecode-workspace { grid-template-columns: 210px minmax(360px, 1fr); }
+  .kubecode-agent-panel { display: none; }
+}

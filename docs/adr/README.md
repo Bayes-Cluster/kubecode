@@ -219,3 +219,4 @@ proposed → active → superseded
 | [0159](0159-antigravity-permission-flags-aligned-with-cli.md) | Antigravity permission flags aligned with CLI | active |
 | [0160](0160-remove-codescene-quality-gate.md) | Remove the CodeScene quality gate | active |
 | [0161](0161-kubeflow-web-server-architecture.md) | Kubeflow web server architecture | active |
+| [0162](0162-browser-workbench-and-xterm.md) | Browser workbench with CodeMirror and xterm | active |

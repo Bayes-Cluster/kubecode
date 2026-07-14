@@ -47,6 +47,16 @@ Safe mode disables Claude/OpenCode shell tools and uses Codex's read-only,
 untrusted sandbox. Power mode enables project-scoped shell work without granting
 access to paths outside the Project boundary configured by Kubecode.
 
+`KubecodeApi` is the browser's only server boundary. It encodes Project IDs and
+relative file paths independently, preserves structured API errors, and derives
+HTTP and WebSocket endpoints from the active Notebook pathname. UI components
+do not assemble absolute backend URLs themselves.
+
+Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
+`kubecode_terminal_created`, and `kubecode_agent_run_started`. Event properties
+contain only action modes, Agent IDs, and permission modes; Project names,
+paths, prompts, terminal contents, and file contents are never included.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy

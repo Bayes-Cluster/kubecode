@@ -72,6 +72,8 @@
     "@tauri-apps/plugin-updater": "^2.10.0",
     "@tiptap/pm": "3.22.5",
     "@tldraw/assets": "4.5.10",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

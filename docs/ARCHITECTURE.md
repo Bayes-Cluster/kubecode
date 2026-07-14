@@ -19,6 +19,16 @@ The active server boundary currently consists of four Rust abstractions:
 - `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
   probes remain unprefixed for Kubernetes.
 
+The active React entry point is `src/kubecode/App.tsx`. Its left rail owns
+Project and file navigation, the center column owns CodeMirror and reconnectable
+xterm tabs, and the right rail owns normalized Agent conversations. Browser code
+uses `KubecodeApi`, which derives every HTTP and WebSocket route from the current
+Kubeflow Notebook prefix.
+
+The production image is built by `deploy/Dockerfile`. It bundles the web build,
+Rust server, and pinned Claude Code, Codex, and OpenCode CLIs. s6 initializes CLI
+state links below `${PERSISTENT_DIR}/.state` before serving on port 8888.
+
 Tolaria is a personal knowledge and life management desktop app. It reads a vault of markdown files with YAML frontmatter and presents them in a four-panel UI inspired by Bear Notes.
 
 ## Design Principles
