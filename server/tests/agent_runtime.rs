@@ -30,16 +30,29 @@ async fn keeps_running_after_start_returns_and_persists_normalized_events() {
     let store = Arc::new(AgentStore::open(&database).expect("agent store"));
     let binary = executable(
         &temp,
-        r#"printf '%s\n' '{"type":"thread.started","thread_id":"thread-1"}'
-printf '%s\n' '{"type":"item.started","item":{"id":"tool-1","type":"command_execution","command":"pwd"}}'
-printf '%s\n' '{"type":"item.completed","item":{"id":"tool-1","type":"command_execution","aggregated_output":"ok"}}'
-printf '%s\n' '{"type":"item.completed","item":{"id":"message-1","type":"agent_message","text":"Finished"}}'"#,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-1\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"tool_call","toolCallId":"tool-1","title":"Shell","rawInput":{"command":"pwd"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"tool-1","status":"completed","rawOutput":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Finished"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
     );
     let runtime = AgentRuntime::new(
         Arc::clone(&workspace),
         Arc::clone(&store),
         vec![AgentDescriptor {
-            id: AgentId::Codex,
+            id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
             executable: binary,
@@ -47,7 +60,7 @@ printf '%s\n' '{"type":"item.completed","item":{"id":"message-1","type":"agent_m
         }],
     );
     let conversation = store
-        .create_conversation(&project.id, AgentId::Codex, None)
+        .create_conversation(&project.id, AgentId::OpenCode, None)
         .expect("conversation");
 
     let run = runtime

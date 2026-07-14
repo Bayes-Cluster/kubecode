@@ -154,7 +154,7 @@
 .kubecode-terminal-pane {
   border-top: 1px solid var(--border-subtle);
   flex: 0 0 auto;
-  grid-template-rows: 34px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .kubecode-panel-header {
@@ -189,6 +189,43 @@
   justify-content: flex-start;
   overflow-x: auto;
   padding: 0 8px;
+}
+
+.kubecode-terminal-workspace {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.kubecode-terminal-split {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kubecode-terminal-split[data-split-direction='vertical'] {
+  flex-direction: column;
+}
+
+.kubecode-terminal-split-child {
+  flex-grow: 0;
+  flex-shrink: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kubecode-terminal-leaf {
+  border: 1px solid transparent;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kubecode-terminal-leaf[data-active='true'] {
+  border-color: color-mix(in srgb, var(--accent-blue) 38%, transparent);
 }
 
 .kubecode-terminal-view { background: #171717; padding: 6px; }

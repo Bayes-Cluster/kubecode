@@ -30,6 +30,8 @@ describe('Kubecode workspace', () => {
       ]),
       listAgents: vi.fn().mockResolvedValue([
         { id: 'codex', available: true, version: 'test', executable: 'codex', error: null },
+        { id: 'claude_code', available: false, version: null, executable: 'claude', error: 'missing' },
+        { id: 'opencode', available: true, version: 'test', executable: 'opencode', error: null },
       ]),
       listEntries: vi.fn().mockResolvedValue([]),
       listTerminals: vi.fn().mockResolvedValue([]),
@@ -41,6 +43,15 @@ describe('Kubecode workspace', () => {
     expect(screen.getByTestId('ai-permission-mode-toggle')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Safe' })).toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: 'Vault Safe' })).not.toBeInTheDocument()
+    expect(document.querySelectorAll('img[src="./ai-agent-icons/codex.svg"]').length)
+      .toBeGreaterThanOrEqual(2)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }))
+    const claudeOption = screen.getByRole('option', { name: /Claude Code/ })
+    expect(claudeOption).toBeInTheDocument()
+    expect(claudeOption).toHaveAttribute('data-disabled')
+    expect(document.querySelector('img[src="./ai-agent-icons/claude-code.svg"]')).toBeInTheDocument()
+    expect(document.querySelector('img[src="./ai-agent-icons/opencode.svg"]')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
     const handles = container.querySelectorAll('.cursor-col-resize')
     expect(handles).toHaveLength(2)
     const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement

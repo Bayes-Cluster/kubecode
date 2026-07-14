@@ -52,7 +52,7 @@ describe('AiWorkspaceFloatingButton', () => {
     renderButton()
 
     const iconImage = screen.getByTestId('ai-workspace-floating-button').querySelector('img')
-    expect(iconImage).toHaveAttribute('src', '/ai-agent-icons/codex.svg')
+    expect(iconImage).toHaveAttribute('src', './ai-agent-icons/codex.svg')
   })
 
   it('falls back to sparkles when no selected agent is available', () => {

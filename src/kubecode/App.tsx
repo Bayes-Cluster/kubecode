@@ -6,8 +6,6 @@ import {
   FolderOpen,
   Plus,
   Sparkle,
-  TerminalWindow,
-  Trash,
 } from '@phosphor-icons/react'
 
 import { ResizeHandle } from '@/components/ResizeHandle'
@@ -36,7 +34,7 @@ import type {
   TerminalInfo,
   TextDocument,
 } from './api'
-import { TerminalView } from './TerminalView'
+import { TerminalWorkspace } from './TerminalWorkspace'
 import './kubecode.css'
 
 type EntryDialogState = { kind: Entry['kind'] } | null
@@ -53,7 +51,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [document, setDocument] = useState<TextDocument | null>(null)
   const [draft, setDraft] = useState('')
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
-  const [terminalId, setTerminalId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [projectDialog, setProjectDialog] = useState(false)
   const [entryDialog, setEntryDialog] = useState<EntryDialogState>(null)
@@ -65,7 +62,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const centerRef = useRef<HTMLElement>(null)
   const project = projects.find((item) => item.id === projectId) ?? null
-  const terminal = terminals.find((item) => item.id === terminalId) ?? terminals[0]
   const dirty = Boolean(document && document.content !== draft)
 
   const resizeSidebar = useCallback((delta: number) => {
@@ -121,7 +117,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         setDraft('')
         setEntries(nextEntries)
         setTerminals(nextTerminals)
-        setTerminalId(nextTerminals[0]?.id ?? null)
         setConversations(nextConversations)
       })
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
@@ -175,20 +170,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     } catch (cause) {
       setError(errorMessage(cause, t('kubecode.error')))
     }
-  }
-
-  const createTerminal = async () => {
-    if (!projectId) return
-    const created = await api.createTerminal(projectId, 100, 28)
-    setTerminals((current) => [...current, created])
-    setTerminalId(created.id)
-    trackEvent('kubecode_terminal_created')
-  }
-
-  const closeTerminal = async (id: string) => {
-    await api.closeTerminal(id)
-    setTerminals((current) => current.filter((item) => item.id !== id))
-    if (terminalId === id) setTerminalId(null)
   }
 
   return (
@@ -309,38 +290,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           </div>
           <ResizeHandle direction="vertical" onResize={resizeTerminal} />
           <div className="kubecode-terminal-pane" style={{ height: terminalHeight }}>
-            <div className="kubecode-terminal-tabs">
-              <TerminalWindow />
-              {terminals.map((item, index) => (
-                <Button
-                  key={item.id}
-                  size="xs"
-                  variant={item.id === terminal?.id ? 'secondary' : 'ghost'}
-                  onClick={() => setTerminalId(item.id)}
-                >
-                  {t('kubecode.terminal')} {index + 1}
-                </Button>
-              ))}
-              <Button
-                aria-label={t('kubecode.newTerminal')}
-                disabled={!projectId}
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => void createTerminal()}
-              ><Plus /></Button>
-              {terminal && (
-                <Button
-                  aria-label={t('kubecode.closeTerminal')}
-                  size="icon-xs"
-                  variant="ghost"
-                  onClick={() => void closeTerminal(terminal.id)}
-                ><Trash /></Button>
-              )}
-            </div>
-            {projectId && terminal ? (
-              <TerminalView api={api} projectId={projectId} terminal={terminal} />
+            {projectId ? (
+              <TerminalWorkspace
+                agents={agents}
+                api={api}
+                initialTerminals={terminals}
+                key={projectId}
+                projectId={projectId}
+                t={t}
+              />
             ) : (
-              <div className="kubecode-empty-small">{t('kubecode.newTerminal')}</div>
+              <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
             )}
           </div>
         </section>

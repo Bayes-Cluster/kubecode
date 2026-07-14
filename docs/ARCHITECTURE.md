@@ -14,14 +14,19 @@ The active server boundary currently consists of four Rust abstractions:
 - `TerminalManager` owns reconnectable PTYs independently from browser sockets.
 - `AgentStore` persists normalized Agent sessions/events and enforces one active
   run per Project.
-- `AgentRuntime` owns CLI child processes after the initiating request returns,
-  normalizes provider JSON, and serves reconnectable event cursors/SSE.
+- `AgentRuntime` is an ACP client that owns adapter child processes after the
+  initiating request returns. It resolves pinned Claude/Codex adapters from
+  explicit overrides, project-local package binaries, or `PATH`, then passes
+  the discovered CLI path through `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`. It
+  normalizes protocol updates and serves reconnectable event cursors/SSE.
 - `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
   probes remain unprefixed for Kubernetes.
 
 The active React entry point is `src/kubecode/App.tsx`. Its left rail owns
 Project and file navigation, the center column owns CodeMirror and reconnectable
-xterm tabs, and the right rail owns normalized Agent conversations. The shell
+xterm terminal trees, and the right rail owns normalized Agent conversations. A
+terminal leaf can be a regular shell or the native Claude Code, Codex, or
+OpenCode TUI; split-right and split-down create independent PTYs. The shell
 uses SideX's IDE-region model and Zed's compact visual hierarchy while retaining
 Tolaria's AI header, permission toggle, transcript, tool cards, composer, and
 Phosphor icon language. Both side rails are separated from the editor by
@@ -33,7 +38,8 @@ Browser code uses `KubecodeApi`, which derives every HTTP and WebSocket route
 from the current Kubeflow Notebook prefix.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
-Rust server, and pinned Claude Code, Codex, and OpenCode CLIs. s6 initializes CLI
+Rust server, pinned Claude Code, Codex, and OpenCode CLIs, and pinned official
+Claude/Codex ACP adapters. OpenCode supplies ACP natively. s6 initializes CLI
 state links below `${PERSISTENT_DIR}/.state` before serving on port 8888.
 
 Tolaria is a personal knowledge and life management desktop app. It reads a vault of markdown files with YAML frontmatter and presents them in a four-panel UI inspired by Bear Notes.

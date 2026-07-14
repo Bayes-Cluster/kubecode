@@ -13,6 +13,7 @@ name = "kubecode-server"
 path = "src/main.rs"
 
 [dependencies]
+agent-client-protocol = "=1.2.0"
 axum = { version = "0.8", features = ["ws"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"

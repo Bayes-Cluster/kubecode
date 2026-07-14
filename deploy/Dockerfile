@@ -22,6 +22,8 @@ ARG S6_VERSION=3.2.0.2
 ARG CLAUDE_CODE_VERSION=2.1.205
 ARG CODEX_VERSION=0.144.3
 ARG OPENCODE_VERSION=1.17.20
+ARG CLAUDE_ACP_VERSION=0.59.0
+ARG CODEX_ACP_VERSION=1.1.2
 
 ENV NB_USER=jovyan \
     NB_UID=1000 \
@@ -53,6 +55,8 @@ RUN apt-get update \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}" \
       "opencode-ai@${OPENCODE_VERSION}" \
+      "@agentclientprotocol/claude-agent-acp@${CLAUDE_ACP_VERSION}" \
+      "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" \
  && useradd --create-home --uid "${NB_UID}" --gid "${NB_GID}" --shell /bin/bash "${NB_USER}" \
  && usermod -aG sudo "${NB_USER}" \
  && printf '%%sudo ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/kubecode \

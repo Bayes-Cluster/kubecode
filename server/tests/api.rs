@@ -277,10 +277,11 @@ async fn creates_lists_and_explicitly_closes_terminals_over_http() {
         &app,
         Method::POST,
         &terminals_uri,
-        json!({"cols":100, "rows":30}),
+        json!({"kind":"regular", "cols":100, "rows":30}),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(terminal["kind"], "regular");
     let terminal_id = terminal["id"].as_str().expect("terminal id");
 
     let (status, terminals) = json_request(&app, Method::GET, &terminals_uri, Value::Null).await;
@@ -434,11 +435,25 @@ async fn exposes_completed_run_details_replay_and_event_stream() {
     let store = Arc::new(AgentStore::open(&database).expect("agent store"));
     let binary = executable(
         &temp,
-        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"thread-api\"}'\nprintf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished through API\"}}'",
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-api\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-api","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Finished through API"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
     );
     let app = app_router(
         AppState::new(workspace, store).with_agents(vec![AgentDescriptor {
-            id: AgentId::Codex,
+            id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
             executable: binary,
@@ -459,7 +474,7 @@ async fn exposes_completed_run_details_replay_and_event_stream() {
         &app,
         Method::POST,
         &conversations_uri,
-        json!({"agent_id":"codex"}),
+        json!({"agent_id":"opencode"}),
     )
     .await;
     let conversation_id = conversation["id"].as_str().expect("conversation id");

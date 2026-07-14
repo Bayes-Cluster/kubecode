@@ -2,6 +2,7 @@ export type Project = { id: string; name: string; path: string }
 export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
+export type TerminalKind = 'regular' | AgentId
 export type AgentDescriptor = {
   id: AgentId
   available: boolean
@@ -39,7 +40,14 @@ export type AgentEvent = {
   payload: Record<string, unknown>
   created_at: string
 }
-export type TerminalInfo = { id: string; project_id: string; cols: number; rows: number }
+export type TerminalInfo = {
+  id: string
+  project_id: string
+  title: string
+  kind: TerminalKind
+  cols: number
+  rows: number
+}
 
 export class ApiError extends Error {
   readonly code: string
@@ -176,10 +184,15 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/terminals`)
   }
 
-  createTerminal(projectId: string, cols: number, rows: number): Promise<TerminalInfo> {
+  createTerminal(
+    projectId: string,
+    kind: TerminalKind,
+    cols: number,
+    rows: number,
+  ): Promise<TerminalInfo> {
     return this.request(`${this.projectPath(projectId)}/terminals`, {
       method: 'POST',
-      body: JSON.stringify({ cols, rows }),
+      body: JSON.stringify({ kind, cols, rows }),
     })
   }
 

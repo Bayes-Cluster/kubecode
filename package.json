@@ -30,7 +30,9 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
+    "@agentclientprotocol/claude-agent-acp": "0.59.0",
+    "@agentclientprotocol/codex-acp": "1.1.2",
+    "@anthropic-ai/sdk": "^0.111.0",
     "@blocknote/code-block": "^0.46.2",
     "@blocknote/core": "^0.46.2",
     "@blocknote/mantine": "^0.46.2",
@@ -53,6 +55,7 @@
     "@ironcalc/workbook": "0.5.7",
     "@lezer/highlight": "^1.2.3",
     "@mantine/core": "^8.3.14",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

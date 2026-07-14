@@ -20,6 +20,52 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await expect(page.locator('.cm-editor')).toBeVisible()
 
   await page.getByRole('button', { name: 'New terminal' }).click()
+  await page.getByRole('menuitem', { name: 'Regular terminal' }).click()
   await expect(page.getByRole('button', { name: 'Terminal 1' })).toBeVisible()
   await expect(page.locator('.xterm')).toBeVisible()
+
+  const agents = await page.evaluate(async () => {
+    const response = await fetch('./api/v1/agents')
+    return await response.json() as Array<{ available: boolean; id: string }>
+  })
+  const agentNames = {
+    claude_code: 'Claude Code',
+    codex: 'Codex',
+    opencode: 'OpenCode',
+  } as const
+
+  const agentSelector = page.getByRole('combobox', { name: 'Agent' })
+  await expect(agentSelector.locator('img')).toHaveCount(1)
+  await agentSelector.click()
+  for (const agent of agents) {
+    const option = page.getByRole('option', {
+      name: agentNames[agent.id as keyof typeof agentNames],
+    })
+    if (agent.available) await expect(option).not.toHaveAttribute('data-disabled')
+    else await expect(option).toHaveAttribute('data-disabled')
+  }
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: 'New terminal' }).click()
+  for (const agent of agents) {
+    const item = page.getByRole('menuitem', {
+      name: agentNames[agent.id as keyof typeof agentNames],
+    })
+    if (agent.available) await expect(item).not.toHaveAttribute('data-disabled')
+    else await expect(item).toHaveAttribute('data-disabled')
+  }
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: 'Split terminal right' }).click()
+  await expect(page.locator('.kubecode-terminal-leaf')).toHaveCount(2)
+  const firstPane = page.locator('.kubecode-terminal-split-child').first()
+  await expect(firstPane).toHaveAttribute('style', /50%/)
+  const handle = page.locator('.kubecode-terminal-split > .cursor-col-resize').first()
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('terminal split handle is not visible')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 100, box.y + box.height / 2)
+  await page.mouse.up()
+  await expect(firstPane).not.toHaveAttribute('style', /50%/)
 })

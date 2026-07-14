@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 interface AiPanelHeaderProps {
   agentLabel: string
   agentReadiness: AiAgentReadiness
+  agentIcon?: ReactNode
   targetKind?: 'agent' | 'api_model'
   locale?: AppLocale
   permissionMode: AiAgentPermissionMode
@@ -312,6 +313,7 @@ function AiPanelEmptyState({
 }
 
 export const AiPanelHeader = memo(function AiPanelHeader({
+  agentIcon,
   agentLabel,
   agentReadiness,
   targetKind = 'agent',
@@ -334,7 +336,7 @@ export const AiPanelHeader = memo(function AiPanelHeader({
       style={{ padding: '8px 12px', gap: 8 }}
     >
       <div className="flex items-center" style={{ gap: 8 }}>
-        <Sparkle size={16} className="shrink-0 text-muted-foreground" />
+        {agentIcon ?? <Sparkle size={16} className="shrink-0 text-muted-foreground" />}
         <div className="flex flex-1 flex-col overflow-hidden">
           <span className="text-muted-foreground" style={{ fontSize: 13, fontWeight: 600 }}>
             {t('ai.panel.title')}

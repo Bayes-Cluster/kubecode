@@ -16,7 +16,11 @@ cargo run --manifest-path server/Cargo.toml
 
 Open `http://127.0.0.1:8888/user/local/kubecode`. Project content is created
 below `PERSISTENT_DIR`; registry, Agent events, and CLI state belong below its
-excluded `.state` subtree.
+excluded `.state` subtree. `pnpm install` provides project-local
+`claude-agent-acp` and `codex-acp` executables for AI-panel development; the
+deployment image installs the same pinned adapters globally. OpenCode provides
+its own `opencode acp` command. Adapter paths can be overridden with
+`KUBECODE_CLAUDE_ACP_PATH` and `KUBECODE_CODEX_ACP_PATH`.
 
 Build the Kubeflow image from the repository root:
 
@@ -34,7 +38,7 @@ How to navigate the codebase, run the app, and find what you need.
 
 ## Prerequisites
 
-- **Node.js** 18+ and **pnpm**
+- **Node.js** 22+ and **pnpm** (required by the pinned Claude ACP adapter)
 - **Rust** 1.77.2+ (for the Tauri backend)
 - **git** CLI (required by the git integration features; Windows users may choose native Git or WSL2 Git in Settings)
 

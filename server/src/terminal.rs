@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::agent_discovery::AgentDescriptor;
+use crate::agents::AgentId;
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Error)]
@@ -17,6 +19,8 @@ pub enum TerminalError {
     NotFound(String),
     #[error("the project terminal limit has been reached")]
     LimitReached,
+    #[error("agent is not available: {0:?}")]
+    AgentUnavailable(AgentId),
     #[error("PTY error: {0}")]
     Pty(String),
     #[error(transparent)]
@@ -25,11 +29,43 @@ pub enum TerminalError {
     Workspace(#[from] WorkspaceError),
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalKind {
+    #[default]
+    Regular,
+    ClaudeCode,
+    Codex,
+    #[serde(rename = "opencode")]
+    OpenCode,
+}
+
+impl TerminalKind {
+    fn agent_id(self) -> Option<AgentId> {
+        match self {
+            Self::Regular => None,
+            Self::ClaudeCode => Some(AgentId::ClaudeCode),
+            Self::Codex => Some(AgentId::Codex),
+            Self::OpenCode => Some(AgentId::OpenCode),
+        }
+    }
+
+    fn title(self, sequence: usize) -> String {
+        match self {
+            Self::Regular => format!("Terminal {sequence}"),
+            Self::ClaudeCode => "Claude Code".to_owned(),
+            Self::Codex => "Codex".to_owned(),
+            Self::OpenCode => "OpenCode".to_owned(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TerminalInfo {
     pub id: String,
     pub project_id: String,
     pub title: String,
+    pub kind: TerminalKind,
     pub cols: u16,
     pub rows: u16,
 }
@@ -45,6 +81,7 @@ pub struct TerminalManager {
     workspace: Arc<WorkspaceService>,
     per_project_limit: usize,
     buffer_capacity: usize,
+    agents: HashMap<AgentId, AgentDescriptor>,
     sessions: Mutex<HashMap<String, Arc<TerminalSession>>>,
 }
 
@@ -69,10 +106,20 @@ impl TerminalManager {
         per_project_limit: usize,
         buffer_capacity: usize,
     ) -> Self {
+        Self::with_agents(workspace, per_project_limit, buffer_capacity, Vec::new())
+    }
+
+    pub fn with_agents(
+        workspace: Arc<WorkspaceService>,
+        per_project_limit: usize,
+        buffer_capacity: usize,
+        agents: Vec<AgentDescriptor>,
+    ) -> Self {
         Self {
             workspace,
             per_project_limit,
             buffer_capacity,
+            agents: agents.into_iter().map(|agent| (agent.id, agent)).collect(),
             sessions: Mutex::new(HashMap::new()),
         }
     }
@@ -84,6 +131,7 @@ impl TerminalManager {
     pub fn create(
         &self,
         project_id: &str,
+        kind: TerminalKind,
         cols: u16,
         rows: u16,
     ) -> Result<TerminalInfo, TerminalError> {
@@ -116,8 +164,8 @@ impl TerminalManager {
                 pixel_height: 0,
             })
             .map_err(|error| TerminalError::Pty(error.to_string()))?;
-        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-        let mut command = CommandBuilder::new(shell);
+        let executable = self.executable(kind)?;
+        let mut command = CommandBuilder::new(executable);
         command.cwd(project_path);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
@@ -139,7 +187,8 @@ impl TerminalManager {
         let info = TerminalInfo {
             id: id.clone(),
             project_id: project_id.to_owned(),
-            title: format!("Terminal {}", existing + 1),
+            title: kind.title(existing + 1),
+            kind,
             cols,
             rows,
         };
@@ -160,6 +209,17 @@ impl TerminalManager {
             }),
         );
         Ok(info)
+    }
+
+    fn executable(&self, kind: TerminalKind) -> Result<String, TerminalError> {
+        let Some(agent_id) = kind.agent_id() else {
+            return Ok(env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned()));
+        };
+        self.agents
+            .get(&agent_id)
+            .filter(|agent| agent.available)
+            .map(|agent| agent.executable.clone())
+            .ok_or(TerminalError::AgentUnavailable(agent_id))
     }
 
     pub fn list(&self, project_id: &str) -> Vec<TerminalInfo> {

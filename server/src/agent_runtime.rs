@@ -1,14 +1,24 @@
 use std::collections::HashMap;
-use std::process::Stdio;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::schema::v1::{
+    CancelNotification, ContentBlock, ContentChunk, EnvVariable, InitializeRequest,
+    LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PermissionOption,
+    PermissionOptionKind, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+    ToolCall, ToolCallStatus, ToolCallUpdate,
+};
+use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
 use serde_json::{Value, json};
 use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use crate::agent_discovery::AgentDescriptor;
+use crate::agent_discovery::{is_executable, resolve_executable};
 use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, PermissionMode, RunStatus, StoreError,
 };
@@ -18,8 +28,16 @@ use crate::workspace::{WorkspaceError, WorkspaceService};
 pub enum RuntimeError {
     #[error("agent is not available: {0:?}")]
     AgentUnavailable(AgentId),
-    #[error("agent process could not start: {0}")]
-    Spawn(#[from] std::io::Error),
+    #[error("ACP connection failed: {0}")]
+    Acp(String),
+    #[error(
+        "ACP adapter for {agent:?} is not installed: {binary}. Install it or set {variable} to its executable path"
+    )]
+    AdapterUnavailable {
+        agent: AgentId,
+        binary: String,
+        variable: &'static str,
+    },
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]
@@ -84,18 +102,17 @@ impl AgentRuntime {
             .insert(run.id.clone(), cancel);
 
         let runtime = self.clone();
-        let spawned_run = run.clone();
+        let execution = AgentExecution {
+            run: run.clone(),
+            agent_id: conversation.agent_id,
+            descriptor,
+            provider_session_id: conversation.provider_session_id,
+            cwd,
+            message: request.message,
+            permission_mode: request.permission_mode,
+        };
         tokio::spawn(async move {
-            runtime
-                .execute(
-                    spawned_run,
-                    conversation.agent_id,
-                    descriptor,
-                    cwd,
-                    request,
-                    cancelled,
-                )
-                .await;
+            runtime.execute(execution, cancelled).await;
         });
         Ok(run)
     }
@@ -108,91 +125,22 @@ impl AgentRuntime {
             .is_some_and(|sender| sender.send(()).is_ok())
     }
 
-    async fn execute(
-        &self,
-        run: AgentRun,
-        agent_id: AgentId,
-        descriptor: AgentDescriptor,
-        cwd: std::path::PathBuf,
-        request: StartAgentRun,
-        mut cancelled: oneshot::Receiver<()>,
-    ) {
-        let mut command = build_command(
-            agent_id,
-            &descriptor.executable,
-            &cwd,
-            &request.message,
-            request.permission_mode,
-        );
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                self.fail_run(&run.id, format!("could not start agent: {error}"));
-                self.remove_cancellation(&run.id);
-                return;
-            }
-        };
-        let stdout = child.stdout.take().expect("agent stdout was configured");
-        let stderr = child.stderr.take().expect("agent stderr was configured");
-        let stderr_task = tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            let mut diagnostics = Vec::new();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if !line.trim().is_empty() && diagnostics.len() < 3 {
-                    diagnostics.push(line);
-                }
-            }
-            diagnostics.join("\n")
-        });
-        let mut lines = BufReader::new(stdout).lines();
-        let mut was_cancelled = false;
+    async fn execute(&self, execution: AgentExecution, cancelled: oneshot::Receiver<()>) {
+        let result = run_acp(Arc::clone(&self.store), &execution, cancelled).await;
+        self.remove_cancellation(&execution.run.id);
 
-        loop {
-            tokio::select! {
-                line = lines.next_line() => match line {
-                    Ok(Some(line)) => self.persist_provider_line(&run, agent_id, &line),
-                    Ok(None) | Err(_) => break,
-                },
-                _ = &mut cancelled => {
-                    was_cancelled = true;
-                    let _ = child.start_kill();
-                    break;
-                }
-            }
-        }
-        let status = child.wait().await;
-        let diagnostic = stderr_task.await.unwrap_or_default();
-        self.remove_cancellation(&run.id);
-
-        if was_cancelled {
-            let _ = self.store.finish_run(&run.id, RunStatus::Cancelled, None);
-        } else if status.as_ref().is_ok_and(|status| status.success()) {
-            let _ = self.store.finish_run(&run.id, RunStatus::Completed, None);
-        } else {
-            let message = if diagnostic.is_empty() {
-                status
-                    .map(|status| format!("agent exited with {status}"))
-                    .unwrap_or_else(|error| format!("agent wait failed: {error}"))
-            } else {
-                diagnostic
-            };
-            self.fail_run(&run.id, message);
-        }
-    }
-
-    fn persist_provider_line(&self, run: &AgentRun, agent_id: AgentId, line: &str) {
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            return;
-        };
-        for event in normalize_event(agent_id, &value) {
-            if let Some(session_id) = event.session_id {
+        match result {
+            Ok(AcpRunOutcome::Completed) => {
                 let _ = self
                     .store
-                    .set_provider_session(&run.conversation_id, &session_id);
+                    .finish_run(&execution.run.id, RunStatus::Completed, None);
             }
-            if let Some((kind, payload)) = event.persisted {
-                let _ = self.store.append_event(&run.id, kind, &payload);
+            Ok(AcpRunOutcome::Cancelled) => {
+                let _ = self
+                    .store
+                    .finish_run(&execution.run.id, RunStatus::Cancelled, None);
             }
+            Err(error) => self.fail_run(&execution.run.id, error.to_string()),
         }
     }
 
@@ -213,433 +161,406 @@ impl AgentRuntime {
     }
 }
 
-fn build_command(
+struct AgentExecution {
+    run: AgentRun,
     agent_id: AgentId,
-    executable: &str,
-    cwd: &std::path::Path,
-    message: &str,
+    descriptor: AgentDescriptor,
+    provider_session_id: Option<String>,
+    cwd: PathBuf,
+    message: String,
     permission_mode: PermissionMode,
-) -> Command {
-    let mut command = Command::new(executable);
-    match agent_id {
-        AgentId::ClaudeCode => {
-            command.args([
-                "-p",
-                message,
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--include-partial-messages",
-                "--permission-mode",
-                "acceptEdits",
-            ]);
-            match permission_mode {
-                PermissionMode::Safe => {
-                    command.args(["--disallowedTools", "Bash"]);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AcpRunOutcome {
+    Completed,
+    Cancelled,
+}
+
+async fn run_acp(
+    store: Arc<AgentStore>,
+    execution: &AgentExecution,
+    mut cancelled: oneshot::Receiver<()>,
+) -> Result<AcpRunOutcome, RuntimeError> {
+    let agent = acp_agent(execution.agent_id, &execution.descriptor)?;
+    let accepting_updates = Arc::new(AtomicBool::new(false));
+    let update_store = Arc::clone(&store);
+    let update_run_id = execution.run.id.clone();
+    let update_gate = Arc::clone(&accepting_updates);
+    let permission_store = Arc::clone(&store);
+    let permission_run_id = execution.run.id.clone();
+    let conversation_id = execution.run.conversation_id.clone();
+    let provider_session_id = execution.provider_session_id.clone();
+    let permission_mode = execution.permission_mode;
+    let cwd = execution.cwd.clone();
+    let message = execution.message.clone();
+
+    let result = agent_client_protocol::Client
+        .builder()
+        .name("Kubecode")
+        .on_receive_notification(
+            async move |notification: SessionNotification, _connection| {
+                if update_gate.load(Ordering::Acquire) {
+                    persist_session_update(&update_store, &update_run_id, notification.update);
                 }
-                PermissionMode::Power => {
-                    command.args(["--allowedTools", "Bash"]);
+                Ok(())
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
+        .on_receive_request(
+            async move |request: RequestPermissionRequest, responder, _connection| {
+                let outcome = permission_outcome(&request.options, permission_mode);
+                let request_payload = json!({
+                    "tool_id": request.tool_call.tool_call_id.to_string(),
+                    "tool": request.tool_call.fields.title,
+                    "input": request.tool_call.fields.raw_input,
+                    "options": request.options,
+                });
+                let _ = permission_store.append_event(
+                    &permission_run_id,
+                    AgentEventKind::PermissionRequested,
+                    &request_payload,
+                );
+                let _ = permission_store.append_event(
+                    &permission_run_id,
+                    AgentEventKind::PermissionResolved,
+                    &json!({"outcome": outcome}),
+                );
+                responder.respond(RequestPermissionResponse::new(outcome))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+            connection
+                .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                .block_task()
+                .await?;
+
+            let session_id = match provider_session_id {
+                Some(session_id)
+                    if connection
+                        .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
+                        .block_task()
+                        .await
+                        .is_ok() =>
+                {
+                    session_id.into()
+                }
+                _ => {
+                    connection
+                        .send_request(NewSessionRequest::new(cwd))
+                        .block_task()
+                        .await?
+                        .session_id
+                }
+            };
+            store
+                .set_provider_session(&conversation_id, &session_id.to_string())
+                .map_err(|error| {
+                    agent_client_protocol::Error::internal_error().data(error.to_string())
+                })?;
+            accepting_updates.store(true, Ordering::Release);
+
+            let prompt = connection
+                .send_request(PromptRequest::new(session_id.clone(), vec![message.into()]))
+                .block_task();
+            tokio::select! {
+                response = prompt => {
+                    response?;
+                    Ok(AcpRunOutcome::Completed)
+                }
+                _ = &mut cancelled => {
+                    connection.send_notification(CancelNotification::new(session_id))?;
+                    Ok(AcpRunOutcome::Cancelled)
                 }
             }
-            command.env_remove("CLAUDECODE");
-        }
-        AgentId::Codex => {
-            let (sandbox, approval) = match permission_mode {
-                PermissionMode::Safe => ("read-only", "untrusted"),
-                PermissionMode::Power => ("workspace-write", "never"),
-            };
-            command.args([
-                "--sandbox",
-                sandbox,
-                "--ask-for-approval",
-                approval,
-                "exec",
-                "--json",
-                "-C",
-                cwd.to_string_lossy().as_ref(),
-                message,
-            ]);
-        }
-        AgentId::OpenCode => {
-            command.args(["run", "--format", "json", message]);
-            let bash = match permission_mode {
-                PermissionMode::Safe => "deny",
-                PermissionMode::Power => "allow",
-            };
-            command.env(
-                "OPENCODE_CONFIG_CONTENT",
-                json!({
-                    "$schema": "https://opencode.ai/config.json",
-                    "permission": {
-                        "read": "allow", "edit": "allow", "glob": "allow",
-                        "grep": "allow", "list": "allow",
-                        "external_directory": "deny", "bash": bash
-                    }
-                })
-                .to_string(),
-            );
-        }
-    }
-    command
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    command
-}
-
-struct NormalizedEvent {
-    session_id: Option<String>,
-    persisted: Option<(AgentEventKind, Value)>,
-}
-
-fn normalize_event(agent_id: AgentId, value: &Value) -> Vec<NormalizedEvent> {
-    match agent_id {
-        AgentId::ClaudeCode => normalize_claude(value),
-        AgentId::Codex => normalize_codex(value),
-        AgentId::OpenCode => normalize_opencode(value),
-    }
-}
-
-fn session(session_id: Option<&str>) -> Vec<NormalizedEvent> {
-    session_id
-        .map(|session_id| NormalizedEvent {
-            session_id: Some(session_id.to_owned()),
-            persisted: None,
         })
-        .into_iter()
-        .collect()
+        .await;
+
+    result.map_err(|error| RuntimeError::Acp(error.to_string()))
 }
 
-fn event(kind: AgentEventKind, payload: Value) -> Vec<NormalizedEvent> {
-    vec![NormalizedEvent {
-        session_id: None,
-        persisted: Some((kind, payload)),
-    }]
-}
-
-fn normalize_codex(value: &Value) -> Vec<NormalizedEvent> {
-    match value["type"].as_str().unwrap_or_default() {
-        "thread.started" => session(value["thread_id"].as_str()),
-        "item.started" => normalize_codex_item(&value["item"], false),
-        "item.completed" => normalize_codex_item(&value["item"], true),
-        _ => Vec::new(),
-    }
-}
-
-fn normalize_codex_item(item: &Value, completed: bool) -> Vec<NormalizedEvent> {
-    let id = item["id"].as_str().unwrap_or("tool");
-    match (item["type"].as_str().unwrap_or_default(), completed) {
-        ("command_execution", false) => event(
-            AgentEventKind::ToolStarted,
-            json!({"tool_id": id, "tool":"Bash", "input":{"command":item["command"]}}),
+fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent, RuntimeError> {
+    let (name, command, args, agent_environment) = match agent_id {
+        AgentId::ClaudeCode => (
+            "Claude Agent",
+            configured_adapter(
+                AgentId::ClaudeCode,
+                "KUBECODE_CLAUDE_ACP_PATH",
+                "claude-agent-acp",
+            )?,
+            Vec::new(),
+            vec![EnvVariable::new(
+                "CLAUDE_CODE_EXECUTABLE",
+                descriptor.executable.clone(),
+            )],
         ),
-        ("command_execution", true) => event(
-            AgentEventKind::ToolCompleted,
-            json!({"tool_id":id, "output":item["aggregated_output"]}),
+        AgentId::Codex => (
+            "Codex",
+            configured_adapter(AgentId::Codex, "KUBECODE_CODEX_ACP_PATH", "codex-acp")?,
+            Vec::new(),
+            vec![EnvVariable::new(
+                "CODEX_PATH",
+                descriptor.executable.clone(),
+            )],
         ),
-        ("agent_message", true) => item["text"]
-            .as_str()
-            .map(|text| event(AgentEventKind::TextDelta, json!({"text":text})))
-            .unwrap_or_default(),
-        ("reasoning", true) => item["text"]
-            .as_str()
-            .map(|text| event(AgentEventKind::ThinkingDelta, json!({"text":text})))
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    }
-}
-
-fn normalize_claude(value: &Value) -> Vec<NormalizedEvent> {
-    match value["type"].as_str().unwrap_or_default() {
-        "system" if value["subtype"] == "init" => session(value["session_id"].as_str()),
-        "result" => {
-            let mut events = session(value["session_id"].as_str());
-            if let Some(text) = value["result"].as_str().filter(|text| !text.is_empty()) {
-                events.extend(event(AgentEventKind::TextDelta, json!({"text":text})));
-            }
-            events
-        }
-        "stream_event" => normalize_claude_stream(&value["event"]),
-        "tool_result" => event(
-            AgentEventKind::ToolCompleted,
-            json!({"tool_id":value["tool_use_id"], "output":value["content"]}),
+        AgentId::OpenCode => (
+            "OpenCode",
+            PathBuf::from(&descriptor.executable),
+            vec!["acp".to_owned()],
+            Vec::new(),
         ),
-        _ => Vec::new(),
-    }
-}
-
-fn normalize_claude_stream(stream: &Value) -> Vec<NormalizedEvent> {
-    match stream["type"].as_str().unwrap_or_default() {
-        "content_block_delta" if stream["delta"]["type"] == "text_delta" => event(
-            AgentEventKind::TextDelta,
-            json!({"text":stream["delta"]["text"]}),
-        ),
-        "content_block_delta" if stream["delta"]["type"] == "thinking_delta" => event(
-            AgentEventKind::ThinkingDelta,
-            json!({"text":stream["delta"]["thinking"]}),
-        ),
-        "content_block_start" if stream["content_block"]["type"] == "tool_use" => event(
-            AgentEventKind::ToolStarted,
-            json!({
-                "tool_id":stream["content_block"]["id"],
-                "tool":stream["content_block"]["name"],
-                "input":stream["content_block"]["input"]
-            }),
-        ),
-        _ => Vec::new(),
-    }
-}
-
-fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
-    let direct_type = value["type"].as_str().unwrap_or_default();
-    if direct_type == "session" {
-        return session(
-            value["sessionID"]
-                .as_str()
-                .or_else(|| value["session_id"].as_str()),
-        );
-    }
-    let part = &value["part"];
-    let kind = if matches!(
-        direct_type,
-        "message"
-            | "text"
-            | "reasoning"
-            | "tool_use"
-            | "tool"
-            | "tool_result"
-            | "tool_done"
-            | "error"
-    ) {
-        direct_type
-    } else {
-        part["type"].as_str().unwrap_or(direct_type)
     };
-    let field = |name: &str| value.get(name).or_else(|| part.get(name));
-    match kind {
-        "message" | "text" => field("text")
-            .or_else(|| field("content"))
-            .and_then(Value::as_str)
-            .map(|text| event(AgentEventKind::TextDelta, json!({"text":text})))
-            .unwrap_or_default(),
-        "reasoning" => field("text")
-            .and_then(Value::as_str)
-            .map(|text| event(AgentEventKind::ThinkingDelta, json!({"text":text})))
-            .unwrap_or_default(),
-        "tool_use" | "tool" => event(
-            AgentEventKind::ToolStarted,
-            json!({"tool_id":field("id"), "tool":field("name"), "input":field("input")}),
-        ),
-        "tool_result" | "tool_done" => event(
-            AgentEventKind::ToolCompleted,
-            json!({"tool_id":field("id"), "output":field("output")}),
-        ),
-        "error" => event(AgentEventKind::Error, json!({"message":field("message")})),
-        _ => Vec::new(),
+    Ok(AcpAgent::new(McpServer::Stdio(
+        McpServerStdio::new(name, command)
+            .args(args)
+            .env(agent_environment),
+    )))
+}
+
+fn configured_adapter(
+    agent: AgentId,
+    variable: &'static str,
+    default: &str,
+) -> Result<PathBuf, RuntimeError> {
+    if let Some(configured) = env::var_os(variable).map(PathBuf::from) {
+        return executable_path(configured).ok_or_else(|| RuntimeError::AdapterUnavailable {
+            agent,
+            binary: env::var_os(variable)
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            variable,
+        });
     }
+
+    local_adapter(default)
+        .or_else(|| resolve_executable(default))
+        .ok_or_else(|| RuntimeError::AdapterUnavailable {
+            agent,
+            binary: default.to_owned(),
+            variable,
+        })
+}
+
+fn executable_path(candidate: PathBuf) -> Option<PathBuf> {
+    if candidate.components().count() > 1 {
+        is_executable(&candidate).then_some(candidate)
+    } else {
+        resolve_executable(candidate.to_str()?)
+    }
+}
+
+fn local_adapter(name: &str) -> Option<PathBuf> {
+    let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
+    let candidate = project_root.join("node_modules/.bin").join(name);
+    is_executable(&candidate).then_some(candidate)
+}
+
+fn permission_outcome(
+    options: &[PermissionOption],
+    permission_mode: PermissionMode,
+) -> RequestPermissionOutcome {
+    let preferred = options.iter().find(|option| {
+        matches!(
+            (permission_mode, option.kind),
+            (PermissionMode::Safe, PermissionOptionKind::RejectOnce)
+                | (PermissionMode::Safe, PermissionOptionKind::RejectAlways)
+                | (PermissionMode::Power, PermissionOptionKind::AllowOnce)
+                | (PermissionMode::Power, PermissionOptionKind::AllowAlways)
+        )
+    });
+    preferred.map_or(RequestPermissionOutcome::Cancelled, |option| {
+        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option.option_id.clone()))
+    })
+}
+
+fn persist_session_update(store: &AgentStore, run_id: &str, update: SessionUpdate) {
+    let event = match update {
+        SessionUpdate::AgentMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk),
+        SessionUpdate::AgentThoughtChunk(chunk) => text_event(AgentEventKind::ThinkingDelta, chunk),
+        SessionUpdate::ToolCall(tool_call) => Some(tool_started(tool_call)),
+        SessionUpdate::ToolCallUpdate(update) => Some(tool_updated(update)),
+        SessionUpdate::UsageUpdate(usage) => serde_json::to_value(usage)
+            .ok()
+            .map(|payload| (AgentEventKind::Usage, payload)),
+        _ => None,
+    };
+    if let Some((kind, payload)) = event {
+        let _ = store.append_event(run_id, kind, &payload);
+    }
+}
+
+fn text_event(kind: AgentEventKind, chunk: ContentChunk) -> Option<(AgentEventKind, Value)> {
+    match chunk.content {
+        ContentBlock::Text(text) => Some((kind, json!({"text": text.text}))),
+        _ => None,
+    }
+}
+
+fn tool_started(tool_call: ToolCall) -> (AgentEventKind, Value) {
+    (
+        AgentEventKind::ToolStarted,
+        json!({
+            "tool_id": tool_call.tool_call_id.to_string(),
+            "tool": tool_call.title,
+            "input": tool_call.raw_input,
+            "output": tool_call.raw_output,
+            "status": tool_call.status,
+        }),
+    )
+}
+
+fn tool_updated(update: ToolCallUpdate) -> (AgentEventKind, Value) {
+    let kind = match update.fields.status {
+        Some(ToolCallStatus::Completed | ToolCallStatus::Failed) => AgentEventKind::ToolCompleted,
+        _ => AgentEventKind::ToolUpdated,
+    };
+    (
+        kind,
+        json!({
+            "tool_id": update.tool_call_id.to_string(),
+            "tool": update.fields.title,
+            "input": update.fields.raw_input,
+            "output": update.fields.raw_output,
+            "status": update.fields.status,
+            "content": update.fields.content,
+        }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-
-    fn persisted(value: Vec<NormalizedEvent>) -> Vec<(AgentEventKind, Value)> {
-        value
-            .into_iter()
-            .filter_map(|event| event.persisted)
-            .collect()
-    }
-
-    fn command_args(command: &Command) -> Vec<String> {
-        command
-            .as_std()
-            .get_args()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect()
-    }
+    use agent_client_protocol::schema::v1::{
+        PermissionOptionId, TextContent, ToolCallId, ToolCallUpdateFields,
+    };
 
     #[test]
-    fn builds_provider_specific_safe_and_power_commands() {
-        let cwd = Path::new("/tmp/project");
-        let claude_safe = build_command(
-            AgentId::ClaudeCode,
-            "claude",
-            cwd,
-            "fix it",
-            PermissionMode::Safe,
-        );
-        let claude_power = build_command(
-            AgentId::ClaudeCode,
-            "claude",
-            cwd,
-            "fix it",
-            PermissionMode::Power,
-        );
-        assert!(
-            command_args(&claude_safe)
-                .windows(2)
-                .any(|pair| pair == ["--disallowedTools", "Bash"])
-        );
-        assert!(
-            command_args(&claude_power)
-                .windows(2)
-                .any(|pair| pair == ["--allowedTools", "Bash"])
-        );
-
-        let codex_safe =
-            build_command(AgentId::Codex, "codex", cwd, "fix it", PermissionMode::Safe);
-        let codex_power = build_command(
-            AgentId::Codex,
-            "codex",
-            cwd,
-            "fix it",
-            PermissionMode::Power,
-        );
-        assert!(
-            command_args(&codex_safe)
-                .windows(2)
-                .any(|pair| pair == ["--sandbox", "read-only"])
-        );
-        assert!(
-            command_args(&codex_power)
-                .windows(2)
-                .any(|pair| pair == ["--sandbox", "workspace-write"])
-        );
-
-        let opencode_safe = build_command(
-            AgentId::OpenCode,
-            "opencode",
-            cwd,
-            "fix it",
-            PermissionMode::Safe,
-        );
-        let opencode_power = build_command(
-            AgentId::OpenCode,
-            "opencode",
-            cwd,
-            "fix it",
-            PermissionMode::Power,
-        );
-        let config = |command: &Command| {
-            command
-                .as_std()
-                .get_envs()
-                .find(|(name, _)| *name == "OPENCODE_CONFIG_CONTENT")
-                .and_then(|(_, value)| value)
-                .expect("OpenCode config")
-                .to_string_lossy()
-                .into_owned()
+    fn builds_standard_adapter_commands() {
+        let descriptor = AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: "/opt/bin/opencode".into(),
+            error: None,
         };
-        assert!(config(&opencode_safe).contains(r#""bash":"deny""#));
-        assert!(config(&opencode_power).contains(r#""bash":"allow""#));
+        let server = acp_agent(AgentId::OpenCode, &descriptor)
+            .expect("native ACP agent")
+            .into_server();
+        let McpServer::Stdio(server) = server else {
+            panic!("stdio adapter")
+        };
+        assert_eq!(server.command, PathBuf::from("/opt/bin/opencode"));
+        assert_eq!(server.args, ["acp"]);
     }
 
     #[test]
-    fn normalizes_codex_sessions_text_reasoning_and_tools() {
-        let session_event = normalize_event(
-            AgentId::Codex,
-            &json!({"type":"thread.started", "thread_id":"thread-1"}),
-        );
-        assert_eq!(session_event[0].session_id.as_deref(), Some("thread-1"));
-
-        let started = persisted(normalize_event(
-            AgentId::Codex,
-            &json!({"type":"item.started", "item":{"id":"tool-1", "type":"command_execution", "command":"pwd"}}),
-        ));
-        assert_eq!(started[0].0, AgentEventKind::ToolStarted);
-        let completed = persisted(normalize_event(
-            AgentId::Codex,
-            &json!({"type":"item.completed", "item":{"id":"tool-1", "type":"command_execution", "aggregated_output":"ok"}}),
-        ));
-        assert_eq!(completed[0].0, AgentEventKind::ToolCompleted);
-
-        let text = persisted(normalize_event(
-            AgentId::Codex,
-            &json!({"type":"item.completed", "item":{"type":"agent_message", "text":"done"}}),
-        ));
-        assert_eq!(text[0].1["text"], "done");
-        let thinking = persisted(normalize_event(
-            AgentId::Codex,
-            &json!({"type":"item.completed", "item":{"type":"reasoning", "text":"plan"}}),
-        ));
-        assert_eq!(thinking[0].0, AgentEventKind::ThinkingDelta);
-        assert!(normalize_event(AgentId::Codex, &json!({"type":"unknown"})).is_empty());
+    fn codex_adapter_uses_discovered_cli_and_project_adapter() {
+        let descriptor = AgentDescriptor {
+            id: AgentId::Codex,
+            available: true,
+            version: Some("test".into()),
+            executable: "/opt/homebrew/bin/codex".into(),
+            error: None,
+        };
+        let server = acp_agent(AgentId::Codex, &descriptor)
+            .expect("project ACP adapter")
+            .into_server();
+        let McpServer::Stdio(server) = server else {
+            panic!("stdio adapter")
+        };
+        assert!(server.command.ends_with("node_modules/.bin/codex-acp"));
+        assert!(server.env.iter().any(|variable| {
+            variable.name == "CODEX_PATH" && variable.value == "/opt/homebrew/bin/codex"
+        }));
     }
 
     #[test]
-    fn normalizes_claude_sessions_streams_results_and_tools() {
-        let initialized = normalize_event(
-            AgentId::ClaudeCode,
-            &json!({"type":"system", "subtype":"init", "session_id":"session-1"}),
+    fn claude_adapter_uses_discovered_cli_and_project_adapter() {
+        let descriptor = AgentDescriptor {
+            id: AgentId::ClaudeCode,
+            available: true,
+            version: Some("test".into()),
+            executable: "/home/jovyan/.local/bin/claude".into(),
+            error: None,
+        };
+        let server = acp_agent(AgentId::ClaudeCode, &descriptor)
+            .expect("project ACP adapter")
+            .into_server();
+        let McpServer::Stdio(server) = server else {
+            panic!("stdio adapter")
+        };
+        assert!(
+            server
+                .command
+                .ends_with("node_modules/.bin/claude-agent-acp")
         );
-        assert_eq!(initialized[0].session_id.as_deref(), Some("session-1"));
-
-        let result = normalize_event(
-            AgentId::ClaudeCode,
-            &json!({"type":"result", "session_id":"session-1", "result":"done"}),
-        );
-        assert_eq!(result.len(), 2);
-        assert_eq!(persisted(result)[0].1["text"], "done");
-
-        for (delta_type, field, expected_kind) in [
-            ("text_delta", "text", AgentEventKind::TextDelta),
-            ("thinking_delta", "thinking", AgentEventKind::ThinkingDelta),
-        ] {
-            let events = persisted(normalize_event(
-                AgentId::ClaudeCode,
-                &json!({"type":"stream_event", "event":{"type":"content_block_delta", "delta":{"type":delta_type, field:"value"}}}),
-            ));
-            assert_eq!(events[0].0, expected_kind);
-        }
-
-        let tool = persisted(normalize_event(
-            AgentId::ClaudeCode,
-            &json!({"type":"stream_event", "event":{"type":"content_block_start", "content_block":{"type":"tool_use", "id":"tool-1", "name":"Read", "input":{}}}}),
-        ));
-        assert_eq!(tool[0].0, AgentEventKind::ToolStarted);
-        let tool_result = persisted(normalize_event(
-            AgentId::ClaudeCode,
-            &json!({"type":"tool_result", "tool_use_id":"tool-1", "content":"ok"}),
-        ));
-        assert_eq!(tool_result[0].0, AgentEventKind::ToolCompleted);
-        assert!(normalize_event(AgentId::ClaudeCode, &json!({"type":"unknown"})).is_empty());
+        assert!(server.env.iter().any(|variable| {
+            variable.name == "CLAUDE_CODE_EXECUTABLE"
+                && variable.value == "/home/jovyan/.local/bin/claude"
+        }));
     }
 
     #[test]
-    fn normalizes_opencode_direct_and_part_events() {
-        let session_event = normalize_event(
-            AgentId::OpenCode,
-            &json!({"type":"session", "sessionID":"session-1"}),
+    fn validates_adapter_executables_and_empty_permissions() {
+        assert!(executable_path(PathBuf::from("sh")).is_some());
+        assert!(executable_path(PathBuf::from("/definitely/missing/adapter")).is_none());
+        assert!(local_adapter("codex-acp").is_some());
+        assert_eq!(
+            permission_outcome(&[], PermissionMode::Safe),
+            RequestPermissionOutcome::Cancelled
         );
-        assert_eq!(session_event[0].session_id.as_deref(), Some("session-1"));
+    }
 
-        for (value, expected_kind) in [
-            (
-                json!({"type":"text", "text":"done"}),
-                AgentEventKind::TextDelta,
+    #[test]
+    fn maps_acp_content_and_tool_updates_to_shared_events() {
+        let text = text_event(
+            AgentEventKind::TextDelta,
+            ContentChunk::new(ContentBlock::Text(TextContent::new("done"))),
+        )
+        .expect("text event");
+        assert_eq!(text.1["text"], "done");
+
+        let tool = tool_updated(ToolCallUpdate::new(
+            ToolCallId::new("tool-1"),
+            ToolCallUpdateFields::new()
+                .title("Shell".to_owned())
+                .status(ToolCallStatus::Completed)
+                .raw_output(json!({"stdout":"ok"})),
+        ));
+        assert_eq!(tool.0, AgentEventKind::ToolCompleted);
+        assert_eq!(tool.1["tool_id"], "tool-1");
+    }
+
+    #[test]
+    fn safe_rejects_and_power_allows_acp_permissions() {
+        let options = vec![
+            PermissionOption::new(
+                PermissionOptionId::new("allow"),
+                "Allow",
+                PermissionOptionKind::AllowOnce,
             ),
-            (
-                json!({"part":{"type":"reasoning", "text":"plan"}}),
-                AgentEventKind::ThinkingDelta,
+            PermissionOption::new(
+                PermissionOptionId::new("reject"),
+                "Reject",
+                PermissionOptionKind::RejectOnce,
             ),
-            (
-                json!({"type":"tool", "id":"tool-1", "name":"bash", "input":{}}),
-                AgentEventKind::ToolStarted,
-            ),
-            (
-                json!({"part":{"type":"tool_done", "id":"tool-1", "output":"ok"}}),
-                AgentEventKind::ToolCompleted,
-            ),
-            (
-                json!({"type":"error", "message":"failed"}),
-                AgentEventKind::Error,
-            ),
-        ] {
-            let events = persisted(normalize_event(AgentId::OpenCode, &value));
-            assert_eq!(events[0].0, expected_kind);
-        }
-        assert!(normalize_event(AgentId::OpenCode, &json!({"type":"unknown"})).is_empty());
+        ];
+        assert_eq!(
+            selected_option(permission_outcome(&options, PermissionMode::Safe)),
+            "reject"
+        );
+        assert_eq!(
+            selected_option(permission_outcome(&options, PermissionMode::Power)),
+            "allow"
+        );
+    }
+
+    fn selected_option(outcome: RequestPermissionOutcome) -> String {
+        let RequestPermissionOutcome::Selected(selected) = outcome else {
+            panic!("selected outcome")
+        };
+        selected.option_id.to_string()
     }
 }

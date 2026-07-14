@@ -20,7 +20,10 @@ is keyed by UUID and bound to one registered Project cwd. Its 2 MiB byte ring
 buffer exposes monotonic cursors, allowing a refreshed browser to request only
 missing output and detect when it needs a truncated snapshot. Disconnecting a
 socket never closes a PTY; only the explicit delete endpoint, process exit, or
-Pod termination ends it. The default limit is eight terminals per Project.
+Pod termination ends it. Every PTY has a `regular`, `claude_code`, `codex`, or
+`opencode` profile. Agent TUI profiles resolve through the discovery catalog and
+fail closed when their binary is unavailable. The default limit is eight
+terminals per Project.
 
 `AgentStore` owns durable conversation, run, normalized event, and saved
 permission-rule metadata in the same Kubecode SQLite database. It enforces one
@@ -35,17 +38,22 @@ Agent discovery probes exactly `claude`, `codex`, and `opencode` in parallel at
 server startup and exposes their path, version, availability, and diagnostic at
 `GET /api/v1/agents`. Administrators can pin executable locations with
 `KUBECODE_CLAUDE_PATH`, `KUBECODE_CODEX_PATH`, and
-`KUBECODE_OPENCODE_PATH`; authentication and model configuration remain owned
-by each CLI.
+`KUBECODE_OPENCODE_PATH`. Without an override, discovery checks the inherited
+PATH, login-shell PATH, and Tolaria-compatible local toolchain locations such as
+`.claude/local`, `.codex/bin`, `.opencode/bin`, mise/asdf/npm/bun/nvm, and
+Homebrew. Authentication and model configuration remain owned by each CLI.
 
-`AgentRuntime` launches the selected CLI in the validated Project cwd and owns
-the child process independently of any HTTP or SSE connection. Provider JSON
-streams are normalized into the `AgentStore` event vocabulary. Run creation
-returns immediately; clients can fetch events after a sequence cursor or keep
-an SSE connection open, and an explicit cancel request terminates the child.
-Safe mode disables Claude/OpenCode shell tools and uses Codex's read-only,
-untrusted sandbox. Power mode enables project-scoped shell work without granting
-access to paths outside the Project boundary configured by Kubecode.
+`AgentRuntime` launches the selected ACP endpoint in the validated Project cwd
+and owns the adapter process independently of any HTTP or SSE connection. It
+uses the official Rust ACP SDK for initialization, session load/create, prompt,
+stream updates, permissions, and cancellation. Claude and Codex use pinned
+official adapters. Their adapter paths are resolved separately and receive the
+discovered CLI path, preserving the CLI's authentication and configuration.
+OpenCode uses its native `acp` subcommand. ACP session IDs are stored on
+conversations, while typed protocol updates are normalized into the
+`AgentStore` event vocabulary. Safe mode selects a reject permission option and
+Power mode selects an allow option; authentication and model configuration stay
+inside the external agent.
 
 `KubecodeApi` is the browser's only server boundary. It encodes Project IDs and
 relative file paths independently, preserves structured API errors, and derives
@@ -68,8 +76,15 @@ usable minimum; their maximums are calculated from the live workbench rather
 than fixed pixel ranges or panel ratios. The right-hand and Terminal deltas are
 inverted because their handles resize from the panels' leading edges.
 
+`TerminalWorkspace` owns a recursive split tree of terminal leaf IDs. A leaf is
+an independent reconnectable PTY, and a split is horizontal or vertical with a
+frame-synchronized draggable ratio. Selecting an existing session replaces the
+active leaf without destroying its server PTY; closing a leaf collapses its
+parent split.
+
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
-`kubecode_terminal_created`, and `kubecode_agent_run_started`. Event properties
+`kubecode_terminal_created`, `kubecode_terminal_closed`, and
+`kubecode_agent_run_started`. Event properties
 contain only action modes, Agent IDs, and permission modes; Project names,
 paths, prompts, terminal contents, and file contents are never included.
 

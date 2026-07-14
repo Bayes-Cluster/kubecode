@@ -18,7 +18,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
 use crate::agents::{AgentEvent, AgentId, AgentStore, PermissionMode, RunStatus, StoreError};
-use crate::terminal::{TerminalError, TerminalManager, TerminalSnapshot};
+use crate::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalSnapshot};
 use crate::workspace::{EntryKind, WorkspaceError, WorkspaceService};
 
 const API_PATH: &str = "/api/v1";
@@ -53,6 +53,12 @@ impl AppState {
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {
+        self.terminals = Arc::new(TerminalManager::with_agents(
+            Arc::clone(&self.workspace),
+            8,
+            2 * 1024 * 1024,
+            agents.clone(),
+        ));
         self.agent_runtime = Arc::new(AgentRuntime::new(
             Arc::clone(&self.workspace),
             self.agent_runtime.store(),
@@ -417,6 +423,8 @@ async fn write_file(
 
 #[derive(Debug, Deserialize)]
 struct CreateTerminalRequest {
+    #[serde(default)]
+    kind: TerminalKind,
     #[serde(default = "default_terminal_cols")]
     cols: u16,
     #[serde(default = "default_terminal_rows")]
@@ -437,7 +445,7 @@ async fn create_terminal(
 ) -> Result<impl IntoResponse, ApiError> {
     let terminal = state
         .terminals
-        .create(&project_id, request.cols, request.rows)?;
+        .create(&project_id, request.kind, request.cols, request.rows)?;
     Ok((StatusCode::CREATED, Json(terminal)))
 }
 
@@ -604,6 +612,9 @@ impl IntoResponse for ApiError {
                 let (status, code) = match &error {
                     TerminalError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
                     TerminalError::LimitReached => (StatusCode::CONFLICT, "terminal_limit"),
+                    TerminalError::AgentUnavailable(_) => {
+                        (StatusCode::CONFLICT, "agent_unavailable")
+                    }
                     TerminalError::Workspace(workspace) => workspace_error_status(workspace),
                     TerminalError::Pty(_) | TerminalError::Io(_) => {
                         (StatusCode::INTERNAL_SERVER_ERROR, "terminal_error")
@@ -629,9 +640,14 @@ impl IntoResponse for ApiError {
                     let (status, code) = workspace_error_status(&workspace);
                     (status, code, workspace.to_string())
                 }
-                RuntimeError::Spawn(_) => (
+                RuntimeError::Acp(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "agent_error",
+                    error.to_string(),
+                ),
+                RuntimeError::AdapterUnavailable { .. } => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "agent_adapter_unavailable",
                     error.to_string(),
                 ),
             },

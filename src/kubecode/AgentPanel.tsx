@@ -5,6 +5,7 @@ import {
   AiPanelHeader,
   AiPanelMessageHistory,
 } from '@/components/AiPanelChrome'
+import { AiAgentIcon } from '@/components/AiAgentIcon'
 import type { AiAction } from '@/components/AiMessage'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
@@ -148,6 +149,7 @@ export function AgentPanel({
       style={{ width }}
     >
       <AiPanelHeader
+        agentIcon={<AiAgentIcon agent={activeAgentId} size={16} />}
         agentLabel={agentLabel}
         agentReadiness={readiness}
         locale={locale}
@@ -190,6 +192,7 @@ export function AgentPanel({
             <SelectContent>
               {agents.map((agent) => (
                 <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
+                  <AiAgentIcon agent={agent.id} size={14} />
                   {agentName(agent.id)}
                 </SelectItem>
               ))}
