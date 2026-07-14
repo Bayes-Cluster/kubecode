@@ -4,7 +4,7 @@ Mark a Laputa task as done: add completion comment, move to In Review, then self
 
 Run this after Phase 1 (Playwright) and Phase 2 (native app QA) both pass **and `git push origin main` has succeeded**.
 
-⚠️ A task is NOT done until the push succeeds. If the push is blocked by the pre-push hook (clippy, tests, CodeScene, build):
+⚠️ A task is NOT done until the push succeeds. If the push is blocked by the pre-push hook (clippy, tests, coverage, build):
 - Read the error
 - Fix it (never use `--no-verify`)
 - Commit the fix and push again

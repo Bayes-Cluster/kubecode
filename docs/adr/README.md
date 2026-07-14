@@ -120,7 +120,7 @@ proposed → active → superseded
 | [0061](0061-ai-prompt-bridge-event-bus.md) | AI prompt bridge — module-level event bus for cross-component prompt routing | active |
 | [0062](0062-selectable-cli-ai-agents.md) | Selectable CLI AI agents with a shared panel architecture | active |
 | [0063](0063-blocknote-code-block-package-for-editor-highlighting.md) | BlockNote code-block package for editor syntax highlighting | active |
-| [0064](0064-ratcheted-codescene-thresholds.md) | Ratcheted CodeScene thresholds as the quality gate baseline | active |
+| [0064](0064-ratcheted-codescene-thresholds.md) | Ratcheted CodeScene thresholds as the quality gate baseline | superseded → [0160](0160-remove-codescene-quality-gate.md) |
 | [0065](0065-root-managed-ai-guidance-files.md) | Root-managed AI guidance files with Claude shim | active |
 | [0066](0066-calendar-semver-versioning-for-alpha-and-stable-releases.md) | Calendar-semver versioning for alpha and stable releases | active |
 | [0067](0067-autogit-idle-and-inactive-checkpoints.md) | AutoGit idle and inactive checkpoints | active |
@@ -217,3 +217,4 @@ proposed → active → superseded
 | [0157](0157-opt-in-sandboxed-html-block-scripts.md) | Opt-in sandboxed scripts for HTML block dashboards | active |
 | [0158](0158-vault-write-mcp-tools-update-and-append.md) | Vault-write MCP tools: update_note and append_to_note | active |
 | [0159](0159-antigravity-permission-flags-aligned-with-cli.md) | Antigravity permission flags aligned with CLI | active |
+| [0160](0160-remove-codescene-quality-gate.md) | Remove the CodeScene quality gate | active |

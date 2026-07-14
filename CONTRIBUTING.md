@@ -24,7 +24,7 @@ A few things to keep in mind before opening one:
   - Requests marked **planned** are usually great contribution targets
 - Keep PRs small, focused, and easy to review
 - Include a short explanation of the problem and your solution
-- Follow the dev process described in Tolaria’s `AGENTS.md` (tests, code health, etc.)
+- Follow the dev process described in Tolaria’s `AGENTS.md` (tests, coverage, security checks, etc.)
 - Avoid bundling unrelated refactors into the same PR
 
 If you want to contribute a feature, the best place to start is here: <https://tolaria.canny.io/>

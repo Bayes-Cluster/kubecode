@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for CodeScene
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -72,45 +72,8 @@ jobs:
         if: steps.docs-changes.outputs.should-build == 'true'
         run: pnpm docs:build
 
-      # ── 1. Code Health (CodeScene — Hotspot + Average Code Health gates) ──
-      # Enforces minimum floors on BOTH hotspot and average code health.
-      # Thresholds come from .codescene-thresholds so CI and local hooks match.
-      - name: Code Health gates
-        env:
-          CODESCENE_PAT: ${{ secrets.CODESCENE_PAT }}
-          CODESCENE_PROJECT_ID: ${{ secrets.CODESCENE_PROJECT_ID }}
-        run: |
-          HOTSPOT_THRESHOLD=$(grep '^HOTSPOT_THRESHOLD=' .codescene-thresholds | cut -d= -f2)
-          AVERAGE_THRESHOLD=$(grep '^AVERAGE_THRESHOLD=' .codescene-thresholds | cut -d= -f2)
-          API_RESPONSE=$(curl -sf \
-            -H "Authorization: Bearer $CODESCENE_PAT" \
-            -H "Accept: application/json" \
-            "https://api.codescene.io/v2/projects/$CODESCENE_PROJECT_ID")
-          HOTSPOT_SCORE=$(echo "$API_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['analysis']['hotspot_code_health']['now'])")
-          AVERAGE_SCORE=$(echo "$API_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['analysis']['code_health']['now'])")
-          echo "Hotspot Code Health: $HOTSPOT_SCORE (threshold: $HOTSPOT_THRESHOLD)"
-          echo "Average Code Health: $AVERAGE_SCORE (threshold: $AVERAGE_THRESHOLD)"
-          python3 -c "
-          hotspot = float('$HOTSPOT_SCORE')
-          average = float('$AVERAGE_SCORE')
-          ht = float('$HOTSPOT_THRESHOLD')
-          at = float('$AVERAGE_THRESHOLD')
-          failed = False
-          if hotspot < ht:
-              print(f'❌ Hotspot Code Health {hotspot:.2f} is below threshold {ht}')
-              failed = True
-          else:
-              print(f'✅ Hotspot Code Health {hotspot:.2f} ≥ {ht}')
-          if average < at:
-              print(f'❌ Average Code Health {average:.2f} is below threshold {at}')
-              failed = True
-          else:
-              print(f'✅ Average Code Health {average:.2f} ≥ {at}')
-          if failed:
-              exit(1)
-          "
 
-      # ── 2. Documentation check (warning only — does not fail build) ───────
+      # ── 1. Documentation check (warning only — does not fail build) ───────
       - name: Check docs are updated
         continue-on-error: true
         run: |
@@ -128,7 +91,7 @@ jobs:
           fi
           echo "✅ Documentation check passed"
 
-      # ── 3. Lint & format ──────────────────────────────────────────────────
+      # ── 2. Lint & format ──────────────────────────────────────────────────
       - name: Lint frontend
         run: pnpm lint
 

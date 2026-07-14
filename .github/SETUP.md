@@ -6,14 +6,6 @@
 
 Nel repository GitHub (Settings → Secrets and variables → Actions → New repository secret):
 
-**CODESCENE_TOKEN**
-```
-<il tuo CodeScene PAT — stesso di ~/.codescene/token>
-```
-
-**CODESCENE_PROJECT_ID**  
-Trova l'ID del progetto nella dashboard CodeScene (URL: `https://codescene.io/projects/<PROJECT_ID>/...`)
-
 **VITE_SENTRY_DSN**
 ```
 <frontend Sentry DSN used by shipped Tolaria builds>
@@ -100,11 +92,6 @@ cargo fmt --manifest-path=src-tauri/Cargo.toml -- --check
 - Threshold: 70% (lines, functions, branches, statements)
 - Configurabile in `vite.config.ts`
 
-### 🏥 Code Health
-- CodeScene delta analysis
-- **Fail se code health diminuisce**
-- Confronta HEAD vs base branch
-
 ### 📡 Telemetry In Release Builds
 - `release.yml` e `release-stable.yml` devono ricevere `VITE_SENTRY_DSN`, `SENTRY_DSN`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST`
 - `VITE_SENTRY_DSN` inizializza il frontend Sentry bundle
@@ -165,23 +152,7 @@ Il check **avvisa** (non fallisce) se:
 git commit -m "fix: editor scroll bug [skip docs]"
 ```
 
-### CodeScene Fail Threshold
-
-Nel workflow, modifica:
-
-```yaml
-- name: CodeScene Delta Analysis
-  uses: codescene-oss/codescene-delta-analysis-action@v1
-  with:
-    fail-on-declining-code-health: true  # Cambia a false per warning-only
-    minimum-code-health-score: 8.0       # Aggiungi per soglia assoluta
-```
-
 ## Troubleshooting
-
-### CodeScene fails con "Project not found"
-- Verifica che `CODESCENE_PROJECT_ID` sia corretto
-- Controlla che il token abbia accesso al progetto
 
 ### Coverage check fails
 - Verifica che `@vitest/coverage-v8` sia installato: `pnpm add -D @vitest/coverage-v8`
@@ -203,7 +174,6 @@ Nel workflow, modifica:
 ✅ Run frontend tests
 ✅ Run Rust tests
 ✅ Run frontend coverage (75% lines, 73% functions)
-✅ CodeScene Delta Analysis (code health: 9.2 → 9.3)
 ✅ Check docs are updated (docs/ARCHITECTURE.md modified)
 ✅ Lint frontend
 ✅ Clippy (Rust)

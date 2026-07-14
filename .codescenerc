@@ -1,9 +1,0 @@
-{
-  "exclude": [
-    "tools/",
-    "scripts/",
-    "src-tauri/gen/",
-    "coverage/",
-    "dist/"
-  ]
-}
