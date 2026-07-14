@@ -31,6 +31,13 @@ store after a Pod restart changes any running or permission-blocked run to
 `interrupted` and appends a terminal `run_completed` event. Saved permission
 rules are always scoped to both the Project and the selected Agent.
 
+Agent discovery probes exactly `claude`, `codex`, and `opencode` in parallel at
+server startup and exposes their path, version, availability, and diagnostic at
+`GET /api/v1/agents`. Administrators can pin executable locations with
+`KUBECODE_CLAUDE_PATH`, `KUBECODE_CODEX_PATH`, and
+`KUBECODE_OPENCODE_PATH`; authentication and model configuration remain owned
+by each CLI.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy

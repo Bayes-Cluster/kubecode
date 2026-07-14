@@ -29,6 +29,7 @@ pub enum StoreError {
 pub enum AgentId {
     ClaudeCode,
     Codex,
+    #[serde(rename = "opencode")]
     OpenCode,
 }
 

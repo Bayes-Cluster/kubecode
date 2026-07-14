@@ -88,6 +88,28 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
 }
 
 #[tokio::test]
+async fn exposes_exactly_the_supported_agent_catalog_below_the_prefix() {
+    let (_temp, app) = app();
+
+    let (status, agents) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/agents"),
+        Value::Null,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let ids = agents
+        .as_array()
+        .expect("agents")
+        .iter()
+        .map(|agent| agent["id"].as_str().expect("agent id"))
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["claude_code", "codex", "opencode"]);
+}
+
+#[tokio::test]
 async fn creates_reads_and_revision_checks_files_over_http() {
     let (_temp, app) = app();
     let (_, project) = json_request(

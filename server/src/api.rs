@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
+use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::terminal::{TerminalError, TerminalManager, TerminalSnapshot};
 use crate::workspace::{EntryKind, WorkspaceError, WorkspaceService};
 
@@ -21,6 +22,7 @@ const API_PATH: &str = "/api/v1";
 pub struct AppState {
     pub workspace: Arc<WorkspaceService>,
     pub terminals: Arc<TerminalManager>,
+    pub agents: Arc<Vec<AgentDescriptor>>,
 }
 
 impl AppState {
@@ -33,7 +35,13 @@ impl AppState {
         Self {
             workspace,
             terminals,
+            agents: Arc::new(supported_agents_unavailable()),
         }
+    }
+
+    pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {
+        self.agents = Arc::new(agents);
+        self
     }
 }
 
@@ -59,6 +67,7 @@ pub fn app_router_with_static(
 
 fn api_router(state: AppState) -> Router {
     Router::new()
+        .route("/agents", get(list_agents))
         .route("/projects", get(list_projects).post(create_project))
         .route("/projects/{project_id}", delete(unregister_project))
         .route(
@@ -82,6 +91,10 @@ fn api_router(state: AppState) -> Router {
             get(read_file).put(write_file),
         )
         .with_state(state)
+}
+
+async fn list_agents(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.agents.as_ref().clone())
 }
 
 fn root_router(application: Router, base_path: &str) -> Router {
