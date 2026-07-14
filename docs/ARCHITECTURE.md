@@ -1,5 +1,12 @@
 # Architecture
 
+> **Kubecode migration:** ADR-0161 supersedes the Tauri application boundary
+> below. The active product is a React browser client backed by the standalone
+> Rust server in `server/`. Project files under `PERSISTENT_DIR` are the content
+> source of truth; SQLite under `.state/kubecode` stores registry and runtime
+> metadata. The Tolaria architecture remains below as migration context until
+> each corresponding desktop subsystem is retired.
+
 Tolaria is a personal knowledge and life management desktop app. It reads a vault of markdown files with YAML frontmatter and presents them in a four-panel UI inspired by Bear Notes.
 
 ## Design Principles

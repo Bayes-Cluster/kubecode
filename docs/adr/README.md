@@ -56,7 +56,7 @@ proposed → active → superseded
 
 | ID | Title | Status |
 |----|-------|--------|
-| [0001](0001-tauri-react-stack.md) | Tauri v2 + React as application stack | active |
+| [0001](0001-tauri-react-stack.md) | Tauri v2 + React as application stack | superseded → [0161](0161-kubeflow-web-server-architecture.md) |
 | [0002](0002-filesystem-source-of-truth.md) | Filesystem as the single source of truth | active |
 | [0003](0003-single-note-model.md) | Single note open at a time (no tabs) | active |
 | [0004](0004-vault-vs-app-settings-storage.md) | Vault vs app settings for state storage | active |
@@ -218,3 +218,4 @@ proposed → active → superseded
 | [0158](0158-vault-write-mcp-tools-update-and-append.md) | Vault-write MCP tools: update_note and append_to_note | active |
 | [0159](0159-antigravity-permission-flags-aligned-with-cli.md) | Antigravity permission flags aligned with CLI | active |
 | [0160](0160-remove-codescene-quality-gate.md) | Remove the CodeScene quality gate | active |
+| [0161](0161-kubeflow-web-server-architecture.md) | Kubeflow web server architecture | active |

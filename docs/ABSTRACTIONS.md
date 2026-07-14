@@ -1,5 +1,14 @@
 # Abstractions
 
+## Kubecode workspace boundary
+
+`WorkspaceService` is the only code allowed to translate Project IDs and
+browser-supplied relative paths into filesystem paths. It canonicalizes the
+persistent root, rejects traversal, `.state`, and escaping symlinks, and uses
+revision-checked atomic writes for editable UTF-8 files. API handlers and Agent
+adapters must pass Project IDs through this abstraction instead of accepting an
+arbitrary cwd from the browser.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy

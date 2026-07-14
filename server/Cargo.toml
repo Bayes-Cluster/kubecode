@@ -1,0 +1,29 @@
+[package]
+name = "kubecode-server"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "kubecode_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kubecode-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+hex = "0.4"
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
