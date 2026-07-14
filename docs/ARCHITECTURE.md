@@ -26,9 +26,11 @@ uses SideX's IDE-region model and Zed's compact visual hierarchy while retaining
 Tolaria's AI header, permission toggle, transcript, tool cards, composer, and
 Phosphor icon language. Both side rails are separated from the editor by
 `ResizeHandle`; widths are clamped so dragging cannot collapse the working area,
-and the AI rail can be closed and reopened from the title bar. Browser code uses
-`KubecodeApi`, which derives every HTTP and WebSocket route from the current
-Kubeflow Notebook prefix.
+the editor/terminal split uses the same frame-synchronized handle on its vertical
+axis, and the AI rail can be closed and reopened from the title bar. Bounds are
+derived from the live workbench dimensions rather than a fixed panel ratio.
+Browser code uses `KubecodeApi`, which derives every HTTP and WebSocket route
+from the current Kubeflow Notebook prefix.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
 Rust server, and pinned Claude Code, Codex, and OpenCode CLIs. s6 initializes CLI

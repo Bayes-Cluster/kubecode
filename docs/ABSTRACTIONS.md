@@ -61,10 +61,12 @@ and send interactions. Agent selection remains a Kubecode-specific composer
 control and only offers Claude Code, Codex, and OpenCode discovery results.
 
 The workbench owns its left and right rail widths in `KubecodeApp`. Shared
-`ResizeHandle` instances apply pointer deltas with bounded widths (180–420 px for
-Projects/files and 280–560 px for AI), keeping the CodeMirror/xterm center area
-flexible. The right-hand delta is inverted because its handle is attached to the
-panel's left edge.
+`ResizeHandle` instances apply pointer deltas at animation-frame cadence while
+keeping the latest callback in a ref, so React rerenders do not cancel an active
+drag frame. Project/file, AI, and editor/Terminal dimensions retain only a small
+usable minimum; their maximums are calculated from the live workbench rather
+than fixed pixel ranges or panel ratios. The right-hand and Terminal deltas are
+inverted because their handles resize from the panels' leading edges.
 
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, and `kubecode_agent_run_started`. Event properties

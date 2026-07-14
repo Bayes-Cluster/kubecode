@@ -43,6 +43,8 @@ describe('Kubecode workspace', () => {
     expect(screen.queryByRole('radio', { name: 'Vault Safe' })).not.toBeInTheDocument()
     const handles = container.querySelectorAll('.cursor-col-resize')
     expect(handles).toHaveLength(2)
+    const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement
+    expect(terminalHandle).toBeInTheDocument()
 
     const sidebar = container.querySelector('.kubecode-sidebar') as HTMLElement
     expect(sidebar.style.width).toBe('240px')
@@ -57,6 +59,13 @@ describe('Kubecode workspace', () => {
     fireEvent.mouseMove(document, { clientX: 1060 })
     fireEvent.mouseUp(document)
     expect(agentPanel.style.width).toBe('380px')
+
+    const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
+    expect(terminalPane.style.height).toBe('260px')
+    fireEvent.mouseDown(terminalHandle, { clientY: 600 })
+    fireEvent.mouseMove(document, { clientY: 560 })
+    fireEvent.mouseUp(document)
+    expect(terminalPane.style.height).toBe('300px')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close AI panel' }))
     expect(screen.queryByTestId('ai-panel')).not.toBeInTheDocument()

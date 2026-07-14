@@ -134,9 +134,9 @@
 }
 
 .kubecode-center {
-  display: grid;
+  display: flex;
   flex: 1 1 auto;
-  grid-template-rows: minmax(280px, 2fr) minmax(180px, 1fr);
+  flex-direction: column;
   min-height: 0;
   min-width: 360px;
 }
@@ -147,9 +147,13 @@
   min-height: 0;
 }
 
-.kubecode-editor-pane { grid-template-rows: 40px minmax(0, 1fr); }
+.kubecode-editor-pane {
+  flex: 1 1 auto;
+  grid-template-rows: 40px minmax(0, 1fr);
+}
 .kubecode-terminal-pane {
   border-top: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
   grid-template-rows: 34px minmax(0, 1fr);
 }
 

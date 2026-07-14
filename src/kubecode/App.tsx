@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   File,
@@ -61,9 +61,37 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [sidebarWidth, setSidebarWidth] = useState(240)
   const [agentPanelWidth, setAgentPanelWidth] = useState(340)
   const [agentPanelOpen, setAgentPanelOpen] = useState(true)
+  const [terminalHeight, setTerminalHeight] = useState(260)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const centerRef = useRef<HTMLElement>(null)
   const project = projects.find((item) => item.id === projectId) ?? null
   const terminal = terminals.find((item) => item.id === terminalId) ?? terminals[0]
   const dirty = Boolean(document && document.content !== draft)
+
+  const resizeSidebar = useCallback((delta: number) => {
+    setSidebarWidth((current) => {
+      const workspaceWidth = workspaceRef.current?.clientWidth || window.innerWidth
+      const occupiedByAgent = agentPanelOpen ? agentPanelWidth : 0
+      const maximum = Math.max(160, workspaceWidth - occupiedByAgent - 320)
+      return clamp(current + delta, 160, maximum)
+    })
+  }, [agentPanelOpen, agentPanelWidth])
+
+  const resizeAgentPanel = useCallback((delta: number) => {
+    setAgentPanelWidth((current) => {
+      const workspaceWidth = workspaceRef.current?.clientWidth || window.innerWidth
+      const maximum = Math.max(260, workspaceWidth - sidebarWidth - 320)
+      return clamp(current - delta, 260, maximum)
+    })
+  }, [sidebarWidth])
+
+  const resizeTerminal = useCallback((delta: number) => {
+    setTerminalHeight((current) => {
+      const centerHeight = centerRef.current?.clientHeight || window.innerHeight - 38
+      const maximum = Math.max(80, centerHeight - 120)
+      return clamp(current - delta, 80, maximum)
+    })
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -182,7 +210,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           )}
         </div>
       </header>
-      <div className="kubecode-workspace">
+      <div className="kubecode-workspace" ref={workspaceRef}>
         <aside className="kubecode-sidebar" style={{ width: sidebarWidth }}>
           <div className="kubecode-section-heading">
             <strong>{t('kubecode.projects')}</strong>
@@ -246,11 +274,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
             )}
           </div>
         </aside>
-        <ResizeHandle onResize={(delta) => {
-          setSidebarWidth((current) => clamp(current + delta, 180, 420))
-        }} />
+        <ResizeHandle onResize={resizeSidebar} />
 
-        <section className="kubecode-center">
+        <section className="kubecode-center" ref={centerRef}>
           <div className="kubecode-editor-pane">
             <div className="kubecode-panel-header">
               <strong>{document?.path ?? t('kubecode.editor')}</strong>
@@ -281,7 +307,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               </div>
             )}
           </div>
-          <div className="kubecode-terminal-pane">
+          <ResizeHandle direction="vertical" onResize={resizeTerminal} />
+          <div className="kubecode-terminal-pane" style={{ height: terminalHeight }}>
             <div className="kubecode-terminal-tabs">
               <TerminalWindow />
               {terminals.map((item, index) => (
@@ -321,9 +348,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         {agentPanelOpen && (
           <>
             <div className="kubecode-agent-resize">
-              <ResizeHandle onResize={(delta) => {
-                setAgentPanelWidth((current) => clamp(current - delta, 280, 560))
-              }} />
+              <ResizeHandle onResize={resizeAgentPanel} />
             </div>
             {projectId ? (
               <AgentPanel

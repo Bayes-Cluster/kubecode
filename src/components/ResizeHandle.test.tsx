@@ -66,6 +66,34 @@ describe('ResizeHandle', () => {
     expect(onResize).toHaveBeenCalledWith(20)
   })
 
+  it('keeps an in-flight animation frame when the callback changes', () => {
+    const firstResize = vi.fn()
+    const nextResize = vi.fn()
+    const { container, rerender } = render(<ResizeHandle onResize={firstResize} />)
+    const handle = container.firstChild as HTMLElement
+
+    fireEvent.mouseDown(handle, { clientX: 100 })
+    fireEvent.mouseMove(document, { clientX: 120 })
+    rerender(<ResizeHandle onResize={nextResize} />)
+
+    expect(globalThis.cancelAnimationFrame).not.toHaveBeenCalled()
+    if (rafCallback) rafCallback(0)
+    expect(nextResize).toHaveBeenCalledWith(20)
+  })
+
+  it('uses vertical pointer movement for a row resize handle', () => {
+    const onResize = vi.fn()
+    const { container } = render(<ResizeHandle direction="vertical" onResize={onResize} />)
+    const handle = container.firstChild as HTMLElement
+
+    expect(handle.className).toContain('cursor-row-resize')
+    fireEvent.mouseDown(handle, { clientY: 200 })
+    fireEvent.mouseMove(document, { clientY: 170 })
+    if (rafCallback) rafCallback(0)
+
+    expect(onResize).toHaveBeenCalledWith(-30)
+  })
+
   it('flushes pending delta on mouseUp', () => {
     const onResize = vi.fn()
     const { container } = render(<ResizeHandle onResize={onResize} />)
