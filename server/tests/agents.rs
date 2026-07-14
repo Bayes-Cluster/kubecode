@@ -1,0 +1,125 @@
+use kubecode_server::agents::{
+    AgentEventKind, AgentId, AgentStore, PermissionMode, RunStatus, StoreError,
+};
+use tempfile::TempDir;
+
+fn store() -> (TempDir, AgentStore) {
+    let temp = TempDir::new().expect("tempdir");
+    let store = AgentStore::open(temp.path().join("kubecode.sqlite3")).expect("agent store");
+    (temp, store)
+}
+
+#[test]
+fn enforces_one_active_run_per_project_but_allows_other_projects() {
+    let (_temp, store) = store();
+    let first_conversation = store
+        .create_conversation("project-a", AgentId::Codex, None)
+        .expect("first conversation");
+    let second_conversation = store
+        .create_conversation("project-a", AgentId::ClaudeCode, None)
+        .expect("second conversation");
+    let other_project = store
+        .create_conversation("project-b", AgentId::OpenCode, None)
+        .expect("other project conversation");
+
+    let first = store
+        .start_run(&first_conversation.id, "project-a", PermissionMode::Safe)
+        .expect("first run");
+    let duplicate = store
+        .start_run(&second_conversation.id, "project-a", PermissionMode::Safe)
+        .expect_err("same project must be locked");
+    assert!(matches!(duplicate, StoreError::ActiveRun(_)));
+
+    store
+        .start_run(&other_project.id, "project-b", PermissionMode::Power)
+        .expect("different project may run");
+    store
+        .finish_run(&first.id, RunStatus::Completed, None)
+        .expect("finish first run");
+    store
+        .start_run(&second_conversation.id, "project-a", PermissionMode::Safe)
+        .expect("project lock released");
+}
+
+#[test]
+fn persists_monotonic_events_and_replays_after_a_cursor() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, Some("Refactor"))
+        .expect("conversation");
+    let run = store
+        .start_run(&conversation.id, "project", PermissionMode::Safe)
+        .expect("run");
+
+    let first = store
+        .append_event(
+            &run.id,
+            AgentEventKind::TextDelta,
+            &serde_json::json!({"text":"a"}),
+        )
+        .expect("first event");
+    let second = store
+        .append_event(
+            &run.id,
+            AgentEventKind::ToolStarted,
+            &serde_json::json!({"tool":"shell"}),
+        )
+        .expect("second event");
+    assert_eq!(first.seq, 2);
+    assert_eq!(second.seq, 3);
+
+    let replay = store.events_after(&run.id, 2).expect("replay");
+    assert_eq!(replay.len(), 1);
+    assert_eq!(replay[0].seq, 3);
+    assert_eq!(replay[0].kind, AgentEventKind::ToolStarted);
+}
+
+#[test]
+fn marks_inflight_runs_interrupted_when_the_store_reopens() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let run_id = {
+        let store = AgentStore::open(&database).expect("first store");
+        let conversation = store
+            .create_conversation("project", AgentId::ClaudeCode, None)
+            .expect("conversation");
+        store
+            .start_run(&conversation.id, "project", PermissionMode::Safe)
+            .expect("run")
+            .id
+    };
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let run = reopened.get_run(&run_id).expect("get run");
+    assert_eq!(run.status, RunStatus::Interrupted);
+    let events = reopened.events_after(&run_id, 0).expect("events");
+    assert_eq!(
+        events.last().expect("interrupted event").kind,
+        AgentEventKind::RunCompleted
+    );
+}
+
+#[test]
+fn permission_rules_are_scoped_to_project_and_agent() {
+    let (_temp, store) = store();
+    let matcher = serde_json::json!({"tool":"Bash", "command_prefix":"git status"});
+    store
+        .allow_always("project-a", AgentId::ClaudeCode, &matcher)
+        .expect("save rule");
+
+    assert!(
+        store
+            .is_allowed("project-a", AgentId::ClaudeCode, &matcher)
+            .expect("same scope")
+    );
+    assert!(
+        !store
+            .is_allowed("project-b", AgentId::ClaudeCode, &matcher)
+            .expect("other project")
+    );
+    assert!(
+        !store
+            .is_allowed("project-a", AgentId::Codex, &matcher)
+            .expect("other agent")
+    );
+}

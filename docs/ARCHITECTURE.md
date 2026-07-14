@@ -7,6 +7,16 @@
 > metadata. The Tolaria architecture remains below as migration context until
 > each corresponding desktop subsystem is retired.
 
+The active server boundary currently consists of four Rust abstractions:
+
+- `WorkspaceService` validates all Project and file paths below
+  `PERSISTENT_DIR`.
+- `TerminalManager` owns reconnectable PTYs independently from browser sockets.
+- `AgentStore` persists normalized Agent sessions/events and enforces one active
+  run per Project.
+- `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
+  probes remain unprefixed for Kubernetes.
+
 Tolaria is a personal knowledge and life management desktop app. It reads a vault of markdown files with YAML frontmatter and presents them in a four-panel UI inspired by Bear Notes.
 
 ## Design Principles

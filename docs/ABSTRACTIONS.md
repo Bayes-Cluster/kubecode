@@ -22,6 +22,15 @@ missing output and detect when it needs a truncated snapshot. Disconnecting a
 socket never closes a PTY; only the explicit delete endpoint, process exit, or
 Pod termination ends it. The default limit is eight terminals per Project.
 
+`AgentStore` owns durable conversation, run, normalized event, and saved
+permission-rule metadata in the same Kubecode SQLite database. It enforces one
+active run per Project while allowing different Projects to execute in
+parallel. Every run event receives a monotonically increasing sequence number
+so SSE clients can reconnect from a cursor without losing output. Opening the
+store after a Pod restart changes any running or permission-blocked run to
+`interrupted` and appends a terminal `run_completed` event. Saved permission
+rules are always scoped to both the Project and the selected Agent.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy
