@@ -23,6 +23,7 @@ interface AiPanelHeaderProps {
   targetKind?: 'agent' | 'api_model'
   locale?: AppLocale
   permissionMode: AiAgentPermissionMode
+  permissionModeControlLabels?: Partial<Record<AiAgentPermissionMode, string>>
   permissionModeDisabled: boolean
   onPermissionModeChange: (mode: AiAgentPermissionMode) => void
   onClose: () => void
@@ -316,6 +317,7 @@ export const AiPanelHeader = memo(function AiPanelHeader({
   targetKind = 'agent',
   locale = 'en',
   permissionMode,
+  permissionModeControlLabels,
   permissionModeDisabled,
   onPermissionModeChange,
   onClose,
@@ -368,6 +370,7 @@ export const AiPanelHeader = memo(function AiPanelHeader({
         <AiPermissionModeToggle
           value={permissionMode}
           locale={locale}
+          controlLabels={permissionModeControlLabels}
           disabled={permissionModeDisabled}
           onChange={onPermissionModeChange}
         />
@@ -383,11 +386,13 @@ export const AiPanelHeader = memo(function AiPanelHeader({
 function AiPermissionModeToggle({
   value,
   locale = 'en',
+  controlLabels,
   disabled,
   onChange,
 }: {
   value: AiAgentPermissionMode
   locale?: AppLocale
+  controlLabels?: Partial<Record<AiAgentPermissionMode, string>>
   disabled: boolean
   onChange: (mode: AiAgentPermissionMode) => void
 }) {
@@ -424,7 +429,7 @@ function AiPermissionModeToggle({
                 }
                 onClick={() => onChange(mode)}
               >
-                {aiAgentPermissionModeLabels(mode, locale).control}
+                {controlLabels?.[mode] ?? aiAgentPermissionModeLabels(mode, locale).control}
               </Button>
             </ActionTooltip>
           )

@@ -5,10 +5,12 @@ import {
   Folder,
   FolderOpen,
   Plus,
+  Sparkle,
   TerminalWindow,
   Trash,
 } from '@phosphor-icons/react'
 
+import { ResizeHandle } from '@/components/ResizeHandle'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -56,6 +58,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [entryDialog, setEntryDialog] = useState<EntryDialogState>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [agentPanelWidth, setAgentPanelWidth] = useState(340)
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true)
   const project = projects.find((item) => item.id === projectId) ?? null
   const terminal = terminals.find((item) => item.id === terminalId) ?? terminals[0]
   const dirty = Boolean(document && document.content !== draft)
@@ -163,10 +168,22 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       <header className="kubecode-topbar">
         <div className="kubecode-brand"><span>K</span>{t('kubecode.appName')}</div>
         <div className="kubecode-project-path">{project?.path ?? t('kubecode.selectProject')}</div>
-        {error && <div className="kubecode-inline-error">{error}</div>}
+        <div className="kubecode-topbar-actions">
+          {error && <div className="kubecode-inline-error">{error}</div>}
+          {!agentPanelOpen && (
+            <Button
+              aria-label={t('ai.panel.title')}
+              size="icon-xs"
+              variant="ghost"
+              onClick={() => setAgentPanelOpen(true)}
+            >
+              <Sparkle />
+            </Button>
+          )}
+        </div>
       </header>
       <div className="kubecode-workspace">
-        <aside className="kubecode-sidebar">
+        <aside className="kubecode-sidebar" style={{ width: sidebarWidth }}>
           <div className="kubecode-section-heading">
             <strong>{t('kubecode.projects')}</strong>
             <Button
@@ -229,6 +246,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
             )}
           </div>
         </aside>
+        <ResizeHandle onResize={(delta) => {
+          setSidebarWidth((current) => clamp(current + delta, 180, 420))
+        }} />
 
         <section className="kubecode-center">
           <div className="kubecode-editor-pane">
@@ -298,20 +318,37 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           </div>
         </section>
 
-        {projectId ? (
-          <AgentPanel
-            agents={agents}
-            api={api}
-            conversations={conversations}
-            key={projectId}
-            onConversationCreated={(conversation) => {
-              setConversations((current) => [...current, conversation])
-            }}
-            projectId={projectId}
-            t={t}
-          />
-        ) : (
-          <aside className="kubecode-agent-panel kubecode-empty">{t('kubecode.selectProject')}</aside>
+        {agentPanelOpen && (
+          <>
+            <div className="kubecode-agent-resize">
+              <ResizeHandle onResize={(delta) => {
+                setAgentPanelWidth((current) => clamp(current - delta, 280, 560))
+              }} />
+            </div>
+            {projectId ? (
+              <AgentPanel
+                agents={agents}
+                api={api}
+                conversations={conversations}
+                key={projectId}
+                locale={locale}
+                onClose={() => setAgentPanelOpen(false)}
+                onConversationCreated={(conversation) => {
+                  setConversations((current) => [...current, conversation])
+                }}
+                projectId={projectId}
+                t={t}
+                width={agentPanelWidth}
+              />
+            ) : (
+              <aside
+                className="kubecode-agent-panel kubecode-empty"
+                style={{ width: agentPanelWidth }}
+              >
+                {t('kubecode.selectProject')}
+              </aside>
+            )}
+          </>
         )}
       </div>
       <ProjectDialog
@@ -455,4 +492,8 @@ function EntryDialog({
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value))
 }

@@ -52,6 +52,20 @@ relative file paths independently, preserves structured API errors, and derives
 HTTP and WebSocket endpoints from the active Notebook pathname. UI components
 do not assemble absolute backend URLs themselves.
 
+`AgentPanel` is the renderer adapter between Kubecode's normalized SSE event
+vocabulary and Tolaria's existing AI presentation components. It converts text,
+reasoning, tool lifecycle, completion, and error events into `AiAgentMessage`
+records consumed by `AiPanelMessageHistory`; `AiPanelHeader` and
+`AiPanelComposer` retain the existing new-chat, close, permission-mode, stop,
+and send interactions. Agent selection remains a Kubecode-specific composer
+control and only offers Claude Code, Codex, and OpenCode discovery results.
+
+The workbench owns its left and right rail widths in `KubecodeApp`. Shared
+`ResizeHandle` instances apply pointer deltas with bounded widths (180–420 px for
+Projects/files and 280–560 px for AI), keeping the CodeMirror/xterm center area
+flexible. The right-hand delta is inverted because its handle is attached to the
+panel's left edge.
+
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, and `kubecode_agent_run_started`. Event properties
 contain only action modes, Agent IDs, and permission modes; Project names,

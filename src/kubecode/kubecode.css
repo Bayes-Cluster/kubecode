@@ -2,17 +2,18 @@
   background: var(--surface-app);
   color: var(--text-primary);
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
 }
 
 .kubecode-topbar {
   align-items: center;
+  background: var(--surface-sidebar);
   border-bottom: 1px solid var(--border-subtle);
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) auto;
-  padding: 0 12px;
+  padding: 0 10px;
 }
 
 .kubecode-brand {
@@ -28,24 +29,39 @@
   border-radius: 7px;
   color: white;
   display: inline-flex;
-  height: 26px;
+  height: 22px;
   justify-content: center;
-  width: 26px;
+  width: 22px;
 }
 
 .kubecode-project-path {
+  background: var(--surface-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
   color: var(--text-secondary);
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
+  justify-self: center;
+  max-width: 560px;
   overflow: hidden;
+  padding: 3px 16px;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+  width: min(70%, 560px);
+}
+
+.kubecode-topbar-actions {
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 32px;
 }
 
 .kubecode-workspace {
-  display: grid;
-  grid-template-columns: 240px minmax(420px, 1fr) minmax(300px, 360px);
+  display: flex;
   min-height: 0;
+  min-width: 0;
 }
 
 .kubecode-sidebar,
@@ -58,14 +74,20 @@
 .kubecode-sidebar {
   border-right: 1px solid var(--border-subtle);
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   padding: 10px 8px;
 }
 
 .kubecode-agent-panel {
   border-left: 1px solid var(--border-subtle);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  flex: 0 0 auto;
+}
+
+.kubecode-agent-resize {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
 }
 
 .kubecode-section-heading,
@@ -113,8 +135,10 @@
 
 .kubecode-center {
   display: grid;
+  flex: 1 1 auto;
   grid-template-rows: minmax(280px, 2fr) minmax(180px, 1fr);
   min-height: 0;
+  min-width: 360px;
 }
 
 .kubecode-editor-pane,
@@ -242,6 +266,6 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-workspace { grid-template-columns: 210px minmax(360px, 1fr); }
-  .kubecode-agent-panel { display: none; }
+  .kubecode-agent-panel,
+  .kubecode-agent-resize { display: none; }
 }

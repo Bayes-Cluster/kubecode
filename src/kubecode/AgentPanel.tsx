@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PaperPlaneTilt, Stop } from '@phosphor-icons/react'
 
-import { Button } from '@/components/ui/button'
+import {
+  AiPanelComposer,
+  AiPanelHeader,
+  AiPanelMessageHistory,
+} from '@/components/AiPanelChrome'
+import type { AiAction } from '@/components/AiMessage'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import type { TranslationKey } from '@/lib/i18n'
+import type { AiAgentMessage } from '@/lib/aiAgentConversation'
+import type { AiAgentPermissionMode } from '@/lib/aiAgentPermissionMode'
+import type { AppLocale, TranslationKey } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type {
@@ -22,9 +27,12 @@ type AgentPanelProps = {
   api: KubecodeApi
   agents: AgentDescriptor[]
   conversations: Conversation[]
+  locale: AppLocale
+  onClose: () => void
   onConversationCreated: (conversation: Conversation) => void
   projectId: string
   t: Translator
+  width: number
 }
 
 const EVENT_NAMES = [
@@ -37,24 +45,31 @@ export function AgentPanel({
   api,
   agents,
   conversations,
+  locale,
+  onClose,
   onConversationCreated,
   projectId,
   t,
+  width,
 }: AgentPanelProps) {
   const availableAgent = agents.find((agent) => agent.available) ?? agents[0]
   const [agentId, setAgentId] = useState<AgentId>(availableAgent?.id ?? 'codex')
-  const [permissionMode, setPermissionMode] = useState<'safe' | 'power'>('safe')
+  const [permissionMode, setPermissionMode] = useState<AiAgentPermissionMode>('safe')
   const [prompt, setPrompt] = useState('')
   const [run, setRun] = useState<AgentRun | null>(null)
-  const [events, setEvents] = useState<AgentEvent[]>([])
+  const [messages, setMessages] = useState<AiAgentMessage[]>([])
   const [error, setError] = useState<string | null>(null)
-  const output = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLDivElement>(null)
   const runId = run?.id
-
+  const isActive = run?.status === 'running' || run?.status === 'waiting_permission'
   const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const activeAgentId = selectedAgent?.available || !availableAgent?.available
+    ? agentId
+    : availableAgent.id
+  const activeAgent = agents.find((agent) => agent.id === activeAgentId)
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.agent_id === agentId),
-    [agentId, conversations],
+    () => conversations.find((conversation) => conversation.agent_id === activeAgentId),
+    [activeAgentId, conversations],
   )
 
   useEffect(() => {
@@ -62,9 +77,7 @@ export function AgentPanel({
     const stream = new EventSource(api.eventStreamUrl(runId))
     const receive = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as AgentEvent
-      setEvents((current) => current.some((item) => item.seq === event.seq)
-        ? current
-        : [...current, event])
+      setMessages((current) => applyAgentEvent(current, runId, event))
       if (event.kind === 'run_completed') {
         void api.getRun(runId).then(setRun)
         stream.close()
@@ -75,18 +88,14 @@ export function AgentPanel({
     return () => stream.close()
   }, [api, runId, t])
 
-  useEffect(() => {
-    if (output.current) output.current.scrollTop = output.current.scrollHeight
-  }, [events])
-
-  const send = async () => {
-    const message = prompt.trim()
-    if (!message || !selectedAgent?.available || run?.status === 'running') return
+  const send = async (text: string) => {
+    const message = text.trim()
+    if (!message || !activeAgent?.available || isActive) return
     setError(null)
     try {
       const conversation = selectedConversation ?? await api.createConversation(
         projectId,
-        agentId,
+        activeAgentId,
         message.slice(0, 60),
       )
       if (!selectedConversation) onConversationCreated(conversation)
@@ -94,13 +103,22 @@ export function AgentPanel({
         projectId,
         conversation.id,
         message,
-        permissionMode,
+        permissionMode === 'power_user' ? 'power' : 'safe',
       )
-      setEvents([])
+      setMessages((current) => [
+        ...current,
+        {
+          actions: [],
+          id: nextRun.id,
+          isStreaming: true,
+          reasoningDone: false,
+          userMessage: message,
+        },
+      ])
       setRun(nextRun)
       setPrompt('')
       trackEvent('kubecode_agent_run_started', {
-        agent_id: agentId,
+        agent_id: activeAgentId,
         permission_mode: permissionMode,
       })
     } catch (cause) {
@@ -113,98 +131,144 @@ export function AgentPanel({
     await api.cancelRun(run.id)
   }
 
+  const newChat = () => {
+    if (isActive) return
+    setMessages([])
+    setRun(null)
+    setError(null)
+  }
+
+  const readiness = activeAgent?.available ? 'ready' : 'missing'
+  const agentLabel = agentName(activeAgentId)
+
   return (
-    <aside className="kubecode-agent-panel">
-      <div className="kubecode-panel-header">
-        <strong>{t('kubecode.agent')}</strong>
-        <Select value={agentId} onValueChange={(value) => setAgentId(value as AgentId)}>
-          <SelectTrigger size="sm" aria-label={t('kubecode.agent')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {agents.map((agent) => (
-              <SelectItem key={agent.id} value={agent.id}>
-                {agentName(agent.id)}{agent.available ? '' : ' · unavailable'}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="kubecode-agent-output" ref={output}>
-        {events.length === 0 && (
-          <div className="kubecode-empty">{t('kubecode.noAgentOutput')}</div>
-        )}
-        {events.map((event) => <AgentEventRow event={event} key={event.seq} />)}
-      </div>
-      {!selectedAgent?.available && (
-        <div className="kubecode-inline-error">{t('kubecode.agentUnavailable')}</div>
-      )}
+    <aside
+      className="kubecode-agent-panel flex flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
+      data-testid="ai-panel"
+      style={{ width }}
+    >
+      <AiPanelHeader
+        agentLabel={agentLabel}
+        agentReadiness={readiness}
+        locale={locale}
+        permissionMode={permissionMode}
+        permissionModeControlLabels={{
+          power_user: t('kubecode.power'),
+          safe: t('kubecode.safe'),
+        }}
+        permissionModeDisabled={Boolean(isActive)}
+        onPermissionModeChange={setPermissionMode}
+        onClose={onClose}
+        onNewChat={newChat}
+      />
+      <AiPanelMessageHistory
+        agentLabel={agentLabel}
+        agentReadiness={readiness}
+        locale={locale}
+        messages={messages}
+        isActive={Boolean(isActive)}
+        hasContext
+      />
       {error && <div className="kubecode-inline-error">{error}</div>}
-      <div className="kubecode-agent-compose">
-        <div className="kubecode-mode-switch">
-          <Button
-            size="xs"
-            variant={permissionMode === 'safe' ? 'default' : 'ghost'}
-            onClick={() => setPermissionMode('safe')}
-          >
-            {t('kubecode.safe')}
-          </Button>
-          <Button
-            size="xs"
-            variant={permissionMode === 'power' ? 'default' : 'ghost'}
-            onClick={() => setPermissionMode('power')}
-          >
-            {t('kubecode.power')}
-          </Button>
-        </div>
-        <Textarea
-          aria-label={t('kubecode.agentPlaceholder')}
-          placeholder={t('kubecode.agentPlaceholder')}
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              void send()
-            }
-          }}
-        />
-        {run?.status === 'running' ? (
-          <Button variant="outline" onClick={() => void stop()}>
-            <Stop weight="fill" /> {t('kubecode.stop')}
-          </Button>
-        ) : (
-          <Button disabled={!prompt.trim() || !selectedAgent?.available} onClick={() => void send()}>
-            <PaperPlaneTilt /> {t('kubecode.send')}
-          </Button>
+      <AiPanelComposer
+        entries={[]}
+        agentLabel={agentLabel}
+        agentReadiness={readiness}
+        locale={locale}
+        input={prompt}
+        inputRef={inputRef}
+        isActive={Boolean(isActive)}
+        controls={(
+          <Select value={activeAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
+            <SelectTrigger
+              aria-label={t('kubecode.agent')}
+              className="h-7 max-w-40 border-0 bg-transparent px-2 text-xs shadow-none"
+              size="sm"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map((agent) => (
+                <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
+                  {agentName(agent.id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-      </div>
+        onChange={setPrompt}
+        onSend={(text) => void send(text)}
+        onStop={() => void stop()}
+      />
     </aside>
   )
 }
 
-function AgentEventRow({ event }: { event: AgentEvent }) {
-  if (event.kind === 'run_started' || event.kind === 'run_completed') {
-    return <div className="kubecode-agent-status">{event.kind.replace('_', ' ')}</div>
+function applyAgentEvent(
+  messages: AiAgentMessage[],
+  runId: string,
+  event: AgentEvent,
+): AiAgentMessage[] {
+  return messages.map((message) => {
+    if (message.id !== runId) return message
+    if (event.kind === 'text_delta') {
+      return { ...message, response: `${message.response ?? ''}${textValue(event.payload.text)}` }
+    }
+    if (event.kind === 'thinking_delta') {
+      return { ...message, reasoning: `${message.reasoning ?? ''}${textValue(event.payload.text)}` }
+    }
+    if (event.kind === 'tool_started') {
+      return { ...message, actions: upsertAction(message.actions, event, 'pending') }
+    }
+    if (event.kind === 'tool_updated') {
+      return { ...message, actions: upsertAction(message.actions, event, 'pending') }
+    }
+    if (event.kind === 'tool_completed') {
+      return { ...message, actions: upsertAction(message.actions, event, 'done') }
+    }
+    if (event.kind === 'error') {
+      return {
+        ...message,
+        isStreaming: false,
+        reasoningDone: true,
+        response: `${message.response ?? ''}${textValue(event.payload.message)}`,
+      }
+    }
+    if (event.kind === 'run_completed') {
+      return { ...message, isStreaming: false, reasoningDone: true }
+    }
+    return message
+  })
+}
+
+function upsertAction(
+  actions: AiAction[],
+  event: AgentEvent,
+  status: AiAction['status'],
+): AiAction[] {
+  const toolId = textValue(event.payload.tool_id) || `tool-${event.seq}`
+  const tool = textValue(event.payload.tool) || 'Tool'
+  const existing = actions.find((action) => action.toolId === toolId)
+  const action: AiAction = {
+    input: displayValue(event.payload.input) || existing?.input,
+    label: tool,
+    output: displayValue(event.payload.output) || existing?.output,
+    status,
+    tool,
+    toolId,
   }
-  if (event.kind === 'text_delta') {
-    return <div className="kubecode-agent-text">{String(event.payload.text ?? '')}</div>
-  }
-  if (event.kind === 'thinking_delta') {
-    return <div className="kubecode-agent-thinking">{String(event.payload.text ?? '')}</div>
-  }
-  if (event.kind.startsWith('tool_')) {
-    return (
-      <div className="kubecode-agent-tool">
-        <strong>{String(event.payload.tool ?? event.kind)}</strong>
-        <pre>{JSON.stringify(event.payload.input ?? event.payload.output ?? {}, null, 2)}</pre>
-      </div>
-    )
-  }
-  if (event.kind === 'error') {
-    return <div className="kubecode-inline-error">{String(event.payload.message ?? 'Agent error')}</div>
-  }
-  return null
+  return existing
+    ? actions.map((current) => current.toolId === toolId ? action : current)
+    : [...actions, action]
+}
+
+function displayValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 function agentName(id: AgentId): string {
