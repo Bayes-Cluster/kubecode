@@ -82,7 +82,7 @@ start_shared_server() {
 
   printf '[chunk-playwright] starting shared server at %s\n' "$base_url"
   TOLARIA_VITE_CACHE_DIR="${TOLARIA_VITE_CACHE_DIR:-${TMPDIR:-/tmp}/tolaria-vite-smoke-shared}" \
-    node scripts/playwright-smoke-server.mjs "$server_port" >"${log_dir}/shared-server.log" 2>&1 &
+    node scripts/playwright-kubecode-server.mjs "$server_port" >"${log_dir}/shared-server.log" 2>&1 &
   server_pid="$!"
   wait_for_shared_server
 }

@@ -106,7 +106,7 @@ cargo test   # Rust tests (from src-tauri/)
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # E2E tests
-pnpm playwright:smoke       # Curated Playwright core smoke lane (~5 min)
+pnpm playwright:smoke       # Kubecode Project/editor/terminal smoke flow
 pnpm playwright:regression  # Full Playwright regression suite
 ```
 
@@ -139,7 +139,7 @@ The pre-push hook uses the faster sidecar path automatically when Chunk is avail
 
 - `tolaria-hooks-frontend-2`: lint and build first, then frontend coverage.
 - `tolaria-hooks-rust`: clippy, rustfmt, and Rust coverage.
-- `tolaria-hooks-playwright`: curated Playwright smoke with a shared Vite server and eight shards.
+- `tolaria-hooks-playwright`: Kubecode Playwright smoke with a shared Rust web server and eight shards.
 
 Set `LAPUTA_PREPUSH_LOCAL=1` to force the local fallback path. If CircleCI has duplicate sidecar names, pin lanes with `SIDECAR_FRONTEND_ID`, `SIDECAR_RUST_ID`, and `SIDECAR_PLAYWRIGHT_ID`.
 
@@ -327,7 +327,7 @@ tolaria/
 ├── tests/smoke/                  # Playwright specs (full regression + @smoke subset)
 ├── design/                       # Per-task design files
 ├── demo-vault-v2/                # Curated local QA fixture for native/dev flows
-├── scripts/                      # Build/utility scripts
+├── scripts/                      # Build/utility scripts, including the Kubecode smoke server
 │
 ├── package.json                  # Frontend dependencies + scripts
 ├── lara.yaml                     # Lara CLI locale sync configuration
@@ -498,8 +498,8 @@ cargo test
 # Rust coverage (must pass ≥85% line coverage)
 cargo llvm-cov --manifest-path src-tauri/Cargo.toml --no-clean --fail-under-lines 85
 
-# Playwright core smoke lane (requires dev server)
-BASE_URL="http://localhost:5173" pnpm playwright:smoke
+# Kubecode core smoke lane (starts its own Rust web server)
+pnpm playwright:smoke
 
 # Full Playwright regression suite
 BASE_URL="http://localhost:5173" pnpm playwright:regression

@@ -1,7 +1,11 @@
 import { defineConfig } from '@playwright/test'
 
-const baseURL = process.env.BASE_URL || 'http://127.0.0.1:41741'
-const port = new URL(baseURL).port || '41741'
+const requestedBaseURL = process.env.BASE_URL || 'http://127.0.0.1:41741'
+const requestedURL = new URL(requestedBaseURL)
+const baseURL = requestedURL.pathname === '/'
+  ? `${requestedURL.origin}/user/local/kubecode`
+  : requestedURL.href.replace(/\/$/, '')
+const port = requestedURL.port || '41741'
 const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_SERVER
   ? process.env.PLAYWRIGHT_REUSE_SERVER === '1'
   : process.env.CI !== 'true'
@@ -30,8 +34,8 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
   webServer: {
-    command: `node scripts/playwright-smoke-server.mjs ${port}`,
-    url: baseURL,
+    command: `node scripts/playwright-kubecode-server.mjs ${port}`,
+    url: `${requestedURL.origin}/healthz`,
     reuseExistingServer,
     timeout: 30_000,
     stdout: 'pipe',

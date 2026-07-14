@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test'
 
 test('@smoke project, editor, and terminal workspace', async ({ page }) => {
-  const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:8888/user/local/kubecode'
-  await page.goto(baseUrl)
+  const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
+  const workspaceUrl = requested.pathname === '/'
+    ? `${requested.origin}/user/local/kubecode`
+    : requested.href.replace(/\/$/, '')
+  await page.goto(workspaceUrl)
 
   await expect(page.locator('.kubecode-brand')).toContainText('Kubecode')
   await page.getByRole('button', { name: 'Add project' }).click()

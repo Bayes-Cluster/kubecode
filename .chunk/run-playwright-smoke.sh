@@ -35,7 +35,7 @@ cleanup() {
   fi
 
   if [[ "${PLAYWRIGHT_REUSE_SERVER:-}" != "1" ]]; then
-    pkill -TERM -f "playwright-smoke-server.mjs ${port}" 2>/dev/null || true
+    pkill -TERM -f "playwright-kubecode-server.mjs ${port}" 2>/dev/null || true
     pkill -TERM -f "vite.js --host 127.0.0.1 --port ${port}" 2>/dev/null || true
   fi
 
