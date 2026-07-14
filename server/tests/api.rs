@@ -1,10 +1,13 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
-use kubecode_server::agents::AgentStore;
+use kubecode_server::agent_discovery::AgentDescriptor;
+use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::api::{AppState, app_router, app_router_with_static};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -292,4 +295,221 @@ async fn creates_lists_and_explicitly_closes_terminals_over_http() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn manages_project_registration_and_entry_lifecycle_over_http() {
+    let (temp, app) = app();
+    fs::create_dir_all(temp.path().join("srv/imported")).expect("import directory");
+    let (status, imported) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"import", "path":"imported", "name":"Imported"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let project_id = imported["id"].as_str().expect("project id");
+    let entries_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/entries");
+
+    for body in [
+        json!({"path":"src", "kind":"directory"}),
+        json!({"path":"src/main.rs", "kind":"file"}),
+    ] {
+        let (status, _) = json_request(&app, Method::POST, &entries_uri, body).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    let (status, entries) = json_request(
+        &app,
+        Method::GET,
+        &format!("{entries_uri}?path=src"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(entries[0]["path"], "src/main.rs");
+
+    let (status, _) = json_request(
+        &app,
+        Method::PATCH,
+        &entries_uri,
+        json!({"from":"src/main.rs", "to":"src/lib.rs"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{entries_uri}?path=src/lib.rs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, error) = json_request(&app, Method::GET, &entries_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["code"], "not_found");
+}
+
+#[tokio::test]
+async fn reports_request_store_and_terminal_errors_consistently() {
+    let (_temp, app) = app();
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "parent":".", "name":"errors"}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"codex"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!("{conversations_uri}/{conversation_id}/runs"),
+        json!({"message":"  ", "permission_mode":"safe"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_request");
+
+    for (method, suffix) in [
+        (Method::GET, "/runs/missing"),
+        (Method::DELETE, "/runs/missing"),
+        (Method::GET, "/runs/missing/events"),
+    ] {
+        let (status, error) = json_request(
+            &app,
+            method,
+            &format!("{BASE_PATH}/api/v1{suffix}"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(error["code"], "not_found");
+    }
+    let (status, error) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/terminals/missing"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["code"], "not_found");
+}
+
+fn executable(directory: &TempDir, body: &str) -> String {
+    let path = directory.path().join("codex");
+    fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write mock agent");
+    let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions).expect("permissions");
+    path.to_string_lossy().into_owned()
+}
+
+#[tokio::test]
+async fn exposes_completed_run_details_replay_and_event_stream() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database = state_dir.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"thread-api\"}'\nprintf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished through API\"}}'",
+    );
+    let app = app_router(
+        AppState::new(workspace, store).with_agents(vec![AgentDescriptor {
+            id: AgentId::Codex,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "parent":".", "name":"run-api"}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"codex"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let (status, run) = json_request(
+        &app,
+        Method::POST,
+        &format!("{conversations_uri}/{conversation_id}/runs"),
+        json!({"message":"Do it", "permission_mode":"power"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let run_id = run["id"].as_str().expect("run id");
+    let run_uri = format!("{BASE_PATH}/api/v1/runs/{run_id}");
+
+    let completed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let (_, current) = json_request(&app, Method::GET, &run_uri, Value::Null).await;
+            if current["status"] != "running" {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+    assert_eq!(completed["status"], "completed");
+
+    let events_uri = format!("{run_uri}/events");
+    let (status, events) = json_request(&app, Method::GET, &events_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(events.as_array().expect("events").iter().any(|event| {
+        event["kind"] == "text_delta" && event["payload"]["text"] == "Finished through API"
+    }));
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{events_uri}/stream?after=0"))
+                .body(Body::empty())
+                .expect("stream request"),
+        )
+        .await
+        .expect("stream response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("stream body");
+    assert!(String::from_utf8_lossy(&body).contains("Finished through API"));
+
+    let (status, error) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "run_not_active");
 }

@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-function firstInlineScriptFromIndex(): string {
+function resizeObserverScriptFromIndex(): string {
   const indexHtml = readFileSync(`${process.cwd()}/index.html`, 'utf8')
-  const match = indexHtml.match(/<script>\s*([\s\S]*?)\s*<\/script>/)
-  if (!match) throw new Error('index.html startup script was not found')
-  return match[1]
+  const scripts = [...indexHtml.matchAll(/<script>\s*([\s\S]*?)\s*<\/script>/g)]
+  const script = scripts.find((match) => match[1].includes('ResizeObserver loop'))
+  if (!script) throw new Error('index.html ResizeObserver startup script was not found')
+  return script[1]
 }
 
 describe('index startup script', () => {
@@ -18,7 +19,7 @@ describe('index startup script', () => {
 
   it('does not show the boot overlay for ResizeObserver loop notifications', () => {
     document.body.innerHTML = ''
-    new Function(firstInlineScriptFromIndex())()
+    new Function(resizeObserverScriptFromIndex())()
 
     const event = new ErrorEvent('error', {
       cancelable: true,
@@ -32,7 +33,7 @@ describe('index startup script', () => {
 
   it('does not create a visible boot overlay for real startup errors', () => {
     document.body.innerHTML = ''
-    new Function(firstInlineScriptFromIndex())()
+    new Function(resizeObserverScriptFromIndex())()
 
     window.dispatchEvent(new ErrorEvent('error', {
       message: 'startup failed',

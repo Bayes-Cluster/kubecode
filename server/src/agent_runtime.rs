@@ -439,3 +439,207 @@ fn normalize_opencode(value: &Value) -> Vec<NormalizedEvent> {
         _ => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn persisted(value: Vec<NormalizedEvent>) -> Vec<(AgentEventKind, Value)> {
+        value
+            .into_iter()
+            .filter_map(|event| event.persisted)
+            .collect()
+    }
+
+    fn command_args(command: &Command) -> Vec<String> {
+        command
+            .as_std()
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn builds_provider_specific_safe_and_power_commands() {
+        let cwd = Path::new("/tmp/project");
+        let claude_safe = build_command(
+            AgentId::ClaudeCode,
+            "claude",
+            cwd,
+            "fix it",
+            PermissionMode::Safe,
+        );
+        let claude_power = build_command(
+            AgentId::ClaudeCode,
+            "claude",
+            cwd,
+            "fix it",
+            PermissionMode::Power,
+        );
+        assert!(
+            command_args(&claude_safe)
+                .windows(2)
+                .any(|pair| pair == ["--disallowedTools", "Bash"])
+        );
+        assert!(
+            command_args(&claude_power)
+                .windows(2)
+                .any(|pair| pair == ["--allowedTools", "Bash"])
+        );
+
+        let codex_safe =
+            build_command(AgentId::Codex, "codex", cwd, "fix it", PermissionMode::Safe);
+        let codex_power = build_command(
+            AgentId::Codex,
+            "codex",
+            cwd,
+            "fix it",
+            PermissionMode::Power,
+        );
+        assert!(
+            command_args(&codex_safe)
+                .windows(2)
+                .any(|pair| pair == ["--sandbox", "read-only"])
+        );
+        assert!(
+            command_args(&codex_power)
+                .windows(2)
+                .any(|pair| pair == ["--sandbox", "workspace-write"])
+        );
+
+        let opencode_safe = build_command(
+            AgentId::OpenCode,
+            "opencode",
+            cwd,
+            "fix it",
+            PermissionMode::Safe,
+        );
+        let opencode_power = build_command(
+            AgentId::OpenCode,
+            "opencode",
+            cwd,
+            "fix it",
+            PermissionMode::Power,
+        );
+        let config = |command: &Command| {
+            command
+                .as_std()
+                .get_envs()
+                .find(|(name, _)| *name == "OPENCODE_CONFIG_CONTENT")
+                .and_then(|(_, value)| value)
+                .expect("OpenCode config")
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert!(config(&opencode_safe).contains(r#""bash":"deny""#));
+        assert!(config(&opencode_power).contains(r#""bash":"allow""#));
+    }
+
+    #[test]
+    fn normalizes_codex_sessions_text_reasoning_and_tools() {
+        let session_event = normalize_event(
+            AgentId::Codex,
+            &json!({"type":"thread.started", "thread_id":"thread-1"}),
+        );
+        assert_eq!(session_event[0].session_id.as_deref(), Some("thread-1"));
+
+        let started = persisted(normalize_event(
+            AgentId::Codex,
+            &json!({"type":"item.started", "item":{"id":"tool-1", "type":"command_execution", "command":"pwd"}}),
+        ));
+        assert_eq!(started[0].0, AgentEventKind::ToolStarted);
+        let completed = persisted(normalize_event(
+            AgentId::Codex,
+            &json!({"type":"item.completed", "item":{"id":"tool-1", "type":"command_execution", "aggregated_output":"ok"}}),
+        ));
+        assert_eq!(completed[0].0, AgentEventKind::ToolCompleted);
+
+        let text = persisted(normalize_event(
+            AgentId::Codex,
+            &json!({"type":"item.completed", "item":{"type":"agent_message", "text":"done"}}),
+        ));
+        assert_eq!(text[0].1["text"], "done");
+        let thinking = persisted(normalize_event(
+            AgentId::Codex,
+            &json!({"type":"item.completed", "item":{"type":"reasoning", "text":"plan"}}),
+        ));
+        assert_eq!(thinking[0].0, AgentEventKind::ThinkingDelta);
+        assert!(normalize_event(AgentId::Codex, &json!({"type":"unknown"})).is_empty());
+    }
+
+    #[test]
+    fn normalizes_claude_sessions_streams_results_and_tools() {
+        let initialized = normalize_event(
+            AgentId::ClaudeCode,
+            &json!({"type":"system", "subtype":"init", "session_id":"session-1"}),
+        );
+        assert_eq!(initialized[0].session_id.as_deref(), Some("session-1"));
+
+        let result = normalize_event(
+            AgentId::ClaudeCode,
+            &json!({"type":"result", "session_id":"session-1", "result":"done"}),
+        );
+        assert_eq!(result.len(), 2);
+        assert_eq!(persisted(result)[0].1["text"], "done");
+
+        for (delta_type, field, expected_kind) in [
+            ("text_delta", "text", AgentEventKind::TextDelta),
+            ("thinking_delta", "thinking", AgentEventKind::ThinkingDelta),
+        ] {
+            let events = persisted(normalize_event(
+                AgentId::ClaudeCode,
+                &json!({"type":"stream_event", "event":{"type":"content_block_delta", "delta":{"type":delta_type, field:"value"}}}),
+            ));
+            assert_eq!(events[0].0, expected_kind);
+        }
+
+        let tool = persisted(normalize_event(
+            AgentId::ClaudeCode,
+            &json!({"type":"stream_event", "event":{"type":"content_block_start", "content_block":{"type":"tool_use", "id":"tool-1", "name":"Read", "input":{}}}}),
+        ));
+        assert_eq!(tool[0].0, AgentEventKind::ToolStarted);
+        let tool_result = persisted(normalize_event(
+            AgentId::ClaudeCode,
+            &json!({"type":"tool_result", "tool_use_id":"tool-1", "content":"ok"}),
+        ));
+        assert_eq!(tool_result[0].0, AgentEventKind::ToolCompleted);
+        assert!(normalize_event(AgentId::ClaudeCode, &json!({"type":"unknown"})).is_empty());
+    }
+
+    #[test]
+    fn normalizes_opencode_direct_and_part_events() {
+        let session_event = normalize_event(
+            AgentId::OpenCode,
+            &json!({"type":"session", "sessionID":"session-1"}),
+        );
+        assert_eq!(session_event[0].session_id.as_deref(), Some("session-1"));
+
+        for (value, expected_kind) in [
+            (
+                json!({"type":"text", "text":"done"}),
+                AgentEventKind::TextDelta,
+            ),
+            (
+                json!({"part":{"type":"reasoning", "text":"plan"}}),
+                AgentEventKind::ThinkingDelta,
+            ),
+            (
+                json!({"type":"tool", "id":"tool-1", "name":"bash", "input":{}}),
+                AgentEventKind::ToolStarted,
+            ),
+            (
+                json!({"part":{"type":"tool_done", "id":"tool-1", "output":"ok"}}),
+                AgentEventKind::ToolCompleted,
+            ),
+            (
+                json!({"type":"error", "message":"failed"}),
+                AgentEventKind::Error,
+            ),
+        ] {
+            let events = persisted(normalize_event(AgentId::OpenCode, &value));
+            assert_eq!(events[0].0, expected_kind);
+        }
+        assert!(normalize_event(AgentId::OpenCode, &json!({"type":"unknown"})).is_empty());
+    }
+}
