@@ -1,0 +1,54 @@
+[package]
+name = "tolaria"
+version = "0.1.0"
+description = "Personal knowledge and life management app"
+authors = ["Luca Rossi"]
+license = "AGPL-3.0-or-later"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "tolaria_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.4", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+log = "0.4"
+notify = "6.1"
+tauri = { version = "2.10.0", features = ["macos-private-api", "protocol-asset", "devtools", "image-png"] }
+tauri-plugin-log = "2"
+gray_matter = "0.2"
+walkdir = "2"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+futures-util = "0.3"
+base64 = "0.22"
+regex = "1"
+ironcalc_base = "0.7.1"
+csv = "1.4"
+dirs = "5"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2.10.0"
+tauri-plugin-process = "2.3.1"
+tauri-plugin-opener = "2"
+tauri-plugin-prevent-default = "4.0.4"
+sentry = "0.37"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tauri-plugin-deep-link = "2.4.9"
+tauri-plugin-single-instance = { version = "2.4.2", features = ["deep-link"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.3"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
+objc2-web-kit = { version = "0.3.2", features = ["WKWebView", "objc2-app-kit"] }
+
+[dev-dependencies]

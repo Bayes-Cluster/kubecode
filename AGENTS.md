@@ -1,0 +1,194 @@
+# AGENTS.md — Tolaria App
+
+## 1. Development Process
+
+### Start working on a task
+
+**Before writing a single line of code:** run `mcp__codescene__code_health_score` to check the current codebase health against `.codescene-thresholds`. If the score is already below the threshold, **stop and refactor first** — find the worst files with the MCP, improve them, commit, then start the task. Never start feature work on a codebase that is already below the gate.
+
+- Read task description and all comments fully
+- For To Rework: the ❌ QA failed comment tells you exactly what to fix
+- Check `docs/adr/` for relevant architecture decisions before structural choices
+- Check `docs/ARCHITECTURE.md` and `docs/ABSTRACTIONS.md` for relevant structural information
+- For UI tasks: study app visual language and components first. Prioritize reusing existing components, assets, and variables over recreating them.
+- If working on a Todoist task, add a comment: `🚀 Starting work on this task. [Brief description of approach]`
+
+### Commits & pushes
+
+- Local work may happen on `main`, in detached HEAD worktrees, or in other temporary local states. The production path is still direct-to-main: final verified work is pushed to `origin/main`, with no PR branch flow.
+- Commit every 20–30 min: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`
+- Pre-commit is a lightweight lint gate only. Pre-push runs the full check suite (build + tests + coverage + core Playwright smoke + CodeScene), preferably on three Chunk sidecar lanes for automatic test/coverage work: frontend lint/build/coverage, Rust coverage, and Playwright smoke. The goal is lower wall-clock time than local hooks while keeping each heavy gate isolated; keep local Playwright mainly for authoring, focused reproduction, or sidecar outages.
+- **A task is NOT done until `git push origin main` succeeds.** If the hook blocks: read the error, fix it (clippy, tests, CodeScene, build), commit the fix, push again. **⛔ NEVER use --no-verify**
+
+### TDD (mandatory)
+
+Red → Green → Refactor → Commit. One cycle per commit. For bugs: write failing regression test first, then fix. Exception: pure CSS/layout changes.
+
+**Test quality (Kent Beck's Desiderata):** Isolated · Deterministic · Fast · Behavioral · Structure-insensitive · Specific · Predictive. Fix flaky tests first. Prefer E2E over unit tests for user flows.
+
+### Localization (mandatory for UI copy)
+
+All user-facing UI labels/copy must live in `src/lib/locales/en.json` and be translated into every target listed in `lara.yaml`. When adding or changing interface copy:
+
+```bash
+pnpm l10n:translate
+```
+
+Use `pnpm l10n:translate:force` only when intentionally regenerating existing translations. Commit `src/lib/locales/*.json`, `lara.yaml`/`lara.lock` changes if produced, and verify placeholders/product names stayed intact.
+
+### Product analytics (mandatory for meaningful features)
+
+New features should almost always emit a PostHog event so we can see whether users actually discover and use them. Skip instrumentation only for very small changes where a dedicated event would create noise. Use clear, stable event names, avoid PII or note content, and include only safe metadata that helps evaluate adoption and failures.
+
+When adding or changing a meaningful user-facing feature, include the event name(s) in the Todoist completion comment alongside QA, docs, and code health. If intentionally not instrumenting a feature, explain why in the completion comment.
+
+### Code health (mandatory)
+
+Pre-push enforces **Hotspot Code Health** and **Average Code Health** ≥ thresholds in `.codescene-thresholds`. Pre-commit is lint-only; CodeScene remains mandatory through the file-level review rules below and the pre-push ratchet gate. Thresholds are a **ratchet** — only go up. When pre-push sees improved remote scores, it updates `.codescene-thresholds`, stages it, and stops so you can commit the new floor with normal verified hooks before pushing again. Never add `// eslint-disable`, `#[allow(...)]`, or `as any`.
+
+**Release rule:** CodeScene is a before/after gate, not just a final score. Every task must record the starting CodeScene state before edits and the final state after edits. If touched code gets worse, refactor before committing.
+
+**⛔ NEVER edit `.codescene-thresholds` to lower the values.** If the gate blocks you, improve the code — do not lower the bar.
+
+**CodeScene access order:** use CodeScene MCP tools if available. If MCP is unavailable, use the installed `cs` CLI for file-level review/delta work, and use the CodeScene API (`CODESCENE_PAT` + `CODESCENE_PROJECT_ID`) for project-wide Hotspot/Average threshold checks from `.codescene-thresholds`.
+
+**Before editing any existing code file:** capture its current file-level CodeScene score. After your edits, re-run the same file-level review and verify the score is higher. If the file already starts at `10.0`, it must remain `10.0`.
+
+**New files:** every new **scorable code file** must reach CodeScene score `10.0` before commit. If CodeScene reports `null` / "no scorable code" for a new file, it must still have zero CodeScene findings/warnings.
+
+**Before every commit:** run CodeScene file-level review on every touched or newly created code file and verify the rule above. **Boy Scout Rule:** every file you touch must leave with a higher score, unless it was already `10.0`, in which case it must stay `10.0`.
+
+**If CodeScene gate blocks your push:** use `mcp__codescene__code_health_score` to find the worst file, refactor it, commit, push again. Do NOT stop or wait for laputa-refactor — that is a background loop, not a substitute for fixing your own regressions.
+
+### Security scan with Codacy (mandatory)
+
+Use Codacy as a security and static-analysis gate before a task is considered releasable.
+
+- Prefer the Codacy MCP inside Codex to inspect repository/file issues for every touched code file.
+- If MCP is unavailable, use the local CLI wrapper, e.g. `.codacy/cli.sh analyze <path> --format sarif`; choose the relevant tool when useful (`eslint`, `opengrep`, `trivy`, `lizard`).
+- **Always fix Critical and High severity findings introduced by your change.** Do not move the task to In Review with new Critical/High Codacy issues.
+- Review Medium findings. Fix them when they are real defects or security-sensitive; otherwise explain why they are acceptable in the completion comment.
+- Never silence a Codacy rule just to pass the scan. Prefer small code changes that remove the finding.
+
+### Check suite (runs on every push)
+```bash
+pnpm lint && npx tsc --noEmit && pnpm test && pnpm test:coverage  # frontend ≥70%
+cargo test && cargo llvm-cov --manifest-path src-tauri/Cargo.toml --no-clean --fail-under-lines 85
+```
+
+Coverage is a release gate, not a vanity metric:
+- Frontend coverage must stay ≥70%.
+- Rust line coverage must stay ≥85%.
+- For bug fixes, add a regression test when practical.
+- For new behavior, add targeted coverage close to the changed code; do not rely only on broad E2E coverage.
+
+### UI and native QA
+
+**Phase 1 — Playwright (only for core user flows):**
+
+Write Playwright test in `tests/smoke/<slug>.spec.ts` only if feature touches: vault open, note create/save/delete, search, wikilink navigation, git commit/push, conflict resolution. Tag a test with `@smoke` only if it protects a core pre-push workflow. Do NOT tag cosmetic or mock-heavy checks — keep those in the full regression lane. Prefer `.chunk/run-playwright-smoke.sh` on a Chunk sidecar for the curated smoke lane because local Playwright is expensive; keep `pnpm playwright:smoke` available for focused local reproduction. The curated smoke suite must stay under **5 minutes** when sharded on sidecars; use `pnpm playwright:regression` for the full Playwright pass.
+
+```bash
+pnpm dev --port 5201 &
+sleep 3
+BASE_URL="http://localhost:5201" npx playwright test tests/smoke/<slug>.spec.ts
+```
+
+**Phase 2 — Native app QA:**
+
+```bash
+pnpm tauri dev &
+sleep 10
+bash ~/.openclaw/skills/tolaria-qa/scripts/focus-app.sh laputa
+bash ~/.openclaw/skills/tolaria-qa/scripts/screenshot.sh /tmp/qa-native.png
+```
+
+Use computer-use/browser-control style interaction for native UI QA when available: click, hover, drag, select, scroll, and type the way a real user would with the mouse and trackpad. For every UI feature, test the primary mouse-driven path first, then verify any relevant keyboard shortcut or keyboard-first workflow still works. Tolaria is still a keyboard-first app, but QA must not assume users only interact by keyboard.
+
+Use `osascript` for app focus, keyboard shortcuts, and keyboard-specific checks. **⚠️ WKWebView:** `osascript keystroke` can be blocked inside editor content — use computer use for native editor interaction when possible, and rely on Playwright for deterministic text-input coverage. Write result as Todoist comment (✅ or ❌).
+
+### Release-readiness checklist
+
+Before pushing or moving a task to In Review, verify the release gates and add a **completion comment** to the Todoist task. The comment must include:
+
+- What was implemented (a few lines covering logic and UX/UI).
+- QA: what was tested and how (Playwright / native screenshot / osascript).
+- Tests/coverage: commands run and final coverage result.
+- CodeScene: before/after touched-file checks plus final Hotspot and Average scores after push; final scores must pass `.codescene-thresholds`.
+- Coverage commands passed (`pnpm test:coverage` and `cargo llvm-cov ... --fail-under-lines 85`) or the change is docs-only.
+- Codacy: MCP/CLI scan summary; confirm no new Critical/High findings.
+- Localization: any user-facing copy lives in `src/lib/locales/en.json`, `pnpm l10n:translate` was run, and `pnpm l10n:validate` passes. If no copy changed, say “Localization: no UI copy changes”.
+- PostHog: meaningful new user actions/events are instrumented with safe metadata; noisy/minor changes explicitly say “PostHog: no event needed because …”.
+- Refactoring: any files refactored to meet the CodeScene gate, or "none needed".
+- ADRs: any new/updated ADRs, or "none".
+- Docs: any updated docs (`ARCHITECTURE.md`, `ABSTRACTIONS.md`, etc.), or "none".
+- Demo vault dirt checked: `git status --short -- demo-vault demo-vault-v2` is empty unless fixture changes are intentional.
+
+### ADRs & docs
+
+ADRs live in `docs/adr/`. Create in the same commit as the code. Never edit existing — create a new one that supersedes. Use `/create-adr`. **When:** new dependency, storage strategy, platform target, core abstraction, cross-cutting pattern. **Not for:** bug fixes, styling, refactors.
+
+After any Tauri command, new component/hook, data model change, or new integration: update `docs/ARCHITECTURE.md`, `docs/ABSTRACTIONS.md`, and/or `docs/GETTING-STARTED.md` in the same commit.
+
+---
+
+## 2. Product Rules
+
+### Demo vault hygiene (`demo-vault/`, `demo-vault-v2/`)
+
+Default to `demo-vault-v2/` for testing.
+
+- Treat `demo-vault/` and `demo-vault-v2/` as disposable QA fixtures unless the task explicitly changes demo content.
+- If you create untracked notes, attachments, or other temporary files there for testing, delete them before the task is complete.
+- If you modify tracked demo-vault files only to test or QA behavior, revert those edits before the final commit.
+- Before declaring a task done, make sure `git status --short -- demo-vault demo-vault-v2` is empty unless demo fixture changes are part of the task.
+- If a fresh run starts and the only local dirt is inside `demo-vault/` or `demo-vault-v2/`, clean those paths first and continue. That case is recoverable QA residue, not a blocker.
+
+### User vault (`~/Laputa/`)
+
+Default to `demo-vault-v2/`. If you must use `~/Laputa/` for testing:
+- **Never commit or push** any test notes to the remote vault
+- **Delete all test notes from disk** when done — do not leave untitled or temporary notes on the filesystem. Run `cd ~/Laputa && git checkout -- . && git clean -fd` to restore the vault to its last committed state.
+- **Rationale:** test notes pollute the local vault over time, making it a collection of nonsensical untitled files. The vault must stay clean on disk, not just on the remote.
+
+### UI components — mandatory rules
+
+**Always use shadcn/ui components.** Never use raw HTML form elements (`<input>`, `<select>`, `<button>`, native `<input type="date">`, etc.) for user-facing UI. Every interactive element must use the shadcn/ui equivalent:
+
+| Need | Use |
+|---|---|
+| Text input | `Input` from shadcn/ui |
+| Dropdown/select | `Select` from shadcn/ui |
+| Date picker | `Calendar` + `Popover` from shadcn/ui (NOT native `<input type="date">`) |
+| Button | `Button` from shadcn/ui |
+| Autocomplete/combobox | Reuse existing combobox components from the app (check `src/components/`) |
+| Wikilink picker | Reuse the wikilink autocomplete component already used in the editor and Properties panel |
+| Emoji picker | Reuse the emoji picker component already used for note/type icons |
+| Color picker | Reuse the color swatch picker used for type customization |
+| Toggle/switch | `Switch` or `ToggleGroup` from shadcn/ui |
+| Dialog/modal | `Dialog` from shadcn/ui |
+
+**When in doubt:** search `src/components/` for an existing component before building new. **Visual language:** all new UI must feel native to Tolaria — if it looks like a browser default, it's wrong.
+
+---
+
+## 3. Reference
+
+### macOS / Tauri gotchas
+
+- `Option+N` → special chars on macOS. Use `e.code` or `Cmd+N`
+- Tauri menu accelerators: `MenuItemBuilder::new(label).accelerator("CmdOrCtrl+1")`
+- `app.set_menu()` replaces the ENTIRE menu bar — include all submenus
+- `mock-tauri.ts` silently swallows Tauri calls — not a substitute for native testing
+
+### QA scripts
+
+```bash
+bash ~/.openclaw/skills/tolaria-qa/scripts/focus-app.sh Tolaria
+bash ~/.openclaw/skills/tolaria-qa/scripts/screenshot.sh /tmp/out.png
+bash ~/.openclaw/skills/tolaria-qa/scripts/shortcut.sh "command" "s"
+```
+
+### Diagrams
+
+Prefer Mermaid (`flowchart`, `sequenceDiagram`, `classDiagram`, `stateDiagram-v2`). ASCII only for spatial wireframe layouts.

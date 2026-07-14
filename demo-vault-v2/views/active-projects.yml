@@ -1,0 +1,9 @@
+name: Active Projects
+icon: rocket
+color: blue
+sort: "modified:desc"
+filters:
+  all:
+    - field: type
+      op: equals
+      value: Project

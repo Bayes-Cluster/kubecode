@@ -1,0 +1,61 @@
+{
+  "name": "Tolaria QA fixture",
+  "purpose": "Curated local vault for native QA and developer flows. This is not the public Getting Started starter vault.",
+  "large_fixture": {
+    "generator": "python3 scripts/generate_demo_vault.py",
+    "default_output": "generated-fixtures/demo-vault-large"
+  },
+  "scenarios": [
+    {
+      "id": "exact-match-search",
+      "reason": "Quick Open should rank the exact title 'Writing' above prefix matches.",
+      "files": [
+        "topic-writing.md",
+        "writing-for-clarity-vs-writing-for-credit.md",
+        "writing-weekly-rhythm.md"
+      ]
+    },
+    {
+      "id": "relationship-rendering",
+      "reason": "Relationship keys should render in the inspector instead of as plain properties.",
+      "files": [
+        "responsibility-sponsorships.md",
+        "measure-sponsorship-mrr.md",
+        "measure-close-rate.md",
+        "procedure-quarterly-sponsor-outreach.md",
+        "procedure-sponsor-onboarding.md",
+        "24q4-laputa-start.md",
+        "24q4.md",
+        "person-luca-rossi.md"
+      ]
+    },
+    {
+      "id": "project-navigation",
+      "reason": "Projects, quarters, and a saved view give keyboard QA a compact but representative browsing path.",
+      "files": [
+        "24q4.md",
+        "25q1.md",
+        "25q2.md",
+        "24q4-laputa-start.md",
+        "25q1-laputa-v1.md",
+        "25q2-laputa-v2.md",
+        "views/active-projects.yml"
+      ]
+    },
+    {
+      "id": "attachment-rendering",
+      "reason": "A note with a real binary attachment keeps image/block QA anchored to the fixture.",
+      "files": [
+        "laputa-qa-reference.md",
+        "attachments/laputa-reference.png"
+      ]
+    },
+    {
+      "id": "rtl-mixed-direction",
+      "reason": "Arabic and mixed English/Arabic paragraphs keep rich editor and raw editor BiDi QA anchored to the fixture.",
+      "files": [
+        "rtl-mixed-direction-qa.md"
+      ]
+    }
+  ]
+}
