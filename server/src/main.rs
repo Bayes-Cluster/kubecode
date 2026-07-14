@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use kubecode_server::agent_discovery::discover_agents;
+use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router_with_static};
 use kubecode_server::workspace::WorkspaceService;
 
@@ -22,13 +23,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|_| "8888".to_owned())
         .parse::<u16>()?;
 
-    let workspace = WorkspaceService::open(
-        &persistent_directory,
-        state_directory.join("kubecode.sqlite3"),
-    )?;
+    let database_path = state_directory.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&persistent_directory, &database_path)?;
+    let agent_store = AgentStore::open(&database_path)?;
     let agents = discover_agents().await;
     let app = app_router_with_static(
-        AppState::new(Arc::new(workspace)).with_agents(agents),
+        AppState::new(Arc::new(workspace), Arc::new(agent_store)).with_agents(agents),
         &base_path,
         static_directory,
     );

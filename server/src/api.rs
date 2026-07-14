@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
 use std::sync::Arc;
 
@@ -6,6 +8,7 @@ use axum::Router;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get};
 use serde::{Deserialize, Serialize};
@@ -13,6 +16,8 @@ use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
+use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
+use crate::agents::{AgentEvent, AgentId, AgentStore, PermissionMode, RunStatus, StoreError};
 use crate::terminal::{TerminalError, TerminalManager, TerminalSnapshot};
 use crate::workspace::{EntryKind, WorkspaceError, WorkspaceService};
 
@@ -23,23 +28,36 @@ pub struct AppState {
     pub workspace: Arc<WorkspaceService>,
     pub terminals: Arc<TerminalManager>,
     pub agents: Arc<Vec<AgentDescriptor>>,
+    pub agent_runtime: Arc<AgentRuntime>,
 }
 
 impl AppState {
-    pub fn new(workspace: Arc<WorkspaceService>) -> Self {
+    pub fn new(workspace: Arc<WorkspaceService>, agent_store: Arc<AgentStore>) -> Self {
         let terminals = Arc::new(TerminalManager::new(
             Arc::clone(&workspace),
             8,
             2 * 1024 * 1024,
         ));
+        let agents = supported_agents_unavailable();
+        let agent_runtime = Arc::new(AgentRuntime::new(
+            Arc::clone(&workspace),
+            agent_store,
+            agents.clone(),
+        ));
         Self {
             workspace,
             terminals,
-            agents: Arc::new(supported_agents_unavailable()),
+            agents: Arc::new(agents),
+            agent_runtime,
         }
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {
+        self.agent_runtime = Arc::new(AgentRuntime::new(
+            Arc::clone(&self.workspace),
+            self.agent_runtime.store(),
+            agents.clone(),
+        ));
         self.agents = Arc::new(agents);
         self
     }
@@ -69,6 +87,20 @@ fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/agents", get(list_agents))
         .route("/projects", get(list_projects).post(create_project))
+        .route(
+            "/projects/{project_id}/conversations",
+            get(list_conversations).post(create_conversation),
+        )
+        .route(
+            "/projects/{project_id}/conversations/{conversation_id}/runs",
+            axum::routing::post(start_agent_run),
+        )
+        .route(
+            "/runs/{run_id}",
+            get(get_agent_run).delete(cancel_agent_run),
+        )
+        .route("/runs/{run_id}/events", get(list_agent_events))
+        .route("/runs/{run_id}/events/stream", get(stream_agent_events))
         .route("/projects/{project_id}", delete(unregister_project))
         .route(
             "/projects/{project_id}/terminals",
@@ -95,6 +127,154 @@ fn api_router(state: AppState) -> Router {
 
 async fn list_agents(State(state): State<AppState>) -> impl IntoResponse {
     Json(state.agents.as_ref().clone())
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateConversationRequest {
+    agent_id: AgentId,
+    title: Option<String>,
+}
+
+async fn list_conversations(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    Ok(Json(
+        state
+            .agent_runtime
+            .store()
+            .list_conversations(&project_id)?,
+    ))
+}
+
+async fn create_conversation(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<CreateConversationRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let conversation = state.agent_runtime.store().create_conversation(
+        &project_id,
+        request.agent_id,
+        request.title.as_deref(),
+    )?;
+    Ok((StatusCode::CREATED, Json(conversation)))
+}
+
+#[derive(Debug, Deserialize)]
+struct StartRunRequest {
+    message: String,
+    permission_mode: PermissionMode,
+}
+
+async fn start_agent_run(
+    State(state): State<AppState>,
+    Path((project_id, conversation_id)): Path<(String, String)>,
+    Json(request): Json<StartRunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if request.message.trim().is_empty() {
+        return Err(ApiError::InvalidRequest("message must not be empty".into()));
+    }
+    let run = state.agent_runtime.start(StartAgentRun {
+        conversation_id,
+        project_id,
+        message: request.message,
+        permission_mode: request.permission_mode,
+    })?;
+    Ok((StatusCode::ACCEPTED, Json(run)))
+}
+
+async fn get_agent_run(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.agent_runtime.store().get_run(&run_id)?))
+}
+
+async fn cancel_agent_run(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state.agent_runtime.store().get_run(&run_id)?;
+    if !state.agent_runtime.cancel(&run_id) {
+        return Err(ApiError::RunNotActive(run_id));
+    }
+    Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct EventQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+async fn list_agent_events(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+    Query(query): Query<EventQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.agent_runtime.store().get_run(&run_id)?;
+    Ok(Json(
+        state
+            .agent_runtime
+            .store()
+            .events_after(&run_id, query.after)?,
+    ))
+}
+
+struct AgentEventStreamState {
+    store: Arc<AgentStore>,
+    run_id: String,
+    cursor: u64,
+    pending: VecDeque<AgentEvent>,
+}
+
+async fn stream_agent_events(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+    Query(query): Query<EventQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    let store = state.agent_runtime.store();
+    store.get_run(&run_id)?;
+    let stream = futures_util::stream::unfold(
+        AgentEventStreamState {
+            store,
+            run_id,
+            cursor: query.after,
+            pending: VecDeque::new(),
+        },
+        |mut state| async move {
+            loop {
+                if let Some(agent_event) = state.pending.pop_front() {
+                    state.cursor = agent_event.seq;
+                    let event = Event::default()
+                        .id(agent_event.seq.to_string())
+                        .event(agent_event.kind.as_str())
+                        .json_data(&agent_event)
+                        .unwrap_or_else(|_| Event::default().event("serialization_error"));
+                    return Some((Ok(event), state));
+                }
+                state.pending = state
+                    .store
+                    .events_after(&state.run_id, state.cursor)
+                    .unwrap_or_default()
+                    .into();
+                if !state.pending.is_empty() {
+                    continue;
+                }
+                let run = state.store.get_run(&state.run_id).ok()?;
+                if !matches!(
+                    run.status,
+                    RunStatus::Running | RunStatus::WaitingPermission
+                ) {
+                    return None;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        },
+    );
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 fn root_router(application: Router, base_path: &str) -> Router {
@@ -383,6 +563,10 @@ struct ErrorBody {
 enum ApiError {
     Workspace(WorkspaceError),
     Terminal(TerminalError),
+    AgentStore(StoreError),
+    AgentRuntime(RuntimeError),
+    InvalidRequest(String),
+    RunNotActive(String),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -394,6 +578,18 @@ impl From<WorkspaceError> for ApiError {
 impl From<TerminalError> for ApiError {
     fn from(error: TerminalError) -> Self {
         Self::Terminal(error)
+    }
+}
+
+impl From<StoreError> for ApiError {
+    fn from(error: StoreError) -> Self {
+        Self::AgentStore(error)
+    }
+}
+
+impl From<RuntimeError> for ApiError {
+    fn from(error: RuntimeError) -> Self {
+        Self::AgentRuntime(error)
     }
 }
 
@@ -415,8 +611,52 @@ impl IntoResponse for ApiError {
                 };
                 (status, code, error.to_string())
             }
+            ApiError::AgentStore(error) => {
+                let (status, code) = store_error_status(&error);
+                (status, code, error.to_string())
+            }
+            ApiError::AgentRuntime(error) => match error {
+                RuntimeError::AgentUnavailable(_) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "agent_unavailable",
+                    error.to_string(),
+                ),
+                RuntimeError::Store(store) => {
+                    let (status, code) = store_error_status(&store);
+                    (status, code, store.to_string())
+                }
+                RuntimeError::Workspace(workspace) => {
+                    let (status, code) = workspace_error_status(&workspace);
+                    (status, code, workspace.to_string())
+                }
+                RuntimeError::Spawn(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "agent_error",
+                    error.to_string(),
+                ),
+            },
+            ApiError::InvalidRequest(message) => {
+                (StatusCode::BAD_REQUEST, "invalid_request", message)
+            }
+            ApiError::RunNotActive(run_id) => (
+                StatusCode::CONFLICT,
+                "run_not_active",
+                format!("run is not active: {run_id}"),
+            ),
         };
         (status, Json(ErrorBody { code, message })).into_response()
+    }
+}
+
+fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
+    match error {
+        StoreError::ConversationNotFound(_) | StoreError::RunNotFound(_) => {
+            (StatusCode::NOT_FOUND, "not_found")
+        }
+        StoreError::ActiveRun(_) => (StatusCode::CONFLICT, "active_run"),
+        StoreError::InvalidStoredValue(_) | StoreError::Json(_) | StoreError::Database(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
+        }
     }
 }
 

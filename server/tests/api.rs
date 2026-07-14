@@ -4,6 +4,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
+use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router, app_router_with_static};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -19,7 +20,11 @@ fn app() -> (TempDir, Router) {
     fs::create_dir_all(&state).expect("state directory");
     let workspace =
         WorkspaceService::open(&root, state.join("kubecode.sqlite3")).expect("workspace service");
-    let router = app_router(AppState::new(Arc::new(workspace)), BASE_PATH);
+    let agent_store = AgentStore::open(state.join("kubecode.sqlite3")).expect("agent store");
+    let router = app_router(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store)),
+        BASE_PATH,
+    );
     (temp, router)
 }
 
@@ -110,6 +115,45 @@ async fn exposes_exactly_the_supported_agent_catalog_below_the_prefix() {
 }
 
 #[tokio::test]
+async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
+    let (_temp, app) = app();
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "parent":".", "name":"agent-api"}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+
+    let (status, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"codex", "title":"Implement feature"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+
+    let (status, conversations) =
+        json_request(&app, Method::GET, &conversations_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(conversations.as_array().expect("conversations").len(), 1);
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations/{conversation_id}/runs"),
+        json!({"message":"Do it", "permission_mode":"safe"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(error["code"], "agent_unavailable");
+}
+
+#[tokio::test]
 async fn creates_reads_and_revision_checks_files_over_http() {
     let (_temp, app) = app();
     let (_, project) = json_request(
@@ -182,7 +226,12 @@ async fn serves_the_spa_only_below_the_configured_base_path() {
     fs::write(static_dir.join("index.html"), "<main>Kubecode</main>").expect("index");
     let workspace = WorkspaceService::open(&root, state_dir.join("kubecode.sqlite3"))
         .expect("workspace service");
-    let app = app_router_with_static(AppState::new(Arc::new(workspace)), BASE_PATH, &static_dir);
+    let agent_store = AgentStore::open(state_dir.join("kubecode.sqlite3")).expect("agent store");
+    let app = app_router_with_static(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store)),
+        BASE_PATH,
+        &static_dir,
+    );
 
     let prefixed = app
         .clone()

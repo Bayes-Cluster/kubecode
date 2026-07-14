@@ -14,6 +14,8 @@ The active server boundary currently consists of four Rust abstractions:
 - `TerminalManager` owns reconnectable PTYs independently from browser sockets.
 - `AgentStore` persists normalized Agent sessions/events and enforces one active
   run per Project.
+- `AgentRuntime` owns CLI child processes after the initiating request returns,
+  normalizes provider JSON, and serves reconnectable event cursors/SSE.
 - `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
   probes remain unprefixed for Kubernetes.
 

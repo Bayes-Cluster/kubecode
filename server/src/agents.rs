@@ -24,7 +24,7 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentId {
     ClaudeCode,
@@ -187,6 +187,68 @@ impl AgentStore {
                 ],
             )?;
         Ok(conversation)
+    }
+
+    pub fn get_conversation(&self, conversation_id: &str) -> Result<Conversation, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database
+            .query_row(
+                "SELECT id, project_id, agent_id, provider_session_id, title
+                 FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |row| {
+                    let agent_id = row.get::<_, String>(2)?;
+                    Ok(Conversation {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
+                        provider_session_id: row.get(3)?,
+                        title: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))
+    }
+
+    pub fn list_conversations(&self, project_id: &str) -> Result<Vec<Conversation>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, project_id, agent_id, provider_session_id, title
+             FROM conversations WHERE project_id = ?1 ORDER BY created_at, id",
+        )?;
+        let rows = statement.query_map([project_id], |row| {
+            let agent_id = row.get::<_, String>(2)?;
+            Ok(Conversation {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
+                provider_session_id: row.get(3)?,
+                title: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn set_provider_session(
+        &self,
+        conversation_id: &str,
+        provider_session_id: &str,
+    ) -> Result<(), StoreError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE conversations SET provider_session_id = ?2,
+                 updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                params![conversation_id, provider_session_id],
+            )?;
+        if changed == 0 {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        Ok(())
     }
 
     pub fn start_run(
@@ -480,7 +542,7 @@ fn to_sql_conversion_error(error: StoreError) -> rusqlite::Error {
 macro_rules! string_enum {
     ($type:ty, {$($variant:path => $value:literal),+ $(,)?}) => {
         impl $type {
-            fn as_str(self) -> &'static str {
+            pub fn as_str(self) -> &'static str {
                 match self { $($variant => $value),+ }
             }
         }

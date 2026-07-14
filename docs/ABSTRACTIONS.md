@@ -38,6 +38,15 @@ server startup and exposes their path, version, availability, and diagnostic at
 `KUBECODE_OPENCODE_PATH`; authentication and model configuration remain owned
 by each CLI.
 
+`AgentRuntime` launches the selected CLI in the validated Project cwd and owns
+the child process independently of any HTTP or SSE connection. Provider JSON
+streams are normalized into the `AgentStore` event vocabulary. Run creation
+returns immediately; clients can fetch events after a sequence cursor or keep
+an SSE connection open, and an explicit cancel request terminates the child.
+Safe mode disables Claude/OpenCode shell tools and uses Codex's read-only,
+untrusted sandbox. Power mode enables project-scoped shell work without granting
+access to paths outside the Project boundary configured by Kubecode.
+
 Key abstractions and domain models in Tolaria.
 
 ## Design Philosophy
