@@ -42,7 +42,11 @@ store after a Pod restart changes any running or permission-blocked run to
 rules are always scoped to both the Project and the selected Agent.
 Session titles have two sources: `manual_title` and `agent_title`. The effective
 title is `manual_title ?? agent_title`; clearing the manual title returns control
-to ACP `session_info` updates. Session events are independent of runs so history
+to ACP `session_info` updates. An untitled Session derives a short fallback
+`agent_title` from its first non-slash prompt; a fresh import can derive the same
+fallback from its first replayed user chunk. This fallback remains replaceable
+by a later non-empty native ACP title and never overrides `manual_title`.
+Session events are independent of runs so history
 emitted by `session/load` and state updates emitted between prompts remain
 replayable.
 
@@ -107,7 +111,11 @@ primitives without retaining the old right-side AI Panel chrome. Slash-command
 suggestions, Agent plans, native mode/config selectors, fork, and provider delete
 are rendered only from retained ACP state and capabilities. Equivalent mode and
 config option sets are shown once, and every remaining selector has a visible
-label. The app passes an
+label. ACP plan entries are normalized into a status checklist with a completed
+count and collapsible body. Both Agent reasoning chunks and final response
+chunks use `MarkdownContent`; its URL transform preserves wiki links and
+sanitized KaTeX placeholders for `\(...\)`, `\[...\]`, `$...$`, and `$$...$$`
+while leaving fenced code untouched. The app passes an
 ordered bounded workspace-event window to this renderer; events received before
 their run record is available are queued and replayed in sequence, preventing
 fast slash commands and token bursts from disappearing in the live view.

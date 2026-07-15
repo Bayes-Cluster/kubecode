@@ -1174,8 +1174,14 @@ fn persist_session_update(
     update: SessionUpdate,
 ) {
     let event = match update {
-        SessionUpdate::UserMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk)
-            .map(|(_, payload)| ("user_message_delta", None, payload)),
+        SessionUpdate::UserMessageChunk(chunk) => {
+            text_event(AgentEventKind::TextDelta, chunk).map(|(_, payload)| {
+                if let Some(text) = payload.get("text").and_then(Value::as_str) {
+                    let _ = store.set_agent_title_if_untitled(conversation_id, text);
+                }
+                ("user_message_delta", None, payload)
+            })
+        }
         SessionUpdate::AgentMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk)
             .map(|(kind, payload)| ("text_delta", Some(kind), payload)),
         SessionUpdate::AgentThoughtChunk(chunk) => text_event(AgentEventKind::ThinkingDelta, chunk)
@@ -1207,13 +1213,10 @@ fn persist_session_update(
         }
         SessionUpdate::SessionInfoUpdate(info) => {
             match &info.title {
-                MaybeUndefined::Value(title) => {
+                MaybeUndefined::Value(title) if !title.trim().is_empty() => {
                     let _ = store.set_agent_title(conversation_id, Some(title));
                 }
-                MaybeUndefined::Null => {
-                    let _ = store.set_agent_title(conversation_id, None);
-                }
-                MaybeUndefined::Undefined => {}
+                MaybeUndefined::Value(_) | MaybeUndefined::Null | MaybeUndefined::Undefined => {}
             }
             serialized_update("session_info", AgentEventKind::SessionInfo, info)
         }

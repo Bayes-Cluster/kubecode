@@ -60,7 +60,9 @@ global workspace events into those snapshots. A blue pulse marks a latest
 Session run that is active; an amber marker highlights a Session waiting for
 permission/input or ending failed, timed out, or interrupted. Permission and
 elicitation requests persist their waiting state so the same signal survives a
-browser reconnect.
+browser reconnect. The selected Session header uses the same blue-running and
+amber-waiting semantics, while the Project marker remains an aggregate across
+all of that Project's Sessions.
 
 New Session can either create an Agent-native session or list and load native
 sessions for the current Project. Native list/load/resume/fork/delete controls and
@@ -70,7 +72,10 @@ imports its ACP history into the Session event timeline without translating it
 through a private CLI protocol. A fresh import deliberately uses `session/load`
 when supported so history notifications are captured; established local
 Sessions use `session/resume` to avoid replaying stored history. Manual titles override Agent title updates until
-the user explicitly returns title control to the Agent.
+the user explicitly returns title control to the Agent. When neither source has
+a title, the first non-command user request—or the first replayed user message
+from an import—provides a bounded fallback title. A later native ACP title may
+replace that fallback without overriding a manual title.
 
 The composer has no Kubecode-owned Safe/Power selector. It displays only
 Agent-advertised modes and configuration, labels distinct controls explicitly,
@@ -78,6 +83,9 @@ and removes duplicate representations of the same option set. ACP permission
 requests retain the Agent's original choices and wait for the user's selection;
 the runtime never auto-selects an allow or reject option. The persisted run
 permission column is legacy compatibility data rather than runtime policy.
+Structured ACP plans render as collapsible progress checklists rather than raw
+protocol JSON. Agent response and reasoning text share the Markdown renderer,
+including sanitized KaTeX output for inline and display LaTeX delimiters.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
 Rust server, pinned Claude Code, Codex, and OpenCode CLIs, and pinned official

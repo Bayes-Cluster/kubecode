@@ -120,12 +120,7 @@ done"#,
         }],
     );
     let conversation = store
-        .create_imported_conversation(
-            &project.id,
-            AgentId::OpenCode,
-            "provider-session",
-            Some("Imported session"),
-        )
+        .create_imported_conversation(&project.id, AgentId::OpenCode, "provider-session", None)
         .expect("imported conversation");
 
     runtime
@@ -142,6 +137,13 @@ done"#,
     assert!(events.iter().any(|event| {
         event.kind == "text_delta" && event.payload["text"] == "Earlier response"
     }));
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("imported title")
+            .title,
+        "Earlier request"
+    );
 }
 
 #[tokio::test]

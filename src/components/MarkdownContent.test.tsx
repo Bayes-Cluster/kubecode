@@ -102,6 +102,19 @@ describe('MarkdownContent', () => {
     expect(container.querySelector('li')).toBeTruthy()
   })
 
+  it('renders inline and display LaTeX with KaTeX', () => {
+    const { container } = render(
+      <MarkdownContent content={'Inline \\(x^2\\)\n\n\\[f(x)=x^2\\]'} />,
+    )
+    expect(container.querySelector('.ai-math-inline .katex')).toBeInTheDocument()
+    expect(container.querySelector('.ai-math-display .katex-display')).toBeInTheDocument()
+  })
+
+  it('keeps malformed math links from breaking the message renderer', () => {
+    render(<MarkdownContent content="[invalid formula](math-inline:%ZZ)" />)
+    expect(screen.getByRole('link', { name: 'invalid formula' })).toBeInTheDocument()
+  })
+
   it('wraps content in .ai-markdown container', () => {
     const { container } = render(<MarkdownContent content="Hello" />)
     expect(container.querySelector('.ai-markdown')).toBeTruthy()

@@ -135,11 +135,11 @@ function ReasoningBlock({ locale, text, expanded, onToggle }: {
       {expanded && (
         <div
           ref={contentRef}
-          className="text-muted-foreground"
+          className="ai-reasoning-markdown text-muted-foreground"
           style={{ fontSize: 12, lineHeight: 1.5, padding: '4px 0 4px 20px', maxHeight: 200, overflowY: 'auto' }}
           data-testid="reasoning-content"
         >
-          {text}
+          <MarkdownContent content={text} />
         </div>
       )}
     </div>

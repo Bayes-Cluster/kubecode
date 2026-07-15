@@ -177,6 +177,45 @@ describe('AgentSessionWorkspace', () => {
     })
   })
 
+  it('renders ACP plans as a progress checklist instead of raw JSON', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        plan: {
+          entries: [
+            { content: 'Inspect the workspace', priority: 'medium', status: 'completed' },
+            { content: 'Implement the fix', priority: 'high', status: 'in_progress' },
+            { content: 'Run verification', priority: 'low', status: 'pending' },
+          ],
+        },
+      }),
+    } as unknown as KubecodeApi
+
+    const { container } = render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByRole('button', { name: /Hide Agent plan/ })).toBeInTheDocument()
+    expect(screen.getByText('Inspect the workspace')).toBeInTheDocument()
+    expect(screen.getByText('Implement the fix')).toBeInTheDocument()
+    expect(screen.getByText('Run verification')).toBeInTheDocument()
+    expect(container.querySelectorAll('.kubecode-session-plan-entry')).toHaveLength(3)
+    expect(container.querySelector('.kubecode-session-plan-entry[data-status="completed"]')).toBeTruthy()
+    expect(container.querySelector('pre')).not.toBeInTheDocument()
+  })
+
   it('does not render ACP state events as an empty imported message', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
@@ -338,7 +377,7 @@ describe('AgentSessionWorkspace', () => {
       resolvePermission: vi.fn().mockResolvedValue(undefined),
     } as unknown as KubecodeApi
 
-    render(
+    const { container } = render(
       <AgentSessionWorkspace
         agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
         api={api}
@@ -351,6 +390,9 @@ describe('AgentSessionWorkspace', () => {
     )
 
     expect(await screen.findByText('Write file')).toBeInTheDocument()
+    const status = container.querySelector('.kubecode-session-status')
+    expect(status).toHaveTextContent('Permission required')
+    expect(status?.querySelector('[data-state]')).toHaveAttribute('data-state', 'stuck')
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-restored', 'allow')

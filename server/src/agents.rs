@@ -353,6 +353,38 @@ impl AgentStore {
         self.set_conversation_title(conversation_id, "agent_title", normalized_title(title))
     }
 
+    pub fn set_agent_title_if_untitled(
+        &self,
+        conversation_id: &str,
+        source: &str,
+    ) -> Result<Option<Conversation>, StoreError> {
+        let Some(title) = fallback_conversation_title(source) else {
+            return Ok(None);
+        };
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE conversations SET agent_title = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND manual_title IS NULL AND agent_title IS NULL",
+                params![conversation_id, title],
+            )?;
+        if changed == 0 {
+            self.get_conversation(conversation_id)?;
+            return Ok(None);
+        }
+        let conversation = self.get_conversation(conversation_id)?;
+        self.append_workspace_event(
+            "session_updated",
+            Some(&conversation.project_id),
+            Some(conversation_id),
+            None,
+            &json!({"title":conversation.title}),
+        )?;
+        Ok(Some(conversation))
+    }
+
     pub fn delete_conversation(&self, conversation_id: &str) -> Result<(), StoreError> {
         let conversation = self.get_conversation(conversation_id)?;
         self.database
@@ -509,6 +541,7 @@ impl AgentStore {
         )?;
         transaction.commit()?;
         drop(database);
+        self.set_agent_title_if_untitled(conversation_id, message)?;
         self.append_session_event(
             conversation_id,
             "user_message",
@@ -954,6 +987,48 @@ fn normalized_title(title: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn fallback_conversation_title(source: &str) -> Option<String> {
+    const MAX_WORDS: usize = 4;
+    const MAX_CHARS: usize = 48;
+    const STOP_WORDS: &[&str] = &[
+        "a", "an", "can", "could", "for", "help", "me", "please", "the", "to", "would", "you",
+    ];
+
+    let line = source.lines().find(|line| !line.trim().is_empty())?.trim();
+    if line.starts_with('/') {
+        return None;
+    }
+    let words = line
+        .split_whitespace()
+        .map(|word| word.trim_matches(|character: char| !character.is_alphanumeric()))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let meaningful = words
+        .iter()
+        .copied()
+        .filter(|word| !STOP_WORDS.contains(&word.to_ascii_lowercase().as_str()))
+        .collect::<Vec<_>>();
+    let selected = if meaningful.is_empty() {
+        &words
+    } else {
+        &meaningful
+    };
+    let mut title = selected
+        .iter()
+        .take(MAX_WORDS)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_CHARS)
+        .collect::<String>();
+    let first = title.chars().next()?;
+    if first.is_lowercase() {
+        title.replace_range(0..first.len_utf8(), &first.to_uppercase().to_string());
+    }
+    Some(title)
 }
 
 fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {

@@ -74,6 +74,11 @@ describe('AiMessage', () => {
     expect(screen.getByText('Thinking about it...')).toBeTruthy()
   })
 
+  it('renders reasoning through the markdown renderer', () => {
+    render(<AiMessage userMessage="Ask" reasoning="**Thinking** with \\(x^2\\)" reasoningDone={false} actions={[]} />)
+    expect(screen.getByTestId('reasoning-content').querySelector('[data-testid="markdown-content"]')).toBeTruthy()
+  })
+
   it('auto-collapses reasoning when reasoningDone=true', () => {
     render(<AiMessage userMessage="Ask" reasoning="Thinking..." reasoningDone actions={[]} />)
     expect(screen.getByTestId('reasoning-toggle')).toBeTruthy()

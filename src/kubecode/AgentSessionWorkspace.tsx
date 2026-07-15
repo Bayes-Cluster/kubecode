@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DotsThree, ShieldWarning } from '@phosphor-icons/react'
+import { CaretDown, Check, DotsThree, ShieldWarning } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChrome'
@@ -64,6 +64,11 @@ type PendingElicitation = {
   properties: ElicitationProperty[]
   requestId: string
 }
+type SessionPlanEntry = {
+  content: string
+  priority: string
+  status: 'completed' | 'in_progress' | 'pending'
+}
 
 type AgentSessionWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -119,7 +124,7 @@ export function AgentSessionWorkspace({
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
-  const [planOpen, setPlanOpen] = useState(false)
+  const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [providerDeleteOpen, setProviderDeleteOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -133,6 +138,9 @@ export function AgentSessionWorkspace({
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
+  const waitingForInput = run?.status === 'waiting_permission'
+    || pendingPermission !== null
+    || pendingElicitation !== null
 
   const attachRun = useCallback((nextRun: AgentRun) => {
     knownRunIdsRef.current.add(nextRun.id)
@@ -332,6 +340,8 @@ export function AgentSessionWorkspace({
     : []
   const nativeMode = sessionMode(sessionState)
   const configSelects = distinctSessionConfigSelects(nativeMode, sessionConfigSelects(sessionState))
+  const planEntries = sessionPlanEntries(sessionState?.plan)
+  const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   const refreshSessionState = async () => {
     setSessionState(await api.getSessionState(conversation.id))
@@ -344,8 +354,10 @@ export function AgentSessionWorkspace({
           <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
         </div>
         <div className="kubecode-session-status">
-          <span data-state={active ? 'running' : 'idle'} />
-          {active ? t('kubecode.running') : t('kubecode.ready')}
+          <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
+          {waitingForInput
+            ? t(pendingElicitation ? 'kubecode.answerAgentQuestion' : 'kubecode.permissionRequired')
+            : active ? t('kubecode.running') : t('kubecode.ready')}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
@@ -478,12 +490,36 @@ export function AgentSessionWorkspace({
           </div>
         </div>
       )}
-      {sessionState?.plan && (
+      {planEntries.length > 0 && (
         <div className="kubecode-session-plan">
-          <Button size="sm" variant="ghost" onClick={() => setPlanOpen((open) => !open)}>
-            {planOpen ? t('kubecode.hideAgentPlan') : t('kubecode.showAgentPlan')}
+          <Button
+            aria-expanded={planOpen}
+            className="kubecode-session-plan-trigger"
+            size="sm"
+            variant="ghost"
+            onClick={() => setPlanOpen((open) => !open)}
+          >
+            <span>{completedPlanEntries} / {planEntries.length}</span>
+            <span>{planOpen ? t('kubecode.hideAgentPlan') : t('kubecode.showAgentPlan')}</span>
+            <CaretDown data-open={planOpen} />
           </Button>
-          {planOpen && <pre>{JSON.stringify(sessionState.plan, null, 2)}</pre>}
+          {planOpen && (
+            <ol className="kubecode-session-plan-list">
+              {planEntries.map((entry, index) => (
+                <li
+                  className="kubecode-session-plan-entry"
+                  data-priority={entry.priority}
+                  data-status={entry.status}
+                  key={`${index}-${entry.content}`}
+                >
+                  <span className="kubecode-session-plan-state" aria-hidden="true">
+                    {entry.status === 'completed' && <Check weight="bold" />}
+                  </span>
+                  <span>{entry.content}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
       <div className="kubecode-session-composer">
@@ -728,6 +764,35 @@ function sessionConfigSelects(state: AgentSessionState | null): SessionSelect[] 
     if (!id || !name || !currentValue || options.length === 0) return []
     return [{ id, name, currentValue, options }]
   })
+}
+
+function sessionPlanEntries(plan: Record<string, unknown> | null | undefined): SessionPlanEntry[] {
+  if (!plan) return []
+  const nestedPlan = objectValue(plan.plan)
+  const values = arrayValue(plan.entries)
+    ?? arrayValue(nestedPlan?.entries)
+    ?? arrayValue(objectValue(plan.items)?.entries)
+  if (!values) return []
+  return values.flatMap((value) => {
+    const entry = objectValue(value)
+    const content = textValue(entry?.content)
+    if (!content) return []
+    return [{
+      content,
+      priority: textValue(entry?.priority) || 'medium',
+      status: planEntryStatus(textValue(entry?.status)),
+    }]
+  })
+}
+
+function planEntryStatus(status: string): SessionPlanEntry['status'] {
+  if (status === 'completed') return 'completed'
+  if (status === 'in_progress' || status === 'inProgress') return 'in_progress'
+  return 'pending'
+}
+
+function arrayValue(value: unknown): unknown[] | null {
+  return Array.isArray(value) ? value : null
 }
 
 function distinctSessionConfigSelects(

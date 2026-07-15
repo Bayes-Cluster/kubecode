@@ -534,6 +534,27 @@
 
 .ai-markdown p { margin: 0.5em 0; }
 
+.ai-reasoning-markdown .ai-markdown {
+  color: inherit;
+  font-size: inherit;
+}
+
+.ai-math-inline {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: middle;
+}
+
+.ai-math-display {
+  display: block;
+  margin: 0.75em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.15em 0;
+  text-align: center;
+}
+
 .ai-markdown strong { font-weight: 600; }
 
 .ai-markdown h1,

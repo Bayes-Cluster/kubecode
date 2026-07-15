@@ -249,6 +249,64 @@ fn manual_titles_override_agent_titles_and_can_return_to_agent_control() {
 }
 
 #[test]
+fn untitled_sessions_receive_a_short_fallback_title_without_overriding_manual_titles() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("untitled conversation");
+
+    store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Please implement OAuth login flow for the dashboard",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("generated title")
+            .agent_title
+            .as_deref(),
+        Some("Implement OAuth login flow")
+    );
+
+    let manually_named = store
+        .create_conversation("project", AgentId::ClaudeCode, Some("Release work"))
+        .expect("manually named conversation");
+    store
+        .set_agent_title_if_untitled(&manually_named.id, "Replace this title")
+        .expect("fallback ignored");
+    assert_eq!(
+        store
+            .get_conversation(&manually_named.id)
+            .expect("manual title preserved")
+            .title,
+        "Release work"
+    );
+}
+
+#[test]
+fn imported_sessions_can_derive_a_title_from_replayed_history() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_imported_conversation("project", AgentId::Codex, "provider-untitled", None)
+        .expect("untitled import");
+
+    store
+        .set_agent_title_if_untitled(&conversation.id, "修复导入会话历史为空的问题")
+        .expect("history title");
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("generated import title")
+            .title,
+        "修复导入会话历史为空的问题"
+    );
+}
+
+#[test]
 fn imports_and_removes_provider_sessions_locally() {
     let (_temp, store) = store();
     let conversation = store
