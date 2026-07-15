@@ -65,8 +65,8 @@ done"#,
 
     let run = runtime
         .start(StartAgentRun {
-            conversation_id: conversation.id,
-            project_id: project.id,
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
             message: "Do the work".into(),
             permission_mode: PermissionMode::Safe,
         })
@@ -98,4 +98,25 @@ done"#,
         events.last().expect("terminal event").kind,
         AgentEventKind::RunCompleted
     );
+
+    let second = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Continue in the same ACP session".into(),
+            permission_mode: PermissionMode::Safe,
+        })
+        .expect("start second run");
+    let second_completed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let current = store.get_run(&second.id).expect("second run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("second run completion");
+    assert_eq!(second_completed.status, RunStatus::Completed);
 }

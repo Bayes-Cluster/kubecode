@@ -7,13 +7,14 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
     : requested.href.replace(/\/$/, '')
   await page.goto(workspaceUrl)
 
-  await expect(page.locator('.kubecode-brand')).toContainText('Kubecode')
+  await expect(page.getByRole('navigation', { name: 'Projects' })).toBeVisible()
   await page.getByRole('button', { name: 'Add project' }).click()
   await page.getByRole('textbox', { name: 'Project name' }).fill('playwright-project')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.getByRole('button', { name: 'playwright-project' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'New file' }).first().click()
+  await page.getByRole('tab', { name: 'Files' }).click()
+  await page.getByRole('button', { name: 'New file' }).click()
   await page.getByRole('textbox', { name: 'Relative path' }).fill('main.py')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await page.getByRole('button', { name: 'main.py' }).click()
@@ -34,6 +35,7 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
     opencode: 'OpenCode',
   } as const
 
+  await page.getByRole('button', { name: 'New session' }).click()
   const agentSelector = page.getByRole('combobox', { name: 'Agent' })
   await expect(agentSelector.locator('img')).toHaveCount(1)
   await agentSelector.click()
@@ -44,6 +46,7 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
     if (agent.available) await expect(option).not.toHaveAttribute('data-disabled')
     else await expect(option).toHaveAttribute('data-disabled')
   }
+  await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'New terminal' }).click()

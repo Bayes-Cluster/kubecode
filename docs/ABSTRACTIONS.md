@@ -25,11 +25,12 @@ Pod termination ends it. Every PTY has a `regular`, `claude_code`, `codex`, or
 fail closed when their binary is unavailable. The default limit is eight
 terminals per Project.
 
-`AgentStore` owns durable conversation, run, normalized event, and saved
-permission-rule metadata in the same Kubecode SQLite database. It enforces one
-active run per Project while allowing different Projects to execute in
-parallel. Every run event receives a monotonically increasing sequence number
-so SSE clients can reconnect from a cursor without losing output. Opening the
+`AgentStore` owns durable Session, prompt-bearing run, normalized event, global
+workspace-event, and saved permission-rule metadata in the same Kubecode SQLite
+database. It enforces one active run per Session while allowing Sessions in the
+same Project to execute in parallel. Every run event and global workspace event
+receives a monotonically increasing sequence number so the single browser SSE
+can reconnect from a cursor without losing output. Opening the
 store after a Pod restart changes any running or permission-blocked run to
 `interrupted` and appends a terminal `run_completed` event. Saved permission
 rules are always scoped to both the Project and the selected Agent.
@@ -44,34 +45,47 @@ PATH, login-shell PATH, and Tolaria-compatible local toolchain locations such as
 Homebrew. Authentication and model configuration remain owned by each CLI.
 
 `AgentRuntime` launches the selected ACP endpoint in the validated Project cwd
-and owns the adapter process independently of any HTTP or SSE connection. It
+and owns it through a Session actor independently of any HTTP or SSE connection. It
 uses the official Rust ACP SDK for initialization, session load/create, prompt,
 stream updates, permissions, and cancellation. Claude and Codex use pinned
 official adapters. Their adapter paths are resolved separately and receive the
 discovered CLI path, preserving the CLI's authentication and configuration.
-OpenCode uses its native `acp` subcommand. ACP session IDs are stored on
-conversations, while typed protocol updates are normalized into the
-`AgentStore` event vocabulary. Safe mode selects a reject permission option and
-Power mode selects an allow option; authentication and model configuration stay
-inside the external agent.
+OpenCode uses its native `acp` subcommand. One actor serializes prompts for one
+Session while actors for different Sessions run concurrently. Actors remain
+connected between turns and stop after thirty idle minutes; the next turn uses
+`session/load`. ACP session IDs are stored with Sessions, while typed protocol
+updates are normalized into the `AgentStore` event vocabulary. Safe mode emits
+a pending permission event and waits for the user's ACP option; Power mode
+selects an allow option. Authentication and model configuration stay inside the
+external agent.
+
+`GitService` is the local Source Control boundary. It always resolves a Project
+through `WorkspaceService`, rejects absolute/traversing path arguments, starts
+`git` without a shell, and disables terminal prompting. The browser Review tab
+uses its status and diff snapshots and exposes explicit init, stage, unstage,
+discard, and commit mutations. Remote and branch workflows remain out of scope.
 
 `KubecodeApi` is the browser's only server boundary. It encodes Project IDs and
 relative file paths independently, preserves structured API errors, and derives
 HTTP and WebSocket endpoints from the active Notebook pathname. UI components
 do not assemble absolute backend URLs themselves.
 
-`AgentPanel` is the renderer adapter between Kubecode's normalized SSE event
-vocabulary and Tolaria's existing AI presentation components. It converts text,
-reasoning, tool lifecycle, completion, and error events into `AiAgentMessage`
-records consumed by `AiPanelMessageHistory`; `AiPanelHeader` and
-`AiPanelComposer` retain the existing new-chat, close, permission-mode, stop,
-and send interactions. Agent selection remains a Kubecode-specific composer
-control and only offers Claude Code, Codex, and OpenCode discovery results.
+`AgentSessionWorkspace` is the primary renderer surface. It hydrates all stored
+runs for the selected Session, folds the global event stream into
+`AiAgentMessage` records, renders ACP permission choices above the composer, and
+keeps the Session's Agent immutable. It reuses proven Tolaria message/composer
+primitives without retaining the old right-side AI Panel chrome.
 
-The workbench owns its left and right rail widths in `KubecodeApp`. Shared
+`ContextWorkbench` owns the right-side Review, Files, Editor, and Diff tabs.
+Review is the default tab, while CodeMirror opens beside the Session and shares
+the same Terminal row. Filesystem and Git workspace events invalidate its
+snapshots without opening additional EventSource connections.
+
+The workbench owns its Session sidebar, context pane, and Terminal dimensions in
+`KubecodeApp`. Shared
 `ResizeHandle` instances apply pointer deltas at animation-frame cadence while
 keeping the latest callback in a ref, so React rerenders do not cancel an active
-drag frame. Project/file, AI, and editor/Terminal dimensions retain only a small
+drag frame. Session, context, and Terminal dimensions retain only a small
 usable minimum; their maximums are calculated from the live workbench rather
 than fixed pixel ranges or panel ratios. The right-hand and Terminal deltas are
 inverted because their handles resize from the panels' leading edges.
@@ -83,8 +97,9 @@ active leaf without destroying its server PTY; closing a leaf collapses its
 parent split.
 
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
-`kubecode_terminal_created`, `kubecode_terminal_closed`, and
-`kubecode_agent_run_started`. Event properties
+`kubecode_terminal_created`, `kubecode_terminal_closed`,
+`kubecode_session_created`, `kubecode_agent_run_started`, and
+`kubecode_git_action_used`. Event properties
 contain only action modes, Agent IDs, and permission modes; Project names,
 paths, prompts, terminal contents, and file contents are never included.
 

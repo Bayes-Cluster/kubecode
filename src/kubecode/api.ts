@@ -29,6 +29,7 @@ export type AgentRun = {
   id: string
   conversation_id: string
   project_id: string
+  message: string
   status: RunStatus
   permission_mode: 'safe' | 'power'
   error: string | null
@@ -40,6 +41,26 @@ export type AgentEvent = {
   payload: Record<string, unknown>
   created_at: string
 }
+export type WorkspaceEvent = {
+  id: number
+  kind: string
+  project_id: string | null
+  conversation_id: string | null
+  run_id: string | null
+  payload: Record<string, unknown>
+  created_at: string
+}
+export type GitFileChange = {
+  path: string
+  index_status: string | null
+  worktree_status: string | null
+}
+export type GitStatus = {
+  is_repository: boolean
+  branch: string | null
+  files: GitFileChange[]
+}
+export type GitMutation = 'stage' | 'unstage' | 'discard'
 export type TerminalInfo = {
   id: string
   project_id: string
@@ -134,16 +155,44 @@ export class KubecodeApi {
     })
   }
 
+  gitStatus(projectId: string): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/status`)
+  }
+
+  initializeGit(projectId: string): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/init`, { method: 'POST' })
+  }
+
+  gitDiff(projectId: string, path: string, staged: boolean): Promise<string> {
+    return this.request<{ diff: string }>(
+      `${this.projectPath(projectId)}/git/diff?${query({ path, staged: staged ? 1 : 0 })}`,
+    ).then((result) => result.diff)
+  }
+
+  mutateGit(projectId: string, action: GitMutation, paths: string[]): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/mutate`, {
+      method: 'POST',
+      body: JSON.stringify({ action, paths }),
+    })
+  }
+
+  commitGit(projectId: string, message: string): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/commit`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    })
+  }
+
   listAgents(): Promise<AgentDescriptor[]> {
     return this.request('/agents')
   }
 
   listConversations(projectId: string): Promise<Conversation[]> {
-    return this.request(`${this.projectPath(projectId)}/conversations`)
+    return this.request(`${this.projectPath(projectId)}/sessions`)
   }
 
   createConversation(projectId: string, agentId: AgentId, title?: string): Promise<Conversation> {
-    return this.request(`${this.projectPath(projectId)}/conversations`, {
+    return this.request(`${this.projectPath(projectId)}/sessions`, {
       method: 'POST',
       body: JSON.stringify({ agent_id: agentId, title: title || undefined }),
     })
@@ -156,12 +205,16 @@ export class KubecodeApi {
     permissionMode: 'safe' | 'power',
   ): Promise<AgentRun> {
     return this.request(
-      `${this.projectPath(projectId)}/conversations/${encodeURIComponent(conversationId)}/runs`,
+      `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/runs`,
       {
         method: 'POST',
         body: JSON.stringify({ message, permission_mode: permissionMode }),
       },
     )
+  }
+
+  listRuns(conversationId: string): Promise<AgentRun[]> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/runs`)
   }
 
   getRun(runId: string): Promise<AgentRun> {
@@ -176,8 +229,19 @@ export class KubecodeApi {
     return `${this.basePath}/runs/${encodeURIComponent(runId)}/events/stream?${query({ after })}`
   }
 
+  workspaceEventStreamUrl(after = 0): string {
+    return `${this.basePath}/events?${query({ after })}`
+  }
+
   cancelRun(runId: string): Promise<void> {
     return this.request(`/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
+  }
+
+  resolvePermission(requestId: string, optionId: string): Promise<void> {
+    return this.request(`/permissions/${encodeURIComponent(requestId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ option_id: optionId }),
+    })
   }
 
   listTerminals(projectId: string): Promise<TerminalInfo[]> {

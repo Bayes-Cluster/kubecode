@@ -1,11 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from './App'
 import type { KubecodeApi } from './api'
 
 describe('Kubecode workspace', () => {
-  it('shows registered projects and keeps the empty editor actionable', async () => {
+  beforeEach(() => localStorage.clear())
+
+  it('uses project and session navigation with the agent session as the primary workspace', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: 'demo' },
@@ -14,16 +16,20 @@ describe('Kubecode workspace', () => {
       listEntries: vi.fn().mockResolvedValue([]),
       listTerminals: vi.fn().mockResolvedValue([]),
       listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
-    expect(screen.getByText('Select a file to start editing')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'New file' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'New session' })).toBeInTheDocument()
+    expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Review' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.queryByText('Select a file to start editing')).not.toBeInTheDocument()
   })
 
-  it('keeps the Tolaria AI chrome and lets both sidebars resize', async () => {
+  it('creates sessions only from available agents and resizes session, context, and terminal panes', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: 'demo' },
@@ -36,15 +42,13 @@ describe('Kubecode workspace', () => {
       listEntries: vi.fn().mockResolvedValue([]),
       listTerminals: vi.fn().mockResolvedValue([]),
       listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    expect(await screen.findByTestId('ai-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('ai-permission-mode-toggle')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'Safe' })).toBeInTheDocument()
-    expect(screen.queryByRole('radio', { name: 'Vault Safe' })).not.toBeInTheDocument()
-    expect(document.querySelectorAll('img[src="./ai-agent-icons/codex.svg"]').length)
-      .toBeGreaterThanOrEqual(2)
+    expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
+    expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }))
     const claudeOption = screen.getByRole('option', { name: /Claude Code/ })
     expect(claudeOption).toBeInTheDocument()
@@ -52,24 +56,26 @@ describe('Kubecode workspace', () => {
     expect(document.querySelector('img[src="./ai-agent-icons/claude-code.svg"]')).toBeInTheDocument()
     expect(document.querySelector('img[src="./ai-agent-icons/opencode.svg"]')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.keyDown(document, { key: 'Escape' })
     const handles = container.querySelectorAll('.cursor-col-resize')
     expect(handles).toHaveLength(2)
     const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement
     expect(terminalHandle).toBeInTheDocument()
 
-    const sidebar = container.querySelector('.kubecode-sidebar') as HTMLElement
-    expect(sidebar.style.width).toBe('240px')
-    fireEvent.mouseDown(handles[0], { clientX: 240 })
-    fireEvent.mouseMove(document, { clientX: 280 })
-    fireEvent.mouseUp(document)
+    const sidebar = container.querySelector('.kubecode-session-sidebar') as HTMLElement
     expect(sidebar.style.width).toBe('280px')
+    fireEvent.mouseDown(handles[0], { clientX: 328 })
+    fireEvent.mouseMove(document, { clientX: 368 })
+    fireEvent.mouseUp(document)
+    expect(sidebar.style.width).toBe('320px')
 
-    const agentPanel = screen.getByTestId('ai-panel')
-    expect(agentPanel.style.width).toBe('340px')
+    const contextPane = screen.getByTestId('context-workbench')
+    expect(contextPane.style.width).toBe('440px')
     fireEvent.mouseDown(handles[1], { clientX: 1100 })
     fireEvent.mouseMove(document, { clientX: 1060 })
     fireEvent.mouseUp(document)
-    expect(agentPanel.style.width).toBe('380px')
+    expect(contextPane.style.width).toBe('480px')
 
     const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
     expect(terminalPane.style.height).toBe('260px')
@@ -78,9 +84,31 @@ describe('Kubecode workspace', () => {
     fireEvent.mouseUp(document)
     expect(terminalPane.style.height).toBe('300px')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close AI panel' }))
-    expect(screen.queryByTestId('ai-panel')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'AI Agent' }))
-    expect(screen.getByTestId('ai-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-session-workspace')).toBeVisible()
+  })
+
+  it('restores the saved pane layout for a project', async () => {
+    localStorage.setItem('kubecode:layout:project-1', JSON.stringify({
+      contextOpen: true,
+      contextWidth: 612,
+      sessionSidebarOpen: true,
+      sessionSidebarWidth: 357,
+      terminalHeight: 389,
+      terminalOpen: true,
+    }))
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: 'demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const { container } = render(<KubecodeApp api={api} />)
+
+    expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
+    expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('357px')
+    expect(screen.getByTestId('context-workbench').style.width).toBe('612px')
+    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
   })
 })

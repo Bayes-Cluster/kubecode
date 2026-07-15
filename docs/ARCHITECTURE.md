@@ -7,35 +7,40 @@
 > metadata. The Tolaria architecture remains below as migration context until
 > each corresponding desktop subsystem is retired.
 
-The active server boundary currently consists of four Rust abstractions:
+The active server boundary currently consists of five Rust abstractions:
 
 - `WorkspaceService` validates all Project and file paths below
   `PERSISTENT_DIR`.
 - `TerminalManager` owns reconnectable PTYs independently from browser sockets.
-- `AgentStore` persists normalized Agent sessions/events and enforces one active
-  run per Project.
-- `AgentRuntime` is an ACP client that owns adapter child processes after the
-  initiating request returns. It resolves pinned Claude/Codex adapters from
+- `AgentStore` persists Agent sessions, prompt-bearing runs, normalized events,
+  and the global cursor-based workspace event log. It enforces one active run
+  per Session while allowing Sessions to execute concurrently.
+- `AgentRuntime` owns one long-lived ACP actor per active Session. The actor
+  processes prompts serially, stays alive across turns, and exits after thirty
+  idle minutes; a later turn reloads the persisted provider Session. It resolves
+  pinned Claude/Codex adapters from
   explicit overrides, project-local package binaries, or `PATH`, then passes
   the discovered CLI path through `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`. It
-  normalizes protocol updates and serves reconnectable event cursors/SSE.
+  normalizes protocol updates, pauses Safe-mode requests for browser permission
+  decisions, and serves reconnectable event cursors through the global SSE.
+- `GitService` provides Project-scoped local status, diff, stage, unstage,
+  discard, init, and commit operations without shell interpolation.
 - `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
   probes remain unprefixed for Kubernetes.
 
-The active React entry point is `src/kubecode/App.tsx`. Its left rail owns
-Project and file navigation, the center column owns CodeMirror and reconnectable
-xterm terminal trees, and the right rail owns normalized Agent conversations. A
-terminal leaf can be a regular shell or the native Claude Code, Codex, or
-OpenCode TUI; split-right and split-down create independent PTYs. The shell
-uses SideX's IDE-region model and Zed's compact visual hierarchy while retaining
-Tolaria's AI header, permission toggle, transcript, tool cards, composer, and
-Phosphor icon language. Both side rails are separated from the editor by
-`ResizeHandle`; widths are clamped so dragging cannot collapse the working area,
-the editor/terminal split uses the same frame-synchronized handle on its vertical
-axis, and the AI rail can be closed and reopened from the title bar. Bounds are
-derived from the live workbench dimensions rather than a fixed panel ratio.
-Browser code uses `KubecodeApi`, which derives every HTTP and WebSocket route
-from the current Kubeflow Notebook prefix.
+The active React entry point is `src/kubecode/App.tsx`. Its structure follows
+OpenCode Web: a fixed Project rail, a resizable Session sidebar, the primary
+Agent Session timeline/composer, a tabbed Review/Files/CodeMirror context pane,
+and a Terminal row spanning the Session and context columns. Files opened from
+the tree or Review stay in the right context pane, so editing never replaces the
+Session. A terminal leaf can be a regular shell or the native Claude Code,
+Codex, or OpenCode TUI; split-right and split-down create independent PTYs.
+`ResizeHandle` updates all movable boundaries at animation-frame cadence, and
+only small usability minimums constrain the otherwise free dimensions. Browser
+code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from
+the current Kubeflow Notebook prefix. One global workspace SSE multiplexes
+Agent, file, Git, and Terminal metadata; PTY byte streams retain dedicated
+WebSockets.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
 Rust server, pinned Claude Code, Codex, and OpenCode CLIs, and pinned official

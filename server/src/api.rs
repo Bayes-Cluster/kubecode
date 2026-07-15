@@ -7,7 +7,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get};
@@ -17,7 +17,10 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
-use crate::agents::{AgentEvent, AgentId, AgentStore, PermissionMode, RunStatus, StoreError};
+use crate::agents::{
+    AgentEvent, AgentId, AgentStore, PermissionMode, RunStatus, StoreError, WorkspaceEvent,
+};
+use crate::git::{GitError, GitMutation, GitService};
 use crate::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalSnapshot};
 use crate::workspace::{EntryKind, WorkspaceError, WorkspaceService};
 
@@ -29,6 +32,7 @@ pub struct AppState {
     pub terminals: Arc<TerminalManager>,
     pub agents: Arc<Vec<AgentDescriptor>>,
     pub agent_runtime: Arc<AgentRuntime>,
+    pub git: Arc<GitService>,
 }
 
 impl AppState {
@@ -39,6 +43,7 @@ impl AppState {
             2 * 1024 * 1024,
         ));
         let agents = supported_agents_unavailable();
+        let git = Arc::new(GitService::new(Arc::clone(&workspace)));
         let agent_runtime = Arc::new(AgentRuntime::new(
             Arc::clone(&workspace),
             agent_store,
@@ -49,6 +54,7 @@ impl AppState {
             terminals,
             agents: Arc::new(agents),
             agent_runtime,
+            git,
         }
     }
 
@@ -92,9 +98,14 @@ pub fn app_router_with_static(
 fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/agents", get(list_agents))
+        .route("/events", get(stream_workspace_events))
         .route("/projects", get(list_projects).post(create_project))
         .route(
             "/projects/{project_id}/conversations",
+            get(list_conversations).post(create_conversation),
+        )
+        .route(
+            "/projects/{project_id}/sessions",
             get(list_conversations).post(create_conversation),
         )
         .route(
@@ -102,12 +113,42 @@ fn api_router(state: AppState) -> Router {
             axum::routing::post(start_agent_run),
         )
         .route(
+            "/projects/{project_id}/sessions/{conversation_id}/runs",
+            axum::routing::post(start_agent_run),
+        )
+        .route(
+            "/conversations/{conversation_id}/runs",
+            get(list_conversation_runs),
+        )
+        .route(
+            "/sessions/{conversation_id}/runs",
+            get(list_conversation_runs),
+        )
+        .route(
             "/runs/{run_id}",
             get(get_agent_run).delete(cancel_agent_run),
         )
         .route("/runs/{run_id}/events", get(list_agent_events))
         .route("/runs/{run_id}/events/stream", get(stream_agent_events))
+        .route(
+            "/permissions/{request_id}",
+            axum::routing::post(resolve_permission),
+        )
         .route("/projects/{project_id}", delete(unregister_project))
+        .route("/projects/{project_id}/git/status", get(git_status))
+        .route(
+            "/projects/{project_id}/git/init",
+            axum::routing::post(git_initialize),
+        )
+        .route("/projects/{project_id}/git/diff", get(git_diff))
+        .route(
+            "/projects/{project_id}/git/mutate",
+            axum::routing::post(git_mutate),
+        )
+        .route(
+            "/projects/{project_id}/git/commit",
+            axum::routing::post(git_commit),
+        )
         .route(
             "/projects/{project_id}/terminals",
             get(list_terminals).post(create_terminal),
@@ -198,6 +239,15 @@ async fn get_agent_run(
     Ok(Json(state.agent_runtime.store().get_run(&run_id)?))
 }
 
+async fn list_conversation_runs(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(
+        state.agent_runtime.store().list_runs(&conversation_id)?,
+    ))
+}
+
 async fn cancel_agent_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
@@ -205,6 +255,30 @@ async fn cancel_agent_run(
     state.agent_runtime.store().get_run(&run_id)?;
     if !state.agent_runtime.cancel(&run_id) {
         return Err(ApiError::RunNotActive(run_id));
+    }
+    Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolvePermissionRequest {
+    option_id: String,
+}
+
+async fn resolve_permission(
+    State(state): State<AppState>,
+    Path(request_id): Path<String>,
+    Json(request): Json<ResolvePermissionRequest>,
+) -> Result<StatusCode, ApiError> {
+    if request.option_id.trim().is_empty() {
+        return Err(ApiError::InvalidRequest(
+            "option_id must not be empty".into(),
+        ));
+    }
+    if !state
+        .agent_runtime
+        .resolve_permission(&request_id, &request.option_id)
+    {
+        return Err(ApiError::PermissionNotFound(request_id));
     }
     Ok(StatusCode::ACCEPTED)
 }
@@ -234,6 +308,53 @@ struct AgentEventStreamState {
     run_id: String,
     cursor: u64,
     pending: VecDeque<AgentEvent>,
+}
+
+struct WorkspaceEventStreamState {
+    store: Arc<AgentStore>,
+    cursor: u64,
+    pending: VecDeque<WorkspaceEvent>,
+}
+
+async fn stream_workspace_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<EventQuery>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let cursor = headers
+        .get("last-event-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(query.after);
+    let stream = futures_util::stream::unfold(
+        WorkspaceEventStreamState {
+            store: state.agent_runtime.store(),
+            cursor,
+            pending: VecDeque::new(),
+        },
+        |mut state| async move {
+            loop {
+                if let Some(workspace_event) = state.pending.pop_front() {
+                    state.cursor = workspace_event.id;
+                    let event = Event::default()
+                        .id(workspace_event.id.to_string())
+                        .event("workspace_event")
+                        .json_data(&workspace_event)
+                        .unwrap_or_else(|_| Event::default().event("serialization_error"));
+                    return Some((Ok(event), state));
+                }
+                state.pending = state
+                    .store
+                    .workspace_events_after(state.cursor)
+                    .unwrap_or_default()
+                    .into();
+                if state.pending.is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                }
+            }
+        },
+    );
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn stream_agent_events(
@@ -334,6 +455,93 @@ async fn unregister_project(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn git_status(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.git.status(&project_id).await?))
+}
+
+async fn git_initialize(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let status = state.git.initialize(&project_id).await?;
+    emit_project_event(&state, "git_changed", &project_id, json!({"action":"init"}));
+    Ok((StatusCode::CREATED, Json(status)))
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct GitDiffQuery {
+    path: String,
+    #[serde(default)]
+    staged: bool,
+}
+
+async fn git_diff(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Query(query): Query<GitDiffQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(json!({
+        "diff": state.git.diff(&project_id, &query.path, query.staged).await?
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct GitMutationRequest {
+    action: GitMutation,
+    paths: Vec<String>,
+}
+
+async fn git_mutate(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<GitMutationRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let status = state
+        .git
+        .mutate(&project_id, request.action, &request.paths)
+        .await?;
+    emit_project_event(
+        &state,
+        "git_changed",
+        &project_id,
+        json!({"action":request.action}),
+    );
+    Ok(Json(status))
+}
+
+#[derive(Debug, Deserialize)]
+struct GitCommitRequest {
+    message: String,
+}
+
+async fn git_commit(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<GitCommitRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let status = state.git.commit(&project_id, &request.message).await?;
+    emit_project_event(
+        &state,
+        "git_changed",
+        &project_id,
+        json!({"action":"commit"}),
+    );
+    Ok(Json(status))
+}
+
+fn emit_project_event(state: &AppState, kind: &str, project_id: &str, payload: serde_json::Value) {
+    let _ = state.agent_runtime.store().append_workspace_event(
+        kind,
+        Some(project_id),
+        None,
+        None,
+        &payload,
+    );
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct EntryQuery {
     #[serde(default)]
@@ -364,6 +572,12 @@ async fn create_entry(
     state
         .workspace
         .create_entry(&project_id, &request.path, request.kind)?;
+    emit_project_event(
+        &state,
+        "file_changed",
+        &project_id,
+        json!({"path":request.path}),
+    );
     Ok(StatusCode::CREATED)
 }
 
@@ -381,6 +595,12 @@ async fn rename_entry(
     state
         .workspace
         .rename_entry(&project_id, &request.from, &request.to)?;
+    emit_project_event(
+        &state,
+        "file_changed",
+        &project_id,
+        json!({"from":request.from, "to":request.to}),
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -390,6 +610,12 @@ async fn delete_entry(
     Query(query): Query<EntryQuery>,
 ) -> Result<StatusCode, ApiError> {
     state.workspace.delete_entry(&project_id, &query.path)?;
+    emit_project_event(
+        &state,
+        "file_changed",
+        &project_id,
+        json!({"path":query.path}),
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -413,12 +639,19 @@ async fn write_file(
     Query(query): Query<EntryQuery>,
     Json(request): Json<WriteFileRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(state.workspace.write_text(
+    let document = state.workspace.write_text(
         &project_id,
         &query.path,
         &request.content,
         &request.revision,
-    )?))
+    )?;
+    emit_project_event(
+        &state,
+        "file_changed",
+        &project_id,
+        json!({"path":query.path}),
+    );
+    Ok(Json(document))
 }
 
 #[derive(Debug, Deserialize)]
@@ -446,6 +679,12 @@ async fn create_terminal(
     let terminal = state
         .terminals
         .create(&project_id, request.kind, request.cols, request.rows)?;
+    emit_project_event(
+        &state,
+        "terminal_created",
+        &project_id,
+        json!({"terminal_id":terminal.id.clone()}),
+    );
     Ok((StatusCode::CREATED, Json(terminal)))
 }
 
@@ -453,7 +692,14 @@ async fn close_terminal(
     State(state): State<AppState>,
     Path(terminal_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    let terminal = state.terminals.get(&terminal_id)?;
     state.terminals.close(&terminal_id)?;
+    emit_project_event(
+        &state,
+        "terminal_closed",
+        &terminal.project_id,
+        json!({"terminal_id":terminal_id}),
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -575,6 +821,8 @@ enum ApiError {
     AgentRuntime(RuntimeError),
     InvalidRequest(String),
     RunNotActive(String),
+    Git(GitError),
+    PermissionNotFound(String),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -598,6 +846,12 @@ impl From<StoreError> for ApiError {
 impl From<RuntimeError> for ApiError {
     fn from(error: RuntimeError) -> Self {
         Self::AgentRuntime(error)
+    }
+}
+
+impl From<GitError> for ApiError {
+    fn from(error: GitError) -> Self {
+        Self::Git(error)
     }
 }
 
@@ -658,6 +912,22 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "run_not_active",
                 format!("run is not active: {run_id}"),
+            ),
+            ApiError::Git(error) => {
+                let (status, code) = match &error {
+                    GitError::InvalidPath(_) | GitError::EmptyMessage => {
+                        (StatusCode::BAD_REQUEST, "invalid_request")
+                    }
+                    GitError::Workspace(workspace) => workspace_error_status(workspace),
+                    GitError::Command(_) => (StatusCode::CONFLICT, "git_error"),
+                    GitError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "git_error"),
+                };
+                (status, code, error.to_string())
+            }
+            ApiError::PermissionNotFound(request_id) => (
+                StatusCode::NOT_FOUND,
+                "permission_not_found",
+                format!("permission request is no longer active: {request_id}"),
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

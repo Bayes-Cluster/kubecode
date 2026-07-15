@@ -1,21 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, ContentChunk, EnvVariable, InitializeRequest,
     LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PermissionOption,
-    PermissionOptionKind, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
-    ToolCall, ToolCallStatus, ToolCallUpdate,
+    PermissionOptionId, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification, SessionUpdate, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
 use serde_json::{Value, json};
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
 
 use crate::agent_discovery::AgentDescriptor;
 use crate::agent_discovery::{is_executable, resolve_executable};
@@ -58,7 +59,29 @@ pub struct AgentRuntime {
     store: Arc<AgentStore>,
     agents: Arc<HashMap<AgentId, AgentDescriptor>>,
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
+    pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
 }
+
+#[derive(Clone)]
+struct SessionActorHandle {
+    generation: String,
+    sender: mpsc::UnboundedSender<AgentCommand>,
+}
+
+struct PendingPermission {
+    allowed_options: HashSet<String>,
+    run_id: String,
+    sender: oneshot::Sender<RequestPermissionOutcome>,
+}
+
+impl PendingPermission {
+    fn accepts(&self, option_id: &str) -> bool {
+        self.allowed_options.contains(option_id)
+    }
+}
+
+const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 impl AgentRuntime {
     pub fn new(
@@ -71,6 +94,8 @@ impl AgentRuntime {
             store,
             agents: Arc::new(agents.into_iter().map(|agent| (agent.id, agent)).collect()),
             cancellations: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            pending_permissions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -93,6 +118,7 @@ impl AgentRuntime {
         let run = self.store.start_run(
             &request.conversation_id,
             &request.project_id,
+            &request.message,
             request.permission_mode,
         )?;
         let (cancel, cancelled) = oneshot::channel();
@@ -101,46 +127,127 @@ impl AgentRuntime {
             .expect("agent cancellation mutex poisoned")
             .insert(run.id.clone(), cancel);
 
-        let runtime = self.clone();
-        let execution = AgentExecution {
+        let command = AgentCommand {
             run: run.clone(),
+            message: request.message,
+            permission_mode: request.permission_mode,
+            cancelled,
+        };
+        let config = AgentSessionConfig {
+            conversation_id: conversation.id,
             agent_id: conversation.agent_id,
             descriptor,
             provider_session_id: conversation.provider_session_id,
             cwd,
-            message: request.message,
-            permission_mode: request.permission_mode,
         };
-        tokio::spawn(async move {
-            runtime.execute(execution, cancelled).await;
-        });
+        self.dispatch(config, command);
         Ok(run)
     }
 
     pub fn cancel(&self, run_id: &str) -> bool {
-        self.cancellations
+        let cancelled = self
+            .cancellations
             .lock()
             .expect("agent cancellation mutex poisoned")
             .remove(run_id)
-            .is_some_and(|sender| sender.send(()).is_ok())
+            .is_some_and(|sender| sender.send(()).is_ok());
+        self.cancel_pending_permissions(run_id);
+        cancelled
     }
 
-    async fn execute(&self, execution: AgentExecution, cancelled: oneshot::Receiver<()>) {
-        let result = run_acp(Arc::clone(&self.store), &execution, cancelled).await;
-        self.remove_cancellation(&execution.run.id);
+    pub fn resolve_permission(&self, request_id: &str, option_id: &str) -> bool {
+        let mut permissions = self
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned");
+        if !permissions
+            .get(request_id)
+            .is_some_and(|pending| pending.accepts(option_id))
+        {
+            return false;
+        }
+        permissions.remove(request_id).is_some_and(|pending| {
+            pending
+                .sender
+                .send(RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(PermissionOptionId::new(option_id.to_owned())),
+                ))
+                .is_ok()
+        })
+    }
 
-        match result {
-            Ok(AcpRunOutcome::Completed) => {
-                let _ = self
-                    .store
-                    .finish_run(&execution.run.id, RunStatus::Completed, None);
+    fn dispatch(&self, config: AgentSessionConfig, command: AgentCommand) {
+        let existing = self
+            .sessions
+            .lock()
+            .expect("agent session mutex poisoned")
+            .get(&config.conversation_id)
+            .cloned();
+        let command = if let Some(handle) = existing {
+            match handle.sender.send(command) {
+                Ok(()) => return,
+                Err(error) => error.0,
             }
-            Ok(AcpRunOutcome::Cancelled) => {
-                let _ = self
-                    .store
-                    .finish_run(&execution.run.id, RunStatus::Cancelled, None);
+        } else {
+            command
+        };
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let generation = Uuid::new_v4().to_string();
+        self.sessions
+            .lock()
+            .expect("agent session mutex poisoned")
+            .insert(
+                config.conversation_id.clone(),
+                SessionActorHandle {
+                    generation: generation.clone(),
+                    sender,
+                },
+            );
+        let runtime = self.clone();
+        tokio::spawn(async move {
+            let conversation_id = config.conversation_id.clone();
+            runtime.run_session_actor(config, command, receiver).await;
+            let mut sessions = runtime
+                .sessions
+                .lock()
+                .expect("agent session mutex poisoned");
+            if sessions
+                .get(&conversation_id)
+                .is_some_and(|handle| handle.generation == generation)
+            {
+                sessions.remove(&conversation_id);
             }
-            Err(error) => self.fail_run(&execution.run.id, error.to_string()),
+        });
+    }
+
+    async fn run_session_actor(
+        &self,
+        config: AgentSessionConfig,
+        first_command: AgentCommand,
+        mut receiver: mpsc::UnboundedReceiver<AgentCommand>,
+    ) {
+        let active_run_id = Arc::new(Mutex::new(None));
+        let result = run_acp_session(
+            self.clone(),
+            config,
+            first_command,
+            &mut receiver,
+            Arc::clone(&active_run_id),
+        )
+        .await;
+        if let Err(error) = result {
+            if let Some(run_id) = active_run_id
+                .lock()
+                .expect("active run mutex poisoned")
+                .take()
+            {
+                self.fail_run(&run_id, error.to_string());
+            }
+            while let Ok(command) = receiver.try_recv() {
+                self.fail_run(&command.run.id, error.to_string());
+                self.remove_cancellation(&command.run.id);
+            }
         }
     }
 
@@ -159,16 +266,38 @@ impl AgentRuntime {
             .expect("agent cancellation mutex poisoned")
             .remove(run_id);
     }
+
+    fn cancel_pending_permissions(&self, run_id: &str) {
+        let mut permissions = self
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned");
+        let request_ids = permissions
+            .iter()
+            .filter(|(_, pending)| pending.run_id == run_id)
+            .map(|(request_id, _)| request_id.clone())
+            .collect::<Vec<_>>();
+        for request_id in request_ids {
+            if let Some(pending) = permissions.remove(&request_id) {
+                let _ = pending.sender.send(RequestPermissionOutcome::Cancelled);
+            }
+        }
+    }
 }
 
-struct AgentExecution {
-    run: AgentRun,
+struct AgentSessionConfig {
+    conversation_id: String,
     agent_id: AgentId,
     descriptor: AgentDescriptor,
     provider_session_id: Option<String>,
     cwd: PathBuf,
+}
+
+struct AgentCommand {
+    run: AgentRun,
     message: String,
     permission_mode: PermissionMode,
+    cancelled: oneshot::Receiver<()>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -177,31 +306,37 @@ enum AcpRunOutcome {
     Cancelled,
 }
 
-async fn run_acp(
-    store: Arc<AgentStore>,
-    execution: &AgentExecution,
-    mut cancelled: oneshot::Receiver<()>,
-) -> Result<AcpRunOutcome, RuntimeError> {
-    let agent = acp_agent(execution.agent_id, &execution.descriptor)?;
-    let accepting_updates = Arc::new(AtomicBool::new(false));
-    let update_store = Arc::clone(&store);
-    let update_run_id = execution.run.id.clone();
-    let update_gate = Arc::clone(&accepting_updates);
-    let permission_store = Arc::clone(&store);
-    let permission_run_id = execution.run.id.clone();
-    let conversation_id = execution.run.conversation_id.clone();
-    let provider_session_id = execution.provider_session_id.clone();
-    let permission_mode = execution.permission_mode;
-    let cwd = execution.cwd.clone();
-    let message = execution.message.clone();
+async fn run_acp_session(
+    runtime: AgentRuntime,
+    config: AgentSessionConfig,
+    first_command: AgentCommand,
+    receiver: &mut mpsc::UnboundedReceiver<AgentCommand>,
+    active_run_id: Arc<Mutex<Option<String>>>,
+) -> Result<(), RuntimeError> {
+    let agent = acp_agent(config.agent_id, &config.descriptor)?;
+    let update_store = Arc::clone(&runtime.store);
+    let update_run_id = Arc::clone(&active_run_id);
+    let permission_store = Arc::clone(&runtime.store);
+    let permission_run_id = Arc::clone(&active_run_id);
+    let permission_mode = Arc::new(Mutex::new(PermissionMode::Safe));
+    let current_permission_mode = Arc::clone(&permission_mode);
+    let pending_permissions = Arc::clone(&runtime.pending_permissions);
+    let store = Arc::clone(&runtime.store);
+    let conversation_id = config.conversation_id;
+    let provider_session_id = config.provider_session_id;
+    let cwd = config.cwd;
 
     let result = agent_client_protocol::Client
         .builder()
         .name("Kubecode")
         .on_receive_notification(
             async move |notification: SessionNotification, _connection| {
-                if update_gate.load(Ordering::Acquire) {
-                    persist_session_update(&update_store, &update_run_id, notification.update);
+                let run_id = update_run_id
+                    .lock()
+                    .expect("active run mutex poisoned")
+                    .clone();
+                if let Some(run_id) = run_id {
+                    persist_session_update(&update_store, &run_id, notification.update);
                 }
                 Ok(())
             },
@@ -209,23 +344,70 @@ async fn run_acp(
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
-                let outcome = permission_outcome(&request.options, permission_mode);
+                let mode = *current_permission_mode
+                    .lock()
+                    .expect("permission mode mutex poisoned");
+                let run_id = permission_run_id
+                    .lock()
+                    .expect("active run mutex poisoned")
+                    .clone();
+                let request_id = Uuid::new_v4().to_string();
                 let request_payload = json!({
+                    "request_id": request_id,
                     "tool_id": request.tool_call.tool_call_id.to_string(),
                     "tool": request.tool_call.fields.title,
                     "input": request.tool_call.fields.raw_input,
-                    "options": request.options,
+                    "options": request.options.iter().map(|option| json!({
+                        "id": option.option_id.to_string(),
+                        "label": option.name,
+                        "kind": option.kind,
+                    })).collect::<Vec<_>>(),
                 });
-                let _ = permission_store.append_event(
-                    &permission_run_id,
-                    AgentEventKind::PermissionRequested,
-                    &request_payload,
-                );
-                let _ = permission_store.append_event(
-                    &permission_run_id,
-                    AgentEventKind::PermissionResolved,
-                    &json!({"outcome": outcome}),
-                );
+                let outcome = if let Some(run_id) = run_id {
+                    let _ = permission_store.append_event(
+                        &run_id,
+                        AgentEventKind::PermissionRequested,
+                        &request_payload,
+                    );
+                    let outcome = if mode == PermissionMode::Power {
+                        permission_outcome(&request.options, mode)
+                    } else {
+                        let (sender, receiver) = oneshot::channel();
+                        pending_permissions
+                            .lock()
+                            .expect("pending permission mutex poisoned")
+                            .insert(
+                                request_id.clone(),
+                                PendingPermission {
+                                    allowed_options: request
+                                        .options
+                                        .iter()
+                                        .map(|option| option.option_id.to_string())
+                                        .collect(),
+                                    run_id: run_id.clone(),
+                                    sender,
+                                },
+                            );
+                        let selected = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
+                            .await
+                            .ok()
+                            .and_then(Result::ok)
+                            .unwrap_or(RequestPermissionOutcome::Cancelled);
+                        pending_permissions
+                            .lock()
+                            .expect("pending permission mutex poisoned")
+                            .remove(&request_id);
+                        selected
+                    };
+                    let _ = permission_store.append_event(
+                        &run_id,
+                        AgentEventKind::PermissionResolved,
+                        &json!({"request_id":request_id, "outcome": outcome}),
+                    );
+                    outcome
+                } else {
+                    RequestPermissionOutcome::Cancelled
+                };
                 responder.respond(RequestPermissionResponse::new(outcome))
             },
             agent_client_protocol::on_receive_request!(),
@@ -259,21 +441,52 @@ async fn run_acp(
                 .map_err(|error| {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 })?;
-            accepting_updates.store(true, Ordering::Release);
-
-            let prompt = connection
-                .send_request(PromptRequest::new(session_id.clone(), vec![message.into()]))
-                .block_task();
-            tokio::select! {
-                response = prompt => {
-                    response?;
-                    Ok(AcpRunOutcome::Completed)
-                }
-                _ = &mut cancelled => {
-                    connection.send_notification(CancelNotification::new(session_id))?;
-                    Ok(AcpRunOutcome::Cancelled)
-                }
+            let mut next_command = Some(first_command);
+            loop {
+                let command = if let Some(command) = next_command.take() {
+                    command
+                } else {
+                    match tokio::time::timeout(SESSION_IDLE_TIMEOUT, receiver.recv()).await {
+                        Ok(Some(command)) => command,
+                        Ok(None) | Err(_) => break,
+                    }
+                };
+                *active_run_id.lock().expect("active run mutex poisoned") =
+                    Some(command.run.id.clone());
+                *permission_mode
+                    .lock()
+                    .expect("permission mode mutex poisoned") = command.permission_mode;
+                let mut cancelled = command.cancelled;
+                let prompt = connection
+                    .send_request(PromptRequest::new(
+                        session_id.clone(),
+                        vec![command.message.into()],
+                    ))
+                    .block_task();
+                let outcome = tokio::select! {
+                    response = prompt => {
+                        response?;
+                        AcpRunOutcome::Completed
+                    }
+                    _ = &mut cancelled => {
+                        connection.send_notification(CancelNotification::new(session_id.clone()))?;
+                        AcpRunOutcome::Cancelled
+                    }
+                };
+                runtime.remove_cancellation(&command.run.id);
+                let status = match outcome {
+                    AcpRunOutcome::Completed => RunStatus::Completed,
+                    AcpRunOutcome::Cancelled => RunStatus::Cancelled,
+                };
+                runtime
+                    .store
+                    .finish_run(&command.run.id, status, None)
+                    .map_err(|error| {
+                        agent_client_protocol::Error::internal_error().data(error.to_string())
+                    })?;
+                *active_run_id.lock().expect("active run mutex poisoned") = None;
             }
+            Ok(())
         })
         .await;
 
@@ -555,6 +768,37 @@ mod tests {
             selected_option(permission_outcome(&options, PermissionMode::Power)),
             "allow"
         );
+    }
+
+    #[tokio::test]
+    async fn pending_permissions_accept_only_agent_provided_options() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let runtime = AgentRuntime::new(workspace, store, Vec::new());
+        let (sender, receiver) = oneshot::channel();
+        runtime
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex")
+            .insert(
+                "permission-1".to_owned(),
+                PendingPermission {
+                    allowed_options: HashSet::from(["allow_once".to_owned()]),
+                    run_id: "run-1".to_owned(),
+                    sender,
+                },
+            );
+
+        assert!(!runtime.resolve_permission("permission-1", "invented_option"));
+        assert!(runtime.resolve_permission("permission-1", "allow_once"));
+        assert_eq!(
+            selected_option(receiver.await.expect("permission outcome")),
+            "allow_once"
+        );
+        assert!(!runtime.resolve_permission("permission-1", "allow_once"));
     }
 
     fn selected_option(outcome: RequestPermissionOutcome) -> String {

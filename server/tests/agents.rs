@@ -10,7 +10,7 @@ fn store() -> (TempDir, AgentStore) {
 }
 
 #[test]
-fn enforces_one_active_run_per_project_but_allows_other_projects() {
+fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
     let (_temp, store) = store();
     let first_conversation = store
         .create_conversation("project-a", AgentId::Codex, None)
@@ -23,22 +23,57 @@ fn enforces_one_active_run_per_project_but_allows_other_projects() {
         .expect("other project conversation");
 
     let first = store
-        .start_run(&first_conversation.id, "project-a", PermissionMode::Safe)
+        .start_run(
+            &first_conversation.id,
+            "project-a",
+            "first",
+            PermissionMode::Safe,
+        )
         .expect("first run");
+    store
+        .start_run(
+            &second_conversation.id,
+            "project-a",
+            "parallel",
+            PermissionMode::Safe,
+        )
+        .expect("another session in the same project may run");
     let duplicate = store
-        .start_run(&second_conversation.id, "project-a", PermissionMode::Safe)
-        .expect_err("same project must be locked");
+        .start_run(
+            &first_conversation.id,
+            "project-a",
+            "duplicate",
+            PermissionMode::Safe,
+        )
+        .expect_err("same session must be locked");
     assert!(matches!(duplicate, StoreError::ActiveRun(_)));
 
     store
-        .start_run(&other_project.id, "project-b", PermissionMode::Power)
+        .start_run(
+            &other_project.id,
+            "project-b",
+            "other",
+            PermissionMode::Power,
+        )
         .expect("different project may run");
     store
         .finish_run(&first.id, RunStatus::Completed, None)
         .expect("finish first run");
     store
-        .start_run(&second_conversation.id, "project-a", PermissionMode::Safe)
-        .expect("project lock released");
+        .start_run(
+            &first_conversation.id,
+            "project-a",
+            "next",
+            PermissionMode::Safe,
+        )
+        .expect("session lock released");
+
+    let history = store
+        .list_runs(&first_conversation.id)
+        .expect("session history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].message, "first");
+    assert_eq!(history[1].message, "next");
 }
 
 #[test]
@@ -48,7 +83,12 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
         .create_conversation("project", AgentId::Codex, Some("Refactor"))
         .expect("conversation");
     let run = store
-        .start_run(&conversation.id, "project", PermissionMode::Safe)
+        .start_run(
+            &conversation.id,
+            "project",
+            "Refactor it",
+            PermissionMode::Safe,
+        )
         .expect("run");
 
     let first = store
@@ -72,6 +112,11 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
     assert_eq!(replay.len(), 1);
     assert_eq!(replay[0].seq, 3);
     assert_eq!(replay[0].kind, AgentEventKind::ToolStarted);
+
+    let workspace_events = store.workspace_events_after(0).expect("workspace replay");
+    assert!(workspace_events.iter().any(|event| {
+        event.run_id.as_deref() == Some(run.id.as_str()) && event.kind == "tool_started"
+    }));
 }
 
 #[test]
@@ -84,7 +129,12 @@ fn marks_inflight_runs_interrupted_when_the_store_reopens() {
             .create_conversation("project", AgentId::ClaudeCode, None)
             .expect("conversation");
         store
-            .start_run(&conversation.id, "project", PermissionMode::Safe)
+            .start_run(
+                &conversation.id,
+                "project",
+                "Continue",
+                PermissionMode::Safe,
+            )
             .expect("run")
             .id
     };

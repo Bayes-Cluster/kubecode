@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Plus,
   SplitHorizontal,
@@ -30,6 +30,7 @@ type TerminalLayout =
     type: 'split'
     id: string
     direction: 'horizontal' | 'vertical'
+    ratio: number
     first: TerminalLayout
     second: TerminalLayout
   }
@@ -70,13 +71,21 @@ function TerminalWorkspaceState({
   t,
 }: TerminalWorkspaceProps) {
   const [terminals, setTerminals] = useState(initialTerminals)
-  const [layout, setLayout] = useState<TerminalLayout | null>(() => (
-    initialTerminals[0] ? leaf(initialTerminals[0].id) : null
-  ))
-  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(
-    initialTerminals[0]?.id ?? null,
-  )
+  const [{ initialLayout, initialActiveTerminalId }] = useState(() => {
+    const initialWorkspace = readTerminalWorkspace(projectId, initialTerminals)
+    return {
+      initialLayout: initialWorkspace.layout,
+      initialActiveTerminalId: initialWorkspace.activeTerminalId,
+    }
+  })
+  const [layout, setLayout] = useState<TerminalLayout | null>(initialLayout)
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(initialActiveTerminalId)
   const splitSequence = useRef(0)
+
+  useEffect(() => {
+    if (initialTerminals.length === 0 && terminals.length === 0 && hasStoredTerminalWorkspace(projectId)) return
+    writeTerminalWorkspace(projectId, { activeTerminalId, layout })
+  }, [activeTerminalId, initialTerminals.length, layout, projectId, terminals.length])
 
   const create = useCallback(async (kind: TerminalKind, split?: 'horizontal' | 'vertical') => {
     const created = await api.createTerminal(projectId, kind, 100, 28)
@@ -88,6 +97,7 @@ function TerminalWorkspaceState({
           type: 'split' as const,
           id: `terminal-split-${++splitSequence.current}`,
           direction: split,
+          ratio: 50,
           first: leaf(activeTerminalId),
           second: leaf(created.id),
         }
@@ -175,6 +185,9 @@ function TerminalWorkspaceState({
           api={api}
           layout={layout}
           onActivate={setActiveTerminalId}
+          onResizeSplit={(splitId, ratio) => setLayout((current) => (
+            current ? updateSplitRatio(current, splitId, ratio) : current
+          ))}
           projectId={projectId}
           terminals={terminals}
         />
@@ -235,6 +248,7 @@ function TerminalLayoutView({
   api,
   layout,
   onActivate,
+  onResizeSplit,
   projectId,
   terminals,
 }: {
@@ -242,6 +256,7 @@ function TerminalLayoutView({
   api: KubecodeApi
   layout: TerminalLayout
   onActivate: (terminalId: string) => void
+  onResizeSplit: (splitId: string, ratio: number) => void
   projectId: string
   terminals: TerminalInfo[]
 }) {
@@ -264,6 +279,7 @@ function TerminalLayoutView({
       api={api}
       layout={layout}
       onActivate={onActivate}
+      onResizeSplit={onResizeSplit}
       projectId={projectId}
       terminals={terminals}
     />
@@ -275,19 +291,19 @@ function TerminalSplit(props: {
   api: KubecodeApi
   layout: Extract<TerminalLayout, { type: 'split' }>
   onActivate: (terminalId: string) => void
+  onResizeSplit: (splitId: string, ratio: number) => void
   projectId: string
   terminals: TerminalInfo[]
 }) {
-  const { layout } = props
+  const { layout, onResizeSplit } = props
   const container = useRef<HTMLDivElement>(null)
-  const [ratio, setRatio] = useState(50)
   const resize = useCallback((delta: number) => {
     const size = layout.direction === 'horizontal'
       ? container.current?.clientWidth
       : container.current?.clientHeight
     if (!size) return
-    setRatio((current) => clamp(current + delta / size * 100, 5, 95))
-  }, [layout.direction])
+    onResizeSplit(layout.id, clamp(layout.ratio + delta / size * 100, 5, 95))
+  }, [layout.direction, layout.id, layout.ratio, onResizeSplit])
 
   return (
     <div
@@ -295,14 +311,14 @@ function TerminalSplit(props: {
       data-split-direction={layout.direction}
       ref={container}
     >
-      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${ratio}%` }}>
+      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${layout.ratio}%` }}>
         <TerminalLayoutView {...props} layout={layout.first} />
       </div>
       <ResizeHandle
         direction={layout.direction === 'horizontal' ? 'horizontal' : 'vertical'}
         onResize={resize}
       />
-      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${100 - ratio}%` }}>
+      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${100 - layout.ratio}%` }}>
         <TerminalLayoutView {...props} layout={layout.second} />
       </div>
     </div>
@@ -350,6 +366,92 @@ function removeLeaf(layout: TerminalLayout | null, terminalId: string): Terminal
 function firstTerminal(layout: TerminalLayout | null): string | null {
   if (!layout) return null
   return layout.type === 'leaf' ? layout.terminalId : firstTerminal(layout.first)
+}
+
+function updateSplitRatio(layout: TerminalLayout, splitId: string, ratio: number): TerminalLayout {
+  if (layout.type === 'leaf') return layout
+  if (layout.id === splitId) return { ...layout, ratio }
+  return {
+    ...layout,
+    first: updateSplitRatio(layout.first, splitId, ratio),
+    second: updateSplitRatio(layout.second, splitId, ratio),
+  }
+}
+
+type StoredTerminalWorkspace = {
+  activeTerminalId: string | null
+  layout: TerminalLayout | null
+}
+
+function readTerminalWorkspace(
+  projectId: string,
+  terminals: TerminalInfo[],
+): StoredTerminalWorkspace {
+  const fallbackId = terminals[0]?.id ?? null
+  const fallback = { activeTerminalId: fallbackId, layout: fallbackId ? leaf(fallbackId) : null }
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(terminalStorageKey(projectId)) ?? 'null')
+    if (!isRecord(value)) return fallback
+    const terminalIds = new Set(terminals.map((terminal) => terminal.id))
+    const layout = sanitizeLayout(value.layout, terminalIds)
+    if (!layout) return fallback
+    const savedActiveId = typeof value.activeTerminalId === 'string' ? value.activeTerminalId : null
+    const activeTerminalId = savedActiveId && containsTerminal(layout, savedActiveId)
+      ? savedActiveId
+      : firstTerminal(layout)
+    return { activeTerminalId, layout }
+  } catch {
+    return fallback
+  }
+}
+
+function sanitizeLayout(value: unknown, terminalIds: Set<string>): TerminalLayout | null {
+  if (!isRecord(value)) return null
+  if (value.type === 'leaf') {
+    return typeof value.terminalId === 'string' && terminalIds.has(value.terminalId)
+      ? leaf(value.terminalId)
+      : null
+  }
+  if (value.type !== 'split') return null
+  const first = sanitizeLayout(value.first, terminalIds)
+  const second = sanitizeLayout(value.second, terminalIds)
+  if (!first) return second
+  if (!second) return first
+  if (value.direction !== 'horizontal' && value.direction !== 'vertical') return first
+  return {
+    type: 'split',
+    id: typeof value.id === 'string' ? value.id : `terminal-split-restored`,
+    direction: value.direction,
+    ratio: typeof value.ratio === 'number' && Number.isFinite(value.ratio)
+      ? clamp(value.ratio, 5, 95)
+      : 50,
+    first,
+    second,
+  }
+}
+
+function writeTerminalWorkspace(projectId: string, workspace: StoredTerminalWorkspace): void {
+  try {
+    localStorage.setItem(terminalStorageKey(projectId), JSON.stringify(workspace))
+  } catch {
+    // Restricted browser contexts can disable local storage.
+  }
+}
+
+function hasStoredTerminalWorkspace(projectId: string): boolean {
+  try {
+    return localStorage.getItem(terminalStorageKey(projectId)) !== null
+  } catch {
+    return false
+  }
+}
+
+function terminalStorageKey(projectId: string): string {
+  return `kubecode:terminal-layout:${projectId}`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

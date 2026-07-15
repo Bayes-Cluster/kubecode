@@ -1,5 +1,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -357,6 +358,162 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
     let (status, error) = json_request(&app, Method::GET, &entries_uri, Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error["code"], "not_found");
+}
+
+#[tokio::test]
+async fn supports_session_aliases_global_events_permissions_and_git_review() {
+    let (temp, app) = app();
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "parent":".", "name":"session-review-api"}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let sessions_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions");
+    let (status, session) = json_request(
+        &app,
+        Method::POST,
+        &sessions_uri,
+        json!({"agent_id":"codex", "title":"Review changes"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session_id = session["id"].as_str().expect("session id");
+
+    let (status, sessions) = json_request(&app, Method::GET, &sessions_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sessions[0]["title"], "Review changes");
+    let (status, runs) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{session_id}/runs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(runs.as_array().expect("runs").is_empty());
+
+    let events = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{BASE_PATH}/api/v1/events?after=0"))
+                .header("last-event-id", "0")
+                .body(Body::empty())
+                .expect("workspace event request"),
+        )
+        .await
+        .expect("workspace event response");
+    assert_eq!(events.status(), StatusCode::OK);
+    assert_eq!(events.headers()[header::CONTENT_TYPE], "text/event-stream");
+
+    let (status, invalid_permission) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/permissions/missing"),
+        json!({"option_id":" "}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(invalid_permission["code"], "invalid_request");
+    let (status, missing_permission) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/permissions/missing"),
+        json!({"option_id":"allow_once"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(missing_permission["code"], "permission_not_found");
+
+    let git_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/git");
+    let (status, initial) =
+        json_request(&app, Method::GET, &format!("{git_uri}/status"), Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(initial["is_repository"], false);
+    let (status, initialized) =
+        json_request(&app, Method::POST, &format!("{git_uri}/init"), Value::Null).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(initialized["is_repository"], true);
+    configure_git_identity(&temp.path().join("srv/session-review-api"));
+    fs::write(
+        temp.path().join("srv/session-review-api/README.md"),
+        "first\n",
+    )
+    .expect("write review file");
+
+    let (status, staged) = json_request(
+        &app,
+        Method::POST,
+        &format!("{git_uri}/mutate"),
+        json!({"action":"stage", "paths":["README.md"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(staged["files"][0]["index_status"], "A");
+    let (status, diff) = json_request(
+        &app,
+        Method::GET,
+        &format!("{git_uri}/diff?path=README.md&staged=true"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        diff["diff"]
+            .as_str()
+            .expect("staged diff")
+            .contains("+first")
+    );
+    let (status, committed) = json_request(
+        &app,
+        Method::POST,
+        &format!("{git_uri}/commit"),
+        json!({"message":"Initial commit"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        committed["files"]
+            .as_array()
+            .expect("clean files")
+            .is_empty()
+    );
+
+    fs::write(
+        temp.path().join("srv/session-review-api/README.md"),
+        "first\nsecond\n",
+    )
+    .expect("modify review file");
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &format!("{git_uri}/mutate"),
+        json!({"action":"discard", "paths":["README.md"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        fs::read_to_string(temp.path().join("srv/session-review-api/README.md"))
+            .expect("restored review file"),
+        "first\n"
+    );
+}
+
+fn configure_git_identity(repository: &std::path::Path) {
+    for (key, value) in [
+        ("user.name", "Kubecode API Test"),
+        ("user.email", "api-test@kubecode.local"),
+    ] {
+        let status = Command::new("git")
+            .args(["config", key, value])
+            .current_dir(repository)
+            .status()
+            .expect("git config");
+        assert!(status.success());
+    }
 }
 
 #[tokio::test]

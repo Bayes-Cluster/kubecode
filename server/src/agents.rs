@@ -82,6 +82,7 @@ pub struct AgentRun {
     pub id: String,
     pub conversation_id: String,
     pub project_id: String,
+    pub message: String,
     pub status: RunStatus,
     pub permission_mode: PermissionMode,
     pub error: Option<String>,
@@ -92,6 +93,17 @@ pub struct AgentEvent {
     pub run_id: String,
     pub seq: u64,
     pub kind: AgentEventKind,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct WorkspaceEvent {
+    pub id: u64,
+    pub kind: String,
+    pub project_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub run_id: Option<String>,
     pub payload: Value,
     pub created_at: String,
 }
@@ -124,6 +136,7 @@ impl AgentStore {
                id TEXT PRIMARY KEY,
                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
                project_id TEXT NOT NULL,
+               message TEXT NOT NULL DEFAULT '',
                status TEXT NOT NULL,
                permission_mode TEXT NOT NULL,
                error TEXT,
@@ -147,7 +160,22 @@ impl AgentStore {
                matcher TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                UNIQUE(project_id, agent_id, matcher)
+             );
+             CREATE TABLE IF NOT EXISTS workspace_events (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               kind TEXT NOT NULL,
+               project_id TEXT,
+               conversation_id TEXT,
+               run_id TEXT,
+               payload TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );",
+        )?;
+        ensure_column(
+            &database,
+            "agent_runs",
+            "message",
+            "TEXT NOT NULL DEFAULT ''",
         )?;
         let store = Self {
             database: Mutex::new(database),
@@ -186,6 +214,13 @@ impl AgentStore {
                     conversation.title
                 ],
             )?;
+        self.append_workspace_event(
+            "session_created",
+            Some(project_id),
+            Some(&conversation.id),
+            None,
+            &json!({"agent_id": agent_id, "title": conversation.title}),
+        )?;
         Ok(conversation)
     }
 
@@ -255,6 +290,7 @@ impl AgentStore {
         &self,
         conversation_id: &str,
         project_id: &str,
+        message: &str,
         permission_mode: PermissionMode,
     ) -> Result<AgentRun, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
@@ -273,9 +309,9 @@ impl AgentStore {
         let active = transaction
             .query_row(
                 "SELECT id FROM agent_runs
-                 WHERE project_id = ?1 AND status IN ('running', 'waiting_permission')
+                 WHERE conversation_id = ?1 AND status IN ('running', 'waiting_permission')
                  LIMIT 1",
-                [project_id],
+                [conversation_id],
                 |row| row.get::<_, String>(0),
             )
             .optional()?;
@@ -287,18 +323,20 @@ impl AgentStore {
             id: Uuid::new_v4().to_string(),
             conversation_id: conversation_id.to_owned(),
             project_id: project_id.to_owned(),
+            message: message.to_owned(),
             status: RunStatus::Running,
             permission_mode,
             error: None,
         };
         transaction.execute(
             "INSERT INTO agent_runs
-             (id, conversation_id, project_id, status, permission_mode)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             (id, conversation_id, project_id, message, status, permission_mode)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 run.id,
                 run.conversation_id,
                 run.project_id,
+                run.message,
                 run.status.as_str(),
                 run.permission_mode.as_str()
             ],
@@ -318,13 +356,25 @@ impl AgentStore {
             .lock()
             .expect("agent database mutex poisoned")
             .query_row(
-                "SELECT id, conversation_id, project_id, status, permission_mode, error
+                "SELECT id, conversation_id, project_id, message, status, permission_mode, error
                  FROM agent_runs WHERE id = ?1",
                 [run_id],
                 run_from_row,
             )
             .optional()?
             .ok_or_else(|| StoreError::RunNotFound(run_id.to_owned()))
+    }
+
+    pub fn list_runs(&self, conversation_id: &str) -> Result<Vec<AgentRun>, StoreError> {
+        self.get_conversation(conversation_id)?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error
+             FROM agent_runs WHERE conversation_id = ?1 ORDER BY rowid",
+        )?;
+        let rows = statement.query_map([conversation_id], run_from_row)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
     }
 
     pub fn finish_run(
@@ -401,6 +451,46 @@ impl AgentStore {
             })
         })
         .collect()
+    }
+
+    pub fn append_workspace_event(
+        &self,
+        kind: &str,
+        project_id: Option<&str>,
+        conversation_id: Option<&str>,
+        run_id: Option<&str>,
+        payload: &Value,
+    ) -> Result<WorkspaceEvent, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database.execute(
+            "INSERT INTO workspace_events
+             (kind, project_id, conversation_id, run_id, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                kind,
+                project_id,
+                conversation_id,
+                run_id,
+                serde_json::to_string(payload)?
+            ],
+        )?;
+        let id = database.last_insert_rowid();
+        workspace_event_by_id(&database, id)
+    }
+
+    pub fn workspace_events_after(&self, cursor: u64) -> Result<Vec<WorkspaceEvent>, StoreError> {
+        let cursor = i64::try_from(cursor).map_err(|_| {
+            StoreError::InvalidStoredValue("workspace event cursor exceeds SQLite range".into())
+        })?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, kind, project_id, conversation_id, run_id, payload, created_at
+             FROM workspace_events WHERE id > ?1 ORDER BY id LIMIT 512",
+        )?;
+        let rows = statement.query_map([cursor], workspace_event_from_row)?;
+        rows.map(|row| row.and_then(workspace_event_from_values))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
     }
 
     pub fn allow_always(
@@ -485,15 +575,14 @@ fn append_event_transaction(
     kind: AgentEventKind,
     payload: &Value,
 ) -> Result<AgentEvent, StoreError> {
-    let run_exists = transaction
-        .query_row("SELECT 1 FROM agent_runs WHERE id = ?1", [run_id], |_| {
-            Ok(())
-        })
+    let run_scope = transaction
+        .query_row(
+            "SELECT project_id, conversation_id FROM agent_runs WHERE id = ?1",
+            [run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
         .optional()?
-        .is_some();
-    if !run_exists {
-        return Err(StoreError::RunNotFound(run_id.to_owned()));
-    }
+        .ok_or_else(|| StoreError::RunNotFound(run_id.to_owned()))?;
     let stored_seq = transaction.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM agent_events WHERE run_id = ?1",
         [run_id],
@@ -504,6 +593,12 @@ fn append_event_transaction(
         "INSERT INTO agent_events (run_id, seq, kind, payload)
          VALUES (?1, ?2, ?3, ?4)",
         params![run_id, stored_seq, kind.as_str(), payload],
+    )?;
+    transaction.execute(
+        "INSERT INTO workspace_events
+         (kind, project_id, conversation_id, run_id, payload)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![kind.as_str(), run_scope.0, run_scope.1, run_id, payload],
     )?;
     let created_at = transaction.query_row(
         "SELECT created_at FROM agent_events WHERE run_id = ?1 AND seq = ?2",
@@ -521,18 +616,93 @@ fn append_event_transaction(
     })
 }
 
+type StoredWorkspaceEvent = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+);
+
+fn workspace_event_by_id(database: &Connection, id: i64) -> Result<WorkspaceEvent, StoreError> {
+    let values = database.query_row(
+        "SELECT id, kind, project_id, conversation_id, run_id, payload, created_at
+         FROM workspace_events WHERE id = ?1",
+        [id],
+        workspace_event_from_row,
+    )?;
+    workspace_event_from_values(values).map_err(StoreError::from)
+}
+
+fn workspace_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredWorkspaceEvent> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+    ))
+}
+
+fn workspace_event_from_values(values: StoredWorkspaceEvent) -> rusqlite::Result<WorkspaceEvent> {
+    let (id, kind, project_id, conversation_id, run_id, payload, created_at) = values;
+    let id = u64::try_from(id).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(error),
+        )
+    })?;
+    let payload = serde_json::from_str(&payload).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    Ok(WorkspaceEvent {
+        id,
+        kind,
+        project_id,
+        conversation_id,
+        run_id,
+        payload,
+        created_at,
+    })
+}
+
 fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
-    let status = row.get::<_, String>(3)?;
-    let permission_mode = row.get::<_, String>(4)?;
+    let status = row.get::<_, String>(4)?;
+    let permission_mode = row.get::<_, String>(5)?;
     Ok(AgentRun {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
         project_id: row.get(2)?,
+        message: row.get(3)?,
         status: RunStatus::from_str(&status).map_err(to_sql_conversion_error)?,
         permission_mode: PermissionMode::from_str(&permission_mode)
             .map_err(to_sql_conversion_error)?,
-        error: row.get(5)?,
+        error: row.get(6)?,
     })
+}
+
+fn ensure_column(
+    database: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), rusqlite::Error> {
+    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|current| current == column) {
+        database.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn to_sql_conversion_error(error: StoreError) -> rusqlite::Error {

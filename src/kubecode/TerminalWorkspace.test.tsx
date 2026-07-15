@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TerminalWorkspace } from './TerminalWorkspace'
 import type { KubecodeApi, TerminalInfo } from './api'
@@ -17,6 +17,8 @@ const agents = [
 ]
 
 describe('TerminalWorkspace', () => {
+  beforeEach(() => localStorage.clear())
+
   it('creates regular or agent TUI terminals from the profile menu', async () => {
     const codex = terminal('codex-1', 'Codex', 'codex')
     const api = {
@@ -82,6 +84,41 @@ describe('TerminalWorkspace', () => {
     await screen.findByTestId('terminal-terminal-3')
     expect(screen.getAllByTestId(/^terminal-terminal-/)).toHaveLength(3)
     expect(container.querySelector('[data-split-direction="vertical"]')).toBeInTheDocument()
+  })
+
+  it('restores a project split tree and its freely resized ratio', async () => {
+    const first = terminal('terminal-1', 'Codex', 'codex')
+    const second = terminal('terminal-2', 'Shell', 'regular')
+    localStorage.setItem('kubecode:terminal-layout:project-1', JSON.stringify({
+      activeTerminalId: second.id,
+      layout: {
+        type: 'split',
+        id: 'saved-split',
+        direction: 'horizontal',
+        ratio: 82,
+        first: { type: 'leaf', terminalId: first.id },
+        second: { type: 'leaf', terminalId: second.id },
+      },
+    }))
+    const api = {
+      createTerminal: vi.fn(),
+      closeTerminal: vi.fn().mockResolvedValue(undefined),
+    } as unknown as KubecodeApi
+    const { container } = render(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
+        initialTerminals={[first, second]}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    expect(screen.getAllByTestId(/^terminal-terminal-/)).toHaveLength(2)
+    const children = container.querySelectorAll('.kubecode-terminal-split-child')
+    expect((children[0] as HTMLElement).style.flexBasis).toBe('82%')
+    expect((children[1] as HTMLElement).style.flexBasis).toBe('18%')
+    expect(screen.getByRole('button', { name: /Shell/ })).toHaveAttribute('data-variant', 'secondary')
   })
 })
 
