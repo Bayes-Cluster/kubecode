@@ -70,6 +70,7 @@ type TerminalWorkspaceProps = {
   open?: boolean
   projectId: string
   t: (key: TranslationKey, values?: TranslationValues) => string
+  terminalFont?: string
 }
 
 const agentKinds: Array<{ id: AgentId; kind: TerminalKind; label: string }> = [
@@ -93,6 +94,7 @@ export function TerminalWorkspace({
   open = true,
   projectId,
   t,
+  terminalFont = 'ui-monospace, monospace',
 }: TerminalWorkspaceProps) {
   const [terminals, setTerminals] = useState(initialTerminals)
   const [workspace, setWorkspace] = useState<StoredTerminalWorkspaceV2>(() => (
@@ -334,6 +336,7 @@ export function TerminalWorkspace({
               onRestart={restart}
               onStatus={updateStatus}
               projectId={projectId}
+              terminalFont={terminalFont}
               terminals={terminals}
               t={t}
               visible={open}
@@ -578,7 +581,7 @@ function TerminalProfileMenu({
           const available = agents.some((agent) => agent.id === profile.id && agent.available)
           return (
             <DropdownMenuItem disabled={!available} key={profile.id} onSelect={() => onCreate(profile.kind)}>
-              <AiAgentIcon agent={profile.id} size={16} /> {profile.label}
+              <AiAgentIcon agent={profile.id} size={18} /> {profile.label}
             </DropdownMenuItem>
           )
         })}
@@ -596,6 +599,7 @@ function TerminalLayoutView({
   onRestart,
   onStatus,
   projectId,
+  terminalFont,
   terminals,
   t,
   visible,
@@ -608,6 +612,7 @@ function TerminalLayoutView({
   onRestart: (terminal: TerminalInfo) => Promise<void>
   onStatus: (terminal: TerminalInfo) => void
   projectId: string
+  terminalFont: string
   terminals: TerminalInfo[]
   t: (key: TranslationKey, values?: TranslationValues) => string
   visible: boolean
@@ -622,7 +627,7 @@ function TerminalLayoutView({
         data-status={terminal.status}
         onMouseDown={() => onActivate(layout.terminalId)}
       >
-        <TerminalView api={api} onStatus={onStatus} projectId={projectId} terminal={terminal} visible={visible} />
+        <TerminalView api={api} fontFamily={terminalFont} onStatus={onStatus} projectId={projectId} terminal={terminal} visible={visible} />
         {terminal.status === 'exited' && (
           <div className="kubecode-terminal-exited">
             <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
@@ -642,6 +647,7 @@ function TerminalLayoutView({
       onRestart={onRestart}
       onStatus={onStatus}
       projectId={projectId}
+      terminalFont={terminalFont}
       t={t}
       terminals={terminals}
       visible={visible}
@@ -682,7 +688,7 @@ function TerminalSplit(props: Parameters<typeof TerminalLayoutView>[0] & {
 
 function TerminalKindIcon({ kind }: { kind: TerminalKind }) {
   const profile = agentKinds.find((item) => item.kind === kind)
-  return profile ? <AiAgentIcon agent={profile.id} size={14} /> : <TerminalWindow />
+  return profile ? <AiAgentIcon agent={profile.id} size={16} /> : <TerminalWindow />
 }
 
 function replaceGroup(

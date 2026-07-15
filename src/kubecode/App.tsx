@@ -33,15 +33,18 @@ import {
 } from '@/components/ui/select'
 import { createTranslator, resolveEffectiveLocale } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
-import {
-  applyThemeSelectionToDocument,
-  readStoredThemeMode,
-  writeStoredThemeMode,
-  type ThemeMode,
-} from '@/lib/themeMode'
 
 import { AgentSessionWorkspace } from './AgentSessionWorkspace'
 import { ContextWorkbench } from './ContextWorkbench'
+import {
+  applyKubecodeAppearance,
+  KUBECODE_THEME_OPTIONS,
+  readKubecodeAppearance,
+  terminalFontStack,
+  writeKubecodeAppearance,
+  type KubecodeAppearance,
+  type KubecodeTheme,
+} from './appearancePreferences'
 import { KubecodeApi } from './api'
 import type {
   AgentDescriptor,
@@ -81,10 +84,23 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
+  const [appearance, setAppearance] = useState<KubecodeAppearance>(() => (
+    readKubecodeAppearance(localStorage)
+  ))
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
+
+  useEffect(() => {
+    applyKubecodeAppearance(document, appearance)
+    writeKubecodeAppearance(localStorage, appearance)
+    if (appearance.colorScheme !== 'system' || typeof window.matchMedia !== 'function') return
+    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+    const applySystemTheme = () => applyKubecodeAppearance(document, appearance)
+    systemTheme.addEventListener('change', applySystemTheme)
+    return () => systemTheme.removeEventListener('change', applySystemTheme)
+  }, [appearance])
 
   const applyProjectLayout = useCallback((nextProjectId: string) => {
     const layout = readProjectLayout(nextProjectId)
@@ -279,7 +295,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                     variant={item.id === conversationId ? 'secondary' : 'ghost'}
                     onClick={() => setConversationId(item.id)}
                   >
-                    <AiAgentIcon agent={item.agent_id} size={15} />
+                    <AiAgentIcon agent={item.agent_id} size={18} />
                     <span>{item.title || t('kubecode.untitledSession')}</span>
                   </Button>
                 ))}
@@ -352,6 +368,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 open={terminalOpen}
                 projectId={projectId}
                 t={t}
+                terminalFont={terminalFontStack(appearance.terminalFont)}
               />
             ) : terminalOpen ? (
               <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
@@ -382,7 +399,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         }}
         t={t}
       />
-      <KubecodeSettingsDialog agents={agents} open={settingsOpen} onOpenChange={setSettingsOpen} t={t} />
+      <KubecodeSettingsDialog
+        agents={agents}
+        appearance={appearance}
+        open={settingsOpen}
+        onAppearanceChange={setAppearance}
+        onOpenChange={setSettingsOpen}
+        t={t}
+      />
     </main>
   )
 }
@@ -581,7 +605,7 @@ function NewSessionDialog({
               <SelectContent>
                 {agents.map((agent) => (
                   <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
-                    <AiAgentIcon agent={agent.id} size={15} /> {agentName(agent.id)}
+                    <AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -741,22 +765,29 @@ function ProjectDialog({
 
 function KubecodeSettingsDialog({
   agents,
+  appearance,
   open,
+  onAppearanceChange,
   onOpenChange,
   t,
 }: {
   agents: AgentDescriptor[]
+  appearance: KubecodeAppearance
   open: boolean
+  onAppearanceChange: (appearance: KubecodeAppearance) => void
   onOpenChange: (open: boolean) => void
   t: Translator
 }) {
   const [section, setSection] = useState<'general' | 'agents' | 'terminal' | 'editor'>('general')
-  const [theme, setTheme] = useState<ThemeMode>(() => readStoredThemeMode(localStorage) ?? 'system')
 
-  const changeTheme = (nextTheme: ThemeMode) => {
-    setTheme(nextTheme)
-    writeStoredThemeMode(localStorage, nextTheme)
-    applyThemeSelectionToDocument(document, nextTheme)
+  const updateAppearance = <Key extends keyof KubecodeAppearance>(
+    key: Key,
+    value: KubecodeAppearance[Key],
+  ) => {
+    onAppearanceChange({ ...appearance, [key]: value })
+    if (key === 'colorScheme' || key === 'theme') {
+      trackEvent('kubecode_appearance_changed', { setting: key, value })
+    }
   }
 
   return (
@@ -775,23 +806,72 @@ function KubecodeSettingsDialog({
           ))}
         </aside>
         <section className="kubecode-settings-content">
-          <h2>{t(`kubecode.settings.${section}`)}</h2>
+          <h2>{section === 'general' ? t('kubecode.appearance') : t(`kubecode.settings.${section}`)}</h2>
           {section === 'general' && (
-            <div className="kubecode-setting-row">
-              <div><strong>{t('kubecode.theme')}</strong><span>{t('kubecode.themeDescription')}</span></div>
-              <Select value={theme} onValueChange={(value) => changeTheme(value as ThemeMode)}>
-                <SelectTrigger aria-label={t('kubecode.theme')} className="w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="system">{t('kubecode.theme.system')}</SelectItem>
-                  <SelectItem value="light">{t('kubecode.theme.light')}</SelectItem>
-                  <SelectItem value="dark">{t('kubecode.theme.dark')}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="kubecode-settings-group">
+              <div className="kubecode-setting-row">
+                <div><strong>{t('kubecode.colorScheme')}</strong><span>{t('kubecode.colorSchemeDescription')}</span></div>
+                <Select
+                  value={appearance.colorScheme}
+                  onValueChange={(value) => updateAppearance('colorScheme', value as KubecodeAppearance['colorScheme'])}
+                >
+                  <SelectTrigger aria-label={t('kubecode.colorScheme')} className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system">{t('kubecode.theme.system')}</SelectItem>
+                    <SelectItem value="light">{t('kubecode.theme.light')}</SelectItem>
+                    <SelectItem value="dark">{t('kubecode.theme.dark')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="kubecode-setting-row">
+                <div><strong>{t('kubecode.theme')}</strong><span>{t('kubecode.themeDescription')}</span></div>
+                <Select
+                  value={appearance.theme}
+                  onValueChange={(value) => updateAppearance('theme', value as KubecodeTheme)}
+                >
+                  <SelectTrigger aria-label={t('kubecode.theme')} className="w-52"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {KUBECODE_THEME_OPTIONS.map((theme) => (
+                      <SelectItem key={theme} value={theme}>{t(`kubecode.theme.${theme}`)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="kubecode-setting-row">
+                <div><strong>{t('kubecode.uiFont')}</strong><span>{t('kubecode.uiFontDescription')}</span></div>
+                <Input
+                  aria-label={t('kubecode.uiFont')}
+                  className="kubecode-font-input"
+                  value={appearance.uiFont}
+                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'uiFont' })}
+                  onChange={(event) => updateAppearance('uiFont', event.target.value)}
+                />
+              </div>
+              <div className="kubecode-setting-row">
+                <div><strong>{t('kubecode.codeFont')}</strong><span>{t('kubecode.codeFontDescription')}</span></div>
+                <Input
+                  aria-label={t('kubecode.codeFont')}
+                  className="kubecode-font-input kubecode-font-input-mono"
+                  value={appearance.codeFont}
+                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'codeFont' })}
+                  onChange={(event) => updateAppearance('codeFont', event.target.value)}
+                />
+              </div>
+              <div className="kubecode-setting-row">
+                <div><strong>{t('kubecode.terminalFont')}</strong><span>{t('kubecode.terminalFontDescription')}</span></div>
+                <Input
+                  aria-label={t('kubecode.terminalFont')}
+                  className="kubecode-font-input kubecode-font-input-mono"
+                  value={appearance.terminalFont}
+                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'terminalFont' })}
+                  onChange={(event) => updateAppearance('terminalFont', event.target.value)}
+                />
+              </div>
             </div>
           )}
           {section === 'agents' && agents.map((agent) => (
             <div className="kubecode-setting-row" key={agent.id}>
-              <div><strong><AiAgentIcon agent={agent.id} size={15} /> {agentName(agent.id)}</strong><span>{agent.executable}</span></div>
+              <div><strong><AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}</strong><span>{agent.executable}</span></div>
               <span data-available={agent.available}>{agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}</span>
             </div>
           ))}

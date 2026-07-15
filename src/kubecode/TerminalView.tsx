@@ -13,18 +13,20 @@ import {
 
 type TerminalViewProps = {
   api: KubecodeApi
+  fontFamily: string
   projectId: string
   terminal: TerminalInfo
   visible: boolean
   onStatus: (terminal: TerminalInfo) => void
 }
 
-export function TerminalView({ api, onStatus, projectId, terminal, visible }: TerminalViewProps) {
+export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, visible }: TerminalViewProps) {
   const container = useRef<HTMLDivElement>(null)
   const fitAddon = useRef<FitAddon>(null)
   const xtermRef = useRef<Terminal>(null)
   const terminalRef = useRef(terminal)
   const visibleRef = useRef(visible)
+  const fontFamilyRef = useRef(fontFamily)
 
   useEffect(() => {
     terminalRef.current = terminal
@@ -33,6 +35,13 @@ export function TerminalView({ api, onStatus, projectId, terminal, visible }: Te
   useEffect(() => {
     visibleRef.current = visible
   }, [visible])
+
+  useEffect(() => {
+    fontFamilyRef.current = fontFamily
+    if (!xtermRef.current) return
+    xtermRef.current.options.fontFamily = fontFamily
+    fitAddon.current?.fit()
+  }, [fontFamily])
 
   useEffect(() => {
     if (!visible) return
@@ -52,8 +61,8 @@ export function TerminalView({ api, onStatus, projectId, terminal, visible }: Te
       convertEol: true,
       cols: snapshot?.cols,
       rows: snapshot?.rows,
-      fontFamily: 'JetBrains Mono, monospace',
-      fontSize: 13,
+      fontFamily: fontFamilyRef.current,
+      fontSize: 14,
       scrollback: 10_000,
       theme: { background: '#171717', foreground: '#e5e5e5' },
     })

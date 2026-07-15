@@ -169,11 +169,17 @@ scroll position live in `sessionStorage`. This preserves the dock across browser
 refresh, Project switching, and folding without claiming persistence across a
 server or Pod restart.
 
+`KubecodeAppearance` separates system/light/dark selection from the named color
+palette and from UI, code, and Terminal font families. The normalized value is
+stored once under `kubecode:appearance:v1`. Applying it updates semantic theme
+tokens for the React shell and portals; CodeMirror follows a CSS font variable,
+while `TerminalView` applies font changes to the existing xterm instance.
+
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, `kubecode_terminal_closed`,
 `kubecode_terminal_restarted`, `kubecode_terminal_renamed`,
 `kubecode_terminal_auto_closed`, `kubecode_terminal_navigator_toggled`,
-`kubecode_panel_toggled`,
+`kubecode_panel_toggled`, `kubecode_appearance_changed`,
 `kubecode_session_created`, `kubecode_agent_session_imported`,
 `kubecode_session_renamed`, `kubecode_session_removed`,
 `kubecode_agent_session_forked`, `kubecode_agent_run_started`,

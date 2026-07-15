@@ -372,7 +372,7 @@ export function AgentSessionWorkspace({
     <section className="kubecode-agent-session" data-testid="agent-session-workspace">
       <header className="kubecode-session-header">
         <div className="kubecode-session-title">
-          <AiAgentIcon agent={conversation.agent_id} size={17} />
+          <AiAgentIcon agent={conversation.agent_id} size={20} />
           <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
         </div>
         <div className="kubecode-session-status">
@@ -561,7 +561,7 @@ export function AgentSessionWorkspace({
           controls={(
             <div className="kubecode-composer-controls">
               <span className="kubecode-agent-chip">
-                <AiAgentIcon agent={conversation.agent_id} size={14} /> {agentLabel}
+                <AiAgentIcon agent={conversation.agent_id} size={17} /> {agentLabel}
               </span>
               {nativeMode && (
                 <Select
@@ -573,7 +573,7 @@ export function AgentSessionWorkspace({
                     )
                   }}
                 >
-                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
                     <span className="text-muted-foreground">{t('kubecode.agentMode')}</span>
                     <span aria-hidden="true">·</span>
                     <SelectValue />
@@ -596,7 +596,7 @@ export function AgentSessionWorkspace({
                     )
                   }}
                 >
-                  <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                  <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
                     <span className="text-muted-foreground">{config.name}</span>
                     <span aria-hidden="true">·</span>
                     <SelectValue />

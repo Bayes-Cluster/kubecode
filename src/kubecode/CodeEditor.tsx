@@ -49,7 +49,7 @@ export function CodeEditor({ content, documentKey, onChange }: CodeEditorProps) 
           }),
           EditorView.theme({
             '&': { height: '100%', backgroundColor: 'var(--surface-editor)' },
-            '.cm-scroller': { fontFamily: 'JetBrains Mono, monospace', fontSize: '13px' },
+            '.cm-scroller': { fontFamily: 'var(--kubecode-code-font)', fontSize: '14px' },
             '.cm-gutters': {
               backgroundColor: 'var(--surface-sidebar)',
               borderColor: 'var(--border-subtle)',

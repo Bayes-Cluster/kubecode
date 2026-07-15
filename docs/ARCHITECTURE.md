@@ -73,6 +73,13 @@ overwrite each other. The Session renderer also buffers events until their run
 metadata is loaded. Fast native commands and filesystem changes therefore
 render identically live and after database replay.
 
+Kubecode appearance preferences are a browser-local concern. The versioned
+`appearancePreferences` boundary validates and persists color scheme, workspace
+theme, and UI/code/Terminal font families, then exposes them as document-level
+attributes and CSS variables. Color scheme remains independent from the
+OpenCode-compatible theme palette. CodeMirror consumes the code-font variable;
+xterm updates its font option in place so changing fonts does not reconnect a PTY.
+
 The Project rail loads Project-scoped run snapshots at startup and then folds
 global workspace events into those snapshots. A blue pulse marks a latest
 Session run that is active; an amber marker highlights a Session waiting for
