@@ -158,11 +158,21 @@ async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations/{conversation_id}/runs"),
-        json!({"message":"Do it", "permission_mode":"safe"}),
+        json!({"message":"Do it"}),
     )
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(error["code"], "agent_unavailable");
+
+    let (status, runs) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/runs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(runs.as_array().expect("project runs").is_empty());
 }
 
 #[tokio::test]
@@ -557,7 +567,7 @@ async fn reports_request_store_and_terminal_errors_consistently() {
         &app,
         Method::POST,
         &format!("{conversations_uri}/{conversation_id}/runs"),
-        json!({"message":"  ", "permission_mode":"safe"}),
+        json!({"message":"  "}),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -656,7 +666,7 @@ done"#,
         &app,
         Method::POST,
         &format!("{conversations_uri}/{conversation_id}/runs"),
-        json!({"message":"Do it", "permission_mode":"power"}),
+        json!({"message":"Do it"}),
     )
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);

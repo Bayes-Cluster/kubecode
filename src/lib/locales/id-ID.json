@@ -1144,5 +1144,8 @@
   "kubecode.permissionRequired": "Permission required",
   "kubecode.answerAgentQuestion": "Answer Agent question",
   "kubecode.decline": "Decline",
-  "kubecode.submitAnswers": "Submit answers"
+  "kubecode.submitAnswers": "Submit answers",
+  "kubecode.allowAll": "Selalu izinkan",
+  "kubecode.allow": "Izinkan",
+  "kubecode.reject": "Tolak"
 }

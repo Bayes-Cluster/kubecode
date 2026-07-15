@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
-import type { AiAgentPermissionMode } from '@/lib/aiAgentPermissionMode'
 import type { AppLocale, TranslationKey } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -89,6 +88,17 @@ const SESSION_STATE_EVENT_KINDS = new Set([
   'session_info',
   'usage',
 ])
+const SESSION_TIMELINE_EVENT_KINDS = new Set([
+  'error',
+  'run_completed',
+  'text_delta',
+  'thinking_delta',
+  'tool_completed',
+  'tool_started',
+  'tool_updated',
+  'user_message',
+  'user_message_delta',
+])
 export function AgentSessionWorkspace({
   agents,
   api,
@@ -101,7 +111,6 @@ export function AgentSessionWorkspace({
   t,
   workspaceEvents,
 }: AgentSessionWorkspaceProps) {
-  const [permissionMode, setPermissionMode] = useState<AiAgentPermissionMode>('safe')
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
   const [run, setRun] = useState<AgentRun | null>(null)
@@ -235,13 +244,11 @@ export function AgentSessionWorkspace({
         projectId,
         conversation.id,
         message,
-        permissionMode === 'power_user' ? 'power' : 'safe',
       )
       attachRun(nextRun)
       setPrompt('')
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
-        permission_mode: permissionMode,
       })
     } catch (cause) {
       setError(errorMessage(cause, t('kubecode.error')))
@@ -324,7 +331,7 @@ export function AgentSessionWorkspace({
     ? commands.filter((command) => command.name.toLowerCase().includes(prompt.slice(1).toLowerCase()))
     : []
   const nativeMode = sessionMode(sessionState)
-  const configSelects = sessionConfigSelects(sessionState)
+  const configSelects = distinctSessionConfigSelects(nativeMode, sessionConfigSelects(sessionState))
 
   const refreshSessionState = async () => {
     setSessionState(await api.getSessionState(conversation.id))
@@ -402,7 +409,7 @@ export function AgentSessionWorkspace({
                 variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
                 onClick={() => void api.resolvePermission(pendingPermission.requestId, option.id)}
               >
-                {option.label}
+                {permissionChoiceLabel(option, t)}
               </Button>
             ))}
           </div>
@@ -505,7 +512,9 @@ export function AgentSessionWorkspace({
                     void api.setSessionMode(conversation.id, value).then(refreshSessionState)
                   }}
                 >
-                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto max-w-36 border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                    <span className="text-muted-foreground">{t('kubecode.agentMode')}</span>
+                    <span aria-hidden="true">·</span>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -523,7 +532,9 @@ export function AgentSessionWorkspace({
                     void api.setSessionConfig(conversation.id, config.id, value).then(refreshSessionState)
                   }}
                 >
-                  <SelectTrigger aria-label={config.name} className="h-7 w-auto max-w-40 border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                  <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                    <span className="text-muted-foreground">{config.name}</span>
+                    <span aria-hidden="true">·</span>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -533,19 +544,6 @@ export function AgentSessionWorkspace({
                   </SelectContent>
                 </Select>
               ))}
-              <Select
-                disabled={active}
-                value={permissionMode}
-                onValueChange={(value) => setPermissionMode(value as AiAgentPermissionMode)}
-              >
-                <SelectTrigger aria-label={t('kubecode.permissionMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="safe">{t('kubecode.safe')}</SelectItem>
-                  <SelectItem value="power_user">{t('kubecode.power')}</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           )}
           entries={[]}
@@ -632,6 +630,7 @@ async function hydrateConversation(
 function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): AiAgentMessage[] {
   const runById = new Map(runs.map((run) => [run.id, run]))
   return events.reduce<AiAgentMessage[]>((messages, event) => {
+    if (!SESSION_TIMELINE_EVENT_KINDS.has(event.kind)) return messages
     const runId = textValue(event.payload.run_id)
     if (event.kind === 'user_message') {
       const run = runById.get(runId)
@@ -645,6 +644,7 @@ function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): Ai
       }
       return [...messages, nativeMessage(event, text)]
     }
+    if (event.kind === 'run_completed' && messages.length === 0) return messages
     const message = messages.at(-1) ?? nativeMessage(event, '')
     const messageId = message.id ?? `native-${event.seq}`
     const history = messages.length > 0 ? messages : [message]
@@ -657,6 +657,15 @@ function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): Ai
     }
     return applyAgentEvent(history, messageId, mapped)
   }, [])
+}
+
+function permissionChoiceLabel(option: PermissionChoice, t: Translator): string {
+  if (option.kind === 'allow_always') return t('kubecode.allowAll')
+  if (option.kind === 'allow_once') return t('kubecode.allow')
+  if (option.kind === 'reject_once' || option.kind === 'reject_always') {
+    return t('kubecode.reject')
+  }
+  return option.label
 }
 
 function nativeMessage(event: SessionEvent, text: string): AiAgentMessage {
@@ -719,6 +728,26 @@ function sessionConfigSelects(state: AgentSessionState | null): SessionSelect[] 
     if (!id || !name || !currentValue || options.length === 0) return []
     return [{ id, name, currentValue, options }]
   })
+}
+
+function distinctSessionConfigSelects(
+  nativeMode: SessionSelect | null,
+  configs: SessionSelect[],
+): SessionSelect[] {
+  const nativeSignature = nativeMode ? sessionSelectSignature(nativeMode) : null
+  const ids = new Set<string>()
+  return configs.filter((config) => {
+    if (ids.has(config.id) || sessionSelectSignature(config) === nativeSignature) return false
+    ids.add(config.id)
+    return true
+  })
+}
+
+function sessionSelectSignature(select: SessionSelect): string {
+  return select.options
+    .map((option) => `${option.id.trim().toLowerCase()}\u0000${option.name.trim().toLowerCase()}`)
+    .sort()
+    .join('\u0001')
 }
 
 function selectOptions(values: unknown[]): { id: string; name: string }[] {

@@ -33,7 +33,7 @@ describe('ContextWorkbench', () => {
         projectId="project-1"
         t={createTranslator('en')}
         width={440}
-        workspaceEvent={null}
+        workspaceEvents={[]}
       />,
     )
 
@@ -57,12 +57,61 @@ describe('ContextWorkbench', () => {
         projectId="project-1"
         t={createTranslator('en')}
         width={440}
-        workspaceEvent={null}
+        workspaceEvents={[]}
       />,
     )
 
     fireEvent.click(await screen.findByRole('button', { name: 'Create a Git repository' }))
     await waitFor(() => expect(api.initializeGit).toHaveBeenCalledWith('project-1'))
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
+  })
+
+  it('refreshes Files when a file event is followed by another workspace event', async () => {
+    const api = {
+      listEntries: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([
+          { name: 'new-file.ts', path: 'new-file.ts', kind: 'file' },
+          { name: 'new-folder', path: 'new-folder', kind: 'directory' },
+        ]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const props = {
+      api,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      width: 440,
+    }
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(1))
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      {
+        id: 10,
+        kind: 'file_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { path: 'new-file.ts' },
+        created_at: 'now',
+      },
+      {
+        id: 11,
+        kind: 'git_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: {},
+        created_at: 'now',
+      },
+    ]} />)
+
+    await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(2))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Files' }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    expect(await screen.findByText('new-file.ts')).toBeInTheDocument()
+    expect(screen.getByText('new-folder')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   File,
@@ -53,10 +53,10 @@ type ContextWorkbenchProps = {
   projectId: string | null
   t: Translator
   width: number
-  workspaceEvent: WorkspaceEvent | null
+  workspaceEvents: WorkspaceEvent[]
 }
 
-export function ContextWorkbench({ api, projectId, t, width, workspaceEvent }: ContextWorkbenchProps) {
+export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: ContextWorkbenchProps) {
   const [tab, setTab] = useState<ContextTab>('review')
   const [entries, setEntries] = useState<Entry[]>([])
   const [directory, setDirectory] = useState('')
@@ -68,20 +68,26 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvent }: C
   const [diff, setDiff] = useState<{ path: string; content: string } | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
+  const entriesRequestRef = useRef(0)
+  const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const dirty = Boolean(document && document.content !== draft)
 
   const refreshEntries = useCallback(async (path = directory) => {
-    if (projectId) setEntries(await api.listEntries(projectId, path))
+    if (!projectId) return
+    const requestId = ++entriesRequestRef.current
+    const nextEntries = await api.listEntries(projectId, path)
+    if (requestId === entriesRequestRef.current) setEntries(nextEntries)
   }, [api, directory, projectId])
 
   useEffect(() => {
     if (!projectId) {
       return
     }
+    const entriesRequestId = ++entriesRequestRef.current
     let current = true
     void Promise.all([api.listEntries(projectId), api.gitStatus(projectId)]).then(([nextEntries, status]) => {
       if (current) {
-        setEntries(nextEntries)
+        if (entriesRequestId === entriesRequestRef.current) setEntries(nextEntries)
         setGitStatus(status)
       }
     }).catch((cause: unknown) => {
@@ -91,12 +97,19 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvent }: C
   }, [api, projectId, t])
 
   useEffect(() => {
-    if (!projectId || workspaceEvent?.project_id !== projectId) return
-    if (workspaceEvent.kind === 'file_changed') queueMicrotask(() => void refreshEntries())
-    if (workspaceEvent.kind === 'file_changed' || workspaceEvent.kind === 'git_changed') {
+    if (!projectId) return
+    const nextEvents = workspaceEvents.filter((event) => (
+      event.id > processedWorkspaceEventRef.current && event.project_id === projectId
+    ))
+    processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
+      ?? processedWorkspaceEventRef.current
+    const filesChanged = nextEvents.some((event) => event.kind === 'file_changed')
+    const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
+    if (filesChanged) queueMicrotask(() => void refreshEntries())
+    if (filesChanged || gitChanged) {
       void api.gitStatus(projectId).then(setGitStatus)
     }
-  }, [api, projectId, refreshEntries, workspaceEvent])
+  }, [api, projectId, refreshEntries, workspaceEvents])
 
   const openEntry = async (entry: Entry) => {
     if (!projectId) return

@@ -27,7 +27,7 @@ The active server boundary currently consists of five Rust abstractions:
   explicit overrides, project-local package binaries, or `PATH`, then passes
   the discovered CLI path through `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`. It
   retains ACP capabilities, plans, commands, modes, config, usage, title and
-  extension metadata, pauses Safe-mode requests for browser permission
+  extension metadata, preserves Agent-provided permission choices for browser
   decisions, accepts native mode/config changes while a prompt is active,
   renders structured ACP elicitation forms when an Agent needs user
   input, and serves reconnectable event cursors through the global SSE.
@@ -49,17 +49,35 @@ code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from
 the current Kubeflow Notebook prefix. One global workspace SSE multiplexes
 Agent, file, Git, and Terminal metadata; PTY byte streams retain dedicated
 WebSockets. The React shell retains an ordered bounded event window rather than
-only the latest event, and the Session renderer buffers events until their run
-metadata is loaded. Fast native commands therefore render identically live and
-after database replay.
+only the latest event. Both the Session renderer and context workbench consume
+that window by event ID, so adjacent Session, file, and Git events cannot
+overwrite each other. The Session renderer also buffers events until their run
+metadata is loaded. Fast native commands and filesystem changes therefore
+render identically live and after database replay.
+
+The Project rail loads Project-scoped run snapshots at startup and then folds
+global workspace events into those snapshots. A blue pulse marks a latest
+Session run that is active; an amber marker highlights a Session waiting for
+permission/input or ending failed, timed out, or interrupted. Permission and
+elicitation requests persist their waiting state so the same signal survives a
+browser reconnect.
 
 New Session can either create an Agent-native session or list and load native
 sessions for the current Project. Native list/load/resume/fork/delete controls and
 mode/config selectors are capability-driven: the browser only renders an
 operation after the connected Agent advertises it. Loading a native Session
 imports its ACP history into the Session event timeline without translating it
-through a private CLI protocol. Manual titles override Agent title updates until
+through a private CLI protocol. A fresh import deliberately uses `session/load`
+when supported so history notifications are captured; established local
+Sessions use `session/resume` to avoid replaying stored history. Manual titles override Agent title updates until
 the user explicitly returns title control to the Agent.
+
+The composer has no Kubecode-owned Safe/Power selector. It displays only
+Agent-advertised modes and configuration, labels distinct controls explicitly,
+and removes duplicate representations of the same option set. ACP permission
+requests retain the Agent's original choices and wait for the user's selection;
+the runtime never auto-selects an allow or reject option. The persisted run
+permission column is legacy compatibility data rather than runtime policy.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
 Rust server, pinned Claude Code, Codex, and OpenCode CLIs, and pinned official

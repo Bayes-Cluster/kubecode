@@ -1144,5 +1144,8 @@
   "kubecode.permissionRequired": "需要授权",
   "kubecode.answerAgentQuestion": "回答 Agent 问题",
   "kubecode.decline": "拒绝",
-  "kubecode.submitAnswers": "提交回答"
+  "kubecode.submitAnswers": "提交回答",
+  "kubecode.allowAll": "始终允许",
+  "kubecode.allow": "允许",
+  "kubecode.reject": "拒绝"
 }

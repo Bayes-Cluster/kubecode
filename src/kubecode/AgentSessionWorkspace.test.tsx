@@ -88,6 +88,135 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByRole('combobox', { name: 'Permission' })).toBeEnabled()
   })
 
+  it('shows only distinct Agent-native controls with visible labels', async () => {
+    const changedState = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'acceptEdits',
+        availableModes: [
+          { id: 'manual', name: 'Manual' },
+          { id: 'acceptEdits', name: 'Accept Edits' },
+        ],
+      },
+    }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValueOnce({
+        ...emptySessionState,
+        current_mode: {
+          currentModeId: 'manual',
+          availableModes: [
+            { id: 'manual', name: 'Manual' },
+            { id: 'acceptEdits', name: 'Accept Edits' },
+          ],
+        },
+        config_options: {
+          configOptions: [
+            {
+              type: 'select',
+              id: 'permissionMode',
+              name: 'Permission',
+              currentValue: 'manual',
+              options: [
+                { value: 'manual', name: 'Manual' },
+                { value: 'acceptEdits', name: 'Accept Edits' },
+              ],
+            },
+            {
+              type: 'select',
+              id: 'model',
+              name: 'Model',
+              currentValue: 'default',
+              options: [
+                { value: 'default', name: 'Default' },
+                { value: 'fast', name: 'Fast' },
+              ],
+            },
+            {
+              type: 'select',
+              id: 'effort',
+              name: 'Effort',
+              currentValue: 'default',
+              options: [
+                { value: 'default', name: 'Default' },
+                { value: 'high', name: 'High' },
+              ],
+            },
+          ],
+        },
+      }).mockResolvedValue(changedState),
+      setSessionMode: vi.fn().mockResolvedValue(undefined),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByRole('combobox', { name: 'Agent mode' })).toHaveTextContent('Agent mode')
+    expect(screen.queryByRole('combobox', { name: 'Permission' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Permission mode' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Model')
+    expect(screen.getByRole('combobox', { name: 'Effort' })).toHaveTextContent('Effort')
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Agent mode' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Accept Edits' }))
+    await waitFor(() => {
+      expect(api.setSessionMode).toHaveBeenCalledWith(conversation.id, 'acceptEdits')
+      expect(screen.getByRole('combobox', { name: 'Agent mode' })).toHaveTextContent('Accept Edits')
+    })
+  })
+
+  it('does not render ACP state events as an empty imported message', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([
+        {
+          conversation_id: conversation.id,
+          seq: 1,
+          kind: 'capabilities',
+          payload: { loadSession: true },
+          created_at: 'now',
+        },
+        {
+          conversation_id: conversation.id,
+          seq: 2,
+          kind: 'session_loaded',
+          payload: {},
+          created_at: 'now',
+        },
+      ]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    const { container } = render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await waitFor(() => expect(api.listSessionEvents).toHaveBeenCalled())
+    expect(container.querySelectorAll('article')).toHaveLength(0)
+  })
+
   it('replays a fast slash-command response that arrives before its run is loaded', async () => {
     let resolveRun: ((value: AgentRun) => void) | undefined
     const pendingRun = new Promise<AgentRun>((resolve) => { resolveRun = resolve })
@@ -173,13 +302,15 @@ describe('AgentSessionWorkspace', () => {
         request_id: 'permission-1',
         tool: 'Shell',
         options: [
-          { id: 'reject', label: 'Reject', kind: 'reject_once' },
-          { id: 'allow', label: 'Allow', kind: 'allow_once' },
+          { id: 'always', label: 'Always Allow all Bash', kind: 'allow_always' },
+          { id: 'allow', label: 'Allow this Bash command', kind: 'allow_once' },
+          { id: 'reject', label: 'Reject this Bash command', kind: 'reject_once' },
         ],
       },
       created_at: 'now',
     }
     rerender(<AgentSessionWorkspace {...props} workspaceEvents={[permissionEvent]} />)
+    expect(await screen.findByRole('button', { name: 'Allow all' })).toHaveAttribute('title', 'Always Allow all Bash')
     fireEvent.click(await screen.findByRole('button', { name: 'Allow' }))
 
     await waitFor(() => {
@@ -220,7 +351,7 @@ describe('AgentSessionWorkspace', () => {
     )
 
     expect(await screen.findByText('Write file')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-restored', 'allow')
     })

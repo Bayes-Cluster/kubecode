@@ -220,3 +220,9 @@ proposed → active → superseded
 | [0160](0160-remove-codescene-quality-gate.md) | Remove the CodeScene quality gate | active |
 | [0161](0161-kubeflow-web-server-architecture.md) | Kubeflow web server architecture | active |
 | [0162](0162-browser-workbench-and-xterm.md) | Browser workbench with CodeMirror and xterm | active |
+| [0163](0163-acp-agents-and-splittable-terminal-profiles.md) | ACP Agents and splittable Terminal profiles | active |
+| [0164](0164-session-actors-and-global-workspace-events.md) | Session actors and one global workspace event stream | active; permission policy superseded by [0167](0167-agent-native-permission-controls.md) |
+| [0165](0165-session-first-browser-workbench-and-local-git-review.md) | Session-first browser workbench and local Git review | active |
+| [0166](0166-absolute-project-roots-and-acp-session-state.md) | Absolute Project roots and ACP Session state | active |
+| [0167](0167-agent-native-permission-controls.md) | Agent-native permission controls | active |
+| [0168](0168-imported-session-hydration-and-project-activity.md) | Imported Session hydration and Project activity | active |

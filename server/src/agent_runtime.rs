@@ -9,11 +9,10 @@ use agent_client_protocol::schema::v1::{
     CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
     ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, EnvVariable,
     ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerStdio, NewSessionRequest, PermissionOption, PermissionOptionId, PermissionOptionKind,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus,
-    ToolCallUpdate,
+    McpServerStdio, NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
+    SelectedPermissionOutcome, SessionConfigOptionValue, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
 use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
@@ -55,7 +54,6 @@ pub struct StartAgentRun {
     pub conversation_id: String,
     pub project_id: String,
     pub message: String,
-    pub permission_mode: PermissionMode,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -139,7 +137,7 @@ impl AgentRuntime {
             &request.conversation_id,
             &request.project_id,
             &request.message,
-            request.permission_mode,
+            PermissionMode::Safe,
         )?;
         let (cancel, cancelled) = oneshot::channel();
         self.cancellations
@@ -150,7 +148,6 @@ impl AgentRuntime {
         let command = AgentCommand {
             run: run.clone(),
             message: request.message,
-            permission_mode: request.permission_mode,
             cancelled,
         };
         let config = AgentSessionConfig {
@@ -644,7 +641,6 @@ struct AgentSessionConfig {
 struct AgentCommand {
     run: AgentRun,
     message: String,
-    permission_mode: PermissionMode,
     cancelled: oneshot::Receiver<()>,
 }
 
@@ -678,11 +674,19 @@ async fn process_session_control(
             None
         }
         SessionCommand::SetMode { mode_id, response } => {
+            let selected_mode = mode_id.clone();
             let result = connection
                 .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
                 .block_task()
                 .await
-                .map(|_| ())
+                .map(|_| {
+                    persist_serialized_session_event(
+                        store,
+                        conversation_id,
+                        "current_mode",
+                        json!({"currentModeId":selected_mode}),
+                    );
+                })
                 .map_err(|error| error.to_string());
             let _ = response.send(result);
             None
@@ -738,14 +742,17 @@ async fn run_acp_session(
     receiver: &mut mpsc::UnboundedReceiver<SessionCommand>,
     active_run_id: Arc<Mutex<Option<String>>>,
 ) -> Result<(), RuntimeError> {
+    let hydrate_provider_history = config.provider_session_id.is_some()
+        && runtime
+            .store
+            .session_events_after(&config.conversation_id, 0)?
+            .is_empty();
     let agent = acp_agent(config.agent_id, &config.descriptor)?;
     let update_store = Arc::clone(&runtime.store);
     let update_run_id = Arc::clone(&active_run_id);
     let update_conversation_id = config.conversation_id.clone();
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
-    let permission_mode = Arc::new(Mutex::new(PermissionMode::Safe));
-    let current_permission_mode = Arc::clone(&permission_mode);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
     let elicitation_store = Arc::clone(&runtime.store);
     let elicitation_run_id = Arc::clone(&active_run_id);
@@ -776,9 +783,6 @@ async fn run_acp_session(
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
-                let mode = *current_permission_mode
-                    .lock()
-                    .expect("permission mode mutex poisoned");
                 let run_id = permission_run_id
                     .lock()
                     .expect("active run mutex poisoned")
@@ -796,41 +800,39 @@ async fn run_acp_session(
                     })).collect::<Vec<_>>(),
                 });
                 let outcome = if let Some(run_id) = run_id {
+                    let _ = permission_store
+                        .set_run_status(&run_id, RunStatus::WaitingPermission);
                     let _ = permission_store.append_event(
                         &run_id,
                         AgentEventKind::PermissionRequested,
                         &request_payload,
                     );
-                    let outcome = if mode == PermissionMode::Power {
-                        permission_outcome(&request.options, mode)
-                    } else {
-                        let (sender, receiver) = oneshot::channel();
-                        pending_permissions
-                            .lock()
-                            .expect("pending permission mutex poisoned")
-                            .insert(
-                                request_id.clone(),
-                                PendingPermission {
-                                    allowed_options: request
-                                        .options
-                                        .iter()
-                                        .map(|option| option.option_id.to_string())
-                                        .collect(),
-                                    run_id: run_id.clone(),
-                                    sender,
-                                },
-                            );
-                        let selected = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
-                            .await
-                            .ok()
-                            .and_then(Result::ok)
-                            .unwrap_or(RequestPermissionOutcome::Cancelled);
-                        pending_permissions
-                            .lock()
-                            .expect("pending permission mutex poisoned")
-                            .remove(&request_id);
-                        selected
-                    };
+                    let (sender, receiver) = oneshot::channel();
+                    pending_permissions
+                        .lock()
+                        .expect("pending permission mutex poisoned")
+                        .insert(
+                            request_id.clone(),
+                            PendingPermission {
+                                allowed_options: request
+                                    .options
+                                    .iter()
+                                    .map(|option| option.option_id.to_string())
+                                    .collect(),
+                                run_id: run_id.clone(),
+                                sender,
+                            },
+                        );
+                    let outcome = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                        .unwrap_or(RequestPermissionOutcome::Cancelled);
+                    pending_permissions
+                        .lock()
+                        .expect("pending permission mutex poisoned")
+                        .remove(&request_id);
+                    let _ = permission_store.set_run_status(&run_id, RunStatus::Running);
                     let _ = permission_store.append_event(
                         &run_id,
                         AgentEventKind::PermissionResolved,
@@ -856,6 +858,8 @@ async fn run_acp_session(
                     object.insert("request_id".into(), Value::String(request_id.clone()));
                 }
                 let action = if let Some(run_id) = run_id {
+                    let _ = elicitation_store
+                        .set_run_status(&run_id, RunStatus::WaitingPermission);
                     let _ = elicitation_store.append_event(
                         &run_id,
                         AgentEventKind::ElicitationRequested,
@@ -881,6 +885,7 @@ async fn run_acp_session(
                         .lock()
                         .expect("pending elicitation mutex poisoned")
                         .remove(&request_id);
+                    let _ = elicitation_store.set_run_status(&run_id, RunStatus::Running);
                     let _ = elicitation_store.append_event(
                         &run_id,
                         AgentEventKind::ElicitationResolved,
@@ -913,48 +918,68 @@ async fn run_acp_session(
             );
 
             let session_id = if let Some(session_id) = provider_session_id {
-                let resumed = if initialization
+                if hydrate_provider_history && initialization.agent_capabilities.load_session {
+                    let response = connection
+                        .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
+                        .block_task()
+                        .await?;
+                    persist_serialized_session_event(
+                        &store,
+                        &conversation_id,
+                        "session_loaded",
+                        response,
+                    );
+                    session_id.into()
+                } else {
+                    let resumed = if initialization
                     .agent_capabilities
                     .session_capabilities
                     .resume
                     .is_some()
-                {
-                    connection
-                        .send_request(ResumeSessionRequest::new(session_id.clone(), cwd.clone()))
-                        .block_task()
-                        .await
-                        .map(|response| {
-                            persist_serialized_session_event(
-                                &store,
-                                &conversation_id,
-                                "session_resumed",
-                                response,
-                            );
-                        })
-                        .is_ok()
-                } else {
-                    false
-                };
-                if resumed {
-                    session_id.into()
-                } else {
-                    match connection
-                        .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
-                        .block_task()
-                        .await
                     {
-                        Ok(response) => {
-                            persist_serialized_session_event(
-                                &store,
-                                &conversation_id,
-                                "session_loaded",
-                                response,
-                            );
-                            session_id.into()
-                        }
-                        Err(_) => {
-                            create_provider_session(&connection, &store, &conversation_id, cwd)
-                                .await?
+                        connection
+                            .send_request(ResumeSessionRequest::new(
+                                session_id.clone(),
+                                cwd.clone(),
+                            ))
+                            .block_task()
+                            .await
+                            .map(|response| {
+                                persist_serialized_session_event(
+                                    &store,
+                                    &conversation_id,
+                                    "session_resumed",
+                                    response,
+                                );
+                            })
+                            .is_ok()
+                    } else {
+                        false
+                    };
+                    if resumed {
+                        session_id.into()
+                    } else {
+                        match connection
+                            .send_request(LoadSessionRequest::new(
+                                session_id.clone(),
+                                cwd.clone(),
+                            ))
+                            .block_task()
+                            .await
+                        {
+                            Ok(response) => {
+                                persist_serialized_session_event(
+                                    &store,
+                                    &conversation_id,
+                                    "session_loaded",
+                                    response,
+                                );
+                                session_id.into()
+                            }
+                            Err(_) => {
+                                create_provider_session(&connection, &store, &conversation_id, cwd)
+                                    .await?
+                            }
                         }
                     }
                 }
@@ -985,9 +1010,6 @@ async fn run_acp_session(
                 };
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
-                *permission_mode
-                    .lock()
-                    .expect("permission mode mutex poisoned") = command.permission_mode;
                 let mut cancelled = command.cancelled;
                 let prompt = connection
                     .send_request(PromptRequest::new(
@@ -1145,24 +1167,6 @@ fn local_adapter(name: &str) -> Option<PathBuf> {
     is_executable(&candidate).then_some(candidate)
 }
 
-fn permission_outcome(
-    options: &[PermissionOption],
-    permission_mode: PermissionMode,
-) -> RequestPermissionOutcome {
-    let preferred = options.iter().find(|option| {
-        matches!(
-            (permission_mode, option.kind),
-            (PermissionMode::Safe, PermissionOptionKind::RejectOnce)
-                | (PermissionMode::Safe, PermissionOptionKind::RejectAlways)
-                | (PermissionMode::Power, PermissionOptionKind::AllowOnce)
-                | (PermissionMode::Power, PermissionOptionKind::AllowAlways)
-        )
-    });
-    preferred.map_or(RequestPermissionOutcome::Cancelled, |option| {
-        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option.option_id.clone()))
-    })
-}
-
 fn persist_session_update(
     store: &AgentStore,
     conversation_id: &str,
@@ -1301,9 +1305,7 @@ fn tool_updated(update: ToolCallUpdate) -> (AgentEventKind, Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{
-        PermissionOptionId, TextContent, ToolCallId, ToolCallUpdateFields,
-    };
+    use agent_client_protocol::schema::v1::{TextContent, ToolCallId, ToolCallUpdateFields};
 
     #[test]
     fn builds_standard_adapter_commands() {
@@ -1372,14 +1374,10 @@ mod tests {
     }
 
     #[test]
-    fn validates_adapter_executables_and_empty_permissions() {
+    fn validates_adapter_executables() {
         assert!(executable_path(PathBuf::from("sh")).is_some());
         assert!(executable_path(PathBuf::from("/definitely/missing/adapter")).is_none());
         assert!(local_adapter("codex-acp").is_some());
-        assert_eq!(
-            permission_outcome(&[], PermissionMode::Safe),
-            RequestPermissionOutcome::Cancelled
-        );
     }
 
     #[test]
@@ -1400,30 +1398,6 @@ mod tests {
         ));
         assert_eq!(tool.0, AgentEventKind::ToolCompleted);
         assert_eq!(tool.1["tool_id"], "tool-1");
-    }
-
-    #[test]
-    fn safe_rejects_and_power_allows_acp_permissions() {
-        let options = vec![
-            PermissionOption::new(
-                PermissionOptionId::new("allow"),
-                "Allow",
-                PermissionOptionKind::AllowOnce,
-            ),
-            PermissionOption::new(
-                PermissionOptionId::new("reject"),
-                "Reject",
-                PermissionOptionKind::RejectOnce,
-            ),
-        ];
-        assert_eq!(
-            selected_option(permission_outcome(&options, PermissionMode::Safe)),
-            "reject"
-        );
-        assert_eq!(
-            selected_option(permission_outcome(&options, PermissionMode::Power)),
-            "allow"
-        );
     }
 
     #[tokio::test]

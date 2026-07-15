@@ -17,9 +17,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
-use crate::agents::{
-    AgentEvent, AgentId, AgentStore, PermissionMode, RunStatus, StoreError, WorkspaceEvent,
-};
+use crate::agents::{AgentEvent, AgentId, AgentStore, RunStatus, StoreError, WorkspaceEvent};
 use crate::git::{GitError, GitMutation, GitService};
 use crate::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalSnapshot};
 use crate::workspace::{DirectoryListing, EntryKind, WorkspaceError, WorkspaceService};
@@ -101,6 +99,7 @@ fn api_router(state: AppState) -> Router {
         .route("/events", get(stream_workspace_events))
         .route("/filesystem/directories", get(list_directories))
         .route("/projects", get(list_projects).post(create_project))
+        .route("/projects/{project_id}/runs", get(list_project_runs))
         .route(
             "/projects/{project_id}/agents/{agent_id}/sessions",
             get(list_provider_sessions),
@@ -340,7 +339,6 @@ async fn fork_conversation(
 #[derive(Debug, Deserialize)]
 struct StartRunRequest {
     message: String,
-    permission_mode: PermissionMode,
 }
 
 async fn start_agent_run(
@@ -355,7 +353,6 @@ async fn start_agent_run(
         conversation_id,
         project_id,
         message: request.message,
-        permission_mode: request.permission_mode,
     })?;
     Ok((StatusCode::ACCEPTED, Json(run)))
 }
@@ -373,6 +370,16 @@ async fn list_conversation_runs(
 ) -> Result<impl IntoResponse, ApiError> {
     Ok(Json(
         state.agent_runtime.store().list_runs(&conversation_id)?,
+    ))
+}
+
+async fn list_project_runs(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    Ok(Json(
+        state.agent_runtime.store().list_project_runs(&project_id)?,
     ))
 }
 

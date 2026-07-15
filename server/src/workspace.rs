@@ -178,7 +178,7 @@ impl WorkspaceService {
                 path: path_string(&canonical),
             });
         }
-        entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        entries.sort_by_key(|entry| entry.name.to_lowercase());
         Ok(DirectoryListing {
             path: path_string(&directory),
             parent: directory.parent().map(path_string),

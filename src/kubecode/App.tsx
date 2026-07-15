@@ -49,10 +49,12 @@ import { KubecodeApi } from './api'
 import type {
   AgentDescriptor,
   AgentId,
+  AgentRun,
   Conversation,
   DirectoryListing,
   Project,
   ProviderSessionInfo,
+  RunStatus,
   TerminalInfo,
   WorkspaceEvent,
 } from './api'
@@ -78,6 +80,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [terminalOpen, setTerminalOpen] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
+  const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
@@ -106,6 +109,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         const initialProjectId = nextProjects[0]?.id ?? null
         setProjectId(initialProjectId)
         if (initialProjectId) applyProjectLayout(initialProjectId)
+        if (typeof api.listProjectRuns === 'function') {
+          void Promise.all(nextProjects.map(async (item) => (
+            [item.id, await api.listProjectRuns(item.id)] as const
+          ))).then((entries) => {
+            if (!current) return
+            setProjectRuns((existing) => mergeProjectRuns(existing, Object.fromEntries(entries)))
+          }).catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
+        }
       })
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
@@ -147,6 +158,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     const receive = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as WorkspaceEvent
       setWorkspaceEvents((current) => [...current, event].slice(-2048))
+      setProjectRuns((current) => applyWorkspaceRunEvent(current, event))
       if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)
         && event.project_id === projectId && projectId) {
         void api.listConversations(projectId).then(setConversations)
@@ -212,6 +224,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 aria-label={item.name}
                 className="kubecode-project-button"
                 data-active={item.id === projectId}
+                data-session-status={projectSessionStatus(projectRuns[item.id] ?? []) ?? undefined}
                 key={item.id}
                 size="icon"
                 variant="ghost"
@@ -270,7 +283,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               conversation={conversation}
               locale={locale}
               onConversationCreated={(created) => {
-                setConversations((current) => [...current.filter((item) => item.id !== created.id), created])
+                setConversations((current) => upsertConversation(current, created))
                 setConversationId(created.id)
               }}
               projectId={projectId}
@@ -297,7 +310,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                   projectId={projectId}
                   t={t}
                   width={contextWidth}
-                  workspaceEvent={workspaceEvents.at(-1) ?? null}
+                  workspaceEvents={workspaceEvents}
                 />
               </>
             )}
@@ -334,7 +347,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         projectId={projectId}
         onOpenChange={setSessionDialog}
         onSession={(created) => {
-          setConversations((current) => [...current, created])
+          setConversations((current) => upsertConversation(current, created))
           setConversationId(created.id)
         }}
         t={t}
@@ -342,6 +355,91 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       <KubecodeSettingsDialog agents={agents} open={settingsOpen} onOpenChange={setSettingsOpen} t={t} />
     </main>
   )
+}
+
+function upsertConversation(current: Conversation[], conversation: Conversation): Conversation[] {
+  return [...current.filter((item) => item.id !== conversation.id), conversation]
+}
+
+type ProjectSessionStatus = 'running' | 'stuck'
+
+function projectSessionStatus(runs: AgentRun[]): ProjectSessionStatus | null {
+  const latestRuns = new Map<string, AgentRun>()
+  for (const run of runs) latestRuns.set(run.conversation_id, run)
+  const statuses = [...latestRuns.values()].map((run) => run.status)
+  if (statuses.some(isStuckStatus)) return 'stuck'
+  return statuses.includes('running') ? 'running' : null
+}
+
+function isStuckStatus(status: RunStatus): boolean {
+  return status === 'waiting_permission'
+    || status === 'failed'
+    || status === 'timed_out'
+    || status === 'interrupted'
+}
+
+function mergeProjectRuns(
+  current: Record<string, AgentRun[]>,
+  loaded: Record<string, AgentRun[]>,
+): Record<string, AgentRun[]> {
+  const merged = { ...current }
+  for (const [projectId, runs] of Object.entries(loaded)) {
+    const currentById = new Map((current[projectId] ?? []).map((run) => [run.id, run]))
+    merged[projectId] = runs.map((run) => currentById.get(run.id) ?? run)
+    for (const run of currentById.values()) {
+      if (!runs.some((loadedRun) => loadedRun.id === run.id)) merged[projectId].push(run)
+    }
+  }
+  return merged
+}
+
+function applyWorkspaceRunEvent(
+  current: Record<string, AgentRun[]>,
+  event: WorkspaceEvent,
+): Record<string, AgentRun[]> {
+  if (!event.project_id || !event.conversation_id || !event.run_id) return current
+  const status = eventRunStatus(event)
+  if (!status) return current
+  const projectRuns = current[event.project_id] ?? []
+  const existing = projectRuns.find((run) => run.id === event.run_id)
+  const updated: AgentRun = existing
+    ? { ...existing, status }
+    : {
+        id: event.run_id,
+        conversation_id: event.conversation_id,
+        project_id: event.project_id,
+        message: '',
+        status,
+        permission_mode: 'safe',
+        error: null,
+      }
+  return {
+    ...current,
+    [event.project_id]: existing
+      ? projectRuns.map((run) => run.id === updated.id ? updated : run)
+      : [...projectRuns, updated],
+  }
+}
+
+function eventRunStatus(event: WorkspaceEvent): RunStatus | null {
+  if (event.kind === 'run_started') return 'running'
+  if (event.kind === 'permission_requested' || event.kind === 'elicitation_requested') {
+    return 'waiting_permission'
+  }
+  if (event.kind === 'permission_resolved' || event.kind === 'elicitation_resolved') return 'running'
+  if (event.kind !== 'run_completed') return null
+  const status = event.payload.status
+  return isRunStatus(status) ? status : 'completed'
+}
+
+function isRunStatus(value: unknown): value is RunStatus {
+  return value === 'running'
+    || value === 'waiting_permission'
+    || value === 'completed'
+    || value === 'failed'
+    || value === 'cancelled'
+    || value === 'timed_out'
+    || value === 'interrupted'
 }
 
 type Translator = ReturnType<typeof createTranslator>

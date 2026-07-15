@@ -31,6 +31,13 @@ fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
         )
         .expect("first run");
     store
+        .set_run_status(&first.id, RunStatus::WaitingPermission)
+        .expect("mark run waiting");
+    assert_eq!(
+        store.get_run(&first.id).expect("waiting run").status,
+        RunStatus::WaitingPermission
+    );
+    store
         .start_run(
             &second_conversation.id,
             "project-a",
@@ -74,6 +81,16 @@ fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
     assert_eq!(history.len(), 2);
     assert_eq!(history[0].message, "first");
     assert_eq!(history[1].message, "next");
+
+    let project_history = store
+        .list_project_runs("project-a")
+        .expect("project run history");
+    assert_eq!(project_history.len(), 3);
+    assert!(
+        project_history
+            .iter()
+            .all(|run| run.project_id == "project-a")
+    );
 }
 
 #[test]

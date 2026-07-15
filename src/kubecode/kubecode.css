@@ -117,7 +117,33 @@
   color: var(--text-secondary);
   font-weight: 650;
   height: 34px;
+  position: relative;
   width: 34px;
+}
+
+.kubecode-project-button[data-session-status]::after {
+  border: 2px solid var(--surface-sidebar);
+  border-radius: 50%;
+  bottom: -2px;
+  content: '';
+  height: 9px;
+  position: absolute;
+  right: -2px;
+  width: 9px;
+}
+
+.kubecode-project-button[data-session-status='running']::after {
+  animation: kubecode-project-running 1.6s ease-in-out infinite;
+  background: var(--accent-blue);
+}
+
+.kubecode-project-button[data-session-status='stuck']::after {
+  background: var(--feedback-warning-text);
+}
+
+@keyframes kubecode-project-running {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 34%, transparent); }
+  50% { box-shadow: 0 0 0 4px transparent; }
 }
 
 .kubecode-project-button[data-active='true'] {
@@ -422,42 +448,70 @@
 }
 
 .kubecode-permission-actions > button {
-  max-width: min(100%, 240px);
-  min-width: 0;
+  flex: 0 1 auto;
+  height: auto;
+  max-width: min(100%, 160px);
+  min-height: 32px;
+  min-width: 72px;
   overflow: hidden;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .kubecode-elicitation-dock {
-  background: var(--surface-sidebar);
+  background: var(--surface-app);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 7%, transparent);
   display: grid;
-  gap: 10px;
+  gap: 0;
   margin: 0 auto 8px;
-  max-height: min(420px, 48vh);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: min(520px, 62vh);
   max-width: 760px;
-  overflow-y: auto;
-  padding: 12px;
+  overflow: hidden;
+  padding: 0;
   width: calc(100% - 20px);
 }
 
-.kubecode-elicitation-heading,
-.kubecode-elicitation-field {
+.kubecode-elicitation-heading {
+  border-bottom: 1px solid var(--border-subtle);
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  padding: 13px 15px 12px;
 }
 
-.kubecode-elicitation-heading > span,
-.kubecode-elicitation-field > small {
+.kubecode-elicitation-heading > strong { font-size: 13px; }
+.kubecode-elicitation-heading > span {
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .kubecode-elicitation-fields {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  overflow-y: auto;
+  padding: 13px 15px;
+}
+
+.kubecode-elicitation-field {
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px 10px;
+}
+
+.kubecode-elicitation-field > small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .kubecode-elicitation-field > span {
@@ -465,18 +519,21 @@
   font-weight: 600;
 }
 
-.kubecode-elicitation-field:has([role='switch']) {
-  align-content: center;
-  grid-template-columns: minmax(0, 1fr) auto;
+.kubecode-elicitation-field > input,
+.kubecode-elicitation-field > button {
+  margin-top: auto;
+  width: 100%;
 }
 
-.kubecode-elicitation-field:has([role='switch']) > small { grid-column: 1; }
-.kubecode-elicitation-field:has([role='switch']) > [role='switch'] { grid-column: 2; grid-row: 1 / span 2; }
+.kubecode-elicitation-field > [role='switch'] { margin-top: 5px; }
 
 .kubecode-elicitation-actions {
+  background: var(--surface-sidebar);
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   gap: 7px;
   justify-content: flex-end;
+  padding: 10px 15px;
 }
 
 .kubecode-session-composer > div {
@@ -488,9 +545,20 @@
 }
 
 .kubecode-composer-controls {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   gap: 4px;
   max-width: 100%;
-  overflow-x: auto;
+  min-width: 0;
+  overflow: visible;
+  row-gap: 2px;
+}
+
+.kubecode-composer-controls [data-slot='select-trigger'] {
+  flex: 0 0 auto;
+  max-width: none;
+  min-width: max-content;
+  white-space: nowrap;
 }
 .kubecode-agent-chip {
   color: var(--text-secondary);

@@ -72,10 +72,18 @@ concurrently with an active prompt, so native permission modes remain selectable
 without starting a second adapter process. Actors remain
 connected between turns and stop after thirty idle minutes; the next turn uses
 `session/resume` when advertised and falls back to `session/load`. ACP session IDs are stored with Sessions, while typed protocol
-updates are normalized into the `AgentStore` event vocabulary. Safe mode emits
-a pending permission event and waits for the user's ACP option; Power mode
-selects an allow option. Authentication and model configuration stay inside the
-external agent.
+updates are normalized into the `AgentStore` event vocabulary. Kubecode has no
+independent Safe/Power policy: its prompt API accepts only the message, and ACP
+permission requests always wait for the user to select one of the Agent's
+original options. The run table's permission column is retained only for
+storage compatibility. Authentication, model configuration, and native modes
+stay inside the external agent.
+
+A provider Session with no local Session events is a fresh import. Its first
+actor connection prefers `session/load` when available so replayed user and
+Agent chunks become the durable local timeline; subsequent connections resume
+without duplicating that history. Run status moves to `waiting_permission`
+while an ACP permission or elicitation request blocks the Agent.
 
 `GitService` is the local Source Control boundary. It always resolves a Project
 through `WorkspaceService`, rejects absolute/traversing path arguments, starts
@@ -86,7 +94,9 @@ discard, and commit mutations. Remote and branch workflows remain out of scope.
 `KubecodeApi` is the browser's only server boundary. It encodes Project IDs and
 relative file paths independently, preserves structured API errors, and derives
 HTTP and WebSocket endpoints from the active Notebook pathname. UI components
-do not assemble absolute backend URLs themselves.
+do not assemble absolute backend URLs themselves. Its Project run endpoint
+seeds cross-Project activity indicators; global workspace events keep the same
+snapshots current without per-Project polling.
 
 `AgentSessionWorkspace` is the primary renderer surface. It hydrates the stored
 Session timeline, folds the global event stream into
@@ -95,15 +105,19 @@ elicitation forms above the composer, and
 keeps the Session's Agent immutable. It reuses proven Tolaria message/composer
 primitives without retaining the old right-side AI Panel chrome. Slash-command
 suggestions, Agent plans, native mode/config selectors, fork, and provider delete
-are rendered only from retained ACP state and capabilities. The app passes an
+are rendered only from retained ACP state and capabilities. Equivalent mode and
+config option sets are shown once, and every remaining selector has a visible
+label. The app passes an
 ordered bounded workspace-event window to this renderer; events received before
 their run record is available are queued and replayed in sequence, preventing
 fast slash commands and token bursts from disappearing in the live view.
 
 `ContextWorkbench` owns the right-side Review, Files, Editor, and Diff tabs.
 Review is the default tab, while CodeMirror opens beside the Session and shares
-the same Terminal row. Filesystem and Git workspace events invalidate its
-snapshots without opening additional EventSource connections.
+the same Terminal row. It consumes the ordered workspace-event window by event
+ID, coalesces file and Git invalidations, and ignores stale entry responses.
+New files and folders therefore appear without refresh even when another event
+follows immediately, without opening additional EventSource connections.
 
 The workbench owns its Session sidebar, context pane, and Terminal dimensions in
 `KubecodeApp`. Shared
@@ -127,7 +141,7 @@ Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_agent_session_forked`, `kubecode_agent_run_started`,
 `kubecode_agent_elicitation_resolved`, and
 `kubecode_git_action_used`. Event properties
-contain only action modes, Agent IDs, and permission modes; Project names,
+contain only action modes and Agent IDs; Project names,
 paths, prompts, terminal contents, and file contents are never included.
 
 Key abstractions and domain models in Tolaria.

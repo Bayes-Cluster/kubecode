@@ -265,19 +265,22 @@ export class KubecodeApi {
     projectId: string,
     conversationId: string,
     message: string,
-    permissionMode: 'safe' | 'power',
   ): Promise<AgentRun> {
     return this.request(
       `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/runs`,
       {
         method: 'POST',
-        body: JSON.stringify({ message, permission_mode: permissionMode }),
+        body: JSON.stringify({ message }),
       },
     )
   }
 
   listRuns(conversationId: string): Promise<AgentRun[]> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/runs`)
+  }
+
+  listProjectRuns(projectId: string): Promise<AgentRun[]> {
+    return this.request(`${this.projectPath(projectId)}/runs`)
   }
 
   getRun(runId: string): Promise<AgentRun> {

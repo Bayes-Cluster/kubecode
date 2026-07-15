@@ -543,6 +543,32 @@ impl AgentStore {
             .map_err(StoreError::from)
     }
 
+    pub fn list_project_runs(&self, project_id: &str) -> Result<Vec<AgentRun>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error
+             FROM agent_runs WHERE project_id = ?1 ORDER BY rowid",
+        )?;
+        let rows = statement.query_map([project_id], run_from_row)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn set_run_status(&self, run_id: &str, status: RunStatus) -> Result<(), StoreError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE agent_runs SET status = ?2 WHERE id = ?1",
+                params![run_id, status.as_str()],
+            )?;
+        if changed == 0 {
+            return Err(StoreError::RunNotFound(run_id.to_owned()));
+        }
+        Ok(())
+    }
+
     pub fn finish_run(
         &self,
         run_id: &str,

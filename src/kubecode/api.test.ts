@@ -35,4 +35,38 @@ describe('Kubecode API client', () => {
       message: 'already running',
     })
   })
+
+  it('starts an Agent run without a Kubecode permission mode', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'run-1',
+      conversation_id: 'session-1',
+      project_id: 'project-1',
+      message: 'Do it',
+      status: 'running',
+      permission_mode: 'safe',
+      error: null,
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.startRun('project-1', 'session-1', 'Do it')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/sessions/session-1/runs',
+      expect.objectContaining({ body: JSON.stringify({ message: 'Do it' }) }),
+    )
+  })
+
+  it('loads project run state for project icon activity', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('[]'))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.listProjectRuns('project/id')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project%2Fid/runs',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
 })

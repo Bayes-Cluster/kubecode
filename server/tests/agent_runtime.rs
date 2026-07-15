@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_runtime::{AgentRuntime, SessionConfigInput, StartAgentRun};
-use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, PermissionMode, RunStatus};
+use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, RunStatus};
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
 
@@ -80,6 +80,71 @@ done"#,
 }
 
 #[tokio::test]
+async fn importing_provider_session_loads_history_before_resuming() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"loadSession\":true,\"sessionCapabilities\":{\"resume\":{}}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/resume"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+      ;;
+    *'"method":"session/load"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"provider-session","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Earlier request"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"provider-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Earlier response"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_imported_conversation(
+            &project.id,
+            AgentId::OpenCode,
+            "provider-session",
+            Some("Imported session"),
+        )
+        .expect("imported conversation");
+
+    runtime
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("initialize imported ACP session");
+
+    let events = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events");
+    assert!(events.iter().any(|event| {
+        event.kind == "user_message_delta" && event.payload["text"] == "Earlier request"
+    }));
+    assert!(events.iter().any(|event| {
+        event.kind == "text_delta" && event.payload["text"] == "Earlier response"
+    }));
+}
+
+#[tokio::test]
 async fn changes_native_config_while_a_prompt_is_running() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -102,6 +167,9 @@ async fn changes_native_config_while_a_prompt_is_running() {
       ;;
     *'"method":"session/set_config_option"'*)
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"configOptions\":[]}}"
+      ;;
+    *'"method":"session/set_mode"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
       ;;
   esac
 done"#,
@@ -129,7 +197,6 @@ done"#,
             conversation_id: conversation.id.clone(),
             project_id: project.id,
             message: "Keep working".into(),
-            permission_mode: PermissionMode::Safe,
         })
         .expect("start prompt");
 
@@ -144,6 +211,17 @@ done"#,
     .await
     .expect("config update must not wait for prompt completion")
     .expect("set config");
+
+    runtime
+        .set_session_mode(&conversation.id, "acceptEdits".into())
+        .await
+        .expect("set mode");
+    let events = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events");
+    assert!(events.iter().any(|event| {
+        event.kind == "current_mode" && event.payload["currentModeId"] == "acceptEdits"
+    }));
 
     assert!(runtime.cancel(&run.id));
 }
@@ -198,7 +276,6 @@ done"#,
             conversation_id: conversation.id.clone(),
             project_id: project.id.clone(),
             message: "Do the work".into(),
-            permission_mode: PermissionMode::Safe,
         })
         .expect("start run");
 
@@ -234,7 +311,6 @@ done"#,
             conversation_id: conversation.id,
             project_id: project.id,
             message: "Continue in the same ACP session".into(),
-            permission_mode: PermissionMode::Safe,
         })
         .expect("start second run");
     let second_completed = tokio::time::timeout(Duration::from_secs(3), async {
