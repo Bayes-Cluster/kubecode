@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -21,6 +21,8 @@ pub enum TerminalError {
     LimitReached,
     #[error("agent is not available: {0:?}")]
     AgentUnavailable(AgentId),
+    #[error("terminal title must be 1-80 characters without control characters")]
+    InvalidTitle,
     #[error("PTY error: {0}")]
     Pty(String),
     #[error(transparent)]
@@ -38,6 +40,14 @@ pub enum TerminalKind {
     Codex,
     #[serde(rename = "opencode")]
     OpenCode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalStatus {
+    #[default]
+    Running,
+    Exited,
 }
 
 impl TerminalKind {
@@ -68,7 +78,18 @@ pub struct TerminalInfo {
     pub kind: TerminalKind,
     pub cols: u16,
     pub rows: u16,
+    pub status: TerminalStatus,
+    pub exit_code: Option<u32>,
+    pub signal: Option<String>,
 }
+
+#[derive(Clone, Debug)]
+pub struct TerminalLifecycleEvent {
+    pub kind: &'static str,
+    pub terminal: TerminalInfo,
+}
+
+pub type TerminalEventSink = Arc<dyn Fn(TerminalLifecycleEvent) + Send + Sync>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TerminalSnapshot {
@@ -83,13 +104,14 @@ pub struct TerminalManager {
     buffer_capacity: usize,
     agents: HashMap<AgentId, AgentDescriptor>,
     sessions: Mutex<HashMap<String, Arc<TerminalSession>>>,
+    event_sink: TerminalEventSink,
 }
 
 struct TerminalSession {
-    info: Mutex<TerminalInfo>,
+    info: Arc<Mutex<TerminalInfo>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
-    child: Mutex<Box<dyn Child + Send + Sync>>,
+    killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     buffer: Arc<Mutex<TerminalBuffer>>,
 }
 
@@ -115,12 +137,29 @@ impl TerminalManager {
         buffer_capacity: usize,
         agents: Vec<AgentDescriptor>,
     ) -> Self {
+        Self::with_agents_and_events(
+            workspace,
+            per_project_limit,
+            buffer_capacity,
+            agents,
+            Arc::new(|_| {}),
+        )
+    }
+
+    pub fn with_agents_and_events(
+        workspace: Arc<WorkspaceService>,
+        per_project_limit: usize,
+        buffer_capacity: usize,
+        agents: Vec<AgentDescriptor>,
+        event_sink: TerminalEventSink,
+    ) -> Self {
         Self {
             workspace,
             per_project_limit,
             buffer_capacity,
             agents: agents.into_iter().map(|agent| (agent.id, agent)).collect(),
             sessions: Mutex::new(HashMap::new()),
+            event_sink,
         }
     }
 
@@ -150,6 +189,14 @@ impl TerminalManager {
                     .project_id
                     == project_id
             })
+            .filter(|session| {
+                session
+                    .info
+                    .lock()
+                    .expect("terminal info mutex poisoned")
+                    .status
+                    == TerminalStatus::Running
+            })
             .count();
         if existing >= self.per_project_limit {
             return Err(TerminalError::LimitReached);
@@ -169,10 +216,11 @@ impl TerminalManager {
         command.cwd(project_path);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| TerminalError::Pty(error.to_string()))?;
+        let killer = child.clone_killer();
         drop(pair.slave);
         let mut reader = pair
             .master
@@ -191,24 +239,46 @@ impl TerminalManager {
             kind,
             cols,
             rows,
+            status: TerminalStatus::Running,
+            exit_code: None,
+            signal: None,
         };
+        let info = Arc::new(Mutex::new(info));
         let buffer = Arc::new(Mutex::new(TerminalBuffer::new(self.buffer_capacity)));
         let reader_buffer = Arc::clone(&buffer);
         thread::Builder::new()
             .name(format!("kubecode-pty-{id}"))
             .spawn(move || copy_pty_output(&mut reader, &reader_buffer))?;
 
-        sessions.insert(
-            id,
-            Arc::new(TerminalSession {
-                info: Mutex::new(info.clone()),
-                master: Mutex::new(pair.master),
-                writer: Mutex::new(writer),
-                child: Mutex::new(child),
-                buffer,
-            }),
-        );
-        Ok(info)
+        let session = Arc::new(TerminalSession {
+            info: Arc::clone(&info),
+            master: Mutex::new(pair.master),
+            writer: Mutex::new(writer),
+            killer: Mutex::new(killer),
+            buffer,
+        });
+        sessions.insert(id.clone(), session);
+        drop(sessions);
+        let event_sink = Arc::clone(&self.event_sink);
+        thread::Builder::new()
+            .name(format!("kubecode-pty-wait-{id}"))
+            .spawn(move || {
+                let Ok(status) = child.wait() else {
+                    return;
+                };
+                let terminal = {
+                    let mut terminal = info.lock().expect("terminal info mutex poisoned");
+                    terminal.status = TerminalStatus::Exited;
+                    terminal.exit_code = Some(status.exit_code());
+                    terminal.signal = status.signal().map(str::to_owned);
+                    terminal.clone()
+                };
+                event_sink(TerminalLifecycleEvent {
+                    kind: "terminal_exited",
+                    terminal,
+                });
+            })?;
+        self.get(&id)
     }
 
     fn executable(&self, kind: TerminalKind) -> Result<String, TerminalError> {
@@ -282,6 +352,17 @@ impl TerminalManager {
         Ok(())
     }
 
+    pub fn rename(&self, terminal_id: &str, title: &str) -> Result<TerminalInfo, TerminalError> {
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
+            return Err(TerminalError::InvalidTitle);
+        }
+        let session = self.session(terminal_id)?;
+        let mut info = session.info.lock().expect("terminal info mutex poisoned");
+        info.title = title.to_owned();
+        Ok(info.clone())
+    }
+
     pub fn read_since(
         &self,
         terminal_id: &str,
@@ -302,11 +383,19 @@ impl TerminalManager {
             .expect("terminal sessions mutex poisoned")
             .remove(terminal_id)
             .ok_or_else(|| TerminalError::NotFound(terminal_id.to_owned()))?;
-        session
-            .child
+        let running = session
+            .info
             .lock()
-            .expect("terminal child mutex poisoned")
-            .kill()?;
+            .expect("terminal info mutex poisoned")
+            .status
+            == TerminalStatus::Running;
+        if running {
+            session
+                .killer
+                .lock()
+                .expect("terminal killer mutex poisoned")
+                .kill()?;
+        }
         Ok(())
     }
 

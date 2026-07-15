@@ -2,7 +2,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from './App'
-import type { KubecodeApi } from './api'
+import type { KubecodeApi, TerminalInfo } from './api'
+
+vi.mock('./TerminalView', () => ({
+  TerminalView: ({ terminal }: { terminal: TerminalInfo }) => (
+    <div data-testid={`terminal-${terminal.id}`}>{terminal.title}</div>
+  ),
+}))
 
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
@@ -235,7 +241,7 @@ describe('Kubecode workspace', () => {
         { id: 'opencode', available: true, version: 'test', executable: 'opencode', error: null },
       ]),
       listEntries: vi.fn().mockResolvedValue([]),
-      listTerminals: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([terminal('terminal-1')]),
       listConversations: vi.fn().mockResolvedValue([]),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -253,6 +259,8 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
+    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('0px')
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle terminal' }))
     const handles = container.querySelectorAll('.cursor-col-resize')
     expect(handles).toHaveLength(2)
     const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement
@@ -295,7 +303,7 @@ describe('Kubecode workspace', () => {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: 'demo' }]),
       listAgents: vi.fn().mockResolvedValue([]),
       listEntries: vi.fn().mockResolvedValue([]),
-      listTerminals: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([terminal('terminal-1')]),
       listConversations: vi.fn().mockResolvedValue([]),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -442,3 +450,17 @@ describe('Kubecode workspace', () => {
     }))
   })
 })
+
+function terminal(id: string): TerminalInfo {
+  return {
+    id,
+    project_id: 'project-1',
+    title: 'Terminal',
+    kind: 'regular',
+    cols: 100,
+    rows: 28,
+    status: 'running',
+    exit_code: null,
+    signal: null,
+  }
+}

@@ -37,10 +37,11 @@ describe('TerminalWorkspace', () => {
     )
 
     fireEvent.pointerDown(
-      screen.getByRole('button', { name: 'kubecode.newTerminal' }),
+      screen.getByRole('button', { name: 'kubecode.terminalProfiles' }),
       { button: 0 },
     )
-    expect(screen.getByRole('menuitem', { name: /kubecode.regularTerminal/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /^kubecode.terminal$/ })).toBeInTheDocument()
+    expect(screen.queryByText(/regular terminal/i)).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Claude Code/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Codex/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /OpenCode/ })).toHaveAttribute('data-disabled')
@@ -118,7 +119,38 @@ describe('TerminalWorkspace', () => {
     const children = container.querySelectorAll('.kubecode-terminal-split-child')
     expect((children[0] as HTMLElement).style.flexBasis).toBe('82%')
     expect((children[1] as HTMLElement).style.flexBasis).toBe('18%')
-    expect(screen.getByRole('button', { name: /Shell/ })).toHaveAttribute('data-variant', 'secondary')
+    expect(screen.getByRole('tab', { name: /Shell/ })).toHaveAttribute('data-variant', 'secondary')
+  })
+
+  it('renames a terminal tab and folds the dock from its own toolbar', async () => {
+    const first = terminal('terminal-1', 'Terminal 1', 'regular')
+    const renamed = { ...first, title: 'Build shell' }
+    const onCollapse = vi.fn()
+    const api = {
+      closeTerminal: vi.fn().mockResolvedValue(undefined),
+      createTerminal: vi.fn(),
+      updateTerminal: vi.fn().mockResolvedValue(renamed),
+    } as unknown as KubecodeApi
+
+    render(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
+        initialTerminals={[first]}
+        onCollapse={onCollapse}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    fireEvent.doubleClick(screen.getByRole('tab', { name: /Terminal 1/ }))
+    const title = screen.getByRole('textbox', { name: 'kubecode.terminalTitle' })
+    fireEvent.change(title, { target: { value: 'Build shell' } })
+    fireEvent.keyDown(title, { key: 'Enter' })
+    await waitFor(() => expect(api.updateTerminal).toHaveBeenCalledWith('terminal-1', 'Build shell'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.collapse' }))
+    expect(onCollapse).toHaveBeenCalledOnce()
   })
 })
 
@@ -127,5 +159,15 @@ function terminal(
   title: string,
   kind: TerminalInfo['kind'],
 ): TerminalInfo {
-  return { id, project_id: 'project-1', title, kind, cols: 100, rows: 28 }
+  return {
+    id,
+    project_id: 'project-1',
+    title,
+    kind,
+    cols: 100,
+    rows: 28,
+    status: 'running',
+    exit_code: null,
+    signal: null,
+  }
 }

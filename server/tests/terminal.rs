@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::AgentId;
-use kubecode_server::terminal::{TerminalError, TerminalKind, TerminalManager};
+use kubecode_server::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalStatus};
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
 
@@ -148,4 +148,76 @@ fn rejects_unavailable_agent_tui_terminals() {
         error,
         TerminalError::AgentUnavailable(AgentId::ClaudeCode)
     ));
+}
+
+#[test]
+fn keeps_exited_terminals_available_until_the_user_closes_them() {
+    let (temp, project_id, manager) = manager(8);
+    let executable = temp.path().join("exit-terminal.sh");
+    fs::write(&executable, "#!/bin/sh\nprintf 'finished\\n'\nexit 7\n")
+        .expect("write exiting terminal");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
+            .expect("make exiting terminal executable");
+    }
+    let manager = TerminalManager::with_agents(
+        manager.workspace(),
+        8,
+        2 * 1024 * 1024,
+        vec![AgentDescriptor {
+            id: AgentId::Codex,
+            available: true,
+            version: Some("test".to_owned()),
+            executable: executable.to_string_lossy().into_owned(),
+            error: None,
+        }],
+    );
+
+    let terminal = manager
+        .create(&project_id, TerminalKind::Codex, 80, 24)
+        .expect("create exiting terminal");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let exited = loop {
+        let info = manager.get(&terminal.id).expect("terminal remains listed");
+        if info.status == TerminalStatus::Exited {
+            break info;
+        }
+        assert!(Instant::now() < deadline, "terminal exit timed out");
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    assert_eq!(exited.exit_code, Some(7));
+    assert_eq!(exited.signal, None);
+    assert!(
+        manager
+            .read_since(&terminal.id, 0)
+            .expect("exited output")
+            .data
+            .contains("finished")
+    );
+    manager.close(&terminal.id).expect("close exited terminal");
+}
+
+#[test]
+fn renames_a_terminal_with_a_sanitized_bounded_title() {
+    let (_temp, project_id, manager) = manager(8);
+    let terminal = manager
+        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .expect("create terminal");
+
+    let renamed = manager
+        .rename(&terminal.id, "  Build shell  ")
+        .expect("rename terminal");
+    assert_eq!(renamed.title, "Build shell");
+    assert!(matches!(
+        manager.rename(&terminal.id, "\u{001b}[31munsafe"),
+        Err(TerminalError::InvalidTitle)
+    ));
+    assert!(matches!(
+        manager.rename(&terminal.id, &"x".repeat(81)),
+        Err(TerminalError::InvalidTitle)
+    ));
+    manager.close(&terminal.id).expect("close terminal");
 }

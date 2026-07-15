@@ -93,6 +93,9 @@ export type TerminalInfo = {
   kind: TerminalKind
   cols: number
   rows: number
+  status: 'running' | 'exited'
+  exit_code: number | null
+  signal: string | null
 }
 
 export class ApiError extends Error {
@@ -360,6 +363,13 @@ export class KubecodeApi {
 
   closeTerminal(terminalId: string): Promise<void> {
     return this.request(`/terminals/${encodeURIComponent(terminalId)}`, { method: 'DELETE' })
+  }
+
+  updateTerminal(terminalId: string, title: string): Promise<TerminalInfo> {
+    return this.request(`/terminals/${encodeURIComponent(terminalId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    })
   }
 
   terminalSocket(projectId: string, terminalId: string, cursor: number): WebSocket {

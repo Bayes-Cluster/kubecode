@@ -77,7 +77,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
   const [contextOpen, setContextOpen] = useState(true)
-  const [terminalOpen, setTerminalOpen] = useState(true)
+  const [terminalOpen, setTerminalOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
   const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
@@ -162,6 +162,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)
         && event.project_id === projectId && projectId) {
         void api.listConversations(projectId).then(setConversations)
+      }
+      if (['terminal_created', 'terminal_updated', 'terminal_exited', 'terminal_closed'].includes(event.kind)
+        && event.project_id === projectId && projectId) {
+        void api.listTerminals(projectId).then(setTerminals)
       }
     }
     stream.addEventListener('workspace_event', receive as EventListener)
@@ -315,18 +319,30 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               </>
             )}
           </div>
-          {terminalOpen && (
-            <>
-              <ResizeHandle direction="vertical" onResize={resizeTerminal} />
-              <div className="kubecode-terminal-pane" style={{ height: terminalHeight }}>
-                {projectId ? (
-                  <TerminalWorkspace agents={agents} api={api} initialTerminals={terminals} key={projectId} projectId={projectId} t={t} />
-                ) : (
-                  <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
-                )}
-              </div>
-            </>
-          )}
+          {terminalOpen && <ResizeHandle direction="vertical" onResize={resizeTerminal} />}
+          <div
+            aria-hidden={!terminalOpen}
+            className="kubecode-terminal-pane"
+            data-open={terminalOpen}
+            inert={!terminalOpen ? true : undefined}
+            style={{ height: terminalOpen ? terminalHeight : 0 }}
+          >
+            {projectId ? (
+              <TerminalWorkspace
+                agents={agents}
+                api={api}
+                autoCreateOnOpen
+                initialTerminals={terminals}
+                key={projectId}
+                onCollapse={() => setTerminalOpen(false)}
+                open={terminalOpen}
+                projectId={projectId}
+                t={t}
+              />
+            ) : terminalOpen ? (
+              <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -809,7 +825,7 @@ const DEFAULT_PROJECT_LAYOUT: ProjectLayout = {
   sessionSidebarOpen: true,
   sessionSidebarWidth: 280,
   terminalHeight: 260,
-  terminalOpen: true,
+  terminalOpen: false,
 }
 
 function readProjectLayout(projectId: string): ProjectLayout {

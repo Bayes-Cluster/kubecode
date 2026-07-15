@@ -13,7 +13,9 @@ The active server boundary currently consists of five Rust abstractions:
 - `WorkspaceService` registers absolute canonical Project roots, keeps
   `PERSISTENT_DIR/.state` private, and validates every later file operation
   relative to the selected Project root.
-- `TerminalManager` owns reconnectable PTYs independently from browser sockets.
+- `TerminalManager` owns reconnectable PTYs independently from browser sockets,
+  retains exited processes until explicit close, and publishes lifecycle metadata
+  without mixing it into the PTY byte stream.
 - `AgentStore` persists Agent sessions with separate manual/Agent titles,
   prompt-bearing runs, normalized run and Session events,
   and the global cursor-based workspace event log. It enforces one active run
@@ -39,10 +41,15 @@ The active server boundary currently consists of five Rust abstractions:
 The active React entry point is `src/kubecode/App.tsx`. Its structure follows
 OpenCode Web: a fixed Project rail, a resizable Session sidebar, the primary
 Agent Session timeline/composer, a tabbed Review/Files/CodeMirror context pane,
-and a Terminal row spanning the Session and context columns. Files opened from
+and a folded-by-default Terminal dock spanning the Session and context columns. Files opened from
 the tree or Review stay in the right context pane, so editing never replaces the
-Session. A terminal leaf can be a regular shell or the native Claude Code,
-Codex, or OpenCode TUI; split-right and split-down create independent PTYs.
+Session. Terminal tabs represent groups, while each group owns a recursive split
+tree of independent PTYs. A terminal leaf can be a shell or the native Claude Code,
+Codex, or OpenCode TUI profile; split-right and split-down inherit the active
+leaf's profile. Group order, split ratios, and active leaves persist per Project
+in browser storage. A bounded serialized xterm snapshot restores visible output
+and scroll position immediately after browser refresh while the server cursor
+replays any newer bytes.
 `ResizeHandle` updates all movable boundaries at animation-frame cadence, and
 only small usability minimums constrain the otherwise free dimensions. Browser
 code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from

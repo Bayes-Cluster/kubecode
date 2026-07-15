@@ -19,7 +19,10 @@ use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
 use crate::agents::{AgentEvent, AgentId, AgentStore, RunStatus, StoreError, WorkspaceEvent};
 use crate::git::{GitError, GitMutation, GitService};
-use crate::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalSnapshot};
+use crate::terminal::{
+    TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
+    TerminalSnapshot, TerminalStatus,
+};
 use crate::workspace::{DirectoryListing, EntryKind, WorkspaceError, WorkspaceService};
 
 const API_PATH: &str = "/api/v1";
@@ -35,10 +38,12 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(workspace: Arc<WorkspaceService>, agent_store: Arc<AgentStore>) -> Self {
-        let terminals = Arc::new(TerminalManager::new(
+        let terminals = Arc::new(TerminalManager::with_agents_and_events(
             Arc::clone(&workspace),
             8,
             2 * 1024 * 1024,
+            Vec::new(),
+            terminal_event_sink(Arc::clone(&agent_store)),
         ));
         let agents = supported_agents_unavailable();
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
@@ -57,11 +62,12 @@ impl AppState {
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {
-        self.terminals = Arc::new(TerminalManager::with_agents(
+        self.terminals = Arc::new(TerminalManager::with_agents_and_events(
             Arc::clone(&self.workspace),
             8,
             2 * 1024 * 1024,
             agents.clone(),
+            terminal_event_sink(self.agent_runtime.store()),
         ));
         self.agent_runtime = Arc::new(AgentRuntime::new(
             Arc::clone(&self.workspace),
@@ -178,7 +184,10 @@ fn api_router(state: AppState) -> Router {
             "/projects/{project_id}/terminals",
             get(list_terminals).post(create_terminal),
         )
-        .route("/terminals/{terminal_id}", delete(close_terminal))
+        .route(
+            "/terminals/{terminal_id}",
+            delete(close_terminal).patch(rename_terminal),
+        )
         .route(
             "/projects/{project_id}/terminals/{terminal_id}/attach",
             get(attach_terminal),
@@ -805,6 +814,24 @@ fn emit_project_event(state: &AppState, kind: &str, project_id: &str, payload: s
     );
 }
 
+fn terminal_event_sink(store: Arc<AgentStore>) -> TerminalEventSink {
+    Arc::new(move |event: TerminalLifecycleEvent| {
+        let terminal = event.terminal;
+        let _ = store.append_workspace_event(
+            event.kind,
+            Some(&terminal.project_id),
+            None,
+            None,
+            &json!({
+                "terminal_id": terminal.id,
+                "status": terminal.status,
+                "exit_code": terminal.exit_code,
+                "signal": terminal.signal,
+            }),
+        );
+    })
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct EntryQuery {
     #[serde(default)]
@@ -927,6 +954,11 @@ struct CreateTerminalRequest {
     rows: u16,
 }
 
+#[derive(Debug, Deserialize)]
+struct RenameTerminalRequest {
+    title: String,
+}
+
 async fn list_terminals(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
@@ -966,6 +998,21 @@ async fn close_terminal(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn rename_terminal(
+    State(state): State<AppState>,
+    Path(terminal_id): Path<String>,
+    Json(request): Json<RenameTerminalRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let terminal = state.terminals.rename(&terminal_id, &request.title)?;
+    emit_project_event(
+        &state,
+        "terminal_updated",
+        &terminal.project_id,
+        json!({"terminal_id":terminal.id.clone()}),
+    );
+    Ok(Json(terminal))
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct TerminalAttachQuery {
     #[serde(default)]
@@ -1000,11 +1047,9 @@ async fn terminal_socket(
     terminal_id: String,
     mut cursor: u64,
 ) {
-    if send_terminal_snapshot(&mut socket, &manager, &terminal_id, &mut cursor)
-        .await
-        .is_err()
-    {
-        return;
+    match send_terminal_snapshot(&mut socket, &manager, &terminal_id, &mut cursor).await {
+        Ok(false) => {}
+        Ok(true) | Err(()) => return,
     }
 
     loop {
@@ -1028,8 +1073,9 @@ async fn terminal_socket(
                 }
             }
             () = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
-                if send_terminal_snapshot(&mut socket, &manager, &terminal_id, &mut cursor).await.is_err() {
-                    return;
+                match send_terminal_snapshot(&mut socket, &manager, &terminal_id, &mut cursor).await {
+                    Ok(false) => {}
+                    Ok(true) | Err(()) => return,
                 }
             }
         }
@@ -1041,16 +1087,24 @@ async fn send_terminal_snapshot(
     manager: &TerminalManager,
     terminal_id: &str,
     cursor: &mut u64,
-) -> Result<(), ()> {
+) -> Result<bool, ()> {
     let snapshot = manager.read_since(terminal_id, *cursor).map_err(|_| ())?;
-    if snapshot.data.is_empty() && !snapshot.truncated {
-        return Ok(());
+    if !snapshot.data.is_empty() || snapshot.truncated {
+        *cursor = snapshot.cursor;
+        socket
+            .send(Message::Text(terminal_output_json(snapshot).into()))
+            .await
+            .map_err(|_| ())?;
     }
-    *cursor = snapshot.cursor;
+    let terminal = manager.get(terminal_id).map_err(|_| ())?;
+    if terminal.status != TerminalStatus::Exited {
+        return Ok(false);
+    }
     socket
-        .send(Message::Text(terminal_output_json(snapshot).into()))
+        .send(Message::Text(terminal_status_json(&terminal).into()))
         .await
-        .map_err(|_| ())
+        .map_err(|_| ())?;
+    Ok(true)
 }
 
 fn terminal_output_json(snapshot: TerminalSnapshot) -> String {
@@ -1059,6 +1113,16 @@ fn terminal_output_json(snapshot: TerminalSnapshot) -> String {
         "data": snapshot.data,
         "cursor": snapshot.cursor,
         "truncated": snapshot.truncated,
+    })
+    .to_string()
+}
+
+fn terminal_status_json(terminal: &crate::terminal::TerminalInfo) -> String {
+    json!({
+        "type": "status",
+        "status": terminal.status,
+        "exit_code": terminal.exit_code,
+        "signal": terminal.signal,
     })
     .to_string()
 }
@@ -1133,6 +1197,7 @@ impl IntoResponse for ApiError {
                     TerminalError::AgentUnavailable(_) => {
                         (StatusCode::CONFLICT, "agent_unavailable")
                     }
+                    TerminalError::InvalidTitle => (StatusCode::BAD_REQUEST, "invalid_title"),
                     TerminalError::Workspace(workspace) => workspace_error_status(workspace),
                     TerminalError::Pty(_) | TerminalError::Io(_) => {
                         (StatusCode::INTERNAL_SERVER_ERROR, "terminal_error")

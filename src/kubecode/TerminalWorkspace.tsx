@@ -1,15 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
+  CaretDown,
   Plus,
   SplitHorizontal,
   SplitVertical,
   TerminalWindow,
-  Trash,
+  X,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { ResizeHandle } from '@/components/ResizeHandle'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,29 +45,38 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { trackEvent } from '@/lib/telemetry'
-import type { TranslationKey } from '@/lib/i18n'
+import type { TranslationKey, TranslationValues } from '@/lib/i18n'
 
 import type { AgentDescriptor, AgentId, KubecodeApi, TerminalInfo, TerminalKind } from './api'
+import { removeTerminalSnapshot } from './terminalSnapshots'
 import { TerminalView } from './TerminalView'
-
-type TerminalLayout =
-  | { type: 'leaf'; terminalId: string }
-  | {
-    type: 'split'
-    id: string
-    direction: 'horizontal' | 'vertical'
-    ratio: number
-    first: TerminalLayout
-    second: TerminalLayout
-  }
+import {
+  activateTerminalLeaf,
+  closeTerminalLeaf,
+  createTerminalGroup,
+  readTerminalWorkspace,
+  reconcileTerminalWorkspace,
+  replaceTerminalLeaf,
+  splitTerminalLeaf,
+  terminalIds,
+  updateSplitRatio,
+  writeTerminalWorkspace,
+  type StoredTerminalWorkspaceV2,
+  type TerminalGroup,
+  type TerminalLayout,
+} from './terminalWorkspaceState'
 
 type TerminalWorkspaceProps = {
   agents: AgentDescriptor[]
   api: KubecodeApi
+  autoCreateOnOpen?: boolean
   initialTerminals: TerminalInfo[]
+  onCollapse?: () => void
+  open?: boolean
   projectId: string
-  t: (key: TranslationKey) => string
+  t: (key: TranslationKey, values?: TranslationValues) => string
 }
 
 const agentKinds: Array<{ id: AgentId; kind: TerminalKind; label: string }> = [
@@ -50,150 +86,366 @@ const agentKinds: Array<{ id: AgentId; kind: TerminalKind; label: string }> = [
 ]
 
 export function TerminalWorkspace({
-  initialTerminals,
-  ...props
-}: TerminalWorkspaceProps) {
-  const initialKey = initialTerminals.map((terminal) => terminal.id).join(':')
-  return (
-    <TerminalWorkspaceState
-      {...props}
-      initialTerminals={initialTerminals}
-      key={initialKey}
-    />
-  )
-}
-
-function TerminalWorkspaceState({
   agents,
   api,
+  autoCreateOnOpen = false,
   initialTerminals,
+  onCollapse,
+  open = true,
   projectId,
   t,
 }: TerminalWorkspaceProps) {
   const [terminals, setTerminals] = useState(initialTerminals)
-  const [{ initialLayout, initialActiveTerminalId }] = useState(() => {
-    const initialWorkspace = readTerminalWorkspace(projectId, initialTerminals)
-    return {
-      initialLayout: initialWorkspace.layout,
-      initialActiveTerminalId: initialWorkspace.activeTerminalId,
-    }
-  })
-  const [layout, setLayout] = useState<TerminalLayout | null>(initialLayout)
-  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(initialActiveTerminalId)
-  const splitSequence = useRef(0)
+  const [workspace, setWorkspace] = useState<StoredTerminalWorkspaceV2>(() => (
+    readTerminalWorkspace(projectId, initialTerminals)
+  ))
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [closingGroupId, setClosingGroupId] = useState<string | null>(null)
+  const sequence = useRef(0)
+  const activeGroup = workspace.groups.find((group) => group.id === workspace.activeGroupId) ?? null
+  const activeTerminal = terminals.find((terminal) => terminal.id === activeGroup?.activeTerminalId) ?? null
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  useEffect(() => writeTerminalWorkspace(projectId, workspace), [projectId, workspace])
 
   useEffect(() => {
-    if (initialTerminals.length === 0 && terminals.length === 0 && hasStoredTerminalWorkspace(projectId)) return
-    writeTerminalWorkspace(projectId, { activeTerminalId, layout })
-  }, [activeTerminalId, initialTerminals.length, layout, projectId, terminals.length])
+    setTerminals(initialTerminals)
+    setWorkspace((current) => reconcileTerminalWorkspace(current, initialTerminals))
+  }, [initialTerminals])
 
-  const create = useCallback(async (kind: TerminalKind, split?: 'horizontal' | 'vertical') => {
-    const created = await api.createTerminal(projectId, kind, 100, 28)
-    setTerminals((current) => [...current, created])
-    setLayout((current) => {
-      if (!current || !activeTerminalId) return leaf(created.id)
-      const replacement = split
-        ? {
-          type: 'split' as const,
-          id: `terminal-split-${++splitSequence.current}`,
-          direction: split,
-          ratio: 50,
-          first: leaf(activeTerminalId),
-          second: leaf(created.id),
+  const create = useCallback(async (
+    kind: TerminalKind,
+    placement: 'group' | 'split' = 'group',
+    direction: 'horizontal' | 'vertical' = 'horizontal',
+  ) => {
+    if (creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await api.createTerminal(projectId, kind, 100, 28)
+      setTerminals((current) => [...current, created])
+      setWorkspace((current) => {
+        const group = current.groups.find((item) => item.id === current.activeGroupId)
+        if (placement === 'split' && group) {
+          const updated = splitTerminalLeaf(
+            group,
+            group.activeTerminalId,
+            created.id,
+            direction,
+            uniqueId('terminal-split', sequence),
+          )
+          return replaceGroup(current, updated)
         }
-        : leaf(created.id)
-      return replaceLeaf(current, activeTerminalId, replacement)
-    })
-    setActiveTerminalId(created.id)
-    trackEvent('kubecode_terminal_created', { kind, split: split ?? 'none' })
-  }, [activeTerminalId, api, projectId])
+        const createdGroup = createTerminalGroup(uniqueId('terminal-group', sequence), created.id)
+        return {
+          ...current,
+          activeGroupId: createdGroup.id,
+          groups: [...current.groups, createdGroup],
+        }
+      })
+      trackEvent('kubecode_terminal_created', {
+        direction: placement === 'split' ? direction : 'none',
+        kind,
+        placement,
+      })
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setCreating(false)
+    }
+  }, [api, creating, projectId])
 
-  const splitActive = (direction: 'horizontal' | 'vertical') => {
-    const active = terminals.find((item) => item.id === activeTerminalId)
-    void create(active?.kind ?? 'regular', direction)
+  useEffect(() => {
+    if (!autoCreateOnOpen || !open || terminals.length > 0 || creating) return
+    void create('regular')
+  }, [autoCreateOnOpen, create, creating, open, terminals.length])
+
+  const closeLeaf = useCallback(async (terminalId: string) => {
+    setError(null)
+    try {
+      await api.closeTerminal(terminalId)
+      removeTerminalSnapshot(projectId, terminalId)
+      setTerminals((current) => current.filter((terminal) => terminal.id !== terminalId))
+      setWorkspace((current) => removeTerminalFromWorkspace(current, terminalId))
+      trackEvent('kubecode_terminal_closed', { scope: 'leaf' })
+      if (terminals.length === 1) onCollapse?.()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }, [api, onCollapse, projectId, terminals.length])
+
+  const closeGroup = useCallback(async (groupId: string) => {
+    const group = workspace.groups.find((item) => item.id === groupId)
+    if (!group) return
+    setError(null)
+    try {
+      const ids = terminalIds(group.layout)
+      await Promise.all(ids.map((terminalId) => api.closeTerminal(terminalId)))
+      ids.forEach((terminalId) => removeTerminalSnapshot(projectId, terminalId))
+      setTerminals((current) => current.filter((terminal) => !ids.includes(terminal.id)))
+      setWorkspace((current) => removeGroup(current, groupId))
+      setClosingGroupId(null)
+      trackEvent('kubecode_terminal_closed', { scope: 'group' })
+      if (ids.length === terminals.length) onCollapse?.()
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }, [api, onCollapse, projectId, terminals.length, workspace.groups])
+
+  const requestCloseGroup = (group: TerminalGroup) => {
+    if (terminalIds(group.layout).length === 1) {
+      void closeGroup(group.id)
+      return
+    }
+    setClosingGroupId(group.id)
   }
 
-  const selectTerminal = (terminalId: string) => {
-    setLayout((current) => {
-      if (!current) return leaf(terminalId)
-      if (containsTerminal(current, terminalId)) return current
-      return activeTerminalId
-        ? replaceLeaf(current, activeTerminalId, leaf(terminalId))
-        : leaf(terminalId)
+  const restart = useCallback(async (terminal: TerminalInfo) => {
+    setError(null)
+    try {
+      const created = await api.createTerminal(projectId, terminal.kind, terminal.cols, terminal.rows)
+      setTerminals((current) => [...current.filter((item) => item.id !== terminal.id), created])
+      setWorkspace((current) => ({
+        ...current,
+        groups: current.groups.map((group) => replaceTerminalLeaf(group, terminal.id, created.id)),
+      }))
+      removeTerminalSnapshot(projectId, terminal.id)
+      await api.closeTerminal(terminal.id)
+      trackEvent('kubecode_terminal_restarted', { kind: terminal.kind })
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }, [api, projectId])
+
+  const rename = useCallback(async (terminalId: string, title: string) => {
+    setError(null)
+    try {
+      const updated = await api.updateTerminal(terminalId, title)
+      setTerminals((current) => current.map((terminal) => terminal.id === updated.id ? updated : terminal))
+      trackEvent('kubecode_terminal_renamed')
+    } catch (cause) {
+      setError(errorMessage(cause))
+      throw cause
+    }
+  }, [api])
+
+  const activateLeaf = (terminalId: string) => {
+    setWorkspace((current) => {
+      const group = current.groups.find((item) => terminalIds(item.layout).includes(terminalId))
+      if (!group) return current
+      return {
+        ...replaceGroup(current, activateTerminalLeaf(group, terminalId)),
+        activeGroupId: group.id,
+      }
     })
-    setActiveTerminalId(terminalId)
   }
 
-  const closeActive = async () => {
-    if (!activeTerminalId) return
-    await api.closeTerminal(activeTerminalId)
-    const remaining = terminals.filter((item) => item.id !== activeTerminalId)
-    const nextLayout = removeLeaf(layout, activeTerminalId)
-    const nextActive = firstTerminal(nextLayout) ?? remaining[0]?.id ?? null
-    setTerminals(remaining)
-    setLayout(nextLayout ?? (nextActive ? leaf(nextActive) : null))
-    setActiveTerminalId(nextActive)
-    trackEvent('kubecode_terminal_closed')
+  const dragGroup = (event: DragEndEvent) => {
+    if (!event.over || event.active.id === event.over.id) return
+    setWorkspace((current) => {
+      const from = current.groups.findIndex((group) => group.id === event.active.id)
+      const to = current.groups.findIndex((group) => group.id === event.over?.id)
+      return from < 0 || to < 0 ? current : { ...current, groups: arrayMove(current.groups, from, to) }
+    })
+  }
+
+  const updateStatus = useCallback((updated: TerminalInfo) => {
+    setTerminals((current) => current.map((terminal) => terminal.id === updated.id ? updated : terminal))
+  }, [])
+
+  return (
+    <div className="kubecode-terminal-workspace" data-open={open}>
+      <div className="kubecode-terminal-toolbar">
+        <TerminalWindow className="kubecode-terminal-toolbar-icon" />
+        <DndContext collisionDetection={closestCenter} onDragEnd={dragGroup} sensors={sensors}>
+          <SortableContext
+            items={workspace.groups.map((group) => group.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div className="kubecode-terminal-tabs" role="tablist">
+              {workspace.groups.map((group) => (
+                <TerminalGroupTab
+                  active={group.id === workspace.activeGroupId}
+                  group={group}
+                  key={group.id}
+                  onActivate={() => setWorkspace((current) => ({ ...current, activeGroupId: group.id }))}
+                  onClose={() => requestCloseGroup(group)}
+                  onRename={rename}
+                  t={t}
+                  terminals={terminals}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+        <div className="kubecode-terminal-toolbar-actions">
+          <Button
+            aria-label={t('kubecode.newTerminal')}
+            disabled={creating}
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => void create('regular')}
+          ><Plus /></Button>
+          <TerminalProfileMenu agents={agents} disabled={creating} onCreate={(kind) => void create(kind)} t={t} />
+          <Button
+            aria-label={t('kubecode.splitRight')}
+            disabled={!activeTerminal || creating}
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => void create(activeTerminal?.kind ?? 'regular', 'split', 'horizontal')}
+          ><SplitHorizontal /></Button>
+          <Button
+            aria-label={t('kubecode.splitDown')}
+            disabled={!activeTerminal || creating}
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => void create(activeTerminal?.kind ?? 'regular', 'split', 'vertical')}
+          ><SplitVertical /></Button>
+          <Button
+            aria-label={t('kubecode.closeTerminal')}
+            disabled={!activeTerminal}
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => activeTerminal && void closeLeaf(activeTerminal.id)}
+          ><X /></Button>
+          <Button
+            aria-label={t('kubecode.collapse')}
+            size="icon-xs"
+            variant="ghost"
+            onClick={onCollapse}
+          ><CaretDown /></Button>
+        </div>
+      </div>
+      {error && <div className="kubecode-terminal-error" role="alert">{error}</div>}
+      {activeGroup ? (
+        <TerminalLayoutView
+          activeTerminalId={activeGroup.activeTerminalId}
+          api={api}
+          layout={activeGroup.layout}
+          onActivate={activateLeaf}
+          onClose={closeLeaf}
+          onResizeSplit={(splitId, ratio) => setWorkspace((current) => ({
+            ...current,
+            groups: current.groups.map((group) => group.id === activeGroup.id
+              ? { ...group, layout: updateSplitRatio(group.layout, splitId, ratio) }
+              : group),
+          }))}
+          onRestart={restart}
+          onStatus={updateStatus}
+          projectId={projectId}
+          showLeafHeaders={terminalIds(activeGroup.layout).length > 1}
+          terminals={terminals}
+          t={t}
+          visible={open}
+        />
+      ) : (
+        <div className="kubecode-empty-small">{creating ? t('kubecode.loading') : t('kubecode.newTerminal')}</div>
+      )}
+      <Dialog open={closingGroupId !== null} onOpenChange={(next) => !next && setClosingGroupId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.closeTerminalGroup')}</DialogTitle>
+            <DialogDescription>{t('kubecode.closeTerminalGroupDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">{t('common.cancel')}</Button></DialogClose>
+            <Button variant="destructive" onClick={() => closingGroupId && void closeGroup(closingGroupId)}>
+              {t('kubecode.closeTerminalGroup')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function TerminalGroupTab({
+  active,
+  group,
+  onActivate,
+  onClose,
+  onRename,
+  t,
+  terminals,
+}: {
+  active: boolean
+  group: TerminalGroup
+  onActivate: () => void
+  onClose: () => void
+  onRename: (terminalId: string, title: string) => Promise<void>
+  t: (key: TranslationKey, values?: TranslationValues) => string
+  terminals: TerminalInfo[]
+}) {
+  const [editing, setEditing] = useState(false)
+  const activeTerminal = terminals.find((terminal) => terminal.id === group.activeTerminalId)
+  const [title, setTitle] = useState(activeTerminal?.title ?? '')
+  const count = terminalIds(group.layout).length
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: group.id })
+  const style = { transform: CSS.Transform.toString(transform), transition }
+
+  const save = async () => {
+    const next = title.trim()
+    if (activeTerminal && next && next !== activeTerminal.title) await onRename(activeTerminal.id, next)
+    setEditing(false)
   }
 
   return (
-    <div className="kubecode-terminal-workspace">
-      <div className="kubecode-terminal-tabs">
-        <TerminalWindow />
-        {terminals.map((terminal) => (
-          <Button
-            key={terminal.id}
-            size="xs"
-            variant={terminal.id === activeTerminalId ? 'secondary' : 'ghost'}
-            onClick={() => selectTerminal(terminal.id)}
-          >
-            <TerminalKindIcon kind={terminal.kind} />
-            {terminal.title}
-          </Button>
-        ))}
-        <TerminalProfileMenu
-          agents={agents}
-          disabled={!projectId}
-          onCreate={(kind) => void create(kind)}
-          t={t}
+    <div
+      className="kubecode-terminal-group-tab-shell"
+      data-active={active}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+    >
+      {editing ? (
+        <div className="kubecode-terminal-group-tab kubecode-terminal-group-tab-editing">
+        <TerminalKindIcon kind={activeTerminal?.kind ?? 'regular'} />
+        <Input
+          aria-label={t('kubecode.terminalTitle')}
+          autoFocus
+          value={title}
+          onBlur={() => void save()}
+          onChange={(event) => setTitle(event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'Enter') void save()
+            if (event.key === 'Escape') setEditing(false)
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
         />
-        <Button
-          aria-label={t('kubecode.splitRight')}
-          disabled={!activeTerminalId}
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => splitActive('horizontal')}
-        ><SplitHorizontal /></Button>
-        <Button
-          aria-label={t('kubecode.splitDown')}
-          disabled={!activeTerminalId}
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => splitActive('vertical')}
-        ><SplitVertical /></Button>
-        <Button
-          aria-label={t('kubecode.closeTerminal')}
-          disabled={!activeTerminalId}
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => void closeActive()}
-        ><Trash /></Button>
-      </div>
-      {layout ? (
-        <TerminalLayoutView
-          activeTerminalId={activeTerminalId}
-          api={api}
-          layout={layout}
-          onActivate={setActiveTerminalId}
-          onResizeSplit={(splitId, ratio) => setLayout((current) => (
-            current ? updateSplitRatio(current, splitId, ratio) : current
-          ))}
-          projectId={projectId}
-          terminals={terminals}
-        />
+        {count > 1 && <small>{count}</small>}
+        </div>
       ) : (
-        <div className="kubecode-empty-small">{t('kubecode.newTerminal')}</div>
+        <Button
+          aria-selected={active}
+          className="kubecode-terminal-group-tab"
+          role="tab"
+          size="xs"
+          variant={active ? 'secondary' : 'ghost'}
+          onClick={onActivate}
+          onDoubleClick={() => {
+            setTitle(activeTerminal?.title ?? '')
+            setEditing(true)
+          }}
+        >
+          <TerminalKindIcon kind={activeTerminal?.kind ?? 'regular'} />
+          <span>{activeTerminal?.title ?? t('kubecode.terminal')}</span>
+          {count > 1 && <small>{count}</small>}
+        </Button>
       )}
+      <Button
+        aria-label={t('kubecode.closeTerminalGroup')}
+        className="kubecode-terminal-tab-close"
+        size="icon-xs"
+        variant="ghost"
+        onClick={(event) => { event.stopPropagation(); onClose() }}
+        onPointerDown={(event) => event.stopPropagation()}
+      ><X /></Button>
     </div>
   )
 }
@@ -207,33 +459,26 @@ function TerminalProfileMenu({
   agents: AgentDescriptor[]
   disabled: boolean
   onCreate: (kind: TerminalKind) => void
-  t: (key: TranslationKey) => string
+  t: (key: TranslationKey, values?: TranslationValues) => string
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          aria-label={t('kubecode.newTerminal')}
-          disabled={disabled}
-          size="icon-xs"
-          variant="ghost"
-        ><Plus /></Button>
+        <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} size="icon-xs" variant="ghost">
+          <CaretDown />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel>{t('kubecode.regularTerminal')}</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('kubecode.terminal')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onCreate('regular')}>
-          <TerminalWindow /> {t('kubecode.regularTerminal')}
+          <TerminalWindow /> {t('kubecode.terminal')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t('kubecode.agentTui')}</DropdownMenuLabel>
         {agentKinds.map((profile) => {
           const available = agents.some((agent) => agent.id === profile.id && agent.available)
           return (
-            <DropdownMenuItem
-              disabled={!available}
-              key={profile.id}
-              onSelect={() => onCreate(profile.kind)}
-            >
+            <DropdownMenuItem disabled={!available} key={profile.id} onSelect={() => onCreate(profile.kind)}>
               <AiAgentIcon agent={profile.id} size={16} /> {profile.label}
             </DropdownMenuItem>
           )
@@ -248,17 +493,29 @@ function TerminalLayoutView({
   api,
   layout,
   onActivate,
+  onClose,
   onResizeSplit,
+  onRestart,
+  onStatus,
   projectId,
+  showLeafHeaders,
   terminals,
+  t,
+  visible,
 }: {
-  activeTerminalId: string | null
+  activeTerminalId: string
   api: KubecodeApi
   layout: TerminalLayout
   onActivate: (terminalId: string) => void
+  onClose: (terminalId: string) => Promise<void>
   onResizeSplit: (splitId: string, ratio: number) => void
+  onRestart: (terminal: TerminalInfo) => Promise<void>
+  onStatus: (terminal: TerminalInfo) => void
   projectId: string
+  showLeafHeaders: boolean
   terminals: TerminalInfo[]
+  t: (key: TranslationKey, values?: TranslationValues) => string
+  visible: boolean
 }) {
   if (layout.type === 'leaf') {
     const terminal = terminals.find((item) => item.id === layout.terminalId)
@@ -267,9 +524,29 @@ function TerminalLayoutView({
       <div
         className="kubecode-terminal-leaf"
         data-active={layout.terminalId === activeTerminalId}
+        data-status={terminal.status}
         onMouseDown={() => onActivate(layout.terminalId)}
       >
-        <TerminalView api={api} projectId={projectId} terminal={terminal} />
+        {showLeafHeaders && (
+          <div className="kubecode-terminal-leaf-header">
+            <TerminalKindIcon kind={terminal.kind} />
+            <span>{terminal.title}</span>
+            {terminal.status === 'exited' && <small>{t('kubecode.terminalExited')}</small>}
+            {terminal.status === 'exited' && (
+              <Button size="xs" variant="ghost" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
+            )}
+            <Button aria-label={t('kubecode.closeTerminal')} size="icon-xs" variant="ghost" onClick={() => void onClose(terminal.id)}>
+              <X />
+            </Button>
+          </div>
+        )}
+        <TerminalView api={api} onStatus={onStatus} projectId={projectId} terminal={terminal} visible={visible} />
+        {terminal.status === 'exited' && !showLeafHeaders && (
+          <div className="kubecode-terminal-exited">
+            <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
+            <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -279,21 +556,21 @@ function TerminalLayoutView({
       api={api}
       layout={layout}
       onActivate={onActivate}
+      onClose={onClose}
       onResizeSplit={onResizeSplit}
+      onRestart={onRestart}
+      onStatus={onStatus}
       projectId={projectId}
+      showLeafHeaders={showLeafHeaders}
+      t={t}
       terminals={terminals}
+      visible={visible}
     />
   )
 }
 
-function TerminalSplit(props: {
-  activeTerminalId: string | null
-  api: KubecodeApi
+function TerminalSplit(props: Parameters<typeof TerminalLayoutView>[0] & {
   layout: Extract<TerminalLayout, { type: 'split' }>
-  onActivate: (terminalId: string) => void
-  onResizeSplit: (splitId: string, ratio: number) => void
-  projectId: string
-  terminals: TerminalInfo[]
 }) {
   const { layout, onResizeSplit } = props
   const container = useRef<HTMLDivElement>(null)
@@ -302,20 +579,18 @@ function TerminalSplit(props: {
       ? container.current?.clientWidth
       : container.current?.clientHeight
     if (!size) return
-    onResizeSplit(layout.id, clamp(layout.ratio + delta / size * 100, 5, 95))
+    const minimumRatio = Math.min(49, 48 / size * 100)
+    onResizeSplit(layout.id, clamp(layout.ratio + delta / size * 100, minimumRatio, 100 - minimumRatio))
   }, [layout.direction, layout.id, layout.ratio, onResizeSplit])
 
   return (
-    <div
-      className="kubecode-terminal-split"
-      data-split-direction={layout.direction}
-      ref={container}
-    >
+    <div className="kubecode-terminal-split" data-split-direction={layout.direction} ref={container}>
       <div className="kubecode-terminal-split-child" style={{ flexBasis: `${layout.ratio}%` }}>
         <TerminalLayoutView {...props} layout={layout.first} />
       </div>
       <ResizeHandle
         direction={layout.direction === 'horizontal' ? 'horizontal' : 'vertical'}
+        onDoubleClick={() => onResizeSplit(layout.id, 50)}
         onResize={resize}
       />
       <div className="kubecode-terminal-split-child" style={{ flexBasis: `${100 - layout.ratio}%` }}>
@@ -330,128 +605,47 @@ function TerminalKindIcon({ kind }: { kind: TerminalKind }) {
   return profile ? <AiAgentIcon agent={profile.id} size={14} /> : <TerminalWindow />
 }
 
-function leaf(terminalId: string): TerminalLayout {
-  return { type: 'leaf', terminalId }
+function replaceGroup(
+  workspace: StoredTerminalWorkspaceV2,
+  group: TerminalGroup,
+): StoredTerminalWorkspaceV2 {
+  return {
+    ...workspace,
+    activeGroupId: group.id,
+    groups: workspace.groups.map((item) => item.id === group.id ? group : item),
+  }
 }
 
-function containsTerminal(layout: TerminalLayout, terminalId: string): boolean {
-  return layout.type === 'leaf'
-    ? layout.terminalId === terminalId
-    : containsTerminal(layout.first, terminalId) || containsTerminal(layout.second, terminalId)
-}
-
-function replaceLeaf(
-  layout: TerminalLayout,
+function removeTerminalFromWorkspace(
+  workspace: StoredTerminalWorkspaceV2,
   terminalId: string,
-  replacement: TerminalLayout,
-): TerminalLayout {
-  if (layout.type === 'leaf') return layout.terminalId === terminalId ? replacement : layout
+): StoredTerminalWorkspaceV2 {
+  const groups = workspace.groups.flatMap((group) => closeTerminalLeaf(group, terminalId) ?? [])
+  const activeGroupId = groups.some((group) => group.id === workspace.activeGroupId)
+    ? workspace.activeGroupId
+    : groups[0]?.id ?? null
+  return { ...workspace, activeGroupId, groups }
+}
+
+function removeGroup(
+  workspace: StoredTerminalWorkspaceV2,
+  groupId: string,
+): StoredTerminalWorkspaceV2 {
+  const groups = workspace.groups.filter((group) => group.id !== groupId)
   return {
-    ...layout,
-    first: replaceLeaf(layout.first, terminalId, replacement),
-    second: replaceLeaf(layout.second, terminalId, replacement),
+    ...workspace,
+    activeGroupId: workspace.activeGroupId === groupId ? groups[0]?.id ?? null : workspace.activeGroupId,
+    groups,
   }
 }
 
-function removeLeaf(layout: TerminalLayout | null, terminalId: string): TerminalLayout | null {
-  if (!layout) return null
-  if (layout.type === 'leaf') return layout.terminalId === terminalId ? null : layout
-  const first = removeLeaf(layout.first, terminalId)
-  const second = removeLeaf(layout.second, terminalId)
-  if (!first) return second
-  if (!second) return first
-  return { ...layout, first, second }
+function uniqueId(prefix: string, sequence: { current: number }): string {
+  sequence.current += 1
+  return `${prefix}-${Date.now()}-${sequence.current}`
 }
 
-function firstTerminal(layout: TerminalLayout | null): string | null {
-  if (!layout) return null
-  return layout.type === 'leaf' ? layout.terminalId : firstTerminal(layout.first)
-}
-
-function updateSplitRatio(layout: TerminalLayout, splitId: string, ratio: number): TerminalLayout {
-  if (layout.type === 'leaf') return layout
-  if (layout.id === splitId) return { ...layout, ratio }
-  return {
-    ...layout,
-    first: updateSplitRatio(layout.first, splitId, ratio),
-    second: updateSplitRatio(layout.second, splitId, ratio),
-  }
-}
-
-type StoredTerminalWorkspace = {
-  activeTerminalId: string | null
-  layout: TerminalLayout | null
-}
-
-function readTerminalWorkspace(
-  projectId: string,
-  terminals: TerminalInfo[],
-): StoredTerminalWorkspace {
-  const fallbackId = terminals[0]?.id ?? null
-  const fallback = { activeTerminalId: fallbackId, layout: fallbackId ? leaf(fallbackId) : null }
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(terminalStorageKey(projectId)) ?? 'null')
-    if (!isRecord(value)) return fallback
-    const terminalIds = new Set(terminals.map((terminal) => terminal.id))
-    const layout = sanitizeLayout(value.layout, terminalIds)
-    if (!layout) return fallback
-    const savedActiveId = typeof value.activeTerminalId === 'string' ? value.activeTerminalId : null
-    const activeTerminalId = savedActiveId && containsTerminal(layout, savedActiveId)
-      ? savedActiveId
-      : firstTerminal(layout)
-    return { activeTerminalId, layout }
-  } catch {
-    return fallback
-  }
-}
-
-function sanitizeLayout(value: unknown, terminalIds: Set<string>): TerminalLayout | null {
-  if (!isRecord(value)) return null
-  if (value.type === 'leaf') {
-    return typeof value.terminalId === 'string' && terminalIds.has(value.terminalId)
-      ? leaf(value.terminalId)
-      : null
-  }
-  if (value.type !== 'split') return null
-  const first = sanitizeLayout(value.first, terminalIds)
-  const second = sanitizeLayout(value.second, terminalIds)
-  if (!first) return second
-  if (!second) return first
-  if (value.direction !== 'horizontal' && value.direction !== 'vertical') return first
-  return {
-    type: 'split',
-    id: typeof value.id === 'string' ? value.id : `terminal-split-restored`,
-    direction: value.direction,
-    ratio: typeof value.ratio === 'number' && Number.isFinite(value.ratio)
-      ? clamp(value.ratio, 5, 95)
-      : 50,
-    first,
-    second,
-  }
-}
-
-function writeTerminalWorkspace(projectId: string, workspace: StoredTerminalWorkspace): void {
-  try {
-    localStorage.setItem(terminalStorageKey(projectId), JSON.stringify(workspace))
-  } catch {
-    // Restricted browser contexts can disable local storage.
-  }
-}
-
-function hasStoredTerminalWorkspace(projectId: string): boolean {
-  try {
-    return localStorage.getItem(terminalStorageKey(projectId)) !== null
-  } catch {
-    return false
-  }
-}
-
-function terminalStorageKey(projectId: string): string {
-  return `kubecode:terminal-layout:${projectId}`
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

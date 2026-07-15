@@ -8,10 +8,12 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.goto(workspaceUrl)
 
   await expect(page.getByRole('navigation', { name: 'Projects' })).toBeVisible()
+  const projectName = `kubecode-playwright-${Date.now()}`
+  const projectPath = `/tmp/${projectName}`
   await page.getByRole('button', { name: 'Add project' }).click()
-  await page.getByRole('textbox', { name: 'Project name' }).fill('playwright-project')
+  await page.getByRole('textbox', { name: 'Full path on this server' }).fill(projectPath)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'playwright-project' })).toBeVisible()
+  await expect(page.getByRole('button', { name: projectName })).toBeVisible()
 
   await page.getByRole('tab', { name: 'Files' }).click()
   await page.getByRole('button', { name: 'New file' }).click()
@@ -20,9 +22,8 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.getByRole('button', { name: 'main.py' }).click()
   await expect(page.locator('.cm-editor')).toBeVisible()
 
-  await page.getByRole('button', { name: 'New terminal' }).click()
-  await page.getByRole('menuitem', { name: 'Regular terminal' }).click()
-  await expect(page.getByRole('button', { name: 'Terminal 1' })).toBeVisible()
+  await page.getByRole('button', { name: 'Toggle terminal' }).click()
+  await expect(page.getByRole('tab', { name: 'Terminal 1' })).toBeVisible()
   await expect(page.locator('.xterm')).toBeVisible()
 
   const agents = await page.evaluate(async () => {
@@ -49,7 +50,7 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: 'New terminal' }).click()
+  await page.getByRole('button', { name: 'Terminal profiles' }).click()
   for (const agent of agents) {
     const item = page.getByRole('menuitem', {
       name: agentNames[agent.id as keyof typeof agentNames],

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef } from 'react'
 
 interface ResizeHandleProps {
   direction?: 'horizontal' | 'vertical'
+  onDoubleClick?: () => void
   onResize: (delta: number) => void
 }
 
-export function ResizeHandle({ direction = 'horizontal', onResize }: ResizeHandleProps) {
+export function ResizeHandle({ direction = 'horizontal', onDoubleClick, onResize }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null)
   const onResizeRef = useRef(onResize)
   const isDragging = useRef(false)
@@ -83,6 +84,7 @@ export function ResizeHandle({ direction = 'horizontal', onResize }: ResizeHandl
   return (
     <div
       ref={handleRef}
+      onDoubleClick={onDoubleClick}
       className={direction === 'vertical'
         ? 'relative z-30 -mt-1 h-1 shrink-0 self-stretch cursor-row-resize bg-transparent transition-colors hover:bg-[var(--border)]'
         : 'relative z-30 -ml-1 w-1 shrink-0 self-stretch cursor-col-resize bg-transparent transition-colors hover:bg-[var(--border)]'}

@@ -307,13 +307,18 @@ async fn creates_lists_and_explicitly_closes_terminals_over_http() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(terminals.as_array().expect("terminals").len(), 1);
 
-    let (status, _) = json_request(
+    let terminal_uri = format!("{BASE_PATH}/api/v1/terminals/{terminal_id}");
+    let (status, renamed) = json_request(
         &app,
-        Method::DELETE,
-        &format!("{BASE_PATH}/api/v1/terminals/{terminal_id}"),
-        Value::Null,
+        Method::PATCH,
+        &terminal_uri,
+        json!({"title":"  Build logs  "}),
     )
     .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(renamed["title"], "Build logs");
+
+    let (status, _) = json_request(&app, Method::DELETE, &terminal_uri, Value::Null).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 

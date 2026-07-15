@@ -136,14 +136,25 @@ usable minimum; their maximums are calculated from the live workbench rather
 than fixed pixel ranges or panel ratios. The right-hand and Terminal deltas are
 inverted because their handles resize from the panels' leading edges.
 
-`TerminalWorkspace` owns a recursive split tree of terminal leaf IDs. A leaf is
-an independent reconnectable PTY, and a split is horizontal or vertical with a
-frame-synchronized draggable ratio. Selecting an existing session replaces the
-active leaf without destroying its server PTY; closing a leaf collapses its
-parent split.
+`TerminalWorkspace` uses a VS Code-style group model: each tab is one terminal
+group, and each group owns a recursive split tree of terminal leaf IDs. A leaf
+is an independent reconnectable PTY, and a split is horizontal or vertical with
+a frame-synchronized, container-relative draggable ratio. Closing a leaf
+collapses its parent split; closing a multi-leaf group requires confirmation.
+The group model is reconciled with the server terminal list, so externally
+closed PTYs disappear and newly discovered PTYs become singleton groups.
+
+`TerminalView` treats the browser socket as an attachment rather than process
+ownership. `TerminalManager` retains exited sessions until explicit close and
+sends a final status frame after buffered output. Per-Project group layout lives
+in `localStorage`; a bounded serialized xterm buffer, cursor, dimensions, and
+scroll position live in `sessionStorage`. This preserves the dock across browser
+refresh, Project switching, and folding without claiming persistence across a
+server or Pod restart.
 
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, `kubecode_terminal_closed`,
+`kubecode_terminal_restarted`, `kubecode_terminal_renamed`,
 `kubecode_session_created`, `kubecode_agent_session_imported`,
 `kubecode_session_renamed`, `kubecode_session_removed`,
 `kubecode_agent_session_forked`, `kubecode_agent_run_started`,
