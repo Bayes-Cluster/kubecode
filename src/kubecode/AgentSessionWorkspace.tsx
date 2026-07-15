@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { DotsThree } from '@phosphor-icons/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { DotsThree, ShieldWarning } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChrome'
@@ -76,7 +76,7 @@ type AgentSessionWorkspaceProps = {
   onConversationUpdated: (conversation: Conversation) => void
   projectId: string | null
   t: Translator
-  workspaceEvent: WorkspaceEvent | null
+  workspaceEvents: WorkspaceEvent[]
 }
 
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
@@ -99,7 +99,7 @@ export function AgentSessionWorkspace({
   onConversationUpdated,
   projectId,
   t,
-  workspaceEvent,
+  workspaceEvents,
 }: AgentSessionWorkspaceProps) {
   const [permissionMode, setPermissionMode] = useState<AiAgentPermissionMode>('safe')
   const [prompt, setPrompt] = useState('')
@@ -115,16 +115,58 @@ export function AgentSessionWorkspace({
   const [providerDeleteOpen, setProviderDeleteOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLDivElement>(null)
+  const knownRunIdsRef = useRef(new Set<string>())
+  const loadingRunsRef = useRef(new Map<string, Promise<AgentRun>>())
+  const pendingRunEventsRef = useRef(new Map<string, AgentEvent[]>())
+  const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
+  const latestWorkspaceEventIdRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
+  latestWorkspaceEventIdRef.current = workspaceEvents.at(-1)?.id ?? 0
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
 
+  const attachRun = useCallback((nextRun: AgentRun) => {
+    knownRunIdsRef.current.add(nextRun.id)
+    const pending = pendingRunEventsRef.current.get(nextRun.id) ?? []
+    pendingRunEventsRef.current.delete(nextRun.id)
+    setMessages((current) => {
+      const initial = current.some((message) => message.id === nextRun.id)
+        ? current
+        : [...current, messageFromRun(nextRun)]
+      return pending.reduce(
+        (history, event) => applyAgentEvent(history, nextRun.id, event),
+        initial,
+      )
+    })
+    setRun((current) => (
+      current?.id === nextRun.id
+        && !ACTIVE_RUN_STATUSES.has(current.status)
+        && ACTIVE_RUN_STATUSES.has(nextRun.status)
+        ? current
+        : nextRun
+    ))
+  }, [])
+
+  const loadRun = useCallback((runId: string) => {
+    const loading = loadingRunsRef.current.get(runId)
+    if (loading) return loading
+    const request = api.getRun(runId)
+    loadingRunsRef.current.set(runId, request)
+    void request.then(attachRun).finally(() => loadingRunsRef.current.delete(runId))
+    return request
+  }, [api, attachRun])
+
   useEffect(() => {
     if (!conversation) return
+    knownRunIdsRef.current.clear()
+    loadingRunsRef.current.clear()
+    pendingRunEventsRef.current.clear()
+    processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
     let current = true
     void hydrateConversation(api, conversation.id).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState }) => {
       if (!current) return
       setMessages(history)
+      knownRunIdsRef.current = new Set(history.flatMap((message) => message.id ? [message.id] : []))
       setRun(activeRun)
       setPendingPermission(restoredPermission)
       setPendingElicitation(restoredElicitation)
@@ -137,48 +179,52 @@ export function AgentSessionWorkspace({
   }, [api, conversation, t])
 
   useEffect(() => {
-    if (!conversation || workspaceEvent?.conversation_id !== conversation.id || !workspaceEvent.run_id) return
-    const event: AgentEvent = {
-      created_at: workspaceEvent.created_at,
-      kind: workspaceEvent.kind,
-      payload: workspaceEvent.payload,
-      run_id: workspaceEvent.run_id,
-      seq: workspaceEvent.id,
+    if (!conversation) return
+    const nextEvents = workspaceEvents.filter((event) => (
+      event.id > processedWorkspaceEventRef.current
+        && event.conversation_id === conversation.id
+        && event.run_id
+    ))
+    processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
+      ?? processedWorkspaceEventRef.current
+    let refreshState = false
+    for (const workspaceEvent of nextEvents) {
+      const event: AgentEvent = {
+        created_at: workspaceEvent.created_at,
+        kind: workspaceEvent.kind,
+        payload: workspaceEvent.payload,
+        run_id: workspaceEvent.run_id as string,
+        seq: workspaceEvent.id,
+      }
+      if (event.kind === 'permission_requested') {
+        const permission = permissionFromEvent(event)
+        if (permission) setPendingPermission(permission)
+      }
+      if (event.kind === 'permission_resolved') setPendingPermission(null)
+      if (event.kind === 'elicitation_requested') {
+        const elicitation = elicitationFromEvent(event)
+        if (elicitation) {
+          setPendingElicitation(elicitation)
+          setElicitationAnswers(initialElicitationAnswers(elicitation))
+        }
+      }
+      if (event.kind === 'elicitation_resolved') setPendingElicitation(null)
+      if (event.kind === 'run_started') {
+        void loadRun(event.run_id)
+      } else if (knownRunIdsRef.current.has(event.run_id)) {
+        setMessages((current) => applyAgentEvent(current, event.run_id, event))
+      } else {
+        const pending = pendingRunEventsRef.current.get(event.run_id) ?? []
+        pendingRunEventsRef.current.set(event.run_id, [...pending, event])
+        void loadRun(event.run_id)
+      }
+      if (event.kind === 'run_completed') {
+        void api.getRun(event.run_id).then(attachRun)
+      }
+      refreshState ||= SESSION_STATE_EVENT_KINDS.has(event.kind)
     }
-    if (event.kind === 'permission_requested') {
-      const permission = permissionFromEvent(event)
-      if (permission) queueMicrotask(() => setPendingPermission(permission))
-    }
-    if (event.kind === 'permission_resolved') {
-      queueMicrotask(() => setPendingPermission(null))
-    }
-    if (event.kind === 'elicitation_requested') {
-      const elicitation = elicitationFromEvent(event)
-      if (elicitation) queueMicrotask(() => {
-        setPendingElicitation(elicitation)
-        setElicitationAnswers(initialElicitationAnswers(elicitation))
-      })
-    }
-    if (event.kind === 'elicitation_resolved') {
-      queueMicrotask(() => setPendingElicitation(null))
-    }
-    if (event.kind === 'run_started') {
-      void api.getRun(event.run_id).then((nextRun) => {
-        setMessages((current) => current.some((message) => message.id === nextRun.id)
-          ? current
-          : [...current, messageFromRun(nextRun)])
-        setRun(nextRun)
-      })
-      return
-    }
-    queueMicrotask(() => {
-      setMessages((current) => applyAgentEvent(current, event.run_id, event))
-    })
-    if (event.kind === 'run_completed') void api.getRun(event.run_id).then(setRun)
-    if (SESSION_STATE_EVENT_KINDS.has(event.kind)) {
-      void api.getSessionState(conversation.id).then(setSessionState)
-    }
-  }, [api, conversation, workspaceEvent])
+    if (refreshState) void api.getSessionState(conversation.id).then(setSessionState)
+  }, [api, attachRun, conversation, loadRun, workspaceEvents])
 
   const send = async (text: string) => {
     const message = text.trim()
@@ -191,8 +237,7 @@ export function AgentSessionWorkspace({
         message,
         permissionMode === 'power_user' ? 'power' : 'safe',
       )
-      setMessages((current) => [...current, messageFromRun(nextRun)])
-      setRun(nextRun)
+      attachRun(nextRun)
       setPrompt('')
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
@@ -342,16 +387,18 @@ export function AgentSessionWorkspace({
       </div>
       {error && <div className="kubecode-inline-error">{error}</div>}
       {pendingPermission && (
-        <div className="kubecode-permission-dock">
-          <div>
+        <div aria-live="polite" className="kubecode-permission-dock">
+          <div className="kubecode-permission-heading">
+            <ShieldWarning size={17} />
             <strong>{t('kubecode.permissionRequired')}</strong>
-            <span>{pendingPermission.tool}</span>
           </div>
-          <div>
+          <code className="kubecode-permission-command">{pendingPermission.tool}</code>
+          <div className="kubecode-permission-actions">
             {pendingPermission.options.map((option) => (
               <Button
                 key={option.id}
                 size="sm"
+                title={option.label}
                 variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
                 onClick={() => void api.resolvePermission(pendingPermission.requestId, option.id)}
               >
@@ -453,7 +500,6 @@ export function AgentSessionWorkspace({
               </span>
               {nativeMode && (
                 <Select
-                  disabled={active}
                   value={nativeMode.currentValue}
                   onValueChange={(value) => {
                     void api.setSessionMode(conversation.id, value).then(refreshSessionState)
@@ -471,7 +517,6 @@ export function AgentSessionWorkspace({
               )}
               {configSelects.map((config) => (
                 <Select
-                  disabled={active}
                   key={config.id}
                   value={config.currentValue}
                   onValueChange={(value) => {
@@ -680,7 +725,7 @@ function selectOptions(values: unknown[]): { id: string; name: string }[] {
   return values.flatMap((value) => {
     if (!value || typeof value !== 'object') return []
     const option = value as Record<string, unknown>
-    const id = textValue(option.id)
+    const id = textValue(option.id) || textValue(option.value)
     const name = textValue(option.name)
     return id && name ? [{ id, name }] : []
   })

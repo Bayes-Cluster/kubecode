@@ -230,7 +230,6 @@ async fn create_conversation(
 ) -> Result<impl IntoResponse, ApiError> {
     state.workspace.project_path(&project_id)?;
     let store = state.agent_runtime.store();
-    let imported = request.provider_session_id.is_some();
     let conversation = if let Some(provider_session_id) = request.provider_session_id.as_deref() {
         let imported = store.create_imported_conversation(
             &project_id,
@@ -250,13 +249,22 @@ async fn create_conversation(
     } else {
         store.create_conversation(&project_id, request.agent_id, request.title.as_deref())?
     };
-    if imported {
-        state
+    if state
+        .agents
+        .iter()
+        .any(|agent| agent.id == conversation.agent_id && agent.available)
+        && let Err(error) = state
             .agent_runtime
-            .hydrate_provider_session(&conversation.id)
-            .await?;
+            .initialize_conversation(&conversation.id)
+            .await
+    {
+        let _ = store.delete_conversation(&conversation.id);
+        return Err(error.into());
     }
-    Ok((StatusCode::CREATED, Json(conversation)))
+    Ok((
+        StatusCode::CREATED,
+        Json(store.get_conversation(&conversation.id)?),
+    ))
 }
 
 async fn list_provider_sessions(

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kubecode_server::agent_discovery::AgentDescriptor;
-use kubecode_server::agent_runtime::{AgentRuntime, StartAgentRun};
+use kubecode_server::agent_runtime::{AgentRuntime, SessionConfigInput, StartAgentRun};
 use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, PermissionMode, RunStatus};
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
@@ -16,6 +16,136 @@ fn executable(directory: &TempDir, body: &str) -> String {
     permissions.set_mode(0o755);
     fs::set_permissions(&path, permissions).expect("permissions");
     path.to_string_lossy().into_owned()
+}
+
+#[tokio::test]
+async fn initializes_provider_session_and_commands_before_the_first_prompt() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-ready","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"status","description":"Show session status"}]}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-ready\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+
+    runtime
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("initialize ACP session");
+
+    let initialized = store
+        .get_conversation(&conversation.id)
+        .expect("initialized conversation");
+    assert_eq!(
+        initialized.provider_session_id.as_deref(),
+        Some("session-ready")
+    );
+    let events = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events");
+    assert!(events.iter().any(|event| {
+        event.kind == "available_commands"
+            && event.payload["availableCommands"][0]["name"] == "status"
+    }));
+}
+
+#[tokio::test]
+async fn changes_native_config_while_a_prompt_is_running() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-config\"}}"
+      ;;
+    *'"method":"session/set_config_option"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"configOptions\":[]}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    runtime
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("initialize ACP session");
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id,
+            message: "Keep working".into(),
+            permission_mode: PermissionMode::Safe,
+        })
+        .expect("start prompt");
+
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runtime.set_session_config(
+            &conversation.id,
+            "permissionMode".into(),
+            SessionConfigInput::ValueId("acceptEdits".into()),
+        ),
+    )
+    .await
+    .expect("config update must not wait for prompt completion")
+    .expect("set config");
+
+    assert!(runtime.cancel(&run.id));
 }
 
 #[tokio::test]

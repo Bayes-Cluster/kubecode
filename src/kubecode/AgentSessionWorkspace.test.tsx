@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
@@ -13,7 +14,9 @@ vi.mock('@/components/AiPanelChrome', () => ({
       <article key={message.id}>{message.userMessage}{message.response}</article>
     ))}</div>
   ),
-  AiPanelComposer: () => <div data-testid="composer" />,
+  AiPanelComposer: ({ controls }: { controls?: ReactNode }) => (
+    <div data-testid="composer">{controls}</div>
+  ),
 }))
 
 const conversation = {
@@ -46,6 +49,94 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('keeps native Agent permission configuration selectable during a run', async () => {
+    const running = { ...run, status: 'running' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([running]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        config_options: {
+          configOptions: [{
+            type: 'select',
+            id: 'permissionMode',
+            name: 'Permission',
+            currentValue: 'manual',
+            options: [
+              { value: 'manual', name: 'Manual' },
+              { value: 'acceptEdits', name: 'Accept Edits' },
+            ],
+          }],
+        },
+      }),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByRole('combobox', { name: 'Permission' })).toBeEnabled()
+  })
+
+  it('replays a fast slash-command response that arrives before its run is loaded', async () => {
+    let resolveRun: ((value: AgentRun) => void) | undefined
+    const pendingRun = new Promise<AgentRun>((resolve) => { resolveRun = resolve })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      getRun: vi.fn().mockReturnValue(pendingRun),
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+    await waitFor(() => expect(api.getSessionState).toHaveBeenCalled())
+
+    const started: WorkspaceEvent = {
+      id: 10,
+      kind: 'run_started',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: 'run-status',
+      payload: {},
+      created_at: 'now',
+    }
+    const response: WorkspaceEvent = {
+      id: 11,
+      kind: 'text_delta',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: 'run-status',
+      payload: { text: 'Session is ready' },
+      created_at: 'now',
+    }
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[started, response]} />)
+
+    resolveRun?.({ ...run, id: 'run-status', message: '/status' })
+
+    expect(await screen.findByText('/statusSession is ready')).toBeInTheDocument()
+  })
+
   it('hydrates persisted run history and resolves ACP permissions from the global event stream', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([run]),
@@ -68,7 +159,7 @@ describe('AgentSessionWorkspace', () => {
       projectId: 'project-1',
       t: createTranslator('en'),
     }
-    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvent={null} />)
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
 
     expect(await screen.findByText('Implement itDone')).toBeInTheDocument()
 
@@ -88,7 +179,7 @@ describe('AgentSessionWorkspace', () => {
       },
       created_at: 'now',
     }
-    rerender(<AgentSessionWorkspace {...props} workspaceEvent={permissionEvent} />)
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[permissionEvent]} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Allow' }))
 
     await waitFor(() => {
@@ -124,7 +215,7 @@ describe('AgentSessionWorkspace', () => {
         locale="en"
         projectId="project-1"
         t={createTranslator('en')}
-        workspaceEvent={null}
+        workspaceEvents={[]}
       />,
     )
 

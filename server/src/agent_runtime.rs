@@ -160,8 +160,27 @@ impl AgentRuntime {
             provider_session_id: conversation.provider_session_id,
             cwd,
         };
-        self.dispatch(config, command);
+        self.dispatch(config, SessionCommand::Prompt(command));
         Ok(run)
+    }
+
+    pub async fn initialize_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let config = AgentSessionConfig {
+            conversation_id: conversation.id,
+            agent_id: conversation.agent_id,
+            descriptor,
+            provider_session_id: conversation.provider_session_id,
+            cwd,
+        };
+        let (response, ready) = oneshot::channel();
+        self.dispatch(config, SessionCommand::Ready { response });
+        ready
+            .await
+            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?
+            .map_err(RuntimeError::Acp)
     }
 
     pub async fn list_provider_sessions(
@@ -412,7 +431,7 @@ impl AgentRuntime {
             })
     }
 
-    fn dispatch(&self, config: AgentSessionConfig, command: AgentCommand) {
+    fn dispatch(&self, config: AgentSessionConfig, command: SessionCommand) {
         let existing = self
             .sessions
             .lock()
@@ -420,18 +439,18 @@ impl AgentRuntime {
             .get(&config.conversation_id)
             .cloned();
         let command = if let Some(handle) = existing {
-            match handle.sender.send(SessionCommand::Prompt(command)) {
+            match handle.sender.send(command) {
                 Ok(()) => return,
-                Err(error) => match error.0 {
-                    SessionCommand::Prompt(command) => command,
-                    _ => unreachable!("dispatch sends only prompt commands"),
-                },
+                Err(error) => error.0,
             }
         } else {
             command
         };
 
         let (sender, receiver) = mpsc::unbounded_channel();
+        sender
+            .send(command)
+            .expect("new session actor receiver must be open");
         let generation = Uuid::new_v4().to_string();
         self.sessions
             .lock()
@@ -446,7 +465,7 @@ impl AgentRuntime {
         let runtime = self.clone();
         tokio::spawn(async move {
             let conversation_id = config.conversation_id.clone();
-            runtime.run_session_actor(config, command, receiver).await;
+            runtime.run_session_actor(config, receiver).await;
             let mut sessions = runtime
                 .sessions
                 .lock()
@@ -463,14 +482,12 @@ impl AgentRuntime {
     async fn run_session_actor(
         &self,
         config: AgentSessionConfig,
-        first_command: AgentCommand,
         mut receiver: mpsc::UnboundedReceiver<SessionCommand>,
     ) {
         let active_run_id = Arc::new(Mutex::new(None));
         let result = run_acp_session(
             self.clone(),
             config,
-            first_command,
             &mut receiver,
             Arc::clone(&active_run_id),
         )
@@ -490,7 +507,8 @@ impl AgentRuntime {
                         self.remove_cancellation(&command.run.id);
                     }
                     SessionCommand::SetMode { response, .. }
-                    | SessionCommand::SetConfig { response, .. } => {
+                    | SessionCommand::SetConfig { response, .. }
+                    | SessionCommand::Ready { response } => {
                         let _ = response.send(Err(error.to_string()));
                     }
                 }
@@ -632,6 +650,9 @@ struct AgentCommand {
 
 enum SessionCommand {
     Prompt(AgentCommand),
+    Ready {
+        response: oneshot::Sender<Result<(), String>>,
+    },
     SetMode {
         mode_id: String,
         response: oneshot::Sender<Result<(), String>>,
@@ -641,6 +662,61 @@ enum SessionCommand {
         value: SessionConfigInput,
         response: oneshot::Sender<Result<(), String>>,
     },
+}
+
+async fn process_session_control(
+    connection: &ConnectionTo<Agent>,
+    session_id: &agent_client_protocol::schema::v1::SessionId,
+    command: SessionCommand,
+    store: &AgentStore,
+    conversation_id: &str,
+) -> Option<AgentCommand> {
+    match command {
+        SessionCommand::Prompt(command) => Some(command),
+        SessionCommand::Ready { response } => {
+            let _ = response.send(Ok(()));
+            None
+        }
+        SessionCommand::SetMode { mode_id, response } => {
+            let result = connection
+                .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
+                .block_task()
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string());
+            let _ = response.send(result);
+            None
+        }
+        SessionCommand::SetConfig {
+            config_id,
+            value,
+            response,
+        } => {
+            let value = match value {
+                SessionConfigInput::Boolean(value) => SessionConfigOptionValue::boolean(value),
+                SessionConfigInput::ValueId(value) => SessionConfigOptionValue::value_id(value),
+            };
+            let result = connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    config_id,
+                    value,
+                ))
+                .block_task()
+                .await
+                .map(|update| {
+                    persist_serialized_session_event(
+                        store,
+                        conversation_id,
+                        "config_options",
+                        update,
+                    );
+                })
+                .map_err(|error| error.to_string());
+            let _ = response.send(result);
+            None
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -659,7 +735,6 @@ enum AcpRunOutcome {
 async fn run_acp_session(
     runtime: AgentRuntime,
     config: AgentSessionConfig,
-    first_command: AgentCommand,
     receiver: &mut mpsc::UnboundedReceiver<SessionCommand>,
     active_run_id: Arc<Mutex<Option<String>>>,
 ) -> Result<(), RuntimeError> {
@@ -891,64 +966,21 @@ async fn run_acp_session(
                 .map_err(|error| {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 })?;
-            let mut next_command = Some(SessionCommand::Prompt(first_command));
             loop {
-                let command = if let Some(command) = next_command.take() {
-                    command
-                } else {
+                let command =
                     match tokio::time::timeout(SESSION_IDLE_TIMEOUT, receiver.recv()).await {
                         Ok(Some(command)) => command,
                         Ok(None) | Err(_) => break,
-                    }
-                };
-                let SessionCommand::Prompt(command) = command else {
-                    match command {
-                        SessionCommand::SetMode { mode_id, response } => {
-                            let result = connection
-                                .send_request(SetSessionModeRequest::new(
-                                    session_id.clone(),
-                                    mode_id,
-                                ))
-                                .block_task()
-                                .await
-                                .map(|_| ())
-                                .map_err(|error| error.to_string());
-                            let _ = response.send(result);
-                        }
-                        SessionCommand::SetConfig {
-                            config_id,
-                            value,
-                            response,
-                        } => {
-                            let value = match value {
-                                SessionConfigInput::Boolean(value) => {
-                                    SessionConfigOptionValue::boolean(value)
-                                }
-                                SessionConfigInput::ValueId(value) => {
-                                    SessionConfigOptionValue::value_id(value)
-                                }
-                            };
-                            let result = connection
-                                .send_request(SetSessionConfigOptionRequest::new(
-                                    session_id.clone(),
-                                    config_id,
-                                    value,
-                                ))
-                                .block_task()
-                                .await
-                                .map(|update| {
-                                    persist_serialized_session_event(
-                                        &runtime.store,
-                                        &conversation_id,
-                                        "config_options",
-                                        update,
-                                    );
-                                })
-                                .map_err(|error| error.to_string());
-                            let _ = response.send(result);
-                        }
-                        SessionCommand::Prompt(_) => unreachable!(),
-                    }
+                    };
+                let Some(command) = process_session_control(
+                    &connection,
+                    &session_id,
+                    command,
+                    &runtime.store,
+                    &conversation_id,
+                )
+                .await
+                else {
                     continue;
                 };
                 *active_run_id.lock().expect("active run mutex poisoned") =
@@ -963,14 +995,37 @@ async fn run_acp_session(
                         vec![command.message.into()],
                     ))
                     .block_task();
-                let outcome = tokio::select! {
-                    response = prompt => {
-                        response?;
-                        AcpRunOutcome::Completed
-                    }
-                    _ = &mut cancelled => {
-                        connection.send_notification(CancelNotification::new(session_id.clone()))?;
-                        AcpRunOutcome::Cancelled
+                tokio::pin!(prompt);
+                let mut controls_open = true;
+                let outcome = loop {
+                    tokio::select! {
+                        response = &mut prompt => {
+                            response?;
+                            break AcpRunOutcome::Completed;
+                        }
+                        _ = &mut cancelled => {
+                            connection.send_notification(CancelNotification::new(session_id.clone()))?;
+                            break AcpRunOutcome::Cancelled;
+                        }
+                        next = receiver.recv(), if controls_open => {
+                            if let Some(next) = next {
+                                if let Some(queued_prompt) = process_session_control(
+                                    &connection,
+                                    &session_id,
+                                    next,
+                                    &runtime.store,
+                                    &conversation_id,
+                                ).await {
+                                    runtime.fail_run(
+                                        &queued_prompt.run.id,
+                                        "another prompt is already running in this session".into(),
+                                    );
+                                    runtime.remove_cancellation(&queued_prompt.run.id);
+                                }
+                            } else {
+                                controls_open = false;
+                            }
+                        }
                     }
                 };
                 runtime.remove_cancellation(&command.run.id);

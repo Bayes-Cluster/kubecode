@@ -170,6 +170,66 @@
   width: 100%;
 }
 
+.kubecode-new-session-dialog {
+  gap: 0;
+  max-width: 520px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.kubecode-new-session-dialog > header {
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 5px;
+  padding: 20px 22px 17px;
+}
+
+.kubecode-new-session-form {
+  display: grid;
+  gap: 17px;
+  padding: 18px 22px 22px;
+}
+
+.kubecode-new-session-dialog .kubecode-mode-switch {
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+}
+
+.kubecode-new-session-dialog .kubecode-mode-switch > button {
+  color: var(--text-secondary);
+  width: 100%;
+}
+
+.kubecode-new-session-dialog .kubecode-mode-switch > button[data-active='true'] {
+  background: var(--surface-app);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.kubecode-new-session-field {
+  color: var(--text-secondary);
+  display: grid;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 7px;
+}
+
+.kubecode-new-session-field [data-slot='select-trigger'],
+.kubecode-new-session-field input {
+  color: var(--text-primary);
+  height: 40px;
+  width: 100%;
+}
+
+.kubecode-new-session-footer {
+  background: color-mix(in srgb, var(--surface-sidebar) 55%, var(--surface-app));
+  border-top: 1px solid var(--border-subtle);
+  padding: 13px 22px;
+}
+
 .kubecode-session-list {
   display: flex;
   flex: 1;
@@ -319,19 +379,54 @@
 }
 
 .kubecode-permission-dock {
-  align-items: center;
-  background: var(--feedback-warning-bg);
-  border: 1px solid var(--feedback-warning-border);
-  border-radius: 8px;
-  display: flex;
-  justify-content: space-between;
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  display: grid;
+  gap: 10px;
   margin: 0 auto 8px;
-  max-width: 760px;
-  padding: 9px 11px;
+  max-width: 740px;
+  padding: 12px;
   width: calc(100% - 20px);
 }
-.kubecode-permission-dock > div { align-items: center; display: flex; gap: 7px; }
-.kubecode-permission-dock span { color: var(--text-secondary); font-size: 12px; }
+
+.kubecode-permission-heading {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.kubecode-permission-heading svg { color: var(--feedback-warning-text); }
+
+.kubecode-permission-command {
+  background: var(--surface-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 92px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 8px 9px;
+  white-space: pre-wrap;
+}
+
+.kubecode-permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.kubecode-permission-actions > button {
+  max-width: min(100%, 240px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .kubecode-elicitation-dock {
   background: var(--surface-sidebar);

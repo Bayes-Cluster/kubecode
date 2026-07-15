@@ -56,7 +56,10 @@ PATH, login-shell PATH, and Tolaria-compatible local toolchain locations such as
 Homebrew. Authentication and model configuration remain owned by each CLI.
 
 `AgentRuntime` launches the selected ACP endpoint in the validated Project cwd
-and owns it through a Session actor independently of any HTTP or SSE connection. It
+and owns it through a Session actor independently of any HTTP or SSE connection.
+Creating an available Agent Session waits for the actor to initialize and create
+or load its provider Session, making retained ACP commands and options readable
+before the first prompt. It
 uses the official Rust ACP SDK for initialization, session list/load/resume/create,
 fork/delete, prompt, stream updates, permissions, structured elicitation,
 mode/config changes, and cancellation. Claude and Codex use pinned
@@ -64,8 +67,9 @@ official adapters. Their adapter paths are resolved separately and receive the
 discovered CLI path, preserving the CLI's authentication and configuration.
 OpenCode uses its native `acp` subcommand. One actor serializes prompts for one
 Session while actors for different Sessions run concurrently. Prompt and option
-commands share the same actor connection, so a model/mode change cannot race a
-second adapter process. Actors remain
+commands share the same actor connection. Mode and config requests are polled
+concurrently with an active prompt, so native permission modes remain selectable
+without starting a second adapter process. Actors remain
 connected between turns and stop after thirty idle minutes; the next turn uses
 `session/resume` when advertised and falls back to `session/load`. ACP session IDs are stored with Sessions, while typed protocol
 updates are normalized into the `AgentStore` event vocabulary. Safe mode emits
@@ -91,7 +95,10 @@ elicitation forms above the composer, and
 keeps the Session's Agent immutable. It reuses proven Tolaria message/composer
 primitives without retaining the old right-side AI Panel chrome. Slash-command
 suggestions, Agent plans, native mode/config selectors, fork, and provider delete
-are rendered only from retained ACP state and capabilities.
+are rendered only from retained ACP state and capabilities. The app passes an
+ordered bounded workspace-event window to this renderer; events received before
+their run record is available are queued and replayed in sequence, preventing
+fast slash commands and token bursts from disappearing in the live view.
 
 `ContextWorkbench` owns the right-side Review, Files, Editor, and Diff tabs.
 Review is the default tab, while CodeMirror opens beside the Session and shares

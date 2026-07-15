@@ -77,7 +77,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [contextOpen, setContextOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [workspaceEvent, setWorkspaceEvent] = useState<WorkspaceEvent | null>(null)
+  const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
@@ -146,7 +146,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     const stream = new EventSource(api.workspaceEventStreamUrl())
     const receive = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as WorkspaceEvent
-      setWorkspaceEvent(event)
+      setWorkspaceEvents((current) => [...current, event].slice(-2048))
       if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)
         && event.project_id === projectId && projectId) {
         void api.listConversations(projectId).then(setConversations)
@@ -285,7 +285,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 setConversations((current) => current.map((item) => item.id === updated.id ? updated : item))
               }}
               t={t}
-              workspaceEvent={workspaceEvent}
+              workspaceEvents={workspaceEvents}
               key={conversationId ?? projectId ?? 'no-project'}
             />
             {contextOpen && (
@@ -297,7 +297,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                   projectId={projectId}
                   t={t}
                   width={contextWidth}
-                  workspaceEvent={workspaceEvent}
+                  workspaceEvent={workspaceEvents.at(-1) ?? null}
                 />
               </>
             )}
@@ -371,6 +371,8 @@ function NewSessionDialog({
   const [providerSessionId, setProviderSessionId] = useState<string | null>(null)
   const [loadingProviderSessions, setLoadingProviderSessions] = useState(false)
   const [providerError, setProviderError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const selectedAgentId = agents.some((agent) => agent.id === agentId && agent.available)
     ? agentId
@@ -403,70 +405,95 @@ function NewSessionDialog({
 
   const create = async () => {
     if (!projectId) return
-    const providerSession = providerSessions.find((item) => item.session_id === providerSessionId)
-    const session = await api.createConversation(
-      projectId,
-      selectedAgentId,
-      title.trim() || undefined,
-      mode === 'import' ? providerSession?.session_id : undefined,
-      mode === 'import' ? providerSession?.title ?? undefined : undefined,
-    )
-    trackEvent(mode === 'import' ? 'kubecode_agent_session_imported' : 'kubecode_session_created', {
-      agent_id: selectedAgentId,
-    })
-    setTitle('')
-    setProviderSessionId(null)
-    onSession(session)
-    onOpenChange(false)
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const providerSession = providerSessions.find((item) => item.session_id === providerSessionId)
+      const session = await api.createConversation(
+        projectId,
+        selectedAgentId,
+        title.trim() || undefined,
+        mode === 'import' ? providerSession?.session_id : undefined,
+        mode === 'import' ? providerSession?.title ?? undefined : undefined,
+      )
+      trackEvent(mode === 'import' ? 'kubecode_agent_session_imported' : 'kubecode_session_created', {
+        agent_id: selectedAgentId,
+      })
+      setTitle('')
+      setProviderSessionId(null)
+      onSession(session)
+      onOpenChange(false)
+    } catch (cause) {
+      setCreateError(errorMessage(cause, t('kubecode.error')))
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="kubecode-new-session-dialog">
         <DialogHeader>
           <DialogTitle>{t('kubecode.newSession')}</DialogTitle>
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="kubecode-mode-switch">
-          <Button variant={mode === 'new' ? 'default' : 'outline'} onClick={() => setMode('new')}>{t('kubecode.startNewSession')}</Button>
-          <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')}>{t('kubecode.importAgentSession')}</Button>
-        </div>
-        <Select value={selectedAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
-          <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {agents.map((agent) => (
-              <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
-                <AiAgentIcon agent={agent.id} size={15} /> {agentName(agent.id)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {mode === 'new' ? (
-          <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
-        ) : (
-          <div className="kubecode-provider-session-list">
-            {providerSessions.map((session) => (
-              <Button
-                data-active={session.session_id === providerSessionId}
-                key={session.session_id}
-                variant={session.session_id === providerSessionId ? 'secondary' : 'ghost'}
-                onClick={() => setProviderSessionId(session.session_id)}
-              >
-                <span>{session.title || t('kubecode.untitledSession')}</span>
-                <code>{session.updated_at ?? session.session_id}</code>
-              </Button>
-            ))}
-            {loadingProviderSessions && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
-            {!loadingProviderSessions && providerSessions.length === 0 && !providerError && (
-              <div className="kubecode-empty-small">{t('kubecode.noProviderSessions')}</div>
-            )}
-            {providerError && <div className="kubecode-inline-error">{providerError}</div>}
+        <div className="kubecode-new-session-form">
+          <div className="kubecode-mode-switch" role="group">
+            <Button data-active={mode === 'new'} size="sm" variant="ghost" onClick={() => setMode('new')}>
+              {t('kubecode.startNewSession')}
+            </Button>
+            <Button data-active={mode === 'import'} size="sm" variant="ghost" onClick={() => setMode('import')}>
+              {t('kubecode.importAgentSession')}
+            </Button>
           </div>
-        )}
-        <DialogFooter>
-          <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-          <Button disabled={!projectId || !availableAgent || (mode === 'import' && !providerSessionId)} onClick={() => void create()}>
-            {mode === 'import' ? t('kubecode.import') : t('kubecode.create')}
+          <label className="kubecode-new-session-field">
+            <span>{t('kubecode.agent')}</span>
+            <Select value={selectedAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
+              <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
+                    <AiAgentIcon agent={agent.id} size={15} /> {agentName(agent.id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          {mode === 'new' ? (
+            <label className="kubecode-new-session-field">
+              <span>{t('kubecode.sessionTitle')}</span>
+              <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+          ) : (
+            <div className="kubecode-provider-session-list">
+              {providerSessions.map((session) => (
+                <Button
+                  data-active={session.session_id === providerSessionId}
+                  key={session.session_id}
+                  variant={session.session_id === providerSessionId ? 'secondary' : 'ghost'}
+                  onClick={() => setProviderSessionId(session.session_id)}
+                >
+                  <span>{session.title || t('kubecode.untitledSession')}</span>
+                  <code>{session.updated_at ?? session.session_id}</code>
+                </Button>
+              ))}
+              {loadingProviderSessions && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
+              {!loadingProviderSessions && providerSessions.length === 0 && !providerError && (
+                <div className="kubecode-empty-small">{t('kubecode.noProviderSessions')}</div>
+              )}
+              {providerError && <div className="kubecode-inline-error">{providerError}</div>}
+            </div>
+          )}
+          {createError && <div className="kubecode-inline-error">{createError}</div>}
+        </div>
+        <DialogFooter className="kubecode-new-session-footer">
+          <DialogClose asChild><Button disabled={creating} variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
+          <Button
+            aria-busy={creating}
+            disabled={creating || !projectId || !availableAgent || (mode === 'import' && !providerSessionId)}
+            onClick={() => void create()}
+          >
+            {creating ? t('kubecode.loading') : mode === 'import' ? t('kubecode.import') : t('kubecode.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

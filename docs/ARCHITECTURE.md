@@ -18,15 +18,18 @@ The active server boundary currently consists of five Rust abstractions:
   prompt-bearing runs, normalized run and Session events,
   and the global cursor-based workspace event log. It enforces one active run
   per Session while allowing Sessions to execute concurrently.
-- `AgentRuntime` owns one long-lived ACP actor per active Session. The actor
-  processes prompts serially, stays alive across turns, and exits after thirty
+- `AgentRuntime` owns one long-lived ACP actor per connected Session. New
+  Sessions complete ACP initialization before the create request returns, so
+  native commands, modes, and configuration are available before the first
+  prompt. The actor processes prompts serially, stays alive across turns, and exits after thirty
   idle minutes; a later turn reloads the persisted provider Session. It resolves
   pinned Claude/Codex adapters from
   explicit overrides, project-local package binaries, or `PATH`, then passes
   the discovered CLI path through `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`. It
   retains ACP capabilities, plans, commands, modes, config, usage, title and
   extension metadata, pauses Safe-mode requests for browser permission
-  decisions, renders structured ACP elicitation forms when an Agent needs user
+  decisions, accepts native mode/config changes while a prompt is active,
+  renders structured ACP elicitation forms when an Agent needs user
   input, and serves reconnectable event cursors through the global SSE.
 - `GitService` provides Project-scoped local status, diff, stage, unstage,
   discard, init, and commit operations without shell interpolation.
@@ -45,7 +48,10 @@ only small usability minimums constrain the otherwise free dimensions. Browser
 code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from
 the current Kubeflow Notebook prefix. One global workspace SSE multiplexes
 Agent, file, Git, and Terminal metadata; PTY byte streams retain dedicated
-WebSockets.
+WebSockets. The React shell retains an ordered bounded event window rather than
+only the latest event, and the Session renderer buffers events until their run
+metadata is loaded. Fast native commands therefore render identically live and
+after database replay.
 
 New Session can either create an Agent-native session or list and load native
 sessions for the current Project. Native list/load/resume/fork/delete controls and
