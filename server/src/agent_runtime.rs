@@ -162,16 +162,7 @@ impl AgentRuntime {
     }
 
     pub async fn initialize_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
-        let conversation = self.store.get_conversation(conversation_id)?;
-        let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let cwd = self.workspace.project_path(&conversation.project_id)?;
-        let config = AgentSessionConfig {
-            conversation_id: conversation.id,
-            agent_id: conversation.agent_id,
-            descriptor,
-            provider_session_id: conversation.provider_session_id,
-            cwd,
-        };
+        let config = self.session_config(conversation_id)?;
         let (response, ready) = oneshot::channel();
         self.dispatch(config, SessionCommand::Ready { response });
         ready
@@ -584,7 +575,7 @@ impl AgentRuntime {
         conversation_id: &str,
         mode_id: String,
     ) -> Result<(), RuntimeError> {
-        self.send_session_control(conversation_id, |response| SessionCommand::SetMode {
+        self.dispatch_session_control(conversation_id, |response| SessionCommand::SetMode {
             mode_id,
             response,
         })
@@ -597,7 +588,7 @@ impl AgentRuntime {
         config_id: String,
         value: SessionConfigInput,
     ) -> Result<(), RuntimeError> {
-        self.send_session_control(conversation_id, |response| SessionCommand::SetConfig {
+        self.dispatch_session_control(conversation_id, |response| SessionCommand::SetConfig {
             config_id,
             value,
             response,
@@ -605,28 +596,31 @@ impl AgentRuntime {
         .await
     }
 
-    async fn send_session_control(
+    async fn dispatch_session_control(
         &self,
         conversation_id: &str,
         command: impl FnOnce(oneshot::Sender<Result<(), String>>) -> SessionCommand,
     ) -> Result<(), RuntimeError> {
-        let sender = self
-            .sessions
-            .lock()
-            .expect("agent session mutex poisoned")
-            .get(conversation_id)
-            .map(|handle| handle.sender.clone())
-            .ok_or_else(|| {
-                RuntimeError::Acp("session is not connected; send a prompt first".into())
-            })?;
+        let config = self.session_config(conversation_id)?;
         let (response, result) = oneshot::channel();
-        sender
-            .send(command(response))
-            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?;
+        self.dispatch(config, command(response));
         result
             .await
             .map_err(|_| RuntimeError::Acp("session connection closed".into()))?
             .map_err(RuntimeError::Acp)
+    }
+
+    fn session_config(&self, conversation_id: &str) -> Result<AgentSessionConfig, RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        Ok(AgentSessionConfig {
+            conversation_id: conversation.id,
+            agent_id: conversation.agent_id,
+            descriptor,
+            provider_session_id: conversation.provider_session_id,
+            cwd,
+        })
     }
 }
 

@@ -80,6 +80,72 @@ done"#,
 }
 
 #[tokio::test]
+async fn reconnects_a_session_before_changing_its_native_mode() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-reconnected\"}}"
+      ;;
+    *'"method":"session/set_mode"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+
+    runtime
+        .set_session_mode(&conversation.id, "acceptEdits".into())
+        .await
+        .expect("reconnect and set mode");
+
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("reconnected conversation")
+            .provider_session_id
+            .as_deref(),
+        Some("session-reconnected")
+    );
+    assert!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("session events")
+            .iter()
+            .any(|event| {
+                event.kind == "current_mode" && event.payload["currentModeId"] == "acceptEdits"
+            })
+    );
+}
+
+#[tokio::test]
 async fn importing_provider_session_loads_history_before_resuming() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");

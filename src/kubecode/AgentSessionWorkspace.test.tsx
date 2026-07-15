@@ -177,6 +177,49 @@ describe('AgentSessionWorkspace', () => {
     })
   })
 
+  it('reports a failed Claude mode change and restores the confirmed mode', async () => {
+    const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
+    const state = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'dontAsk',
+        availableModes: [
+          { id: 'dontAsk', name: "Don't Ask" },
+          { id: 'plan', name: 'Plan Mode' },
+        ],
+      },
+    }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(state),
+      setSessionMode: vi.fn().mockRejectedValue(new Error('ACP session could not reconnect')),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'claude_code', available: true, version: '1', executable: 'claude', error: null }]}
+      api={api}
+      conversation={claudeConversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const mode = await screen.findByRole('combobox', { name: 'Agent mode' })
+    expect(mode).toHaveTextContent("Don't Ask")
+
+    fireEvent.click(mode)
+    fireEvent.click(await screen.findByRole('option', { name: 'Plan Mode' }))
+
+    expect(await screen.findByText('ACP session could not reconnect')).toBeInTheDocument()
+    expect(mode).toHaveTextContent("Don't Ask")
+  })
+
   it('renders ACP plans as a progress checklist instead of raw JSON', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),

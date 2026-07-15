@@ -346,6 +346,28 @@ export function AgentSessionWorkspace({
   const refreshSessionState = async () => {
     setSessionState(await api.getSessionState(conversation.id))
   }
+
+  const commitSessionOption = async (
+    optimisticState: AgentSessionState | null,
+    request: () => Promise<void>,
+  ) => {
+    const confirmedState = sessionState
+    setError(null)
+    setSessionState(optimisticState)
+    try {
+      await request()
+    } catch (cause) {
+      setSessionState(confirmedState)
+      setError(errorMessage(cause, t('kubecode.error')))
+      return
+    }
+    try {
+      await refreshSessionState()
+    } catch (cause) {
+      setError(errorMessage(cause, t('kubecode.error')))
+    }
+  }
+
   return (
     <section className="kubecode-agent-session" data-testid="agent-session-workspace">
       <header className="kubecode-session-header">
@@ -545,7 +567,10 @@ export function AgentSessionWorkspace({
                 <Select
                   value={nativeMode.currentValue}
                   onValueChange={(value) => {
-                    void api.setSessionMode(conversation.id, value).then(refreshSessionState)
+                    void commitSessionOption(
+                      sessionStateWithMode(sessionState, value),
+                      () => api.setSessionMode(conversation.id, value),
+                    )
                   }}
                 >
                   <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
@@ -565,7 +590,10 @@ export function AgentSessionWorkspace({
                   key={config.id}
                   value={config.currentValue}
                   onValueChange={(value) => {
-                    void api.setSessionConfig(conversation.id, config.id, value).then(refreshSessionState)
+                    void commitSessionOption(
+                      sessionStateWithConfig(sessionState, config.id, value),
+                      () => api.setSessionConfig(conversation.id, config.id, value),
+                    )
                   }}
                 >
                   <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
@@ -764,6 +792,36 @@ function sessionConfigSelects(state: AgentSessionState | null): SessionSelect[] 
     if (!id || !name || !currentValue || options.length === 0) return []
     return [{ id, name, currentValue, options }]
   })
+}
+
+function sessionStateWithMode(
+  state: AgentSessionState | null,
+  currentModeId: string,
+): AgentSessionState | null {
+  if (!state?.current_mode) return state
+  return {
+    ...state,
+    current_mode: { ...state.current_mode, currentModeId },
+  }
+}
+
+function sessionStateWithConfig(
+  state: AgentSessionState | null,
+  configId: string,
+  currentValue: string,
+): AgentSessionState | null {
+  const configOptions = state?.config_options?.configOptions
+  if (!state?.config_options || !Array.isArray(configOptions)) return state
+  return {
+    ...state,
+    config_options: {
+      ...state.config_options,
+      configOptions: configOptions.map((value) => {
+        const config = objectValue(value)
+        return textValue(config?.id) === configId ? { ...config, currentValue } : value
+      }),
+    },
+  }
 }
 
 function sessionPlanEntries(plan: Record<string, unknown> | null | undefined): SessionPlanEntry[] {
