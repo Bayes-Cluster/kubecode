@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use crate::agents::{
 };
 use crate::git::{GitError, GitMutation, GitService};
 use crate::terminal::{TerminalError, TerminalKind, TerminalManager, TerminalSnapshot};
-use crate::workspace::{EntryKind, WorkspaceError, WorkspaceService};
+use crate::workspace::{DirectoryListing, EntryKind, WorkspaceError, WorkspaceService};
 
 const API_PATH: &str = "/api/v1";
 
@@ -99,7 +99,12 @@ fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/agents", get(list_agents))
         .route("/events", get(stream_workspace_events))
+        .route("/filesystem/directories", get(list_directories))
         .route("/projects", get(list_projects).post(create_project))
+        .route(
+            "/projects/{project_id}/agents/{agent_id}/sessions",
+            get(list_provider_sessions),
+        )
         .route(
             "/projects/{project_id}/conversations",
             get(list_conversations).post(create_conversation),
@@ -125,6 +130,23 @@ fn api_router(state: AppState) -> Router {
             get(list_conversation_runs),
         )
         .route(
+            "/sessions/{conversation_id}",
+            axum::routing::patch(update_conversation).delete(remove_conversation),
+        )
+        .route(
+            "/sessions/{conversation_id}/fork",
+            axum::routing::post(fork_conversation),
+        )
+        .route(
+            "/sessions/{conversation_id}/events",
+            get(list_session_events),
+        )
+        .route("/sessions/{conversation_id}/state", get(get_session_state))
+        .route(
+            "/sessions/{conversation_id}/options",
+            axum::routing::patch(update_session_option),
+        )
+        .route(
             "/runs/{run_id}",
             get(get_agent_run).delete(cancel_agent_run),
         )
@@ -133,6 +155,10 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/permissions/{request_id}",
             axum::routing::post(resolve_permission),
+        )
+        .route(
+            "/elicitations/{request_id}",
+            axum::routing::post(resolve_elicitation),
         )
         .route("/projects/{project_id}", delete(unregister_project))
         .route("/projects/{project_id}/git/status", get(git_status))
@@ -180,6 +206,8 @@ async fn list_agents(State(state): State<AppState>) -> impl IntoResponse {
 struct CreateConversationRequest {
     agent_id: AgentId,
     title: Option<String>,
+    provider_session_id: Option<String>,
+    agent_title: Option<String>,
 }
 
 async fn list_conversations(
@@ -201,12 +229,104 @@ async fn create_conversation(
     Json(request): Json<CreateConversationRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     state.workspace.project_path(&project_id)?;
-    let conversation = state.agent_runtime.store().create_conversation(
-        &project_id,
-        request.agent_id,
-        request.title.as_deref(),
-    )?;
+    let store = state.agent_runtime.store();
+    let imported = request.provider_session_id.is_some();
+    let conversation = if let Some(provider_session_id) = request.provider_session_id.as_deref() {
+        let imported = store.create_imported_conversation(
+            &project_id,
+            request.agent_id,
+            provider_session_id,
+            request.agent_title.as_deref(),
+        )?;
+        if request
+            .title
+            .as_ref()
+            .is_some_and(|title| !title.trim().is_empty())
+        {
+            store.set_manual_title(&imported.id, request.title.as_deref())?
+        } else {
+            imported
+        }
+    } else {
+        store.create_conversation(&project_id, request.agent_id, request.title.as_deref())?
+    };
+    if imported {
+        state
+            .agent_runtime
+            .hydrate_provider_session(&conversation.id)
+            .await?;
+    }
     Ok((StatusCode::CREATED, Json(conversation)))
+}
+
+async fn list_provider_sessions(
+    State(state): State<AppState>,
+    Path((project_id, agent_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let agent_id = agent_id
+        .parse::<AgentId>()
+        .map_err(|_| ApiError::InvalidRequest("unsupported agent id".into()))?;
+    Ok(Json(
+        state
+            .agent_runtime
+            .list_provider_sessions(&project_id, agent_id)
+            .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateConversationRequest {
+    manual_title: Option<String>,
+}
+
+async fn update_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<UpdateConversationRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.agent_runtime.store().set_manual_title(
+        &conversation_id,
+        request.manual_title.as_deref(),
+    )?))
+}
+
+async fn remove_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Query(query): Query<RemoveConversationQuery>,
+) -> Result<StatusCode, ApiError> {
+    if query.scope.as_deref() == Some("provider") {
+        state
+            .agent_runtime
+            .delete_provider_session(&conversation_id)
+            .await?;
+    } else {
+        state
+            .agent_runtime
+            .store()
+            .delete_conversation(&conversation_id)?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RemoveConversationQuery {
+    scope: Option<String>,
+}
+
+async fn fork_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            state
+                .agent_runtime
+                .fork_provider_session(&conversation_id)
+                .await?,
+        ),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -283,6 +403,25 @@ async fn resolve_permission(
     Ok(StatusCode::ACCEPTED)
 }
 
+#[derive(Debug, Deserialize)]
+struct ResolveElicitationRequest {
+    content: Option<BTreeMap<String, agent_client_protocol::schema::v1::ElicitationContentValue>>,
+}
+
+async fn resolve_elicitation(
+    State(state): State<AppState>,
+    Path(request_id): Path<String>,
+    Json(request): Json<ResolveElicitationRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !state
+        .agent_runtime
+        .resolve_elicitation(&request_id, request.content)
+    {
+        return Err(ApiError::ElicitationNotFound(request_id));
+    }
+    Ok(StatusCode::ACCEPTED)
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct EventQuery {
     #[serde(default)]
@@ -301,6 +440,106 @@ async fn list_agent_events(
             .store()
             .events_after(&run_id, query.after)?,
     ))
+}
+
+async fn list_session_events(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Query(query): Query<EventQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(
+        state
+            .agent_runtime
+            .store()
+            .session_events_after(&conversation_id, query.after)?,
+    ))
+}
+
+#[derive(Debug, Default, Serialize)]
+struct SessionState {
+    capabilities: Option<serde_json::Value>,
+    available_commands: Option<serde_json::Value>,
+    current_mode: Option<serde_json::Value>,
+    config_options: Option<serde_json::Value>,
+    plan: Option<serde_json::Value>,
+    usage: Option<serde_json::Value>,
+}
+
+async fn get_session_state(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let events = state
+        .agent_runtime
+        .store()
+        .session_events_after(&conversation_id, 0)?;
+    let mut session = SessionState::default();
+    for event in events {
+        match event.kind.as_str() {
+            "capabilities" => session.capabilities = Some(event.payload),
+            "available_commands" => session.available_commands = Some(event.payload),
+            "current_mode" => {
+                if let (Some(current), Some(mode_id)) = (
+                    session
+                        .current_mode
+                        .as_mut()
+                        .and_then(|value| value.as_object_mut()),
+                    event.payload.get("currentModeId"),
+                ) {
+                    current.insert("currentModeId".into(), mode_id.clone());
+                } else {
+                    session.current_mode = Some(event.payload);
+                }
+            }
+            "config_options" => session.config_options = Some(event.payload),
+            "session_loaded" | "session_created_state" => {
+                if let Some(modes) = event.payload.get("modes") {
+                    session.current_mode = Some(modes.clone());
+                }
+                if let Some(options) = event.payload.get("configOptions") {
+                    session.config_options = Some(json!({"configOptions":options}));
+                }
+            }
+            "plan" => session.plan = Some(event.payload),
+            "usage" => session.usage = Some(event.payload),
+            _ => {}
+        }
+    }
+    Ok(Json(session))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum UpdateSessionOptionRequest {
+    Mode {
+        value: String,
+    },
+    Config {
+        config_id: String,
+        value: crate::agent_runtime::SessionConfigInput,
+    },
+}
+
+async fn update_session_option(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<UpdateSessionOptionRequest>,
+) -> Result<StatusCode, ApiError> {
+    match request {
+        UpdateSessionOptionRequest::Mode { value } => {
+            state
+                .agent_runtime
+                .set_session_mode(&conversation_id, value)
+                .await?;
+        }
+        UpdateSessionOptionRequest::Config { config_id, value } => {
+            state
+                .agent_runtime
+                .set_session_config(&conversation_id, config_id, value)
+                .await?;
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 struct AgentEventStreamState {
@@ -428,8 +667,8 @@ async fn list_projects(State(state): State<AppState>) -> Result<impl IntoRespons
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CreateProjectRequest {
-    Create { parent: String, name: String },
-    Import { path: String, name: Option<String> },
+    Create { path: String },
+    Import { path: String },
 }
 
 async fn create_project(
@@ -437,14 +676,23 @@ async fn create_project(
     Json(request): Json<CreateProjectRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let project = match request {
-        CreateProjectRequest::Create { parent, name } => {
-            state.workspace.create_project(&parent, &name)?
-        }
-        CreateProjectRequest::Import { path, name } => {
-            state.workspace.import_project(&path, name.as_deref())?
-        }
+        CreateProjectRequest::Create { path } => state.workspace.create_project_at(path)?,
+        CreateProjectRequest::Import { path } => state.workspace.import_project_at(path)?,
     };
     Ok((StatusCode::CREATED, Json(project)))
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DirectoryQuery {
+    path: Option<String>,
+}
+
+async fn list_directories(
+    State(state): State<AppState>,
+    Query(query): Query<DirectoryQuery>,
+) -> Result<Json<DirectoryListing>, ApiError> {
+    let requested = query.path.as_deref().map(FileSystemPath::new);
+    Ok(Json(state.workspace.list_directories(requested)?))
 }
 
 async fn unregister_project(
@@ -823,6 +1071,7 @@ enum ApiError {
     RunNotActive(String),
     Git(GitError),
     PermissionNotFound(String),
+    ElicitationNotFound(String),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -928,6 +1177,11 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND,
                 "permission_not_found",
                 format!("permission request is no longer active: {request_id}"),
+            ),
+            ApiError::ElicitationNotFound(request_id) => (
+                StatusCode::NOT_FOUND,
+                "elicitation_not_found",
+                format!("elicitation request is no longer active: {request_id}"),
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

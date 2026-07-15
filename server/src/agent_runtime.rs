@@ -1,18 +1,23 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, ContentChunk, EnvVariable, InitializeRequest,
-    LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PermissionOption,
-    PermissionOptionId, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionNotification, SessionUpdate, ToolCall, ToolCallStatus, ToolCallUpdate,
+    CancelNotification, ClientCapabilities, ContentBlock, ContentChunk, CreateElicitationRequest,
+    CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
+    ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, EnvVariable,
+    ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
+    McpServerStdio, NewSessionRequest, PermissionOption, PermissionOptionId, PermissionOptionKind,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus,
+    ToolCallUpdate,
 };
+use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
 use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
@@ -53,6 +58,14 @@ pub struct StartAgentRun {
     pub permission_mode: PermissionMode,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProviderSessionInfo {
+    pub session_id: String,
+    pub cwd: String,
+    pub title: Option<String>,
+    pub updated_at: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
@@ -61,18 +74,24 @@ pub struct AgentRuntime {
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
+    pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
 }
 
 #[derive(Clone)]
 struct SessionActorHandle {
     generation: String,
-    sender: mpsc::UnboundedSender<AgentCommand>,
+    sender: mpsc::UnboundedSender<SessionCommand>,
 }
 
 struct PendingPermission {
     allowed_options: HashSet<String>,
     run_id: String,
     sender: oneshot::Sender<RequestPermissionOutcome>,
+}
+
+struct PendingElicitation {
+    run_id: String,
+    sender: oneshot::Sender<ElicitationAction>,
 }
 
 impl PendingPermission {
@@ -96,6 +115,7 @@ impl AgentRuntime {
             cancellations: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+            pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -144,6 +164,204 @@ impl AgentRuntime {
         Ok(run)
     }
 
+    pub async fn list_provider_sessions(
+        &self,
+        project_id: &str,
+        agent_id: AgentId,
+    ) -> Result<Vec<ProviderSessionInfo>, RuntimeError> {
+        let descriptor = self.available_descriptor(agent_id)?;
+        let cwd = self.workspace.project_path(project_id)?;
+        let agent = acp_agent(agent_id, &descriptor)?;
+        agent_client_protocol::Client
+            .builder()
+            .name("Kubecode")
+            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+                let initialization = connection
+                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .block_task()
+                    .await?;
+                if initialization
+                    .agent_capabilities
+                    .session_capabilities
+                    .list
+                    .is_none()
+                {
+                    return Ok(Vec::new());
+                }
+                let mut sessions = Vec::new();
+                let mut cursor = None;
+                loop {
+                    let response = connection
+                        .send_request(
+                            ListSessionsRequest::new()
+                                .cwd(cwd.clone())
+                                .cursor(cursor.clone()),
+                        )
+                        .block_task()
+                        .await?;
+                    sessions.extend(response.sessions.into_iter().map(|session| {
+                        ProviderSessionInfo {
+                            session_id: session.session_id.to_string(),
+                            cwd: session.cwd.to_string_lossy().into_owned(),
+                            title: session.title,
+                            updated_at: session.updated_at,
+                        }
+                    }));
+                    cursor = response.next_cursor;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+                Ok(sessions)
+            })
+            .await
+            .map_err(|error| RuntimeError::Acp(error.to_string()))
+    }
+
+    pub async fn hydrate_provider_session(
+        &self,
+        conversation_id: &str,
+    ) -> Result<(), RuntimeError> {
+        if !self
+            .store
+            .session_events_after(conversation_id, 0)?
+            .is_empty()
+        {
+            return Ok(());
+        }
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
+            StoreError::InvalidStoredValue("conversation has no provider session".into())
+        })?;
+        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        let update_store = Arc::clone(&self.store);
+        let update_conversation_id = conversation.id.clone();
+        let state_store = Arc::clone(&self.store);
+        let state_conversation_id = conversation.id;
+        agent_client_protocol::Client
+            .builder()
+            .name("Kubecode")
+            .on_receive_notification(
+                async move |notification: SessionNotification, _connection| {
+                    persist_session_update(
+                        &update_store,
+                        &update_conversation_id,
+                        None,
+                        notification.update,
+                    );
+                    Ok(())
+                },
+                agent_client_protocol::on_receive_notification!(),
+            )
+            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+                let initialization = connection
+                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .block_task()
+                    .await?;
+                persist_serialized_session_event(
+                    &state_store,
+                    &state_conversation_id,
+                    "capabilities",
+                    &initialization.agent_capabilities,
+                );
+                let response = connection
+                    .send_request(LoadSessionRequest::new(provider_session_id, cwd))
+                    .block_task()
+                    .await?;
+                persist_serialized_session_event(
+                    &state_store,
+                    &state_conversation_id,
+                    "session_loaded",
+                    response,
+                );
+                Ok(())
+            })
+            .await
+            .map_err(|error| RuntimeError::Acp(error.to_string()))
+    }
+
+    pub async fn delete_provider_session(&self, conversation_id: &str) -> Result<(), RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
+            StoreError::InvalidStoredValue("conversation has no provider session".into())
+        })?;
+        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        agent_client_protocol::Client
+            .builder()
+            .name("Kubecode")
+            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+                let initialization = connection
+                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .block_task()
+                    .await?;
+                if initialization
+                    .agent_capabilities
+                    .session_capabilities
+                    .delete
+                    .is_none()
+                {
+                    return Err(agent_client_protocol::Error::method_not_found());
+                }
+                connection
+                    .send_request(DeleteSessionRequest::new(provider_session_id))
+                    .block_task()
+                    .await?;
+                Ok(())
+            })
+            .await
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        self.store.delete_conversation(conversation_id)?;
+        Ok(())
+    }
+
+    pub async fn fork_provider_session(
+        &self,
+        conversation_id: &str,
+    ) -> Result<crate::agents::Conversation, RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
+            StoreError::InvalidStoredValue("conversation has no provider session".into())
+        })?;
+        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        let forked_session_id = agent_client_protocol::Client
+            .builder()
+            .name("Kubecode")
+            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+                let initialization = connection
+                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .block_task()
+                    .await?;
+                if initialization
+                    .agent_capabilities
+                    .session_capabilities
+                    .fork
+                    .is_none()
+                {
+                    return Err(agent_client_protocol::Error::method_not_found());
+                }
+                let response = connection
+                    .send_request(ForkSessionRequest::new(provider_session_id, cwd))
+                    .block_task()
+                    .await?;
+                Ok(response.session_id.to_string())
+            })
+            .await
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let fork = self.store.create_imported_conversation(
+            &conversation.project_id,
+            conversation.agent_id,
+            &forked_session_id,
+            conversation.agent_title.as_deref(),
+        )?;
+        self.hydrate_provider_session(&fork.id).await?;
+        Ok(fork)
+    }
+
     pub fn cancel(&self, run_id: &str) -> bool {
         let cancelled = self
             .cancellations
@@ -152,6 +370,7 @@ impl AgentRuntime {
             .remove(run_id)
             .is_some_and(|sender| sender.send(()).is_ok());
         self.cancel_pending_permissions(run_id);
+        self.cancel_pending_elicitations(run_id);
         cancelled
     }
 
@@ -176,6 +395,23 @@ impl AgentRuntime {
         })
     }
 
+    pub fn resolve_elicitation(
+        &self,
+        request_id: &str,
+        content: Option<BTreeMap<String, ElicitationContentValue>>,
+    ) -> bool {
+        self.pending_elicitations
+            .lock()
+            .expect("pending elicitation mutex poisoned")
+            .remove(request_id)
+            .is_some_and(|pending| {
+                let action = content.map_or(ElicitationAction::Decline, |content| {
+                    ElicitationAction::Accept(ElicitationAcceptAction::new().content(content))
+                });
+                pending.sender.send(action).is_ok()
+            })
+    }
+
     fn dispatch(&self, config: AgentSessionConfig, command: AgentCommand) {
         let existing = self
             .sessions
@@ -184,9 +420,12 @@ impl AgentRuntime {
             .get(&config.conversation_id)
             .cloned();
         let command = if let Some(handle) = existing {
-            match handle.sender.send(command) {
+            match handle.sender.send(SessionCommand::Prompt(command)) {
                 Ok(()) => return,
-                Err(error) => error.0,
+                Err(error) => match error.0 {
+                    SessionCommand::Prompt(command) => command,
+                    _ => unreachable!("dispatch sends only prompt commands"),
+                },
             }
         } else {
             command
@@ -225,7 +464,7 @@ impl AgentRuntime {
         &self,
         config: AgentSessionConfig,
         first_command: AgentCommand,
-        mut receiver: mpsc::UnboundedReceiver<AgentCommand>,
+        mut receiver: mpsc::UnboundedReceiver<SessionCommand>,
     ) {
         let active_run_id = Arc::new(Mutex::new(None));
         let result = run_acp_session(
@@ -245,19 +484,35 @@ impl AgentRuntime {
                 self.fail_run(&run_id, error.to_string());
             }
             while let Ok(command) = receiver.try_recv() {
-                self.fail_run(&command.run.id, error.to_string());
-                self.remove_cancellation(&command.run.id);
+                match command {
+                    SessionCommand::Prompt(command) => {
+                        self.fail_run(&command.run.id, error.to_string());
+                        self.remove_cancellation(&command.run.id);
+                    }
+                    SessionCommand::SetMode { response, .. }
+                    | SessionCommand::SetConfig { response, .. } => {
+                        let _ = response.send(Err(error.to_string()));
+                    }
+                }
             }
         }
     }
 
     fn fail_run(&self, run_id: &str, message: String) {
+        let run = self.store.get_run(run_id).ok();
         let _ =
             self.store
                 .append_event(run_id, AgentEventKind::Error, &json!({"message": message}));
         let _ = self
             .store
             .finish_run(run_id, RunStatus::Failed, Some(&message));
+        if let Some(run) = run {
+            let _ = self.store.append_session_event(
+                &run.conversation_id,
+                "run_completed",
+                &json!({"run_id":run_id, "status":"failed", "error":message}),
+            );
+        }
     }
 
     fn remove_cancellation(&self, run_id: &str) {
@@ -283,6 +538,81 @@ impl AgentRuntime {
             }
         }
     }
+
+    fn cancel_pending_elicitations(&self, run_id: &str) {
+        let mut elicitations = self
+            .pending_elicitations
+            .lock()
+            .expect("pending elicitation mutex poisoned");
+        let request_ids = elicitations
+            .iter()
+            .filter(|(_, pending)| pending.run_id == run_id)
+            .map(|(request_id, _)| request_id.clone())
+            .collect::<Vec<_>>();
+        for request_id in request_ids {
+            if let Some(pending) = elicitations.remove(&request_id) {
+                let _ = pending.sender.send(ElicitationAction::Cancel);
+            }
+        }
+    }
+
+    fn available_descriptor(&self, agent_id: AgentId) -> Result<AgentDescriptor, RuntimeError> {
+        self.agents
+            .get(&agent_id)
+            .filter(|agent| agent.available)
+            .cloned()
+            .ok_or(RuntimeError::AgentUnavailable(agent_id))
+    }
+
+    pub async fn set_session_mode(
+        &self,
+        conversation_id: &str,
+        mode_id: String,
+    ) -> Result<(), RuntimeError> {
+        self.send_session_control(conversation_id, |response| SessionCommand::SetMode {
+            mode_id,
+            response,
+        })
+        .await
+    }
+
+    pub async fn set_session_config(
+        &self,
+        conversation_id: &str,
+        config_id: String,
+        value: SessionConfigInput,
+    ) -> Result<(), RuntimeError> {
+        self.send_session_control(conversation_id, |response| SessionCommand::SetConfig {
+            config_id,
+            value,
+            response,
+        })
+        .await
+    }
+
+    async fn send_session_control(
+        &self,
+        conversation_id: &str,
+        command: impl FnOnce(oneshot::Sender<Result<(), String>>) -> SessionCommand,
+    ) -> Result<(), RuntimeError> {
+        let sender = self
+            .sessions
+            .lock()
+            .expect("agent session mutex poisoned")
+            .get(conversation_id)
+            .map(|handle| handle.sender.clone())
+            .ok_or_else(|| {
+                RuntimeError::Acp("session is not connected; send a prompt first".into())
+            })?;
+        let (response, result) = oneshot::channel();
+        sender
+            .send(command(response))
+            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?;
+        result
+            .await
+            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?
+            .map_err(RuntimeError::Acp)
+    }
 }
 
 struct AgentSessionConfig {
@@ -300,6 +630,26 @@ struct AgentCommand {
     cancelled: oneshot::Receiver<()>,
 }
 
+enum SessionCommand {
+    Prompt(AgentCommand),
+    SetMode {
+        mode_id: String,
+        response: oneshot::Sender<Result<(), String>>,
+    },
+    SetConfig {
+        config_id: String,
+        value: SessionConfigInput,
+        response: oneshot::Sender<Result<(), String>>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum SessionConfigInput {
+    Boolean(bool),
+    ValueId(String),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcpRunOutcome {
     Completed,
@@ -310,17 +660,21 @@ async fn run_acp_session(
     runtime: AgentRuntime,
     config: AgentSessionConfig,
     first_command: AgentCommand,
-    receiver: &mut mpsc::UnboundedReceiver<AgentCommand>,
+    receiver: &mut mpsc::UnboundedReceiver<SessionCommand>,
     active_run_id: Arc<Mutex<Option<String>>>,
 ) -> Result<(), RuntimeError> {
     let agent = acp_agent(config.agent_id, &config.descriptor)?;
     let update_store = Arc::clone(&runtime.store);
     let update_run_id = Arc::clone(&active_run_id);
+    let update_conversation_id = config.conversation_id.clone();
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
     let permission_mode = Arc::new(Mutex::new(PermissionMode::Safe));
     let current_permission_mode = Arc::clone(&permission_mode);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
+    let elicitation_store = Arc::clone(&runtime.store);
+    let elicitation_run_id = Arc::clone(&active_run_id);
+    let pending_elicitations = Arc::clone(&runtime.pending_elicitations);
     let store = Arc::clone(&runtime.store);
     let conversation_id = config.conversation_id;
     let provider_session_id = config.provider_session_id;
@@ -335,9 +689,12 @@ async fn run_acp_session(
                     .lock()
                     .expect("active run mutex poisoned")
                     .clone();
-                if let Some(run_id) = run_id {
-                    persist_session_update(&update_store, &run_id, notification.update);
-                }
+                persist_session_update(
+                    &update_store,
+                    &update_conversation_id,
+                    run_id.as_deref(),
+                    notification.update,
+                );
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -412,36 +769,129 @@ async fn run_acp_session(
             },
             agent_client_protocol::on_receive_request!(),
         )
+        .on_receive_request(
+            async move |request: CreateElicitationRequest, responder, _connection| {
+                let run_id = elicitation_run_id
+                    .lock()
+                    .expect("active run mutex poisoned")
+                    .clone();
+                let request_id = Uuid::new_v4().to_string();
+                let mut payload = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
+                if let Value::Object(object) = &mut payload {
+                    object.insert("request_id".into(), Value::String(request_id.clone()));
+                }
+                let action = if let Some(run_id) = run_id {
+                    let _ = elicitation_store.append_event(
+                        &run_id,
+                        AgentEventKind::ElicitationRequested,
+                        &payload,
+                    );
+                    let (sender, receiver) = oneshot::channel();
+                    pending_elicitations
+                        .lock()
+                        .expect("pending elicitation mutex poisoned")
+                        .insert(
+                            request_id.clone(),
+                            PendingElicitation {
+                                run_id: run_id.clone(),
+                                sender,
+                            },
+                        );
+                    let action = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                        .unwrap_or(ElicitationAction::Cancel);
+                    pending_elicitations
+                        .lock()
+                        .expect("pending elicitation mutex poisoned")
+                        .remove(&request_id);
+                    let _ = elicitation_store.append_event(
+                        &run_id,
+                        AgentEventKind::ElicitationResolved,
+                        &json!({"request_id":request_id, "action":action}),
+                    );
+                    action
+                } else {
+                    ElicitationAction::Cancel
+                };
+                responder.respond(CreateElicitationResponse::new(action))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
         .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
-            connection
-                .send_request(InitializeRequest::new(ProtocolVersion::V1))
+            let initialization = connection
+                .send_request(
+                    InitializeRequest::new(ProtocolVersion::V1).client_capabilities(
+                        ClientCapabilities::new().elicitation(
+                            ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
+                        ),
+                    ),
+                )
                 .block_task()
                 .await?;
+            persist_serialized_session_event(
+                &store,
+                &conversation_id,
+                "capabilities",
+                &initialization.agent_capabilities,
+            );
 
-            let session_id = match provider_session_id {
-                Some(session_id)
-                    if connection
+            let session_id = if let Some(session_id) = provider_session_id {
+                let resumed = if initialization
+                    .agent_capabilities
+                    .session_capabilities
+                    .resume
+                    .is_some()
+                {
+                    connection
+                        .send_request(ResumeSessionRequest::new(session_id.clone(), cwd.clone()))
+                        .block_task()
+                        .await
+                        .map(|response| {
+                            persist_serialized_session_event(
+                                &store,
+                                &conversation_id,
+                                "session_resumed",
+                                response,
+                            );
+                        })
+                        .is_ok()
+                } else {
+                    false
+                };
+                if resumed {
+                    session_id.into()
+                } else {
+                    match connection
                         .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
                         .block_task()
                         .await
-                        .is_ok() =>
-                {
-                    session_id.into()
+                    {
+                        Ok(response) => {
+                            persist_serialized_session_event(
+                                &store,
+                                &conversation_id,
+                                "session_loaded",
+                                response,
+                            );
+                            session_id.into()
+                        }
+                        Err(_) => {
+                            create_provider_session(&connection, &store, &conversation_id, cwd)
+                                .await?
+                        }
+                    }
                 }
-                _ => {
-                    connection
-                        .send_request(NewSessionRequest::new(cwd))
-                        .block_task()
-                        .await?
-                        .session_id
-                }
+            } else {
+                create_provider_session(&connection, &store, &conversation_id, cwd).await?
             };
             store
                 .set_provider_session(&conversation_id, &session_id.to_string())
                 .map_err(|error| {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 })?;
-            let mut next_command = Some(first_command);
+            let mut next_command = Some(SessionCommand::Prompt(first_command));
             loop {
                 let command = if let Some(command) = next_command.take() {
                     command
@@ -450,6 +900,56 @@ async fn run_acp_session(
                         Ok(Some(command)) => command,
                         Ok(None) | Err(_) => break,
                     }
+                };
+                let SessionCommand::Prompt(command) = command else {
+                    match command {
+                        SessionCommand::SetMode { mode_id, response } => {
+                            let result = connection
+                                .send_request(SetSessionModeRequest::new(
+                                    session_id.clone(),
+                                    mode_id,
+                                ))
+                                .block_task()
+                                .await
+                                .map(|_| ())
+                                .map_err(|error| error.to_string());
+                            let _ = response.send(result);
+                        }
+                        SessionCommand::SetConfig {
+                            config_id,
+                            value,
+                            response,
+                        } => {
+                            let value = match value {
+                                SessionConfigInput::Boolean(value) => {
+                                    SessionConfigOptionValue::boolean(value)
+                                }
+                                SessionConfigInput::ValueId(value) => {
+                                    SessionConfigOptionValue::value_id(value)
+                                }
+                            };
+                            let result = connection
+                                .send_request(SetSessionConfigOptionRequest::new(
+                                    session_id.clone(),
+                                    config_id,
+                                    value,
+                                ))
+                                .block_task()
+                                .await
+                                .map(|update| {
+                                    persist_serialized_session_event(
+                                        &runtime.store,
+                                        &conversation_id,
+                                        "config_options",
+                                        update,
+                                    );
+                                })
+                                .map_err(|error| error.to_string());
+                            let _ = response.send(result);
+                        }
+                        SessionCommand::Prompt(_) => unreachable!(),
+                    }
+                    continue;
                 };
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
@@ -484,6 +984,11 @@ async fn run_acp_session(
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
+                let _ = runtime.store.append_session_event(
+                    &conversation_id,
+                    "run_completed",
+                    &json!({"run_id":command.run.id, "status":status}),
+                );
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
             }
             Ok(())
@@ -491,6 +996,21 @@ async fn run_acp_session(
         .await;
 
     result.map_err(|error| RuntimeError::Acp(error.to_string()))
+}
+
+async fn create_provider_session(
+    connection: &ConnectionTo<Agent>,
+    store: &AgentStore,
+    conversation_id: &str,
+    cwd: PathBuf,
+) -> Result<agent_client_protocol::schema::v1::SessionId, agent_client_protocol::Error> {
+    let response = connection
+        .send_request(NewSessionRequest::new(cwd))
+        .block_task()
+        .await?;
+    let session_id = response.session_id.clone();
+    persist_serialized_session_event(store, conversation_id, "session_created_state", response);
+    Ok(session_id)
 }
 
 fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent, RuntimeError> {
@@ -588,19 +1108,100 @@ fn permission_outcome(
     })
 }
 
-fn persist_session_update(store: &AgentStore, run_id: &str, update: SessionUpdate) {
+fn persist_session_update(
+    store: &AgentStore,
+    conversation_id: &str,
+    run_id: Option<&str>,
+    update: SessionUpdate,
+) {
     let event = match update {
-        SessionUpdate::AgentMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk),
-        SessionUpdate::AgentThoughtChunk(chunk) => text_event(AgentEventKind::ThinkingDelta, chunk),
-        SessionUpdate::ToolCall(tool_call) => Some(tool_started(tool_call)),
-        SessionUpdate::ToolCallUpdate(update) => Some(tool_updated(update)),
-        SessionUpdate::UsageUpdate(usage) => serde_json::to_value(usage)
-            .ok()
-            .map(|payload| (AgentEventKind::Usage, payload)),
+        SessionUpdate::UserMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk)
+            .map(|(_, payload)| ("user_message_delta", None, payload)),
+        SessionUpdate::AgentMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk)
+            .map(|(kind, payload)| ("text_delta", Some(kind), payload)),
+        SessionUpdate::AgentThoughtChunk(chunk) => text_event(AgentEventKind::ThinkingDelta, chunk)
+            .map(|(kind, payload)| ("thinking_delta", Some(kind), payload)),
+        SessionUpdate::ToolCall(tool_call) => {
+            let (kind, payload) = tool_started(tool_call);
+            Some(("tool_started", Some(kind), payload))
+        }
+        SessionUpdate::ToolCallUpdate(update) => {
+            let (kind, payload) = tool_updated(update);
+            let session_kind = if kind == AgentEventKind::ToolCompleted {
+                "tool_completed"
+            } else {
+                "tool_updated"
+            };
+            Some((session_kind, Some(kind), payload))
+        }
+        SessionUpdate::Plan(plan) => serialized_update("plan", AgentEventKind::Plan, plan),
+        SessionUpdate::AvailableCommandsUpdate(commands) => serialized_update(
+            "available_commands",
+            AgentEventKind::AvailableCommands,
+            commands,
+        ),
+        SessionUpdate::CurrentModeUpdate(mode) => {
+            serialized_update("current_mode", AgentEventKind::CurrentMode, mode)
+        }
+        SessionUpdate::ConfigOptionUpdate(options) => {
+            serialized_update("config_options", AgentEventKind::ConfigOptions, options)
+        }
+        SessionUpdate::SessionInfoUpdate(info) => {
+            match &info.title {
+                MaybeUndefined::Value(title) => {
+                    let _ = store.set_agent_title(conversation_id, Some(title));
+                }
+                MaybeUndefined::Null => {
+                    let _ = store.set_agent_title(conversation_id, None);
+                }
+                MaybeUndefined::Undefined => {}
+            }
+            serialized_update("session_info", AgentEventKind::SessionInfo, info)
+        }
+        SessionUpdate::UsageUpdate(usage) => {
+            serialized_update("usage", AgentEventKind::Usage, usage)
+        }
         _ => None,
     };
-    if let Some((kind, payload)) = event {
-        let _ = store.append_event(run_id, kind, &payload);
+    if let Some((session_kind, run_kind, payload)) = event {
+        let session_payload = match run_id {
+            Some(run_id) => merge_run_id(payload.clone(), run_id),
+            None => payload.clone(),
+        };
+        let _ = store.append_session_event(conversation_id, session_kind, &session_payload);
+        if let (Some(run_id), Some(run_kind)) = (run_id, run_kind) {
+            let _ = store.append_event(run_id, run_kind, &payload);
+        }
+    }
+}
+
+fn serialized_update(
+    session_kind: &'static str,
+    run_kind: AgentEventKind,
+    value: impl serde::Serialize,
+) -> Option<(&'static str, Option<AgentEventKind>, Value)> {
+    serde_json::to_value(value)
+        .ok()
+        .map(|payload| (session_kind, Some(run_kind), payload))
+}
+
+fn persist_serialized_session_event(
+    store: &AgentStore,
+    conversation_id: &str,
+    kind: &str,
+    value: impl serde::Serialize,
+) {
+    if let Ok(payload) = serde_json::to_value(value) {
+        let _ = store.append_session_event(conversation_id, kind, &payload);
+    }
+}
+
+fn merge_run_id(mut payload: Value, run_id: &str) -> Value {
+    if let Value::Object(ref mut object) = payload {
+        object.insert("run_id".into(), Value::String(run_id.to_owned()));
+        payload
+    } else {
+        json!({"run_id":run_id, "value":payload})
     }
 }
 

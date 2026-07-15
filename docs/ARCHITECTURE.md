@@ -2,17 +2,20 @@
 
 > **Kubecode migration:** ADR-0161 supersedes the Tauri application boundary
 > below. The active product is a React browser client backed by the standalone
-> Rust server in `server/`. Project files under `PERSISTENT_DIR` are the content
+> Rust server in `server/`. Each Project is an absolute canonical server path;
+> `PERSISTENT_DIR` is the registry/state home rather than a Project parent. Project files are the content
 > source of truth; SQLite under `.state/kubecode` stores registry and runtime
 > metadata. The Tolaria architecture remains below as migration context until
 > each corresponding desktop subsystem is retired.
 
 The active server boundary currently consists of five Rust abstractions:
 
-- `WorkspaceService` validates all Project and file paths below
-  `PERSISTENT_DIR`.
+- `WorkspaceService` registers absolute canonical Project roots, keeps
+  `PERSISTENT_DIR/.state` private, and validates every later file operation
+  relative to the selected Project root.
 - `TerminalManager` owns reconnectable PTYs independently from browser sockets.
-- `AgentStore` persists Agent sessions, prompt-bearing runs, normalized events,
+- `AgentStore` persists Agent sessions with separate manual/Agent titles,
+  prompt-bearing runs, normalized run and Session events,
   and the global cursor-based workspace event log. It enforces one active run
   per Session while allowing Sessions to execute concurrently.
 - `AgentRuntime` owns one long-lived ACP actor per active Session. The actor
@@ -21,8 +24,10 @@ The active server boundary currently consists of five Rust abstractions:
   pinned Claude/Codex adapters from
   explicit overrides, project-local package binaries, or `PATH`, then passes
   the discovered CLI path through `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`. It
-  normalizes protocol updates, pauses Safe-mode requests for browser permission
-  decisions, and serves reconnectable event cursors through the global SSE.
+  retains ACP capabilities, plans, commands, modes, config, usage, title and
+  extension metadata, pauses Safe-mode requests for browser permission
+  decisions, renders structured ACP elicitation forms when an Agent needs user
+  input, and serves reconnectable event cursors through the global SSE.
 - `GitService` provides Project-scoped local status, diff, stage, unstage,
   discard, init, and commit operations without shell interpolation.
 - `AppState` composes those services below `${NB_PREFIX}/api/v1`; only health
@@ -41,6 +46,14 @@ code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from
 the current Kubeflow Notebook prefix. One global workspace SSE multiplexes
 Agent, file, Git, and Terminal metadata; PTY byte streams retain dedicated
 WebSockets.
+
+New Session can either create an Agent-native session or list and load native
+sessions for the current Project. Native list/load/resume/fork/delete controls and
+mode/config selectors are capability-driven: the browser only renders an
+operation after the connected Agent advertises it. Loading a native Session
+imports its ACP history into the Session event timeline without translating it
+through a private CLI protocol. Manual titles override Agent title updates until
+the user explicitly returns title control to the Agent.
 
 The production image is built by `deploy/Dockerfile`. It bundles the web build,
 Rust server, pinned Claude Code, Codex, and OpenCode CLIs, and pinned official

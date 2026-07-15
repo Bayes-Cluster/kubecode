@@ -14,13 +14,18 @@ PORT=8888 \
 cargo run --manifest-path server/Cargo.toml
 ```
 
-Open `http://127.0.0.1:8888/user/local/kubecode`. Project content is created
-below `PERSISTENT_DIR`; registry, Agent events, and CLI state belong below its
-excluded `.state` subtree. `pnpm install` provides project-local
+Open `http://127.0.0.1:8888/user/local/kubecode`. `PERSISTENT_DIR` stores the
+registry, Agent events, and CLI state in its excluded `.state` subtree. Projects
+are registered by full canonical server path and may live elsewhere when the
+server process has access. The Import dialog browses the server filesystem, not
+the browser computer. `pnpm install` provides project-local
 `claude-agent-acp` and `codex-acp` executables for AI-panel development; the
 deployment image installs the same pinned adapters globally. OpenCode provides
 its own `opencode acp` command. Adapter paths can be overridden with
 `KUBECODE_CLAUDE_ACP_PATH` and `KUBECODE_CODEX_ACP_PATH`.
+Agent-native session resume, modes, configuration, commands, permissions, and
+structured questions appear only when the selected ACP endpoint advertises the
+corresponding capability.
 
 Build the Kubeflow image from the repository root:
 

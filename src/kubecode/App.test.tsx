@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from './App'
@@ -110,5 +110,140 @@ describe('Kubecode workspace', () => {
     expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('357px')
     expect(screen.getByTestId('context-workbench').style.width).toBe('612px')
     expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
+  })
+
+  it('registers projects by full path and browses server directories when importing', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listDirectories: vi.fn().mockResolvedValue({
+        path: '/srv/projects',
+        parent: '/srv',
+        entries: [{ name: 'demo', path: '/srv/projects/demo', hidden: false }],
+      }),
+    } as unknown as KubecodeApi
+    render(<KubecodeApp api={api} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
+    expect(screen.queryByRole('textbox', { name: 'Project name' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Full path on this server' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import project' }))
+    expect(await screen.findByText('/srv/projects')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /demo/ })).toBeInTheDocument()
+    expect(api.listDirectories).toHaveBeenCalledWith(undefined)
+  })
+
+  it('shows functional session actions and preserves an Agent title separately', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([
+        { id: 'codex', available: true, version: 'test', executable: 'codex', error: null },
+      ]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([{
+        id: 'session-1',
+        project_id: 'project-1',
+        agent_id: 'codex',
+        provider_session_id: 'native-1',
+        title: 'Agent title',
+        manual_title: null,
+        agent_title: 'Agent title',
+      }]),
+      listRuns: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        capabilities: { sessionCapabilities: { delete: {} } },
+        available_commands: null,
+        current_mode: null,
+        config_options: null,
+        plan: null,
+        usage: null,
+      }),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    render(<KubecodeApp api={api} />)
+
+    await waitFor(() => expect(screen.getAllByText('Agent title')).toHaveLength(2))
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Session actions' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    expect(await screen.findByText('Rename session')).toBeInTheDocument()
+    expect(screen.getByText('Remove from Kubecode')).toBeInTheDocument()
+    expect(screen.getByText('Delete from Agent')).toBeInTheDocument()
+  })
+
+  it('renders and resolves an ACP elicitation form from the active Agent run', async () => {
+    const resolveElicitation = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([
+        { id: 'codex', available: true, version: 'test', executable: 'codex', error: null },
+      ]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([{
+        id: 'session-1',
+        project_id: 'project-1',
+        agent_id: 'codex',
+        provider_session_id: 'native-1',
+        title: 'Session',
+        manual_title: null,
+        agent_title: null,
+      }]),
+      listRuns: vi.fn().mockResolvedValue([{
+        id: 'run-1',
+        conversation_id: 'session-1',
+        project_id: 'project-1',
+        message: 'Build the feature',
+        status: 'running',
+        permission_mode: 'safe',
+        error: null,
+      }]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([{
+        run_id: 'run-1',
+        seq: 1,
+        kind: 'elicitation_requested',
+        created_at: '2026-07-15T00:00:00Z',
+        payload: {
+          request_id: 'question-1',
+          message: 'Which behavior should I implement?',
+          requestedSchema: {
+            type: 'object',
+            required: ['goal'],
+            properties: {
+              goal: { type: 'string', title: 'Goal' },
+              includeTests: { type: 'boolean', title: 'Include tests', default: true },
+            },
+          },
+        },
+      }]),
+      getSessionState: vi.fn().mockResolvedValue({
+        capabilities: null,
+        available_commands: null,
+        current_mode: null,
+        config_options: null,
+        plan: null,
+        usage: null,
+      }),
+      resolveElicitation,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    render(<KubecodeApp api={api} />)
+
+    expect(await screen.findByText('Which behavior should I implement?')).toBeInTheDocument()
+    const submit = screen.getByRole('button', { name: 'Submit answers' })
+    expect(submit).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Goal' }), { target: { value: 'Use native ACP' } })
+    fireEvent.click(submit)
+
+    await waitFor(() => expect(resolveElicitation).toHaveBeenCalledWith('question-1', {
+      goal: 'Use native ACP',
+      includeTests: true,
+    }))
   })
 })

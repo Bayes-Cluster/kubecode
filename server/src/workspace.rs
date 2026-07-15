@@ -62,6 +62,20 @@ pub struct FileEntry {
     pub size: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub path: String,
+    pub hidden: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DirectoryListing {
+    pub path: String,
+    pub parent: Option<String>,
+    pub entries: Vec<DirectoryEntry>,
+}
+
 pub struct WorkspaceService {
     root: PathBuf,
     database: Mutex<Connection>,
@@ -90,6 +104,8 @@ impl WorkspaceService {
              );",
         )?;
 
+        migrate_project_paths(&database, &root)?;
+
         Ok(Self {
             root,
             database: Mutex::new(database),
@@ -102,6 +118,72 @@ impl WorkspaceService {
 
     pub fn project_path(&self, project_id: &str) -> Result<PathBuf, WorkspaceError> {
         self.project_root(project_id)
+    }
+
+    pub fn create_project_at(&self, path: impl AsRef<Path>) -> Result<Project, WorkspaceError> {
+        let requested = require_absolute(path.as_ref())?;
+        reject_state_directory(&self.root, requested)?;
+        if requested.exists() {
+            return Err(WorkspaceError::DuplicateProject(path_string(requested)));
+        }
+        fs::create_dir_all(requested)?;
+        let canonical = requested.canonicalize()?;
+        reject_state_directory(&self.root, &canonical)?;
+        self.register_project(canonical)
+    }
+
+    pub fn import_project_at(&self, path: impl AsRef<Path>) -> Result<Project, WorkspaceError> {
+        let requested = require_absolute(path.as_ref())?;
+        let canonical = requested.canonicalize()?;
+        reject_state_directory(&self.root, &canonical)?;
+        if !canonical.is_dir() {
+            return Err(WorkspaceError::InvalidPath(path_string(requested)));
+        }
+        self.register_project(canonical)
+    }
+
+    pub fn list_directories(
+        &self,
+        requested: Option<&Path>,
+    ) -> Result<DirectoryListing, WorkspaceError> {
+        let fallback = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute() && path.is_dir())
+            .unwrap_or_else(|| self.root.clone());
+        let requested = requested.unwrap_or(&fallback);
+        require_absolute(requested)?;
+        let directory = requested.canonicalize()?;
+        reject_state_directory(&self.root, &directory)?;
+        if !directory.is_dir() {
+            return Err(WorkspaceError::InvalidPath(path_string(requested)));
+        }
+
+        let mut entries = Vec::new();
+        for result in fs::read_dir(&directory)? {
+            let entry = match result {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let canonical = match entry.path().canonicalize() {
+                Ok(path) if path.is_dir() => path,
+                _ => continue,
+            };
+            if reject_state_directory(&self.root, &canonical).is_err() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            entries.push(DirectoryEntry {
+                hidden: name.starts_with('.'),
+                name,
+                path: path_string(&canonical),
+            });
+        }
+        entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        Ok(DirectoryListing {
+            path: path_string(&directory),
+            parent: directory.parent().map(path_string),
+            entries,
+        })
     }
 
     pub fn create_project(&self, parent: &str, name: &str) -> Result<Project, WorkspaceError> {
@@ -121,7 +203,7 @@ impl WorkspaceService {
         fs::create_dir_all(&destination)?;
         let canonical = destination.canonicalize()?;
         ensure_contained(&self.root, &canonical, path_string(&relative))?;
-        self.register_project(relative, Some(name))
+        self.register_project(canonical)
     }
 
     pub fn import_project(
@@ -147,7 +229,8 @@ impl WorkspaceService {
             .strip_prefix(&self.root)
             .map_err(|_| WorkspaceError::InvalidPath(relative.to_string_lossy().into_owned()))?
             .to_path_buf();
-        self.register_project(canonical_relative, name)
+        let _ = name;
+        self.register_project(self.root.join(canonical_relative).canonicalize()?)
     }
 
     pub fn list_projects(&self) -> Result<Vec<Project>, WorkspaceError> {
@@ -363,22 +446,13 @@ impl WorkspaceService {
         Ok(())
     }
 
-    fn register_project(
-        &self,
-        relative: PathBuf,
-        requested_name: Option<&str>,
-    ) -> Result<Project, WorkspaceError> {
-        let path = path_string(&relative);
-        let name = requested_name
-            .filter(|value| !value.trim().is_empty())
-            .map(str::trim)
-            .map(str::to_owned)
-            .or_else(|| {
-                relative
-                    .file_name()
-                    .map(|value| value.to_string_lossy().into_owned())
-            })
-            .ok_or_else(|| WorkspaceError::InvalidPath(path.clone()))?;
+    fn register_project(&self, canonical: PathBuf) -> Result<Project, WorkspaceError> {
+        let path = path_string(&canonical);
+        let name = canonical
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| path.clone());
         let database = self
             .database
             .lock()
@@ -420,8 +494,7 @@ impl WorkspaceService {
             .optional()?
             .ok_or_else(|| WorkspaceError::ProjectNotFound(project_id.to_owned()))?;
         drop(database);
-        let canonical = self.root.join(path).canonicalize()?;
-        ensure_contained(&self.root, &canonical, project_id.to_owned())?;
+        let canonical = PathBuf::from(path).canonicalize()?;
         Ok(canonical)
     }
 
@@ -440,6 +513,45 @@ impl WorkspaceService {
         )?;
         Ok((relative, canonical))
     }
+}
+
+fn migrate_project_paths(database: &Connection, legacy_root: &Path) -> Result<(), WorkspaceError> {
+    let mut statement = database.prepare("SELECT id, path FROM projects")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let transaction = database.unchecked_transaction()?;
+    for (id, stored) in rows {
+        let path = Path::new(&stored);
+        if path.is_absolute() {
+            continue;
+        }
+        let absolute = legacy_root.join(path).canonicalize()?;
+        transaction.execute(
+            "UPDATE projects SET path = ?2 WHERE id = ?1",
+            params![id, path_string(&absolute)],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn require_absolute(path: &Path) -> Result<&Path, WorkspaceError> {
+    if !path.is_absolute() {
+        return Err(WorkspaceError::InvalidPath(path_string(path)));
+    }
+    Ok(path)
+}
+
+fn reject_state_directory(legacy_root: &Path, candidate: &Path) -> Result<(), WorkspaceError> {
+    let state = legacy_root.join(STATE_DIRECTORY);
+    if candidate == state || candidate.starts_with(&state) {
+        return Err(WorkspaceError::InvalidPath(path_string(candidate)));
+    }
+    Ok(())
 }
 
 fn normalize_relative(value: &str, allow_empty: bool) -> Result<PathBuf, WorkspaceError> {

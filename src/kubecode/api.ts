@@ -1,4 +1,6 @@
 export type Project = { id: string; name: string; path: string }
+export type DirectoryEntry = { name: string; path: string; hidden: boolean }
+export type DirectoryListing = { path: string; parent: string | null; entries: DirectoryEntry[] }
 export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
@@ -16,6 +18,8 @@ export type Conversation = {
   agent_id: AgentId
   provider_session_id: string | null
   title: string
+  manual_title: string | null
+  agent_title: string | null
 }
 export type RunStatus =
   | 'running'
@@ -40,6 +44,27 @@ export type AgentEvent = {
   kind: string
   payload: Record<string, unknown>
   created_at: string
+}
+export type SessionEvent = {
+  conversation_id: string
+  seq: number
+  kind: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+export type AgentSessionState = {
+  capabilities: Record<string, unknown> | null
+  available_commands: Record<string, unknown> | null
+  current_mode: Record<string, unknown> | null
+  config_options: Record<string, unknown> | null
+  plan: Record<string, unknown> | null
+  usage: Record<string, unknown> | null
+}
+export type ProviderSessionInfo = {
+  session_id: string
+  cwd: string
+  title: string | null
+  updated_at: string | null
 }
 export type WorkspaceEvent = {
   id: number
@@ -102,17 +127,21 @@ export class KubecodeApi {
     return this.request('/projects')
   }
 
-  createProject(parent: string, name: string): Promise<Project> {
+  listDirectories(path?: string): Promise<DirectoryListing> {
+    return this.request(`/filesystem/directories?${query({ path })}`)
+  }
+
+  createProject(path: string): Promise<Project> {
     return this.request('/projects', {
       method: 'POST',
-      body: JSON.stringify({ kind: 'create', parent, name }),
+      body: JSON.stringify({ kind: 'create', path }),
     })
   }
 
-  importProject(path: string, name?: string): Promise<Project> {
+  importProject(path: string): Promise<Project> {
     return this.request('/projects', {
       method: 'POST',
-      body: JSON.stringify({ kind: 'import', path, name: name || undefined }),
+      body: JSON.stringify({ kind: 'import', path }),
     })
   }
 
@@ -191,11 +220,45 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/sessions`)
   }
 
-  createConversation(projectId: string, agentId: AgentId, title?: string): Promise<Conversation> {
+  listProviderSessions(projectId: string, agentId: AgentId): Promise<ProviderSessionInfo[]> {
+    return this.request(
+      `${this.projectPath(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
+    )
+  }
+
+  createConversation(
+    projectId: string,
+    agentId: AgentId,
+    title?: string,
+    providerSessionId?: string,
+    agentTitle?: string,
+  ): Promise<Conversation> {
     return this.request(`${this.projectPath(projectId)}/sessions`, {
       method: 'POST',
-      body: JSON.stringify({ agent_id: agentId, title: title || undefined }),
+      body: JSON.stringify({
+        agent_id: agentId,
+        agent_title: agentTitle || undefined,
+        provider_session_id: providerSessionId || undefined,
+        title: title || undefined,
+      }),
     })
+  }
+
+  updateConversation(conversationId: string, manualTitle: string | null): Promise<Conversation> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ manual_title: manualTitle }),
+    })
+  }
+
+  removeConversation(conversationId: string, scope: 'local' | 'provider' = 'local'): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}?${query({ scope })}`, {
+      method: 'DELETE',
+    })
+  }
+
+  forkConversation(conversationId: string): Promise<Conversation> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/fork`, { method: 'POST' })
   }
 
   startRun(
@@ -225,6 +288,28 @@ export class KubecodeApi {
     return this.request(`/runs/${encodeURIComponent(runId)}/events?${query({ after })}`)
   }
 
+  listSessionEvents(conversationId: string, after = 0): Promise<SessionEvent[]> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/events?${query({ after })}`)
+  }
+
+  getSessionState(conversationId: string): Promise<AgentSessionState> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/state`)
+  }
+
+  setSessionMode(conversationId: string, value: string): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/options`, {
+      method: 'PATCH',
+      body: JSON.stringify({ kind: 'mode', value }),
+    })
+  }
+
+  setSessionConfig(conversationId: string, configId: string, value: string | boolean): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/options`, {
+      method: 'PATCH',
+      body: JSON.stringify({ kind: 'config', config_id: configId, value }),
+    })
+  }
+
   eventStreamUrl(runId: string, after = 0): string {
     return `${this.basePath}/runs/${encodeURIComponent(runId)}/events/stream?${query({ after })}`
   }
@@ -241,6 +326,16 @@ export class KubecodeApi {
     return this.request(`/permissions/${encodeURIComponent(requestId)}`, {
       method: 'POST',
       body: JSON.stringify({ option_id: optionId }),
+    })
+  }
+
+  resolveElicitation(
+    requestId: string,
+    content: Record<string, string | number | boolean | string[]> | null,
+  ): Promise<void> {
+    return this.request(`/elicitations/${encodeURIComponent(requestId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
     })
   }
 
@@ -297,8 +392,10 @@ export class KubecodeApi {
   }
 }
 
-function query(values: Record<string, string | number>): string {
+function query(values: Record<string, string | number | undefined>): string {
   return new URLSearchParams(
-    Object.entries(values).map(([key, value]) => [key, String(value)]),
+    Object.entries(values).flatMap(([key, value]) => (
+      value === undefined ? [] : [[key, String(value)]]
+    )),
   ).toString()
 }

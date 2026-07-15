@@ -59,7 +59,7 @@ async fn json_request(app: &Router, method: Method, uri: &str, body: Value) -> (
 
 #[tokio::test]
 async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let health = app
         .clone()
         .oneshot(
@@ -76,11 +76,19 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"demo"}),
+        json!({"kind":"create", "path":temp.path().join("srv/demo")}),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(created["path"], "demo");
+    assert_eq!(
+        created["path"],
+        temp.path()
+            .join("srv/demo")
+            .canonicalize()
+            .expect("canonical project")
+            .to_string_lossy()
+            .as_ref()
+    );
 
     let (status, projects) = json_request(
         &app,
@@ -120,12 +128,12 @@ async fn exposes_exactly_the_supported_agent_catalog_below_the_prefix() {
 
 #[tokio::test]
 async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let (_, project) = json_request(
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"agent-api"}),
+        json!({"kind":"create", "path":temp.path().join("srv/agent-api")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");
@@ -159,12 +167,12 @@ async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
 
 #[tokio::test]
 async fn creates_reads_and_revision_checks_files_over_http() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let (_, project) = json_request(
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"api"}),
+        json!({"kind":"create", "path":temp.path().join("srv/api")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");
@@ -207,12 +215,12 @@ async fn creates_reads_and_revision_checks_files_over_http() {
 
 #[tokio::test]
 async fn rejects_invalid_project_paths_with_a_structured_error() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let (status, error) = json_request(
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"import", "path":".state"}),
+        json!({"kind":"import", "path":temp.path().join("srv/.state")}),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -263,12 +271,12 @@ async fn serves_the_spa_only_below_the_configured_base_path() {
 
 #[tokio::test]
 async fn creates_lists_and_explicitly_closes_terminals_over_http() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let (_, project) = json_request(
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"terminal-api"}),
+        json!({"kind":"create", "path":temp.path().join("srv/terminal-api")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");
@@ -307,7 +315,7 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"import", "path":"imported", "name":"Imported"}),
+        json!({"kind":"import", "path":temp.path().join("srv/imported")}),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -367,7 +375,7 @@ async fn supports_session_aliases_global_events_permissions_and_git_review() {
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"session-review-api"}),
+        json!({"kind":"create", "path":temp.path().join("srv/session-review-api")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");
@@ -427,6 +435,15 @@ async fn supports_session_aliases_global_events_permissions_and_git_review() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(missing_permission["code"], "permission_not_found");
+    let (status, missing_elicitation) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/elicitations/missing"),
+        json!({"content":{"goal":"Use native ACP", "includeTests":true}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(missing_elicitation["code"], "elicitation_not_found");
 
     let git_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/git");
     let (status, initial) =
@@ -518,12 +535,12 @@ fn configure_git_identity(repository: &std::path::Path) {
 
 #[tokio::test]
 async fn reports_request_store_and_terminal_errors_consistently() {
-    let (_temp, app) = app();
+    let (temp, app) = app();
     let (_, project) = json_request(
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"errors"}),
+        json!({"kind":"create", "path":temp.path().join("srv/errors")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");
@@ -622,7 +639,7 @@ done"#,
         &app,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects"),
-        json!({"kind":"create", "parent":".", "name":"run-api"}),
+        json!({"kind":"create", "path":temp.path().join("srv/run-api")}),
     )
     .await;
     let project_id = project["id"].as_str().expect("project id");

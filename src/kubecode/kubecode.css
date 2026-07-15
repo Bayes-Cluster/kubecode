@@ -7,6 +7,19 @@
   overflow: hidden;
 }
 
+.kubecode-app,
+.kubecode-app * {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
+}
+
+.kubecode-app::-webkit-scrollbar,
+.kubecode-app *::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
 .kubecode-topbar {
   align-items: center;
   background: color-mix(in srgb, var(--surface-sidebar) 92%, var(--surface-app));
@@ -262,6 +275,49 @@
   width: 100%;
 }
 
+.kubecode-session-plan {
+  margin: 0 auto 6px;
+  max-width: 780px;
+  width: calc(100% - 20px);
+}
+
+.kubecode-session-plan pre {
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  font-size: 11px;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.kubecode-command-suggestions {
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.kubecode-command-suggestions > button {
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.kubecode-command-suggestions code { color: var(--text-primary); }
+.kubecode-command-suggestions span {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kubecode-permission-dock {
   align-items: center;
   background: var(--feedback-warning-bg);
@@ -277,6 +333,57 @@
 .kubecode-permission-dock > div { align-items: center; display: flex; gap: 7px; }
 .kubecode-permission-dock span { color: var(--text-secondary); font-size: 12px; }
 
+.kubecode-elicitation-dock {
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  margin: 0 auto 8px;
+  max-height: min(420px, 48vh);
+  max-width: 760px;
+  overflow-y: auto;
+  padding: 12px;
+  width: calc(100% - 20px);
+}
+
+.kubecode-elicitation-heading,
+.kubecode-elicitation-field {
+  display: grid;
+  gap: 4px;
+}
+
+.kubecode-elicitation-heading > span,
+.kubecode-elicitation-field > small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.kubecode-elicitation-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.kubecode-elicitation-field > span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kubecode-elicitation-field:has([role='switch']) {
+  align-content: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.kubecode-elicitation-field:has([role='switch']) > small { grid-column: 1; }
+.kubecode-elicitation-field:has([role='switch']) > [role='switch'] { grid-column: 2; grid-row: 1 / span 2; }
+
+.kubecode-elicitation-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
 .kubecode-session-composer > div {
   background: var(--surface-sidebar);
   border: 1px solid var(--border-strong) !important;
@@ -285,7 +392,11 @@
   overflow: hidden;
 }
 
-.kubecode-composer-controls { gap: 4px; }
+.kubecode-composer-controls {
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .kubecode-agent-chip {
   color: var(--text-secondary);
   font-size: 12px;
@@ -572,6 +683,98 @@
   color: var(--feedback-error-text);
   font-size: 12px;
   padding: 6px 12px;
+}
+
+.kubecode-directory-browser {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  display: grid;
+  grid-template-rows: 40px minmax(180px, 34vh) 38px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kubecode-provider-session-list {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, 42vh);
+  min-height: 150px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.kubecode-provider-session-list > button {
+  align-items: flex-start;
+  flex: 0 0 auto;
+  flex-direction: column;
+  height: auto;
+  min-height: 48px;
+  overflow: hidden;
+  padding: 7px 9px;
+  width: 100%;
+}
+
+.kubecode-provider-session-list > button span,
+.kubecode-provider-session-list > button code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-provider-session-list > button code {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.kubecode-directory-location {
+  align-items: center;
+  background: var(--surface-sidebar);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.kubecode-directory-location code {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-directory-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.kubecode-directory-list > button {
+  flex: 0 0 30px;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.kubecode-directory-list > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-show-hidden {
+  align-items: center;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 0 10px;
 }
 
 @media (max-width: 980px) {

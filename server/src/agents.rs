@@ -64,6 +64,13 @@ pub enum AgentEventKind {
     PermissionRequested,
     PermissionResolved,
     Usage,
+    Plan,
+    AvailableCommands,
+    CurrentMode,
+    ConfigOptions,
+    SessionInfo,
+    ElicitationRequested,
+    ElicitationResolved,
     Error,
     RunCompleted,
 }
@@ -75,6 +82,8 @@ pub struct Conversation {
     pub agent_id: AgentId,
     pub provider_session_id: Option<String>,
     pub title: String,
+    pub manual_title: Option<String>,
+    pub agent_title: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -93,6 +102,15 @@ pub struct AgentEvent {
     pub run_id: String,
     pub seq: u64,
     pub kind: AgentEventKind,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SessionEvent {
+    pub conversation_id: String,
+    pub seq: u64,
+    pub kind: String,
     pub payload: Value,
     pub created_at: String,
 }
@@ -153,6 +171,14 @@ impl AgentStore {
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                PRIMARY KEY (run_id, seq)
              );
+             CREATE TABLE IF NOT EXISTS session_events (
+               conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+               seq INTEGER NOT NULL,
+               kind TEXT NOT NULL,
+               payload TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (conversation_id, seq)
+             );
              CREATE TABLE IF NOT EXISTS agent_permission_rules (
                id TEXT PRIMARY KEY,
                project_id TEXT NOT NULL,
@@ -177,6 +203,14 @@ impl AgentStore {
             "message",
             "TEXT NOT NULL DEFAULT ''",
         )?;
+        ensure_column(&database, "conversations", "manual_title", "TEXT")?;
+        ensure_column(&database, "conversations", "agent_title", "TEXT")?;
+        database.execute(
+            "UPDATE conversations SET manual_title = title
+             WHERE manual_title IS NULL AND agent_title IS NULL
+               AND TRIM(title) <> '' AND title <> 'New conversation'",
+            [],
+        )?;
         let store = Self {
             database: Mutex::new(database),
         };
@@ -195,23 +229,22 @@ impl AgentStore {
             project_id: project_id.to_owned(),
             agent_id,
             provider_session_id: None,
-            title: title
-                .filter(|value| !value.trim().is_empty())
-                .map(str::trim)
-                .unwrap_or("New conversation")
-                .to_owned(),
+            title: normalized_title(title).unwrap_or_default(),
+            manual_title: normalized_title(title),
+            agent_title: None,
         };
         self.database
             .lock()
             .expect("agent database mutex poisoned")
             .execute(
-                "INSERT INTO conversations (id, project_id, agent_id, title)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO conversations (id, project_id, agent_id, title, manual_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     conversation.id,
                     conversation.project_id,
                     conversation.agent_id.as_str(),
-                    conversation.title
+                    conversation.title,
+                    conversation.manual_title,
                 ],
             )?;
         self.append_workspace_event(
@@ -224,23 +257,69 @@ impl AgentStore {
         Ok(conversation)
     }
 
+    pub fn create_imported_conversation(
+        &self,
+        project_id: &str,
+        agent_id: AgentId,
+        provider_session_id: &str,
+        agent_title: Option<&str>,
+    ) -> Result<Conversation, StoreError> {
+        let provider_session_id = provider_session_id.trim();
+        if provider_session_id.is_empty() {
+            return Err(StoreError::InvalidStoredValue(
+                "empty provider session id".into(),
+            ));
+        }
+        if let Some(existing) =
+            self.find_provider_conversation(project_id, agent_id, provider_session_id)?
+        {
+            return Ok(existing);
+        }
+        let agent_title = normalized_title(agent_title);
+        let conversation = Conversation {
+            id: Uuid::new_v4().to_string(),
+            project_id: project_id.to_owned(),
+            agent_id,
+            provider_session_id: Some(provider_session_id.to_owned()),
+            title: agent_title.clone().unwrap_or_default(),
+            manual_title: None,
+            agent_title,
+        };
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "INSERT INTO conversations
+                 (id, project_id, agent_id, provider_session_id, title, agent_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    conversation.id,
+                    conversation.project_id,
+                    conversation.agent_id.as_str(),
+                    conversation.provider_session_id,
+                    conversation.title,
+                    conversation.agent_title,
+                ],
+            )?;
+        self.append_workspace_event(
+            "session_imported",
+            Some(project_id),
+            Some(&conversation.id),
+            None,
+            &json!({"agent_id": agent_id, "provider_session_id": provider_session_id}),
+        )?;
+        Ok(conversation)
+    }
+
     pub fn get_conversation(&self, conversation_id: &str) -> Result<Conversation, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         database
             .query_row(
-                "SELECT id, project_id, agent_id, provider_session_id, title
+                "SELECT id, project_id, agent_id, provider_session_id,
+                        COALESCE(manual_title, agent_title, ''), manual_title, agent_title
                  FROM conversations WHERE id = ?1",
                 [conversation_id],
-                |row| {
-                    let agent_id = row.get::<_, String>(2)?;
-                    Ok(Conversation {
-                        id: row.get(0)?,
-                        project_id: row.get(1)?,
-                        agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
-                        provider_session_id: row.get(3)?,
-                        title: row.get(4)?,
-                    })
-                },
+                conversation_from_row,
             )
             .optional()?
             .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))
@@ -249,21 +328,102 @@ impl AgentStore {
     pub fn list_conversations(&self, project_id: &str) -> Result<Vec<Conversation>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
-            "SELECT id, project_id, agent_id, provider_session_id, title
+            "SELECT id, project_id, agent_id, provider_session_id,
+                    COALESCE(manual_title, agent_title, ''), manual_title, agent_title
              FROM conversations WHERE project_id = ?1 ORDER BY created_at, id",
         )?;
-        let rows = statement.query_map([project_id], |row| {
-            let agent_id = row.get::<_, String>(2)?;
-            Ok(Conversation {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
-                provider_session_id: row.get(3)?,
-                title: row.get(4)?,
-            })
-        })?;
+        let rows = statement.query_map([project_id], conversation_from_row)?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::from)
+    }
+
+    pub fn set_manual_title(
+        &self,
+        conversation_id: &str,
+        title: Option<&str>,
+    ) -> Result<Conversation, StoreError> {
+        self.set_conversation_title(conversation_id, "manual_title", normalized_title(title))
+    }
+
+    pub fn set_agent_title(
+        &self,
+        conversation_id: &str,
+        title: Option<&str>,
+    ) -> Result<Conversation, StoreError> {
+        self.set_conversation_title(conversation_id, "agent_title", normalized_title(title))
+    }
+
+    pub fn delete_conversation(&self, conversation_id: &str) -> Result<(), StoreError> {
+        let conversation = self.get_conversation(conversation_id)?;
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute("DELETE FROM conversations WHERE id = ?1", [conversation_id])?;
+        self.append_workspace_event(
+            "session_removed",
+            Some(&conversation.project_id),
+            Some(conversation_id),
+            None,
+            &json!({"scope":"local"}),
+        )?;
+        Ok(())
+    }
+
+    fn find_provider_conversation(
+        &self,
+        project_id: &str,
+        agent_id: AgentId,
+        provider_session_id: &str,
+    ) -> Result<Option<Conversation>, StoreError> {
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .query_row(
+                "SELECT id, project_id, agent_id, provider_session_id,
+                        COALESCE(manual_title, agent_title, ''), manual_title, agent_title
+                 FROM conversations
+                 WHERE project_id = ?1 AND agent_id = ?2 AND provider_session_id = ?3",
+                params![project_id, agent_id.as_str(), provider_session_id],
+                conversation_from_row,
+            )
+            .optional()
+            .map_err(StoreError::from)
+    }
+
+    fn set_conversation_title(
+        &self,
+        conversation_id: &str,
+        column: &str,
+        title: Option<String>,
+    ) -> Result<Conversation, StoreError> {
+        let query = match column {
+            "manual_title" => {
+                "UPDATE conversations SET manual_title = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1"
+            }
+            "agent_title" => {
+                "UPDATE conversations SET agent_title = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1"
+            }
+            _ => return Err(StoreError::InvalidStoredValue(column.to_owned())),
+        };
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(query, params![conversation_id, title])?;
+        if changed == 0 {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let conversation = self.get_conversation(conversation_id)?;
+        self.append_workspace_event(
+            "session_updated",
+            Some(&conversation.project_id),
+            Some(conversation_id),
+            None,
+            &json!({"title":conversation.title}),
+        )?;
+        Ok(conversation)
     }
 
     pub fn set_provider_session(
@@ -348,6 +508,12 @@ impl AgentStore {
             &json!({"permission_mode": permission_mode}),
         )?;
         transaction.commit()?;
+        drop(database);
+        self.append_session_event(
+            conversation_id,
+            "user_message",
+            &json!({"run_id":run.id, "text":message}),
+        )?;
         Ok(run)
     }
 
@@ -415,6 +581,79 @@ impl AgentStore {
         let event = append_event_transaction(&transaction, run_id, kind, payload)?;
         transaction.commit()?;
         Ok(event)
+    }
+
+    pub fn append_session_event(
+        &self,
+        conversation_id: &str,
+        kind: &str,
+        payload: &Value,
+    ) -> Result<SessionEvent, StoreError> {
+        self.get_conversation(conversation_id)?;
+        let payload = serde_json::to_string(payload)?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let next = database.query_row(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE conversation_id = ?1",
+            [conversation_id],
+            |row| row.get::<_, i64>(0),
+        )?;
+        database.execute(
+            "INSERT INTO session_events (conversation_id, seq, kind, payload)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![conversation_id, next, kind, payload],
+        )?;
+        let created_at = database.query_row(
+            "SELECT created_at FROM session_events WHERE conversation_id = ?1 AND seq = ?2",
+            params![conversation_id, next],
+            |row| row.get::<_, String>(0),
+        )?;
+        Ok(SessionEvent {
+            conversation_id: conversation_id.to_owned(),
+            seq: u64::try_from(next).map_err(|_| {
+                StoreError::InvalidStoredValue("negative session event sequence".into())
+            })?,
+            kind: kind.to_owned(),
+            payload: serde_json::from_str(&payload)?,
+            created_at,
+        })
+    }
+
+    pub fn session_events_after(
+        &self,
+        conversation_id: &str,
+        cursor: u64,
+    ) -> Result<Vec<SessionEvent>, StoreError> {
+        self.get_conversation(conversation_id)?;
+        let cursor = i64::try_from(cursor).map_err(|_| {
+            StoreError::InvalidStoredValue("session event cursor exceeds SQLite range".into())
+        })?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT conversation_id, seq, kind, payload, created_at
+             FROM session_events WHERE conversation_id = ?1 AND seq > ?2 ORDER BY seq",
+        )?;
+        let rows = statement.query_map(params![conversation_id, cursor], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (conversation_id, seq, kind, payload, created_at) = row?;
+            Ok(SessionEvent {
+                conversation_id,
+                seq: u64::try_from(seq).map_err(|_| {
+                    StoreError::InvalidStoredValue("negative session event sequence".into())
+                })?,
+                kind,
+                payload: serde_json::from_str(&payload)?,
+                created_at,
+            })
+        })
+        .collect()
     }
 
     pub fn events_after(&self, run_id: &str, seq: u64) -> Result<Vec<AgentEvent>, StoreError> {
@@ -671,6 +910,26 @@ fn workspace_event_from_values(values: StoredWorkspaceEvent) -> rusqlite::Result
     })
 }
 
+fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
+    let agent_id = row.get::<_, String>(2)?;
+    Ok(Conversation {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
+        provider_session_id: row.get(3)?,
+        title: row.get(4)?,
+        manual_title: row.get(5)?,
+        agent_title: row.get(6)?,
+    })
+}
+
+fn normalized_title(title: Option<&str>) -> Option<String> {
+    title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
 fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
     let status = row.get::<_, String>(4)?;
     let permission_mode = row.get::<_, String>(5)?;
@@ -761,6 +1020,13 @@ string_enum!(AgentEventKind, {
     AgentEventKind::PermissionRequested => "permission_requested",
     AgentEventKind::PermissionResolved => "permission_resolved",
     AgentEventKind::Usage => "usage",
+    AgentEventKind::Plan => "plan",
+    AgentEventKind::AvailableCommands => "available_commands",
+    AgentEventKind::CurrentMode => "current_mode",
+    AgentEventKind::ConfigOptions => "config_options",
+    AgentEventKind::SessionInfo => "session_info",
+    AgentEventKind::ElicitationRequested => "elicitation_requested",
+    AgentEventKind::ElicitationResolved => "elicitation_resolved",
     AgentEventKind::Error => "error",
     AgentEventKind::RunCompleted => "run_completed",
 });

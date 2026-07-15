@@ -117,6 +117,15 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
     assert!(workspace_events.iter().any(|event| {
         event.run_id.as_deref() == Some(run.id.as_str()) && event.kind == "tool_started"
     }));
+
+    store
+        .append_session_event(&conversation.id, "plan", &serde_json::json!({"entries":[]}))
+        .expect("session event");
+    let session_events = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session replay");
+    assert_eq!(session_events[0].kind, "user_message");
+    assert_eq!(session_events[1].kind, "plan");
 }
 
 #[test]
@@ -172,4 +181,78 @@ fn permission_rules_are_scoped_to_project_and_agent() {
             .is_allowed("project-a", AgentId::Codex, &matcher)
             .expect("other agent")
     );
+}
+
+#[test]
+fn manual_titles_override_agent_titles_and_can_return_to_agent_control() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    assert_eq!(conversation.title, "");
+    assert_eq!(conversation.manual_title, None);
+    assert_eq!(conversation.agent_title, None);
+
+    store
+        .set_agent_title(&conversation.id, Some("Investigate build"))
+        .expect("agent title");
+    let agent_named = store
+        .get_conversation(&conversation.id)
+        .expect("agent named");
+    assert_eq!(agent_named.title, "Investigate build");
+    assert_eq!(
+        agent_named.agent_title.as_deref(),
+        Some("Investigate build")
+    );
+
+    store
+        .set_manual_title(&conversation.id, Some("Release blocker"))
+        .expect("manual title");
+    store
+        .set_agent_title(&conversation.id, Some("Agent changed its mind"))
+        .expect("new agent title");
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("manual named")
+            .title,
+        "Release blocker"
+    );
+
+    store
+        .set_manual_title(&conversation.id, None)
+        .expect("return to agent title");
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("agent restored")
+            .title,
+        "Agent changed its mind"
+    );
+}
+
+#[test]
+fn imports_and_removes_provider_sessions_locally() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_imported_conversation(
+            "project",
+            AgentId::ClaudeCode,
+            "provider-123",
+            Some("Native session"),
+        )
+        .expect("imported conversation");
+    assert_eq!(
+        conversation.provider_session_id.as_deref(),
+        Some("provider-123")
+    );
+    assert_eq!(conversation.agent_title.as_deref(), Some("Native session"));
+
+    store
+        .delete_conversation(&conversation.id)
+        .expect("remove local conversation");
+    assert!(matches!(
+        store.get_conversation(&conversation.id),
+        Err(StoreError::ConversationNotFound(_))
+    ));
 }

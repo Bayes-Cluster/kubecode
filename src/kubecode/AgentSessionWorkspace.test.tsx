@@ -22,6 +22,17 @@ const conversation = {
   agent_id: 'codex' as const,
   provider_session_id: 'provider-1',
   title: 'Build feature',
+  manual_title: null,
+  agent_title: 'Build feature',
+}
+
+const emptySessionState = {
+  capabilities: null,
+  available_commands: null,
+  current_mode: null,
+  config_options: null,
+  plan: null,
+  usage: null,
 }
 
 const run: AgentRun = {
@@ -45,6 +56,8 @@ describe('AgentSessionWorkspace', () => {
         payload: { text: 'Done' },
         created_at: 'now',
       }]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
       resolvePermission: vi.fn().mockResolvedValue(undefined),
     } as unknown as KubecodeApi
     const props = {
@@ -98,6 +111,8 @@ describe('AgentSessionWorkspace', () => {
         },
         created_at: 'now',
       }]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
       resolvePermission: vi.fn().mockResolvedValue(undefined),
     } as unknown as KubecodeApi
 

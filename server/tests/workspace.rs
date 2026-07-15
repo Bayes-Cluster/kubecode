@@ -17,16 +17,18 @@ fn service() -> (TempDir, WorkspaceService) {
 fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
     let (_temp, service) = service();
 
+    let created_path = service.root().join("teams/compiler");
     let created = service
-        .create_project("teams", "compiler")
+        .create_project_at(&created_path)
         .expect("create project");
     assert_eq!(created.name, "compiler");
-    assert_eq!(created.path, "teams/compiler");
+    assert_eq!(created.path, created_path.to_string_lossy());
 
     fs::create_dir_all(service.root().join("existing/api")).expect("existing project");
     let imported = service
-        .import_project("existing/api", Some("API"))
+        .import_project_at(&service.root().join("existing/api"))
         .expect("import project");
+    assert_eq!(imported.name, "api");
 
     let projects = service.list_projects().expect("list projects");
     assert_eq!(projects.len(), 2);
@@ -43,20 +45,28 @@ fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
 fn rejects_state_paths_traversal_and_duplicate_projects() {
     let (_temp, service) = service();
 
-    assert!(service.import_project(".state", None).is_err());
-    assert!(service.import_project("../outside", None).is_err());
-    assert!(service.create_project(".", "bad/name").is_err());
+    assert!(
+        service
+            .import_project_at(&service.root().join(".state"))
+            .is_err()
+    );
+    assert!(service.import_project_at("relative/project").is_err());
+    assert!(service.create_project_at("relative/project").is_err());
 
     fs::create_dir_all(service.root().join("project")).expect("project directory");
     service
-        .import_project("project", None)
+        .import_project_at(&service.root().join("project"))
         .expect("first import");
-    assert!(service.import_project("project", None).is_err());
+    assert!(
+        service
+            .import_project_at(&service.root().join("project"))
+            .is_err()
+    );
 }
 
 #[cfg(unix)]
 #[test]
-fn rejects_symlinks_that_escape_the_persistent_root() {
+fn canonicalizes_projects_outside_the_persistent_root() {
     use std::os::unix::fs::symlink;
 
     let (temp, service) = service();
@@ -64,7 +74,30 @@ fn rejects_symlinks_that_escape_the_persistent_root() {
     fs::create_dir_all(&outside).expect("outside directory");
     symlink(&outside, service.root().join("escaped")).expect("symlink");
 
-    assert!(service.import_project("escaped", None).is_err());
+    let project = service
+        .import_project_at(&service.root().join("escaped"))
+        .expect("outside project through symlink");
+    assert_eq!(
+        project.path,
+        outside
+            .canonicalize()
+            .expect("canonical outside")
+            .to_string_lossy()
+    );
+}
+
+#[test]
+fn lists_server_directories_with_absolute_paths_and_hides_state() {
+    let (_temp, service) = service();
+    fs::create_dir_all(service.root().join("visible/nested")).expect("visible directories");
+
+    let listing = service
+        .list_directories(Some(service.root()))
+        .expect("directory listing");
+
+    assert_eq!(listing.path, service.root().to_string_lossy());
+    assert!(listing.entries.iter().any(|entry| entry.name == "visible"));
+    assert!(!listing.entries.iter().any(|entry| entry.name == ".state"));
 }
 
 #[test]

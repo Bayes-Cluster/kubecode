@@ -3,8 +3,13 @@
 ## Kubecode workspace boundary
 
 `WorkspaceService` is the only code allowed to translate Project IDs and
-browser-supplied relative paths into filesystem paths. It canonicalizes the
-persistent root, rejects traversal, `.state`, and escaping symlinks, and uses
+browser-supplied relative paths into filesystem paths. Registration accepts an
+absolute server path, canonicalizes it, derives the display name from its final
+component, and stores the canonical path. The server directory picker enumerates
+directories using the server process identity; OS permissions are therefore its
+outer browse boundary. WorkspaceService rejects its private `.state` subtree.
+After registration, all file operations are resolved inside that Project root,
+reject traversal and escaping symlinks, and use
 revision-checked atomic writes for editable UTF-8 files. API handlers and Agent
 adapters must pass Project IDs through this abstraction instead of accepting an
 arbitrary cwd from the browser.
@@ -25,7 +30,8 @@ Pod termination ends it. Every PTY has a `regular`, `claude_code`, `codex`, or
 fail closed when their binary is unavailable. The default limit is eight
 terminals per Project.
 
-`AgentStore` owns durable Session, prompt-bearing run, normalized event, global
+`AgentStore` owns durable Session, prompt-bearing run, normalized run event,
+Session event, global
 workspace-event, and saved permission-rule metadata in the same Kubecode SQLite
 database. It enforces one active run per Session while allowing Sessions in the
 same Project to execute in parallel. Every run event and global workspace event
@@ -34,6 +40,11 @@ can reconnect from a cursor without losing output. Opening the
 store after a Pod restart changes any running or permission-blocked run to
 `interrupted` and appends a terminal `run_completed` event. Saved permission
 rules are always scoped to both the Project and the selected Agent.
+Session titles have two sources: `manual_title` and `agent_title`. The effective
+title is `manual_title ?? agent_title`; clearing the manual title returns control
+to ACP `session_info` updates. Session events are independent of runs so history
+emitted by `session/load` and state updates emitted between prompts remain
+replayable.
 
 Agent discovery probes exactly `claude`, `codex`, and `opencode` in parallel at
 server startup and exposes their path, version, availability, and diagnostic at
@@ -46,14 +57,17 @@ Homebrew. Authentication and model configuration remain owned by each CLI.
 
 `AgentRuntime` launches the selected ACP endpoint in the validated Project cwd
 and owns it through a Session actor independently of any HTTP or SSE connection. It
-uses the official Rust ACP SDK for initialization, session load/create, prompt,
-stream updates, permissions, and cancellation. Claude and Codex use pinned
+uses the official Rust ACP SDK for initialization, session list/load/resume/create,
+fork/delete, prompt, stream updates, permissions, structured elicitation,
+mode/config changes, and cancellation. Claude and Codex use pinned
 official adapters. Their adapter paths are resolved separately and receive the
 discovered CLI path, preserving the CLI's authentication and configuration.
 OpenCode uses its native `acp` subcommand. One actor serializes prompts for one
-Session while actors for different Sessions run concurrently. Actors remain
+Session while actors for different Sessions run concurrently. Prompt and option
+commands share the same actor connection, so a model/mode change cannot race a
+second adapter process. Actors remain
 connected between turns and stop after thirty idle minutes; the next turn uses
-`session/load`. ACP session IDs are stored with Sessions, while typed protocol
+`session/resume` when advertised and falls back to `session/load`. ACP session IDs are stored with Sessions, while typed protocol
 updates are normalized into the `AgentStore` event vocabulary. Safe mode emits
 a pending permission event and waits for the user's ACP option; Power mode
 selects an allow option. Authentication and model configuration stay inside the
@@ -70,11 +84,14 @@ relative file paths independently, preserves structured API errors, and derives
 HTTP and WebSocket endpoints from the active Notebook pathname. UI components
 do not assemble absolute backend URLs themselves.
 
-`AgentSessionWorkspace` is the primary renderer surface. It hydrates all stored
-runs for the selected Session, folds the global event stream into
-`AiAgentMessage` records, renders ACP permission choices above the composer, and
+`AgentSessionWorkspace` is the primary renderer surface. It hydrates the stored
+Session timeline, folds the global event stream into
+`AiAgentMessage` records, renders ACP permission choices and schema-driven
+elicitation forms above the composer, and
 keeps the Session's Agent immutable. It reuses proven Tolaria message/composer
-primitives without retaining the old right-side AI Panel chrome.
+primitives without retaining the old right-side AI Panel chrome. Slash-command
+suggestions, Agent plans, native mode/config selectors, fork, and provider delete
+are rendered only from retained ACP state and capabilities.
 
 `ContextWorkbench` owns the right-side Review, Files, Editor, and Diff tabs.
 Review is the default tab, while CodeMirror opens beside the Session and shares
@@ -98,7 +115,10 @@ parent split.
 
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, `kubecode_terminal_closed`,
-`kubecode_session_created`, `kubecode_agent_run_started`, and
+`kubecode_session_created`, `kubecode_agent_session_imported`,
+`kubecode_session_renamed`, `kubecode_session_removed`,
+`kubecode_agent_session_forked`, `kubecode_agent_run_started`,
+`kubecode_agent_elicitation_resolved`, and
 `kubecode_git_action_used`. Event properties
 contain only action modes, Agent IDs, and permission modes; Project names,
 paths, prompts, terminal contents, and file contents are never included.

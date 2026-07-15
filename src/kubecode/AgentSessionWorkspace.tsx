@@ -6,12 +6,30 @@ import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChro
 import type { AiAction } from '@/components/AiMessage'
 import { Button } from '@/components/ui/button'
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { AiAgentPermissionMode } from '@/lib/aiAgentPermissionMode'
 import type { AppLocale, TranslationKey } from '@/lib/i18n'
@@ -21,31 +39,64 @@ import type {
   AgentDescriptor,
   AgentEvent,
   AgentRun,
+  AgentSessionState,
   Conversation,
   KubecodeApi,
+  SessionEvent,
   WorkspaceEvent,
 } from './api'
 
 type Translator = (key: TranslationKey) => string
 type PermissionChoice = { id: string; label: string; kind: string }
 type PendingPermission = { requestId: string; tool: string; options: PermissionChoice[] }
+type ElicitationAnswer = string | boolean
+type ElicitationOption = { id: string; name: string }
+type ElicitationProperty = {
+  defaultValue: ElicitationAnswer
+  description: string
+  id: string
+  label: string
+  options: ElicitationOption[]
+  required: boolean
+  type: 'boolean' | 'integer' | 'number' | 'string'
+}
+type PendingElicitation = {
+  message: string
+  properties: ElicitationProperty[]
+  requestId: string
+}
 
 type AgentSessionWorkspaceProps = {
   agents: AgentDescriptor[]
   api: KubecodeApi
   conversation: Conversation | null
   locale: AppLocale
+  onConversationCreated: (conversation: Conversation) => void
+  onConversationRemoved: (conversationId: string) => void
+  onConversationUpdated: (conversation: Conversation) => void
   projectId: string | null
   t: Translator
   workspaceEvent: WorkspaceEvent | null
 }
 
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
+const SESSION_STATE_EVENT_KINDS = new Set([
+  'available_commands',
+  'config_options',
+  'current_mode',
+  'plan',
+  'run_completed',
+  'session_info',
+  'usage',
+])
 export function AgentSessionWorkspace({
   agents,
   api,
   conversation,
   locale,
+  onConversationCreated,
+  onConversationRemoved,
+  onConversationUpdated,
   projectId,
   t,
   workspaceEvent,
@@ -56,6 +107,13 @@ export function AgentSessionWorkspace({
   const [run, setRun] = useState<AgentRun | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null)
+  const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
+  const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
+  const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
+  const [planOpen, setPlanOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [providerDeleteOpen, setProviderDeleteOpen] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLDivElement>(null)
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
@@ -64,11 +122,14 @@ export function AgentSessionWorkspace({
   useEffect(() => {
     if (!conversation) return
     let current = true
-    void hydrateConversation(api, conversation.id).then(({ messages: history, activeRun, pendingPermission: restoredPermission }) => {
+    void hydrateConversation(api, conversation.id).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState }) => {
       if (!current) return
       setMessages(history)
       setRun(activeRun)
       setPendingPermission(restoredPermission)
+      setPendingElicitation(restoredElicitation)
+      setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
+      setSessionState(restoredState)
     }).catch((cause: unknown) => {
       if (current) setError(errorMessage(cause, t('kubecode.error')))
     })
@@ -91,6 +152,16 @@ export function AgentSessionWorkspace({
     if (event.kind === 'permission_resolved') {
       queueMicrotask(() => setPendingPermission(null))
     }
+    if (event.kind === 'elicitation_requested') {
+      const elicitation = elicitationFromEvent(event)
+      if (elicitation) queueMicrotask(() => {
+        setPendingElicitation(elicitation)
+        setElicitationAnswers(initialElicitationAnswers(elicitation))
+      })
+    }
+    if (event.kind === 'elicitation_resolved') {
+      queueMicrotask(() => setPendingElicitation(null))
+    }
     if (event.kind === 'run_started') {
       void api.getRun(event.run_id).then((nextRun) => {
         setMessages((current) => current.some((message) => message.id === nextRun.id)
@@ -104,6 +175,9 @@ export function AgentSessionWorkspace({
       setMessages((current) => applyAgentEvent(current, event.run_id, event))
     })
     if (event.kind === 'run_completed') void api.getRun(event.run_id).then(setRun)
+    if (SESSION_STATE_EVENT_KINDS.has(event.kind)) {
+      void api.getSessionState(conversation.id).then(setSessionState)
+    }
   }, [api, conversation, workspaceEvent])
 
   const send = async (text: string) => {
@@ -133,6 +207,55 @@ export function AgentSessionWorkspace({
     if (run) await api.cancelRun(run.id)
   }
 
+  const resolveElicitation = async (accepted: boolean) => {
+    if (!pendingElicitation || !conversation) return
+    const content = accepted
+      ? elicitationContent(pendingElicitation, elicitationAnswers)
+      : null
+    await api.resolveElicitation(pendingElicitation.requestId, content)
+    setPendingElicitation(null)
+    trackEvent('kubecode_agent_elicitation_resolved', {
+      accepted: accepted ? 1 : 0,
+      agent_id: conversation.agent_id,
+      field_count: pendingElicitation.properties.length,
+    })
+  }
+
+  const rename = async () => {
+    if (!conversation) return
+    const updated = await api.updateConversation(conversation.id, draftTitle.trim() || null)
+    onConversationUpdated(updated)
+    setRenameOpen(false)
+    trackEvent('kubecode_session_renamed', { agent_id: conversation.agent_id })
+  }
+
+  const restoreAgentTitle = async () => {
+    if (!conversation) return
+    onConversationUpdated(await api.updateConversation(conversation.id, null))
+  }
+
+  const removeLocally = async () => {
+    if (!conversation) return
+    await api.removeConversation(conversation.id)
+    onConversationRemoved(conversation.id)
+    trackEvent('kubecode_session_removed', { agent_id: conversation.agent_id, scope: 'local' })
+  }
+
+  const deleteFromAgent = async () => {
+    if (!conversation) return
+    await api.removeConversation(conversation.id, 'provider')
+    onConversationRemoved(conversation.id)
+    setProviderDeleteOpen(false)
+    trackEvent('kubecode_session_removed', { agent_id: conversation.agent_id, scope: 'provider' })
+  }
+
+  const forkSession = async () => {
+    if (!conversation) return
+    const fork = await api.forkConversation(conversation.id)
+    onConversationCreated(fork)
+    trackEvent('kubecode_agent_session_forked', { agent_id: conversation.agent_id })
+  }
+
   if (!conversation) {
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
@@ -145,19 +268,66 @@ export function AgentSessionWorkspace({
   }
 
   const readiness = agent?.available ? 'ready' : 'missing'
+  const commands = availableCommands(sessionState)
+  const canDeleteFromAgent = Boolean(
+    conversation.provider_session_id && sessionCapability(sessionState, 'delete'),
+  )
+  const canFork = Boolean(
+    conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
+  )
+  const visibleCommands = prompt.startsWith('/')
+    ? commands.filter((command) => command.name.toLowerCase().includes(prompt.slice(1).toLowerCase()))
+    : []
+  const nativeMode = sessionMode(sessionState)
+  const configSelects = sessionConfigSelects(sessionState)
+
+  const refreshSessionState = async () => {
+    setSessionState(await api.getSessionState(conversation.id))
+  }
   return (
     <section className="kubecode-agent-session" data-testid="agent-session-workspace">
       <header className="kubecode-session-header">
         <div className="kubecode-session-title">
           <AiAgentIcon agent={conversation.agent_id} size={17} />
-          <strong>{conversation.title}</strong>
+          <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
         </div>
         <div className="kubecode-session-status">
           <span data-state={active ? 'running' : 'idle'} />
           {active ? t('kubecode.running') : t('kubecode.ready')}
-          <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
-            <DotsThree />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
+                <DotsThree />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => {
+                setDraftTitle(conversation.manual_title ?? conversation.title)
+                setRenameOpen(true)
+              }}>
+                {t('kubecode.renameSession')}
+              </DropdownMenuItem>
+              {conversation.manual_title && conversation.agent_title && (
+                <DropdownMenuItem onSelect={() => void restoreAgentTitle()}>
+                  {t('kubecode.useAgentTitle')}
+                </DropdownMenuItem>
+              )}
+              {canFork && (
+                <DropdownMenuItem onSelect={() => void forkSession()}>
+                  {t('kubecode.forkSession')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => void removeLocally()}>
+                {t('kubecode.removeSessionLocally')}
+              </DropdownMenuItem>
+              {canDeleteFromAgent && (
+                <DropdownMenuItem variant="destructive" onSelect={() => setProviderDeleteOpen(true)}>
+                  {t('kubecode.deleteSessionFromAgent')}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
       <div className="kubecode-session-timeline">
@@ -191,7 +361,88 @@ export function AgentSessionWorkspace({
           </div>
         </div>
       )}
+      {pendingElicitation && (
+        <div className="kubecode-elicitation-dock">
+          <div className="kubecode-elicitation-heading">
+            <strong>{t('kubecode.answerAgentQuestion')}</strong>
+            <span>{pendingElicitation.message}</span>
+          </div>
+          <div className="kubecode-elicitation-fields">
+            {pendingElicitation.properties.map((property) => (
+              <label key={property.id} className="kubecode-elicitation-field">
+                <span>{property.label}{property.required ? ' *' : ''}</span>
+                {property.description && <small>{property.description}</small>}
+                {property.type === 'boolean' ? (
+                  <Switch
+                    aria-label={property.label}
+                    checked={Boolean(elicitationAnswers[property.id])}
+                    onCheckedChange={(value) => setElicitationAnswers((current) => ({
+                      ...current,
+                      [property.id]: value,
+                    }))}
+                  />
+                ) : property.options.length > 0 ? (
+                  <Select
+                    value={String(elicitationAnswers[property.id] ?? '')}
+                    onValueChange={(value) => setElicitationAnswers((current) => ({
+                      ...current,
+                      [property.id]: value,
+                    }))}
+                  >
+                    <SelectTrigger aria-label={property.label}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {property.options.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    aria-label={property.label}
+                    type={property.type === 'string' ? 'text' : 'number'}
+                    value={String(elicitationAnswers[property.id] ?? '')}
+                    onChange={(event) => setElicitationAnswers((current) => ({
+                      ...current,
+                      [property.id]: event.target.value,
+                    }))}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+          <div className="kubecode-elicitation-actions">
+            <Button size="sm" variant="outline" onClick={() => void resolveElicitation(false)}>
+              {t('kubecode.decline')}
+            </Button>
+            <Button
+              disabled={!elicitationComplete(pendingElicitation, elicitationAnswers)}
+              size="sm"
+              onClick={() => void resolveElicitation(true)}
+            >
+              {t('kubecode.submitAnswers')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {sessionState?.plan && (
+        <div className="kubecode-session-plan">
+          <Button size="sm" variant="ghost" onClick={() => setPlanOpen((open) => !open)}>
+            {planOpen ? t('kubecode.hideAgentPlan') : t('kubecode.showAgentPlan')}
+          </Button>
+          {planOpen && <pre>{JSON.stringify(sessionState.plan, null, 2)}</pre>}
+        </div>
+      )}
       <div className="kubecode-session-composer">
+        {visibleCommands.length > 0 && (
+          <div className="kubecode-command-suggestions">
+            {visibleCommands.map((command) => (
+              <Button key={command.name} variant="ghost" onClick={() => setPrompt(`/${command.name} `)}>
+                <code>/{command.name}</code>
+                {command.description && <span>{command.description}</span>}
+              </Button>
+            ))}
+          </div>
+        )}
         <AiPanelComposer
           agentLabel={agentLabel}
           agentReadiness={readiness}
@@ -200,6 +451,43 @@ export function AgentSessionWorkspace({
               <span className="kubecode-agent-chip">
                 <AiAgentIcon agent={conversation.agent_id} size={14} /> {agentLabel}
               </span>
+              {nativeMode && (
+                <Select
+                  disabled={active}
+                  value={nativeMode.currentValue}
+                  onValueChange={(value) => {
+                    void api.setSessionMode(conversation.id, value).then(refreshSessionState)
+                  }}
+                >
+                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto max-w-36 border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {nativeMode.options.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {configSelects.map((config) => (
+                <Select
+                  disabled={active}
+                  key={config.id}
+                  value={config.currentValue}
+                  onValueChange={(value) => {
+                    void api.setSessionConfig(conversation.id, config.id, value).then(refreshSessionState)
+                  }}
+                >
+                  <SelectTrigger aria-label={config.name} className="h-7 w-auto max-w-40 border-0 bg-transparent px-2 text-xs shadow-none" size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {config.options.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ))}
               <Select
                 disabled={active}
                 value={permissionMode}
@@ -225,6 +513,38 @@ export function AgentSessionWorkspace({
           onStop={() => void stop()}
         />
       </div>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.renameSession')}</DialogTitle>
+            <DialogDescription>{t('kubecode.renameSessionDescription')}</DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label={t('kubecode.sessionTitle')}
+            value={draftTitle}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void rename()
+            }}
+          />
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
+            <Button onClick={() => void rename()}>{t('kubecode.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={providerDeleteOpen} onOpenChange={setProviderDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.deleteSessionFromAgent')}</DialogTitle>
+            <DialogDescription>{t('kubecode.deleteSessionFromAgentDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
+            <Button variant="destructive" onClick={() => void deleteFromAgent()}>{t('kubecode.delete')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
@@ -236,21 +556,134 @@ async function hydrateConversation(
   messages: AiAgentMessage[]
   activeRun: AgentRun | null
   pendingPermission: PendingPermission | null
+  pendingElicitation: PendingElicitation | null
+  sessionState: AgentSessionState
 }> {
-  const runs = await api.listRuns(conversationId)
+  const [runs, sessionEvents, sessionState] = await Promise.all([
+    api.listRuns(conversationId),
+    api.listSessionEvents(conversationId),
+    api.getSessionState(conversationId),
+  ])
   const events = await Promise.all(runs.map((run) => api.listEvents(run.id)))
-  const messages = runs.map((run, index) => (
-    events[index].reduce(
-      (history, event) => applyAgentEvent(history, run.id, event),
-      [messageFromRun(run)],
-    )[0]
-  ))
+  const messages = sessionEvents.length > 0
+    ? messagesFromSessionEvents(sessionEvents, runs)
+    : runs.map((run, index) => (
+        events[index].reduce(
+          (history, event) => applyAgentEvent(history, run.id, event),
+          [messageFromRun(run)],
+        )[0]
+      ))
   const activeRun = [...runs].reverse().find((item) => ACTIVE_RUN_STATUSES.has(item.status)) ?? null
   const activeRunIndex = activeRun ? runs.findIndex((item) => item.id === activeRun.id) : -1
   const pendingPermission = activeRunIndex >= 0
     ? pendingPermissionFromEvents(events[activeRunIndex])
     : null
-  return { messages, activeRun, pendingPermission }
+  const pendingElicitation = activeRunIndex >= 0
+    ? pendingElicitationFromEvents(events[activeRunIndex])
+    : null
+  return { messages, activeRun, pendingPermission, pendingElicitation, sessionState }
+}
+
+function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): AiAgentMessage[] {
+  const runById = new Map(runs.map((run) => [run.id, run]))
+  return events.reduce<AiAgentMessage[]>((messages, event) => {
+    const runId = textValue(event.payload.run_id)
+    if (event.kind === 'user_message') {
+      const run = runById.get(runId)
+      return [...messages, run ? messageFromRun(run) : nativeMessage(event, textValue(event.payload.text))]
+    }
+    if (event.kind === 'user_message_delta') {
+      const last = messages.at(-1)
+      const text = textValue(event.payload.text)
+      if (last?.id?.startsWith('native-') && !last.response && !last.reasoning) {
+        return [...messages.slice(0, -1), { ...last, userMessage: `${last.userMessage ?? ''}${text}` }]
+      }
+      return [...messages, nativeMessage(event, text)]
+    }
+    const message = messages.at(-1) ?? nativeMessage(event, '')
+    const messageId = message.id ?? `native-${event.seq}`
+    const history = messages.length > 0 ? messages : [message]
+    const mapped: AgentEvent = {
+      created_at: event.created_at,
+      kind: event.kind,
+      payload: event.payload,
+      run_id: messageId,
+      seq: event.seq,
+    }
+    return applyAgentEvent(history, messageId, mapped)
+  }, [])
+}
+
+function nativeMessage(event: SessionEvent, text: string): AiAgentMessage {
+  return {
+    actions: [],
+    id: `native-${event.seq}`,
+    isStreaming: false,
+    reasoningDone: true,
+    userMessage: text,
+  }
+}
+
+type AgentCommand = { name: string; description: string }
+
+function availableCommands(state: AgentSessionState | null): AgentCommand[] {
+  const values = state?.available_commands?.availableCommands
+  if (!Array.isArray(values)) return []
+  return values.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const command = value as Record<string, unknown>
+    const name = textValue(command.name)
+    if (!name) return []
+    return [{ name, description: textValue(command.description) }]
+  })
+}
+
+function sessionCapability(state: AgentSessionState | null, capability: string): boolean {
+  const sessionCapabilities = state?.capabilities?.sessionCapabilities
+  if (!sessionCapabilities || typeof sessionCapabilities !== 'object') return false
+  return (sessionCapabilities as Record<string, unknown>)[capability] != null
+}
+
+type SessionSelect = {
+  id: string
+  name: string
+  currentValue: string
+  options: { id: string; name: string }[]
+}
+
+function sessionMode(state: AgentSessionState | null): SessionSelect | null {
+  const mode = state?.current_mode
+  const currentValue = textValue(mode?.currentModeId)
+  const values = mode?.availableModes
+  if (!currentValue || !Array.isArray(values)) return null
+  const options = selectOptions(values)
+  return options.length > 0 ? { id: 'mode', name: 'Mode', currentValue, options } : null
+}
+
+function sessionConfigSelects(state: AgentSessionState | null): SessionSelect[] {
+  const values = state?.config_options?.configOptions
+  if (!Array.isArray(values)) return []
+  return values.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const config = value as Record<string, unknown>
+    if (config.type !== 'select') return []
+    const id = textValue(config.id)
+    const name = textValue(config.name)
+    const currentValue = textValue(config.currentValue)
+    const options = Array.isArray(config.options) ? selectOptions(config.options) : []
+    if (!id || !name || !currentValue || options.length === 0) return []
+    return [{ id, name, currentValue, options }]
+  })
+}
+
+function selectOptions(values: unknown[]): { id: string; name: string }[] {
+  return values.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const option = value as Record<string, unknown>
+    const id = textValue(option.id)
+    const name = textValue(option.name)
+    return id && name ? [{ id, name }] : []
+  })
 }
 
 function pendingPermissionFromEvents(events: AgentEvent[]): PendingPermission | null {
@@ -260,6 +693,108 @@ function pendingPermissionFromEvents(events: AgentEvent[]): PendingPermission | 
     const requestId = textValue(event.payload.request_id)
     return !requestId || pending?.requestId === requestId ? null : pending
   }, null)
+}
+
+function pendingElicitationFromEvents(events: AgentEvent[]): PendingElicitation | null {
+  return events.reduce<PendingElicitation | null>((pending, event) => {
+    if (event.kind === 'elicitation_requested') return elicitationFromEvent(event) ?? pending
+    if (event.kind !== 'elicitation_resolved') return pending
+    const requestId = textValue(event.payload.request_id)
+    return !requestId || pending?.requestId === requestId ? null : pending
+  }, null)
+}
+
+function elicitationFromEvent(event: AgentEvent): PendingElicitation | null {
+  const requestId = textValue(event.payload.request_id)
+  const message = textValue(event.payload.message)
+  const schema = objectValue(event.payload.requestedSchema)
+  const values = objectValue(schema?.properties)
+  if (!requestId || !message || !values) return null
+  const required = new Set(Array.isArray(schema?.required) ? schema.required.filter(isString) : [])
+  const properties = Object.entries(values).flatMap(([id, value]) => {
+    const property = objectValue(value)
+    const type = propertyType(property?.type)
+    if (!property || !type) return []
+    return [{
+      defaultValue: propertyDefault(property, type),
+      description: textValue(property.description),
+      id,
+      label: textValue(property.title) || id,
+      options: propertyOptions(property),
+      required: required.has(id),
+      type,
+    }]
+  })
+  return { message, properties, requestId }
+}
+
+function initialElicitationAnswers(elicitation: PendingElicitation | null): Record<string, ElicitationAnswer> {
+  return Object.fromEntries(elicitation?.properties.map((property) => [property.id, property.defaultValue]) ?? [])
+}
+
+function elicitationComplete(
+  elicitation: PendingElicitation,
+  answers: Record<string, ElicitationAnswer>,
+): boolean {
+  return elicitation.properties.every((property) => (
+    !property.required || property.type === 'boolean' || String(answers[property.id] ?? '').trim().length > 0
+  ))
+}
+
+function elicitationContent(
+  elicitation: PendingElicitation,
+  answers: Record<string, ElicitationAnswer>,
+): Record<string, string | number | boolean | string[]> {
+  const content: Record<string, string | number | boolean | string[]> = {}
+  for (const property of elicitation.properties) {
+    const value = answers[property.id] ?? property.defaultValue
+    if (!property.required && property.type !== 'boolean' && String(value).trim() === '') continue
+    if (property.type === 'integer') content[property.id] = Number.parseInt(String(value), 10)
+    else if (property.type === 'number') content[property.id] = Number.parseFloat(String(value))
+    else content[property.id] = value
+  }
+  return content
+}
+
+function propertyType(value: unknown): ElicitationProperty['type'] | null {
+  return value === 'boolean' || value === 'integer' || value === 'number' || value === 'string'
+    ? value
+    : null
+}
+
+function propertyDefault(
+  property: Record<string, unknown>,
+  type: ElicitationProperty['type'],
+): ElicitationAnswer {
+  if (type === 'boolean') return typeof property.default === 'boolean' ? property.default : false
+  if (typeof property.default === 'string' || typeof property.default === 'number') {
+    return String(property.default)
+  }
+  return propertyOptions(property)[0]?.id ?? ''
+}
+
+function propertyOptions(property: Record<string, unknown>): ElicitationOption[] {
+  if (Array.isArray(property.oneOf)) {
+    return property.oneOf.flatMap((value) => {
+      const option = objectValue(value)
+      const id = textValue(option?.const)
+      if (!id) return []
+      return [{ id, name: textValue(option?.title) || id }]
+    })
+  }
+  return Array.isArray(property.enum)
+    ? property.enum.filter(isString).map((id) => ({ id, name: id }))
+    : []
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
 }
 
 function messageFromRun(run: AgentRun): AiAgentMessage {

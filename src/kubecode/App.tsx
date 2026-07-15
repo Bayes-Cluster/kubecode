@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   CaretLeft,
+  Folder,
   Gear,
   MagnifyingGlass,
   Plus,
@@ -24,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -47,7 +50,9 @@ import type {
   AgentDescriptor,
   AgentId,
   Conversation,
+  DirectoryListing,
   Project,
+  ProviderSessionInfo,
   TerminalInfo,
   WorkspaceEvent,
 } from './api'
@@ -142,7 +147,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     const receive = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as WorkspaceEvent
       setWorkspaceEvent(event)
-      if (event.kind === 'session_created' && event.project_id === projectId && projectId) {
+      if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)
+        && event.project_id === projectId && projectId) {
         void api.listConversations(projectId).then(setConversations)
       }
     }
@@ -244,7 +250,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                     onClick={() => setConversationId(item.id)}
                   >
                     <AiAgentIcon agent={item.agent_id} size={15} />
-                    <span>{item.title}</span>
+                    <span>{item.title || t('kubecode.untitledSession')}</span>
                   </Button>
                 ))}
                 {projectId && conversations.length === 0 && (
@@ -263,7 +269,21 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               api={api}
               conversation={conversation}
               locale={locale}
+              onConversationCreated={(created) => {
+                setConversations((current) => [...current.filter((item) => item.id !== created.id), created])
+                setConversationId(created.id)
+              }}
               projectId={projectId}
+              onConversationRemoved={(removedId) => {
+                setConversations((current) => {
+                  const next = current.filter((item) => item.id !== removedId)
+                  setConversationId((selected) => selected === removedId ? next.at(-1)?.id ?? null : selected)
+                  return next
+                })
+              }}
+              onConversationUpdated={(updated) => {
+                setConversations((current) => current.map((item) => item.id === updated.id ? updated : item))
+              }}
               t={t}
               workspaceEvent={workspaceEvent}
               key={conversationId ?? projectId ?? 'no-project'}
@@ -346,16 +366,56 @@ function NewSessionDialog({
   const availableAgent = agents.find((agent) => agent.available)
   const [agentId, setAgentId] = useState<AgentId>(availableAgent?.id ?? 'codex')
   const [title, setTitle] = useState('')
+  const [mode, setMode] = useState<'new' | 'import'>('new')
+  const [providerSessions, setProviderSessions] = useState<ProviderSessionInfo[]>([])
+  const [providerSessionId, setProviderSessionId] = useState<string | null>(null)
+  const [loadingProviderSessions, setLoadingProviderSessions] = useState(false)
+  const [providerError, setProviderError] = useState<string | null>(null)
 
   const selectedAgentId = agents.some((agent) => agent.id === agentId && agent.available)
     ? agentId
     : availableAgent?.id ?? agentId
 
+  useEffect(() => {
+    if (!open || mode !== 'import' || !projectId || !availableAgent) return
+    let current = true
+    queueMicrotask(() => {
+      if (!current) return
+      setLoadingProviderSessions(true)
+      setProviderError(null)
+    })
+    void api.listProviderSessions(projectId, selectedAgentId)
+      .then((sessions) => {
+        if (!current) return
+        setProviderSessions(sessions)
+        setProviderSessionId((selected) => sessions.some((item) => item.session_id === selected)
+          ? selected
+          : sessions[0]?.session_id ?? null)
+      })
+      .catch((cause: unknown) => {
+        if (current) setProviderError(errorMessage(cause, t('kubecode.providerSessionsLoadFailed')))
+      })
+      .finally(() => {
+        if (current) setLoadingProviderSessions(false)
+      })
+    return () => { current = false }
+  }, [api, availableAgent, mode, open, projectId, selectedAgentId, t])
+
   const create = async () => {
     if (!projectId) return
-    const session = await api.createConversation(projectId, selectedAgentId, title.trim() || undefined)
-    trackEvent('kubecode_session_created', { agent_id: selectedAgentId })
+    const providerSession = providerSessions.find((item) => item.session_id === providerSessionId)
+    const session = await api.createConversation(
+      projectId,
+      selectedAgentId,
+      title.trim() || undefined,
+      mode === 'import' ? providerSession?.session_id : undefined,
+      mode === 'import' ? providerSession?.title ?? undefined : undefined,
+    )
+    trackEvent(mode === 'import' ? 'kubecode_agent_session_imported' : 'kubecode_session_created', {
+      agent_id: selectedAgentId,
+    })
     setTitle('')
+    setProviderSessionId(null)
     onSession(session)
     onOpenChange(false)
   }
@@ -367,7 +427,10 @@ function NewSessionDialog({
           <DialogTitle>{t('kubecode.newSession')}</DialogTitle>
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
-        <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.sessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+        <div className="kubecode-mode-switch">
+          <Button variant={mode === 'new' ? 'default' : 'outline'} onClick={() => setMode('new')}>{t('kubecode.startNewSession')}</Button>
+          <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')}>{t('kubecode.importAgentSession')}</Button>
+        </div>
         <Select value={selectedAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
           <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -378,9 +441,33 @@ function NewSessionDialog({
             ))}
           </SelectContent>
         </Select>
+        {mode === 'new' ? (
+          <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+        ) : (
+          <div className="kubecode-provider-session-list">
+            {providerSessions.map((session) => (
+              <Button
+                data-active={session.session_id === providerSessionId}
+                key={session.session_id}
+                variant={session.session_id === providerSessionId ? 'secondary' : 'ghost'}
+                onClick={() => setProviderSessionId(session.session_id)}
+              >
+                <span>{session.title || t('kubecode.untitledSession')}</span>
+                <code>{session.updated_at ?? session.session_id}</code>
+              </Button>
+            ))}
+            {loadingProviderSessions && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
+            {!loadingProviderSessions && providerSessions.length === 0 && !providerError && (
+              <div className="kubecode-empty-small">{t('kubecode.noProviderSessions')}</div>
+            )}
+            {providerError && <div className="kubecode-inline-error">{providerError}</div>}
+          </div>
+        )}
         <DialogFooter>
           <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-          <Button disabled={!projectId || !availableAgent} onClick={() => void create()}>{t('kubecode.create')}</Button>
+          <Button disabled={!projectId || !availableAgent || (mode === 'import' && !providerSessionId)} onClick={() => void create()}>
+            {mode === 'import' ? t('kubecode.import') : t('kubecode.create')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -401,18 +488,38 @@ function ProjectDialog({
   t: Translator
 }) {
   const [mode, setMode] = useState<'create' | 'import'>('create')
-  const [name, setName] = useState('')
   const [path, setPath] = useState('')
-  const [parent, setParent] = useState('.')
+  const [listing, setListing] = useState<DirectoryListing | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
+  const [loadingDirectories, setLoadingDirectories] = useState(false)
+  const [browserError, setBrowserError] = useState<string | null>(null)
+
+  const browse = useCallback(async (nextPath?: string) => {
+    setLoadingDirectories(true)
+    setBrowserError(null)
+    try {
+      const nextListing = await api.listDirectories(nextPath)
+      setListing(nextListing)
+      setPath(nextListing.path)
+    } catch (cause) {
+      setBrowserError(errorMessage(cause, t('kubecode.directoryLoadFailed')))
+    } finally {
+      setLoadingDirectories(false)
+    }
+  }, [api, t])
+
+  useEffect(() => {
+    if (open && mode === 'import' && !listing) void browse()
+  }, [browse, listing, mode, open])
 
   const submit = async () => {
     const project = mode === 'create'
-      ? await api.createProject(parent, name)
-      : await api.importProject(path, name || undefined)
+      ? await api.createProject(path)
+      : await api.importProject(path)
     trackEvent('kubecode_project_registered', { mode })
     onProject(project)
-    setName('')
     setPath('')
+    setListing(null)
     onOpenChange(false)
   }
 
@@ -427,12 +534,50 @@ function ProjectDialog({
           <Button variant={mode === 'create' ? 'default' : 'outline'} onClick={() => setMode('create')}>{t('kubecode.createProject')}</Button>
           <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')}>{t('kubecode.importProject')}</Button>
         </div>
-        {mode === 'create' && <Input aria-label={t('kubecode.projectParent')} value={parent} onChange={(event) => setParent(event.target.value)} />}
-        {mode === 'import' && <Input aria-label={t('kubecode.projectPath')} value={path} onChange={(event) => setPath(event.target.value)} />}
-        <Input aria-label={t('kubecode.projectName')} placeholder={t('kubecode.projectName')} value={name} onChange={(event) => setName(event.target.value)} />
+        {mode === 'create' ? (
+          <Input
+            aria-label={t('kubecode.projectPath')}
+            placeholder={t('kubecode.absoluteProjectPath')}
+            value={path}
+            onChange={(event) => setPath(event.target.value)}
+          />
+        ) : (
+          <div className="kubecode-directory-browser">
+            <div className="kubecode-directory-location">
+              <Button
+                aria-label={t('kubecode.parentDirectory')}
+                disabled={!listing?.parent || loadingDirectories}
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => void browse(listing?.parent ?? undefined)}
+              >
+                <ArrowUp />
+              </Button>
+              <code title={listing?.path ?? path}>{listing?.path ?? path}</code>
+            </div>
+            <div className="kubecode-directory-list" aria-label={t('kubecode.selectDirectory')}>
+              {listing?.entries
+                .filter((entry) => showHidden || !entry.hidden)
+                .map((entry) => (
+                  <Button key={entry.path} variant="ghost" onClick={() => void browse(entry.path)}>
+                    <Folder /> <span>{entry.name}</span>
+                  </Button>
+                ))}
+              {!loadingDirectories && listing?.entries.length === 0 && (
+                <div className="kubecode-empty-small">{t('kubecode.emptyDirectory')}</div>
+              )}
+              {loadingDirectories && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
+            </div>
+            <label className="kubecode-show-hidden">
+              <Switch checked={showHidden} onCheckedChange={setShowHidden} />
+              <span>{t('kubecode.showHiddenDirectories')}</span>
+            </label>
+            {browserError && <div className="kubecode-inline-error">{browserError}</div>}
+          </div>
+        )}
         <DialogFooter>
           <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-          <Button disabled={mode === 'create' ? !name.trim() : !path.trim()} onClick={() => void submit()}>{mode === 'create' ? t('kubecode.create') : t('kubecode.import')}</Button>
+          <Button disabled={!path.trim() || loadingDirectories} onClick={() => void submit()}>{mode === 'create' ? t('kubecode.create') : t('kubecode.import')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
