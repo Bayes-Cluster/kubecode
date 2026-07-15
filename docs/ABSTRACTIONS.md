@@ -127,6 +127,12 @@ ID, coalesces file and Git invalidations, and ignores stale entry responses.
 New files and folders therefore appear without refresh even when another event
 follows immediately, without opening additional EventSource connections.
 
+`ProjectFileTree` presents the selected Project as the root of a lazy directory
+tree. Expanding a directory loads only its immediate children; file workspace
+events refresh every expanded branch while keeping the tree topology visible.
+The tree and Changes view share one compact context title bar for refresh and
+creation actions.
+
 The workbench owns its Session sidebar, context pane, and Terminal dimensions in
 `KubecodeApp`. Shared
 `ResizeHandle` instances apply pointer deltas at animation-frame cadence while
@@ -135,14 +141,25 @@ drag frame. Session, context, and Terminal dimensions retain only a small
 usable minimum; their maximums are calculated from the live workbench rather
 than fixed pixel ranges or panel ratios. The right-hand and Terminal deltas are
 inverted because their handles resize from the panels' leading edges.
+Three stateful layout controls in the global top-right toolbar are the only
+collapse controls for the Session sidebar, Terminal dock, and context sidebar.
 
-`TerminalWorkspace` uses a VS Code-style group model: each tab is one terminal
-group, and each group owns a recursive split tree of terminal leaf IDs. A leaf
+`TerminalWorkspace` uses a VS Code-style group model. When at least two PTYs are
+open, a vertical navigator on the dock's right edge renders one flat row per
+terminal leaf; `┌ / ├ / └` prefixes identify members of the same split group
+without introducing a duplicate parent. A single PTY hides the list. The navigator
+can be resized from a 46px icon-only state to a text state of at least 80px, and
+persists its width per Project. A leaf
 is an independent reconnectable PTY, and a split is horizontal or vertical with
 a frame-synchronized, container-relative draggable ratio. Closing a leaf
 collapses its parent split; closing a multi-leaf group requires confirmation.
 The group model is reconciled with the server terminal list, so externally
 closed PTYs disappear and newly discovered PTYs become singleton groups.
+The compact toolbar is the only Terminal header; split leaves contain xterm content
+directly, while the navigator owns activation, group reordering, renaming, and
+leaf closure. Clean, unsignaled exits are deleted automatically and collapse the
+remaining split tree, while abnormal exits remain available for inspection and
+restart.
 
 `TerminalView` treats the browser socket as an attachment rather than process
 ownership. `TerminalManager` retains exited sessions until explicit close and
@@ -155,6 +172,8 @@ server or Pod restart.
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, `kubecode_terminal_closed`,
 `kubecode_terminal_restarted`, `kubecode_terminal_renamed`,
+`kubecode_terminal_auto_closed`, `kubecode_terminal_navigator_toggled`,
+`kubecode_panel_toggled`,
 `kubecode_session_created`, `kubecode_agent_session_imported`,
 `kubecode_session_renamed`, `kubecode_session_removed`,
 `kubecode_agent_session_forked`, `kubecode_agent_run_started`,

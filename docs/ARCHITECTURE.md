@@ -40,16 +40,27 @@ The active server boundary currently consists of five Rust abstractions:
 
 The active React entry point is `src/kubecode/App.tsx`. Its structure follows
 OpenCode Web: a fixed Project rail, a resizable Session sidebar, the primary
-Agent Session timeline/composer, a tabbed Review/Files/CodeMirror context pane,
+Agent Session timeline/composer, a tabbed Changes/Files/CodeMirror context pane,
 and a folded-by-default Terminal dock spanning the Session and context columns. Files opened from
-the tree or Review stay in the right context pane, so editing never replaces the
-Session. Terminal tabs represent groups, while each group owns a recursive split
-tree of independent PTYs. A terminal leaf can be a shell or the native Claude Code,
+the lazy Project-rooted file tree or Changes stay in the right context pane, so
+editing never replaces the Session. The top-right layout control shows and toggles
+the Session sidebar, Terminal dock, and context sidebar as one stateful group.
+When more than one PTY exists, Terminal instances appear in a flat vertical list
+on the dock's right edge; members of a split group receive `┌ / ├ / └` annotations
+instead of a duplicate parent row. With one PTY the list hides and the toolbar shows
+the active title. At narrow list width, the list becomes icon-only and the toolbar
+also carries the active title. The toolbar never becomes a second tab strip. Each
+group owns a recursive split tree of independent PTYs. A terminal leaf can be a shell or the native Claude Code,
 Codex, or OpenCode TUI profile; split-right and split-down inherit the active
-leaf's profile. Group order, split ratios, and active leaves persist per Project
+leaf's profile. Split leaves have no secondary headers; all instance actions live
+in the single dock toolbar or the resizable instance list. The list snaps between
+a 46px compact state and a text state of at least 80px. Group order, split ratios,
+active leaves, and navigator width persist per Project
 in browser storage. A bounded serialized xterm snapshot restores visible output
 and scroll position immediately after browser refresh while the server cursor
-replays any newer bytes.
+replays any newer bytes. A clean shell exit is explicitly closed and removed from
+its group; the final clean exit folds the dock. Non-zero or signaled exits remain
+visible with their status and Restart action.
 `ResizeHandle` updates all movable boundaries at animation-frame cadence, and
 only small usability minimums constrain the otherwise free dimensions. Browser
 code uses `KubecodeApi`, which derives every HTTP, SSE, and WebSocket route from

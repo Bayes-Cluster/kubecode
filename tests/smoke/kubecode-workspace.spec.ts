@@ -19,11 +19,13 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.getByRole('button', { name: 'New file' }).click()
   await page.getByRole('textbox', { name: 'Relative path' }).fill('main.py')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await page.getByRole('button', { name: 'main.py' }).click()
+  await page.getByRole('treeitem', { name: 'main.py' }).click()
   await expect(page.locator('.cm-editor')).toBeVisible()
 
   await page.getByRole('button', { name: 'Toggle terminal' }).click()
-  await expect(page.getByRole('tab', { name: 'Terminal 1' })).toBeVisible()
+  await expect(page.getByRole('tree', { name: 'Terminal' })).toHaveCount(0)
+  await expect(page.locator('.kubecode-terminal-toolbar [role="tab"]')).toHaveCount(0)
+  await expect(page.locator('.kubecode-terminal-toolbar')).toContainText('Terminal 1')
   await expect(page.locator('.xterm')).toBeVisible()
 
   const agents = await page.evaluate(async () => {
@@ -62,6 +64,25 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Split terminal right' }).click()
   await expect(page.locator('.kubecode-terminal-leaf')).toHaveCount(2)
+  await expect(page.getByRole('tree', { name: 'Terminal' }).getByRole('treeitem')).toHaveCount(2)
+  await expect(page.locator('.kubecode-terminal-toolbar')).not.toContainText('Terminal 1')
+  const terminalNavigator = page.getByRole('tree', { name: 'Terminal' })
+  const navigatorBeforeResize = await terminalNavigator.boundingBox()
+  const navigatorHandle = page.locator('.kubecode-terminal-body > .cursor-col-resize')
+  const navigatorHandleBox = await navigatorHandle.boundingBox()
+  if (!navigatorBeforeResize || !navigatorHandleBox) throw new Error('terminal navigator resize handle is not visible')
+  await page.mouse.move(navigatorHandleBox.x + 1, navigatorHandleBox.y + navigatorHandleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(navigatorHandleBox.x - 40, navigatorHandleBox.y + navigatorHandleBox.height / 2)
+  await page.mouse.up()
+  await expect.poll(async () => (await terminalNavigator.boundingBox())?.width).toBeGreaterThan(navigatorBeforeResize.width)
+
+  const navigatorToggle = page.getByRole('button', { name: 'Collapse' })
+  await navigatorToggle.click()
+  await expect(terminalNavigator).toHaveAttribute('data-narrow', 'true')
+  await expect(terminalNavigator).toHaveCSS('width', '46px')
+  await navigatorToggle.click()
+  await expect(terminalNavigator).toHaveCSS('width', '120px')
   const firstPane = page.locator('.kubecode-terminal-split-child').first()
   await expect(firstPane).toHaveAttribute('style', /50%/)
   const handle = page.locator('.kubecode-terminal-split > .cursor-col-resize').first()
@@ -72,4 +93,19 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.mouse.move(box.x + 100, box.y + box.height / 2)
   await page.mouse.up()
   await expect(firstPane).not.toHaveAttribute('style', /50%/)
+
+  await page.getByRole('tab', { name: 'Files' }).click()
+  if (process.env.QA_SCREENSHOT) {
+    await page.screenshot({ path: process.env.QA_SCREENSHOT, fullPage: true })
+  }
+
+  await page.locator('.xterm-helper-textarea').last().focus()
+  await page.keyboard.type('exit')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.kubecode-terminal-leaf')).toHaveCount(1)
+
+  await page.locator('.xterm-helper-textarea').first().focus()
+  await page.keyboard.type('exit')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'false')
 })

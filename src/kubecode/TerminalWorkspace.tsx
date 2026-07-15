@@ -10,33 +10,26 @@ import {
 } from '@dnd-kit/core'
 import {
   arrayMove,
-  horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
   CaretDown,
   Plus,
+  SidebarSimple,
   SplitHorizontal,
   SplitVertical,
   TerminalWindow,
+  Trash,
   X,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { ResizeHandle } from '@/components/ResizeHandle'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +78,12 @@ const agentKinds: Array<{ id: AgentId; kind: TerminalKind; label: string }> = [
   { id: 'opencode', kind: 'opencode', label: 'OpenCode' },
 ]
 
+const TERMINAL_NAVIGATOR_NARROW = 46
+const TERMINAL_NAVIGATOR_WIDE_MINIMUM = 80
+const TERMINAL_NAVIGATOR_DEFAULT = 120
+const TERMINAL_NAVIGATOR_MIDPOINT = 63
+const TERMINAL_NAVIGATOR_MAXIMUM = 500
+
 export function TerminalWorkspace({
   agents,
   api,
@@ -101,10 +100,14 @@ export function TerminalWorkspace({
   ))
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [closingGroupId, setClosingGroupId] = useState<string | null>(null)
+  const [navigatorWidth, setNavigatorWidth] = useState(() => readTerminalNavigatorLayout(projectId).width)
   const sequence = useRef(0)
+  const hadTerminal = useRef(initialTerminals.length > 0)
+  const body = useRef<HTMLDivElement>(null)
   const activeGroup = workspace.groups.find((group) => group.id === workspace.activeGroupId) ?? null
   const activeTerminal = terminals.find((terminal) => terminal.id === activeGroup?.activeTerminalId) ?? null
+  const navigatorVisible = terminals.length > 1
+  const navigatorNarrow = navigatorWidth < TERMINAL_NAVIGATOR_MIDPOINT
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -113,9 +116,23 @@ export function TerminalWorkspace({
   useEffect(() => writeTerminalWorkspace(projectId, workspace), [projectId, workspace])
 
   useEffect(() => {
+    writeTerminalNavigatorLayout(projectId, { width: navigatorWidth })
+  }, [navigatorWidth, projectId])
+
+  useEffect(() => {
     setTerminals(initialTerminals)
     setWorkspace((current) => reconcileTerminalWorkspace(current, initialTerminals))
   }, [initialTerminals])
+
+  useEffect(() => {
+    if (terminals.length > 0) {
+      hadTerminal.current = true
+      return
+    }
+    if (!hadTerminal.current || workspace.groups.length > 0) return
+    hadTerminal.current = false
+    onCollapse?.()
+  }, [onCollapse, terminals.length, workspace.groups.length])
 
   const create = useCallback(async (
     kind: TerminalKind,
@@ -178,32 +195,6 @@ export function TerminalWorkspace({
     }
   }, [api, onCollapse, projectId, terminals.length])
 
-  const closeGroup = useCallback(async (groupId: string) => {
-    const group = workspace.groups.find((item) => item.id === groupId)
-    if (!group) return
-    setError(null)
-    try {
-      const ids = terminalIds(group.layout)
-      await Promise.all(ids.map((terminalId) => api.closeTerminal(terminalId)))
-      ids.forEach((terminalId) => removeTerminalSnapshot(projectId, terminalId))
-      setTerminals((current) => current.filter((terminal) => !ids.includes(terminal.id)))
-      setWorkspace((current) => removeGroup(current, groupId))
-      setClosingGroupId(null)
-      trackEvent('kubecode_terminal_closed', { scope: 'group' })
-      if (ids.length === terminals.length) onCollapse?.()
-    } catch (cause) {
-      setError(errorMessage(cause))
-    }
-  }, [api, onCollapse, projectId, terminals.length, workspace.groups])
-
-  const requestCloseGroup = (group: TerminalGroup) => {
-    if (terminalIds(group.layout).length === 1) {
-      void closeGroup(group.id)
-      return
-    }
-    setClosingGroupId(group.id)
-  }
-
   const restart = useCallback(async (terminal: TerminalInfo) => {
     setError(null)
     try {
@@ -257,31 +248,33 @@ export function TerminalWorkspace({
     setTerminals((current) => current.map((terminal) => terminal.id === updated.id ? updated : terminal))
   }, [])
 
+  const resizeNavigator = useCallback((delta: number) => {
+    setNavigatorWidth((current) => resizeTerminalNavigator(
+      current,
+      delta,
+      Math.min(TERMINAL_NAVIGATOR_MAXIMUM, Math.max(
+        TERMINAL_NAVIGATOR_WIDE_MINIMUM,
+        (body.current?.clientWidth ?? 420) - 120,
+      )),
+    ))
+  }, [])
+
+  const toggleNavigator = () => {
+    const next = navigatorNarrow ? TERMINAL_NAVIGATOR_DEFAULT : TERMINAL_NAVIGATOR_NARROW
+    setNavigatorWidth(next)
+    trackEvent('kubecode_terminal_navigator_toggled', { next_state: navigatorNarrow ? 'wide' : 'narrow' })
+  }
+
   return (
     <div className="kubecode-terminal-workspace" data-open={open}>
       <div className="kubecode-terminal-toolbar">
-        <TerminalWindow className="kubecode-terminal-toolbar-icon" />
-        <DndContext collisionDetection={closestCenter} onDragEnd={dragGroup} sensors={sensors}>
-          <SortableContext
-            items={workspace.groups.map((group) => group.id)}
-            strategy={horizontalListSortingStrategy}
-          >
-            <div className="kubecode-terminal-tabs" role="tablist">
-              {workspace.groups.map((group) => (
-                <TerminalGroupTab
-                  active={group.id === workspace.activeGroupId}
-                  group={group}
-                  key={group.id}
-                  onActivate={() => setWorkspace((current) => ({ ...current, activeGroupId: group.id }))}
-                  onClose={() => requestCloseGroup(group)}
-                  onRename={rename}
-                  t={t}
-                  terminals={terminals}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <strong className="kubecode-terminal-toolbar-title">{t('kubecode.terminal')}</strong>
+        {activeTerminal && (!navigatorVisible || navigatorNarrow) && (
+          <div className="kubecode-terminal-active-profile" title={activeTerminal.title}>
+            <TerminalKindIcon kind={activeTerminal.kind} />
+            <span>{activeTerminal.title}</span>
+          </div>
+        )}
         <div className="kubecode-terminal-toolbar-actions">
           <Button
             aria-label={t('kubecode.newTerminal')}
@@ -311,141 +304,247 @@ export function TerminalWorkspace({
             size="icon-xs"
             variant="ghost"
             onClick={() => activeTerminal && void closeLeaf(activeTerminal.id)}
-          ><X /></Button>
-          <Button
-            aria-label={t('kubecode.collapse')}
-            size="icon-xs"
-            variant="ghost"
-            onClick={onCollapse}
-          ><CaretDown /></Button>
+          ><Trash /></Button>
+          {navigatorVisible && (
+            <Button
+              aria-label={t('kubecode.collapse')}
+              aria-pressed={!navigatorNarrow}
+              size="icon-xs"
+              variant="ghost"
+              onClick={toggleNavigator}
+            ><SidebarSimple /></Button>
+          )}
         </div>
       </div>
       {error && <div className="kubecode-terminal-error" role="alert">{error}</div>}
-      {activeGroup ? (
-        <TerminalLayoutView
-          activeTerminalId={activeGroup.activeTerminalId}
-          api={api}
-          layout={activeGroup.layout}
-          onActivate={activateLeaf}
-          onClose={closeLeaf}
-          onResizeSplit={(splitId, ratio) => setWorkspace((current) => ({
-            ...current,
-            groups: current.groups.map((group) => group.id === activeGroup.id
-              ? { ...group, layout: updateSplitRatio(group.layout, splitId, ratio) }
-              : group),
-          }))}
-          onRestart={restart}
-          onStatus={updateStatus}
-          projectId={projectId}
-          showLeafHeaders={terminalIds(activeGroup.layout).length > 1}
-          terminals={terminals}
-          t={t}
-          visible={open}
-        />
-      ) : (
-        <div className="kubecode-empty-small">{creating ? t('kubecode.loading') : t('kubecode.newTerminal')}</div>
-      )}
-      <Dialog open={closingGroupId !== null} onOpenChange={(next) => !next && setClosingGroupId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.closeTerminalGroup')}</DialogTitle>
-            <DialogDescription>{t('kubecode.closeTerminalGroupDescription')}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('common.cancel')}</Button></DialogClose>
-            <Button variant="destructive" onClick={() => closingGroupId && void closeGroup(closingGroupId)}>
-              {t('kubecode.closeTerminalGroup')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="kubecode-terminal-body" ref={body}>
+        <div className="kubecode-terminal-canvas">
+          {activeGroup ? (
+            <TerminalLayoutView
+              activeTerminalId={activeGroup.activeTerminalId}
+              api={api}
+              layout={activeGroup.layout}
+              onActivate={activateLeaf}
+              onResizeSplit={(splitId, ratio) => setWorkspace((current) => ({
+                ...current,
+                groups: current.groups.map((group) => group.id === activeGroup.id
+                  ? { ...group, layout: updateSplitRatio(group.layout, splitId, ratio) }
+                  : group),
+              }))}
+              onRestart={restart}
+              onStatus={updateStatus}
+              projectId={projectId}
+              terminals={terminals}
+              t={t}
+              visible={open}
+            />
+          ) : (
+            <div className="kubecode-empty-small">
+              {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
+            </div>
+          )}
+        </div>
+        {navigatorVisible && (
+          <>
+            <ResizeHandle
+              onDoubleClick={() => setNavigatorWidth((current) => current < TERMINAL_NAVIGATOR_MIDPOINT
+                ? TERMINAL_NAVIGATOR_DEFAULT
+                : TERMINAL_NAVIGATOR_NARROW)}
+              onResize={resizeNavigator}
+            />
+            <DndContext collisionDetection={closestCenter} onDragEnd={dragGroup} sensors={sensors}>
+              <SortableContext
+                items={workspace.groups.map((group) => group.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div
+                  aria-label={t('kubecode.terminal')}
+                  className="kubecode-terminal-navigator"
+                  data-narrow={navigatorNarrow}
+                  role="tree"
+                  style={{ width: navigatorWidth }}
+                >
+                  {workspace.groups.map((group) => (
+                    <TerminalNavigatorGroup
+                      activeTerminalId={activeTerminal?.id ?? null}
+                      group={group}
+                      key={group.id}
+                      onActivate={activateLeaf}
+                      onCloseTerminal={(terminalId) => void closeLeaf(terminalId)}
+                      onRename={rename}
+                      t={t}
+                      terminals={terminals}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
-function TerminalGroupTab({
-  active,
+function TerminalNavigatorGroup({
+  activeTerminalId,
   group,
   onActivate,
-  onClose,
+  onCloseTerminal,
   onRename,
   t,
   terminals,
 }: {
-  active: boolean
+  activeTerminalId: string | null
   group: TerminalGroup
-  onActivate: () => void
-  onClose: () => void
+  onActivate: (terminalId: string) => void
+  onCloseTerminal: (terminalId: string) => void
   onRename: (terminalId: string, title: string) => Promise<void>
   t: (key: TranslationKey, values?: TranslationValues) => string
   terminals: TerminalInfo[]
 }) {
-  const [editing, setEditing] = useState(false)
-  const activeTerminal = terminals.find((terminal) => terminal.id === group.activeTerminalId)
-  const [title, setTitle] = useState(activeTerminal?.title ?? '')
-  const count = terminalIds(group.layout).length
+  const ids = terminalIds(group.layout)
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: group.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
 
+  return (
+    <div
+      className="kubecode-terminal-navigator-group"
+      ref={setNodeRef}
+      role="none"
+      style={style}
+    >
+      {ids.map((terminalId, index) => {
+        const terminal = terminals.find((item) => item.id === terminalId)
+        return terminal ? (
+          <TerminalNavigatorLeaf
+            active={terminalId === activeTerminalId}
+            dragAttributes={index === 0 ? attributes : undefined}
+            dragListeners={index === 0 ? listeners : undefined}
+            key={terminalId}
+            onActivate={() => onActivate(terminalId)}
+            onClose={() => onCloseTerminal(terminalId)}
+            onRename={onRename}
+            prefix={terminalSplitPrefix(index, ids.length)}
+            t={t}
+            terminal={terminal}
+          />
+        ) : null
+      })}
+    </div>
+  )
+}
+
+function TerminalNavigatorLeaf({
+  active,
+  dragAttributes,
+  dragListeners,
+  onActivate,
+  onClose,
+  onRename,
+  prefix,
+  t,
+  terminal,
+}: {
+  active: boolean
+  dragAttributes?: ReturnType<typeof useSortable>['attributes']
+  dragListeners?: ReturnType<typeof useSortable>['listeners']
+  onActivate: () => void
+  onClose: () => void
+  onRename: (terminalId: string, title: string) => Promise<void>
+  prefix: string
+  t: (key: TranslationKey, values?: TranslationValues) => string
+  terminal: TerminalInfo
+}) {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(terminal.title)
   const save = async () => {
     const next = title.trim()
-    if (activeTerminal && next && next !== activeTerminal.title) await onRename(activeTerminal.id, next)
+    if (next && next !== terminal.title) await onRename(terminal.id, next)
     setEditing(false)
   }
 
   return (
-    <div
-      className="kubecode-terminal-group-tab-shell"
-      data-active={active}
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-    >
+    <div className="kubecode-terminal-navigator-row-shell" data-active={active}>
       {editing ? (
-        <div className="kubecode-terminal-group-tab kubecode-terminal-group-tab-editing">
-        <TerminalKindIcon kind={activeTerminal?.kind ?? 'regular'} />
-        <Input
-          aria-label={t('kubecode.terminalTitle')}
-          autoFocus
-          value={title}
-          onBlur={() => void save()}
-          onChange={(event) => setTitle(event.target.value)}
-          onKeyDown={(event) => {
-            event.stopPropagation()
-            if (event.key === 'Enter') void save()
-            if (event.key === 'Escape') setEditing(false)
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
+        <TerminalNavigatorEditor
+          kind={terminal.kind}
+          onCancel={() => setEditing(false)}
+          onChange={setTitle}
+          onSave={save}
+          prefix={prefix}
+          t={t}
+          title={title}
         />
-        {count > 1 && <small>{count}</small>}
-        </div>
       ) : (
         <Button
+          {...dragAttributes}
+          {...dragListeners}
           aria-selected={active}
-          className="kubecode-terminal-group-tab"
-          role="tab"
+          className="kubecode-terminal-navigator-row"
+          data-active={active}
+          role="treeitem"
           size="xs"
-          variant={active ? 'secondary' : 'ghost'}
+          variant="ghost"
           onClick={onActivate}
           onDoubleClick={() => {
-            setTitle(activeTerminal?.title ?? '')
+            setTitle(terminal.title)
             setEditing(true)
           }}
         >
-          <TerminalKindIcon kind={activeTerminal?.kind ?? 'regular'} />
-          <span>{activeTerminal?.title ?? t('kubecode.terminal')}</span>
-          {count > 1 && <small>{count}</small>}
+          {prefix && <span className="kubecode-terminal-split-prefix">{prefix}</span>}
+          <TerminalKindIcon kind={terminal.kind} />
+          <span className="kubecode-terminal-navigator-title">{terminal.title}</span>
         </Button>
       )}
-      <Button
-        aria-label={t('kubecode.closeTerminalGroup')}
-        className="kubecode-terminal-tab-close"
-        size="icon-xs"
-        variant="ghost"
-        onClick={(event) => { event.stopPropagation(); onClose() }}
+      {!editing && (
+        <Button
+          aria-label={t('kubecode.closeTerminal')}
+          className="kubecode-terminal-navigator-close"
+          size="icon-xs"
+          variant="ghost"
+          onClick={(event) => { event.stopPropagation(); onClose() }}
+          onPointerDown={(event) => event.stopPropagation()}
+        ><X /></Button>
+      )}
+    </div>
+  )
+}
+
+function TerminalNavigatorEditor({
+  kind,
+  onCancel,
+  onChange,
+  onSave,
+  prefix,
+  t,
+  title,
+}: {
+  kind: TerminalKind
+  onCancel: () => void
+  onChange: (value: string) => void
+  onSave: () => Promise<void>
+  prefix: string
+  t: (key: TranslationKey, values?: TranslationValues) => string
+  title: string
+}) {
+  return (
+    <div className="kubecode-terminal-navigator-editor">
+      {prefix && <span className="kubecode-terminal-split-prefix">{prefix}</span>}
+      <TerminalKindIcon kind={kind} />
+      <Input
+        aria-label={t('kubecode.terminalTitle')}
+        autoFocus
+        value={title}
+        onBlur={() => void onSave()}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Enter') void onSave()
+          if (event.key === 'Escape') onCancel()
+        }}
         onPointerDown={(event) => event.stopPropagation()}
-      ><X /></Button>
+      />
     </div>
   )
 }
@@ -493,12 +592,10 @@ function TerminalLayoutView({
   api,
   layout,
   onActivate,
-  onClose,
   onResizeSplit,
   onRestart,
   onStatus,
   projectId,
-  showLeafHeaders,
   terminals,
   t,
   visible,
@@ -507,12 +604,10 @@ function TerminalLayoutView({
   api: KubecodeApi
   layout: TerminalLayout
   onActivate: (terminalId: string) => void
-  onClose: (terminalId: string) => Promise<void>
   onResizeSplit: (splitId: string, ratio: number) => void
   onRestart: (terminal: TerminalInfo) => Promise<void>
   onStatus: (terminal: TerminalInfo) => void
   projectId: string
-  showLeafHeaders: boolean
   terminals: TerminalInfo[]
   t: (key: TranslationKey, values?: TranslationValues) => string
   visible: boolean
@@ -527,21 +622,8 @@ function TerminalLayoutView({
         data-status={terminal.status}
         onMouseDown={() => onActivate(layout.terminalId)}
       >
-        {showLeafHeaders && (
-          <div className="kubecode-terminal-leaf-header">
-            <TerminalKindIcon kind={terminal.kind} />
-            <span>{terminal.title}</span>
-            {terminal.status === 'exited' && <small>{t('kubecode.terminalExited')}</small>}
-            {terminal.status === 'exited' && (
-              <Button size="xs" variant="ghost" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
-            )}
-            <Button aria-label={t('kubecode.closeTerminal')} size="icon-xs" variant="ghost" onClick={() => void onClose(terminal.id)}>
-              <X />
-            </Button>
-          </div>
-        )}
         <TerminalView api={api} onStatus={onStatus} projectId={projectId} terminal={terminal} visible={visible} />
-        {terminal.status === 'exited' && !showLeafHeaders && (
+        {terminal.status === 'exited' && (
           <div className="kubecode-terminal-exited">
             <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
             <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
@@ -556,12 +638,10 @@ function TerminalLayoutView({
       api={api}
       layout={layout}
       onActivate={onActivate}
-      onClose={onClose}
       onResizeSplit={onResizeSplit}
       onRestart={onRestart}
       onStatus={onStatus}
       projectId={projectId}
-      showLeafHeaders={showLeafHeaders}
       t={t}
       terminals={terminals}
       visible={visible}
@@ -627,18 +707,6 @@ function removeTerminalFromWorkspace(
   return { ...workspace, activeGroupId, groups }
 }
 
-function removeGroup(
-  workspace: StoredTerminalWorkspaceV2,
-  groupId: string,
-): StoredTerminalWorkspaceV2 {
-  const groups = workspace.groups.filter((group) => group.id !== groupId)
-  return {
-    ...workspace,
-    activeGroupId: workspace.activeGroupId === groupId ? groups[0]?.id ?? null : workspace.activeGroupId,
-    groups,
-  }
-}
-
 function uniqueId(prefix: string, sequence: { current: number }): string {
   sequence.current += 1
   return `${prefix}-${Date.now()}-${sequence.current}`
@@ -650,4 +718,44 @@ function errorMessage(cause: unknown): string {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value))
+}
+
+type TerminalNavigatorLayout = { width: number }
+
+function readTerminalNavigatorLayout(projectId: string): TerminalNavigatorLayout {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`kubecode:terminal-navigator:${projectId}`) ?? '{}') as {
+      width?: unknown
+    }
+    return {
+      width: typeof stored.width === 'number' && Number.isFinite(stored.width)
+        ? clamp(stored.width, TERMINAL_NAVIGATOR_NARROW, TERMINAL_NAVIGATOR_MAXIMUM)
+        : TERMINAL_NAVIGATOR_DEFAULT,
+    }
+  } catch {
+    return { width: TERMINAL_NAVIGATOR_DEFAULT }
+  }
+}
+
+function terminalSplitPrefix(index: number, count: number): string {
+  if (count < 2) return ''
+  if (index === 0) return '┌'
+  return index === count - 1 ? '└' : '├'
+}
+
+function resizeTerminalNavigator(current: number, delta: number, maximum: number): number {
+  if (current < TERMINAL_NAVIGATOR_MIDPOINT && delta < 0) {
+    return clamp(Math.max(TERMINAL_NAVIGATOR_WIDE_MINIMUM, current - delta), TERMINAL_NAVIGATOR_WIDE_MINIMUM, maximum)
+  }
+  const next = current - delta
+  if (next < TERMINAL_NAVIGATOR_WIDE_MINIMUM) return TERMINAL_NAVIGATOR_NARROW
+  return clamp(next, TERMINAL_NAVIGATOR_WIDE_MINIMUM, maximum)
+}
+
+function writeTerminalNavigatorLayout(projectId: string, layout: TerminalNavigatorLayout): void {
+  try {
+    localStorage.setItem(`kubecode:terminal-navigator:${projectId}`, JSON.stringify(layout))
+  } catch {
+    // Restricted browser contexts can disable local storage.
+  }
 }

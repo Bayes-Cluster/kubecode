@@ -136,7 +136,10 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New session' })).toBeInTheDocument()
     expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Review' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Files' })).toBeInTheDocument()
     expect(screen.queryByText('Select a file to start editing')).not.toBeInTheDocument()
   })
@@ -230,6 +233,54 @@ describe('Kubecode workspace', () => {
     }
   })
 
+  it('closes a terminal after a clean shell exit event', async () => {
+    const originalEventSource = globalThis.EventSource
+    class TerminalEventSource {
+      static current: TerminalEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+
+      constructor() { TerminalEventSource.current = this }
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      close() {}
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent('workspace_event', { data: JSON.stringify(event) }))
+      }
+    }
+    globalThis.EventSource = TerminalEventSource as unknown as typeof EventSource
+    const closeTerminal = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      closeTerminal,
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([terminal('terminal-1')]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await screen.findByRole('button', { name: 'Demo' })
+      act(() => TerminalEventSource.current?.emit({
+        id: 1,
+        kind: 'terminal_exited',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { terminal_id: 'terminal-1', status: 'exited', exit_code: 0, signal: null },
+        created_at: 'now',
+      }))
+
+      await waitFor(() => expect(closeTerminal).toHaveBeenCalledWith('terminal-1'))
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
   it('creates sessions only from available agents and resizes session, context, and terminal panes', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([
@@ -261,6 +312,7 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('0px')
     fireEvent.click(screen.getByRole('button', { name: 'Toggle terminal' }))
+    expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'true')
     const handles = container.querySelectorAll('.cursor-col-resize')
     expect(handles).toHaveLength(2)
     const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement

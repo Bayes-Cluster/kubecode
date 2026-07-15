@@ -3,14 +3,11 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  CaretLeft,
   Folder,
   Gear,
   MagnifyingGlass,
   Plus,
   Question,
-  SidebarSimple,
-  TerminalWindow,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -163,6 +160,23 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         && event.project_id === projectId && projectId) {
         void api.listConversations(projectId).then(setConversations)
       }
+      if (isCleanTerminalExit(event)) {
+        const terminalId = event.payload.terminal_id
+        if (typeof terminalId === 'string') {
+          void api.closeTerminal(terminalId)
+            .then(() => trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' }))
+            .then(() => event.project_id === projectId && projectId
+              ? api.listTerminals(projectId).then(setTerminals)
+              : undefined)
+            .catch((cause: unknown) => {
+              setError(errorMessage(cause, t('kubecode.error')))
+              return event.project_id === projectId && projectId
+                ? api.listTerminals(projectId).then(setTerminals)
+                : undefined
+            })
+        }
+        return
+      }
       if (['terminal_created', 'terminal_updated', 'terminal_exited', 'terminal_closed'].includes(event.kind)
         && event.project_id === projectId && projectId) {
         void api.listTerminals(projectId).then(setTerminals)
@@ -198,9 +212,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     <main className="kubecode-app">
       <header className="kubecode-topbar">
         <div className="kubecode-history-controls">
-          <Button aria-label={t('kubecode.toggleSessions')} size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => !open)}>
-            <SidebarSimple />
-          </Button>
           <Button aria-label={t('kubecode.back')} disabled size="icon-xs" variant="ghost"><ArrowLeft /></Button>
           <Button aria-label={t('kubecode.forward')} disabled size="icon-xs" variant="ghost"><ArrowRight /></Button>
         </div>
@@ -211,11 +222,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         </div>
         <div className="kubecode-topbar-actions">
           {error && <span className="kubecode-topbar-error" title={error}>!</span>}
-          <Button aria-label={t('kubecode.toggleTerminal')} size="icon-xs" variant={terminalOpen ? 'secondary' : 'ghost'} onClick={() => setTerminalOpen((open) => !open)}>
-            <TerminalWindow />
+          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
+            <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
           </Button>
-          <Button aria-label={t('kubecode.toggleContext')} size="icon-xs" variant={contextOpen ? 'secondary' : 'ghost'} onClick={() => setContextOpen((open) => !open)}>
-            <SidebarSimple className="scale-x-[-1]" />
+          <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setTerminalOpen((open) => togglePanel('terminal', open))}>
+            <PanelToggleIcon active={terminalOpen} panel="bottom" />
+          </Button>
+          <Button aria-label={t('kubecode.toggleContext')} aria-pressed={contextOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setContextOpen((open) => togglePanel('context', open))}>
+            <PanelToggleIcon active={contextOpen} panel="right" />
           </Button>
         </div>
       </header>
@@ -253,7 +267,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                   <strong>{project?.name ?? t('kubecode.appName')}</strong>
                   <span>{project?.path ?? t('kubecode.selectProject')}</span>
                 </div>
-                <Button aria-label={t('kubecode.collapse')} size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen(false)}><CaretLeft /></Button>
               </div>
               <Button className="kubecode-new-session" disabled={!projectId} variant="outline" onClick={() => setSessionDialog(true)}>
                 <Plus /> {t('kubecode.newSession')}
@@ -311,6 +324,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 <ContextWorkbench
                   api={api}
                   key={projectId}
+                  projectName={project?.name ?? undefined}
                   projectId={projectId}
                   t={t}
                   width={contextWidth}
@@ -796,6 +810,32 @@ function agentName(id: AgentId): string {
 
 function projectInitial(name: string): string {
   return [...name.trim()][0]?.toUpperCase() ?? 'P'
+}
+
+function PanelToggleIcon({
+  active,
+  panel,
+}: {
+  active: boolean
+  panel: 'left' | 'bottom' | 'right'
+}) {
+  return (
+    <span className="kubecode-panel-toggle-icon" data-active={active} data-panel={panel}>
+      <span />
+    </span>
+  )
+}
+
+function togglePanel(panel: 'sessions' | 'terminal' | 'context', open: boolean): boolean {
+  const nextOpen = !open
+  trackEvent('kubecode_panel_toggled', { next_state: nextOpen ? 'open' : 'closed', panel })
+  return nextOpen
+}
+
+function isCleanTerminalExit(event: WorkspaceEvent): boolean {
+  return event.kind === 'terminal_exited'
+    && event.payload.exit_code === 0
+    && event.payload.signal === null
 }
 
 function availableWidth(element: HTMLElement | null): number {

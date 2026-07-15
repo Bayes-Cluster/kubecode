@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TerminalWorkspace } from './TerminalWorkspace'
@@ -26,7 +26,7 @@ describe('TerminalWorkspace', () => {
       closeTerminal: vi.fn().mockResolvedValue(undefined),
     } as unknown as KubecodeApi
 
-    render(
+    const { container } = render(
       <TerminalWorkspace
         agents={agents}
         api={api}
@@ -52,6 +52,8 @@ describe('TerminalWorkspace', () => {
     })
     expect(screen.getByTestId('terminal-codex-1')).toBeInTheDocument()
     expect(document.querySelector('img[src="./ai-agent-icons/codex.svg"]')).toBeInTheDocument()
+    expect(container.querySelector('.kubecode-terminal-toolbar')).toHaveTextContent('Codex')
+    expect(screen.queryByRole('tree', { name: 'kubecode.terminal' })).not.toBeInTheDocument()
   })
 
   it('splits the active terminal right and down without fixed proportions', async () => {
@@ -78,6 +80,8 @@ describe('TerminalWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.splitRight' }))
     await screen.findByTestId('terminal-terminal-2')
     expect(screen.getAllByTestId(/^terminal-terminal-/)).toHaveLength(2)
+    expect(within(screen.getByRole('tree', { name: 'kubecode.terminal' })).getAllByRole('treeitem'))
+      .toHaveLength(2)
     expect(api.createTerminal).toHaveBeenLastCalledWith('project-1', 'codex', 100, 28)
     expect(container.querySelector('[data-split-direction="horizontal"]')).toBeInTheDocument()
 
@@ -119,13 +123,15 @@ describe('TerminalWorkspace', () => {
     const children = container.querySelectorAll('.kubecode-terminal-split-child')
     expect((children[0] as HTMLElement).style.flexBasis).toBe('82%')
     expect((children[1] as HTMLElement).style.flexBasis).toBe('18%')
-    expect(screen.getByRole('tab', { name: /Shell/ })).toHaveAttribute('data-variant', 'secondary')
+    const navigator = screen.getByRole('tree', { name: 'kubecode.terminal' })
+    expect(within(navigator).getByRole('treeitem', { name: /Shell/ })).toHaveAttribute('data-active', 'true')
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })
 
-  it('renames a terminal tab and folds the dock from its own toolbar', async () => {
+  it('renames a terminal from the side navigator', async () => {
     const first = terminal('terminal-1', 'Terminal 1', 'regular')
+    const second = terminal('terminal-2', 'Terminal 2', 'regular')
     const renamed = { ...first, title: 'Build shell' }
-    const onCollapse = vi.fn()
     const api = {
       closeTerminal: vi.fn().mockResolvedValue(undefined),
       createTerminal: vi.fn(),
@@ -136,6 +142,62 @@ describe('TerminalWorkspace', () => {
       <TerminalWorkspace
         agents={agents}
         api={api}
+        initialTerminals={[first, second]}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    fireEvent.doubleClick(screen.getByRole('treeitem', { name: /Terminal 1/ }))
+    const title = screen.getByRole('textbox', { name: 'kubecode.terminalTitle' })
+    fireEvent.change(title, { target: { value: 'Build shell' } })
+    fireEvent.keyDown(title, { key: 'Enter' })
+    await waitFor(() => expect(api.updateTerminal).toHaveBeenCalledWith('terminal-1', 'Build shell'))
+  })
+
+  it('collapses and restores the resizable terminal navigator', () => {
+    const first = terminal('terminal-1', 'Terminal 1', 'regular')
+    const second = terminal('terminal-2', 'Terminal 2', 'regular')
+    const api = {
+      closeTerminal: vi.fn().mockResolvedValue(undefined),
+      createTerminal: vi.fn(),
+    } as unknown as KubecodeApi
+
+    const { container } = render(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
+        initialTerminals={[first, second]}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    const toggle = screen.getByRole('button', { name: 'kubecode.collapse' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '120px' })
+    expect(container.querySelector('.kubecode-terminal-body > .cursor-col-resize')).toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '46px' })
+    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveAttribute('data-narrow', 'true')
+
+    fireEvent.click(toggle)
+    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '120px' })
+  })
+
+  it('folds the dock when its final server terminal disappears', async () => {
+    const first = terminal('terminal-1', 'Terminal 1', 'regular')
+    const onCollapse = vi.fn()
+    const api = {
+      closeTerminal: vi.fn().mockResolvedValue(undefined),
+      createTerminal: vi.fn(),
+    } as unknown as KubecodeApi
+    const { rerender } = render(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
         initialTerminals={[first]}
         onCollapse={onCollapse}
         projectId="project-1"
@@ -143,14 +205,18 @@ describe('TerminalWorkspace', () => {
       />,
     )
 
-    fireEvent.doubleClick(screen.getByRole('tab', { name: /Terminal 1/ }))
-    const title = screen.getByRole('textbox', { name: 'kubecode.terminalTitle' })
-    fireEvent.change(title, { target: { value: 'Build shell' } })
-    fireEvent.keyDown(title, { key: 'Enter' })
-    await waitFor(() => expect(api.updateTerminal).toHaveBeenCalledWith('terminal-1', 'Build shell'))
+    rerender(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
+        initialTerminals={[]}
+        onCollapse={onCollapse}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.collapse' }))
-    expect(onCollapse).toHaveBeenCalledOnce()
+    await waitFor(() => expect(onCollapse).toHaveBeenCalledOnce())
   })
 })
 

@@ -83,6 +83,10 @@ describe('ContextWorkbench', () => {
       width: 440,
     }
     const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Files' }), {
+      button: 0,
+      ctrlKey: false,
+    })
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(1))
 
     rerender(<ContextWorkbench {...props} workspaceEvents={[
@@ -107,10 +111,6 @@ describe('ContextWorkbench', () => {
     ]} />)
 
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(2))
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Files' }), {
-      button: 0,
-      ctrlKey: false,
-    })
     expect(await screen.findByText('new-file.ts')).toBeInTheDocument()
     expect(screen.getByText('new-folder')).toBeInTheDocument()
   })

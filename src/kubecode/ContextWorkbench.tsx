@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft,
+  ArrowClockwise,
   File,
   FileCode,
   Folder,
@@ -23,18 +23,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { TranslationKey } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
+import { ProjectFileTree } from './ProjectFileTree'
 import type {
   Entry,
   GitFileChange,
@@ -50,16 +45,17 @@ type EntryDialogState = { kind: Entry['kind'] } | null
 
 type ContextWorkbenchProps = {
   api: KubecodeApi
+  projectName?: string
   projectId: string | null
   t: Translator
   width: number
   workspaceEvents: WorkspaceEvent[]
 }
 
-export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: ContextWorkbenchProps) {
+export function ContextWorkbench({ api, projectName, projectId, t, width, workspaceEvents }: ContextWorkbenchProps) {
   const [tab, setTab] = useState<ContextTab>('review')
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [directory, setDirectory] = useState('')
+  const [selectedDirectory, setSelectedDirectory] = useState('')
+  const [fileTreeRevision, setFileTreeRevision] = useState(0)
   const [document, setDocument] = useState<TextDocument | null>(null)
   const [draft, setDraft] = useState('')
   const [entryDialog, setEntryDialog] = useState<EntryDialogState>(null)
@@ -68,28 +64,16 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
   const [diff, setDiff] = useState<{ path: string; content: string } | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
-  const entriesRequestRef = useRef(0)
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const dirty = Boolean(document && document.content !== draft)
-
-  const refreshEntries = useCallback(async (path = directory) => {
-    if (!projectId) return
-    const requestId = ++entriesRequestRef.current
-    const nextEntries = await api.listEntries(projectId, path)
-    if (requestId === entriesRequestRef.current) setEntries(nextEntries)
-  }, [api, directory, projectId])
 
   useEffect(() => {
     if (!projectId) {
       return
     }
-    const entriesRequestId = ++entriesRequestRef.current
     let current = true
-    void Promise.all([api.listEntries(projectId), api.gitStatus(projectId)]).then(([nextEntries, status]) => {
-      if (current) {
-        if (entriesRequestId === entriesRequestRef.current) setEntries(nextEntries)
-        setGitStatus(status)
-      }
+    void api.gitStatus(projectId).then((status) => {
+      if (current) setGitStatus(status)
     }).catch((cause: unknown) => {
       if (current) setError(errorMessage(cause, t('kubecode.error')))
     })
@@ -105,30 +89,20 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
       ?? processedWorkspaceEventRef.current
     const filesChanged = nextEvents.some((event) => event.kind === 'file_changed')
     const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
-    if (filesChanged) queueMicrotask(() => void refreshEntries())
+    if (filesChanged) queueMicrotask(() => setFileTreeRevision((current) => current + 1))
     if (filesChanged || gitChanged) {
       void api.gitStatus(projectId).then(setGitStatus)
     }
-  }, [api, projectId, refreshEntries, workspaceEvents])
+  }, [api, projectId, workspaceEvents])
 
   const openEntry = async (entry: Entry) => {
     if (!projectId) return
     setError(null)
-    if (entry.kind === 'directory') {
-      setDirectory(entry.path)
-      await refreshEntries(entry.path)
-      return
-    }
+    if (entry.kind === 'directory') return
     const nextDocument = await api.readFile(projectId, entry.path)
     setDocument(nextDocument)
     setDraft(nextDocument.content)
     setTab('editor')
-  }
-
-  const goBack = async () => {
-    const parent = directory.includes('/') ? directory.slice(0, directory.lastIndexOf('/')) : ''
-    setDirectory(parent)
-    await refreshEntries(parent)
   }
 
   const save = async () => {
@@ -199,13 +173,18 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
 
   const editorName = useMemo(() => document?.path.split('/').at(-1), [document])
 
+  const refreshContext = () => {
+    setFileTreeRevision((current) => current + 1)
+    if (projectId) void api.gitStatus(projectId).then(setGitStatus)
+  }
+
   return (
     <aside className="kubecode-context-workbench" data-testid="context-workbench" style={{ width }}>
       <Tabs className="kubecode-context-tabs" value={tab} onValueChange={(value) => setTab(value as ContextTab)}>
         <div className="kubecode-context-tabbar">
           <TabsList className="h-full gap-0 p-0" variant="line">
-            <TabsTrigger value="review"><GitDiff /> {t('kubecode.review')}</TabsTrigger>
-            <TabsTrigger value="files"><Folder /> {t('kubecode.files')}</TabsTrigger>
+            <TabsTrigger value="review">{t('kubecode.changes')}</TabsTrigger>
+            <TabsTrigger value="files">{t('kubecode.files')}</TabsTrigger>
             {document && (
               <TabsTrigger value="editor">
                 <FileCode /> {editorName}
@@ -214,22 +193,19 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
             )}
             {diff && <TabsTrigger value="diff"><GitDiff /> {diff.path.split('/').at(-1)}</TabsTrigger>}
           </TabsList>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label={t('kubecode.openContext')} size="icon-xs" variant="ghost"><Plus /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setTab('review')}><GitDiff /> {t('kubecode.review')}</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setTab('files')}><Folder /> {t('kubecode.files')}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="kubecode-context-tab-actions">
+            {tab === 'review' && gitStatus?.branch && <span><GitBranch /> {gitStatus.branch}</span>}
+            <Button aria-label={t('kubecode.refresh')} size="icon-xs" variant="ghost" onClick={refreshContext}><ArrowClockwise /></Button>
+            {tab === 'files' && (
+              <>
+                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File /></Button>
+                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder /></Button>
+              </>
+            )}
+          </div>
         </div>
 
         <TabsContent className="kubecode-context-content" value="review">
-          <div className="kubecode-review-toolbar">
-            <strong>{t('kubecode.changes')}</strong>
-            {gitStatus?.branch && <span><GitBranch /> {gitStatus.branch}</span>}
-          </div>
           {!gitStatus?.is_repository ? (
             <div className="kubecode-review-empty">
               <GitDiff size={30} />
@@ -278,31 +254,16 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
         </TabsContent>
 
         <TabsContent className="kubecode-context-content" value="files">
-          <div className="kubecode-files-toolbar">
-            <div className="kubecode-path-label">{directory || projectId || t('kubecode.files')}</div>
-            <div>
-              <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}>
-                <File />
-              </Button>
-              <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}>
-                <Folder />
-              </Button>
-            </div>
-          </div>
-          {directory && (
-            <Button className="kubecode-file-row" variant="ghost" onClick={() => void goBack()}>
-              <ArrowLeft /> {t('kubecode.back')}
-            </Button>
+          {projectId && (
+            <ProjectFileTree
+              api={api}
+              onDirectoryChange={setSelectedDirectory}
+              onOpenFile={(entry) => void openEntry(entry)}
+              projectId={projectId}
+              projectName={projectName ?? projectId}
+              refreshVersion={fileTreeRevision}
+            />
           )}
-          <div className="kubecode-context-file-list">
-            {entries.map((entry) => (
-              <Button className="kubecode-file-row" key={entry.path} variant="ghost" onClick={() => void openEntry(entry)}>
-                {entry.kind === 'directory' ? <Folder /> : <File />}
-                <span>{entry.name}</span>
-              </Button>
-            ))}
-            {projectId && entries.length === 0 && <div className="kubecode-empty-small">{t('kubecode.emptyDirectory')}</div>}
-          </div>
         </TabsContent>
 
         {document && (
@@ -331,11 +292,11 @@ export function ContextWorkbench({ api, projectId, t, width, workspaceEvents }: 
       {error && <div className="kubecode-inline-error">{error}</div>}
       <EntryDialog
         api={api}
-        directory={directory}
+        directory={selectedDirectory}
         projectId={projectId}
         state={entryDialog}
         onOpenChange={(open) => { if (!open) setEntryDialog(null) }}
-        onCreated={() => void refreshEntries()}
+        onCreated={() => setFileTreeRevision((current) => current + 1)}
         t={t}
       />
       <Dialog open={Boolean(discardPath)} onOpenChange={(open) => { if (!open) setDiscardPath(null) }}>
