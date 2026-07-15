@@ -233,6 +233,42 @@ describe('Kubecode workspace', () => {
     }
   })
 
+  it('clears the workspace connection warning after the event stream reconnects', async () => {
+    const originalEventSource = globalThis.EventSource
+    class ReconnectingEventSource {
+      static current: ReconnectingEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      onopen: ((event: Event) => void) | null = null
+
+      constructor() { ReconnectingEventSource.current = this }
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
+
+      act(() => ReconnectingEventSource.current?.onerror?.(new Event('error')))
+      expect(screen.getByRole('status', {
+        name: 'Workspace connection lost. Reconnecting…',
+      })).toBeInTheDocument()
+
+      act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
+      expect(screen.queryByRole('status', {
+        name: 'Workspace connection lost. Reconnecting…',
+      })).not.toBeInTheDocument()
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
   it('closes a terminal after a clean shell exit event', async () => {
     const originalEventSource = globalThis.EventSource
     class TerminalEventSource {

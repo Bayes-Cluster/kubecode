@@ -10,6 +10,7 @@ import {
   removeTerminalSnapshot,
   writeTerminalSnapshot,
 } from './terminalSnapshots'
+import { terminalThemeFromStyles } from './terminalTheme'
 
 type TerminalViewProps = {
   api: KubecodeApi
@@ -56,6 +57,7 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
     if (!container.current) return
     const snapshot = readTerminalSnapshot(projectId, terminal.id)
     let cursor = snapshot?.cursor ?? 0
+    const themeRoot = document.documentElement
     const xterm = new Terminal({
       cursorBlink: true,
       convertEol: true,
@@ -64,7 +66,7 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
       fontFamily: fontFamilyRef.current,
       fontSize: 14,
       scrollback: 10_000,
-      theme: { background: '#171717', foreground: '#e5e5e5' },
+      theme: terminalThemeFromStyles(getComputedStyle(themeRoot)),
     })
     const fit = new FitAddon()
     const serialize = new SerializeAddon()
@@ -110,6 +112,18 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
       }
     })
     resize.observe(container.current)
+    let themeFrame = 0
+    const updateTheme = () => {
+      cancelAnimationFrame(themeFrame)
+      themeFrame = requestAnimationFrame(() => {
+        xterm.options.theme = terminalThemeFromStyles(getComputedStyle(themeRoot))
+      })
+    }
+    const themeObserver = new MutationObserver(updateTheme)
+    themeObserver.observe(themeRoot, {
+      attributeFilter: ['data-kubecode-theme', 'data-theme', 'style'],
+      attributes: true,
+    })
     return () => {
       writeTerminalSnapshot(projectId, terminal.id, {
         buffer: serialize.serialize({ scrollback: 2_000 }),
@@ -118,6 +132,8 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
         rows: xterm.rows,
         scrollY: xterm.buffer.active.viewportY,
       })
+      cancelAnimationFrame(themeFrame)
+      themeObserver.disconnect()
       resize.disconnect()
       input.dispose()
       socket.close()

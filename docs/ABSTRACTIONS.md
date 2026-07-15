@@ -155,9 +155,10 @@ a frame-synchronized, container-relative draggable ratio. Closing a leaf
 collapses its parent split; closing a multi-leaf group requires confirmation.
 The group model is reconciled with the server terminal list, so externally
 closed PTYs disappear and newly discovered PTYs become singleton groups.
-The compact toolbar is the only Terminal header; split leaves contain xterm content
-directly, while the navigator owns activation, group reordering, renaming, and
-leaf closure. Clean, unsignaled exits are deleted automatically and collapse the
+The compact toolbar contains management actions but no Terminal title or profile
+identity. The dock draws only its top boundary; split leaves contain xterm content
+directly and retain their draggable internal dividers, while the navigator owns
+activation, group reordering, renaming, and leaf closure. Clean, unsignaled exits are deleted automatically and collapse the
 remaining split tree, while abnormal exits remain available for inspection and
 restart.
 
@@ -173,7 +174,8 @@ server or Pod restart.
 palette and from UI, code, and Terminal font families. The normalized value is
 stored once under `kubecode:appearance:v1`. Applying it updates semantic theme
 tokens for the React shell and portals; CodeMirror follows a CSS font variable,
-while `TerminalView` applies font changes to the existing xterm instance.
+while `TerminalView` observes the document theme attributes and applies palette
+and font changes to the existing xterm instance without replacing its socket.
 
 Kubecode emits `kubecode_project_registered`, `kubecode_file_saved`,
 `kubecode_terminal_created`, `kubecode_terminal_closed`,

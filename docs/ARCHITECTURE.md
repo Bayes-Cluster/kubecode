@@ -47,9 +47,9 @@ editing never replaces the Session. The top-right layout control shows and toggl
 the Session sidebar, Terminal dock, and context sidebar as one stateful group.
 When more than one PTY exists, Terminal instances appear in a flat vertical list
 on the dock's right edge; members of a split group receive `┌ / ├ / └` annotations
-instead of a duplicate parent row. With one PTY the list hides and the toolbar shows
-the active title. At narrow list width, the list becomes icon-only and the toolbar
-also carries the active title. The toolbar never becomes a second tab strip. Each
+instead of a duplicate parent row. With one PTY the list hides. The dock toolbar
+contains only management actions—never a title, profile icon, or second tab strip—and
+the dock chrome keeps only its top boundary while recursive split handles remain visible. Each
 group owns a recursive split tree of independent PTYs. A terminal leaf can be a shell or the native Claude Code,
 Codex, or OpenCode TUI profile; split-right and split-down inherit the active
 leaf's profile. Split leaves have no secondary headers; all instance actions live
@@ -78,7 +78,8 @@ Kubecode appearance preferences are a browser-local concern. The versioned
 theme, and UI/code/Terminal font families, then exposes them as document-level
 attributes and CSS variables. Color scheme remains independent from the
 OpenCode-compatible theme palette. CodeMirror consumes the code-font variable;
-xterm updates its font option in place so changing fonts does not reconnect a PTY.
+xterm observes the same semantic palette and updates its background, foreground,
+cursor, selection, ANSI colors, and font in place without reconnecting a PTY.
 
 The Project rail loads Project-scoped run snapshots at startup and then folds
 global workspace events into those snapshots. A blue pulse marks a latest

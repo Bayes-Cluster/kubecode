@@ -51,8 +51,8 @@ describe('TerminalWorkspace', () => {
       expect(api.createTerminal).toHaveBeenCalledWith('project-1', 'codex', 100, 28)
     })
     expect(screen.getByTestId('terminal-codex-1')).toBeInTheDocument()
-    expect(document.querySelector('img[src="./ai-agent-icons/codex.svg"]')).toBeInTheDocument()
-    expect(container.querySelector('.kubecode-terminal-toolbar')).toHaveTextContent('Codex')
+    expect(container.querySelector('.kubecode-terminal-toolbar')).toHaveTextContent('')
+    expect(container.querySelector('.kubecode-terminal-toolbar img')).not.toBeInTheDocument()
     expect(screen.queryByRole('tree', { name: 'kubecode.terminal' })).not.toBeInTheDocument()
   })
 

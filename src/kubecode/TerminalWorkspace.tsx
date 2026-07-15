@@ -270,13 +270,6 @@ export function TerminalWorkspace({
   return (
     <div className="kubecode-terminal-workspace" data-open={open}>
       <div className="kubecode-terminal-toolbar">
-        <strong className="kubecode-terminal-toolbar-title">{t('kubecode.terminal')}</strong>
-        {activeTerminal && (!navigatorVisible || navigatorNarrow) && (
-          <div className="kubecode-terminal-active-profile" title={activeTerminal.title}>
-            <TerminalKindIcon kind={activeTerminal.kind} />
-            <span>{activeTerminal.title}</span>
-          </div>
-        )}
         <div className="kubecode-terminal-toolbar-actions">
           <Button
             aria-label={t('kubecode.newTerminal')}

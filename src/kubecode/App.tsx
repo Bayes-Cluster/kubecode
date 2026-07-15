@@ -8,6 +8,7 @@ import {
   MagnifyingGlass,
   Plus,
   Question,
+  WarningCircle,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -79,6 +80,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [contextOpen, setContextOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [connectionLost, setConnectionLost] = useState(false)
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
   const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
@@ -199,7 +201,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       }
     }
     stream.addEventListener('workspace_event', receive as EventListener)
-    stream.onerror = () => setError(t('kubecode.connectionLost'))
+    stream.onopen = () => setConnectionLost(false)
+    stream.onerror = () => setConnectionLost(true)
     return () => stream.close()
   }, [api, projectId, t])
 
@@ -237,7 +240,16 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           <kbd>⌘K</kbd>
         </div>
         <div className="kubecode-topbar-actions">
-          {error && <span className="kubecode-topbar-error" title={error}>!</span>}
+          {(error || connectionLost) && (
+            <span
+              aria-label={error ?? t('kubecode.connectionLost')}
+              className="kubecode-topbar-error"
+              role="status"
+              title={error ?? t('kubecode.connectionLost')}
+            >
+              <WarningCircle weight="fill" />
+            </span>
+          )}
           <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
             <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
           </Button>
