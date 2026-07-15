@@ -9,7 +9,7 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -94,9 +94,27 @@ pub fn app_router_with_static(
         ServeDir::new(static_directory).not_found_service(ServeFile::new(index_file.clone()));
     let application = Router::new()
         .nest(API_PATH, api_router(state))
-        .route_service("/", ServeFile::new(index_file))
         .fallback_service(service);
-    root_router(application, base_path)
+    let base_path = normalize_base_path(base_path);
+    if base_path.is_empty() {
+        root_router(
+            application.route_service("/", ServeFile::new(index_file)),
+            &base_path,
+        )
+    } else {
+        let index_path = format!("{base_path}/");
+        let redirect_target = index_path.clone();
+        health_router()
+            .route(
+                &base_path,
+                get(move || {
+                    let target = redirect_target.clone();
+                    async move { Redirect::permanent(&target) }
+                }),
+            )
+            .route_service(&index_path, ServeFile::new(index_file))
+            .nest(&base_path, application)
+    }
 }
 
 fn api_router(state: AppState) -> Router {
@@ -670,14 +688,18 @@ async fn stream_agent_events(
 fn root_router(application: Router, base_path: &str) -> Router {
     let base_path = normalize_base_path(base_path);
 
-    let router = Router::new()
-        .route("/healthz", get(health))
-        .route("/readyz", get(health));
+    let router = health_router();
     if base_path.is_empty() {
         router.merge(application)
     } else {
         router.nest(&base_path, application)
     }
+}
+
+fn health_router() -> Router {
+    Router::new()
+        .route("/healthz", get(health))
+        .route("/readyz", get(health))
 }
 
 async fn health() -> &'static str {

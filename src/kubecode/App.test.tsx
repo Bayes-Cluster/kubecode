@@ -426,6 +426,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('shows functional session actions and preserves an Agent title separately', async () => {
+    const removeConversation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
       listAgents: vi.fn().mockResolvedValue([
@@ -452,6 +453,7 @@ describe('Kubecode workspace', () => {
         plan: null,
         usage: null,
       }),
+      removeConversation,
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
     render(<KubecodeApp api={api} />)
@@ -463,8 +465,43 @@ describe('Kubecode workspace', () => {
       pointerType: 'mouse',
     })
     expect(await screen.findByText('Rename session')).toBeInTheDocument()
-    expect(screen.getByText('Remove from Kubecode')).toBeInTheDocument()
-    expect(screen.getByText('Delete from Agent')).toBeInTheDocument()
+    expect(screen.getByText('Delete')).toBeInTheDocument()
+    expect(screen.queryByText('Remove from Kubecode')).not.toBeInTheDocument()
+    expect(screen.queryByText('Delete from Agent')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Delete'))
+    await waitFor(() => expect(removeConversation).toHaveBeenCalledWith('session-1'))
+    expect(removeConversation).not.toHaveBeenCalledWith('session-1', 'provider')
+  })
+
+  it('removes the active project registration from the project menu', async () => {
+    const unregisterProject = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/srv/demo' },
+        { id: 'project-2', name: 'Next', path: '/srv/next' },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      unregisterProject,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    render(<KubecodeApp api={api} />)
+
+    await screen.findByRole('button', { name: 'Demo' })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Delete' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByText('Delete'))
+
+    await waitFor(() => expect(unregisterProject).toHaveBeenCalledWith('project-1'))
+    expect(screen.queryByRole('button', { name: 'Demo' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('data-active', 'true')
   })
 
   it('renders and resolves an ACP elicitation form from the active Agent run', async () => {

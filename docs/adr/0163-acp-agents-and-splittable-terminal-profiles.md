@@ -25,8 +25,8 @@ the native interactive TUI of any discovered coding agent, with editor-style spl
 - Agent authentication, model choice, and provider configuration remain owned by each agent.
 - ACP session IDs are stored with conversations. A new adapter process attempts
   `session/load` before creating a replacement session.
-- ACP updates are translated once into Kubecode's durable event vocabulary; the browser keeps
-  Tolaria's existing AI panel interaction and rendering components.
+- ACP updates are translated once into Kubecode's durable event vocabulary; the browser uses
+  the shared AI interaction and rendering components.
 - Safe mode rejects ACP permission requests by default. Power mode selects an allow option.
 - Terminals are PTY sessions with one of four profiles: Regular, Claude Code, Codex, or
   OpenCode. Agent profiles use the same discovered executable paths as the AI catalog.

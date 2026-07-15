@@ -126,7 +126,6 @@ export function AgentSessionWorkspace({
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
-  const [providerDeleteOpen, setProviderDeleteOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLDivElement>(null)
   const knownRunIdsRef = useRef(new Set<string>())
@@ -301,14 +300,6 @@ export function AgentSessionWorkspace({
     trackEvent('kubecode_session_removed', { agent_id: conversation.agent_id, scope: 'local' })
   }
 
-  const deleteFromAgent = async () => {
-    if (!conversation) return
-    await api.removeConversation(conversation.id, 'provider')
-    onConversationRemoved(conversation.id)
-    setProviderDeleteOpen(false)
-    trackEvent('kubecode_session_removed', { agent_id: conversation.agent_id, scope: 'provider' })
-  }
-
   const forkSession = async () => {
     if (!conversation) return
     const fork = await api.forkConversation(conversation.id)
@@ -329,9 +320,6 @@ export function AgentSessionWorkspace({
 
   const readiness = agent?.available ? 'ready' : 'missing'
   const commands = availableCommands(sessionState)
-  const canDeleteFromAgent = Boolean(
-    conversation.provider_session_id && sessionCapability(sessionState, 'delete'),
-  )
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
@@ -405,13 +393,8 @@ export function AgentSessionWorkspace({
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void removeLocally()}>
-                {t('kubecode.removeSessionLocally')}
+                {t('kubecode.delete')}
               </DropdownMenuItem>
-              {canDeleteFromAgent && (
-                <DropdownMenuItem variant="destructive" onSelect={() => setProviderDeleteOpen(true)}>
-                  {t('kubecode.deleteSessionFromAgent')}
-                </DropdownMenuItem>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -637,18 +620,6 @@ export function AgentSessionWorkspace({
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
             <Button onClick={() => void rename()}>{t('kubecode.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={providerDeleteOpen} onOpenChange={setProviderDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.deleteSessionFromAgent')}</DialogTitle>
-            <DialogDescription>{t('kubecode.deleteSessionFromAgentDescription')}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-            <Button variant="destructive" onClick={() => void deleteFromAgent()}>{t('kubecode.delete')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

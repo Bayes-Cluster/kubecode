@@ -31,5 +31,5 @@ metadata, conversations, normalized events, and permission rules under
   a second backend implementation.
 - Every filesystem request is resolved by the server against a registered
   project and canonical persistent root.
-- Existing Tolaria UI components may be reused, but Tauri-only product flows
-  are outside the Kubecode runtime.
+- Existing shared React primitives may be reused, but desktop-only product
+  flows are outside the Kubecode runtime.

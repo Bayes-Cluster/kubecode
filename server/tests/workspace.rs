@@ -26,7 +26,7 @@ fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
 
     fs::create_dir_all(service.root().join("existing/api")).expect("existing project");
     let imported = service
-        .import_project_at(&service.root().join("existing/api"))
+        .import_project_at(service.root().join("existing/api"))
         .expect("import project");
     assert_eq!(imported.name, "api");
 
@@ -47,7 +47,7 @@ fn rejects_state_paths_traversal_and_duplicate_projects() {
 
     assert!(
         service
-            .import_project_at(&service.root().join(".state"))
+            .import_project_at(service.root().join(".state"))
             .is_err()
     );
     assert!(service.import_project_at("relative/project").is_err());
@@ -55,11 +55,11 @@ fn rejects_state_paths_traversal_and_duplicate_projects() {
 
     fs::create_dir_all(service.root().join("project")).expect("project directory");
     service
-        .import_project_at(&service.root().join("project"))
+        .import_project_at(service.root().join("project"))
         .expect("first import");
     assert!(
         service
-            .import_project_at(&service.root().join("project"))
+            .import_project_at(service.root().join("project"))
             .is_err()
     );
 }
@@ -75,7 +75,7 @@ fn canonicalizes_projects_outside_the_persistent_root() {
     symlink(&outside, service.root().join("escaped")).expect("symlink");
 
     let project = service
-        .import_project_at(&service.root().join("escaped"))
+        .import_project_at(service.root().join("escaped"))
         .expect("outside project through symlink");
     assert_eq!(
         project.path,

@@ -265,7 +265,27 @@ async fn serves_the_spa_only_below_the_configured_base_path() {
         )
         .await
         .expect("prefixed response");
-    assert_eq!(prefixed.status(), StatusCode::OK);
+    assert_eq!(prefixed.status(), StatusCode::PERMANENT_REDIRECT);
+    let expected_location = format!("{BASE_PATH}/");
+    assert_eq!(
+        prefixed
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(expected_location.as_str()),
+    );
+
+    let prefixed_index = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{BASE_PATH}/"))
+                .body(Body::empty())
+                .expect("prefixed index request"),
+        )
+        .await
+        .expect("prefixed index response");
+    assert_eq!(prefixed_index.status(), StatusCode::OK);
 
     let root_response = app
         .oneshot(
@@ -378,6 +398,7 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(temp.path().join("srv/imported").is_dir());
     let (status, error) = json_request(&app, Method::GET, &entries_uri, Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error["code"], "not_found");

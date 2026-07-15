@@ -20,7 +20,7 @@ import {
   extractInlineWikilinkReferences,
   findActiveWikilinkQuery,
 } from './inlineWikilinkText'
-import { extractDroppedPathText, formatDroppedPathList } from './inlineWikilinkDropText'
+import { extractDroppedPathText } from './inlineWikilinkDropText'
 import {
   readSelectionRange,
   serializeInlineNode,
@@ -45,7 +45,6 @@ import {
   isPlainTextBeforeInput,
 } from './inlineWikilinkBeforeInput'
 import { restorePendingRemountState } from './inlineWikilinkRemountState'
-import { useNativePathDrop } from './useNativePathDrop'
 
 interface InlineWikilinkInputProps {
   entries: VaultEntry[]
@@ -285,17 +284,6 @@ export function InlineWikilinkInput({
     pendingScrollTopAfterRemountRef.current = editor?.scrollTop ?? null
     forceRender((current) => current + 1)
   }, [editorRef, onChange, selectionRange, setSelectionRange, value])
-  const insertNativePathDrop = (paths: string[]) => {
-    const droppedPathText = formatDroppedPathList(paths)
-    if (!droppedPathText) return
-
-    insertTransferText(droppedPathText, true)
-  }
-  useNativePathDrop({
-    targetRef: editorRef,
-    disabled,
-    onPathDrop: insertNativePathDrop,
-  })
   const notifyUnsupportedPaste = useCallback(
     () => onUnsupportedPaste?.(UNSUPPORTED_INLINE_PASTE_MESSAGE),
     [onUnsupportedPaste],

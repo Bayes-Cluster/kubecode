@@ -10,9 +10,6 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-site/.vitepress/cache/
-site/.vitepress/dist/
-_site/
 *.local
 
 # Editor directories and files
@@ -33,20 +30,10 @@ _site/
 # Coverage reports
 /coverage/
 
-# Demo vault and helper scripts
-demo-vault/
-generated-fixtures/
-select_demo_notes*.py
-final_selection.py
-
 # Claude Code task signals
 .claude-done
 .claude-blocked
-src-tauri/target
 server/target
-
-# Generated mcp-server bundle (built by scripts/bundle-mcp-server.mjs)
-src-tauri/resources/mcp-server/
 
 # Python cache
 __pycache__/
@@ -65,13 +52,6 @@ CODE-HEALTH-REPORT.md
 
 # Runtime / process files
 .claude-pid
-
-# Generated vault index files (qmd/search artifacts)
-.laputa-index.json
-
-# Tauri signing keys (never commit private keys)
-*.key
-*.key.pub
 
 # Local environment variables (never commit)
 .env

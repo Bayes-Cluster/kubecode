@@ -11,7 +11,14 @@ import type { AgentRun, KubecodeApi, WorkspaceEvent } from './api'
 vi.mock('@/components/AiPanelChrome', () => ({
   AiPanelMessageHistory: ({ messages }: { messages: AiAgentMessage[] }) => (
     <div>{messages.map((message) => (
-      <article key={message.id}>{message.userMessage}{message.response}</article>
+      <article key={message.id} data-streaming={message.isStreaming}>
+        {message.userMessage}
+        {message.reasoning}
+        {message.response}
+        {message.actions.map((action) => (
+          <span key={action.toolId}>{action.label}:{action.status}:{action.output}</span>
+        ))}
+      </article>
     ))}</div>
   ),
   AiPanelComposer: ({ controls }: { controls?: ReactNode }) => (
@@ -398,6 +405,81 @@ describe('AgentSessionWorkspace', () => {
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-1', 'allow')
     })
+  })
+
+  it('reconstructs Agent reasoning, tool progress, errors, and completion from persisted events', async () => {
+    const running = { ...run, status: 'running' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([running]),
+      listEvents: vi.fn().mockResolvedValue([
+        {
+          run_id: run.id,
+          seq: 1,
+          kind: 'thinking_delta',
+          payload: { text: 'Checking files. ' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 2,
+          kind: 'tool_started',
+          payload: { tool_id: 'shell-1', tool: 'Shell', input: { command: 'pwd' } },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 3,
+          kind: 'tool_updated',
+          payload: { tool_id: 'shell-1', tool: 'Shell', output: '/demo' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 4,
+          kind: 'tool_completed',
+          payload: { tool_id: 'shell-1', tool: 'Shell', output: '/demo' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 5,
+          kind: 'error',
+          payload: { message: 'Recovered warning. ' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 6,
+          kind: 'text_delta',
+          payload: { text: 'Finished' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 7,
+          kind: 'run_completed',
+          payload: {},
+          created_at: 'now',
+        },
+      ]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const history = await screen.findByText(/Implement itChecking files/)
+    expect(history).toHaveTextContent('Shell:done:/demo')
+    expect(history).toHaveTextContent('Recovered warning. Finished')
+    expect(history).toHaveAttribute('data-streaming', 'false')
   })
 
   it('restores a pending ACP permission after the browser reconnects', async () => {

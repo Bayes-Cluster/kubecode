@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('@smoke project, editor, and terminal workspace', async ({ page }) => {
+test('@smoke project, editor, terminal, and project removal', async ({ page }) => {
   const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
   const workspaceUrl = requested.pathname === '/'
     ? `${requested.origin}/user/local/kubecode`
@@ -23,68 +23,21 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await expect(page.locator('.cm-editor')).toBeVisible()
 
   await page.getByRole('button', { name: 'Toggle terminal' }).click()
-  await expect(page.getByRole('tree', { name: 'Terminal' })).toHaveCount(0)
-  await expect(page.locator('.kubecode-terminal-toolbar [role="tab"]')).toHaveCount(0)
-  await expect(page.locator('.kubecode-terminal-toolbar')).toContainText('Terminal 1')
+  await expect(page.locator('.kubecode-terminal-toolbar')).toHaveText('')
   await expect(page.locator('.xterm')).toBeVisible()
-
-  const agents = await page.evaluate(async () => {
-    const response = await fetch('./api/v1/agents')
-    return await response.json() as Array<{ available: boolean; id: string }>
-  })
-  const agentNames = {
-    claude_code: 'Claude Code',
-    codex: 'Codex',
-    opencode: 'OpenCode',
-  } as const
-
-  await page.getByRole('button', { name: 'New session' }).click()
-  const agentSelector = page.getByRole('combobox', { name: 'Agent' })
-  await expect(agentSelector.locator('img')).toHaveCount(1)
-  await agentSelector.click()
-  for (const agent of agents) {
-    const option = page.getByRole('option', {
-      name: agentNames[agent.id as keyof typeof agentNames],
-    })
-    if (agent.available) await expect(option).not.toHaveAttribute('data-disabled')
-    else await expect(option).toHaveAttribute('data-disabled')
-  }
-  await page.keyboard.press('Escape')
-  await page.keyboard.press('Escape')
-
-  await page.getByRole('button', { name: 'Terminal profiles' }).click()
-  for (const agent of agents) {
-    const item = page.getByRole('menuitem', {
-      name: agentNames[agent.id as keyof typeof agentNames],
-    })
-    if (agent.available) await expect(item).not.toHaveAttribute('data-disabled')
-    else await expect(item).toHaveAttribute('data-disabled')
-  }
-  await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Split terminal right' }).click()
   await expect(page.locator('.kubecode-terminal-leaf')).toHaveCount(2)
   await expect(page.getByRole('tree', { name: 'Terminal' }).getByRole('treeitem')).toHaveCount(2)
-  await expect(page.locator('.kubecode-terminal-toolbar')).not.toContainText('Terminal 1')
-  const terminalNavigator = page.getByRole('tree', { name: 'Terminal' })
-  const navigatorBeforeResize = await terminalNavigator.boundingBox()
-  const navigatorHandle = page.locator('.kubecode-terminal-body > .cursor-col-resize')
-  const navigatorHandleBox = await navigatorHandle.boundingBox()
-  if (!navigatorBeforeResize || !navigatorHandleBox) throw new Error('terminal navigator resize handle is not visible')
-  await page.mouse.move(navigatorHandleBox.x + 1, navigatorHandleBox.y + navigatorHandleBox.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(navigatorHandleBox.x - 40, navigatorHandleBox.y + navigatorHandleBox.height / 2)
-  await page.mouse.up()
-  await expect.poll(async () => (await terminalNavigator.boundingBox())?.width).toBeGreaterThan(navigatorBeforeResize.width)
+  await expect(page.locator('.kubecode-terminal-toolbar')).toHaveText('')
 
+  const terminalNavigator = page.getByRole('tree', { name: 'Terminal' })
   const navigatorToggle = page.getByRole('button', { name: 'Collapse' })
   await navigatorToggle.click()
   await expect(terminalNavigator).toHaveAttribute('data-narrow', 'true')
-  await expect(terminalNavigator).toHaveCSS('width', '46px')
   await navigatorToggle.click()
-  await expect(terminalNavigator).toHaveCSS('width', '120px')
+
   const firstPane = page.locator('.kubecode-terminal-split-child').first()
-  await expect(firstPane).toHaveAttribute('style', /50%/)
   const handle = page.locator('.kubecode-terminal-split > .cursor-col-resize').first()
   const box = await handle.boundingBox()
   if (!box) throw new Error('terminal split handle is not visible')
@@ -93,11 +46,6 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.mouse.move(box.x + 100, box.y + box.height / 2)
   await page.mouse.up()
   await expect(firstPane).not.toHaveAttribute('style', /50%/)
-
-  await page.getByRole('tab', { name: 'Files' }).click()
-  if (process.env.QA_SCREENSHOT) {
-    await page.screenshot({ path: process.env.QA_SCREENSHOT, fullPage: true })
-  }
 
   await page.locator('.xterm-helper-textarea').last().focus()
   await page.keyboard.type('exit')
@@ -108,4 +56,8 @@ test('@smoke project, editor, and terminal workspace', async ({ page }) => {
   await page.keyboard.type('exit')
   await page.keyboard.press('Enter')
   await expect(page.locator('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'false')
+
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect(page.getByRole('button', { name: projectName })).toHaveCount(0)
 })

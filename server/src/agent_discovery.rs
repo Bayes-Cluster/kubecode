@@ -279,7 +279,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn includes_tolarian_common_install_locations() {
+    fn includes_common_install_locations() {
         let home = PathBuf::from("/Users/alex");
 
         let claude = agent_binary_candidates(AgentId::ClaudeCode, &home);

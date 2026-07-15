@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  DotsThree,
   Folder,
   Gear,
   MagnifyingGlass,
@@ -24,6 +25,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -227,6 +234,29 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     setProjectId(nextProjectId)
   }
 
+  const deleteProject = async () => {
+    if (!project) return
+    try {
+      await api.unregisterProject(project.id)
+      const remainingProjects = projects.filter((item) => item.id !== project.id)
+      const nextProjectId = remainingProjects[0]?.id ?? null
+      setProjects(remainingProjects)
+      setProjectRuns((current) => {
+        const next = { ...current }
+        delete next[project.id]
+        return next
+      })
+      setConversations([])
+      setConversationId(null)
+      setTerminals([])
+      if (nextProjectId) applyProjectLayout(nextProjectId)
+      setProjectId(nextProjectId)
+      trackEvent('kubecode_project_removed')
+    } catch (cause) {
+      setError(errorMessage(cause, t('kubecode.error')))
+    }
+  }
+
   return (
     <main className="kubecode-app">
       <header className="kubecode-topbar">
@@ -295,6 +325,20 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                   <strong>{project?.name ?? t('kubecode.appName')}</strong>
                   <span>{project?.path ?? t('kubecode.selectProject')}</span>
                 </div>
+                {project && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-label={t('kubecode.delete')} size="icon-xs" variant="ghost">
+                        <DotsThree />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem variant="destructive" onSelect={() => void deleteProject()}>
+                        {t('kubecode.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
               <Button className="kubecode-new-session" disabled={!projectId} variant="outline" onClick={() => setSessionDialog(true)}>
                 <Plus /> {t('kubecode.newSession')}

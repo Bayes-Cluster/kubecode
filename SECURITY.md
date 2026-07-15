@@ -1,6 +1,6 @@
 # Security Policy
 
-Thanks for helping keep Tolaria safe.
+Thanks for helping keep Kubecode safe.
 
 If you believe you have found a security vulnerability, **please do not open a public GitHub issue**. Report it privately instead.
 
@@ -10,9 +10,7 @@ We currently support security fixes for:
 
 | Version | Supported |
 | --- | --- |
-| Latest stable release | ✅ |
-| `main` branch | Best effort |
-| Older releases / prereleases | ❌ |
+| `main` / `master` | Best effort |
 
 ## Reporting a vulnerability
 
@@ -49,7 +47,6 @@ The following are generally out of scope unless they demonstrate a real security
 
 - missing best-practice headers or hardening with no practical exploit
 - self-XSS or editor behavior that requires unrealistic user actions
-- reports that only affect unsupported old builds
 - purely theoretical issues with no plausible attack path
 
 If you are unsure whether something qualifies, please still report it privately.

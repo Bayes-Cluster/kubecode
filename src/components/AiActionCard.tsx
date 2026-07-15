@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useCallback } from 'react'
 import {
-  PencilSimple, MagnifyingGlass, Trash, ChartBar, Eye,
+  PencilSimple, MagnifyingGlass,
   CircleNotch, CheckCircle, XCircle, CaretRight, CaretDown,
   Terminal, File, FolderOpen, NotePencil,
 } from '@phosphor-icons/react'
@@ -36,14 +36,6 @@ const TOOL_ICON_MAP: Record<string, IconRenderer> = {
   Read: (s) => <File size={s} />,
   Glob: (s) => <FolderOpen size={s} />,
   Grep: (s) => <MagnifyingGlass size={s} />,
-  // Tolaria MCP tools
-  search_notes: (s) => <MagnifyingGlass size={s} />,
-  get_vault_context: (s) => <ChartBar size={s} />,
-  get_note: (s) => <File size={s} />,
-  open_note: (s) => <Eye size={s} />,
-  // Legacy tools (for backward compatibility with existing messages)
-  create_note: (s) => <PencilSimple size={s} />,
-  delete_note: (s) => <Trash size={s} />,
 }
 const TOOL_ICON_BY_NAME = new Map(Object.entries(TOOL_ICON_MAP))
 

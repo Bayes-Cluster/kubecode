@@ -8,8 +8,8 @@ date: 2026-07-14
 
 ## Context
 
-Kubecode replaces Tolaria's desktop vault UI with a Project-oriented browser
-workspace. It needs an editor that preserves the existing raw-code behavior and
+Kubecode uses a Project-oriented browser workspace. It needs an editor that
+preserves the existing raw-code behavior and
 a real terminal emulator that can attach to the server-owned PTYs.
 
 ## Decision
@@ -28,5 +28,4 @@ derive their API base from the current Kubeflow `NB_PREFIX` pathname.
 - Browser refreshes can reattach to terminals and replay Agent events.
 - The frontend never receives arbitrary filesystem paths or CLI credentials.
 - xterm is a production dependency and must be updated with the frontend lockfile.
-- The previous Tolaria desktop modules remain migration source but are no longer
-  the production browser entry point.
+- Desktop application modules are not part of the production browser target.

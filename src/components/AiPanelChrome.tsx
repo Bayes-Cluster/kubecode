@@ -11,7 +11,7 @@ import {
   type AiAgentPermissionMode,
 } from '../lib/aiAgentPermissionMode'
 import { createTranslator, type AppLocale } from '../lib/i18n'
-import type { AiAgentMessage } from '../hooks/useCliAiAgent'
+import type { AiAgentMessage } from '../lib/aiAgentConversation'
 import type { AiAgentReadiness } from '../lib/aiAgents'
 import type { NoteReference } from '../utils/ai-context'
 import type { VaultEntry } from '../types'

@@ -1,155 +1,175 @@
-![Latest stable](https://img.shields.io/github/v/release/refactoringhq/tolaria?display_name=tag) [![CI](https://github.com/refactoringhq/tolaria/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/refactoringhq/tolaria/actions/workflows/ci.yml) [![Codecov](https://codecov.io/gh/refactoringhq/tolaria/graph/badge.svg?branch=main)](https://codecov.io/gh/refactoringhq/tolaria) [![CodeScene Hotspot Code Health](https://codescene.io/projects/76865/status-badges/hotspot-code-health)](https://codescene.io/projects/76865)
+# Kubecode
 
-# 💧 Tolaria
+Kubecode is a project-based AI coding workspace designed to run inside a
+single-user Kubeflow Notebook. A project is an absolute directory on the
+server. Inside that directory, users can work with long-lived coding-agent
+sessions, terminal PTYs, Git changes, a file tree, and a lightweight
+CodeMirror editor from one browser workspace.
 
-Tolaria is a desktop app for macOS, Windows, and Linux for managing **markdown knowledge bases**. People use it for a variety of use cases:
+Kubecode currently supports three local agents:
 
-* Operate second brains and personal knowledge
-* Organize company docs as context for AI
-* Store OpenClaw/assistants memory and procedures
+- Claude Code
+- Codex
+- OpenCode
 
-Personally, I use it to **run my life** (hey 👋 [Luca here](http://x.com/lucaronin)). I have a massive workspace of 10,000+ notes, which are the result of my [Refactoring](https://refactoring.fm/) work + a ton of personal journaling and *second braining*.
+The application discovers their local executables at server startup. Agent
+authentication, models, and provider configuration remain owned by each CLI.
+Kubecode does not store provider API keys or proxy requests through a hosted
+model service.
 
-<img width="1000" height="656" alt="1776506856823-CleanShot_2026-04-18_at_12 06 57_2x" src="https://github.com/user-attachments/assets/8aeafb0a-b236-43c2-a083-ec111f903c38" />
+## Workspace model
 
-## Sponsors
+- **Project** — an absolute, canonical server path registered with Kubecode.
+- **Session** — a durable ACP conversation connected to one local agent and
+  one project.
+- **Terminal** — a reconnectable PTY running either the user's shell or the
+  native Claude Code, Codex, or OpenCode TUI.
+- **Context panel** — Project files, Git changes, diffs, and CodeMirror editing.
 
-Tolaria is supported by a small panel of tools that help keep the project healthy, tested, and ready for AI-assisted development. I use these tools every day.
+Deleting a Session removes only Kubecode's local session record. Deleting a
+Project unregisters it from Kubecode; it never deletes the project directory
+or any files below it.
 
-<table>
-  <tr>
-    <td align="center" width="25%">
-      <a href="https://www.codacy.com/?utm_source=tolaria&utm_medium=github&utm_campaign=refactoring">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/codacy-light.svg">
-          <img src="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/codacy-dark.svg" alt="Codacy" height="32">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="25%">
-      <a href="https://codescene.com/?utm_source=tolaria&utm_medium=github&utm_campaign=refactoring">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/codescene-light.svg">
-          <img src="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/codescene-dark.svg" alt="CodeScene" height="32">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="25%">
-      <a href="https://circleci.com/?utm_source=tolaria&utm_medium=github&utm_campaign=refactoring">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/circleci-light.svg">
-          <img src="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/circleci-dark.svg" alt="CircleCI" height="32">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="25%">
-      <a href="https://getunblocked.com/?utm_source=tolaria&utm_medium=github&utm_campaign=refactoring">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/unblocked-light.svg">
-          <img src="https://raw.githubusercontent.com/refactoringhq/tolaria/main/site/public/landing/sponsors/unblocked-dark.svg" alt="Unblocked" height="32">
-        </picture>
-      </a>
-    </td>
-  </tr>
-</table>
+## Features
 
-## Walkthroughs
+- Project registration and server-side directory import
+- Long-lived ACP sessions with resume, fork, native commands, modes,
+  configuration, plans, permissions, and structured questions when supported
+  by the selected agent
+- Reconnectable shell and agent TUI terminals with multiple PTYs and free-form
+  horizontal or vertical splits
+- Lazy file tree, file and folder creation, rename, delete, and UTF-8 editing
+- Project-scoped Git status, diff, stage, unstage, discard, init, and commit
+- Markdown, syntax highlighting, and LaTeX rendering in agent responses
+- Light, dark, and system color schemes with OpenCode-compatible themes and
+  independent UI, code, and terminal fonts
+- Kubeflow base-path support through `NB_PREFIX`
 
-You can find some Loom walkthroughs below — they are short and to the point:
-- [How I Organize My Own Tolaria Workspace](https://www.loom.com/share/bb3aaffa238b4be0bd62e4464bca2528)
-- [My Inbox Workflow](https://www.loom.com/share/dffda263317b4fa8b47b59cdf9330571)
-- [How I Save Web Resources to Tolaria](https://www.loom.com/share/8a3c1776f801402ebbf4d7b0f31e9882)
+## Architecture
 
-## Principles
-
-- 📑 **Files-first** — Your notes are plain markdown files. They're portable, work with any editor, and require no export step. Your data belongs to you, not to any app.
-- 🔌 **Git-first** — Every vault is a git repository. You get full version history, the ability to use any git remote, and zero dependency on Tolaria servers.
-- 🛜 **Offline-first, zero lock-in** — No accounts, no subscriptions, no cloud dependencies. Your vault works completely offline and always will. If you stop using Tolaria, you lose nothing.
-- 🔬 **Open source** — Tolaria is free and open source. I built this for [myself](https://x.com/lucaronin) and for sharing it with others.
-- 📋 **Standards-based** — Notes are markdown files with YAML frontmatter. No proprietary formats, no locked-in data. Everything works with standard tools if you decide to move away from Tolaria.
-- 🔍 **Types as lenses, not schemas** — Types in Tolaria are navigation aids, not enforcement mechanisms. There's no required fields, no validation, just helpful categories for finding notes.
-- 🪄**AI-first but not AI-only** — A vault of files works very well with AI agents, but you are free to use whatever you want. We support Claude Code, Codex CLI, and Gemini CLI setup paths, but you can edit the vault with any AI you want. We provide an AGENTS file for your agents to figure out.
-- ⌨️ **Keyboard-first** — Tolaria is designed for power-users who want to use keyboard as much as possible. A lot of how we designed the Editor and the Command Palette is based on this.
-- 💪 **Built from real use** — Tolaria was created for manage my personal vault of 10,000+ notes, and I use it every day. Every feature exists because it solved a real problem.
-
-## Installation
-
-### Homebrew
-
-Install via Homebrew on macOS:
-
-```batch
-brew install --cask tolaria
+```mermaid
+flowchart LR
+  Browser[React workspace] -->|HTTP + SSE| Server[Rust / Axum server]
+  Browser -->|WebSocket| PTY[Terminal PTYs]
+  Server --> Workspace[Project filesystem]
+  Server --> SQLite[(Kubecode SQLite state)]
+  Server --> Git[Local Git]
+  Server --> ACP[ACP session actors]
+  ACP --> Claude[Claude Code]
+  ACP --> Codex[Codex]
+  ACP --> OpenCode[OpenCode]
 ```
 
-### Download from releases
+The Rust server is the trust boundary. The browser sends Project IDs and
+relative paths; the server canonicalizes every filesystem operation inside the
+registered Project root. Session metadata and normalized Agent events are
+stored under `$KUBECODE_STATE_DIR` or `$PERSISTENT_DIR/.state/kubecode`.
 
-Download the [latest release here](https://refactoringhq.github.io/tolaria/download/) for macOS, Windows, or Linux. Windows installers are Authenticode-signed; company-managed devices may still require IT approval of the Tolaria publisher before first install.
+See [Architecture](docs/ARCHITECTURE.md),
+[Abstractions](docs/ABSTRACTIONS.md), and the active
+[ADRs](docs/adr/README.md) for implementation details.
 
-## Getting started
+## Local development
 
-When you open Tolaria for the first time you get the chance of cloning the [getting started vault](https://github.com/refactoringhq/tolaria-getting-started) — which gives you a walkthrough of the whole app.
+### Requirements
 
-The public user docs live in [`site/`](site/) and are published to GitHub Pages. Start with [Install Tolaria](site/start/install.md), then [First Launch](site/start/first-launch.md).
+- Node.js 22 or newer
+- pnpm 10
+- Stable Rust
+- Git
+- At least one supported local agent for AI Session testing
 
-## Open source and local setup
-
-Tolaria is open source and built with Tauri, React, and TypeScript. If you want to run or contribute to the app locally, here is [how to get started](https://github.com/refactoringhq/tolaria/blob/main/docs/GETTING-STARTED.md). You can also find the gist below 👇
-
-### Prerequisites
-
-- Node.js 20+
-- pnpm 8+
-- Rust stable
-- macOS or Linux for development
-
-#### Linux system dependencies
-
-Tauri 2 on Linux requires WebKit2GTK 4.1 and GTK 3:
-
-- Arch / Manjaro:
-  ```bash
-  sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl \
-    appmenu-gtk-module libappindicator-gtk3 librsvg
-  ```
-- Debian / Ubuntu (22.04+):
-  ```bash
-  sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
-    libsoup-3.0-dev patchelf
-  ```
-- Fedora 38+:
-  ```bash
-  sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file \
-    libappindicator-gtk3-devel librsvg2-devel
-  ```
-
-The bundled MCP server still spawns the system `node` binary at runtime on Linux, so install Node from your distro package manager if you want the external AI tooling flow.
-
-### Quick start
+Install dependencies:
 
 ```bash
 pnpm install
+```
+
+Start the API server:
+
+```bash
+pnpm dev:server
+```
+
+In another terminal, start Vite:
+
+```bash
 pnpm dev
 ```
 
-Open `http://localhost:5173` for the browser-based mock mode, or run the native desktop app with:
+Open <http://127.0.0.1:5202>. Vite proxies `/api` requests and terminal
+WebSockets to the Rust server on port 8888. Local runtime data is written below
+`.local/`, which is ignored by Git.
 
-```bash
-pnpm tauri dev
+The agent CLIs must be installed and authenticated separately. The Claude and
+Codex ACP adapters are installed as project dependencies; OpenCode exposes ACP
+natively through `opencode acp`.
+
+Useful executable overrides:
+
+```text
+KUBECODE_CLAUDE_PATH
+KUBECODE_CODEX_PATH
+KUBECODE_OPENCODE_PATH
+KUBECODE_CLAUDE_ACP_PATH
+KUBECODE_CODEX_ACP_PATH
 ```
 
-## Tech Docs
+### Production-style local run
 
-- 📐 [ARCHITECTURE.md](docs/ARCHITECTURE.md) — System design, tech stack, data flow
-- 🧩 [ABSTRACTIONS.md](docs/ABSTRACTIONS.md) — Core abstractions and models
-- 🚀 [GETTING-STARTED.md](docs/GETTING-STARTED.md) — How to navigate the codebase
-- 📚 [ADRs](docs/adr) — Architecture Decision Records
+```bash
+pnpm build
+PERSISTENT_DIR="$PWD/.local/workspace" \
+KUBECODE_STATE_DIR="$PWD/.local/state" \
+KUBECODE_STATIC_DIR="$PWD/dist" \
+PORT=8888 \
+cargo run --manifest-path server/Cargo.toml
+```
 
-## Security
+Then open <http://127.0.0.1:8888>.
 
-If you believe you have found a security issue, please report it privately as described in [SECURITY.md](./SECURITY.md).
+## Container and Kubeflow
 
-## License
+Build the production image:
 
-Tolaria is licensed under AGPL-3.0-or-later. The Tolaria name and logo remain covered by the project’s trademark policy.
+```bash
+docker build -f deploy/Dockerfile -t kubecode:local .
+```
+
+The image contains the web build, `kubecode-server`, the three supported CLIs,
+the Claude and Codex ACP adapters, and s6 process initialization. It runs as the
+Notebook user and stores durable state below the mounted `PERSISTENT_DIR`.
+
+[`deploy/kubeflow-notebook.yaml`](deploy/kubeflow-notebook.yaml) provides a
+reference PVC and Kubeflow Notebook resource. Replace the image and set
+`NB_PREFIX` to the route assigned by your Kubeflow installation.
+
+## Quality checks
+
+```bash
+pnpm lint
+npx tsc --noEmit
+pnpm test
+pnpm test:coverage
+cargo test --manifest-path server/Cargo.toml
+cargo clippy --manifest-path server/Cargo.toml -- -D warnings
+cargo fmt --manifest-path server/Cargo.toml -- --check
+pnpm playwright:smoke
+```
+
+## Repository layout
+
+```text
+src/kubecode/    Browser workspace and API client
+src/components/  Shared UI, Agent transcript, and shadcn primitives
+server/          Axum API, ACP runtime, terminal, Git, and workspace services
+deploy/          Container and Kubeflow deployment assets
+tests/smoke/     Browser workspace smoke test
+docs/            Current architecture and ADRs
+```
+
+## License and origin
+
+Kubecode is licensed under AGPL-3.0-or-later. It began as a derivative of the
+open-source Tolaria project and retains attribution through the repository
+history and license.
