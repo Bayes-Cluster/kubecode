@@ -637,6 +637,12 @@ impl AgentStore {
                 run.permission_mode.as_str()
             ],
         )?;
+        transaction.execute(
+            "UPDATE conversations
+             SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'now')
+             WHERE id = ?1",
+            [&run.conversation_id],
+        )?;
         append_event_transaction(
             &transaction,
             &run.id,

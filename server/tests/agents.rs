@@ -188,6 +188,7 @@ fn lists_session_summaries_and_persists_archive_and_parent_relationships() {
     );
     assert!(!parent_summary.archived);
     assert!(!parent_summary.created_at.is_empty());
+    assert!(parent_summary.updated_at > parent.updated_at);
 
     let child_summary = summaries
         .iter()

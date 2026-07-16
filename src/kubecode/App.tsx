@@ -68,6 +68,7 @@ import type {
   WorkspaceEvent,
 } from './api'
 import { TerminalWorkspace } from './TerminalWorkspace'
+import { SessionSidebarList } from './SessionSidebarList'
 import {
   readKubecodeNotifications,
   writeKubecodeNotifications,
@@ -241,6 +242,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       setWorkspaceEvents((current) => [...current, event].slice(-2048))
       setProjectRuns((current) => applyWorkspaceRunEvent(current, event))
       setAllConversations((current) => applyWorkspaceConversationEvent(current, event))
+      setConversations((current) => applyWorkspaceConversationEvent(current, event))
       const activeProjectId = activeProjectIdRef.current
       if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)) {
         if (typeof api.listSessions === 'function') void api.listSessions().then(setAllConversations)
@@ -320,6 +322,26 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       setError(errorMessage(cause, t('kubecode.error')))
     }
   }
+
+  const handleConversationCreated = useCallback((created: Conversation) => {
+    setConversations((current) => upsertConversation(current, created))
+    setAllConversations((current) => upsertConversation(current, created))
+    setConversationId(created.id)
+  }, [])
+
+  const handleConversationRemoved = useCallback((removedId: string) => {
+    setConversations((current) => {
+      const next = current.filter((item) => item.id !== removedId)
+      setConversationId((selected) => selected === removedId ? next.at(-1)?.id ?? null : selected)
+      return next
+    })
+    setAllConversations((current) => current.filter((item) => item.id !== removedId))
+  }, [])
+
+  const handleConversationUpdated = useCallback((updated: Conversation) => {
+    setConversations((current) => upsertConversation(current, updated))
+    setAllConversations((current) => upsertConversation(current, updated))
+  }, [])
 
   const openSession = useCallback((nextProjectId: string, nextConversationId: string) => {
     if (nextProjectId !== projectId) {
@@ -470,22 +492,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               <Button className="kubecode-new-session" disabled={!projectId} variant="outline" onClick={() => setSessionDialog(true)}>
                 <Plus /> {t('kubecode.newSession')}
               </Button>
-              <div className="kubecode-session-list">
-                {conversations.map((item) => (
-                  <Button
-                    className="kubecode-session-row"
-                    key={item.id}
-                    variant={item.id === conversationId ? 'secondary' : 'ghost'}
-                    onClick={() => setConversationId(item.id)}
-                  >
-                    <AiAgentIcon agent={item.agent_id} size={18} />
-                    <span>{item.title || t('kubecode.untitledSession')}</span>
-                  </Button>
-                ))}
-                {projectId && conversations.length === 0 && (
-                  <div className="kubecode-empty-small">{t('kubecode.noSessions')}</div>
-                )}
-              </div>
+              <SessionSidebarList
+                activeConversationId={conversationId}
+                api={api}
+                conversations={conversations}
+                onConversationCreated={handleConversationCreated}
+                onConversationRemoved={handleConversationRemoved}
+                onConversationUpdated={handleConversationUpdated}
+                onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
+                onSelect={setConversationId}
+                t={t}
+              />
             </aside>
             <ResizeHandle onResize={resizeSessionSidebar} />
           </>
@@ -498,24 +515,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               api={api}
               conversation={conversation}
               locale={locale}
-              onConversationCreated={(created) => {
-                setConversations((current) => upsertConversation(current, created))
-                setAllConversations((current) => upsertConversation(current, created))
-                setConversationId(created.id)
-              }}
+              onConversationCreated={handleConversationCreated}
               projectId={projectId}
-              onConversationRemoved={(removedId) => {
-                setConversations((current) => {
-                  const next = current.filter((item) => item.id !== removedId)
-                  setConversationId((selected) => selected === removedId ? next.at(-1)?.id ?? null : selected)
-                  return next
-                })
-                setAllConversations((current) => current.filter((item) => item.id !== removedId))
-              }}
-              onConversationUpdated={(updated) => {
-                setConversations((current) => current.map((item) => item.id === updated.id ? updated : item))
-                setAllConversations((current) => upsertConversation(current, updated))
-              }}
+              onConversationRemoved={handleConversationRemoved}
+              onConversationUpdated={handleConversationUpdated}
               t={t}
               workspaceEvents={workspaceEvents}
               key={conversationId ?? projectId ?? 'no-project'}
@@ -606,11 +609,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         open={sessionDialog}
         projectId={projectId}
         onOpenChange={setSessionDialog}
-        onSession={(created) => {
-          setConversations((current) => upsertConversation(current, created))
-          setAllConversations((current) => upsertConversation(current, created))
-          setConversationId(created.id)
-        }}
+        onSession={handleConversationCreated}
         t={t}
       />
       <KubecodeSettingsDialog

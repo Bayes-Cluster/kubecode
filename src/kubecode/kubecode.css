@@ -413,29 +413,110 @@
   padding: 13px 22px;
 }
 
-.kubecode-session-list {
+.kubecode-session-browser {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  min-height: 0;
+}
+
+.kubecode-session-search {
+  align-items: center;
+  background: var(--surface-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text-muted);
+  display: flex;
+  flex: 0 0 30px;
+  gap: 5px;
+  margin: 8px 8px 6px;
+  padding: 0 3px 0 8px;
+}
+.kubecode-session-search > svg { flex: 0 0 auto; height: 16px; width: 16px; }
+.kubecode-session-search input {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-size: 13px;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+}
+
+.kubecode-session-list {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 0 5px 8px;
+}
+
+.kubecode-session-section > header {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  justify-content: space-between;
+  letter-spacing: 0.035em;
+  padding: 10px 8px 4px;
+  text-transform: uppercase;
+}
+.kubecode-session-section > header small { font-size: 10px; font-weight: 500; }
+
+.kubecode-session-row-shell {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+  position: relative;
 }
 
 .kubecode-session-row {
+  flex: 1;
+  gap: 8px;
   justify-content: flex-start;
-  min-height: 34px;
+  min-height: 36px;
   overflow: hidden;
-  padding: 0 9px;
+  padding: 0 30px 0 8px;
   width: 100%;
 }
 
-.kubecode-session-row span {
+.kubecode-session-row > span:last-child {
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.kubecode-session-row-shell[data-archived='true'] { opacity: 0.64; }
+.kubecode-session-row-actions {
+  opacity: 0;
+  position: absolute;
+  right: 3px;
+}
+.kubecode-session-row-shell:hover .kubecode-session-row-actions,
+.kubecode-session-row-actions[data-state='open'] { opacity: 1; }
+
+.kubecode-session-agent-status { display: inline-flex; flex: 0 0 auto; position: relative; }
+.kubecode-session-agent-status::after {
+  background: transparent;
+  border: 1.5px solid var(--surface-sidebar);
+  border-radius: 50%;
+  bottom: -2px;
+  content: '';
+  height: 7px;
+  position: absolute;
+  right: -2px;
+  width: 7px;
+}
+.kubecode-session-agent-status[data-status='running']::after { background: var(--accent-blue); }
+.kubecode-session-agent-status[data-status='waiting_permission']::after { background: var(--feedback-warning-text); }
+.kubecode-session-agent-status[data-status='failed']::after,
+.kubecode-session-agent-status[data-status='timed_out']::after,
+.kubecode-session-agent-status[data-status='interrupted']::after { background: var(--feedback-error-text); }
+.kubecode-session-agent-status:not([data-status])::after,
+.kubecode-session-agent-status[data-status='completed']::after,
+.kubecode-session-agent-status[data-status='cancelled']::after { display: none; }
+.kubecode-session-filter-menu { min-width: 210px; }
 
 .kubecode-main-stack {
   display: flex;
