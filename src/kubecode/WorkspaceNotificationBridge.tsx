@@ -5,6 +5,7 @@ import { trackEvent } from '@/lib/telemetry'
 import type { AgentId, Conversation, Project, WorkspaceEvent } from './api'
 import type { KubecodeNotifications, NotificationCategory } from './notificationPreferences'
 import {
+  deliverBrowserNotification,
   notificationCategory,
   notificationPermission,
   shouldNotify,
@@ -61,7 +62,7 @@ export function WorkspaceNotificationBridge({
 
       const conversation = conversations.find((item) => item.id === event.conversation_id)
       const project = projects.find((item) => item.id === event.project_id)
-      const notification = new Notification(
+      const delivery = deliverBrowserNotification(
         `${agentName(conversation?.agent_id)} · ${conversation?.title || copy.untitledSession}`,
         {
           body: copy.body(category, project?.name ?? event.project_id),
@@ -69,6 +70,8 @@ export function WorkspaceNotificationBridge({
           tag: `kubecode:${category}:${event.conversation_id}`,
         },
       )
+      const notification = delivery.notification
+      if (!notification) continue
       notification.onclick = () => {
         window.focus()
         onOpenSession(event.project_id as string, event.conversation_id as string)

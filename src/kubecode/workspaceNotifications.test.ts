@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_KUBECODE_NOTIFICATIONS } from './notificationPreferences'
-import { notificationCategory, shouldNotify } from './workspaceNotifications'
+import {
+  deliverBrowserNotification,
+  ensureBrowserNotificationPermission,
+  notificationCategory,
+  shouldNotify,
+} from './workspaceNotifications'
 import type { WorkspaceEvent } from './api'
 
 function event(kind: string, status?: string): WorkspaceEvent {
@@ -17,6 +22,8 @@ function event(kind: string, status?: string): WorkspaceEvent {
 }
 
 describe('workspace notifications', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it('classifies attention, completion and terminal failures without duplicating raw errors', () => {
     expect(notificationCategory(event('permission_requested'))).toBe('attention')
     expect(notificationCategory(event('elicitation_requested'))).toBe('attention')
@@ -42,5 +49,40 @@ describe('workspace notifications', () => {
       ...DEFAULT_KUBECODE_NOTIFICATIONS,
       enabled: { ...DEFAULT_KUBECODE_NOTIFICATIONS.enabled, completion: false },
     }, 'completion', false)).toBe(false)
+  })
+
+  it('requests permission when needed and reports a delivered notification', async () => {
+    class MockNotification {
+      static permission: NotificationPermission = 'default'
+      static requestPermission = vi.fn(async () => {
+        MockNotification.permission = 'granted'
+        return 'granted' as NotificationPermission
+      })
+
+      constructor(public title: string, public options?: NotificationOptions) {}
+    }
+    vi.stubGlobal('Notification', MockNotification)
+
+    await expect(ensureBrowserNotificationPermission()).resolves.toBe('granted')
+    const delivery = deliverBrowserNotification('Ready', { body: 'Done' })
+
+    expect(MockNotification.requestPermission).toHaveBeenCalledOnce()
+    expect(delivery.status).toBe('sent')
+    expect(delivery.notification?.title).toBe('Ready')
+  })
+
+  it('reports blocked and failed notification delivery instead of failing silently', () => {
+    class BlockedNotification {
+      static permission: NotificationPermission = 'denied'
+    }
+    vi.stubGlobal('Notification', BlockedNotification)
+    expect(deliverBrowserNotification('Blocked').status).toBe('permission_required')
+
+    class FailingNotification {
+      static permission: NotificationPermission = 'granted'
+      constructor() { throw new Error('system notifications unavailable') }
+    }
+    vi.stubGlobal('Notification', FailingNotification)
+    expect(deliverBrowserNotification('Failed').status).toBe('failed')
   })
 })

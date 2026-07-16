@@ -37,6 +37,7 @@ describe('ContextWorkbench', () => {
       />,
     )
 
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Changes' }), { button: 0 })
     expect(await screen.findByText('README.md')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Stage: README.md' }))
     await waitFor(() => {
@@ -61,6 +62,7 @@ describe('ContextWorkbench', () => {
       />,
     )
 
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Changes' }), { button: 0 })
     fireEvent.click(await screen.findByRole('button', { name: 'Create a Git repository' }))
     await waitFor(() => expect(api.initializeGit).toHaveBeenCalledWith('project-1'))
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
@@ -83,8 +85,8 @@ describe('ContextWorkbench', () => {
       width: 440,
     }
     const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
-    expect(screen.getByRole('button', { name: /Changes/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('data-state', 'active')
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(1))
 
     rerender(<ContextWorkbench {...props} workspaceEvents={[

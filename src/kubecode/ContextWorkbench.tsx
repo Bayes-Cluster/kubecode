@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowClockwise,
-  CaretDown,
-  CaretRight,
   File,
   FileCode,
   Folder,
-  GitBranch,
   GitCommit,
   GitDiff,
   Minus,
@@ -42,7 +39,7 @@ import type {
 } from './api'
 
 type Translator = (key: TranslationKey) => string
-type ContextTab = 'overview' | 'editor' | 'diff'
+type ContextTab = 'review' | 'files' | 'editor' | 'diff'
 type EntryDialogState = { kind: Entry['kind'] } | null
 
 type ContextWorkbenchProps = {
@@ -55,9 +52,7 @@ type ContextWorkbenchProps = {
 }
 
 export function ContextWorkbench({ api, projectName, projectId, t, width, workspaceEvents }: ContextWorkbenchProps) {
-  const [tab, setTab] = useState<ContextTab>('overview')
-  const [changesOpen, setChangesOpen] = useState(true)
-  const [filesOpen, setFilesOpen] = useState(true)
+  const [tab, setTab] = useState<ContextTab>('files')
   const [selectedDirectory, setSelectedDirectory] = useState('')
   const [fileTreeRevision, setFileTreeRevision] = useState(0)
   const [document, setDocument] = useState<TextDocument | null>(null)
@@ -124,7 +119,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
   const closeEditor = () => {
     setDocument(null)
     setDraft('')
-    setTab('overview')
+    setTab('files')
   }
 
   const openDiff = async (change: GitFileChange, staged: boolean) => {
@@ -186,8 +181,9 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
     <aside className="kubecode-context-workbench" data-testid="context-workbench" style={{ width }}>
       <Tabs className="kubecode-context-tabs" value={tab} onValueChange={(value) => setTab(value as ContextTab)}>
         <div className="kubecode-context-tabbar">
-          <TabsList className="h-full gap-0 p-0" variant="line">
-            <TabsTrigger value="overview">{t('kubecode.details')}</TabsTrigger>
+          <TabsList className="kubecode-context-primary-tabs">
+            <TabsTrigger value="review">{t('kubecode.changes')}</TabsTrigger>
+            <TabsTrigger value="files">{t('kubecode.files')}</TabsTrigger>
             {document && (
               <TabsTrigger value="editor">
                 <FileCode /> {editorName}
@@ -197,93 +193,74 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
             {diff && <TabsTrigger value="diff"><GitDiff /> {diff.path.split('/').at(-1)}</TabsTrigger>}
           </TabsList>
           <div className="kubecode-context-tab-actions">
+            {tab === 'files' && (
+              <>
+                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File /></Button>
+                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder /></Button>
+              </>
+            )}
             <Button aria-label={t('kubecode.refresh')} size="icon-xs" variant="ghost" onClick={refreshContext}><ArrowClockwise /></Button>
           </div>
         </div>
 
-        <TabsContent className="kubecode-context-content kubecode-detail-overview" value="overview">
-          <section className="kubecode-detail-section" data-open={changesOpen}>
-            <header>
-              <Button aria-expanded={changesOpen} aria-label={t('kubecode.changes')} variant="ghost" onClick={() => setChangesOpen((open) => !open)}>
-                {changesOpen ? <CaretDown /> : <CaretRight />}
-                <GitDiff />
-                <strong>{t('kubecode.changes')}</strong>
-                <small>{gitStatus?.files.length ?? 0}</small>
-              </Button>
-              {gitStatus?.branch && <span><GitBranch /> {gitStatus.branch}</span>}
-            </header>
-            {changesOpen && (
-              <div className="kubecode-detail-section-content kubecode-detail-changes">
-                {!gitStatus?.is_repository ? (
-                  <div className="kubecode-review-empty">
-                    <GitDiff size={26} />
-                    <strong>{t('kubecode.createGitRepository')}</strong>
-                    <span>{t('kubecode.createGitRepositoryDescription')}</span>
-                    <Button disabled={!projectId} size="sm" onClick={() => void initializeGit()}>{t('kubecode.createGitRepository')}</Button>
-                  </div>
-                ) : gitStatus.files.length === 0 ? (
-                  <div className="kubecode-review-empty kubecode-review-empty-compact">
-                    <strong>{t('kubecode.noChanges')}</strong>
-                    <span>{t('kubecode.reviewDescription')}</span>
-                  </div>
-                ) : (
-                  <div className="kubecode-review-body">
-                    {stagedChanges.length > 0 && (
-                      <GitChangeGroup
-                        changes={stagedChanges}
-                        label={t('kubecode.stagedChanges')}
-                        onDiff={(change) => void openDiff(change, true)}
-                        onPrimary={(change) => void mutateGit('unstage', change.path)}
-                        primaryLabel={t('kubecode.unstage')}
-                        primaryIcon={<Minus />}
-                      />
-                    )}
-                    {worktreeChanges.length > 0 && (
-                      <GitChangeGroup
-                        changes={worktreeChanges}
-                        label={t('kubecode.changes')}
-                        onDiff={(change) => void openDiff(change, false)}
-                        onDiscard={(change) => setDiscardPath(change.path)}
-                        onPrimary={(change) => void mutateGit('stage', change.path)}
-                        primaryLabel={t('kubecode.stage')}
-                        primaryIcon={<Plus />}
-                        discardLabel={t('kubecode.discard')}
-                      />
-                    )}
-                    {stagedChanges.length > 0 && (
-                      <div className="kubecode-commit-box">
-                        <Input aria-label={t('kubecode.commitMessage')} placeholder={t('kubecode.commitMessage')} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} />
-                        <Button disabled={!commitMessage.trim()} size="sm" onClick={() => void commit()}><GitCommit /> {t('kubecode.commit')}</Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-          <section className="kubecode-detail-section kubecode-detail-files" data-open={filesOpen}>
-            <header>
-              <Button aria-expanded={filesOpen} variant="ghost" onClick={() => setFilesOpen((open) => !open)}>
-                {filesOpen ? <CaretDown /> : <CaretRight />}
-                <Folder />
-                <strong>{t('kubecode.files')}</strong>
-              </Button>
-              <div>
-                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File /></Button>
-                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder /></Button>
-              </div>
-            </header>
-            {filesOpen && projectId && (
-              <ProjectFileTree
-                api={api}
-                onDirectoryChange={setSelectedDirectory}
-                onOpenFile={(entry) => void openEntry(entry)}
-                projectId={projectId}
-                projectName={projectName ?? projectId}
-                refreshVersion={fileTreeRevision}
-              />
-            )}
-          </section>
+        <TabsContent className="kubecode-context-content" value="review">
+          {!gitStatus?.is_repository ? (
+            <div className="kubecode-review-empty">
+              <GitDiff size={26} />
+              <strong>{t('kubecode.createGitRepository')}</strong>
+              <span>{t('kubecode.createGitRepositoryDescription')}</span>
+              <Button disabled={!projectId} size="sm" onClick={() => void initializeGit()}>{t('kubecode.createGitRepository')}</Button>
+            </div>
+          ) : gitStatus.files.length === 0 ? (
+            <div className="kubecode-review-empty">
+              <strong>{t('kubecode.noChanges')}</strong>
+              <span>{t('kubecode.reviewDescription')}</span>
+            </div>
+          ) : (
+            <div className="kubecode-review-body">
+              {stagedChanges.length > 0 && (
+                <GitChangeGroup
+                  changes={stagedChanges}
+                  label={t('kubecode.stagedChanges')}
+                  onDiff={(change) => void openDiff(change, true)}
+                  onPrimary={(change) => void mutateGit('unstage', change.path)}
+                  primaryLabel={t('kubecode.unstage')}
+                  primaryIcon={<Minus />}
+                />
+              )}
+              {worktreeChanges.length > 0 && (
+                <GitChangeGroup
+                  changes={worktreeChanges}
+                  label={t('kubecode.changes')}
+                  onDiff={(change) => void openDiff(change, false)}
+                  onDiscard={(change) => setDiscardPath(change.path)}
+                  onPrimary={(change) => void mutateGit('stage', change.path)}
+                  primaryLabel={t('kubecode.stage')}
+                  primaryIcon={<Plus />}
+                  discardLabel={t('kubecode.discard')}
+                />
+              )}
+              {stagedChanges.length > 0 && (
+                <div className="kubecode-commit-box">
+                  <Input aria-label={t('kubecode.commitMessage')} placeholder={t('kubecode.commitMessage')} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} />
+                  <Button disabled={!commitMessage.trim()} size="sm" onClick={() => void commit()}><GitCommit /> {t('kubecode.commit')}</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent className="kubecode-context-content" value="files">
+          {projectId && (
+            <ProjectFileTree
+              api={api}
+              onDirectoryChange={setSelectedDirectory}
+              onOpenFile={(entry) => void openEntry(entry)}
+              projectId={projectId}
+              projectName={projectName ?? projectId}
+              refreshVersion={fileTreeRevision}
+            />
+          )}
         </TabsContent>
 
         {document && (
@@ -303,7 +280,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
           <TabsContent className="kubecode-context-content kubecode-diff-view" value="diff">
             <div className="kubecode-editor-toolbar">
               <span>{diff.path}</span>
-              <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={() => { setDiff(null); setTab('overview') }}><X /></Button>
+              <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={() => { setDiff(null); setTab('review') }}><X /></Button>
             </div>
             <pre>{diff.content || t('kubecode.emptyDiff')}</pre>
           </TabsContent>

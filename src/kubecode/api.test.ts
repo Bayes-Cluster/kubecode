@@ -70,6 +70,19 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('serializes Git diff booleans for Axum query parsing', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ diff: '' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.gitDiff('project-1', 'README.md', false)
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/git/diff?path=README.md&staged=false',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
+
   it('loads the workspace cursor and manages global session summaries', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ cursor: 42 })))

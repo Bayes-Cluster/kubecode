@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from './App'
 import type { KubecodeApi, TerminalInfo } from './api'
@@ -12,6 +12,7 @@ vi.mock('./TerminalView', () => ({
 
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
+  afterEach(() => vi.unstubAllGlobals())
 
   it.each(['create', 'import'] as const)(
     'deduplicates a %s completion when the session SSE refresh arrives first',
@@ -139,10 +140,34 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('tab', { name: 'Details' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Changes/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('data-state', 'active')
     expect(screen.queryByText('Select a file to start editing')).not.toBeInTheDocument()
+  })
+
+  it('delivers a test notification and reports the result in Settings', async () => {
+    class MockNotification {
+      static deliveries: string[] = []
+      static permission: NotificationPermission = 'granted'
+      static requestPermission = vi.fn(async () => 'granted' as NotificationPermission)
+
+      constructor(title: string) { MockNotification.deliveries.push(title) }
+    }
+    vi.stubGlobal('Notification', MockNotification)
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send test' }))
+
+    await waitFor(() => expect(MockNotification.deliveries).toEqual([
+      'Kubecode notifications are ready',
+    ]))
+    expect(screen.getByRole('status')).toHaveTextContent('Kubecode notifications are ready')
   })
 
   it('surfaces running and stuck Agent sessions on their project icons', async () => {

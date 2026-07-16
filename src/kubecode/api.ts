@@ -204,7 +204,7 @@ export class KubecodeApi {
 
   gitDiff(projectId: string, path: string, staged: boolean): Promise<string> {
     return this.request<{ diff: string }>(
-      `${this.projectPath(projectId)}/git/diff?${query({ path, staged: staged ? 1 : 0 })}`,
+      `${this.projectPath(projectId)}/git/diff?${query({ path, staged: String(staged) })}`,
     ).then((result) => result.diff)
   }
 

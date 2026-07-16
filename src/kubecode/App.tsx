@@ -76,7 +76,13 @@ import {
   type NotificationCategory,
 } from './notificationPreferences'
 import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
-import { notificationPermission } from './workspaceNotifications'
+import {
+  deliverBrowserNotification,
+  ensureBrowserNotificationPermission,
+  notificationPermission,
+  type BrowserNotificationDelivery,
+  type BrowserNotificationPermission,
+} from './workspaceNotifications'
 import './kubecode.css'
 
 const browserApi = new KubecodeApi()
@@ -106,6 +112,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     readKubecodeNotifications(localStorage)
   ))
   const [notificationOnboardingSuppressed, setNotificationOnboardingSuppressed] = useState(false)
+  const [browserPermission, setBrowserPermission] = useState<BrowserNotificationPermission>(() => (
+    notificationPermission()
+  ))
+  const [notificationTestStatus, setNotificationTestStatus] = useState<BrowserNotificationDelivery['status'] | null>(null)
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
@@ -127,7 +137,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   )
   const notificationOnboardingOpen = !notificationOnboardingSuppressed
     && !notifications.onboardingDismissed
-    && notificationPermission() === 'default'
+    && browserPermission === 'default'
     && workspaceEvents.some((event) => event.kind === 'run_started')
 
   useEffect(() => {
@@ -354,8 +364,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [applyProjectLayout, projectId])
 
   const requestNotificationPermission = useCallback(async () => {
-    if (typeof Notification === 'undefined') return
-    const permission = await Notification.requestPermission()
+    const permission = await ensureBrowserNotificationPermission()
+    setBrowserPermission(permission)
+    if (permission !== 'granted') {
+      setNotificationTestStatus(permission === 'unsupported' ? 'unsupported' : 'permission_required')
+    }
     setNotifications((current) => ({ ...current, onboardingDismissed: true }))
     setNotificationOnboardingSuppressed(true)
     trackEvent('kubecode_notification_permission_requested', { result: permission })
@@ -367,14 +380,20 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     trackEvent('kubecode_notification_onboarding_dismissed')
   }, [])
 
-  const sendTestNotification = useCallback(() => {
-    if (notificationPermission() !== 'granted') return
-    new Notification(t('kubecode.notificationTestTitle'), {
+  const sendTestNotification = useCallback(async () => {
+    const permission = await ensureBrowserNotificationPermission()
+    setBrowserPermission(permission)
+    if (permission !== 'granted') {
+      setNotificationTestStatus(permission === 'unsupported' ? 'unsupported' : 'permission_required')
+      return
+    }
+    const delivery = deliverBrowserNotification(t('kubecode.notificationTestTitle'), {
       body: t('kubecode.notificationTestBody'),
       silent: notifications.sound.completion === 'none',
       tag: 'kubecode:test',
     })
-    trackEvent('kubecode_notification_tested')
+    setNotificationTestStatus(delivery.status)
+    trackEvent('kubecode_notification_tested', { result: delivery.status })
   }, [notifications.sound.completion, t])
 
   return (
@@ -616,6 +635,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         agents={agents}
         appearance={appearance}
         notifications={notifications}
+        notificationPermission={browserPermission}
+        notificationTestStatus={notificationTestStatus}
         open={settingsOpen}
         onAppearanceChange={setAppearance}
         onNotificationsChange={setNotifications}
@@ -1034,6 +1055,8 @@ function KubecodeSettingsDialog({
   agents,
   appearance,
   notifications,
+  notificationPermission: browserPermission,
+  notificationTestStatus,
   open,
   onAppearanceChange,
   onNotificationsChange,
@@ -1045,12 +1068,14 @@ function KubecodeSettingsDialog({
   agents: AgentDescriptor[]
   appearance: KubecodeAppearance
   notifications: KubecodeNotifications
+  notificationPermission: BrowserNotificationPermission
+  notificationTestStatus: BrowserNotificationDelivery['status'] | null
   open: boolean
   onAppearanceChange: (appearance: KubecodeAppearance) => void
   onNotificationsChange: (notifications: KubecodeNotifications) => void
   onOpenChange: (open: boolean) => void
   onRequestNotificationPermission: () => Promise<void>
-  onTestNotification: () => void
+  onTestNotification: () => Promise<void>
   t: Translator
 }) {
   const [section, setSection] = useState<'general' | 'notifications' | 'agents' | 'terminal' | 'editor'>('general')
@@ -1180,6 +1205,9 @@ function KubecodeSettingsDialog({
                       ...notifications,
                       systemMode: value as KubecodeNotifications['systemMode'],
                     })
+                    if (value !== 'off' && browserPermission === 'default') {
+                      void onRequestNotificationPermission()
+                    }
                     trackEvent('kubecode_notification_preference_changed', { setting: 'mode', value })
                   }}
                 >
@@ -1231,19 +1259,23 @@ function KubecodeSettingsDialog({
               <div className="kubecode-setting-row">
                 <div>
                   <strong>{t('kubecode.notificationPermission')}</strong>
-                  <span>{t(`kubecode.notifications.permission.${notificationPermission()}`)}</span>
+                  <span>{t(`kubecode.notifications.permission.${browserPermission}`)}</span>
+                  {notificationTestStatus && (
+                    <span className="kubecode-notification-test-result" data-status={notificationTestStatus} role="status">
+                      {notificationTestMessage(t, notificationTestStatus, browserPermission)}
+                    </span>
+                  )}
                 </div>
                 <div className="kubecode-notification-controls">
-                  {notificationPermission() === 'default' && (
+                  {browserPermission === 'default' && (
                     <Button size="sm" variant="outline" onClick={() => void onRequestNotificationPermission()}>
                       {t('kubecode.enableNotifications')}
                     </Button>
                   )}
                   <Button
-                    disabled={notificationPermission() !== 'granted'}
                     size="sm"
                     variant="outline"
-                    onClick={onTestNotification}
+                    onClick={() => void onTestNotification()}
                   >
                     {t('kubecode.testNotification')}
                   </Button>
@@ -1268,6 +1300,17 @@ function agentName(id: AgentId): string {
   if (id === 'claude_code') return 'Claude Code'
   if (id === 'opencode') return 'OpenCode'
   return 'Codex'
+}
+
+function notificationTestMessage(
+  t: Translator,
+  status: BrowserNotificationDelivery['status'],
+  permission: BrowserNotificationPermission,
+): string {
+  if (status === 'sent') return t('kubecode.notificationTestTitle')
+  if (status === 'failed') return t('kubecode.error')
+  const effectivePermission = status === 'unsupported' ? 'unsupported' : permission
+  return t(`kubecode.notifications.permission.${effectivePermission}`)
 }
 
 function projectInitial(name: string): string {
