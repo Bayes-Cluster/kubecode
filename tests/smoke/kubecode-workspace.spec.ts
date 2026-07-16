@@ -57,7 +57,7 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await page.keyboard.press('Enter')
   await expect(page.locator('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'false')
 
-  await page.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('button', { name: 'Project actions' }).click()
   await page.getByRole('menuitem', { name: 'Delete' }).click()
   await expect(page.getByRole('button', { name: projectName })).toHaveCount(0)
 })
