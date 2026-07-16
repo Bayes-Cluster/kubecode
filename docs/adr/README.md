@@ -19,3 +19,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0172](0172-event-driven-agent-workspace-attention.md) | Event-driven Agent workspace attention |
 | [0173](0173-optional-project-workspaces-and-agent-session-cwd.md) | Optional Project Workspaces and Agent Session cwd |
 | [0174](0174-immutable-agent-chat-branches.md) | Immutable Agent Chat branches |
+| [0175](0175-alternate-index-turn-checkpoints.md) | Alternate-index turn checkpoints |
+| [0176](0176-team-members-and-nested-agent-sessions.md) | Team members and nested Agent Sessions |

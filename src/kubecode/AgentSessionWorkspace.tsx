@@ -83,6 +83,7 @@ type AgentSessionWorkspaceProps = {
   projectId: string | null
   t: Translator
   workspaceEvents: WorkspaceEvent[]
+  workspacesEnabled?: boolean
 }
 
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
@@ -117,6 +118,7 @@ export function AgentSessionWorkspace({
   projectId,
   t,
   workspaceEvents,
+  workspacesEnabled = false,
 }: AgentSessionWorkspaceProps) {
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
@@ -131,6 +133,9 @@ export function AgentSessionWorkspace({
   const [draftTitle, setDraftTitle] = useState('')
   const [editRunId, setEditRunId] = useState<string | null>(null)
   const [editPrompt, setEditPrompt] = useState('')
+  const [teamOpen, setTeamOpen] = useState(false)
+  const [teamAgentId, setTeamAgentId] = useState<Conversation['agent_id']>('codex')
+  const [teamIsolated, setTeamIsolated] = useState(false)
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const knownRunIdsRef = useRef(new Set<string>())
@@ -350,6 +355,21 @@ export function AgentSessionWorkspace({
     await branchAtRun(runId, replacement)
   }
 
+  const addTeamMember = async () => {
+    if (!conversation) return
+    try {
+      const member = await api.createTeamMember(conversation.id, teamAgentId, teamIsolated)
+      onConversationCreated(member)
+      setTeamOpen(false)
+      trackEvent('kubecode_team_member_created', {
+        agent_id: teamAgentId,
+        isolated: Number(teamIsolated),
+      })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
   if (!conversation) {
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
@@ -434,6 +454,13 @@ export function AgentSessionWorkspace({
                   {t('kubecode.forkSession')}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onSelect={() => {
+                setTeamAgentId(agents.find((candidate) => candidate.available)?.id ?? conversation.agent_id)
+                setTeamIsolated(false)
+                setTeamOpen(true)
+              }}>
+                {t('kubecode.addTeamMember')}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void removeLocally()}>
                 {t('kubecode.delete')}
@@ -712,6 +739,40 @@ export function AgentSessionWorkspace({
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
             <Button disabled={!editPrompt.trim()} onClick={() => void submitEdit()}>{t('kubecode.regenerate')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={teamOpen} onOpenChange={setTeamOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.addTeamMember')}</DialogTitle>
+            <DialogDescription>{t('kubecode.addTeamMemberDescription')}</DialogDescription>
+          </DialogHeader>
+          <label className="kubecode-new-session-field">
+            <span>{t('kubecode.agent')}</span>
+            <Select value={teamAgentId} onValueChange={(value) => setTeamAgentId(value as Conversation['agent_id'])}>
+              <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {agents.map((candidate) => (
+                  <SelectItem disabled={!candidate.available} key={candidate.id} value={candidate.id}>
+                    <AiAgentIcon agent={candidate.id} size={18} /> {agentName(candidate.id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          {workspacesEnabled && (
+            <label className="kubecode-team-isolation">
+              <Switch checked={teamIsolated} onCheckedChange={setTeamIsolated} />
+              <span>
+                <strong>{t('kubecode.isolateTeamMember')}</strong>
+                <small>{t('kubecode.isolateTeamMemberDescription')}</small>
+              </span>
+            </label>
+          )}
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
+            <Button onClick={() => void addTeamMember()}>{t('kubecode.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

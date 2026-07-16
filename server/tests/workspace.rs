@@ -102,6 +102,47 @@ fn creates_an_isolated_git_worktree_for_an_agent_session() {
     );
 }
 
+#[test]
+fn captures_and_restores_a_git_tree_without_touching_the_real_index() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("checkpoint-project"))
+        .expect("project");
+    run_git(&project.path, &["init"]);
+    run_git(&project.path, &["config", "user.email", "test@example.com"]);
+    run_git(&project.path, &["config", "user.name", "Kubecode Test"]);
+    fs::write(Path::new(&project.path).join("README.md"), "root\n").expect("fixture");
+    run_git(&project.path, &["add", "README.md"]);
+    run_git(&project.path, &["commit", "-m", "initial"]);
+    fs::write(Path::new(&project.path).join("README.md"), "checkpoint\n")
+        .expect("checkpoint content");
+    fs::write(Path::new(&project.path).join("staged.txt"), "staged\n").expect("staged file");
+    run_git(&project.path, &["add", "staged.txt"]);
+    let staged_before = git_output(&project.path, &["diff", "--cached", "--name-only"]);
+
+    let checkpoint = service
+        .capture_git_tree(Path::new(&project.path), "run-1-before")
+        .expect("capture tree")
+        .expect("git tree");
+    fs::write(Path::new(&project.path).join("README.md"), "later\n").expect("later content");
+    let current = service
+        .capture_git_tree(Path::new(&project.path), "run-1-current")
+        .expect("capture current")
+        .expect("current tree");
+    service
+        .restore_git_tree(Path::new(&project.path), &checkpoint, Some(&current))
+        .expect("restore checkpoint");
+
+    assert_eq!(
+        fs::read_to_string(Path::new(&project.path).join("README.md")).expect("restored file"),
+        "checkpoint\n",
+    );
+    assert_eq!(
+        git_output(&project.path, &["diff", "--cached", "--name-only"]),
+        staged_before,
+    );
+}
+
 fn run_git(cwd: impl AsRef<Path>, args: &[&str]) {
     let output = Command::new("git")
         .args(args)

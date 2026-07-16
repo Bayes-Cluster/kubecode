@@ -157,7 +157,23 @@ describe('Kubecode API client', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/sessions/session%2F1/turns/run%2F1/branch',
-      expect.objectContaining({ body: '{}', method: 'POST' }),
+      expect.objectContaining({ body: JSON.stringify({ restore_files: true }), method: 'POST' }),
+    )
+  })
+
+  it('creates a team member with an explicit shared or isolated workspace', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'member-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.createTeamMember('session-1', 'claude_code', false)
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/sessions/session-1/team-members',
+      expect.objectContaining({
+        body: JSON.stringify({ agent_id: 'claude_code', isolated: false }),
+        method: 'POST',
+      }),
     )
   })
 

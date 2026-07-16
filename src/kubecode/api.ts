@@ -50,7 +50,7 @@ export type Conversation = {
   updated_at?: string
   archived?: boolean
   parent_conversation_id?: string | null
-  relationship?: 'fork' | 'subagent' | 'branch' | null
+  relationship?: 'fork' | 'subagent' | 'branch' | 'team_member' | null
   read_only?: boolean
   latest_run_status?: RunStatus | null
   execution_mode: ExecutionMode
@@ -334,11 +334,26 @@ export class KubecodeApi {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/fork`, { method: 'POST' })
   }
 
-  branchConversationAtRun(conversationId: string, runId: string): Promise<Conversation> {
+  branchConversationAtRun(
+    conversationId: string,
+    runId: string,
+    restoreFiles = true,
+  ): Promise<Conversation> {
     return this.request(
       `/sessions/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(runId)}/branch`,
-      { method: 'POST', body: JSON.stringify({}) },
+      { method: 'POST', body: JSON.stringify({ restore_files: restoreFiles }) },
     )
+  }
+
+  createTeamMember(
+    conversationId: string,
+    agentId: AgentId,
+    isolated: boolean,
+  ): Promise<Conversation> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/team-members`, {
+      method: 'POST',
+      body: JSON.stringify({ agent_id: agentId, isolated }),
+    })
   }
 
   startRun(

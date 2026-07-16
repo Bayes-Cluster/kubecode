@@ -261,6 +261,9 @@ function relationshipLabel(
   if (conversation.relationship === 'subagent') {
     return t('kubecode.subagentOf', { title: parentTitle })
   }
+  if (conversation.relationship === 'team_member') {
+    return t('kubecode.teamMemberOf', { title: parentTitle })
+  }
   return conversation.relationship === 'branch'
     ? t('kubecode.branchOf', { title: parentTitle })
     : t('kubecode.forkOf', { title: parentTitle })

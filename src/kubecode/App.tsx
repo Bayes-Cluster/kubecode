@@ -570,6 +570,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               onConversationUpdated={handleConversationUpdated}
               t={t}
               workspaceEvents={workspaceEvents}
+              workspacesEnabled={project?.workspaces_enabled}
               key={conversationId ?? projectId ?? 'no-project'}
             />
             {contextOpen && (

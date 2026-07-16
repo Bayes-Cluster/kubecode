@@ -37,6 +37,17 @@ selected run, and has a fresh provider Session ID. `recreated_context` is shown
 to the user whenever Kubecode had to rebuild provider context from the durable
 timeline instead of using a native provider checkpoint.
 
+A Team member is another Agent Chat linked to a parent Chat. Shared members keep
+the parent's `agent_session_id` and cwd. An explicitly isolated member receives
+a new Agent Session ID and a nested worktree based on the parent workspace.
+
+## Turn checkpoint
+
+A turn checkpoint stores optional before/after Git tree IDs for one run. Trees
+are captured with a private alternate index, so staging remains user-owned.
+Shared-workspace restoration requires an after-tree fingerprint match; a
+mismatch is a conflict, not an overwrite.
+
 ## Session and run
 
 A Session is a durable relationship between one Agent Session and one Agent. It owns

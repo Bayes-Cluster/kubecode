@@ -169,6 +169,10 @@ fn api_router(state: AppState) -> Router {
             axum::routing::post(branch_conversation_at_run),
         )
         .route(
+            "/sessions/{conversation_id}/team-members",
+            axum::routing::post(create_team_member),
+        )
+        .route(
             "/sessions/{conversation_id}/events",
             get(list_session_events),
         )
@@ -414,12 +418,82 @@ async fn fork_conversation(
 async fn branch_conversation_at_run(
     State(state): State<AppState>,
     Path((conversation_id, run_id)): Path<(String, String)>,
+    Json(request): Json<BranchConversationRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let conversation = state
-        .agent_runtime
-        .store()
-        .branch_conversation_at_run(&conversation_id, &run_id)?;
+    let store = state.agent_runtime.store();
+    let source = store.get_conversation(&conversation_id)?;
+    if request.restore_files
+        && let Some(checkpoint) = store.run_checkpoint(&run_id)?
+        && let Some(before_tree) = checkpoint.before_tree
+    {
+        let cwd = state
+            .workspace
+            .execution_path(&source.project_id, source.workspace_path.as_deref())?;
+        let expected = (source.execution_mode == ExecutionMode::Shared)
+            .then_some(checkpoint.after_tree)
+            .flatten();
+        if source.execution_mode == ExecutionMode::Shared && expected.is_none() {
+            return Err(ApiError::WorkspaceMigration(
+                "cannot safely restore a Shared workspace without an after-turn fingerprint".into(),
+            ));
+        }
+        state
+            .workspace
+            .restore_git_tree(&cwd, &before_tree, expected.as_deref())?;
+    }
+    let conversation = store.branch_conversation_at_run(&conversation_id, &run_id)?;
     Ok((StatusCode::CREATED, Json(conversation)))
+}
+
+#[derive(Debug, Deserialize)]
+struct BranchConversationRequest {
+    #[serde(default = "default_true")]
+    restore_files: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateTeamMemberRequest {
+    agent_id: AgentId,
+    #[serde(default)]
+    isolated: bool,
+}
+
+async fn create_team_member(
+    State(state): State<AppState>,
+    Path(parent_conversation_id): Path<String>,
+    Json(request): Json<CreateTeamMemberRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let store = state.agent_runtime.store();
+    let parent = store.get_conversation(&parent_conversation_id)?;
+    let mut member =
+        store.create_team_member(&parent_conversation_id, request.agent_id, request.isolated)?;
+    if request.isolated {
+        let workspace_path = state.workspace.create_session_worktree_from(
+            &member.project_id,
+            &member.agent_session_id,
+            parent.workspace_path.as_deref(),
+        )?;
+        member = store.assign_execution_workspace(
+            &member.id,
+            ExecutionMode::Worktree,
+            Some(&workspace_path.to_string_lossy()),
+        )?;
+    }
+    if state
+        .agents
+        .iter()
+        .any(|agent| agent.id == member.agent_id && agent.available)
+    {
+        state
+            .agent_runtime
+            .initialize_conversation(&member.id)
+            .await?;
+    }
+    Ok((StatusCode::CREATED, Json(member)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1558,6 +1632,7 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         WorkspaceError::ProjectNotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         WorkspaceError::DuplicateProject(_) => (StatusCode::CONFLICT, "duplicate_project"),
         WorkspaceError::Git(_) => (StatusCode::CONFLICT, "git_worktree_error"),
+        WorkspaceError::CheckpointConflict { .. } => (StatusCode::CONFLICT, "checkpoint_conflict"),
         WorkspaceError::Conflict { .. } => (StatusCode::CONFLICT, "revision_conflict"),
         WorkspaceError::Io(error) if error.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "not_found")

@@ -103,6 +103,66 @@ fn branches_chat_history_without_rewriting_the_source_session() {
 }
 
 #[test]
+fn persists_before_and_after_git_trees_for_a_run() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Change files",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+
+    store
+        .set_run_checkpoint(&run.id, Some("before-tree"), None)
+        .expect("before checkpoint");
+    store
+        .set_run_checkpoint(&run.id, None, Some("after-tree"))
+        .expect("after checkpoint");
+
+    let checkpoint = store
+        .run_checkpoint(&run.id)
+        .expect("checkpoint query")
+        .expect("checkpoint");
+    assert_eq!(checkpoint.before_tree.as_deref(), Some("before-tree"));
+    assert_eq!(checkpoint.after_tree.as_deref(), Some("after-tree"));
+}
+
+#[test]
+fn team_members_share_the_parent_agent_session_by_default() {
+    let (_temp, store) = store();
+    let parent = store
+        .create_conversation("project", AgentId::ClaudeCode, Some("Lead"))
+        .expect("parent");
+
+    let member = store
+        .create_team_member(&parent.id, AgentId::Codex, false)
+        .expect("team member");
+
+    assert_eq!(member.agent_session_id, parent.agent_session_id);
+    assert_eq!(member.execution_mode, parent.execution_mode);
+    assert_eq!(member.workspace_path, parent.workspace_path);
+    assert_eq!(
+        member.parent_conversation_id.as_deref(),
+        Some(parent.id.as_str())
+    );
+    assert_eq!(
+        member.relationship,
+        Some(ConversationRelationship::TeamMember),
+    );
+
+    let isolated = store
+        .create_team_member(&parent.id, AgentId::OpenCode, true)
+        .expect("isolated team member");
+    assert_eq!(isolated.agent_session_id, isolated.id);
+    assert_ne!(isolated.agent_session_id, parent.agent_session_id);
+}
+
+#[test]
 fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
     let (_temp, store) = store();
     let first_conversation = store

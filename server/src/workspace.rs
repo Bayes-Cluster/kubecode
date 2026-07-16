@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -29,6 +29,8 @@ pub enum WorkspaceError {
     FileTooLarge,
     #[error("git worktree operation failed: {0}")]
     Git(String),
+    #[error("workspace changed after this turn (expected {expected}, current {current})")]
+    CheckpointConflict { expected: String, current: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -164,6 +166,15 @@ impl WorkspaceService {
         project_id: &str,
         session_id: &str,
     ) -> Result<PathBuf, WorkspaceError> {
+        self.create_session_worktree_from(project_id, session_id, None)
+    }
+
+    pub fn create_session_worktree_from(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        base_workspace_path: Option<&str>,
+    ) -> Result<PathBuf, WorkspaceError> {
         validate_storage_id(session_id)?;
         let project = self.project(project_id)?;
         if !project.workspaces_enabled {
@@ -171,7 +182,7 @@ impl WorkspaceService {
                 "Workspaces are disabled for this project".into(),
             ));
         }
-        let project_root = PathBuf::from(&project.path).canonicalize()?;
+        let base = self.execution_path(project_id, base_workspace_path)?;
         let workspace_parent = self.state_root.join("worktrees").join(project_id);
         fs::create_dir_all(&workspace_parent)?;
         let workspace_path = workspace_parent.join(session_id);
@@ -183,7 +194,7 @@ impl WorkspaceService {
         let branch = format!("kubecode/{session_id}");
         let workspace_text = path_string(&workspace_path);
         run_git(
-            &project_root,
+            &base,
             &[
                 "worktree",
                 "add",
@@ -220,6 +231,75 @@ impl WorkspaceService {
     ) -> Result<bool, WorkspaceError> {
         let workspace = self.validated_session_worktree(project_id, session_id, workspace_path)?;
         Ok(!git_output(&workspace, &["status", "--porcelain"])?.is_empty())
+    }
+
+    pub fn capture_git_tree(
+        &self,
+        cwd: &Path,
+        checkpoint_id: &str,
+    ) -> Result<Option<String>, WorkspaceError> {
+        validate_storage_id(checkpoint_id)?;
+        let repository = git_command(cwd, &["rev-parse", "--is-inside-work-tree"])?;
+        if !repository.status.success() {
+            return Ok(None);
+        }
+        let checkpoint_parent = self.state_root.join("checkpoints");
+        fs::create_dir_all(&checkpoint_parent)?;
+        let index_path = checkpoint_parent.join(format!("{checkpoint_id}.index"));
+        if index_path.exists() {
+            fs::remove_file(&index_path)?;
+        }
+        let result = (|| {
+            run_git_with_index(cwd, &index_path, &["read-tree", "HEAD"])?;
+            run_git_with_index(cwd, &index_path, &["add", "--all"])?;
+            git_output_with_index(cwd, &index_path, &["write-tree"]).map(Some)
+        })();
+        if index_path.exists() {
+            fs::remove_file(index_path)?;
+        }
+        result
+    }
+
+    pub fn restore_git_tree(
+        &self,
+        cwd: &Path,
+        target_tree: &str,
+        expected_current_tree: Option<&str>,
+    ) -> Result<(), WorkspaceError> {
+        let checkpoint_id = format!("restore-{}", Uuid::new_v4());
+        let current_tree = self
+            .capture_git_tree(cwd, &checkpoint_id)?
+            .ok_or_else(|| WorkspaceError::Git("workspace is not a Git repository".into()))?;
+        if let Some(expected) = expected_current_tree
+            && current_tree != expected
+        {
+            return Err(WorkspaceError::CheckpointConflict {
+                expected: expected.to_owned(),
+                current: current_tree,
+            });
+        }
+        let patch = git_output_bytes(cwd, &["diff", "--binary", &current_tree, target_tree])?;
+        if patch.is_empty() {
+            return Ok(());
+        }
+        let mut child = Command::new("git")
+            .args(["apply", "--whitespace=nowarn", "-"])
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| WorkspaceError::Git("could not open git apply input".into()))?
+            .write_all(&patch)?;
+        let output = child.wait_with_output()?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(git_failure(&output))
+        }
     }
 
     pub fn merge_session_worktree(
@@ -789,6 +869,42 @@ fn git_output(cwd: &Path, args: &[&str]) -> Result<String, WorkspaceError> {
     String::from_utf8(git_output_bytes(cwd, args)?)
         .map(|output| output.trim().to_owned())
         .map_err(|error| WorkspaceError::Git(error.to_string()))
+}
+
+fn run_git_with_index(cwd: &Path, index: &Path, args: &[&str]) -> Result<(), WorkspaceError> {
+    let output = git_command_with_index(cwd, index, args)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(git_failure(&output))
+    }
+}
+
+fn git_output_with_index(
+    cwd: &Path,
+    index: &Path,
+    args: &[&str],
+) -> Result<String, WorkspaceError> {
+    let output = git_command_with_index(cwd, index, args)?;
+    if !output.status.success() {
+        return Err(git_failure(&output));
+    }
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_owned())
+        .map_err(|error| WorkspaceError::Git(error.to_string()))
+}
+
+fn git_command_with_index(
+    cwd: &Path,
+    index: &Path,
+    args: &[&str],
+) -> Result<std::process::Output, WorkspaceError> {
+    Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_INDEX_FILE", index)
+        .output()
+        .map_err(WorkspaceError::from)
 }
 
 fn git_output_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, WorkspaceError> {

@@ -142,6 +142,12 @@ impl AgentRuntime {
             &request.message,
             PermissionMode::Safe,
         )?;
+        if let Ok(Some(tree)) = self
+            .workspace
+            .capture_git_tree(&cwd, &format!("{}-before", run.id))
+        {
+            let _ = self.store.set_run_checkpoint(&run.id, Some(&tree), None);
+        }
         let (cancel, cancelled) = oneshot::channel();
         self.cancellations
             .lock()
@@ -815,6 +821,7 @@ async fn run_acp_session(
     let conversation_id = config.conversation_id;
     let provider_session_id = config.provider_session_id;
     let cwd = config.cwd;
+    let checkpoint_cwd = cwd.clone();
 
     let result = agent_client_protocol::Client
         .builder()
@@ -1122,6 +1129,14 @@ async fn run_acp_session(
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
+                if let Ok(Some(tree)) = runtime.workspace.capture_git_tree(
+                    &checkpoint_cwd,
+                    &format!("{}-after", command.run.id),
+                ) {
+                    let _ = runtime
+                        .store
+                        .set_run_checkpoint(&command.run.id, None, Some(&tree));
+                }
                 let _ = runtime.store.append_session_event(
                     &conversation_id,
                     "run_completed",

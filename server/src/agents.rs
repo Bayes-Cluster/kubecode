@@ -58,6 +58,7 @@ pub enum ConversationRelationship {
     Fork,
     Subagent,
     Branch,
+    TeamMember,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -132,6 +133,13 @@ pub struct AgentRun {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RunCheckpoint {
+    pub run_id: String,
+    pub before_tree: Option<String>,
+    pub after_tree: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentEvent {
     pub run_id: String,
@@ -198,6 +206,12 @@ impl AgentStore {
              );
              CREATE INDEX IF NOT EXISTS idx_agent_runs_project_status
                ON agent_runs(project_id, status);
+             CREATE TABLE IF NOT EXISTS run_checkpoints (
+               run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+               before_tree TEXT,
+               after_tree TEXT,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
              CREATE TABLE IF NOT EXISTS agent_events (
                run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
                seq INTEGER NOT NULL,
@@ -627,6 +641,85 @@ impl AgentStore {
         self.get_conversation(&conversation.id)
     }
 
+    pub fn create_team_member(
+        &self,
+        parent_conversation_id: &str,
+        agent_id: AgentId,
+        isolated: bool,
+    ) -> Result<Conversation, StoreError> {
+        let parent = self.get_conversation(parent_conversation_id)?;
+        let id = Uuid::new_v4().to_string();
+        let conversation = Conversation {
+            agent_session_id: if isolated {
+                id.clone()
+            } else {
+                parent.agent_session_id
+            },
+            id,
+            project_id: parent.project_id.clone(),
+            agent_id,
+            provider_session_id: None,
+            title: String::new(),
+            manual_title: None,
+            agent_title: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            archived: false,
+            parent_conversation_id: Some(parent.id.clone()),
+            relationship: Some(ConversationRelationship::TeamMember),
+            read_only: false,
+            latest_run_status: None,
+            execution_mode: if isolated {
+                ExecutionMode::Shared
+            } else {
+                parent.execution_mode
+            },
+            workspace_path: if isolated {
+                None
+            } else {
+                parent.workspace_path
+            },
+            recreated_context: false,
+            context_prefix: None,
+        };
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "INSERT INTO conversations
+                 (id, agent_session_id, project_id, agent_id, title,
+                  parent_conversation_id, relationship, read_only, execution_mode,
+                  workspace_path, recreated_context)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    conversation.id,
+                    conversation.agent_session_id,
+                    conversation.project_id,
+                    conversation.agent_id.as_str(),
+                    conversation.title,
+                    conversation.parent_conversation_id,
+                    conversation.relationship.map(|value| value.as_str()),
+                    conversation.read_only,
+                    conversation.execution_mode.as_str(),
+                    conversation.workspace_path,
+                    conversation.recreated_context,
+                ],
+            )?;
+        self.append_workspace_event(
+            "session_created",
+            Some(&parent.project_id),
+            Some(&conversation.id),
+            None,
+            &json!({
+                "agent_id": agent_id,
+                "parent_conversation_id": parent.id,
+                "relationship": "team_member",
+                "isolated": isolated,
+            }),
+        )?;
+        self.get_conversation(&conversation.id)
+    }
+
     pub fn set_manual_title(
         &self,
         conversation_id: &str,
@@ -857,6 +950,48 @@ impl AgentStore {
             )
             .optional()?
             .ok_or_else(|| StoreError::RunNotFound(run_id.to_owned()))
+    }
+
+    pub fn set_run_checkpoint(
+        &self,
+        run_id: &str,
+        before_tree: Option<&str>,
+        after_tree: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.get_run(run_id)?;
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "INSERT INTO run_checkpoints (run_id, before_tree, after_tree)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(run_id) DO UPDATE SET
+                   before_tree = COALESCE(excluded.before_tree, run_checkpoints.before_tree),
+                   after_tree = COALESCE(excluded.after_tree, run_checkpoints.after_tree),
+                   updated_at = CURRENT_TIMESTAMP",
+                params![run_id, before_tree, after_tree],
+            )?;
+        Ok(())
+    }
+
+    pub fn run_checkpoint(&self, run_id: &str) -> Result<Option<RunCheckpoint>, StoreError> {
+        self.get_run(run_id)?;
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .query_row(
+                "SELECT run_id, before_tree, after_tree FROM run_checkpoints WHERE run_id = ?1",
+                [run_id],
+                |row| {
+                    Ok(RunCheckpoint {
+                        run_id: row.get(0)?,
+                        before_tree: row.get(1)?,
+                        after_tree: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::from)
     }
 
     pub fn list_runs(&self, conversation_id: &str) -> Result<Vec<AgentRun>, StoreError> {
@@ -1491,6 +1626,7 @@ string_enum!(ConversationRelationship, {
     ConversationRelationship::Fork => "fork",
     ConversationRelationship::Subagent => "subagent",
     ConversationRelationship::Branch => "branch",
+    ConversationRelationship::TeamMember => "team_member",
 });
 
 string_enum!(ExecutionMode, {

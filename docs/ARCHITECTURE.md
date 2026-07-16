@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0173.
+active production boundary is defined by ADRs 0161–0176.
 
 ## Runtime topology
 
@@ -69,6 +69,15 @@ branches. Retained timeline events are copied into the branch for display, and
 the first provider prompt receives an explicit recreated transcript context.
 The branch shares its parent Agent Session cwd and never rewrites source Chat
 history.
+
+Each Git-backed run captures before/after trees through a temporary alternate
+index. Restoring a Shared Session requires its current tree to match the stored
+after-turn fingerprint; isolated worktree Sessions restore inside their own
+boundary. The real Git index and branch are never changed by capture.
+
+Team members are independent Agent Chats that share the parent's Agent Session
+by default. Explicit isolation creates a nested Agent Session and worktree from
+the parent workspace HEAD, so sharing versus isolation remains a user choice.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active
