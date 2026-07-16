@@ -54,6 +54,20 @@ pub enum RunStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ConversationRelationship {
+    Fork,
+    Subagent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConversationRelation {
+    pub parent_conversation_id: String,
+    pub relationship: ConversationRelationship,
+    pub read_only: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AgentEventKind {
     RunStarted,
     TextDelta,
@@ -84,6 +98,13 @@ pub struct Conversation {
     pub title: String,
     pub manual_title: Option<String>,
     pub agent_title: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub archived: bool,
+    pub parent_conversation_id: Option<String>,
+    pub relationship: Option<ConversationRelationship>,
+    pub read_only: bool,
+    pub latest_run_status: Option<RunStatus>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -205,6 +226,20 @@ impl AgentStore {
         )?;
         ensure_column(&database, "conversations", "manual_title", "TEXT")?;
         ensure_column(&database, "conversations", "agent_title", "TEXT")?;
+        ensure_column(
+            &database,
+            "conversations",
+            "archived",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(&database, "conversations", "parent_conversation_id", "TEXT")?;
+        ensure_column(&database, "conversations", "relationship", "TEXT")?;
+        ensure_column(
+            &database,
+            "conversations",
+            "read_only",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         database.execute(
             "UPDATE conversations SET manual_title = title
              WHERE manual_title IS NULL AND agent_title IS NULL
@@ -232,6 +267,13 @@ impl AgentStore {
             title: normalized_title(title).unwrap_or_default(),
             manual_title: normalized_title(title),
             agent_title: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            archived: false,
+            parent_conversation_id: None,
+            relationship: None,
+            read_only: false,
+            latest_run_status: None,
         };
         self.database
             .lock()
@@ -254,7 +296,7 @@ impl AgentStore {
             None,
             &json!({"agent_id": agent_id, "title": conversation.title}),
         )?;
-        Ok(conversation)
+        self.get_conversation(&conversation.id)
     }
 
     pub fn create_imported_conversation(
@@ -263,6 +305,23 @@ impl AgentStore {
         agent_id: AgentId,
         provider_session_id: &str,
         agent_title: Option<&str>,
+    ) -> Result<Conversation, StoreError> {
+        self.create_related_imported_conversation(
+            project_id,
+            agent_id,
+            provider_session_id,
+            agent_title,
+            None,
+        )
+    }
+
+    pub fn create_related_imported_conversation(
+        &self,
+        project_id: &str,
+        agent_id: AgentId,
+        provider_session_id: &str,
+        agent_title: Option<&str>,
+        relation: Option<ConversationRelation>,
     ) -> Result<Conversation, StoreError> {
         let provider_session_id = provider_session_id.trim();
         if provider_session_id.is_empty() {
@@ -284,14 +343,24 @@ impl AgentStore {
             title: agent_title.clone().unwrap_or_default(),
             manual_title: None,
             agent_title,
+            created_at: String::new(),
+            updated_at: String::new(),
+            archived: false,
+            parent_conversation_id: relation
+                .as_ref()
+                .map(|value| value.parent_conversation_id.clone()),
+            relationship: relation.as_ref().map(|value| value.relationship),
+            read_only: relation.is_some_and(|value| value.read_only),
+            latest_run_status: None,
         };
         self.database
             .lock()
             .expect("agent database mutex poisoned")
             .execute(
                 "INSERT INTO conversations
-                 (id, project_id, agent_id, provider_session_id, title, agent_title)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 (id, project_id, agent_id, provider_session_id, title, agent_title,
+                  parent_conversation_id, relationship, read_only)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     conversation.id,
                     conversation.project_id,
@@ -299,6 +368,9 @@ impl AgentStore {
                     conversation.provider_session_id,
                     conversation.title,
                     conversation.agent_title,
+                    conversation.parent_conversation_id,
+                    conversation.relationship.map(|value| value.as_str()),
+                    conversation.read_only,
                 ],
             )?;
         self.append_workspace_event(
@@ -308,16 +380,14 @@ impl AgentStore {
             None,
             &json!({"agent_id": agent_id, "provider_session_id": provider_session_id}),
         )?;
-        Ok(conversation)
+        self.get_conversation(&conversation.id)
     }
 
     pub fn get_conversation(&self, conversation_id: &str) -> Result<Conversation, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         database
             .query_row(
-                "SELECT id, project_id, agent_id, provider_session_id,
-                        COALESCE(manual_title, agent_title, ''), manual_title, agent_title
-                 FROM conversations WHERE id = ?1",
+                &conversation_query("WHERE c.id = ?1"),
                 [conversation_id],
                 conversation_from_row,
             )
@@ -327,14 +397,49 @@ impl AgentStore {
 
     pub fn list_conversations(&self, project_id: &str) -> Result<Vec<Conversation>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
-        let mut statement = database.prepare(
-            "SELECT id, project_id, agent_id, provider_session_id,
-                    COALESCE(manual_title, agent_title, ''), manual_title, agent_title
-             FROM conversations WHERE project_id = ?1 ORDER BY created_at, id",
-        )?;
+        let mut statement = database.prepare(&conversation_query(
+            "WHERE c.project_id = ?1 ORDER BY c.created_at, c.id",
+        ))?;
         let rows = statement.query_map([project_id], conversation_from_row)?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::from)
+    }
+
+    pub fn list_all_conversations(&self) -> Result<Vec<Conversation>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement =
+            database.prepare(&conversation_query("ORDER BY c.updated_at DESC, c.id"))?;
+        let rows = statement.query_map([], conversation_from_row)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn set_archived(
+        &self,
+        conversation_id: &str,
+        archived: bool,
+    ) -> Result<Conversation, StoreError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE conversations SET archived = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![conversation_id, archived],
+            )?;
+        if changed == 0 {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let conversation = self.get_conversation(conversation_id)?;
+        self.append_workspace_event(
+            "session_updated",
+            Some(&conversation.project_id),
+            Some(conversation_id),
+            None,
+            &json!({"archived": archived}),
+        )?;
+        Ok(conversation)
     }
 
     pub fn set_manual_title(
@@ -411,10 +516,9 @@ impl AgentStore {
             .lock()
             .expect("agent database mutex poisoned")
             .query_row(
-                "SELECT id, project_id, agent_id, provider_session_id,
-                        COALESCE(manual_title, agent_title, ''), manual_title, agent_title
-                 FROM conversations
-                 WHERE project_id = ?1 AND agent_id = ?2 AND provider_session_id = ?3",
+                &conversation_query(
+                    "WHERE c.project_id = ?1 AND c.agent_id = ?2 AND c.provider_session_id = ?3",
+                ),
                 params![project_id, agent_id.as_str(), provider_session_id],
                 conversation_from_row,
             )
@@ -791,6 +895,20 @@ impl AgentStore {
             .map_err(StoreError::from)
     }
 
+    pub fn latest_workspace_event_id(&self) -> Result<u64, StoreError> {
+        let id = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
+                [],
+                |row| row.get::<_, i64>(0),
+            )?;
+        u64::try_from(id)
+            .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+    }
+
     pub fn allow_always(
         &self,
         project_id: &str,
@@ -971,6 +1089,16 @@ fn workspace_event_from_values(values: StoredWorkspaceEvent) -> rusqlite::Result
 
 fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
     let agent_id = row.get::<_, String>(2)?;
+    let relationship = row
+        .get::<_, Option<String>>(11)?
+        .map(|value| ConversationRelationship::from_str(&value))
+        .transpose()
+        .map_err(to_sql_conversion_error)?;
+    let latest_run_status = row
+        .get::<_, Option<String>>(13)?
+        .map(|value| RunStatus::from_str(&value))
+        .transpose()
+        .map_err(to_sql_conversion_error)?;
     Ok(Conversation {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -979,7 +1107,26 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         title: row.get(4)?,
         manual_title: row.get(5)?,
         agent_title: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+        archived: row.get(9)?,
+        parent_conversation_id: row.get(10)?,
+        relationship,
+        read_only: row.get(12)?,
+        latest_run_status,
     })
+}
+
+fn conversation_query(suffix: &str) -> String {
+    format!(
+        "SELECT c.id, c.project_id, c.agent_id, c.provider_session_id,
+                COALESCE(c.manual_title, c.agent_title, ''), c.manual_title, c.agent_title,
+                c.created_at, c.updated_at, c.archived, c.parent_conversation_id,
+                c.relationship, c.read_only,
+                (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
+                 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1)
+         FROM conversations c {suffix}"
+    )
 }
 
 fn normalized_title(title: Option<&str>) -> Option<String> {
@@ -1109,6 +1256,11 @@ string_enum!(RunStatus, {
     RunStatus::Cancelled => "cancelled",
     RunStatus::TimedOut => "timed_out",
     RunStatus::Interrupted => "interrupted",
+});
+
+string_enum!(ConversationRelationship, {
+    ConversationRelationship::Fork => "fork",
+    ConversationRelationship::Subagent => "subagent",
 });
 
 string_enum!(AgentEventKind, {

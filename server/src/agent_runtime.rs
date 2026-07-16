@@ -25,7 +25,8 @@ use uuid::Uuid;
 use crate::agent_discovery::AgentDescriptor;
 use crate::agent_discovery::{is_executable, resolve_executable};
 use crate::agents::{
-    AgentEventKind, AgentId, AgentRun, AgentStore, PermissionMode, RunStatus, StoreError,
+    AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
+    PermissionMode, RunStatus, StoreError,
 };
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
@@ -359,11 +360,16 @@ impl AgentRuntime {
             })
             .await
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        let fork = self.store.create_imported_conversation(
+        let fork = self.store.create_related_imported_conversation(
             &conversation.project_id,
             conversation.agent_id,
             &forked_session_id,
             conversation.agent_title.as_deref(),
+            Some(ConversationRelation {
+                parent_conversation_id: conversation.id,
+                relationship: ConversationRelationship::Fork,
+                read_only: false,
+            }),
         )?;
         self.hydrate_provider_session(&fork.id).await?;
         Ok(fork)

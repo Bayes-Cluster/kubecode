@@ -69,4 +69,36 @@ describe('Kubecode API client', () => {
       expect.objectContaining({ headers: expect.any(Headers) }),
     )
   })
+
+  it('loads the workspace cursor and manages global session summaries', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ cursor: 42 })))
+      .mockResolvedValueOnce(new Response('[]'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'session-1', archived: true })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await expect(api.workspaceEventCursor()).resolves.toBe(42)
+    await api.listSessions()
+    await api.archiveConversation('session/1', true)
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/events/cursor',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/sessions',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/sessions/session%2F1',
+      expect.objectContaining({
+        body: JSON.stringify({ archived: true }),
+        method: 'PATCH',
+      }),
+    )
+  })
 })

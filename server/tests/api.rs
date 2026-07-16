@@ -173,6 +173,36 @@ async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(runs.as_array().expect("project runs").is_empty());
+
+    let (status, sessions) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sessions.as_array().expect("global sessions").len(), 1);
+
+    let (status, archived) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}"),
+        json!({"archived":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(archived["archived"], true);
+
+    let (status, cursor) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/events/cursor"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(cursor["cursor"].as_u64().expect("event cursor") > 0);
 }
 
 #[tokio::test]

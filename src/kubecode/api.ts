@@ -20,6 +20,13 @@ export type Conversation = {
   title: string
   manual_title: string | null
   agent_title: string | null
+  created_at?: string
+  updated_at?: string
+  archived?: boolean
+  parent_conversation_id?: string | null
+  relationship?: 'fork' | 'subagent' | null
+  read_only?: boolean
+  latest_run_status?: RunStatus | null
 }
 export type RunStatus =
   | 'running'
@@ -223,6 +230,10 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/sessions`)
   }
 
+  listSessions(): Promise<Conversation[]> {
+    return this.request('/sessions')
+  }
+
   listProviderSessions(projectId: string, agentId: AgentId): Promise<ProviderSessionInfo[]> {
     return this.request(
       `${this.projectPath(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
@@ -251,6 +262,13 @@ export class KubecodeApi {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ manual_title: manualTitle }),
+    })
+  }
+
+  archiveConversation(conversationId: string, archived: boolean): Promise<Conversation> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
     })
   }
 
@@ -322,6 +340,10 @@ export class KubecodeApi {
 
   workspaceEventStreamUrl(after = 0): string {
     return `${this.basePath}/events?${query({ after })}`
+  }
+
+  workspaceEventCursor(): Promise<number> {
+    return this.request<{ cursor: number }>('/events/cursor').then(({ cursor }) => cursor)
   }
 
   cancelRun(runId: string): Promise<void> {

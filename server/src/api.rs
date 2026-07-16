@@ -121,6 +121,8 @@ fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/agents", get(list_agents))
         .route("/events", get(stream_workspace_events))
+        .route("/events/cursor", get(get_workspace_event_cursor))
+        .route("/sessions", get(list_all_conversations))
         .route("/filesystem/directories", get(list_directories))
         .route("/projects", get(list_projects).post(create_project))
         .route("/projects/{project_id}/runs", get(list_project_runs))
@@ -311,6 +313,7 @@ async fn list_provider_sessions(
 #[derive(Debug, Deserialize)]
 struct UpdateConversationRequest {
     manual_title: Option<String>,
+    archived: Option<bool>,
 }
 
 async fn update_conversation(
@@ -318,10 +321,27 @@ async fn update_conversation(
     Path(conversation_id): Path<String>,
     Json(request): Json<UpdateConversationRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(state.agent_runtime.store().set_manual_title(
-        &conversation_id,
-        request.manual_title.as_deref(),
-    )?))
+    let store = state.agent_runtime.store();
+    let conversation = if let Some(archived) = request.archived {
+        store.set_archived(&conversation_id, archived)?
+    } else {
+        store.set_manual_title(&conversation_id, request.manual_title.as_deref())?
+    };
+    Ok(Json(conversation))
+}
+
+async fn list_all_conversations(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.agent_runtime.store().list_all_conversations()?))
+}
+
+async fn get_workspace_event_cursor(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(json!({
+        "cursor": state.agent_runtime.store().latest_workspace_event_id()?
+    })))
 }
 
 async fn remove_conversation(

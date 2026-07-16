@@ -1,5 +1,6 @@
 use kubecode_server::agents::{
-    AgentEventKind, AgentId, AgentStore, PermissionMode, RunStatus, StoreError,
+    AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
+    PermissionMode, RunStatus, StoreError,
 };
 use tempfile::TempDir;
 
@@ -143,6 +144,65 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
         .expect("session replay");
     assert_eq!(session_events[0].kind, "user_message");
     assert_eq!(session_events[1].kind, "plan");
+    assert_eq!(
+        store.latest_workspace_event_id().expect("latest cursor"),
+        workspace_events.last().expect("workspace event").id
+    );
+}
+
+#[test]
+fn lists_session_summaries_and_persists_archive_and_parent_relationships() {
+    let (_temp, store) = store();
+    let parent = store
+        .create_conversation("project-a", AgentId::ClaudeCode, Some("Parent"))
+        .expect("parent");
+    let child = store
+        .create_related_imported_conversation(
+            "project-a",
+            AgentId::ClaudeCode,
+            "provider-child",
+            Some("Child"),
+            Some(ConversationRelation {
+                parent_conversation_id: parent.id.clone(),
+                relationship: ConversationRelationship::Fork,
+                read_only: false,
+            }),
+        )
+        .expect("child");
+    store.set_archived(&child.id, true).expect("archive child");
+    let run = store
+        .start_run(&parent.id, "project-a", "Continue", PermissionMode::Safe)
+        .expect("parent run");
+    store
+        .set_run_status(&run.id, RunStatus::WaitingPermission)
+        .expect("waiting run");
+
+    let summaries = store.list_all_conversations().expect("all conversations");
+    let parent_summary = summaries
+        .iter()
+        .find(|conversation| conversation.id == parent.id)
+        .expect("parent summary");
+    assert_eq!(
+        parent_summary.latest_run_status,
+        Some(RunStatus::WaitingPermission)
+    );
+    assert!(!parent_summary.archived);
+    assert!(!parent_summary.created_at.is_empty());
+
+    let child_summary = summaries
+        .iter()
+        .find(|conversation| conversation.id == child.id)
+        .expect("child summary");
+    assert!(child_summary.archived);
+    assert_eq!(
+        child_summary.parent_conversation_id.as_deref(),
+        Some(parent.id.as_str())
+    );
+    assert_eq!(
+        child_summary.relationship,
+        Some(ConversationRelationship::Fork)
+    );
+    assert!(!child_summary.read_only);
 }
 
 #[test]
