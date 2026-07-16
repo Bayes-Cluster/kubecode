@@ -72,6 +72,18 @@ map to completion, attention, or error categories. The browser's native
 notification permission and focus state determine delivery; no custom audio
 pipeline exists.
 
+## Application message
+
+An application message is transient in-workbench feedback with a severity,
+message, and optional source. A single host renders at most three deduplicated
+messages within the viewport. Compact messages truncate visually and retain the
+complete diagnostic in an expandable view. Permission and elicitation requests
+are not application messages: they remain durable Session attention state.
+
+Application messages never request or deliver browser/system notifications.
+Those remain the responsibility of workspace notification preferences and the
+notification bridge.
+
 ## Appearance
 
 Appearance is browser-local. A versioned preference record stores color scheme,

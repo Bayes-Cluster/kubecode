@@ -44,6 +44,8 @@ import type {
   SessionEvent,
   WorkspaceEvent,
 } from './api'
+import { SystemMessageNotice } from './SystemMessageNotice'
+import { useSystemMessages } from './systemMessages'
 
 type Translator = (key: TranslationKey) => string
 type PermissionChoice = { id: string; label: string; kind: string }
@@ -127,6 +129,7 @@ export function AgentSessionWorkspace({
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
+  const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const knownRunIdsRef = useRef(new Set<string>())
   const loadingRunsRef = useRef(new Map<string, Promise<AgentRun>>())
@@ -140,6 +143,14 @@ export function AgentSessionWorkspace({
   const waitingForInput = run?.status === 'waiting_permission'
     || pendingPermission !== null
     || pendingElicitation !== null
+  const reportError = useCallback((cause: unknown) => {
+    const message = errorMessage(cause, t('kubecode.error'))
+    if (systemMessages) {
+      systemMessages.publish({ level: 'error', message, source: agentLabel })
+    } else {
+      setError(message)
+    }
+  }, [agentLabel, systemMessages, t])
 
   const attachRun = useCallback((nextRun: AgentRun) => {
     knownRunIdsRef.current.add(nextRun.id)
@@ -189,10 +200,10 @@ export function AgentSessionWorkspace({
       setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
       setSessionState(restoredState)
     }).catch((cause: unknown) => {
-      if (current) setError(errorMessage(cause, t('kubecode.error')))
+      if (current) reportError(cause)
     })
     return () => { current = false }
-  }, [api, conversation, t])
+  }, [api, conversation, reportError])
 
   useEffect(() => {
     if (!conversation) return
@@ -258,7 +269,7 @@ export function AgentSessionWorkspace({
         agent_id: conversation.agent_id,
       })
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -346,13 +357,13 @@ export function AgentSessionWorkspace({
       await request()
     } catch (cause) {
       setSessionState(confirmedState)
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
       return
     }
     try {
       await refreshSessionState()
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -409,7 +420,14 @@ export function AgentSessionWorkspace({
           messages={messages}
         />
       </div>
-      {error && <div className="kubecode-inline-error">{error}</div>}
+      {error && (
+        <SystemMessageNotice
+          dismissLabel={t('window.close')}
+          level="error"
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      )}
       {pendingPermission && (
         <div aria-live="polite" className="kubecode-permission-dock">
           <div className="kubecode-permission-heading">

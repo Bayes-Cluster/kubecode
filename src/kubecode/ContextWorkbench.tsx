@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowClockwise,
   File,
@@ -29,6 +29,8 @@ import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
 import { ProjectFileTree } from './ProjectFileTree'
+import { SystemMessageNotice } from './SystemMessageNotice'
+import { useSystemMessages } from './systemMessages'
 import type {
   Entry,
   GitFileChange,
@@ -63,8 +65,17 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
   const [diff, setDiff] = useState<{ path: string; content: string } | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
+  const systemMessages = useSystemMessages()
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const dirty = Boolean(document && document.content !== draft)
+  const reportError = useCallback((cause: unknown) => {
+    const message = errorMessage(cause, t('kubecode.error'))
+    if (systemMessages) {
+      systemMessages.publish({ level: 'error', message, source: t('kubecode.changes') })
+    } else {
+      setError(message)
+    }
+  }, [systemMessages, t])
 
   useEffect(() => {
     if (!projectId) {
@@ -74,10 +85,10 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
     void api.gitStatus(projectId).then((status) => {
       if (current) setGitStatus(status)
     }).catch((cause: unknown) => {
-      if (current) setError(errorMessage(cause, t('kubecode.error')))
+      if (current) reportError(cause)
     })
     return () => { current = false }
-  }, [api, projectId, t])
+  }, [api, projectId, reportError])
 
   useEffect(() => {
     if (!projectId) return
@@ -90,18 +101,22 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
     const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
     if (filesChanged) queueMicrotask(() => setFileTreeRevision((current) => current + 1))
     if (filesChanged || gitChanged) {
-      void api.gitStatus(projectId).then(setGitStatus)
+      void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
     }
-  }, [api, projectId, workspaceEvents])
+  }, [api, projectId, reportError, workspaceEvents])
 
   const openEntry = async (entry: Entry) => {
     if (!projectId) return
     setError(null)
     if (entry.kind === 'directory') return
-    const nextDocument = await api.readFile(projectId, entry.path)
-    setDocument(nextDocument)
-    setDraft(nextDocument.content)
-    setTab('editor')
+    try {
+      const nextDocument = await api.readFile(projectId, entry.path)
+      setDocument(nextDocument)
+      setDraft(nextDocument.content)
+      setTab('editor')
+    } catch (cause) {
+      reportError(cause)
+    }
   }
 
   const save = async () => {
@@ -112,7 +127,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
       setDraft(saved.content)
       trackEvent('kubecode_file_saved', { source: 'context_editor' })
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -132,7 +147,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
       setDiff({ path: change.path, content })
       setTab('diff')
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -142,7 +157,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
       setGitStatus(await api.mutateGit(projectId, action, [path]))
       trackEvent('kubecode_git_action_used', { action })
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -153,7 +168,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
       setCommitMessage('')
       trackEvent('kubecode_git_action_used', { action: 'commit' })
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -163,7 +178,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
       setGitStatus(await api.initializeGit(projectId))
       trackEvent('kubecode_git_action_used', { action: 'init' })
     } catch (cause) {
-      setError(errorMessage(cause, t('kubecode.error')))
+      reportError(cause)
     }
   }
 
@@ -174,7 +189,7 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
 
   const refreshContext = () => {
     setFileTreeRevision((current) => current + 1)
-    if (projectId) void api.gitStatus(projectId).then(setGitStatus)
+    if (projectId) void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
   }
 
   return (
@@ -286,7 +301,14 @@ export function ContextWorkbench({ api, projectName, projectId, t, width, worksp
           </TabsContent>
         )}
       </Tabs>
-      {error && <div className="kubecode-inline-error">{error}</div>}
+      {error && (
+        <SystemMessageNotice
+          dismissLabel={t('window.close')}
+          level="error"
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      )}
       <EntryDialog
         api={api}
         directory={selectedDirectory}

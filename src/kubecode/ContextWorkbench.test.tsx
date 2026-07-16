@@ -11,6 +11,32 @@ vi.mock('./CodeEditor', () => ({
 }))
 
 describe('ContextWorkbench', () => {
+  it('contains long Git errors in a dismissible alert', async () => {
+    const message = "git command failed: error: pathspec 'a-very-long-file-name-that-does-not-exist.lock' did not match any files known to git"
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockRejectedValue(new Error(message)),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={260}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveAttribute('title', message)
+    expect(alert).toHaveTextContent(message)
+    expect(alert.closest('[data-testid="context-workbench"]')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('shows Git changes in Review and stages a file', async () => {
     const cleanAfterStage = {
       is_repository: true,

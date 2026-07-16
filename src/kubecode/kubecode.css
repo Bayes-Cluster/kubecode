@@ -918,6 +918,7 @@
   background: var(--surface-app);
   border-left: 1px solid var(--border-subtle);
   display: flex;
+  flex-direction: column;
   flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
@@ -1384,8 +1385,101 @@
 .kubecode-inline-error {
   color: var(--feedback-error-text);
   font-size: 13px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 6px 12px;
 }
+
+.kubecode-system-message {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-panel) 88%, currentColor);
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 76%, currentColor);
+  color: var(--feedback-error-text);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 13px;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 5px 4px 9px;
+}
+
+.kubecode-system-message-host {
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(450px, calc(100vw - 24px));
+  position: fixed;
+  right: 12px;
+  width: 450px;
+  z-index: 70;
+}
+
+.kubecode-system-message-host .kubecode-system-message {
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: 0 8px 28px color-mix(in srgb, #000 28%, transparent);
+}
+
+.kubecode-system-message[data-level='info'] { color: var(--accent-blue); }
+.kubecode-system-message[data-level='success'] { color: var(--feedback-success-text); }
+.kubecode-system-message[data-level='warning'] { color: var(--accent-orange); }
+.kubecode-system-message[data-level='debug'] { color: var(--text-secondary); }
+
+.kubecode-system-message-icon {
+  flex: 0 0 auto;
+  height: 16px;
+  width: 16px;
+}
+
+.kubecode-system-message-content {
+  color: inherit;
+  flex: 1 1 auto;
+  font: inherit;
+  gap: 5px;
+  height: 26px;
+  justify-content: flex-start;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+}
+
+.kubecode-system-message-content strong { flex: 0 0 auto; }
+.kubecode-system-message-content span {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-system-message-expand {
+  flex: 0 0 auto;
+  height: 13px;
+  transition: transform 120ms ease;
+  width: 13px;
+}
+
+.kubecode-system-message-dismiss { color: var(--text-secondary); flex: 0 0 auto; }
+
+.kubecode-system-message[data-expanded='true'] { align-items: flex-start; }
+.kubecode-system-message[data-expanded='true'] .kubecode-system-message-icon { margin-top: 5px; }
+.kubecode-system-message[data-expanded='true'] .kubecode-system-message-content {
+  align-items: flex-start;
+  height: auto;
+  max-height: min(180px, 30vh);
+  overflow: auto;
+  padding-block: 4px;
+}
+.kubecode-system-message[data-expanded='true'] .kubecode-system-message-content span {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: pre-wrap;
+}
+.kubecode-system-message[data-expanded='true'] .kubecode-system-message-expand { transform: rotate(180deg); }
 
 .kubecode-directory-browser {
   border: 1px solid var(--border-subtle);

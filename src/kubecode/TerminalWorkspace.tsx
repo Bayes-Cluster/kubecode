@@ -45,6 +45,8 @@ import type { TranslationKey, TranslationValues } from '@/lib/i18n'
 import type { AgentDescriptor, AgentId, KubecodeApi, TerminalInfo, TerminalKind } from './api'
 import { removeTerminalSnapshot } from './terminalSnapshots'
 import { TerminalView } from './TerminalView'
+import { SystemMessageNotice } from './SystemMessageNotice'
+import { useSystemMessages } from './systemMessages'
 import {
   activateTerminalLeaf,
   closeTerminalLeaf,
@@ -102,6 +104,7 @@ export function TerminalWorkspace({
   ))
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const systemMessages = useSystemMessages()
   const [navigatorWidth, setNavigatorWidth] = useState(() => readTerminalNavigatorLayout(projectId).width)
   const sequence = useRef(0)
   const hadTerminal = useRef(initialTerminals.length > 0)
@@ -114,6 +117,14 @@ export function TerminalWorkspace({
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+  const reportError = useCallback((cause: unknown) => {
+    const message = errorMessage(cause)
+    if (systemMessages) {
+      systemMessages.publish({ level: 'error', message, source: t('kubecode.terminal') })
+    } else {
+      setError(message)
+    }
+  }, [systemMessages, t])
 
   useEffect(() => writeTerminalWorkspace(projectId, workspace), [projectId, workspace])
 
@@ -172,11 +183,11 @@ export function TerminalWorkspace({
         placement,
       })
     } catch (cause) {
-      setError(errorMessage(cause))
+      reportError(cause)
     } finally {
       setCreating(false)
     }
-  }, [api, creating, projectId])
+  }, [api, creating, projectId, reportError])
 
   useEffect(() => {
     if (!autoCreateOnOpen || !open || terminals.length > 0 || creating) return
@@ -193,9 +204,9 @@ export function TerminalWorkspace({
       trackEvent('kubecode_terminal_closed', { scope: 'leaf' })
       if (terminals.length === 1) onCollapse?.()
     } catch (cause) {
-      setError(errorMessage(cause))
+      reportError(cause)
     }
-  }, [api, onCollapse, projectId, terminals.length])
+  }, [api, onCollapse, projectId, reportError, terminals.length])
 
   const restart = useCallback(async (terminal: TerminalInfo) => {
     setError(null)
@@ -210,9 +221,9 @@ export function TerminalWorkspace({
       await api.closeTerminal(terminal.id)
       trackEvent('kubecode_terminal_restarted', { kind: terminal.kind })
     } catch (cause) {
-      setError(errorMessage(cause))
+      reportError(cause)
     }
-  }, [api, projectId])
+  }, [api, projectId, reportError])
 
   const rename = useCallback(async (terminalId: string, title: string) => {
     setError(null)
@@ -221,10 +232,10 @@ export function TerminalWorkspace({
       setTerminals((current) => current.map((terminal) => terminal.id === updated.id ? updated : terminal))
       trackEvent('kubecode_terminal_renamed')
     } catch (cause) {
-      setError(errorMessage(cause))
+      reportError(cause)
       throw cause
     }
-  }, [api])
+  }, [api, reportError])
 
   const activateLeaf = (terminalId: string) => {
     setWorkspace((current) => {
@@ -311,7 +322,15 @@ export function TerminalWorkspace({
           )}
         </div>
       </div>
-      {error && <div className="kubecode-terminal-error" role="alert">{error}</div>}
+      {error && (
+        <SystemMessageNotice
+          className="kubecode-terminal-error"
+          dismissLabel={t('window.close')}
+          level="error"
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      )}
       <div className="kubecode-terminal-body" ref={body}>
         <div className="kubecode-terminal-canvas">
           {activeGroup ? (

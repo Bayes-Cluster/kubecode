@@ -429,6 +429,44 @@ describe('Kubecode workspace', () => {
     expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
   })
 
+  it('waits for the selected Project terminal list before auto-creating a terminal', async () => {
+    for (const projectId of ['project-1', 'project-2']) {
+      localStorage.setItem(`kubecode:layout:${projectId}`, JSON.stringify({ terminalOpen: true }))
+    }
+    let resolveSecondProject: ((terminals: TerminalInfo[]) => void) | undefined
+    const secondProjectTerminals = new Promise<TerminalInfo[]>((resolve) => {
+      resolveSecondProject = resolve
+    })
+    const createTerminal = vi.fn().mockResolvedValue(terminal('unexpected-terminal'))
+    const api = {
+      createTerminal,
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'First', path: '/first' },
+        { id: 'project-2', name: 'Second', path: '/second' },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockImplementation((projectId: string) => (
+        projectId === 'project-1'
+          ? Promise.resolve([terminal('first-terminal')])
+          : secondProjectTerminals
+      )),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    expect(await screen.findByTestId('terminal-first-terminal')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Second' }))
+    await waitFor(() => expect(api.listTerminals).toHaveBeenCalledWith('project-2'))
+    expect(createTerminal).not.toHaveBeenCalled()
+
+    await act(async () => resolveSecondProject?.([terminal('second-terminal')]))
+    expect(await screen.findByTestId('terminal-second-terminal')).toBeInTheDocument()
+    expect(createTerminal).not.toHaveBeenCalled()
+  })
+
   it('registers projects by full path and browses server directories when importing', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([]),

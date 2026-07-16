@@ -69,6 +69,7 @@ import type {
 } from './api'
 import { TerminalWorkspace } from './TerminalWorkspace'
 import { SessionSidebarList } from './SessionSidebarList'
+import { SystemMessageNotice, SystemMessageProvider } from './SystemMessageNotice'
 import {
   readKubecodeNotifications,
   writeKubecodeNotifications,
@@ -94,6 +95,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [agents, setAgents] = useState<AgentDescriptor[]>([])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
+  const [terminalsLoadedForProjectId, setTerminalsLoadedForProjectId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [allConversations, setAllConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -220,6 +222,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       .then(([nextTerminals, nextConversations]) => {
         if (!current) return
         setTerminals(nextTerminals)
+        setTerminalsLoadedForProjectId(projectId)
         setConversations(nextConversations)
         setAllConversations((current) => mergeConversations(current, nextConversations))
         setConversationId((selected) => (
@@ -305,6 +308,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     setConversationId(null)
     setConversations([])
     setTerminals([])
+    setTerminalsLoadedForProjectId(null)
     applyProjectLayout(nextProjectId)
     setProjectId(nextProjectId)
   }
@@ -325,6 +329,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       setAllConversations((current) => current.filter((item) => item.project_id !== project.id))
       setConversationId(null)
       setTerminals([])
+      setTerminalsLoadedForProjectId(null)
       if (nextProjectId) applyProjectLayout(nextProjectId)
       setProjectId(nextProjectId)
       trackEvent('kubecode_project_removed')
@@ -357,6 +362,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     if (nextProjectId !== projectId) {
       applyProjectLayout(nextProjectId)
       setTerminals([])
+      setTerminalsLoadedForProjectId(null)
       setConversations([])
       setProjectId(nextProjectId)
     }
@@ -397,7 +403,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [notifications.sound.completion, t])
 
   return (
-    <main className="kubecode-app">
+    <SystemMessageProvider dismissLabel={t('window.close')}>
+      <main className="kubecode-app">
       <header className="kubecode-topbar">
         <div className="kubecode-history-controls">
           <Button aria-label={t('kubecode.back')} disabled size="icon-xs" variant="ghost"><ArrowLeft /></Button>
@@ -569,7 +576,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               <TerminalWorkspace
                 agents={agents}
                 api={api}
-                autoCreateOnOpen
+                autoCreateOnOpen={terminalsLoadedForProjectId === projectId && terminals.length === 0}
                 initialTerminals={terminals}
                 key={projectId}
                 onCollapse={() => setTerminalOpen(false)}
@@ -631,7 +638,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         onSession={handleConversationCreated}
         t={t}
       />
-      <KubecodeSettingsDialog
+        <KubecodeSettingsDialog
         agents={agents}
         appearance={appearance}
         notifications={notifications}
@@ -644,8 +651,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         onRequestNotificationPermission={requestNotificationPermission}
         onTestNotification={sendTestNotification}
         t={t}
-      />
-    </main>
+        />
+      </main>
+    </SystemMessageProvider>
   )
 }
 
@@ -921,10 +929,24 @@ function NewSessionDialog({
               {!loadingProviderSessions && providerSessions.length === 0 && !providerError && (
                 <div className="kubecode-empty-small">{t('kubecode.noProviderSessions')}</div>
               )}
-              {providerError && <div className="kubecode-inline-error">{providerError}</div>}
+              {providerError && (
+                <SystemMessageNotice
+                  dismissLabel={t('window.close')}
+                  level="error"
+                  message={providerError}
+                  onDismiss={() => setProviderError(null)}
+                />
+              )}
             </div>
           )}
-          {createError && <div className="kubecode-inline-error">{createError}</div>}
+          {createError && (
+            <SystemMessageNotice
+              dismissLabel={t('window.close')}
+              level="error"
+              message={createError}
+              onDismiss={() => setCreateError(null)}
+            />
+          )}
         </div>
         <DialogFooter className="kubecode-new-session-footer">
           <DialogClose asChild><Button disabled={creating} variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
@@ -1039,7 +1061,14 @@ function ProjectDialog({
               <Switch checked={showHidden} onCheckedChange={setShowHidden} />
               <span>{t('kubecode.showHiddenDirectories')}</span>
             </label>
-            {browserError && <div className="kubecode-inline-error">{browserError}</div>}
+            {browserError && (
+              <SystemMessageNotice
+                dismissLabel={t('window.close')}
+                level="error"
+                message={browserError}
+                onDismiss={() => setBrowserError(null)}
+              />
+            )}
           </div>
         )}
         <DialogFooter>

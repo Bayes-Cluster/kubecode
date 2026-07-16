@@ -59,6 +59,12 @@ completion, input-required, and error outcomes. Settings control focus policy,
 categories, and whether the operating system may play its normal notification
 sound. Permission is requested only from explicit UI.
 
+Application messages use a separate React-level message host. Git, file,
+Session, and Terminal operations publish typed `debug`, `info`, `success`,
+`warning`, or `error` messages without invoking browser notification APIs.
+The host bounds, deduplicates, expands, and dismisses diagnostic text so a
+backend error cannot participate in panel sizing.
+
 ## Event model
 
 One global SSE stream multiplexes Session, run, file, Git, and terminal metadata
