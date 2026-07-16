@@ -1,6 +1,6 @@
 use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
-    PermissionMode, RunStatus, StoreError,
+    ExecutionMode, PermissionMode, RunStatus, StoreError,
 };
 use tempfile::TempDir;
 
@@ -8,6 +8,37 @@ fn store() -> (TempDir, AgentStore) {
     let temp = TempDir::new().expect("tempdir");
     let store = AgentStore::open(temp.path().join("kubecode.sqlite3")).expect("agent store");
     (temp, store)
+}
+
+#[test]
+fn assigns_an_execution_workspace_to_the_agent_session() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    assert_eq!(conversation.agent_session_id, conversation.id);
+    assert_eq!(conversation.execution_mode, ExecutionMode::Shared);
+    assert_eq!(conversation.workspace_path, None);
+
+    let updated = store
+        .assign_execution_workspace(
+            &conversation.id,
+            ExecutionMode::Worktree,
+            Some("/tmp/kubecode-worktree"),
+        )
+        .expect("assign workspace");
+
+    assert_eq!(updated.execution_mode, ExecutionMode::Worktree);
+    assert_eq!(
+        updated.workspace_path.as_deref(),
+        Some("/tmp/kubecode-worktree")
+    );
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("persisted conversation"),
+        updated,
+    );
 }
 
 #[test]

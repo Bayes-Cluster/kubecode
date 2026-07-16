@@ -556,7 +556,7 @@ describe('Kubecode workspace', () => {
     render(<KubecodeApp api={api} />)
 
     await screen.findByRole('button', { name: 'Demo' })
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Delete' }), {
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Project actions' }), {
       button: 0,
       ctrlKey: false,
       pointerType: 'mouse',
@@ -566,6 +566,39 @@ describe('Kubecode workspace', () => {
     await waitFor(() => expect(unregisterProject).toHaveBeenCalledWith('project-1'))
     expect(screen.queryByRole('button', { name: 'Demo' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('data-active', 'true')
+  })
+
+  it('enables Workspaces for a project from its menu', async () => {
+    const setProjectWorkspacesEnabled = vi.fn().mockResolvedValue({
+      id: 'project-1',
+      name: 'Demo',
+      path: '/srv/demo',
+      workspaces_enabled: true,
+    })
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/srv/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      setProjectWorkspacesEnabled,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    render(<KubecodeApp api={api} />)
+
+    await screen.findByRole('button', { name: 'Demo' })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Project actions' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByText('Enable Workspaces'))
+
+    await waitFor(() => expect(setProjectWorkspacesEnabled).toHaveBeenCalledWith('project-1', true))
+    expect(screen.getByText('Workspaces enabled')).toBeInTheDocument()
   })
 
   it('renders and resolves an ACP elicitation form from the active Agent run', async () => {

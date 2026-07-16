@@ -59,6 +59,13 @@ pub enum ConversationRelationship {
     Subagent,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    Shared,
+    Worktree,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConversationRelation {
     pub parent_conversation_id: String,
@@ -92,6 +99,7 @@ pub enum AgentEventKind {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Conversation {
     pub id: String,
+    pub agent_session_id: String,
     pub project_id: String,
     pub agent_id: AgentId,
     pub provider_session_id: Option<String>,
@@ -105,6 +113,8 @@ pub struct Conversation {
     pub relationship: Option<ConversationRelationship>,
     pub read_only: bool,
     pub latest_run_status: Option<RunStatus>,
+    pub execution_mode: ExecutionMode,
+    pub workspace_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -224,6 +234,18 @@ impl AgentStore {
             "message",
             "TEXT NOT NULL DEFAULT ''",
         )?;
+        ensure_column(&database, "conversations", "agent_session_id", "TEXT")?;
+        ensure_column(
+            &database,
+            "conversations",
+            "execution_mode",
+            "TEXT NOT NULL DEFAULT 'shared'",
+        )?;
+        ensure_column(&database, "conversations", "workspace_path", "TEXT")?;
+        database.execute(
+            "UPDATE conversations SET agent_session_id = id WHERE agent_session_id IS NULL",
+            [],
+        )?;
         ensure_column(&database, "conversations", "manual_title", "TEXT")?;
         ensure_column(&database, "conversations", "agent_title", "TEXT")?;
         ensure_column(
@@ -261,6 +283,7 @@ impl AgentStore {
     ) -> Result<Conversation, StoreError> {
         let conversation = Conversation {
             id: Uuid::new_v4().to_string(),
+            agent_session_id: String::new(),
             project_id: project_id.to_owned(),
             agent_id,
             provider_session_id: None,
@@ -274,15 +297,23 @@ impl AgentStore {
             relationship: None,
             read_only: false,
             latest_run_status: None,
+            execution_mode: ExecutionMode::Shared,
+            workspace_path: None,
+        };
+        let conversation = Conversation {
+            agent_session_id: conversation.id.clone(),
+            ..conversation
         };
         self.database
             .lock()
             .expect("agent database mutex poisoned")
             .execute(
-                "INSERT INTO conversations (id, project_id, agent_id, title, manual_title)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO conversations
+                 (id, agent_session_id, project_id, agent_id, title, manual_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     conversation.id,
+                    conversation.agent_session_id,
                     conversation.project_id,
                     conversation.agent_id.as_str(),
                     conversation.title,
@@ -337,6 +368,7 @@ impl AgentStore {
         let agent_title = normalized_title(agent_title);
         let conversation = Conversation {
             id: Uuid::new_v4().to_string(),
+            agent_session_id: String::new(),
             project_id: project_id.to_owned(),
             agent_id,
             provider_session_id: Some(provider_session_id.to_owned()),
@@ -352,17 +384,24 @@ impl AgentStore {
             relationship: relation.as_ref().map(|value| value.relationship),
             read_only: relation.is_some_and(|value| value.read_only),
             latest_run_status: None,
+            execution_mode: ExecutionMode::Shared,
+            workspace_path: None,
+        };
+        let conversation = Conversation {
+            agent_session_id: conversation.id.clone(),
+            ..conversation
         };
         self.database
             .lock()
             .expect("agent database mutex poisoned")
             .execute(
                 "INSERT INTO conversations
-                 (id, project_id, agent_id, provider_session_id, title, agent_title,
+                 (id, agent_session_id, project_id, agent_id, provider_session_id, title, agent_title,
                   parent_conversation_id, relationship, read_only)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     conversation.id,
+                    conversation.agent_session_id,
                     conversation.project_id,
                     conversation.agent_id.as_str(),
                     conversation.provider_session_id,
@@ -438,6 +477,44 @@ impl AgentStore {
             Some(conversation_id),
             None,
             &json!({"archived": archived}),
+        )?;
+        Ok(conversation)
+    }
+
+    pub fn assign_execution_workspace(
+        &self,
+        conversation_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+    ) -> Result<Conversation, StoreError> {
+        if execution_mode == ExecutionMode::Worktree && workspace_path.is_none() {
+            return Err(StoreError::InvalidStoredValue(
+                "worktree execution requires a workspace path".into(),
+            ));
+        }
+        let changed = self
+            .database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE conversations
+                 SET execution_mode = ?2, workspace_path = ?3, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![conversation_id, execution_mode.as_str(), workspace_path],
+            )?;
+        if changed == 0 {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let conversation = self.get_conversation(conversation_id)?;
+        self.append_workspace_event(
+            "session_updated",
+            Some(&conversation.project_id),
+            Some(conversation_id),
+            None,
+            &json!({
+                "execution_mode": execution_mode,
+                "workspace_path": workspace_path,
+            }),
         )?;
         Ok(conversation)
     }
@@ -1105,8 +1182,11 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         .map(|value| RunStatus::from_str(&value))
         .transpose()
         .map_err(to_sql_conversion_error)?;
+    let execution_mode =
+        ExecutionMode::from_str(&row.get::<_, String>(15)?).map_err(to_sql_conversion_error)?;
     Ok(Conversation {
         id: row.get(0)?,
+        agent_session_id: row.get(14)?,
         project_id: row.get(1)?,
         agent_id: AgentId::from_str(&agent_id).map_err(to_sql_conversion_error)?,
         provider_session_id: row.get(3)?,
@@ -1120,6 +1200,8 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         relationship,
         read_only: row.get(12)?,
         latest_run_status,
+        execution_mode,
+        workspace_path: row.get(16)?,
     })
 }
 
@@ -1130,7 +1212,8 @@ fn conversation_query(suffix: &str) -> String {
                 c.created_at, c.updated_at, c.archived, c.parent_conversation_id,
                 c.relationship, c.read_only,
                 (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
-                 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1)
+                 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1),
+                COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path
          FROM conversations c {suffix}"
     )
 }
@@ -1267,6 +1350,11 @@ string_enum!(RunStatus, {
 string_enum!(ConversationRelationship, {
     ConversationRelationship::Fork => "fork",
     ConversationRelationship::Subagent => "subagent",
+});
+
+string_enum!(ExecutionMode, {
+    ExecutionMode::Shared => "shared",
+    ExecutionMode::Worktree => "worktree",
 });
 
 string_enum!(AgentEventKind, {

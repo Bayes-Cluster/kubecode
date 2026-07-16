@@ -57,6 +57,19 @@ async fn json_request(app: &Router, method: Method, uri: &str, body: Value) -> (
     (status, value)
 }
 
+fn run_command(cwd: impl AsRef<std::path::Path>, program: &str, args: &[&str]) {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run command");
+    assert!(
+        output.status.success(),
+        "{program} failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[tokio::test]
 async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     let (temp, app) = app();
@@ -80,6 +93,7 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["workspaces_enabled"], false);
     assert_eq!(
         created["path"],
         temp.path()
@@ -102,6 +116,94 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
 
     let (status, _) = json_request(&app, Method::GET, "/api/v1/projects", Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn updates_the_project_workspaces_preference_over_http() {
+    let (temp, app) = app();
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/workspaces-api")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+
+    let (status, updated) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/workspaces"),
+        json!({"enabled":true}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["workspaces_enabled"], true);
+    let (_, projects) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(projects[0]["workspaces_enabled"], true);
+}
+
+#[tokio::test]
+async fn creates_a_session_in_an_isolated_workspace_when_requested() {
+    let (temp, app) = app();
+    let project_path = temp.path().join("srv/session-worktree-api");
+    fs::create_dir_all(&project_path).expect("project directory");
+    run_command(&project_path, "git", &["init"]);
+    run_command(
+        &project_path,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_path,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_path.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_path, "git", &["add", "README.md"]);
+    run_command(&project_path, "git", &["commit", "-m", "initial"]);
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"import", "path":project_path}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/workspaces"),
+        json!({"enabled":true}),
+    )
+    .await;
+
+    let (status, conversation) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id":"codex", "workspace_mode":"worktree"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(conversation["execution_mode"], "worktree");
+    assert_eq!(conversation["agent_session_id"], conversation["id"]);
+    let workspace_path = conversation["workspace_path"]
+        .as_str()
+        .expect("workspace path");
+    assert!(
+        std::path::Path::new(workspace_path)
+            .join("README.md")
+            .is_file()
+    );
 }
 
 #[tokio::test]

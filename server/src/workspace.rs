@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -26,6 +27,8 @@ pub enum WorkspaceError {
     UnsupportedText,
     #[error("file is larger than the 5 MiB editor limit")]
     FileTooLarge,
+    #[error("git worktree operation failed: {0}")]
+    Git(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -44,6 +47,7 @@ pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
+    pub workspaces_enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -78,6 +82,7 @@ pub struct DirectoryListing {
 
 pub struct WorkspaceService {
     root: PathBuf,
+    state_root: PathBuf,
     database: Mutex<Connection>,
 }
 
@@ -91,6 +96,11 @@ impl WorkspaceService {
         if let Some(parent) = database_path.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
+        let state_root = database_path
+            .as_ref()
+            .parent()
+            .ok_or_else(|| WorkspaceError::InvalidPath(path_string(database_path.as_ref())))?
+            .canonicalize()?;
 
         let database = Connection::open(database_path)?;
         database.execute_batch(
@@ -103,11 +113,18 @@ impl WorkspaceService {
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );",
         )?;
+        ensure_column(
+            &database,
+            "projects",
+            "workspaces_enabled",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
 
         migrate_project_paths(&database, &root)?;
 
         Ok(Self {
             root,
+            state_root,
             database: Mutex::new(database),
         })
     }
@@ -118,6 +135,81 @@ impl WorkspaceService {
 
     pub fn project_path(&self, project_id: &str) -> Result<PathBuf, WorkspaceError> {
         self.project_root(project_id)
+    }
+
+    pub fn project(&self, project_id: &str) -> Result<Project, WorkspaceError> {
+        let database = self
+            .database
+            .lock()
+            .expect("workspace database mutex poisoned");
+        database
+            .query_row(
+                "SELECT id, name, path, workspaces_enabled FROM projects WHERE id = ?1",
+                [project_id],
+                |row| {
+                    Ok(Project {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        path: row.get(2)?,
+                        workspaces_enabled: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| WorkspaceError::ProjectNotFound(project_id.to_owned()))
+    }
+
+    pub fn create_session_worktree(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<PathBuf, WorkspaceError> {
+        validate_storage_id(session_id)?;
+        let project = self.project(project_id)?;
+        if !project.workspaces_enabled {
+            return Err(WorkspaceError::InvalidPath(
+                "Workspaces are disabled for this project".into(),
+            ));
+        }
+        let project_root = PathBuf::from(&project.path).canonicalize()?;
+        let workspace_parent = self.state_root.join("worktrees").join(project_id);
+        fs::create_dir_all(&workspace_parent)?;
+        let workspace_path = workspace_parent.join(session_id);
+        if workspace_path.exists() {
+            return Err(WorkspaceError::DuplicateProject(path_string(
+                &workspace_path,
+            )));
+        }
+        let branch = format!("kubecode/{session_id}");
+        let workspace_text = path_string(&workspace_path);
+        run_git(
+            &project_root,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &branch,
+                workspace_text.as_str(),
+                "HEAD",
+            ],
+        )?;
+        workspace_path.canonicalize().map_err(WorkspaceError::from)
+    }
+
+    pub fn execution_path(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+    ) -> Result<PathBuf, WorkspaceError> {
+        let Some(workspace_path) = workspace_path else {
+            return self.project_root(project_id);
+        };
+        let canonical = PathBuf::from(workspace_path).canonicalize()?;
+        let expected_parent = self.state_root.join("worktrees").join(project_id);
+        if !canonical.starts_with(&expected_parent) {
+            return Err(WorkspaceError::InvalidPath(workspace_path.to_owned()));
+        }
+        Ok(canonical)
     }
 
     pub fn create_project_at(&self, path: impl AsRef<Path>) -> Result<Project, WorkspaceError> {
@@ -238,16 +330,50 @@ impl WorkspaceService {
             .database
             .lock()
             .expect("workspace database mutex poisoned");
-        let mut statement =
-            database.prepare("SELECT id, name, path FROM projects ORDER BY name, path")?;
+        let mut statement = database.prepare(
+            "SELECT id, name, path, workspaces_enabled FROM projects ORDER BY name, path",
+        )?;
         let rows = statement.query_map([], |row| {
             Ok(Project {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 path: row.get(2)?,
+                workspaces_enabled: row.get(3)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()
+            .map_err(WorkspaceError::from)
+    }
+
+    pub fn set_workspaces_enabled(
+        &self,
+        project_id: &str,
+        enabled: bool,
+    ) -> Result<Project, WorkspaceError> {
+        let database = self
+            .database
+            .lock()
+            .expect("workspace database mutex poisoned");
+        let changed = database.execute(
+            "UPDATE projects SET workspaces_enabled = ?2 WHERE id = ?1",
+            params![project_id, enabled],
+        )?;
+        if changed == 0 {
+            return Err(WorkspaceError::ProjectNotFound(project_id.to_owned()));
+        }
+        database
+            .query_row(
+                "SELECT id, name, path, workspaces_enabled FROM projects WHERE id = ?1",
+                [project_id],
+                |row| {
+                    Ok(Project {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        path: row.get(2)?,
+                        workspaces_enabled: row.get(3)?,
+                    })
+                },
+            )
             .map_err(WorkspaceError::from)
     }
 
@@ -472,6 +598,7 @@ impl WorkspaceService {
             id: Uuid::new_v4().to_string(),
             name,
             path,
+            workspaces_enabled: false,
         };
         database.execute(
             "INSERT INTO projects (id, name, path) VALUES (?1, ?2, ?3)",
@@ -513,6 +640,49 @@ impl WorkspaceService {
         )?;
         Ok((relative, canonical))
     }
+}
+
+fn ensure_column(
+    database: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), WorkspaceError> {
+    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|current| current == column) {
+        database.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_storage_id(value: &str) -> Result<(), WorkspaceError> {
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(WorkspaceError::InvalidPath(value.to_owned()));
+    }
+    Ok(())
+}
+
+fn run_git(cwd: &Path, args: &[&str]) -> Result<(), WorkspaceError> {
+    let output = Command::new("git").args(args).current_dir(cwd).output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(WorkspaceError::Git(if message.is_empty() {
+        format!("git exited with {}", output.status)
+    } else {
+        message
+    }))
 }
 
 fn migrate_project_paths(database: &Connection, legacy_root: &Path) -> Result<(), WorkspaceError> {

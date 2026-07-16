@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0171.
+active production boundary is defined by ADRs 0161–0173.
 
 ## Runtime topology
 
@@ -20,6 +20,12 @@ The Axum server composes five services:
 
 SQLite is application metadata, not project content. Project files remain on
 disk at their original absolute paths.
+
+A Project may opt into Workspaces. New Agent Sessions can then execute either
+at the shared Project root or in a server-managed Git worktree below the private
+state directory. The chosen cwd is durable and is used by every ACP lifecycle
+operation, not only the first prompt. Existing and imported Sessions remain
+shared unless the user explicitly creates an isolated Session.
 
 ## Browser workspace
 
@@ -46,6 +52,11 @@ The server discovers exactly three CLIs: Claude Code, Codex, and OpenCode.
 Claude and Codex use pinned ACP adapters; OpenCode exposes ACP natively. Each
 Session actor stays connected across prompts and persists the provider Session
 ID for resume or load after restart.
+
+The current compatibility model maps one conversation to one Agent Session and
+records an Agent Session ID, execution mode, and optional worktree path. This
+keeps cwd ownership explicit while allowing multiple Agent Chats per execution
+Session to be introduced additively.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

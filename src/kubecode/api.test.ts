@@ -70,6 +70,43 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('updates the project Workspaces preference with an explicit boolean', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'project-1',
+      name: 'Demo',
+      path: '/demo',
+      workspaces_enabled: true,
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.setProjectWorkspacesEnabled('project/1', true)
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project%2F1/workspaces',
+      expect.objectContaining({
+        body: JSON.stringify({ enabled: true }),
+        method: 'PATCH',
+      }),
+    )
+  })
+
+  it('requests an isolated workspace when creating an Agent session', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'session-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.createConversation('project-1', 'codex', undefined, undefined, undefined, 'worktree')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/sessions',
+      expect.objectContaining({
+        body: JSON.stringify({ agent_id: 'codex', workspace_mode: 'worktree' }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('serializes Git diff booleans for Axum query parsing', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ diff: '' })))
     vi.stubGlobal('fetch', fetch)

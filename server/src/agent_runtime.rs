@@ -133,7 +133,9 @@ impl AgentRuntime {
             .filter(|agent| agent.available)
             .cloned()
             .ok_or(RuntimeError::AgentUnavailable(conversation.agent_id))?;
-        let cwd = self.workspace.project_path(&request.project_id)?;
+        let cwd = self
+            .workspace
+            .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
         let run = self.store.start_run(
             &request.conversation_id,
             &request.project_id,
@@ -242,7 +244,10 @@ impl AgentRuntime {
             StoreError::InvalidStoredValue("conversation has no provider session".into())
         })?;
         let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let cwd = self.workspace.execution_path(
+            &conversation.project_id,
+            conversation.workspace_path.as_deref(),
+        )?;
         let agent = acp_agent(conversation.agent_id, &descriptor)?;
         let update_store = Arc::clone(&self.store);
         let update_conversation_id = conversation.id.clone();
@@ -334,7 +339,10 @@ impl AgentRuntime {
             StoreError::InvalidStoredValue("conversation has no provider session".into())
         })?;
         let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let cwd = self.workspace.execution_path(
+            &conversation.project_id,
+            conversation.workspace_path.as_deref(),
+        )?;
         let agent = acp_agent(conversation.agent_id, &descriptor)?;
         let forked_session_id = agent_client_protocol::Client
             .builder()
@@ -619,7 +627,10 @@ impl AgentRuntime {
     fn session_config(&self, conversation_id: &str) -> Result<AgentSessionConfig, RuntimeError> {
         let conversation = self.store.get_conversation(conversation_id)?;
         let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let cwd = self.workspace.project_path(&conversation.project_id)?;
+        let cwd = self.workspace.execution_path(
+            &conversation.project_id,
+            conversation.workspace_path.as_deref(),
+        )?;
         Ok(AgentSessionConfig {
             conversation_id: conversation.id,
             agent_id: conversation.agent_id,

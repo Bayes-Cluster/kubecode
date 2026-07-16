@@ -338,6 +338,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     }
   }
 
+  const setProjectWorkspacesEnabled = async (enabled: boolean) => {
+    if (!project) return
+    try {
+      const updated = await api.setProjectWorkspacesEnabled(project.id, enabled)
+      setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
+      trackEvent('kubecode_project_workspaces_changed', { enabled: Number(enabled) })
+    } catch (cause) {
+      setError(errorMessage(cause, t('kubecode.error')))
+    }
+  }
+
   const handleConversationCreated = useCallback((created: Conversation) => {
     setConversations((current) => upsertConversation(current, created))
     setAllConversations((current) => upsertConversation(current, created))
@@ -499,15 +510,21 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 <div>
                   <strong>{project?.name ?? t('kubecode.appName')}</strong>
                   <span>{project?.path ?? t('kubecode.selectProject')}</span>
+                  {project?.workspaces_enabled && <small>{t('kubecode.workspacesEnabled')}</small>}
                 </div>
                 {project && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button aria-label={t('kubecode.delete')} size="icon-xs" variant="ghost">
+                      <Button aria-label={t('kubecode.projectActions')} size="icon-xs" variant="ghost">
                         <DotsThree />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => void setProjectWorkspacesEnabled(!project.workspaces_enabled)}>
+                        {project.workspaces_enabled
+                          ? t('kubecode.disableWorkspaces')
+                          : t('kubecode.enableWorkspaces')}
+                      </DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" onSelect={() => void deleteProject()}>
                         {t('kubecode.delete')}
                       </DropdownMenuItem>
@@ -633,6 +650,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         agents={agents}
         api={api}
         open={sessionDialog}
+        project={project}
         projectId={projectId}
         onOpenChange={setSessionDialog}
         onSession={handleConversationCreated}
@@ -798,6 +816,7 @@ function NewSessionDialog({
   agents,
   api,
   open,
+  project,
   projectId,
   onOpenChange,
   onSession,
@@ -806,6 +825,7 @@ function NewSessionDialog({
   agents: AgentDescriptor[]
   api: KubecodeApi
   open: boolean
+  project: Project | null
   projectId: string | null
   onOpenChange: (open: boolean) => void
   onSession: (conversation: Conversation) => void
@@ -815,6 +835,7 @@ function NewSessionDialog({
   const [agentId, setAgentId] = useState<AgentId>(availableAgent?.id ?? 'codex')
   const [title, setTitle] = useState('')
   const [mode, setMode] = useState<'new' | 'import'>('new')
+  const [executionMode, setExecutionMode] = useState<'shared' | 'worktree'>('shared')
   const [providerSessions, setProviderSessions] = useState<ProviderSessionInfo[]>([])
   const [providerSessionId, setProviderSessionId] = useState<string | null>(null)
   const [loadingProviderSessions, setLoadingProviderSessions] = useState(false)
@@ -825,6 +846,10 @@ function NewSessionDialog({
   const selectedAgentId = agents.some((agent) => agent.id === agentId && agent.available)
     ? agentId
     : availableAgent?.id ?? agentId
+
+  useEffect(() => {
+    if (open) setExecutionMode(project?.workspaces_enabled ? 'worktree' : 'shared')
+  }, [open, project?.workspaces_enabled])
 
   useEffect(() => {
     if (!open || mode !== 'import' || !projectId || !availableAgent) return
@@ -863,9 +888,11 @@ function NewSessionDialog({
         title.trim() || undefined,
         mode === 'import' ? providerSession?.session_id : undefined,
         mode === 'import' ? providerSession?.title ?? undefined : undefined,
+        mode === 'new' ? executionMode : 'shared',
       )
       trackEvent(mode === 'import' ? 'kubecode_agent_session_imported' : 'kubecode_session_created', {
         agent_id: selectedAgentId,
+        execution_mode: mode === 'new' ? executionMode : 'shared',
       })
       setTitle('')
       setProviderSessionId(null)
@@ -908,10 +935,27 @@ function NewSessionDialog({
             </Select>
           </label>
           {mode === 'new' ? (
-            <label className="kubecode-new-session-field">
-              <span>{t('kubecode.sessionTitle')}</span>
-              <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
-            </label>
+            <>
+              <label className="kubecode-new-session-field">
+                <span>{t('kubecode.sessionTitle')}</span>
+                <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+              </label>
+              {project?.workspaces_enabled && (
+                <div className="kubecode-new-session-field">
+                  <span>{t('kubecode.executionWorkspace')}</span>
+                  <div className="kubecode-workspace-mode" role="group" aria-label={t('kubecode.executionWorkspace')}>
+                    <Button data-active={executionMode === 'worktree'} variant="outline" onClick={() => setExecutionMode('worktree')}>
+                      <span>{t('kubecode.newWorkspace')}</span>
+                      <small>{t('kubecode.newWorkspaceDescription')}</small>
+                    </Button>
+                    <Button data-active={executionMode === 'shared'} variant="outline" onClick={() => setExecutionMode('shared')}>
+                      <span>{t('kubecode.projectRoot')}</span>
+                      <small>{t('kubecode.projectRootDescription')}</small>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="kubecode-provider-session-list">
               {providerSessions.map((session) => (

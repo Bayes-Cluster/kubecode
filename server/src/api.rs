@@ -17,7 +17,9 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
-use crate::agents::{AgentEvent, AgentId, AgentStore, RunStatus, StoreError, WorkspaceEvent};
+use crate::agents::{
+    AgentEvent, AgentId, AgentStore, ExecutionMode, RunStatus, StoreError, WorkspaceEvent,
+};
 use crate::git::{GitError, GitMutation, GitService};
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
@@ -186,6 +188,10 @@ fn api_router(state: AppState) -> Router {
             axum::routing::post(resolve_elicitation),
         )
         .route("/projects/{project_id}", delete(unregister_project))
+        .route(
+            "/projects/{project_id}/workspaces",
+            axum::routing::patch(update_project_workspaces),
+        )
         .route("/projects/{project_id}/git/status", get(git_status))
         .route(
             "/projects/{project_id}/git/init",
@@ -236,6 +242,7 @@ struct CreateConversationRequest {
     title: Option<String>,
     provider_session_id: Option<String>,
     agent_title: Option<String>,
+    workspace_mode: Option<ExecutionMode>,
 }
 
 async fn list_conversations(
@@ -258,7 +265,8 @@ async fn create_conversation(
 ) -> Result<impl IntoResponse, ApiError> {
     state.workspace.project_path(&project_id)?;
     let store = state.agent_runtime.store();
-    let conversation = if let Some(provider_session_id) = request.provider_session_id.as_deref() {
+    let mut conversation = if let Some(provider_session_id) = request.provider_session_id.as_deref()
+    {
         let imported = store.create_imported_conversation(
             &project_id,
             request.agent_id,
@@ -277,6 +285,18 @@ async fn create_conversation(
     } else {
         store.create_conversation(&project_id, request.agent_id, request.title.as_deref())?
     };
+    if request.provider_session_id.is_none()
+        && request.workspace_mode == Some(ExecutionMode::Worktree)
+    {
+        let workspace_path = state
+            .workspace
+            .create_session_worktree(&project_id, &conversation.agent_session_id)?;
+        conversation = store.assign_execution_workspace(
+            &conversation.id,
+            ExecutionMode::Worktree,
+            Some(&workspace_path.to_string_lossy()),
+        )?;
+    }
     if state
         .agents
         .iter()
@@ -767,6 +787,23 @@ async fn unregister_project(
 ) -> Result<StatusCode, ApiError> {
     state.workspace.unregister_project(&project_id)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateProjectWorkspacesRequest {
+    enabled: bool,
+}
+
+async fn update_project_workspaces(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<UpdateProjectWorkspacesRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(
+        state
+            .workspace
+            .set_workspaces_enabled(&project_id, request.enabled)?,
+    ))
 }
 
 async fn git_status(
@@ -1329,6 +1366,7 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
         WorkspaceError::ProjectNotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         WorkspaceError::DuplicateProject(_) => (StatusCode::CONFLICT, "duplicate_project"),
+        WorkspaceError::Git(_) => (StatusCode::CONFLICT, "git_worktree_error"),
         WorkspaceError::Conflict { .. } => (StatusCode::CONFLICT, "revision_conflict"),
         WorkspaceError::Io(error) if error.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "not_found")

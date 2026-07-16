@@ -5,7 +5,12 @@ import { DEFAULT_KUBECODE_NOTIFICATIONS } from './notificationPreferences'
 import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
 import type { Conversation, Project, WorkspaceEvent } from './api'
 
-const project: Project = { id: 'project-1', name: 'Demo', path: '/demo' }
+const project: Project = {
+  id: 'project-1',
+  name: 'Demo',
+  path: '/demo',
+  workspaces_enabled: false,
+}
 const conversation: Conversation = {
   id: 'session-1',
   project_id: project.id,

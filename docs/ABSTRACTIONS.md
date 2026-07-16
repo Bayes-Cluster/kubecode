@@ -10,9 +10,26 @@ escaping symlinks, and the private Kubecode state directory.
 Registering or importing a Project adds metadata to SQLite. Unregistering it
 removes that metadata only; it never removes the Project directory or files.
 
+The `workspaces_enabled` preference controls whether new isolated Agent
+Sessions may be created. It defaults to false and does not itself move or
+delete existing execution directories.
+
+## Agent Session and Agent Chat
+
+An Agent Session owns an execution boundary: Project, cwd, shared/worktree
+mode, and eventually its Files, Changes, Tasks, and Terminal resources. A
+server-generated worktree path is private application state and is never
+accepted as an arbitrary browser path.
+
+An Agent Chat owns one provider conversation, transcript, configuration, and
+run history inside that execution boundary. During the compatibility phase the
+stored conversation is both the Agent Chat and its one-to-one Agent Session;
+`agent_session_id` makes the boundary durable for an additive one-to-many
+migration later.
+
 ## Session and run
 
-A Session is a durable relationship between one Project and one Agent. It owns
+A Session is a durable relationship between one Agent Session and one Agent. It owns
 the provider Session ID, manual and Agent titles, retained ACP state, archive
 state, activity timestamps, and an ordered Session event history. A Session may
 reference a parent as a provider-native fork or subagent; imported subagent

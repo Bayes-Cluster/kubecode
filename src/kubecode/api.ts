@@ -1,9 +1,15 @@
-export type Project = { id: string; name: string; path: string }
+export type Project = {
+  id: string
+  name: string
+  path: string
+  workspaces_enabled: boolean
+}
 export type DirectoryEntry = { name: string; path: string; hidden: boolean }
 export type DirectoryListing = { path: string; parent: string | null; entries: DirectoryEntry[] }
 export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
+export type ExecutionMode = 'shared' | 'worktree'
 export type TerminalKind = 'regular' | AgentId
 export type AgentDescriptor = {
   id: AgentId
@@ -14,6 +20,7 @@ export type AgentDescriptor = {
 }
 export type Conversation = {
   id: string
+  agent_session_id: string
   project_id: string
   agent_id: AgentId
   provider_session_id: string | null
@@ -27,6 +34,8 @@ export type Conversation = {
   relationship?: 'fork' | 'subagent' | null
   read_only?: boolean
   latest_run_status?: RunStatus | null
+  execution_mode: ExecutionMode
+  workspace_path: string | null
 }
 export type RunStatus =
   | 'running'
@@ -159,6 +168,13 @@ export class KubecodeApi {
     return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
   }
 
+  setProjectWorkspacesEnabled(projectId: string, enabled: boolean): Promise<Project> {
+    return this.request(`${this.projectPath(projectId)}/workspaces`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    })
+  }
+
   listEntries(projectId: string, path = ''): Promise<Entry[]> {
     return this.request(`${this.projectPath(projectId)}/entries?${query({ path })}`)
   }
@@ -246,6 +262,7 @@ export class KubecodeApi {
     title?: string,
     providerSessionId?: string,
     agentTitle?: string,
+    workspaceMode?: ExecutionMode,
   ): Promise<Conversation> {
     return this.request(`${this.projectPath(projectId)}/sessions`, {
       method: 'POST',
@@ -254,6 +271,7 @@ export class KubecodeApi {
         agent_title: agentTitle || undefined,
         provider_session_id: providerSessionId || undefined,
         title: title || undefined,
+        workspace_mode: workspaceMode === 'worktree' ? workspaceMode : undefined,
       }),
     })
   }

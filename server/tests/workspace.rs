@@ -1,4 +1,6 @@
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 use kubecode_server::workspace::{EntryKind, WorkspaceError, WorkspaceService};
 use tempfile::TempDir;
@@ -23,6 +25,7 @@ fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
         .expect("create project");
     assert_eq!(created.name, "compiler");
     assert_eq!(created.path, created_path.to_string_lossy());
+    assert!(!created.workspaces_enabled);
 
     fs::create_dir_all(service.root().join("existing/api")).expect("existing project");
     let imported = service
@@ -39,6 +42,90 @@ fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
         .expect("unregister project");
     assert!(service.root().join("teams/compiler").is_dir());
     assert_eq!(service.list_projects().expect("list projects").len(), 1);
+}
+
+#[test]
+fn persists_the_project_workspaces_preference() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database_path = root.join(".state/kubecode/kubecode.sqlite3");
+    fs::create_dir_all(database_path.parent().expect("database parent")).expect("state directory");
+
+    let service = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let project = service
+        .create_project_at(root.join("workspaces"))
+        .expect("project");
+    let enabled = service
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+    assert!(enabled.workspaces_enabled);
+    drop(service);
+
+    let reopened = WorkspaceService::open(&root, &database_path).expect("reopen workspace service");
+    let persisted = reopened
+        .list_projects()
+        .expect("list projects")
+        .into_iter()
+        .find(|candidate| candidate.id == project.id)
+        .expect("persisted project");
+    assert!(persisted.workspaces_enabled);
+}
+
+#[test]
+fn creates_an_isolated_git_worktree_for_an_agent_session() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("worktree-project"))
+        .expect("project");
+    run_git(&project.path, &["init"]);
+    run_git(&project.path, &["config", "user.email", "test@example.com"]);
+    run_git(&project.path, &["config", "user.name", "Kubecode Test"]);
+    fs::write(Path::new(&project.path).join("README.md"), "root\n").expect("fixture");
+    run_git(&project.path, &["add", "README.md"]);
+    run_git(&project.path, &["commit", "-m", "initial"]);
+    service
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+
+    let workspace = service
+        .create_session_worktree(&project.id, "session-12345678")
+        .expect("session worktree");
+
+    assert!(workspace.is_dir());
+    assert_eq!(
+        fs::read_to_string(workspace.join("README.md")).expect("worktree content"),
+        "root\n",
+    );
+    assert_eq!(
+        git_output(&workspace, &["branch", "--show-current"]),
+        "kubecode/session-12345678",
+    );
+}
+
+fn run_git(cwd: impl AsRef<Path>, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+fn git_output(cwd: impl AsRef<Path>, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(output.status.success());
+    String::from_utf8(output.stdout)
+        .expect("utf8 git output")
+        .trim()
+        .to_owned()
 }
 
 #[test]
