@@ -129,6 +129,8 @@ export function AgentSessionWorkspace({
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
+  const [editRunId, setEditRunId] = useState<string | null>(null)
+  const [editPrompt, setEditPrompt] = useState('')
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const knownRunIdsRef = useRef(new Set<string>())
@@ -318,6 +320,36 @@ export function AgentSessionWorkspace({
     trackEvent('kubecode_agent_session_forked', { agent_id: conversation.agent_id })
   }
 
+  const branchAtRun = async (runId: string, replacement?: string) => {
+    if (!conversation || !projectId || active) return
+    try {
+      const branch = await api.branchConversationAtRun(conversation.id, runId)
+      onConversationCreated(branch)
+      if (replacement?.trim()) {
+        await api.startRun(projectId, branch.id, replacement.trim())
+      }
+      trackEvent('kubecode_agent_chat_branched', {
+        action: replacement ? 'regenerate' : 'undo',
+        agent_id: conversation.agent_id,
+      })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
+  const regenerate = async (runId: string) => {
+    const message = messages.find((candidate) => candidate.id === runId)?.userMessage
+    if (message) await branchAtRun(runId, message)
+  }
+
+  const submitEdit = async () => {
+    if (!editRunId || !editPrompt.trim()) return
+    const runId = editRunId
+    const replacement = editPrompt
+    setEditRunId(null)
+    await branchAtRun(runId, replacement)
+  }
+
   if (!conversation) {
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
@@ -411,6 +443,9 @@ export function AgentSessionWorkspace({
         </div>
       </header>
       <div className="kubecode-session-timeline">
+        {conversation.recreated_context && (
+          <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
+        )}
         <AiPanelMessageHistory
           agentLabel={agentLabel}
           agentReadiness={readiness}
@@ -418,6 +453,11 @@ export function AgentSessionWorkspace({
           isActive={active}
           locale={locale}
           messages={messages}
+          onEditMessage={(runId, userMessage) => {
+            setEditRunId(runId)
+            setEditPrompt(userMessage)
+          }}
+          onRegenerateMessage={(runId) => void regenerate(runId)}
         />
       </div>
       {error && (
@@ -553,6 +593,11 @@ export function AgentSessionWorkspace({
           </div>
         ) : (
           <>
+            {run && ['cancelled', 'failed', 'interrupted'].includes(run.status) && (
+              <Button className="kubecode-undo-turn" size="sm" variant="ghost" onClick={() => void branchAtRun(run.id)}>
+                {t('kubecode.undoTurn')}
+              </Button>
+            )}
             {visibleCommands.length > 0 && (
               <div className="kubecode-command-suggestions">
                 {visibleCommands.map((command) => (
@@ -650,6 +695,26 @@ export function AgentSessionWorkspace({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={editRunId !== null} onOpenChange={(nextOpen) => !nextOpen && setEditRunId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.editAndRegenerate')}</DialogTitle>
+            <DialogDescription>{t('kubecode.editAndRegenerateDescription')}</DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label={t('kubecode.editMessage')}
+            value={editPrompt}
+            onChange={(event) => setEditPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submitEdit()
+            }}
+          />
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
+            <Button disabled={!editPrompt.trim()} onClick={() => void submitEdit()}>{t('kubecode.regenerate')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
@@ -686,7 +751,7 @@ async function hydrateConversation(
   const pendingElicitation = activeRunIndex >= 0
     ? pendingElicitationFromEvents(events[activeRunIndex])
     : null
-  return { messages, activeRun, pendingPermission, pendingElicitation, sessionState }
+  return { messages, activeRun: runs.at(-1) ?? null, pendingPermission, pendingElicitation, sessionState }
 }
 
 function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): AiAgentMessage[] {

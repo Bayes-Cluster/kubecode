@@ -10,6 +10,25 @@ export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
 export type ExecutionMode = 'shared' | 'worktree'
+export type WorkspaceMigrationStrategy = 'merge' | 'export_patch' | 'discard'
+export type WorkspaceMigrationItem = {
+  conversation_id: string
+  title: string
+  path: string
+  dirty: boolean
+}
+export type WorkspaceMigrationPreview = {
+  active_conversation_ids: string[]
+  worktrees: WorkspaceMigrationItem[]
+}
+export type WorkspaceMigrationResolution = {
+  conversation_id: string
+  strategy: WorkspaceMigrationStrategy
+}
+export type WorkspaceMigrationResult = {
+  project: Project
+  exports: Array<{ conversation_id: string; path: string }>
+}
 export type TerminalKind = 'regular' | AgentId
 export type AgentDescriptor = {
   id: AgentId
@@ -31,11 +50,12 @@ export type Conversation = {
   updated_at?: string
   archived?: boolean
   parent_conversation_id?: string | null
-  relationship?: 'fork' | 'subagent' | null
+  relationship?: 'fork' | 'subagent' | 'branch' | null
   read_only?: boolean
   latest_run_status?: RunStatus | null
   execution_mode: ExecutionMode
   workspace_path: string | null
+  recreated_context: boolean
 }
 export type RunStatus =
   | 'running'
@@ -175,6 +195,20 @@ export class KubecodeApi {
     })
   }
 
+  getWorkspaceMigration(projectId: string): Promise<WorkspaceMigrationPreview> {
+    return this.request(`${this.projectPath(projectId)}/workspaces/migration`)
+  }
+
+  migrateProjectWorkspaces(
+    projectId: string,
+    resolutions: WorkspaceMigrationResolution[],
+  ): Promise<WorkspaceMigrationResult> {
+    return this.request(`${this.projectPath(projectId)}/workspaces/migration`, {
+      method: 'POST',
+      body: JSON.stringify({ resolutions }),
+    })
+  }
+
   listEntries(projectId: string, path = ''): Promise<Entry[]> {
     return this.request(`${this.projectPath(projectId)}/entries?${query({ path })}`)
   }
@@ -298,6 +332,13 @@ export class KubecodeApi {
 
   forkConversation(conversationId: string): Promise<Conversation> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/fork`, { method: 'POST' })
+  }
+
+  branchConversationAtRun(conversationId: string, runId: string): Promise<Conversation> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(runId)}/branch`,
+      { method: 'POST', body: JSON.stringify({}) },
+    )
   }
 
   startRun(

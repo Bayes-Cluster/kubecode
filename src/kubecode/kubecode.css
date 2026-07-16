@@ -442,6 +442,55 @@
   width: 100%;
 }
 
+.kubecode-disable-workspaces-dialog {
+  max-width: 640px;
+}
+
+.kubecode-workspace-migration-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(52vh, 440px);
+  overflow: auto;
+}
+
+.kubecode-workspace-migration-item {
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  padding: 10px 12px;
+}
+
+.kubecode-workspace-migration-item > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kubecode-workspace-migration-item span,
+.kubecode-workspace-migration-item code {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-recreated-context {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 8px 12px 0;
+  text-align: center;
+}
+
+.kubecode-undo-turn {
+  align-self: flex-start;
+  color: var(--text-secondary);
+  margin: 0 10px;
+}
+
 .kubecode-session-browser {
   display: flex;
   flex: 1;

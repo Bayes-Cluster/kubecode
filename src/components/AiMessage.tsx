@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { CaretRight, CaretDown, Brain, ArrowsClockwise, Copy, GitBranch, Terminal } from '@phosphor-icons/react'
+import { CaretRight, CaretDown, Brain, ArrowsClockwise, Copy, GitBranch, PencilSimple, Terminal } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { AiActionCard, type AiActionStatus } from './AiActionCard'
 import { MarkdownContent } from './MarkdownContent'
@@ -30,6 +30,7 @@ export interface AiMessageProps {
   response?: string
   isStreaming?: boolean
   onFork?: (messageId: string) => void
+  onEdit?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
   onNavigateWikilink?: (target: string) => void
   onRegenerate?: (messageId: string) => void
@@ -75,15 +76,31 @@ function ReferencePill({ reference, onClick }: {
   )
 }
 
-function UserBubble({ content, references, onOpenNote }: {
+function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote }: {
   content: string
+  locale: AppLocale
+  messageId?: string
+  onEdit?: (messageId: string, userMessage: string) => void
   references?: NoteReference[]
   onOpenNote?: (path: string) => void
 }) {
   return (
-    <div className="flex justify-end" style={{ marginBottom: 8 }}>
-      <div
-        className="min-w-0 max-w-[85%] overflow-hidden"
+    <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
+      <div className="flex max-w-[85%] items-start gap-1">
+        <Button
+          aria-label={translate(locale, 'ai.message.edit')}
+          className="h-6 w-6 shrink-0 rounded-md p-0 text-muted-foreground opacity-0 group-hover/ai-user:opacity-100 group-focus-within/ai-user:opacity-100"
+          disabled={!messageId || !onEdit}
+          size="icon-xs"
+          title={translate(locale, 'ai.message.edit')}
+          type="button"
+          variant="ghost"
+          onClick={() => messageId && onEdit?.(messageId, content)}
+        >
+          <PencilSimple size={14} />
+        </Button>
+        <div
+        className="min-w-0 overflow-hidden"
         style={{
           background: 'var(--state-hover)',
           color: 'var(--foreground)',
@@ -94,7 +111,7 @@ function UserBubble({ content, references, onOpenNote }: {
           lineHeight: 1.5,
           overflowWrap: 'anywhere',
         }}
-      >
+        >
         {references && references.length > 0 && (
           <div className="flex flex-wrap gap-1" style={{ marginBottom: 4 }}>
             {references.map(ref => (
@@ -103,6 +120,7 @@ function UserBubble({ content, references, onOpenNote }: {
           </div>
         )}
         {content}
+        </div>
       </div>
     </div>
   )
@@ -355,7 +373,7 @@ export function AiMessage(props: AiMessageProps) {
   return <ConversationMessage {...props} />
 }
 
-function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, isStreaming, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
+function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, isStreaming, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
   // Manual override: null = follow auto behavior, true/false = user forced
   const [userOverride, setUserOverride] = useState(false)
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set())
@@ -377,7 +395,7 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
 
   return (
     <div className="min-w-0 max-w-full" data-testid="ai-message" style={{ marginBottom: 16 }}>
-      <UserBubble content={userMessage} references={references} onOpenNote={onOpenNote} />
+      <UserBubble content={userMessage} locale={locale} messageId={messageId} onEdit={onEdit} references={references} onOpenNote={onOpenNote} />
       {reasoning && (
         <ReasoningBlock
           locale={locale}

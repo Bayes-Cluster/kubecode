@@ -165,6 +165,10 @@ fn api_router(state: AppState) -> Router {
             axum::routing::post(fork_conversation),
         )
         .route(
+            "/sessions/{conversation_id}/turns/{run_id}/branch",
+            axum::routing::post(branch_conversation_at_run),
+        )
+        .route(
             "/sessions/{conversation_id}/events",
             get(list_session_events),
         )
@@ -191,6 +195,10 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/projects/{project_id}/workspaces",
             axum::routing::patch(update_project_workspaces),
+        )
+        .route(
+            "/projects/{project_id}/workspaces/migration",
+            get(get_workspace_migration).post(migrate_project_workspaces),
         )
         .route("/projects/{project_id}/git/status", get(git_status))
         .route(
@@ -401,6 +409,17 @@ async fn fork_conversation(
                 .await?,
         ),
     ))
+}
+
+async fn branch_conversation_at_run(
+    State(state): State<AppState>,
+    Path((conversation_id, run_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let conversation = state
+        .agent_runtime
+        .store()
+        .branch_conversation_at_run(&conversation_id, &run_id)?;
+    Ok((StatusCode::CREATED, Json(conversation)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -799,11 +818,177 @@ async fn update_project_workspaces(
     Path(project_id): Path<String>,
     Json(request): Json<UpdateProjectWorkspacesRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    if !request.enabled
+        && state
+            .agent_runtime
+            .store()
+            .list_conversations(&project_id)?
+            .iter()
+            .any(|conversation| conversation.workspace_path.is_some())
+    {
+        return Err(ApiError::WorkspaceMigration(
+            "resolve existing worktrees before disabling Workspaces".into(),
+        ));
+    }
     Ok(Json(
         state
             .workspace
             .set_workspaces_enabled(&project_id, request.enabled)?,
     ))
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum WorkspaceMigrationStrategy {
+    Merge,
+    ExportPatch,
+    Discard,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkspaceMigrationResolution {
+    conversation_id: String,
+    strategy: WorkspaceMigrationStrategy,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkspaceMigrationRequest {
+    resolutions: Vec<WorkspaceMigrationResolution>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkspaceMigrationItem {
+    conversation_id: String,
+    title: String,
+    path: String,
+    dirty: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkspaceMigrationPreview {
+    active_conversation_ids: Vec<String>,
+    worktrees: Vec<WorkspaceMigrationItem>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkspaceMigrationExport {
+    conversation_id: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkspaceMigrationResponse {
+    project: crate::workspace::Project,
+    exports: Vec<WorkspaceMigrationExport>,
+}
+
+async fn get_workspace_migration(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<WorkspaceMigrationPreview>, ApiError> {
+    state.workspace.project(&project_id)?;
+    let conversations = state
+        .agent_runtime
+        .store()
+        .list_conversations(&project_id)?;
+    let active_conversation_ids = conversations
+        .iter()
+        .filter(|conversation| {
+            matches!(
+                conversation.latest_run_status,
+                Some(RunStatus::Running | RunStatus::WaitingPermission)
+            )
+        })
+        .map(|conversation| conversation.id.clone())
+        .collect();
+    let mut worktrees = Vec::new();
+    for conversation in conversations {
+        let Some(path) = conversation.workspace_path else {
+            continue;
+        };
+        worktrees.push(WorkspaceMigrationItem {
+            dirty: state.workspace.session_worktree_dirty(
+                &project_id,
+                &conversation.agent_session_id,
+                &path,
+            )?,
+            conversation_id: conversation.id,
+            title: conversation.title,
+            path,
+        });
+    }
+    Ok(Json(WorkspaceMigrationPreview {
+        active_conversation_ids,
+        worktrees,
+    }))
+}
+
+async fn migrate_project_workspaces(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<WorkspaceMigrationRequest>,
+) -> Result<Json<WorkspaceMigrationResponse>, ApiError> {
+    let preview = get_workspace_migration(State(state.clone()), Path(project_id.clone()))
+        .await?
+        .0;
+    if !preview.active_conversation_ids.is_empty() {
+        return Err(ApiError::WorkspaceMigration(
+            "stop active Agent runs before disabling Workspaces".into(),
+        ));
+    }
+    let resolutions = request
+        .resolutions
+        .into_iter()
+        .map(|resolution| (resolution.conversation_id, resolution.strategy))
+        .collect::<BTreeMap<_, _>>();
+    if preview
+        .worktrees
+        .iter()
+        .any(|item| !resolutions.contains_key(&item.conversation_id))
+    {
+        return Err(ApiError::WorkspaceMigration(
+            "every worktree requires merge, export patch, or discard".into(),
+        ));
+    }
+
+    let store = state.agent_runtime.store();
+    let mut exports = Vec::new();
+    for item in preview.worktrees {
+        state
+            .agent_runtime
+            .disconnect_conversation(&item.conversation_id)
+            .await?;
+        let conversation = store.get_conversation(&item.conversation_id)?;
+        match resolutions
+            .get(&item.conversation_id)
+            .expect("migration resolution checked above")
+        {
+            WorkspaceMigrationStrategy::Merge => state.workspace.merge_session_worktree(
+                &project_id,
+                &conversation.agent_session_id,
+                &item.path,
+            )?,
+            WorkspaceMigrationStrategy::ExportPatch => {
+                let path = state.workspace.export_session_worktree(
+                    &project_id,
+                    &conversation.agent_session_id,
+                    &item.path,
+                )?;
+                exports.push(WorkspaceMigrationExport {
+                    conversation_id: item.conversation_id.clone(),
+                    path: path.to_string_lossy().into_owned(),
+                });
+            }
+            WorkspaceMigrationStrategy::Discard => state.workspace.discard_session_worktree(
+                &project_id,
+                &conversation.agent_session_id,
+                &item.path,
+            )?,
+        }
+        store.assign_execution_workspace(&item.conversation_id, ExecutionMode::Shared, None)?;
+    }
+    let project = state.workspace.set_workspaces_enabled(&project_id, false)?;
+    Ok(Json(WorkspaceMigrationResponse { project, exports }))
 }
 
 async fn git_status(
@@ -1230,6 +1415,7 @@ enum ApiError {
     Git(GitError),
     PermissionNotFound(String),
     ElicitationNotFound(String),
+    WorkspaceMigration(String),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -1341,6 +1527,11 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND,
                 "elicitation_not_found",
                 format!("elicitation request is no longer active: {request_id}"),
+            ),
+            ApiError::WorkspaceMigration(message) => (
+                StatusCode::CONFLICT,
+                "workspace_migration_required",
+                message,
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

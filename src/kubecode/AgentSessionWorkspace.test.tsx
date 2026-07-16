@@ -9,7 +9,11 @@ import { AgentSessionWorkspace } from './AgentSessionWorkspace'
 import type { AgentRun, KubecodeApi, WorkspaceEvent } from './api'
 
 vi.mock('@/components/AiPanelChrome', () => ({
-  AiPanelMessageHistory: ({ messages }: { messages: AiAgentMessage[] }) => (
+  AiPanelMessageHistory: ({ messages, onEditMessage, onRegenerateMessage }: {
+    messages: AiAgentMessage[]
+    onEditMessage?: (messageId: string, message: string) => void
+    onRegenerateMessage?: (messageId: string) => void
+  }) => (
     <div>{messages.map((message) => (
       <article key={message.id} data-streaming={message.isStreaming}>
         {message.userMessage}
@@ -18,6 +22,12 @@ vi.mock('@/components/AiPanelChrome', () => ({
         {message.actions.map((action) => (
           <span key={action.toolId}>{action.label}:{action.status}:{action.output}</span>
         ))}
+        {message.id && onEditMessage && (
+          <button onClick={() => onEditMessage(message.id as string, message.userMessage)}>Edit message</button>
+        )}
+        {message.id && onRegenerateMessage && (
+          <button onClick={() => onRegenerateMessage(message.id as string)}>Regenerate response</button>
+        )}
       </article>
     ))}</div>
   ),
@@ -56,6 +66,49 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('regenerates a completed turn in a new immutable Agent Chat branch', async () => {
+    const branch = {
+      ...conversation,
+      id: 'session-branch',
+      agent_session_id: 'session-1',
+      execution_mode: 'shared' as const,
+      workspace_path: null,
+      recreated_context: true,
+      parent_conversation_id: conversation.id,
+      relationship: 'branch' as const,
+    }
+    const branchConversationAtRun = vi.fn().mockResolvedValue(branch)
+    const startRun = vi.fn().mockResolvedValue({ ...run, id: 'run-branch' })
+    const onConversationCreated = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([run]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      branchConversationAtRun,
+      startRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={onConversationCreated}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Regenerate response' }))
+
+    await waitFor(() => expect(branchConversationAtRun).toHaveBeenCalledWith('session-1', 'run-1'))
+    expect(startRun).toHaveBeenCalledWith('project-1', 'session-branch', 'Implement it')
+    expect(onConversationCreated).toHaveBeenCalledWith(branch)
+  })
+
   it('shows imported subagent sessions as read-only transcripts', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),

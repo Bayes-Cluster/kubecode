@@ -107,6 +107,60 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('previews and resolves the protected Workspaces migration', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        active_conversation_ids: [],
+        worktrees: [{
+          conversation_id: 'session-1',
+          title: 'Agent work',
+          path: '/state/worktrees/session-1',
+          dirty: true,
+        }],
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        project: { id: 'project-1', workspaces_enabled: false },
+        exports: [],
+      })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.getWorkspaceMigration('project-1')
+    await api.migrateProjectWorkspaces('project-1', [{
+      conversation_id: 'session-1',
+      strategy: 'merge',
+    }])
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/projects/project-1/workspaces/migration',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-1/workspaces/migration',
+      expect.objectContaining({
+        body: JSON.stringify({
+          resolutions: [{ conversation_id: 'session-1', strategy: 'merge' }],
+        }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('creates an immutable Agent Chat branch at a run', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'branch-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.branchConversationAtRun('session/1', 'run/1')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/sessions/session%2F1/turns/run%2F1/branch',
+      expect.objectContaining({ body: '{}', method: 'POST' }),
+    )
+  })
+
   it('serializes Git diff booleans for Axum query parsing', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ diff: '' })))
     vi.stubGlobal('fetch', fetch)

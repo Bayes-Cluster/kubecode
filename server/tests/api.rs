@@ -207,6 +207,96 @@ async fn creates_a_session_in_an_isolated_workspace_when_requested() {
 }
 
 #[tokio::test]
+async fn requires_an_explicit_resolution_before_disabling_workspaces() {
+    let (temp, app) = app();
+    let project_path = temp.path().join("srv/disable-workspaces-api");
+    fs::create_dir_all(&project_path).expect("project directory");
+    run_command(&project_path, "git", &["init"]);
+    run_command(
+        &project_path,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_path,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_path.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_path, "git", &["add", "README.md"]);
+    run_command(&project_path, "git", &["commit", "-m", "initial"]);
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"import", "path":project_path}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/workspaces"),
+        json!({"enabled":true}),
+    )
+    .await;
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id":"codex", "workspace_mode":"worktree"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let workspace_path = conversation["workspace_path"]
+        .as_str()
+        .expect("workspace path");
+    fs::write(
+        std::path::Path::new(workspace_path).join("README.md"),
+        "changed\n",
+    )
+    .expect("worktree change");
+
+    let (status, preview) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/workspaces/migration"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["worktrees"][0]["conversation_id"], conversation_id);
+    assert_eq!(preview["worktrees"][0]["dirty"], true);
+
+    let (status, migrated) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/workspaces/migration"),
+        json!({
+            "resolutions":[{
+                "conversation_id":conversation_id,
+                "strategy":"export_patch"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(migrated["project"]["workspaces_enabled"], false);
+    assert!(migrated["exports"][0]["path"].as_str().is_some());
+    assert!(!std::path::Path::new(workspace_path).exists());
+
+    let (_, sessions) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(sessions[0]["execution_mode"], "shared");
+    assert_eq!(sessions[0]["workspace_path"], Value::Null);
+}
+
+#[tokio::test]
 async fn exposes_exactly_the_supported_agent_catalog_below_the_prefix() {
     let (_temp, app) = app();
 
@@ -305,6 +395,59 @@ async fn creates_conversations_and_rejects_runs_for_unavailable_agents() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(cursor["cursor"].as_u64().expect("event cursor") > 0);
+}
+
+#[tokio::test]
+async fn branches_an_agent_chat_at_an_immutable_turn() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let workspace = Arc::new(
+        WorkspaceService::open(&root, state.join("kubecode.sqlite3")).expect("workspace service"),
+    );
+    let store = Arc::new(AgentStore::open(state.join("kubecode.sqlite3")).expect("agent store"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store)),
+        BASE_PATH,
+    );
+    let project = workspace
+        .create_project_at(root.join("chat-branch"))
+        .expect("project");
+    let conversation = store
+        .create_conversation(&project.id, kubecode_server::agents::AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Change this",
+            kubecode_server::agents::PermissionMode::Safe,
+        )
+        .expect("run");
+    store
+        .finish_run(
+            &run.id,
+            kubecode_server::agents::RunStatus::Interrupted,
+            None,
+        )
+        .expect("interrupt run");
+
+    let (status, branch) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/turns/{}/branch",
+            conversation.id, run.id
+        ),
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(branch["parent_conversation_id"], conversation.id);
+    assert_eq!(branch["relationship"], "branch");
+    assert_eq!(branch["recreated_context"], true);
 }
 
 #[tokio::test]

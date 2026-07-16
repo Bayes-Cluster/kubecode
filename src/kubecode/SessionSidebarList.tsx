@@ -258,7 +258,10 @@ function relationshipLabel(
     ? conversationsById.get(conversation.parent_conversation_id)
     : null
   const parentTitle = parent?.title || t('kubecode.untitledSession')
-  return conversation.relationship === 'subagent'
-    ? t('kubecode.subagentOf', { title: parentTitle })
+  if (conversation.relationship === 'subagent') {
+    return t('kubecode.subagentOf', { title: parentTitle })
+  }
+  return conversation.relationship === 'branch'
+    ? t('kubecode.branchOf', { title: parentTitle })
     : t('kubecode.forkOf', { title: parentTitle })
 }

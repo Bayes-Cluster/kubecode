@@ -57,6 +57,7 @@ pub enum RunStatus {
 pub enum ConversationRelationship {
     Fork,
     Subagent,
+    Branch,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -115,6 +116,9 @@ pub struct Conversation {
     pub latest_run_status: Option<RunStatus>,
     pub execution_mode: ExecutionMode,
     pub workspace_path: Option<String>,
+    pub recreated_context: bool,
+    #[serde(skip)]
+    pub context_prefix: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -242,6 +246,13 @@ impl AgentStore {
             "TEXT NOT NULL DEFAULT 'shared'",
         )?;
         ensure_column(&database, "conversations", "workspace_path", "TEXT")?;
+        ensure_column(
+            &database,
+            "conversations",
+            "recreated_context",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(&database, "conversations", "context_prefix", "TEXT")?;
         database.execute(
             "UPDATE conversations SET agent_session_id = id WHERE agent_session_id IS NULL",
             [],
@@ -299,6 +310,8 @@ impl AgentStore {
             latest_run_status: None,
             execution_mode: ExecutionMode::Shared,
             workspace_path: None,
+            recreated_context: false,
+            context_prefix: None,
         };
         let conversation = Conversation {
             agent_session_id: conversation.id.clone(),
@@ -386,6 +399,8 @@ impl AgentStore {
             latest_run_status: None,
             execution_mode: ExecutionMode::Shared,
             workspace_path: None,
+            recreated_context: false,
+            context_prefix: None,
         };
         let conversation = Conversation {
             agent_session_id: conversation.id.clone(),
@@ -517,6 +532,99 @@ impl AgentStore {
             }),
         )?;
         Ok(conversation)
+    }
+
+    pub fn branch_conversation_at_run(
+        &self,
+        source_conversation_id: &str,
+        run_id: &str,
+    ) -> Result<Conversation, StoreError> {
+        let source = self.get_conversation(source_conversation_id)?;
+        let run = self.get_run(run_id)?;
+        if run.conversation_id != source.id {
+            return Err(StoreError::RunNotFound(run_id.to_owned()));
+        }
+        let source_events = self.session_events_after(source_conversation_id, 0)?;
+        let retained_events = source_events
+            .into_iter()
+            .take_while(|event| event.payload.get("run_id").and_then(Value::as_str) != Some(run_id))
+            .collect::<Vec<_>>();
+        let context_prefix = transcript_context(&retained_events);
+        let conversation = Conversation {
+            id: Uuid::new_v4().to_string(),
+            agent_session_id: source.agent_session_id,
+            project_id: source.project_id.clone(),
+            agent_id: source.agent_id,
+            provider_session_id: None,
+            title: source.title.clone(),
+            manual_title: None,
+            agent_title: normalized_title(Some(&source.title)),
+            created_at: String::new(),
+            updated_at: String::new(),
+            archived: false,
+            parent_conversation_id: Some(source.id.clone()),
+            relationship: Some(ConversationRelationship::Branch),
+            read_only: false,
+            latest_run_status: None,
+            execution_mode: source.execution_mode,
+            workspace_path: source.workspace_path,
+            recreated_context: true,
+            context_prefix: (!context_prefix.is_empty()).then_some(context_prefix),
+        };
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction()?;
+        transaction.execute(
+            "INSERT INTO conversations
+             (id, agent_session_id, project_id, agent_id, title, agent_title,
+              parent_conversation_id, relationship, read_only, execution_mode,
+              workspace_path, recreated_context, context_prefix)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                conversation.id,
+                conversation.agent_session_id,
+                conversation.project_id,
+                conversation.agent_id.as_str(),
+                conversation.title,
+                conversation.agent_title,
+                conversation.parent_conversation_id,
+                conversation.relationship.map(|value| value.as_str()),
+                conversation.read_only,
+                conversation.execution_mode.as_str(),
+                conversation.workspace_path,
+                conversation.recreated_context,
+                conversation.context_prefix,
+            ],
+        )?;
+        for (index, event) in retained_events.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO session_events
+                 (conversation_id, seq, kind, payload, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    conversation.id,
+                    i64::try_from(index + 1)
+                        .map_err(|error| { StoreError::InvalidStoredValue(error.to_string()) })?,
+                    event.kind,
+                    serde_json::to_string(&event.payload)?,
+                    event.created_at,
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        drop(database);
+        self.append_workspace_event(
+            "session_created",
+            Some(&source.project_id),
+            Some(&conversation.id),
+            None,
+            &json!({
+                "agent_id": source.agent_id,
+                "parent_conversation_id": source.id,
+                "relationship": "branch",
+                "recreated_context": true,
+            }),
+        )?;
+        self.get_conversation(&conversation.id)
     }
 
     pub fn set_manual_title(
@@ -1202,6 +1310,8 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         latest_run_status,
         execution_mode,
         workspace_path: row.get(16)?,
+        recreated_context: row.get(17)?,
+        context_prefix: row.get(18)?,
     })
 }
 
@@ -1213,7 +1323,8 @@ fn conversation_query(suffix: &str) -> String {
                 c.relationship, c.read_only,
                 (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
                  ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1),
-                COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path
+                COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path,
+                c.recreated_context, c.context_prefix
          FROM conversations c {suffix}"
     )
 }
@@ -1265,6 +1376,35 @@ fn fallback_conversation_title(source: &str) -> Option<String> {
         title.replace_range(0..first.len_utf8(), &first.to_uppercase().to_string());
     }
     Some(title)
+}
+
+fn transcript_context(events: &[SessionEvent]) -> String {
+    let mut transcript = String::from(
+        "The following is immutable context recreated from an earlier Kubecode chat branch:\n",
+    );
+    let mut assistant_open = false;
+    for event in events {
+        match event.kind.as_str() {
+            "user_message" => {
+                if let Some(text) = event.payload.get("text").and_then(Value::as_str) {
+                    transcript.push_str("\nUser: ");
+                    transcript.push_str(text);
+                    assistant_open = false;
+                }
+            }
+            "text_delta" => {
+                if let Some(text) = event.payload.get("text").and_then(Value::as_str) {
+                    if !assistant_open {
+                        transcript.push_str("\nAssistant: ");
+                        assistant_open = true;
+                    }
+                    transcript.push_str(text);
+                }
+            }
+            _ => {}
+        }
+    }
+    transcript.trim().to_owned()
 }
 
 fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
@@ -1350,6 +1490,7 @@ string_enum!(RunStatus, {
 string_enum!(ConversationRelationship, {
     ConversationRelationship::Fork => "fork",
     ConversationRelationship::Subagent => "subagent",
+    ConversationRelationship::Branch => "branch",
 });
 
 string_enum!(ExecutionMode, {

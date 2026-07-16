@@ -14,6 +14,11 @@ The `workspaces_enabled` preference controls whether new isolated Agent
 Sessions may be created. It defaults to false and does not itself move or
 delete existing execution directories.
 
+Workspace migration is explicit and resumable. Each worktree requires a Merge,
+Export patch, or Discard resolution. Active Agent runs prevent migration, and a
+Git conflict leaves Workspaces enabled so the user can resolve it before
+continuing.
+
 ## Agent Session and Agent Chat
 
 An Agent Session owns an execution boundary: Project, cwd, shared/worktree
@@ -26,6 +31,11 @@ run history inside that execution boundary. During the compatibility phase the
 stored conversation is both the Agent Chat and its one-to-one Agent Session;
 `agent_session_id` makes the boundary durable for an additive one-to-many
 migration later.
+
+An Agent Chat branch references its parent Chat, retains events before a
+selected run, and has a fresh provider Session ID. `recreated_context` is shown
+to the user whenever Kubecode had to rebuild provider context from the durable
+timeline instead of using a native provider checkpoint.
 
 ## Session and run
 

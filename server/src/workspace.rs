@@ -212,6 +212,106 @@ impl WorkspaceService {
         Ok(canonical)
     }
 
+    pub fn session_worktree_dirty(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        workspace_path: &str,
+    ) -> Result<bool, WorkspaceError> {
+        let workspace = self.validated_session_worktree(project_id, session_id, workspace_path)?;
+        Ok(!git_output(&workspace, &["status", "--porcelain"])?.is_empty())
+    }
+
+    pub fn merge_session_worktree(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        workspace_path: &str,
+    ) -> Result<(), WorkspaceError> {
+        let workspace = self.validated_session_worktree(project_id, session_id, workspace_path)?;
+        let project_root = self.project_root(project_id)?;
+        if !git_output(&project_root, &["status", "--porcelain"])?.is_empty() {
+            return Err(WorkspaceError::Git(
+                "Project root has uncommitted changes; commit or stash them before merging".into(),
+            ));
+        }
+        if !git_output(&workspace, &["status", "--porcelain"])?.is_empty() {
+            run_git(&workspace, &["add", "--all"])?;
+            run_git(
+                &workspace,
+                &["commit", "-m", &format!("Kubecode workspace {session_id}")],
+            )?;
+        }
+        let branch = worktree_branch(session_id);
+        run_git(
+            &project_root,
+            &[
+                "merge",
+                "--no-ff",
+                &branch,
+                "-m",
+                &format!("Merge Kubecode workspace {session_id}"),
+            ],
+        )?;
+        self.discard_session_worktree(project_id, session_id, workspace_path)
+    }
+
+    pub fn export_session_worktree(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        workspace_path: &str,
+    ) -> Result<PathBuf, WorkspaceError> {
+        let workspace = self.validated_session_worktree(project_id, session_id, workspace_path)?;
+        let project_root = self.project_root(project_id)?;
+        let base = git_output(&project_root, &["rev-parse", "HEAD"])?;
+        let patch = git_output_bytes(&workspace, &["diff", "--binary", &base])?;
+        let export_parent = self.state_root.join("exports").join(project_id);
+        fs::create_dir_all(&export_parent)?;
+        let export_path = export_parent.join(format!("{session_id}.patch"));
+        fs::write(&export_path, patch)?;
+        self.discard_session_worktree(project_id, session_id, workspace_path)?;
+        Ok(export_path)
+    }
+
+    pub fn discard_session_worktree(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        workspace_path: &str,
+    ) -> Result<(), WorkspaceError> {
+        let workspace = self.validated_session_worktree(project_id, session_id, workspace_path)?;
+        let project_root = self.project_root(project_id)?;
+        let workspace_text = path_string(&workspace);
+        run_git(
+            &project_root,
+            &["worktree", "remove", "--force", &workspace_text],
+        )?;
+        run_git(
+            &project_root,
+            &["branch", "-D", &worktree_branch(session_id)],
+        )
+    }
+
+    fn validated_session_worktree(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        workspace_path: &str,
+    ) -> Result<PathBuf, WorkspaceError> {
+        validate_storage_id(session_id)?;
+        let canonical = PathBuf::from(workspace_path).canonicalize()?;
+        let expected = self
+            .state_root
+            .join("worktrees")
+            .join(project_id)
+            .join(session_id);
+        if canonical != expected {
+            return Err(WorkspaceError::InvalidPath(workspace_path.to_owned()));
+        }
+        Ok(canonical)
+    }
+
     pub fn create_project_at(&self, path: impl AsRef<Path>) -> Result<Project, WorkspaceError> {
         let requested = require_absolute(path.as_ref())?;
         reject_state_directory(&self.root, requested)?;
@@ -673,7 +773,7 @@ fn validate_storage_id(value: &str) -> Result<(), WorkspaceError> {
 }
 
 fn run_git(cwd: &Path, args: &[&str]) -> Result<(), WorkspaceError> {
-    let output = Command::new("git").args(args).current_dir(cwd).output()?;
+    let output = git_command(cwd, args)?;
     if output.status.success() {
         return Ok(());
     }
@@ -683,6 +783,41 @@ fn run_git(cwd: &Path, args: &[&str]) -> Result<(), WorkspaceError> {
     } else {
         message
     }))
+}
+
+fn git_output(cwd: &Path, args: &[&str]) -> Result<String, WorkspaceError> {
+    String::from_utf8(git_output_bytes(cwd, args)?)
+        .map(|output| output.trim().to_owned())
+        .map_err(|error| WorkspaceError::Git(error.to_string()))
+}
+
+fn git_output_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, WorkspaceError> {
+    let output = git_command(cwd, args)?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    Err(git_failure(&output))
+}
+
+fn git_command(cwd: &Path, args: &[&str]) -> Result<std::process::Output, WorkspaceError> {
+    Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .map_err(WorkspaceError::from)
+}
+
+fn git_failure(output: &std::process::Output) -> WorkspaceError {
+    let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    WorkspaceError::Git(if message.is_empty() {
+        format!("git exited with {}", output.status)
+    } else {
+        message
+    })
+}
+
+fn worktree_branch(session_id: &str) -> String {
+    format!("kubecode/{session_id}")
 }
 
 fn migrate_project_paths(database: &Connection, legacy_root: &Path) -> Result<(), WorkspaceError> {

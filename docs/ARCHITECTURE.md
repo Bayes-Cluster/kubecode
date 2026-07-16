@@ -27,6 +27,12 @@ state directory. The chosen cwd is durable and is used by every ACP lifecycle
 operation, not only the first prompt. Existing and imported Sessions remain
 shared unless the user explicitly creates an isolated Session.
 
+Disabling Workspaces is a protected migration rather than a preference flip.
+The server blocks on active runs, requires Merge, Export patch, or Discard for
+every worktree, disconnects the ACP actor, then changes the Session cwd to the
+Project root. The Project setting changes only after every worktree succeeds;
+partial failures remain resumable while Workspaces stays enabled.
+
 ## Browser workspace
 
 `src/kubecode/App.tsx` renders a Project rail, grouped Session navigator,
@@ -57,6 +63,12 @@ The current compatibility model maps one conversation to one Agent Session and
 records an Agent Session ID, execution mode, and optional worktree path. This
 keeps cwd ownership explicit while allowing multiple Agent Chats per execution
 Session to be introduced additively.
+
+Edit, Regenerate, and interrupted-turn Undo create immutable Agent Chat
+branches. Retained timeline events are copied into the branch for display, and
+the first provider prompt receives an explicit recreated transcript context.
+The branch shares its parent Agent Session cwd and never rewrites source Chat
+history.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

@@ -45,6 +45,7 @@ import { trackEvent } from '@/lib/telemetry'
 
 import { AgentSessionWorkspace } from './AgentSessionWorkspace'
 import { ContextWorkbench } from './ContextWorkbench'
+import { DisableWorkspacesDialog } from './DisableWorkspacesDialog'
 import {
   applyKubecodeAppearance,
   KUBECODE_THEME_OPTIONS,
@@ -102,6 +103,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
   const [contextOpen, setContextOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -340,6 +342,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 
   const setProjectWorkspacesEnabled = async (enabled: boolean) => {
     if (!project) return
+    if (!enabled) {
+      setDisableWorkspacesOpen(true)
+      return
+    }
     try {
       const updated = await api.setProjectWorkspacesEnabled(project.id, enabled)
       setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
@@ -646,6 +652,22 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         }}
         t={t}
       />
+      {project && (
+        <DisableWorkspacesDialog
+          api={api}
+          onMigrated={(updated) => {
+            setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
+            void api.listConversations(updated.id).then((next) => {
+              setConversations(next)
+              setAllConversations((current) => mergeConversations(current, next))
+            })
+          }}
+          onOpenChange={setDisableWorkspacesOpen}
+          open={disableWorkspacesOpen}
+          project={project}
+          t={t}
+        />
+      )}
       <NewSessionDialog
         agents={agents}
         api={api}

@@ -44,6 +44,7 @@ interface AiPanelMessageHistoryProps {
   messages: AiAgentMessage[]
   isActive: boolean
   onForkMessage?: (messageId: string) => void
+  onEditMessage?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
   onNavigateWikilink?: (target: string) => void
   onRegenerateMessage?: (messageId: string) => void
@@ -470,6 +471,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   messages,
   isActive,
   onForkMessage,
+  onEditMessage,
   onOpenNote,
   onNavigateWikilink,
   onRegenerateMessage,
@@ -508,6 +510,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
           {...message}
           locale={locale}
           messageId={message.id}
+          onEdit={onEditMessage}
           onFork={onForkMessage}
           onOpenNote={onOpenNote}
           onNavigateWikilink={onNavigateWikilink}

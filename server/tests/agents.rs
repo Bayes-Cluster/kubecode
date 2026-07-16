@@ -42,6 +42,67 @@ fn assigns_an_execution_workspace_to_the_agent_session() {
 }
 
 #[test]
+fn branches_chat_history_without_rewriting_the_source_session() {
+    let (_temp, store) = store();
+    let source = store
+        .create_conversation("project", AgentId::Codex, Some("Original"))
+        .expect("source conversation");
+    let first = store
+        .start_run(
+            &source.id,
+            "project",
+            "First question",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    store
+        .append_event(
+            &first.id,
+            AgentEventKind::TextDelta,
+            &serde_json::json!({"text":"First answer"}),
+        )
+        .expect("first answer");
+    store
+        .finish_run(&first.id, RunStatus::Completed, None)
+        .expect("finish first");
+    let second = store
+        .start_run(
+            &source.id,
+            "project",
+            "Second question",
+            PermissionMode::Safe,
+        )
+        .expect("second run");
+    store
+        .finish_run(&second.id, RunStatus::Interrupted, None)
+        .expect("interrupt second");
+
+    let branch = store
+        .branch_conversation_at_run(&source.id, &second.id)
+        .expect("branch conversation");
+
+    assert_ne!(branch.id, source.id);
+    assert_eq!(branch.agent_session_id, source.agent_session_id);
+    assert_eq!(branch.relationship, Some(ConversationRelationship::Branch));
+    assert_eq!(
+        branch.parent_conversation_id.as_deref(),
+        Some(source.id.as_str())
+    );
+    assert!(branch.recreated_context);
+    assert_eq!(store.list_runs(&source.id).expect("source runs").len(), 2);
+    assert!(store.list_runs(&branch.id).expect("branch runs").is_empty());
+    let history = store
+        .session_events_after(&branch.id, 0)
+        .expect("branched transcript");
+    assert!(history.iter().any(|event| {
+        event.kind == "user_message" && event.payload["text"] == "First question"
+    }));
+    assert!(!history.iter().any(|event| {
+        event.kind == "user_message" && event.payload["text"] == "Second question"
+    }));
+}
+
+#[test]
 fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
     let (_temp, store) = store();
     let first_conversation = store

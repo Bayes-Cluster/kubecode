@@ -148,9 +148,20 @@ impl AgentRuntime {
             .expect("agent cancellation mutex poisoned")
             .insert(run.id.clone(), cancel);
 
+        let agent_message = conversation
+            .context_prefix
+            .as_deref()
+            .filter(|_| conversation.provider_session_id.is_none())
+            .map(|context| {
+                format!(
+                    "{context}\n\nContinue with this user request:\n{}",
+                    request.message
+                )
+            })
+            .unwrap_or_else(|| request.message.clone());
         let command = AgentCommand {
             run: run.clone(),
-            message: request.message,
+            message: agent_message,
             cancelled,
         };
         let config = AgentSessionConfig {
@@ -172,6 +183,28 @@ impl AgentRuntime {
             .await
             .map_err(|_| RuntimeError::Acp("session connection closed".into()))?
             .map_err(RuntimeError::Acp)
+    }
+
+    pub async fn disconnect_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
+        let handle = self
+            .sessions
+            .lock()
+            .expect("agent session mutex poisoned")
+            .get(conversation_id)
+            .cloned();
+        let Some(handle) = handle else {
+            return Ok(());
+        };
+        let (response, disconnected) = oneshot::channel();
+        handle
+            .sender
+            .send(SessionCommand::Shutdown { response })
+            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?;
+        tokio::time::timeout(Duration::from_secs(10), disconnected)
+            .await
+            .map_err(|_| RuntimeError::Acp("timed out disconnecting session".into()))?
+            .map_err(|_| RuntimeError::Acp("session connection closed".into()))?;
+        Ok(())
     }
 
     pub async fn list_provider_sessions(
@@ -513,6 +546,9 @@ impl AgentRuntime {
                     | SessionCommand::Ready { response } => {
                         let _ = response.send(Err(error.to_string()));
                     }
+                    SessionCommand::Shutdown { response } => {
+                        let _ = response.send(());
+                    }
                 }
             }
         }
@@ -669,6 +705,9 @@ enum SessionCommand {
         value: SessionConfigInput,
         response: oneshot::Sender<Result<(), String>>,
     },
+    Shutdown {
+        response: oneshot::Sender<()>,
+    },
 }
 
 async fn process_session_control(
@@ -729,6 +768,10 @@ async fn process_session_control(
                 })
                 .map_err(|error| error.to_string());
             let _ = response.send(result);
+            None
+        }
+        SessionCommand::Shutdown { response } => {
+            let _ = response.send(());
             None
         }
     }
@@ -1008,6 +1051,13 @@ async fn run_acp_session(
                         Ok(Some(command)) => command,
                         Ok(None) | Err(_) => break,
                     };
+                let command = match command {
+                    SessionCommand::Shutdown { response } => {
+                        let _ = response.send(());
+                        break;
+                    }
+                    command => command,
+                };
                 let Some(command) = process_session_control(
                     &connection,
                     &session_id,
