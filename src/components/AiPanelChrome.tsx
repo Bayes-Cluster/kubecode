@@ -479,23 +479,39 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   hasContext,
 }: AiPanelMessageHistoryProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const endRef = useRef<HTMLDivElement>(null)
+  const autoFollowRef = useRef(true)
 
   const updateScrollState = useCallback(() => {
     const element = containerRef.current
+    if (element) {
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+      autoFollowRef.current = distanceFromBottom <= 48
+    }
     onScrollStateChange?.((element?.scrollTop ?? 0) > 1)
   }, [onScrollStateChange])
 
   useEffect(() => {
-    void isActive
-    void messages
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(updateScrollState)
-    else updateScrollState()
+    const followLatestMessage = () => {
+      const element = containerRef.current
+      if (element && autoFollowRef.current) element.scrollTop = element.scrollHeight
+      updateScrollState()
+    }
+    if (typeof window.requestAnimationFrame !== 'function') {
+      followLatestMessage()
+      return
+    }
+    const frame = window.requestAnimationFrame(followLatestMessage)
+    return () => window.cancelAnimationFrame(frame)
   }, [messages, isActive, updateScrollState])
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto" style={{ padding: 12 }} onScroll={updateScrollState}>
+    <div
+      ref={containerRef}
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      data-testid="ai-message-history"
+      style={{ overflowAnchor: 'none', padding: 12 }}
+      onScroll={updateScrollState}
+    >
       {messages.length === 0 && !isActive && (
         <AiPanelEmptyState
           agentLabel={agentLabel}
@@ -517,7 +533,6 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
           onRegenerate={onRegenerateMessage}
         />
       ))}
-      <div ref={endRef} />
     </div>
   )
 })
