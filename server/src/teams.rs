@@ -642,7 +642,7 @@ impl TeamStore {
         self.get_task(task_id)
     }
 
-    fn get_task(&self, task_id: &str) -> Result<TeamTask, TeamError> {
+    pub fn get_task(&self, task_id: &str) -> Result<TeamTask, TeamError> {
         let database = self.database.lock().expect("team database mutex poisoned");
         let mut task = database
             .query_row(

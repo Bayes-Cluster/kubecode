@@ -205,8 +205,7 @@ pub fn build_team_mcp(
             "team_review_result",
             "Leader only: accept a teammate result or request changes.",
             async move |input: ReviewResultInput, _connection| {
-                let task = review_context
-                    .teams
+                let task = coordinator(&review_context)
                     .review_result(
                         &input.task_id,
                         &review_context.member.id,
@@ -214,19 +213,6 @@ pub fn build_team_mcp(
                         input.feedback.as_deref(),
                     )
                     .map_err(mcp_error)?;
-                if !input.accepted && let Some(assignee) = task.assignee_member_id.as_deref() {
-                    review_context
-                        .teams
-                        .send_message(
-                            &review_context.member.team_id,
-                            &review_context.member.id,
-                            assignee,
-                            TeamMessageKind::ChangesRequested,
-                            Some(&task.id),
-                            input.feedback.as_deref().unwrap_or("Changes requested"),
-                        )
-                        .map_err(mcp_error)?;
-                }
                 json_output(&task)
             },
             agent_client_protocol_rmcp::tool_fn!(),

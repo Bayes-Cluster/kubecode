@@ -98,7 +98,9 @@ nested under their owning member and are not promoted into Team membership.
 
 Shared Team members execute at the Team root. Explicit isolation creates a
 separate Agent Session and worktree while recording the base tree for Leader
-review. Existing Solo Sessions can be promoted without replacing their Chat
+review. Accepting an isolated file-changing result performs a private-index
+three-way Git tree merge into the Leader workspace; conflicts leave the Leader
+tree untouched. Existing Solo Sessions can be promoted without replacing their Chat
 history or provider identity.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,

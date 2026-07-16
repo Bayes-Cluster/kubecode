@@ -569,6 +569,39 @@ impl WorkspaceService {
         Ok(())
     }
 
+    pub fn merge_isolated_tree(
+        &self,
+        leader_cwd: &Path,
+        base_tree: &str,
+        member_tree: &str,
+    ) -> Result<String, WorkspaceError> {
+        let checkpoint_id = format!("team-merge-{}", Uuid::new_v4());
+        let leader_tree = self
+            .capture_git_tree(leader_cwd, &checkpoint_id)?
+            .ok_or_else(|| WorkspaceError::Git("workspace is not a Git repository".into()))?;
+        let index_path = self
+            .state_root
+            .join("checkpoints")
+            .join(format!("{checkpoint_id}.index"));
+        if index_path.exists() {
+            fs::remove_file(&index_path)?;
+        }
+        let merge_result = (|| {
+            run_git_with_index(
+                leader_cwd,
+                &index_path,
+                &["read-tree", "-m", base_tree, &leader_tree, member_tree],
+            )?;
+            git_output_with_index(leader_cwd, &index_path, &["write-tree"])
+        })();
+        if index_path.exists() {
+            fs::remove_file(index_path)?;
+        }
+        let merged_tree = merge_result?;
+        self.restore_git_tree(leader_cwd, &merged_tree, Some(&leader_tree))?;
+        Ok(merged_tree)
+    }
+
     pub fn create_entry(
         &self,
         project_id: &str,

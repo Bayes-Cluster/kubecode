@@ -143,6 +143,53 @@ fn captures_and_restores_a_git_tree_without_touching_the_real_index() {
     );
 }
 
+#[test]
+fn three_way_merges_an_isolated_tree_into_the_leader_workspace() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("team-merge-project"))
+        .expect("project");
+    run_git(&project.path, &["init"]);
+    run_git(&project.path, &["config", "user.email", "test@example.com"]);
+    run_git(&project.path, &["config", "user.name", "Kubecode Test"]);
+    fs::write(Path::new(&project.path).join("README.md"), "root\n").expect("fixture");
+    run_git(&project.path, &["add", "README.md"]);
+    run_git(&project.path, &["commit", "-m", "initial"]);
+    service
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+    let base = service
+        .capture_git_tree(Path::new(&project.path), "team-base")
+        .unwrap()
+        .unwrap();
+    let isolated = service
+        .create_session_worktree(&project.id, "isolated-member")
+        .expect("isolated worktree");
+    fs::write(isolated.join("member.txt"), "member change\n").expect("member change");
+    let member_tree = service
+        .capture_git_tree(&isolated, "team-member")
+        .unwrap()
+        .unwrap();
+    fs::write(
+        Path::new(&project.path).join("leader.txt"),
+        "leader change\n",
+    )
+    .expect("leader change");
+
+    service
+        .merge_isolated_tree(Path::new(&project.path), &base, &member_tree)
+        .expect("three-way merge");
+
+    assert_eq!(
+        fs::read_to_string(Path::new(&project.path).join("member.txt")).unwrap(),
+        "member change\n"
+    );
+    assert_eq!(
+        fs::read_to_string(Path::new(&project.path).join("leader.txt")).unwrap(),
+        "leader change\n"
+    );
+}
+
 fn run_git(cwd: impl AsRef<Path>, args: &[&str]) {
     let output = Command::new("git")
         .args(args)

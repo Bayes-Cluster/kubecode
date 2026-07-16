@@ -16,6 +16,8 @@ Every newly created Team member ACP session receives an in-process `kubecode-tea
 
 Shared members use the Team execution root. Isolated members receive a separate Git worktree and record the base tree for later Leader review. Result submissions enter the Leader's durable mailbox; an idle Leader is automatically continued, while an active Leader consumes the mailbox after its current turn.
 
+When the Leader accepts an isolated file-changing result, Kubecode captures the member and Leader trees and performs a three-way merge from the member's recorded base using a private Git index. A conflict rejects the review without modifying the Leader workspace.
+
 The browser lists Team snapshots beside ordinary Sessions. A compact Team overview switches directly among member chats and shows live task progress. Existing Solo Sessions can be promoted without replacing their conversation ID or history.
 
 ## Consequences

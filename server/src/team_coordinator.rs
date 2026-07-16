@@ -108,6 +108,36 @@ impl TeamCoordinator {
         Ok(())
     }
 
+    pub fn review_result(
+        &self,
+        task_id: &str,
+        leader_member_id: &str,
+        accept: bool,
+        feedback: Option<&str>,
+    ) -> Result<crate::teams::TeamTask, CoordinatorError> {
+        let task = self.teams.get_task(task_id)?;
+        let team = self.teams.get_team(&task.team_id)?;
+        let leader = self.teams.get_member(leader_member_id)?;
+        ensure_leader(&team, &leader)?;
+        if accept && task.mutates_files {
+            self.merge_isolated_result(&team, &task)?;
+        }
+        let reviewed = self
+            .teams
+            .review_result(task_id, leader_member_id, accept, feedback)?;
+        if !accept && let Some(assignee) = reviewed.assignee_member_id.as_deref() {
+            self.teams.send_message(
+                &team.id,
+                leader_member_id,
+                assignee,
+                TeamMessageKind::ChangesRequested,
+                Some(task_id),
+                feedback.unwrap_or("Changes requested"),
+            )?;
+        }
+        Ok(reviewed)
+    }
+
     fn configure_workspace(
         &self,
         team: &Team,
@@ -144,6 +174,37 @@ impl TeamCoordinator {
         self.workspace
             .capture_git_tree(&path, &format!("team-{}", team.id))
             .map_err(CoordinatorError::from)
+    }
+
+    fn merge_isolated_result(
+        &self,
+        team: &Team,
+        task: &crate::teams::TeamTask,
+    ) -> Result<(), CoordinatorError> {
+        let Some(assignee_id) = task.assignee_member_id.as_deref() else {
+            return Err(TeamError::TaskNotAssigned.into());
+        };
+        let member = self.teams.get_member(assignee_id)?;
+        if member.workspace_mode != MemberWorkspaceMode::Isolated {
+            return Ok(());
+        }
+        let base_tree = member.base_tree.as_deref().ok_or_else(|| {
+            TeamError::InvalidStoredValue("isolated member has no base tree".into())
+        })?;
+        let conversation = self.agents.get_conversation(&member.conversation_id)?;
+        let member_path = self
+            .workspace
+            .execution_path(&team.project_id, conversation.workspace_path.as_deref())?;
+        let member_tree = self
+            .workspace
+            .capture_git_tree(&member_path, &format!("team-result-{}", task.id))?
+            .ok_or_else(|| TeamError::InvalidStoredValue("member workspace is not Git".into()))?;
+        let leader_path = self
+            .workspace
+            .execution_path(&team.project_id, team.workspace_path.as_deref())?;
+        self.workspace
+            .merge_isolated_tree(&leader_path, base_tree, &member_tree)?;
+        Ok(())
     }
 }
 
