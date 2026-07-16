@@ -68,6 +68,10 @@ export function SessionSidebarList({
     () => buildSessionSections(conversations, preferences),
     [conversations, preferences],
   )
+  const conversationsById = useMemo(
+    () => new Map(conversations.map((conversation) => [conversation.id, conversation])),
+    [conversations],
+  )
 
   useEffect(() => writeSessionListPreferences(localStorage, preferences), [preferences])
 
@@ -136,7 +140,15 @@ export function SessionSidebarList({
                   <span className="kubecode-session-agent-status" data-status={conversation.latest_run_status ?? undefined}>
                     <AiAgentIcon agent={conversation.agent_id} size={18} />
                   </span>
-                  <span>{conversation.title || t('kubecode.untitledSession')}</span>
+                  <span className="kubecode-session-row-copy">
+                    <span>{conversation.title || t('kubecode.untitledSession')}</span>
+                    {conversation.relationship && (
+                      <small>
+                        <GitFork />
+                        {relationshipLabel(conversation, conversationsById, t)}
+                      </small>
+                    )}
+                  </span>
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -235,4 +247,18 @@ function SessionFilters({
 
 function sectionLabel(t: Translator, section: SessionSectionId): string {
   return t(`kubecode.sessions.${section}`)
+}
+
+function relationshipLabel(
+  conversation: Conversation,
+  conversationsById: Map<string, Conversation>,
+  t: Translator,
+): string {
+  const parent = conversation.parent_conversation_id
+    ? conversationsById.get(conversation.parent_conversation_id)
+    : null
+  const parentTitle = parent?.title || t('kubecode.untitledSession')
+  return conversation.relationship === 'subagent'
+    ? t('kubecode.subagentOf', { title: parentTitle })
+    : t('kubecode.forkOf', { title: parentTitle })
 }

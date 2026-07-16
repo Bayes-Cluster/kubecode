@@ -13,9 +13,11 @@ removes that metadata only; it never removes the Project directory or files.
 ## Session and run
 
 A Session is a durable relationship between one Project and one Agent. It owns
-the provider Session ID, manual and Agent titles, retained ACP state, and an
-ordered Session event history. Removing a Session from Kubecode never asks the
-provider to delete its native history.
+the provider Session ID, manual and Agent titles, retained ACP state, archive
+state, activity timestamps, and an ordered Session event history. A Session may
+reference a parent as a provider-native fork or subagent; imported subagent
+transcripts may be marked read-only. Removing a Session from Kubecode never asks
+the provider to delete its native history.
 
 A run is one user prompt and its normalized Agent events. A Session has at most
 one active run, while different Sessions can run concurrently. Runs may be
@@ -48,15 +50,27 @@ A workspace event is a durable, globally ordered metadata notification. One SSE
 connection carries Project, Session, run, file, Git, and terminal changes. The
 client retains a bounded ordered window rather than only the newest event.
 
-## Context workbench
+## Details workbench
 
-The context workbench has two views:
+The default Details overview has two independently collapsible trees:
 
 - Changes: Git status and file diffs with stage, unstage, discard, init, and commit.
 - Files: a lazy Project tree and CodeMirror editor.
 
 Opening a file changes context without replacing the Agent Session. File writes
 use a revision token and return HTTP 409 on stale content.
+
+## Workspace attention
+
+Global Session summaries project durable state needed by navigation: Project,
+Agent, title, latest run status, activity, archive state, and parent relation.
+The browser combines these summaries with new workspace events to render
+cross-Project input-required navigation.
+
+Notification preferences are versioned browser-local state. Workspace events
+map to completion, attention, or error categories. The browser's native
+notification permission and focus state determine delivery; no custom audio
+pipeline exists.
 
 ## Appearance
 

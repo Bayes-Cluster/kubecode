@@ -36,9 +36,14 @@ or any files below it.
 - Long-lived ACP sessions with resume, fork, native commands, modes,
   configuration, plans, permissions, and structured questions when supported
   by the selected agent
+- Searchable Session navigation grouped by live status and activity, with
+  archive controls and provider-native fork/subagent relationships
+- Cross-Project input-required indicators and browser/system notifications for
+  completion, attention, and errors
 - Reconnectable shell and agent TUI terminals with multiple PTYs and free-form
   horizontal or vertical splits
-- Lazy file tree, file and folder creation, rename, delete, and UTF-8 editing
+- Docked Changes and Files trees, file and folder creation, rename, delete,
+  diffs, and lightweight CodeMirror editing
 - Project-scoped Git status, diff, stage, unstage, discard, init, and commit
 - Markdown, syntax highlighting, and LaTeX rendering in agent responses
 - Light, dark, and system color schemes with OpenCode-compatible themes and

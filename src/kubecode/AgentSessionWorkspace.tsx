@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CaretDown, Check, DotsThree, ShieldWarning } from '@phosphor-icons/react'
+import { CaretDown, Check, DotsThree, LockKey, ShieldWarning } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChrome'
@@ -528,80 +528,89 @@ export function AgentSessionWorkspace({
         </div>
       )}
       <div className="kubecode-session-composer">
-        {visibleCommands.length > 0 && (
-          <div className="kubecode-command-suggestions">
-            {visibleCommands.map((command) => (
-              <Button key={command.name} variant="ghost" onClick={() => setPrompt(`/${command.name} `)}>
-                <code>/{command.name}</code>
-                {command.description && <span>{command.description}</span>}
-              </Button>
-            ))}
+        {conversation.read_only ? (
+          <div className="kubecode-read-only-session">
+            <LockKey />
+            <span>{t('kubecode.readOnlySubagent')}</span>
           </div>
-        )}
-        <AiPanelComposer
-          agentLabel={agentLabel}
-          agentReadiness={readiness}
-          controls={(
-            <div className="kubecode-composer-controls">
-              <span className="kubecode-agent-chip">
-                <AiAgentIcon agent={conversation.agent_id} size={17} /> {agentLabel}
-              </span>
-              {nativeMode && (
-                <Select
-                  value={nativeMode.currentValue}
-                  onValueChange={(value) => {
-                    void commitSessionOption(
-                      sessionStateWithMode(sessionState, value),
-                      () => api.setSessionMode(conversation.id, value),
-                    )
-                  }}
-                >
-                  <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
-                    <span className="text-muted-foreground">{t('kubecode.agentMode')}</span>
-                    <span aria-hidden="true">·</span>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {nativeMode.options.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        ) : (
+          <>
+            {visibleCommands.length > 0 && (
+              <div className="kubecode-command-suggestions">
+                {visibleCommands.map((command) => (
+                  <Button key={command.name} variant="ghost" onClick={() => setPrompt(`/${command.name} `)}>
+                    <code>/{command.name}</code>
+                    {command.description && <span>{command.description}</span>}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <AiPanelComposer
+              agentLabel={agentLabel}
+              agentReadiness={readiness}
+              controls={(
+                <div className="kubecode-composer-controls">
+                  <span className="kubecode-agent-chip">
+                    <AiAgentIcon agent={conversation.agent_id} size={17} /> {agentLabel}
+                  </span>
+                  {nativeMode && (
+                    <Select
+                      value={nativeMode.currentValue}
+                      onValueChange={(value) => {
+                        void commitSessionOption(
+                          sessionStateWithMode(sessionState, value),
+                          () => api.setSessionMode(conversation.id, value),
+                        )
+                      }}
+                    >
+                      <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
+                        <span className="text-muted-foreground">{t('kubecode.agentMode')}</span>
+                        <span aria-hidden="true">·</span>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {nativeMode.options.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {configSelects.map((config) => (
+                    <Select
+                      key={config.id}
+                      value={config.currentValue}
+                      onValueChange={(value) => {
+                        void commitSessionOption(
+                          sessionStateWithConfig(sessionState, config.id, value),
+                          () => api.setSessionConfig(conversation.id, config.id, value),
+                        )
+                      }}
+                    >
+                      <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
+                        <span className="text-muted-foreground">{config.name}</span>
+                        <span aria-hidden="true">·</span>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {config.options.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ))}
+                </div>
               )}
-              {configSelects.map((config) => (
-                <Select
-                  key={config.id}
-                  value={config.currentValue}
-                  onValueChange={(value) => {
-                    void commitSessionOption(
-                      sessionStateWithConfig(sessionState, config.id, value),
-                      () => api.setSessionConfig(conversation.id, config.id, value),
-                    )
-                  }}
-                >
-                  <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
-                    <span className="text-muted-foreground">{config.name}</span>
-                    <span aria-hidden="true">·</span>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {config.options.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ))}
-            </div>
-          )}
-          entries={[]}
-          input={prompt}
-          inputRef={inputRef}
-          isActive={active}
-          locale={locale}
-          onChange={setPrompt}
-          onSend={(text) => void send(text)}
-          onStop={() => void stop()}
-        />
+              entries={[]}
+              input={prompt}
+              inputRef={inputRef}
+              isActive={active}
+              locale={locale}
+              onChange={setPrompt}
+              onSend={(text) => void send(text)}
+              onStop={() => void stop()}
+            />
+          </>
+        )}
       </div>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>

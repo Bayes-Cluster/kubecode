@@ -18,6 +18,11 @@ describe('session sidebar list', () => {
         conversations={[
           session('session-1', 'Needs permission', 'waiting_permission'),
           session('session-2', 'Documentation', 'completed'),
+          {
+            ...session('session-3', 'Try another approach', 'completed'),
+            parent_conversation_id: 'session-1',
+            relationship: 'fork',
+          },
         ]}
         onConversationCreated={vi.fn()}
         onConversationRemoved={vi.fn()}
@@ -29,6 +34,7 @@ describe('session sidebar list', () => {
     )
 
     expect(screen.getByText('Needs input')).toBeInTheDocument()
+    expect(screen.getByText('Fork of Needs permission')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), {
       target: { value: 'doc' },
     })

@@ -23,9 +23,17 @@ disk at their original absolute paths.
 
 ## Browser workspace
 
-`src/kubecode/App.tsx` renders a Project rail, Session sidebar, primary Agent
-timeline/composer, a Changes/Files/CodeMirror context pane, and a Terminal dock.
-All three surrounding panels are resizable and independently collapsible.
+`src/kubecode/App.tsx` renders a Project rail, grouped Session navigator,
+primary Agent timeline/composer, a docked Details pane, and a Terminal dock.
+All three surrounding panels are resizable and independently collapsible. The
+Details overview presents collapsible Changes and Files trees together; opening
+a file or diff switches that dock to CodeMirror or diff content without
+replacing the active Agent Session.
+
+The Session navigator searches, filters, sorts, groups, archives, forks, and
+deletes Sessions. Needs-input and running Sessions are promoted above date
+groups. Provider-native fork or subagent relationships remain visible, and
+read-only subagent transcripts do not expose a composer.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,
@@ -46,12 +54,19 @@ Agent. Kubecode does not implement a second permission-mode abstraction.
 Session deletion removes only Kubecode's record. Project deletion unregisters
 the Project and does not modify its directory.
 
+Browser system notifications are derived from live workspace events for
+completion, input-required, and error outcomes. Settings control focus policy,
+categories, and whether the operating system may play its normal notification
+sound. Permission is requested only from explicit UI.
+
 ## Event model
 
 One global SSE stream multiplexes Session, run, file, Git, and terminal metadata
 events. Events have monotonically increasing IDs so reconnecting clients can
-resume. PTY bytes use dedicated WebSockets because terminal streams have
-different buffering and cursor semantics.
+resume. The browser first reads the durable current cursor, then opens SSE from
+that position so historical events cannot create stale system notifications.
+PTY bytes use dedicated WebSockets because terminal streams have different
+buffering and cursor semantics.
 
 ## Deployment
 

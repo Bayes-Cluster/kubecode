@@ -56,6 +56,31 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('shows imported subagent sessions as read-only transcripts', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={{ ...conversation, read_only: true, relationship: 'subagent' }}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByText('Read-only subagent transcript')).toBeInTheDocument()
+    expect(screen.queryByTestId('composer')).not.toBeInTheDocument()
+  })
+
   it('keeps native Agent permission configuration selectable during a run', async () => {
     const running = { ...run, status: 'running' as const }
     const api = {

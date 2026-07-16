@@ -16,3 +16,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0169](0169-terminal-groups-and-browser-snapshots.md) | Terminal groups and snapshots |
 | [0170](0170-unified-layout-controls-and-project-file-tree.md) | Layout controls and Project file tree |
 | [0171](0171-web-only-repository-boundary.md) | Web-only repository boundary |
+| [0172](0172-event-driven-agent-workspace-attention.md) | Event-driven Agent workspace attention |
