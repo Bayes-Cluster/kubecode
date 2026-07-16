@@ -139,8 +139,9 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Details' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Changes/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.queryByText('Select a file to start editing')).not.toBeInTheDocument()
   })
 

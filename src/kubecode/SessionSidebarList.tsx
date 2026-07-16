@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArchiveBox,
+  Archive,
   DotsThree,
   Funnel,
   GitFork,
@@ -153,7 +153,7 @@ export function SessionSidebarList({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem onSelect={() => void archive(conversation)}>
-                      <ArchiveBox />
+                      <Archive />
                       {conversation.archived ? t('kubecode.unarchiveSession') : t('kubecode.archiveSession')}
                     </DropdownMenuItem>
                     {conversation.provider_session_id && (

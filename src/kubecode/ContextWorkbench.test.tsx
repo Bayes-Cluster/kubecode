@@ -83,10 +83,8 @@ describe('ContextWorkbench', () => {
       width: 440,
     }
     const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Files' }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    expect(screen.getByRole('button', { name: /Changes/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(1))
 
     rerender(<ContextWorkbench {...props} workspaceEvents={[

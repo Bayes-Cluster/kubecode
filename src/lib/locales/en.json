@@ -1054,6 +1054,7 @@
   "kubecode.delete": "Delete",
   "kubecode.unregister": "Unregister project",
   "kubecode.files": "Files",
+  "kubecode.details": "Details",
   "kubecode.newFile": "New file",
   "kubecode.newFolder": "New folder",
   "kubecode.entryPath": "Relative path",

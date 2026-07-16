@@ -15,7 +15,7 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.getByRole('button', { name: projectName })).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Files' }).click()
+  await expect(page.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('button', { name: 'New file' }).click()
   await page.getByRole('textbox', { name: 'Relative path' }).fill('main.py')
   await page.getByRole('button', { name: 'Create', exact: true }).click()

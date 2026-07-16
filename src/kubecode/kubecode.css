@@ -960,6 +960,52 @@
   overflow: hidden;
 }
 
+.kubecode-detail-overview {
+  overflow-y: auto;
+}
+
+.kubecode-detail-section {
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.kubecode-detail-section[data-open='true'] { min-height: 112px; }
+.kubecode-detail-section > header {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-sidebar) 72%, var(--surface-app));
+  display: flex;
+  flex: 0 0 32px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 5px;
+}
+.kubecode-detail-section > header > button {
+  gap: 5px;
+  height: 28px;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 0 5px;
+}
+.kubecode-detail-section > header > button svg { color: var(--text-muted); height: 15px; width: 15px; }
+.kubecode-detail-section > header > button small { color: var(--text-muted); font-size: 11px; font-weight: 500; }
+.kubecode-detail-section > header > span {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  gap: 4px;
+  margin-right: 6px;
+}
+.kubecode-detail-section > header > span svg { height: 14px; width: 14px; }
+.kubecode-detail-section > header > div { align-items: center; display: flex; }
+.kubecode-detail-section-content { display: flex; min-height: 0; overflow: hidden; }
+.kubecode-detail-changes { max-height: min(42vh, 360px); }
+.kubecode-detail-files { flex: 1 1 260px; }
+.kubecode-detail-files[data-open='false'] { flex: 0 0 auto; min-height: 0; }
+.kubecode-review-empty-compact { min-height: 96px; padding: 14px; }
+
 .kubecode-editor-toolbar {
   border-bottom: 1px solid var(--border-subtle);
   flex: 0 0 40px;
