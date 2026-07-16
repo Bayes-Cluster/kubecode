@@ -44,9 +44,11 @@ the Team cwd; an explicitly isolated member receives a worktree and stores its
 base Git tree. Only the Leader may add members, review results, and author the
 final Team response.
 
-The `kubecode-team` MCP server is injected into new Team ACP sessions. It is the
-cross-Agent control plane for spawning, tasks, review, and messaging; it does
-not replace provider-native tools or subagents.
+The `kubecode-team` MCP server is the cross-Agent control plane for spawning,
+tasks, review, and messaging; it does not replace provider-native tools or
+subagents. ACP transport capabilities choose how it is attached. HTTP-capable
+agents receive a tokenized streamable HTTP endpoint on new, load, and resume;
+other agents retain the in-process bridge for new sessions.
 
 ## Turn checkpoint
 

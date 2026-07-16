@@ -775,6 +775,7 @@ function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): Ai
       }
       return [...messages, nativeMessage(event, text)]
     }
+    if (!runId && messages.length === 0) return messages
     if (event.kind === 'run_completed' && messages.length === 0) return messages
     const message = messages.at(-1) ?? nativeMessage(event, '')
     const messageId = message.id ?? `native-${event.seq}`
@@ -1144,7 +1145,7 @@ function upsertAction(
   const action: AiAction = {
     input: displayValue(event.payload.input) || existing?.input,
     label: tool,
-    output: displayValue(event.payload.output) || existing?.output,
+    output: displayValue(event.payload.output) || displayValue(event.payload.content) || existing?.output,
     status,
     tool,
     toolId,

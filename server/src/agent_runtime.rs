@@ -10,8 +10,8 @@ use agent_client_protocol::schema::v1::{
     CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
     ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, EnvVariable,
     ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    McpServerHttp, McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
     SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
@@ -78,6 +78,13 @@ pub struct AgentRuntime {
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
     teams: Option<Arc<TeamStore>>,
+    team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
+}
+
+#[derive(Clone)]
+struct TeamMcpHttpConfig {
+    origin: String,
+    token: String,
 }
 
 #[derive(Clone)]
@@ -120,6 +127,7 @@ impl AgentRuntime {
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
             teams: None,
+            team_mcp_http: None,
         }
     }
 
@@ -130,6 +138,47 @@ impl AgentRuntime {
 
     pub fn team_store(&self) -> Option<Arc<TeamStore>> {
         self.teams.clone()
+    }
+
+    pub fn with_team_mcp_http_origin(mut self, origin: impl Into<String>) -> Self {
+        self.team_mcp_http = Some(Arc::new(TeamMcpHttpConfig {
+            origin: origin.into().trim_end_matches('/').to_owned(),
+            token: Uuid::new_v4().to_string(),
+        }));
+        self
+    }
+
+    pub fn authorize_team_mcp(&self, token: &str) -> bool {
+        self.team_mcp_http
+            .as_ref()
+            .is_some_and(|config| config.token == token)
+    }
+
+    fn team_mcp_http_server(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<McpServer>, RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(None);
+        };
+        if teams
+            .team_for_conversation(conversation_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let config = self
+            .team_mcp_http
+            .as_ref()
+            .ok_or_else(|| RuntimeError::Acp("Team MCP HTTP origin is not configured".into()))?;
+        Ok(Some(McpServer::Http(McpServerHttp::new(
+            "kubecode-team",
+            format!(
+                "{}/api/v1/team-mcp/{}/{}",
+                config.origin, config.token, conversation_id
+            ),
+        ))))
     }
 
     pub fn workspace_service(&self) -> Arc<WorkspaceService> {
@@ -1094,11 +1143,23 @@ async fn run_acp_session(
                 "capabilities",
                 &initialization.agent_capabilities,
             );
+            let team_mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
+                runtime
+                    .team_mcp_http_server(&conversation_id)
+                    .map_err(|error| {
+                        agent_client_protocol::Error::internal_error().data(error.to_string())
+                    })?
+            } else {
+                None
+            };
 
             let (session_id, _team_session) = if let Some(session_id) = provider_session_id {
                 if hydrate_provider_history && initialization.agent_capabilities.load_session {
                     let response = connection
-                        .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
+                        .send_request(
+                            LoadSessionRequest::new(session_id.clone(), cwd.clone())
+                                .mcp_servers(team_mcp_http.clone().into_iter().collect()),
+                        )
                         .block_task()
                         .await?;
                     persist_serialized_session_event(
@@ -1116,10 +1177,10 @@ async fn run_acp_session(
                     .is_some()
                     {
                         connection
-                            .send_request(ResumeSessionRequest::new(
-                                session_id.clone(),
-                                cwd.clone(),
-                            ))
+                            .send_request(
+                                ResumeSessionRequest::new(session_id.clone(), cwd.clone())
+                                    .mcp_servers(team_mcp_http.clone().into_iter().collect()),
+                            )
                             .block_task()
                             .await
                             .map(|response| {
@@ -1141,7 +1202,7 @@ async fn run_acp_session(
                             .send_request(LoadSessionRequest::new(
                                 session_id.clone(),
                                 cwd.clone(),
-                            ))
+                            ).mcp_servers(team_mcp_http.clone().into_iter().collect()))
                             .block_task()
                             .await
                         {
@@ -1160,6 +1221,7 @@ async fn run_acp_session(
                                     &runtime,
                                     &conversation_id,
                                     cwd,
+                                    team_mcp_http.clone(),
                                     &captured_session_responses,
                                 )
                                 .await?
@@ -1173,6 +1235,7 @@ async fn run_acp_session(
                     &runtime,
                     &conversation_id,
                     cwd,
+                    team_mcp_http,
                     &captured_session_responses,
                 )
                 .await?
@@ -1280,6 +1343,7 @@ async fn create_provider_session(
     runtime: &AgentRuntime,
     conversation_id: &str,
     cwd: PathBuf,
+    team_mcp_http: Option<McpServer>,
     captured_responses: &SessionResponseCapture,
 ) -> Result<
     (
@@ -1288,6 +1352,21 @@ async fn create_provider_session(
     ),
     agent_client_protocol::Error,
 > {
+    if let Some(mcp_server) = team_mcp_http {
+        let response = connection
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(vec![mcp_server]))
+            .block_task()
+            .await?;
+        let session_id = response.session_id.clone();
+        let _ = take_captured_session_response(captured_responses, &session_id);
+        persist_serialized_session_event(
+            &runtime.store,
+            conversation_id,
+            "session_created_state",
+            response,
+        );
+        return Ok((session_id, None));
+    }
     if let Some(mcp_server) = crate::team_mcp::build_team_mcp(runtime.clone(), conversation_id)
         .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?
     {
@@ -1549,6 +1628,7 @@ fn tool_started(tool_call: ToolCall) -> (AgentEventKind, Value) {
             "input": tool_call.raw_input,
             "output": tool_call.raw_output,
             "status": tool_call.status,
+            "content": tool_call.content,
         }),
     )
 }
@@ -1667,6 +1747,19 @@ mod tests {
         ));
         assert_eq!(tool.0, AgentEventKind::ToolCompleted);
         assert_eq!(tool.1["tool_id"], "tool-1");
+
+        let started = tool_started(
+            ToolCall::new(ToolCallId::new("startup-1"), "MCP startup")
+                .status(ToolCallStatus::Failed)
+                .content(vec![
+                    ContentBlock::Text(TextContent::new("connection refused")).into(),
+                ]),
+        );
+        assert_eq!(started.1["status"], "failed");
+        assert_eq!(
+            started.1["content"][0]["content"]["text"],
+            "connection refused"
+        );
     }
 
     #[tokio::test]

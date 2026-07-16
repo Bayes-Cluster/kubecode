@@ -148,7 +148,11 @@ async fn list_teams(
         .teams
         .list_teams(&project_id)?
         .into_iter()
-        .map(|team| snapshot(&state, team))
+        .filter_map(|team| match snapshot(&state, team) {
+            Ok(snapshot) => Some(Ok(snapshot)),
+            Err(TeamApiError::Store(StoreError::ConversationNotFound(_))) => None,
+            Err(error) => Some(Err(error)),
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(snapshots))
 }

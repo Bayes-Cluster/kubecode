@@ -21,3 +21,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0174](0174-immutable-agent-chat-branches.md) | Immutable Agent Chat branches |
 | [0175](0175-alternate-index-turn-checkpoints.md) | Alternate-index turn checkpoints |
 | [0176](0176-team-members-and-nested-agent-sessions.md) | Team members and nested Agent Sessions |
+| [0177](0177-leader-governed-team-sessions-over-acp-mcp.md) | Leader-governed Team Sessions over ACP and MCP |
+| [0178](0178-capability-aware-team-mcp-transport.md) | Capability-aware Team MCP transport |

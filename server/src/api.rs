@@ -21,7 +21,7 @@ use crate::agents::{
     AgentEvent, AgentId, AgentStore, ExecutionMode, RunStatus, StoreError, WorkspaceEvent,
 };
 use crate::git::{GitError, GitMutation, GitService};
-use crate::teams::TeamStore;
+use crate::teams::{TeamError, TeamStore};
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
@@ -88,6 +88,16 @@ impl AppState {
         self.agents = Arc::new(agents);
         self
     }
+
+    pub fn with_team_mcp_http_origin(mut self, origin: impl Into<String>) -> Self {
+        self.agent_runtime = Arc::new(
+            self.agent_runtime
+                .as_ref()
+                .clone()
+                .with_team_mcp_http_origin(origin),
+        );
+        self
+    }
 }
 
 pub fn app_router(state: AppState, base_path: &str) -> Router {
@@ -130,6 +140,10 @@ pub fn app_router_with_static(
 
 fn api_router(state: AppState) -> Router {
     Router::new()
+        .route(
+            "/team-mcp/{token}/{conversation_id}",
+            axum::routing::any(crate::team_mcp::handle_http),
+        )
         .route("/agents", get(list_agents))
         .route("/events", get(stream_workspace_events))
         .route("/events/cursor", get(get_workspace_event_cursor))
@@ -391,6 +405,16 @@ async fn remove_conversation(
     Path(conversation_id): Path<String>,
     Query(query): Query<RemoveConversationQuery>,
 ) -> Result<StatusCode, ApiError> {
+    if let Some(team) = state.teams.team_for_conversation(&conversation_id)? {
+        let member = state
+            .teams
+            .list_members(&team.id)?
+            .into_iter()
+            .find(|member| member.conversation_id == conversation_id);
+        if member.is_some_and(|member| member.id == team.leader_member_id) {
+            state.teams.delete_team(&team.id)?;
+        }
+    }
     if query.scope.as_deref() == Some("provider") {
         state
             .agent_runtime
@@ -1501,6 +1525,7 @@ enum ApiError {
     ElicitationNotFound(String),
     CheckpointUnavailable(String),
     WorkspaceMigration(String),
+    Team(TeamError),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -1530,6 +1555,12 @@ impl From<RuntimeError> for ApiError {
 impl From<GitError> for ApiError {
     fn from(error: GitError) -> Self {
         Self::Git(error)
+    }
+}
+
+impl From<TeamError> for ApiError {
+    fn from(error: TeamError) -> Self {
+        Self::Team(error)
     }
 }
 
@@ -1620,6 +1651,11 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "workspace_migration_required",
                 message,
+            ),
+            ApiError::Team(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "team_error",
+                error.to_string(),
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

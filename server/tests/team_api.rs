@@ -70,6 +70,17 @@ async fn create_project(app: &Router, root: &std::path::Path) -> String {
     project["id"].as_str().expect("project id").to_owned()
 }
 
+fn mcp_response_json(bytes: &[u8]) -> Value {
+    serde_json::from_slice(bytes).unwrap_or_else(|_| {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix("data: "))
+            .and_then(|data| serde_json::from_str(data).ok())
+            .expect("MCP JSON or SSE data")
+    })
+}
+
 #[tokio::test]
 async fn creates_a_team_with_only_its_leader() {
     let (temp, app) = app();
@@ -153,6 +164,54 @@ async fn reads_a_team_snapshot_by_id() {
 }
 
 #[tokio::test]
+async fn an_orphaned_team_does_not_hide_persisted_team_leaders() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (_, orphaned) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Removed"}),
+    )
+    .await;
+    let (_, persisted) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "claude_code", "leader_name": "Persisted"}),
+    )
+    .await;
+    let orphaned_id = orphaned["leader_conversation"]["id"]
+        .as_str()
+        .expect("orphaned leader id");
+    let persisted_id = persisted["leader_conversation"]["id"]
+        .as_str()
+        .expect("persisted leader id");
+
+    let (status, _) = request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/sessions/{orphaned_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, teams) = request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        Value::Null,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(teams.as_array().expect("teams").len(), 1);
+    assert_eq!(teams[0]["leader_conversation"]["id"], persisted_id);
+    assert_eq!(teams[0]["members"][0]["role"], "leader");
+}
+
+#[tokio::test]
 async fn advertises_kubecode_team_tools_to_the_leader_acp_session() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -162,7 +221,7 @@ async fn advertises_kubecode_team_tools_to_the_leader_acp_session() {
     let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
     let agent_store = AgentStore::open(&database_path).expect("agent store");
     let teams = TeamStore::open(&database_path).expect("team store");
-    let transcript = temp.path().join("acp.jsonl");
+    let transcript_path = temp.path().join("acp.jsonl");
     let executable = temp.path().join("opencode");
     fs::write(
         &executable,
@@ -173,32 +232,33 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{\"mcpCapabilities\":{{\"http\":true,\"sse\":false}},\"sessionCapabilities\":{{\"resume\":{{}}}}}},\"authMethods\":[]}}}}"
       ;;
     *'"method":"session/new"'*)
       printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"team-session\",\"configOptions\":[{{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"model-1\",\"options\":[{{\"value\":\"model-1\",\"name\":\"Model 1\"}},{{\"value\":\"model-2\",\"name\":\"Model 2\"}}]}}]}}}}"
       ;;
+    *'"method":"session/resume"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{}}}}"
+      ;;
   esac
 done"#,
-            transcript.display()
+            transcript_path.display()
         ),
     )
     .expect("mock agent");
     let mut permissions = fs::metadata(&executable).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&executable, permissions).expect("executable permissions");
-    let router = app_router(
-        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)).with_agents(
-            vec![AgentDescriptor {
-                id: AgentId::OpenCode,
-                available: true,
-                version: Some("test".into()),
-                executable: executable.to_string_lossy().into_owned(),
-                error: None,
-            }],
-        ),
-        BASE_PATH,
-    );
+    let state = AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams))
+        .with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: executable.to_string_lossy().into_owned(),
+            error: None,
+        }])
+        .with_team_mcp_http_origin("http://127.0.0.1:9999/user/alice/kubecode");
+    let router = app_router(state.clone(), BASE_PATH);
     let project_id = create_project(&router, temp.path()).await;
 
     let (status, snapshot) = request(
@@ -210,18 +270,23 @@ done"#,
     .await;
 
     assert_eq!(status, StatusCode::CREATED);
-    let transcript = fs::read_to_string(transcript).expect("ACP transcript");
-    let initialize = transcript
+    let transcript_text = fs::read_to_string(&transcript_path).expect("ACP transcript");
+    let initialize = transcript_text
         .lines()
         .find(|line| line.contains("initialize"))
         .expect("initialize request");
     assert!(initialize.contains("configOptions"), "{initialize}");
-    let session_new = transcript
+    let session_new = transcript_text
         .lines()
         .find(|line| line.contains("session/new"))
         .expect("session/new request");
     assert!(session_new.contains("mcpServers"), "{session_new}");
     assert!(session_new.contains("kubecode-team"), "{session_new}");
+    assert!(
+        session_new.contains("http://127.0.0.1:9999/user/alice/kubecode/api/v1/team-mcp/"),
+        "{session_new}"
+    );
+    assert!(!session_new.contains("\"url\":\"acp:"), "{session_new}");
 
     let leader_id = snapshot["leader_conversation"]["id"]
         .as_str()
@@ -238,4 +303,148 @@ done"#,
         session_state["config_options"]["configOptions"][0]["id"],
         "model"
     );
+
+    let session_new_json: Value = serde_json::from_str(session_new).expect("session/new json");
+    let mcp_url = session_new_json["params"]["mcpServers"][0]["url"]
+        .as_str()
+        .expect("MCP URL");
+    let mcp_path = mcp_url
+        .strip_prefix("http://127.0.0.1:9999")
+        .expect("local MCP path");
+    let initialize = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(mcp_path)
+                .header(header::HOST, "127.0.0.1:9999")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1"}
+                        }
+                    })
+                    .to_string(),
+                ))
+                .expect("MCP initialize request"),
+        )
+        .await
+        .expect("MCP initialize response");
+    assert_eq!(initialize.status(), StatusCode::OK);
+    let session_header = initialize
+        .headers()
+        .get("mcp-session-id")
+        .expect("MCP session header")
+        .to_str()
+        .expect("MCP session header text")
+        .to_owned();
+    let initialize_bytes = to_bytes(initialize.into_body(), usize::MAX)
+        .await
+        .expect("MCP initialize body");
+    let initialize_body = mcp_response_json(&initialize_bytes);
+    assert!(initialize_body["result"]["capabilities"]["tools"].is_object());
+    let initialized = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(mcp_path)
+                .header(header::HOST, "127.0.0.1:9999")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header("mcp-session-id", &session_header)
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized"
+                    })
+                    .to_string(),
+                ))
+                .expect("MCP initialized notification"),
+        )
+        .await
+        .expect("MCP initialized response");
+    assert!(initialized.status().is_success());
+    let tools = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(mcp_path)
+                .header(header::HOST, "127.0.0.1:9999")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header("mcp-session-id", &session_header)
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/list",
+                        "params": {}
+                    })
+                    .to_string(),
+                ))
+                .expect("MCP tools request"),
+        )
+        .await
+        .expect("MCP tools response");
+    assert_eq!(tools.status(), StatusCode::OK);
+    let tools_body = mcp_response_json(
+        &to_bytes(tools.into_body(), usize::MAX)
+            .await
+            .expect("MCP tools body"),
+    );
+    assert!(
+        tools_body["result"]["tools"]
+            .as_array()
+            .is_some_and(|tools| tools
+                .iter()
+                .any(|tool| tool["name"] == "team_spawn_teammate"))
+    );
+
+    state
+        .agent_runtime
+        .disconnect_conversation(leader_id)
+        .await
+        .expect("disconnect leader before restart");
+    let before_restart = fs::read_to_string(&transcript_path)
+        .expect("pre-restart transcript")
+        .lines()
+        .count();
+    let restarted_workspace = WorkspaceService::open(&root, &database_path).expect("workspace");
+    let restarted_store = AgentStore::open(&database_path).expect("agent store");
+    let restarted_teams = TeamStore::open(&database_path).expect("team store");
+    let restarted = AppState::new(
+        Arc::new(restarted_workspace),
+        Arc::new(restarted_store),
+        Arc::new(restarted_teams),
+    )
+    .with_agents(vec![AgentDescriptor {
+        id: AgentId::OpenCode,
+        available: true,
+        version: Some("test".into()),
+        executable: executable.to_string_lossy().into_owned(),
+        error: None,
+    }])
+    .with_team_mcp_http_origin("http://127.0.0.1:9999/user/alice/kubecode");
+    restarted
+        .agent_runtime
+        .initialize_conversation(leader_id)
+        .await
+        .expect("restore persisted Team Leader");
+    let restarted_transcript = fs::read_to_string(&transcript_path).expect("restart transcript");
+    let resume = restarted_transcript
+        .lines()
+        .skip(before_restart)
+        .find(|line| line.contains("session/resume"))
+        .expect("session/resume request after restart");
+    assert!(resume.contains("kubecode-team"), "{resume}");
+    assert!(resume.contains("/api/v1/team-mcp/"), "{resume}");
 }

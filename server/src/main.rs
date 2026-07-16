@@ -29,13 +29,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let agent_store = AgentStore::open(&database_path)?;
     let teams = TeamStore::open(&database_path)?;
     let agents = discover_agents().await;
+    let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
+    let internal_origin = env::var("KUBECODE_INTERNAL_ORIGIN").unwrap_or_else(|_| {
+        format!(
+            "http://127.0.0.1:{}{}",
+            listener
+                .local_addr()
+                .map(|address| address.port())
+                .unwrap_or(port),
+            base_path.trim_end_matches('/')
+        )
+    });
     let app = app_router_with_static(
         AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams))
-            .with_agents(agents),
+            .with_agents(agents)
+            .with_team_mcp_http_origin(internal_origin),
         &base_path,
         static_directory,
     );
-    let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
     println!("Kubecode listening on http://{host}:{port}{base_path}");
     axum::serve(listener, app).await?;
     Ok(())

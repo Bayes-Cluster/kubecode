@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0177.
+active production boundary is defined by ADRs 0161–0178.
 
 ## Runtime topology
 
@@ -90,11 +90,14 @@ searchable add palette lists the current session's dynamic
 registry or copy file contents into the prompt.
 
 Team Sessions start with one fixed Leader and dynamically add teammate Agent
-Chats through the in-process `kubecode-team` MCP server. Leader-only operations
-are transactionally enforced; teammates can claim unblocked tasks, message one
-another, and submit results into the Leader mailbox. An idle Leader is
-automatically continued when a result arrives. Provider-native subagents remain
-nested under their owning member and are not promoted into Team membership.
+Chats through the `kubecode-team` MCP server. Agents that advertise HTTP receive
+an authenticated streamable HTTP endpoint on new, load, and resume; the
+in-process ACP bridge remains a new-session fallback for other agents.
+Leader-only operations are transactionally enforced; teammates can claim
+unblocked tasks, message one another, and submit results into the Leader
+mailbox. An idle Leader is automatically continued when a result arrives.
+Provider-native subagents remain nested under their owning member and are not
+promoted into Team membership.
 
 Shared Team members execute at the Team root. Explicit isolation creates a
 separate Agent Session and worktree while recording the base tree for Leader
@@ -102,6 +105,12 @@ review. Accepting an isolated file-changing result performs a private-index
 three-way Git tree merge into the Leader workspace; conflicts leave the Leader
 tree untouched. Existing Solo Sessions can be promoted without replacing their Chat
 history or provider identity.
+
+Team identity is read from durable Team and member records on every Project
+load. A stale record whose conversation was removed is isolated rather than
+failing the complete Team collection, and removing a Leader also removes its
+coordination record. Recreated ACP actors attach the current process's Team MCP
+URL to provider load/resume requests.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

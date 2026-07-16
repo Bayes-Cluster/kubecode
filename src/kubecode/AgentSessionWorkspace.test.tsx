@@ -493,6 +493,41 @@ describe('AgentSessionWorkspace', () => {
     expect(container.querySelectorAll('article')).toHaveLength(0)
   })
 
+  it('does not render an unscoped MCP startup event as an empty message', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([{
+        conversation_id: conversation.id,
+        seq: 1,
+        kind: 'tool_started',
+        payload: {
+          tool_id: 'mcp_startup.kubecode-team',
+          tool: 'mcp__kubecode-team__startup',
+          status: 'failed',
+        },
+        created_at: 'now',
+      }]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    const { container } = render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await waitFor(() => expect(api.listSessionEvents).toHaveBeenCalled())
+    expect(container.querySelectorAll('article')).toHaveLength(0)
+  })
+
   it('replays a fast slash-command response that arrives before its run is loaded', async () => {
     let resolveRun: ((value: AgentRun) => void) | undefined
     const pendingRun = new Promise<AgentRun>((resolve) => { resolveRun = resolve })
