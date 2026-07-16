@@ -572,6 +572,14 @@
   width: 100%;
 }
 
+.kubecode-session-row[data-active='true'] {
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
+.kubecode-session-row[data-active='true']:hover {
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+
 .kubecode-session-row-copy {
   display: flex;
   flex: 1;

@@ -871,7 +871,7 @@ type SessionSelect = {
 function agentConfigPriority(group: AgentConfigGroup): number {
   const identity = `${group.id} ${group.name}`.toLocaleLowerCase()
   if (/intelligence|reason|effort/.test(identity)) return 0
-  if (/mode/.test(identity)) return 1
+  if (/\bmode\b/.test(identity)) return 1
   if (/model/.test(identity)) return 2
   if (/fast/.test(identity)) return 3
   return 4

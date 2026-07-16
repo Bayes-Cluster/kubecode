@@ -12,6 +12,38 @@ const commands = [
 ]
 
 describe('ComposerAddMenu', () => {
+  it('aligns the add palette to the full Composer surface', () => {
+    render(
+      <div data-testid="agent-composer-surface">
+        <ComposerAddMenu
+          api={{} as KubecodeApi}
+          commands={[]}
+          onInsert={vi.fn()}
+          projectId="project-1"
+          t={createTranslator('en')}
+        />
+      </div>,
+    )
+
+    const surface = screen.getByTestId('agent-composer-surface')
+    const root = screen.getByRole('button', { name: 'Add context' }).parentElement
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60, height: 50, left: 10, right: 510, top: 10, width: 500, x: 10, y: 10,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(root as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      bottom: 55, height: 32, left: 30, right: 62, top: 23, width: 32, x: 30, y: 23,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+
+    expect(screen.getByRole('dialog', { name: 'Add context' })).toHaveStyle({
+      left: '-20px',
+      width: '500px',
+    })
+  })
+
   it('inserts a native Agent skill or command from the add menu', async () => {
     const onInsert = vi.fn()
 

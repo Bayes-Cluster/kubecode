@@ -28,7 +28,7 @@ export function ComposerAddMenu({
   const [open, setOpen] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [query, setQuery] = useState('')
-  const [paletteWidth, setPaletteWidth] = useState(680)
+  const [paletteLayout, setPaletteLayout] = useState({ left: 0, width: 680 })
   const rootRef = useRef<HTMLDivElement>(null)
   const visibleCommands = useMemo(() => {
     const search = query.trim().toLocaleLowerCase()
@@ -78,7 +78,10 @@ export function ComposerAddMenu({
             const composerRect = composer?.getBoundingClientRect()
             const rootRect = rootRef.current?.getBoundingClientRect()
             if (composerRect && rootRect) {
-              setPaletteWidth(Math.min(680, Math.max(280, composerRect.right - rootRect.left)))
+              setPaletteLayout({
+                left: composerRect.left - rootRect.left,
+                width: composerRect.width,
+              })
             }
           }
           setOpen((current) => !current)
@@ -92,7 +95,7 @@ export function ComposerAddMenu({
           aria-label={t('kubecode.addContext')}
           className="absolute bottom-[calc(100%+12px)] left-0 z-50 flex max-h-[min(520px,58vh)] flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl"
           role="dialog"
-          style={{ width: paletteWidth }}
+          style={paletteLayout}
         >
           {showFiles ? (
             <>

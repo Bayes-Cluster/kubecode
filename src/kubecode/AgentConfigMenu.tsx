@@ -88,7 +88,7 @@ export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
         <div className="absolute bottom-[calc(100%+10px)] right-0 z-50">
           <section
             aria-label={t('kubecode.agentSettings')}
-            className="w-72 overflow-hidden rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+            className="max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
             role="dialog"
           >
             <div className="px-3 py-2 text-sm text-muted-foreground">{primary.name}</div>
@@ -114,7 +114,7 @@ export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
           {activeGroup && (
             <section
               aria-label={activeGroup.name}
-              className="absolute bottom-0 right-[calc(100%+8px)] w-72 overflow-hidden rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+              className="absolute bottom-0 right-[calc(100%+8px)] max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
               role="menu"
             >
               <div className="px-3 py-2 text-sm text-muted-foreground">{activeGroup.name}</div>

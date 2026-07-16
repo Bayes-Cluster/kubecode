@@ -35,6 +35,10 @@ describe('session sidebar list', () => {
 
     expect(screen.getByText('Needs input')).toBeInTheDocument()
     expect(screen.getByText('Fork of Needs permission')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Needs permission' })).toHaveAttribute(
+      'data-variant',
+      'ghost',
+    )
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), {
       target: { value: 'doc' },
     })

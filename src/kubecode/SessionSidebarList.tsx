@@ -134,7 +134,7 @@ export function SessionSidebarList({
                   aria-label={conversation.title || t('kubecode.untitledSession')}
                   className="kubecode-session-row"
                   data-active={conversation.id === activeConversationId}
-                  variant={conversation.id === activeConversationId ? 'secondary' : 'ghost'}
+                  variant="ghost"
                   onClick={() => onSelect(conversation.id)}
                 >
                   <span className="kubecode-session-agent-status" data-status={conversation.latest_run_status ?? undefined}>

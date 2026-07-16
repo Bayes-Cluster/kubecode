@@ -46,4 +46,29 @@ describe('AgentConfigMenu', () => {
 
     expect(onChange).toHaveBeenCalledWith('config:model', 'gpt-5.5')
   })
+
+  it('keeps a long OpenCode model catalog inside a scrollable viewport', () => {
+    const modelOptions = Array.from({ length: 40 }, (_, index) => ({
+      id: `model-${index}`,
+      name: `Provider model ${index}`,
+    }))
+    render(
+      <AgentConfigMenu
+        groups={[
+          groups[0],
+          { ...groups[1], currentValue: 'model-0', options: modelOptions },
+        ]}
+        onChange={vi.fn()}
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent settings' }))
+    fireEvent.click(screen.getByRole('button', { name: /Provider model 0.*Model/i }))
+
+    expect(screen.getByRole('menu', { name: 'Model' })).toHaveClass(
+      'max-h-[min(520px,calc(100vh-80px))]',
+      'overflow-y-auto',
+    )
+  })
 })
