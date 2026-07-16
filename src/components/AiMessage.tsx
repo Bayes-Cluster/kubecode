@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { CaretRight, CaretDown, Brain, ArrowsClockwise, Copy, GitBranch, PencilSimple, Terminal } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { AiActionCard, type AiActionStatus } from './AiActionCard'
 import { MarkdownContent } from './MarkdownContent'
 import { translate, type AppLocale } from '../lib/i18n'
@@ -56,8 +57,9 @@ function ReferencePill({ reference, onClick }: {
   const color = getTypeColor(type)
   const lightColor = getTypeLightColor(type)
   return (
-    <button type="button"
-      className="inline-flex items-center border-none cursor-pointer transition-opacity hover:opacity-80"
+    <Button type="button"
+      variant="ghost"
+      className="inline-flex h-auto items-center border-none cursor-pointer transition-opacity hover:opacity-80"
       style={{
         background: lightColor,
         color,
@@ -72,7 +74,7 @@ function ReferencePill({ reference, onClick }: {
       data-testid="message-reference-pill"
     >
       {reference.title}
-    </button>
+    </Button>
   )
 }
 
@@ -84,28 +86,56 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
   references?: NoteReference[]
   onOpenNote?: (path: string) => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(content)
+  const submit = () => {
+    const message = draft.trim()
+    if (!message || !messageId || !onEdit) return
+    setEditing(false)
+    onEdit(messageId, message)
+  }
+
+  if (editing) {
+    return (
+      <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
+        <form
+          className="flex w-full max-w-[85%] flex-col gap-2 rounded-xl bg-state-hover p-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submit()
+          }}
+        >
+          <Textarea
+            aria-label={translate(locale, 'ai.message.edit')}
+            autoFocus
+            className="max-h-48 min-h-20 resize-y border-border bg-background px-3 py-2 text-[13px] leading-5"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setEditing(false)
+            }}
+          />
+          <div className="flex justify-end gap-2">
+            <Button size="sm" type="button" variant="ghost" onClick={() => setEditing(false)}>
+              {translate(locale, 'kubecode.cancel')}
+            </Button>
+            <Button disabled={!draft.trim()} size="sm" type="submit">
+              {translate(locale, 'kubecode.regenerate')}
+            </Button>
+          </div>
+        </form>
+      </div>
+    )
+  }
+
   return (
     <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
-      <div className="flex max-w-[85%] items-start gap-1">
-        <Button
-          aria-label={translate(locale, 'ai.message.edit')}
-          className="h-6 w-6 shrink-0 rounded-md p-0 text-muted-foreground opacity-0 group-hover/ai-user:opacity-100 group-focus-within/ai-user:opacity-100"
-          disabled={!messageId || !onEdit}
-          size="icon-xs"
-          title={translate(locale, 'ai.message.edit')}
-          type="button"
-          variant="ghost"
-          onClick={() => messageId && onEdit?.(messageId, content)}
-        >
-          <PencilSimple size={14} />
-        </Button>
-        <div
-        className="min-w-0 overflow-hidden"
+      <div
+        className="min-w-0 max-w-[85%] overflow-hidden"
         style={{
           background: 'var(--state-hover)',
           color: 'var(--foreground)',
           borderRadius: '12px 12px 2px 12px',
-          maxWidth: '85%',
           padding: '8px 12px',
           fontSize: 13,
           lineHeight: 1.5,
@@ -120,7 +150,41 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
           </div>
         )}
         {content}
-        </div>
+      </div>
+      <div
+        className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/ai-user:opacity-100 group-focus-within/ai-user:opacity-100"
+        data-testid="ai-user-message-actions"
+      >
+        <Button
+          aria-label={translate(locale, 'ai.message.copyMessage')}
+          className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground"
+          size="icon-xs"
+          title={translate(locale, 'ai.message.copyMessage')}
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            void writeClipboardText(content).catch((error) => {
+              console.warn('[ai] Failed to copy user message:', error)
+            })
+          }}
+        >
+          <Copy size={15} />
+        </Button>
+        <Button
+          aria-label={translate(locale, 'ai.message.edit')}
+          className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground"
+          disabled={!messageId || !onEdit}
+          size="icon-xs"
+          title={translate(locale, 'ai.message.edit')}
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setDraft(content)
+            setEditing(true)
+          }}
+        >
+          <PencilSimple size={15} />
+        </Button>
       </div>
     </div>
   )
@@ -140,8 +204,9 @@ function ReasoningBlock({ locale, text, expanded, onToggle }: {
 
   return (
     <div style={{ marginBottom: 8 }}>
-      <button type="button"
-        className="flex items-center gap-1.5 w-full border-none bg-transparent cursor-pointer p-0 text-muted-foreground hover:text-foreground transition-colors"
+      <Button type="button"
+        variant="ghost"
+        className="flex h-auto items-center justify-start gap-1.5 w-full border-none bg-transparent cursor-pointer p-0 text-muted-foreground hover:text-foreground transition-colors"
         style={{ fontSize: 12, padding: '4px 0' }}
         onClick={onToggle}
         data-testid="reasoning-toggle"
@@ -149,7 +214,7 @@ function ReasoningBlock({ locale, text, expanded, onToggle }: {
         <Brain size={14} />
         <span>{translate(locale, 'ai.message.reasoning')}</span>
         {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-      </button>
+      </Button>
       {expanded && (
         <div
           ref={contentRef}
@@ -211,9 +276,10 @@ function ToolUseBlock({
 
   return (
     <div style={{ marginBottom: 8 }}>
-      <button
+      <Button
         type="button"
-        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-muted-foreground transition-colors hover:text-foreground"
+        variant="ghost"
+        className="flex h-auto w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 text-muted-foreground transition-colors hover:text-foreground"
         style={{ fontSize: 12, padding: '4px 0' }}
         aria-expanded={expanded}
         onClick={onToggle}
@@ -236,7 +302,7 @@ function ToolUseBlock({
           {actions.length}
         </span>
         {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-      </button>
+      </Button>
       {expanded && (
         <div data-testid="tool-use-content" style={{ marginTop: 4 }}>
           <ActionCardsList

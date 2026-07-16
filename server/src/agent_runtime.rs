@@ -568,12 +568,34 @@ impl AgentRuntime {
         let _ = self
             .store
             .finish_run(run_id, RunStatus::Failed, Some(&message));
+        self.capture_after_checkpoint(run_id);
         if let Some(run) = run {
             let _ = self.store.append_session_event(
                 &run.conversation_id,
                 "run_completed",
                 &json!({"run_id":run_id, "status":"failed", "error":message}),
             );
+        }
+    }
+
+    fn capture_after_checkpoint(&self, run_id: &str) {
+        let Ok(run) = self.store.get_run(run_id) else {
+            return;
+        };
+        let Ok(conversation) = self.store.get_conversation(&run.conversation_id) else {
+            return;
+        };
+        let Ok(cwd) = self.workspace.execution_path(
+            &conversation.project_id,
+            conversation.workspace_path.as_deref(),
+        ) else {
+            return;
+        };
+        if let Ok(Some(tree)) = self
+            .workspace
+            .capture_git_tree(&cwd, &format!("{run_id}-after"))
+        {
+            let _ = self.store.set_run_checkpoint(run_id, None, Some(&tree));
         }
     }
 
@@ -821,7 +843,6 @@ async fn run_acp_session(
     let conversation_id = config.conversation_id;
     let provider_session_id = config.provider_session_id;
     let cwd = config.cwd;
-    let checkpoint_cwd = cwd.clone();
 
     let result = agent_client_protocol::Client
         .builder()
@@ -1129,14 +1150,7 @@ async fn run_acp_session(
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
-                if let Ok(Some(tree)) = runtime.workspace.capture_git_tree(
-                    &checkpoint_cwd,
-                    &format!("{}-after", command.run.id),
-                ) {
-                    let _ = runtime
-                        .store
-                        .set_run_checkpoint(&command.run.id, None, Some(&tree));
-                }
+                runtime.capture_after_checkpoint(&command.run.id);
                 let _ = runtime.store.append_session_event(
                     &conversation_id,
                     "run_completed",
@@ -1508,6 +1522,67 @@ mod tests {
             "allow_once"
         );
         assert!(!runtime.resolve_permission("permission-1", "allow_once"));
+    }
+
+    #[test]
+    fn failed_runs_capture_an_after_turn_checkpoint() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let project_path = temp.path().join("project");
+        std::fs::create_dir_all(&project_path).expect("project directory");
+        run_git(&project_path, &["init"]);
+        run_git(
+            &project_path,
+            &["config", "user.email", "kubecode@example.test"],
+        );
+        run_git(&project_path, &["config", "user.name", "Kubecode Test"]);
+        std::fs::write(project_path.join("README.md"), "before\n").expect("initial file");
+        run_git(&project_path, &["add", "README.md"]);
+        run_git(&project_path, &["commit", "-m", "initial"]);
+
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let project = workspace
+            .import_project_at(&project_path)
+            .expect("project registration");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Change the file",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let before = workspace
+            .capture_git_tree(&project_path, "before-failure")
+            .expect("before checkpoint")
+            .expect("git tree");
+        store
+            .set_run_checkpoint(&run.id, Some(&before), None)
+            .expect("store before checkpoint");
+        std::fs::write(project_path.join("README.md"), "after\n").expect("changed file");
+
+        let runtime = AgentRuntime::new(workspace, Arc::clone(&store), Vec::new());
+        runtime.fail_run(&run.id, "OpenCode disconnected".into());
+
+        let checkpoint = store
+            .run_checkpoint(&run.id)
+            .expect("checkpoint query")
+            .expect("checkpoint");
+        assert!(checkpoint.after_tree.is_some());
+    }
+
+    fn run_git(path: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(path)
+            .status()
+            .expect("git command");
+        assert!(status.success(), "git {args:?}");
     }
 
     fn selected_option(outcome: RequestPermissionOutcome) -> String {

@@ -68,12 +68,24 @@ Edit, Regenerate, and interrupted-turn Undo create immutable Agent Chat
 branches. Retained timeline events are copied into the branch for display, and
 the first provider prompt receives an explicit recreated transcript context.
 The branch shares its parent Agent Session cwd and never rewrites source Chat
-history.
+history. User-message edits happen inline in the original bubble. If a legacy
+turn has a before-tree but no after-tree fingerprint, Kubecode creates the Chat
+branch without changing files and surfaces a warning instead of failing the
+entire branch operation.
 
 Each Git-backed run captures before/after trees through a temporary alternate
 index. Restoring a Shared Session requires its current tree to match the stored
 after-turn fingerprint; isolated worktree Sessions restore inside their own
-boundary. The real Git index and branch are never changed by capture.
+boundary. Failed ACP runs also capture their final tree so interrupted-turn
+Undo remains available. The real Git index and branch are never changed by
+capture.
+
+The Agent Composer keeps ACP-native mode, model, effort, and configuration
+controls behind one summary button in its compact lower action row. Its
+searchable add palette lists the current session's dynamic
+`available_commands` and reuses the project file tree to insert a relative
+`@path` reference; Kubecode does not invent a separate cross-Agent skill
+registry or copy file contents into the prompt.
 
 Team members are independent Agent Chats that share the parent's Agent Session
 by default. Explicit isolation creates a nested Agent Session and worktree from

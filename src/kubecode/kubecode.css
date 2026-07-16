@@ -115,8 +115,6 @@
 .kubecode-search,
 .kubecode-session-status,
 .kubecode-session-title,
-.kubecode-composer-controls,
-.kubecode-agent-chip,
 .kubecode-context-tabbar,
 .kubecode-editor-toolbar,
 .kubecode-mode-switch {
@@ -962,29 +960,6 @@
   padding: 10px 15px;
 }
 
-.kubecode-composer-controls {
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: 100%;
-  min-width: 0;
-  overflow: visible;
-  row-gap: 2px;
-}
-
-.kubecode-composer-controls [data-slot='select-trigger'] {
-  flex: 0 0 auto;
-  max-width: none;
-  min-width: max-content;
-  white-space: nowrap;
-}
-.kubecode-agent-chip {
-  color: var(--text-secondary);
-  font-size: 14px;
-  gap: 5px;
-  padding: 0 5px;
-}
-
 .kubecode-session-empty {
   align-items: center;
   justify-content: center;
@@ -1538,10 +1513,12 @@
   min-width: 0;
   overflow: hidden;
   padding: 0 4px;
+  text-align: left;
 }
 
 .kubecode-system-message-content strong { flex: 0 0 auto; }
 .kubecode-system-message-content span {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-align: left;

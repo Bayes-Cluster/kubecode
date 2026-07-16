@@ -34,17 +34,20 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { AppLocale, TranslationKey } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import type {
-  AgentDescriptor,
-  AgentEvent,
-  AgentRun,
-  AgentSessionState,
-  Conversation,
-  KubecodeApi,
-  SessionEvent,
-  WorkspaceEvent,
+import {
+  ApiError,
+  type AgentDescriptor,
+  type AgentEvent,
+  type AgentRun,
+  type AgentSessionState,
+  type Conversation,
+  type KubecodeApi,
+  type SessionEvent,
+  type WorkspaceEvent,
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
+import { ComposerAddMenu } from './ComposerAddMenu'
+import { AgentConfigMenu, type AgentConfigGroup } from './AgentConfigMenu'
 import { useSystemMessages } from './systemMessages'
 
 type Translator = (key: TranslationKey) => string
@@ -131,8 +134,6 @@ export function AgentSessionWorkspace({
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
-  const [editRunId, setEditRunId] = useState<string | null>(null)
-  const [editPrompt, setEditPrompt] = useState('')
   const [teamOpen, setTeamOpen] = useState(false)
   const [teamAgentId, setTeamAgentId] = useState<Conversation['agent_id']>('codex')
   const [teamIsolated, setTeamIsolated] = useState(false)
@@ -328,7 +329,16 @@ export function AgentSessionWorkspace({
   const branchAtRun = async (runId: string, replacement?: string) => {
     if (!conversation || !projectId || active) return
     try {
-      const branch = await api.branchConversationAtRun(conversation.id, runId)
+      let branch: Conversation
+      try {
+        branch = await api.branchConversationAtRun(conversation.id, runId, true)
+      } catch (cause) {
+        if (!(cause instanceof ApiError) || cause.code !== 'checkpoint_unavailable') throw cause
+        branch = await api.branchConversationAtRun(conversation.id, runId, false)
+        const message = t('kubecode.branchFilesNotRestored')
+        if (systemMessages) systemMessages.publish({ level: 'warning', message, source: agentLabel })
+        else setError(message)
+      }
       onConversationCreated(branch)
       if (replacement?.trim()) {
         await api.startRun(projectId, branch.id, replacement.trim())
@@ -345,14 +355,6 @@ export function AgentSessionWorkspace({
   const regenerate = async (runId: string) => {
     const message = messages.find((candidate) => candidate.id === runId)?.userMessage
     if (message) await branchAtRun(runId, message)
-  }
-
-  const submitEdit = async () => {
-    if (!editRunId || !editPrompt.trim()) return
-    const runId = editRunId
-    const replacement = editPrompt
-    setEditRunId(null)
-    await branchAtRun(runId, replacement)
   }
 
   const addTeamMember = async () => {
@@ -391,8 +393,21 @@ export function AgentSessionWorkspace({
     : []
   const nativeMode = sessionMode(sessionState)
   const configSelects = distinctSessionConfigSelects(nativeMode, sessionConfigSelects(sessionState))
+  const agentConfigGroups = buildAgentConfigGroups(nativeMode, configSelects, t)
   const planEntries = sessionPlanEntries(sessionState?.plan)
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
+
+  const insertComposerText = (text: string, kind: 'command' | 'file') => {
+    setPrompt((current) => {
+      if (!current) return text
+      return `${current}${current.endsWith(' ') ? '' : ' '}${text}`
+    })
+    window.requestAnimationFrame(() => inputRef.current?.focus())
+    trackEvent('kubecode_agent_context_inserted', {
+      agent_id: conversation.agent_id,
+      kind,
+    })
+  }
 
   const refreshSessionState = async () => {
     setSessionState(await api.getSessionState(conversation.id))
@@ -417,6 +432,25 @@ export function AgentSessionWorkspace({
     } catch (cause) {
       reportError(cause)
     }
+  }
+
+  const changeAgentConfig = (groupId: string, value: string) => {
+    trackEvent('kubecode_agent_setting_selected', {
+      agent_id: conversation.agent_id,
+      setting: groupId === 'mode:agent' ? 'mode' : groupId.slice('config:'.length),
+    })
+    if (groupId === 'mode:agent') {
+      void commitSessionOption(
+        sessionStateWithMode(sessionState, value),
+        () => api.setSessionMode(conversation.id, value),
+      )
+      return
+    }
+    const configId = groupId.slice('config:'.length)
+    void commitSessionOption(
+      sessionStateWithConfig(sessionState, configId, value),
+      () => api.setSessionConfig(conversation.id, configId, value),
+    )
   }
 
   return (
@@ -470,20 +504,17 @@ export function AgentSessionWorkspace({
         </div>
       </header>
       <div className="kubecode-session-timeline">
-        {conversation.recreated_context && (
-          <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
-        )}
         <AiPanelMessageHistory
           agentLabel={agentLabel}
           agentReadiness={readiness}
           hasContext
           isActive={active}
+          leadingContent={conversation.recreated_context ? (
+            <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
+          ) : undefined}
           locale={locale}
           messages={messages}
-          onEditMessage={(runId, userMessage) => {
-            setEditRunId(runId)
-            setEditPrompt(userMessage)
-          }}
+          onEditMessage={(runId, userMessage) => void branchAtRun(runId, userMessage)}
           onRegenerateMessage={(runId) => void regenerate(runId)}
         />
       </div>
@@ -638,58 +669,22 @@ export function AgentSessionWorkspace({
             <AiPanelComposer
               agentLabel={agentLabel}
               agentReadiness={readiness}
-              controls={(
-                <div className="kubecode-composer-controls">
-                  <span className="kubecode-agent-chip">
-                    <AiAgentIcon agent={conversation.agent_id} size={17} /> {agentLabel}
-                  </span>
-                  {nativeMode && (
-                    <Select
-                      value={nativeMode.currentValue}
-                      onValueChange={(value) => {
-                        void commitSessionOption(
-                          sessionStateWithMode(sessionState, value),
-                          () => api.setSessionMode(conversation.id, value),
-                        )
-                      }}
-                    >
-                      <SelectTrigger aria-label={t('kubecode.agentMode')} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
-                        <span className="text-muted-foreground">{t('kubecode.agentMode')}</span>
-                        <span aria-hidden="true">·</span>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {nativeMode.options.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {configSelects.map((config) => (
-                    <Select
-                      key={config.id}
-                      value={config.currentValue}
-                      onValueChange={(value) => {
-                        void commitSessionOption(
-                          sessionStateWithConfig(sessionState, config.id, value),
-                          () => api.setSessionConfig(conversation.id, config.id, value),
-                        )
-                      }}
-                    >
-                      <SelectTrigger aria-label={config.name} className="h-7 w-auto border-0 bg-transparent px-2 text-sm shadow-none" size="sm">
-                        <span className="text-muted-foreground">{config.name}</span>
-                        <span aria-hidden="true">·</span>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {config.options.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ))}
-                </div>
-              )}
+              leadingControl={projectId ? (
+                <ComposerAddMenu
+                  api={api}
+                  commands={commands}
+                  onInsert={insertComposerText}
+                  projectId={projectId}
+                  t={t}
+                />
+              ) : undefined}
+              controls={agentConfigGroups.length > 0 ? (
+                <AgentConfigMenu
+                  groups={agentConfigGroups}
+                  onChange={changeAgentConfig}
+                  t={t}
+                />
+              ) : undefined}
               entries={[]}
               input={prompt}
               inputRef={inputRef}
@@ -719,26 +714,6 @@ export function AgentSessionWorkspace({
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
             <Button onClick={() => void rename()}>{t('kubecode.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={editRunId !== null} onOpenChange={(nextOpen) => !nextOpen && setEditRunId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.editAndRegenerate')}</DialogTitle>
-            <DialogDescription>{t('kubecode.editAndRegenerateDescription')}</DialogDescription>
-          </DialogHeader>
-          <Input
-            aria-label={t('kubecode.editMessage')}
-            value={editPrompt}
-            onChange={(event) => setEditPrompt(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submitEdit()
-            }}
-          />
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-            <Button disabled={!editPrompt.trim()} onClick={() => void submitEdit()}>{t('kubecode.regenerate')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -891,6 +866,34 @@ type SessionSelect = {
   name: string
   currentValue: string
   options: { id: string; name: string }[]
+}
+
+function agentConfigPriority(group: AgentConfigGroup): number {
+  const identity = `${group.id} ${group.name}`.toLocaleLowerCase()
+  if (/intelligence|reason|effort/.test(identity)) return 0
+  if (/mode/.test(identity)) return 1
+  if (/model/.test(identity)) return 2
+  if (/fast/.test(identity)) return 3
+  return 4
+}
+
+function buildAgentConfigGroups(
+  mode: SessionSelect | null,
+  configs: SessionSelect[],
+  t: Translator,
+): AgentConfigGroup[] {
+  const groups: AgentConfigGroup[] = configs.map((config) => ({
+    ...config,
+    id: `config:${config.id}`,
+  }))
+  if (mode) {
+    groups.push({
+      ...mode,
+      id: 'mode:agent',
+      name: t('kubecode.agentMode'),
+    })
+  }
+  return groups.sort((left, right) => agentConfigPriority(left) - agentConfigPriority(right))
 }
 
 function sessionMode(state: AgentSessionState | null): SessionSelect | null {

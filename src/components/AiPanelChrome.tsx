@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
-import { Sparkle, X, PaperPlaneRight, Plus, Link, Stop } from '@phosphor-icons/react'
+import { ArrowUp, Sparkle, X, Plus, Link, Stop } from '@phosphor-icons/react'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import { ActionTooltip } from '@/components/ui/action-tooltip'
@@ -43,6 +43,7 @@ interface AiPanelMessageHistoryProps {
   locale?: AppLocale
   messages: AiAgentMessage[]
   isActive: boolean
+  leadingContent?: ReactNode
   onForkMessage?: (messageId: string) => void
   onEditMessage?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
@@ -61,6 +62,7 @@ interface AiPanelComposerProps {
   inputRef: React.RefObject<HTMLDivElement | null>
   isActive: boolean
   controls?: ReactNode
+  leadingControl?: ReactNode
   onChange: (value: string) => void
   onSend: (text: string, references: NoteReference[]) => void
   onStop: () => void
@@ -87,9 +89,9 @@ function composerSendButtonStyle(canSend: boolean): CSSProperties {
   return {
     background: canSend ? 'var(--primary)' : 'var(--muted)',
     color: canSend ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
-    borderRadius: 8,
-    width: 30,
-    height: 30,
+    borderRadius: 9999,
+    width: 32,
+    height: 32,
     cursor: canSend ? 'pointer' : 'not-allowed',
   }
 }
@@ -98,9 +100,9 @@ function composerStopButtonStyle(): CSSProperties {
   return {
     background: 'var(--destructive)',
     color: 'var(--destructive-foreground)',
-    borderRadius: 8,
-    width: 30,
-    height: 30,
+    borderRadius: 9999,
+    width: 32,
+    height: 32,
     cursor: 'pointer',
   }
 }
@@ -135,11 +137,11 @@ function ComposerInput({
       onUnsupportedPaste={onUnsupportedAiPaste}
       disabled={disabled}
       placeholder={placeholder}
-      placeholderClassName={hasControls ? 'px-2 py-1.5 text-[13px] leading-5' : undefined}
+      placeholderClassName={hasControls ? 'px-2 pb-1 pt-2 text-[13px] leading-5' : undefined}
       inputRef={inputRef}
       editorClassName={cn(
         'max-h-[120px] overflow-y-auto overscroll-contain',
-        hasControls && 'min-h-[34px] border-0 px-2 py-1.5 leading-5',
+        hasControls && 'min-h-[34px] border-0 px-2 pb-1 pt-2 leading-5',
       )}
       editorStyle={{ maxHeight: 120, overflowY: 'auto', overscrollBehavior: 'contain' }}
     />
@@ -172,7 +174,7 @@ function ComposerSendButton({
       title={label}
       data-testid="agent-send"
     >
-      <PaperPlaneRight size={16} />
+      <ArrowUp size={17} weight="bold" />
     </Button>
   )
 }
@@ -198,27 +200,6 @@ function ComposerStopButton({
     >
       <Stop size={16} weight="fill" />
     </Button>
-  )
-}
-
-function ComposerControlsRow({
-  children,
-  hasControls,
-  sendButton,
-}: {
-  children?: ReactNode
-  hasControls: boolean
-  sendButton: ReactNode
-}) {
-  if (!hasControls) return <>{sendButton}</>
-
-  return (
-    <div className="mt-0.5 flex items-center justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-1">
-        {children}
-      </div>
-      {sendButton}
-    </div>
   )
 }
 
@@ -470,6 +451,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   locale = 'en',
   messages,
   isActive,
+  leadingContent,
   onForkMessage,
   onEditMessage,
   onOpenNote,
@@ -512,6 +494,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
       style={{ overflowAnchor: 'none', padding: 12 }}
       onScroll={updateScrollState}
     >
+      {leadingContent}
       {messages.length === 0 && !isActive && (
         <AiPanelEmptyState
           agentLabel={agentLabel}
@@ -546,6 +529,7 @@ export function AiPanelComposer({
   inputRef,
   isActive,
   controls,
+  leadingControl,
   onChange,
   onSend,
   onStop,
@@ -555,7 +539,8 @@ export function AiPanelComposer({
   const composerDisabled = isActive || agentReadiness !== 'ready'
   const canSend = !composerDisabled && input.trim().length > 0
   const placeholder = getComposerPlaceholder(agentLabel, agentReadiness, t)
-  const hasControls = controls !== undefined && controls !== null
+  const hasControls = (controls !== undefined && controls !== null)
+    || (leadingControl !== undefined && leadingControl !== null)
   const sendButton = isActive
     ? <ComposerStopButton label={t('ai.panel.stop')} onStop={onStop} />
     : (
@@ -573,10 +558,17 @@ export function AiPanelComposer({
       className="flex shrink-0 flex-col"
       style={{ padding: '6px 10px' }}
     >
-      <div className={cn(
-        hasControls ? 'rounded-xl border border-border bg-background px-2 py-1.5 shadow-xs' : 'flex items-end gap-2',
-      )}>
-        <div className={cn('min-w-0 flex-1', hasControls && 'w-full')}>
+      <div
+        className={cn(
+          hasControls
+            ? 'flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-2 shadow-xs'
+            : 'flex items-end gap-2',
+        )}
+        data-layout={hasControls ? 'single-row' : undefined}
+        data-testid="agent-composer-surface"
+      >
+        {hasControls && leadingControl}
+        <div className="min-w-0 flex-1">
           <ComposerInput
             disabled={composerDisabled}
             entries={entries}
@@ -589,9 +581,8 @@ export function AiPanelComposer({
             placeholder={placeholder}
           />
         </div>
-        <ComposerControlsRow hasControls={hasControls} sendButton={sendButton}>
-          {controls}
-        </ComposerControlsRow>
+        {hasControls && controls}
+        {sendButton}
       </div>
     </div>
   )

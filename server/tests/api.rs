@@ -448,6 +448,39 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
     assert_eq!(branch["parent_conversation_id"], conversation.id);
     assert_eq!(branch["relationship"], "branch");
     assert_eq!(branch["recreated_context"], true);
+
+    let incomplete_run = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Interrupted change",
+            kubecode_server::agents::PermissionMode::Safe,
+        )
+        .expect("incomplete run");
+    store
+        .finish_run(
+            &incomplete_run.id,
+            kubecode_server::agents::RunStatus::Interrupted,
+            None,
+        )
+        .expect("interrupt incomplete run");
+    store
+        .set_run_checkpoint(&incomplete_run.id, Some("before-tree"), None)
+        .expect("incomplete checkpoint");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/turns/{}/branch",
+            conversation.id, incomplete_run.id
+        ),
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "checkpoint_unavailable");
 }
 
 #[tokio::test]

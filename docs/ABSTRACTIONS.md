@@ -46,7 +46,16 @@ a new Agent Session ID and a nested worktree based on the parent workspace.
 A turn checkpoint stores optional before/after Git tree IDs for one run. Trees
 are captured with a private alternate index, so staging remains user-owned.
 Shared-workspace restoration requires an after-tree fingerprint match; a
-mismatch is a conflict, not an overwrite.
+mismatch is a conflict, not an overwrite. A legacy run without a complete
+checkpoint may still create an immutable Chat branch, but it does not restore
+files and the browser warns the user about that degraded behavior.
+
+## Composer reference
+
+A Composer reference is a project-relative `@path` token selected through the
+same lazy file tree used by the workbench. Agent skills and commands remain
+Agent-owned: the UI renders ACP `available_commands` and inserts the selected
+native slash command instead of maintaining a Kubecode-only command catalog.
 
 ## Session and run
 

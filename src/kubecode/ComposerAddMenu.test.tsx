@@ -1,0 +1,63 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+
+import { createTranslator } from '@/lib/i18n'
+
+import { ComposerAddMenu } from './ComposerAddMenu'
+import type { KubecodeApi } from './api'
+
+const commands = [
+  { name: 'review', description: 'Review the current changes' },
+  { name: 'skill-writer', description: 'Use the writing skill' },
+]
+
+describe('ComposerAddMenu', () => {
+  it('inserts a native Agent skill or command from the add menu', async () => {
+    const onInsert = vi.fn()
+
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={commands}
+        onInsert={onInsert}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    expect(screen.getByRole('dialog', { name: 'Add context' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search skills, commands, and files' }), {
+      target: { value: 'review' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /review/i }))
+
+    expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
+  })
+
+  it('inserts a project file reference selected from the file tree', async () => {
+    const onInsert = vi.fn()
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([
+        { kind: 'file', name: 'README.md', path: 'README.md' },
+      ]),
+    } as unknown as KubecodeApi
+
+    render(
+      <ComposerAddMenu
+        api={api}
+        commands={[]}
+        onInsert={onInsert}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference file/i }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /README\.md/i }))
+
+    await waitFor(() => expect(onInsert).toHaveBeenCalledWith('@README.md ', 'file'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})

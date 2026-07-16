@@ -1,9 +1,10 @@
+import { createRef } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 
-import { AiPanelMessageHistory } from '@/components/AiPanelChrome'
+import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChrome'
 
 vi.mock('@/components/AiMessage', () => ({
   AiMessage: ({ response }: AiAgentMessage) => <div>{response}</div>,
@@ -78,5 +79,31 @@ describe('AiPanelMessageHistory', () => {
 
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
     expect(timeline.scrollTop).toBe(100)
+  })
+})
+
+describe('AiPanelComposer', () => {
+  it('keeps add, input, Agent settings, and send controls in one row', () => {
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        controls={<button type="button">Agent settings</button>}
+        entries={[]}
+        input="Implement it"
+        inputRef={createRef<HTMLDivElement>()}
+        isActive={false}
+        leadingControl={<button type="button">Add context</button>}
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    )
+
+    const surface = screen.getByTestId('agent-composer-surface')
+    expect(surface).toHaveAttribute('data-layout', 'single-row')
+    expect(surface).toContainElement(screen.getByRole('button', { name: 'Add context' }))
+    expect(surface).toContainElement(screen.getByRole('button', { name: 'Agent settings' }))
+    expect(surface).toContainElement(screen.getByRole('button', { name: 'Send message' }))
   })
 })

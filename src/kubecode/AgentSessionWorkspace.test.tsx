@@ -6,15 +6,16 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { createTranslator } from '@/lib/i18n'
 
 import { AgentSessionWorkspace } from './AgentSessionWorkspace'
-import type { AgentRun, KubecodeApi, WorkspaceEvent } from './api'
+import { ApiError, type AgentRun, type KubecodeApi, type WorkspaceEvent } from './api'
 
 vi.mock('@/components/AiPanelChrome', () => ({
-  AiPanelMessageHistory: ({ messages, onEditMessage, onRegenerateMessage }: {
+  AiPanelMessageHistory: ({ leadingContent, messages, onEditMessage, onRegenerateMessage }: {
+    leadingContent?: ReactNode
     messages: AiAgentMessage[]
     onEditMessage?: (messageId: string, message: string) => void
     onRegenerateMessage?: (messageId: string) => void
   }) => (
-    <div>{messages.map((message) => (
+    <div data-testid="message-history">{leadingContent}{messages.map((message) => (
       <article key={message.id} data-streaming={message.isStreaming}>
         {message.userMessage}
         {message.reasoning}
@@ -31,8 +32,8 @@ vi.mock('@/components/AiPanelChrome', () => ({
       </article>
     ))}</div>
   ),
-  AiPanelComposer: ({ controls }: { controls?: ReactNode }) => (
-    <div data-testid="composer">{controls}</div>
+  AiPanelComposer: ({ controls, leadingControl }: { controls?: ReactNode; leadingControl?: ReactNode }) => (
+    <div data-testid="composer">{leadingControl}{controls}</div>
   ),
 }))
 
@@ -66,6 +67,35 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('places Agent skills, commands, and project files behind the Composer add button', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'review', description: 'Review changes' }],
+        },
+      }),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByRole('button', { name: 'Add context' })).toBeInTheDocument()
+  })
+
   it('regenerates a completed turn in a new immutable Agent Chat branch', async () => {
     const branch = {
       ...conversation,
@@ -104,9 +134,86 @@ describe('AgentSessionWorkspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerate response' }))
 
-    await waitFor(() => expect(branchConversationAtRun).toHaveBeenCalledWith('session-1', 'run-1'))
+    await waitFor(() => expect(branchConversationAtRun).toHaveBeenCalledWith('session-1', 'run-1', true))
     expect(startRun).toHaveBeenCalledWith('project-1', 'session-branch', 'Implement it')
     expect(onConversationCreated).toHaveBeenCalledWith(branch)
+  })
+
+  it('continues a branch without file restoration when an old checkpoint is incomplete', async () => {
+    const branch = {
+      ...conversation,
+      id: 'session-branch',
+      agent_session_id: 'session-1',
+      execution_mode: 'shared' as const,
+      workspace_path: null,
+      recreated_context: true,
+      parent_conversation_id: conversation.id,
+      relationship: 'branch' as const,
+    }
+    const branchConversationAtRun = vi.fn()
+      .mockRejectedValueOnce(new ApiError(
+        'checkpoint_unavailable',
+        'cannot safely restore a Shared workspace without an after-turn fingerprint',
+        409,
+      ))
+      .mockResolvedValueOnce(branch)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([run]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      branchConversationAtRun,
+      startRun: vi.fn().mockResolvedValue({ ...run, id: 'run-branch' }),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'opencode', available: true, version: '1', executable: 'opencode', error: null }]}
+      api={api}
+      conversation={{ ...conversation, agent_id: 'opencode' }}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Regenerate response' }))
+
+    await waitFor(() => expect(branchConversationAtRun).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      'run-1',
+      false,
+    ))
+    expect(await screen.findByText(/files could not be restored/i)).toBeInTheDocument()
+  })
+
+  it('keeps recreated context inside the single message history column', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    const { container } = render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={{ ...conversation, recreated_context: true }}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const history = await screen.findByTestId('message-history')
+    expect(history).toContainElement(screen.getByText(/Recreated context/))
+    expect(container.querySelector('.kubecode-session-timeline')?.children).toHaveLength(1)
   })
 
   it('shows imported subagent sessions as read-only transcripts', async () => {
@@ -170,7 +277,9 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    expect(await screen.findByRole('combobox', { name: 'Permission' })).toBeEnabled()
+    const settings = await screen.findByRole('button', { name: 'Agent settings' })
+    expect(settings).toBeEnabled()
+    expect(settings).toHaveTextContent('Manual')
   })
 
   it('shows only distinct Agent-native controls with visible labels', async () => {
@@ -248,17 +357,17 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    expect(await screen.findByRole('combobox', { name: 'Agent mode' })).toHaveTextContent('Agent mode')
-    expect(screen.queryByRole('combobox', { name: 'Permission' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Permission mode' })).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Model')
-    expect(screen.getByRole('combobox', { name: 'Effort' })).toHaveTextContent('Effort')
+    const settings = await screen.findByRole('button', { name: 'Agent settings' })
+    expect(settings).toHaveTextContent('Default')
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Agent mode' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'Accept Edits' }))
+    fireEvent.click(settings)
+    expect(screen.queryByText('Permission')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Manual.*Agent mode/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accept Edits' }))
     await waitFor(() => {
       expect(api.setSessionMode).toHaveBeenCalledWith(conversation.id, 'acceptEdits')
-      expect(screen.getByRole('combobox', { name: 'Agent mode' })).toHaveTextContent('Accept Edits')
+      expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Accept Edits')
     })
   })
 
@@ -295,11 +404,11 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    const mode = await screen.findByRole('combobox', { name: 'Agent mode' })
+    const mode = await screen.findByRole('button', { name: 'Agent settings' })
     expect(mode).toHaveTextContent("Don't Ask")
 
     fireEvent.click(mode)
-    fireEvent.click(await screen.findByRole('option', { name: 'Plan Mode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Plan Mode' }))
 
     expect(await screen.findByText('ACP session could not reconnect')).toBeInTheDocument()
     expect(mode).toHaveTextContent("Don't Ask")

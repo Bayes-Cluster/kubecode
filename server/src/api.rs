@@ -433,7 +433,7 @@ async fn branch_conversation_at_run(
             .then_some(checkpoint.after_tree)
             .flatten();
         if source.execution_mode == ExecutionMode::Shared && expected.is_none() {
-            return Err(ApiError::WorkspaceMigration(
+            return Err(ApiError::CheckpointUnavailable(
                 "cannot safely restore a Shared workspace without an after-turn fingerprint".into(),
             ));
         }
@@ -1489,6 +1489,7 @@ enum ApiError {
     Git(GitError),
     PermissionNotFound(String),
     ElicitationNotFound(String),
+    CheckpointUnavailable(String),
     WorkspaceMigration(String),
 }
 
@@ -1602,6 +1603,9 @@ impl IntoResponse for ApiError {
                 "elicitation_not_found",
                 format!("elicitation request is no longer active: {request_id}"),
             ),
+            ApiError::CheckpointUnavailable(message) => {
+                (StatusCode::CONFLICT, "checkpoint_unavailable", message)
+            }
             ApiError::WorkspaceMigration(message) => (
                 StatusCode::CONFLICT,
                 "workspace_migration_required",
