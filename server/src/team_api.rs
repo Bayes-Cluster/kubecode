@@ -13,7 +13,10 @@ use crate::workspace::WorkspaceError;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/projects/{project_id}/teams", post(create_team))
+        .route(
+            "/projects/{project_id}/teams",
+            get(list_teams).post(create_team),
+        )
         .route("/teams/{team_id}", get(get_team))
         .route(
             "/sessions/{conversation_id}/promote-to-team",
@@ -40,6 +43,8 @@ struct PromoteToTeamRequest {
 #[derive(Debug, Serialize)]
 struct TeamSnapshot {
     team: Team,
+    leader_conversation: Conversation,
+    conversations: Vec<Conversation>,
     members: Vec<TeamMember>,
     tasks: Vec<TeamTask>,
 }
@@ -56,15 +61,6 @@ async fn create_team(
     if request.workspace == TeamWorkspace::Worktree {
         conversation = assign_worktree(&state, conversation)?;
     }
-    if agent_is_available(&state, &conversation)
-        && let Err(error) = state
-            .agent_runtime
-            .initialize_conversation(&conversation.id)
-            .await
-    {
-        let _ = store.delete_conversation(&conversation.id);
-        return Err(error.into());
-    }
     let title = request
         .title
         .as_deref()
@@ -79,6 +75,16 @@ async fn create_team(
         workspace: request.workspace,
         workspace_path: conversation.workspace_path.as_deref(),
     })?;
+    if agent_is_available(&state, &conversation)
+        && let Err(error) = state
+            .agent_runtime
+            .initialize_conversation(&conversation.id)
+            .await
+    {
+        let _ = state.teams.delete_team(&team.id);
+        let _ = store.delete_conversation(&conversation.id);
+        return Err(error.into());
+    }
     Ok((StatusCode::CREATED, Json(snapshot(&state, team)?)))
 }
 
@@ -133,6 +139,20 @@ async fn get_team(
     Ok(Json(snapshot(&state, team)?))
 }
 
+async fn list_teams(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    state.workspace.project_path(&project_id)?;
+    let snapshots = state
+        .teams
+        .list_teams(&project_id)?
+        .into_iter()
+        .map(|team| snapshot(&state, team))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(snapshots))
+}
+
 fn assign_worktree(
     state: &AppState,
     conversation: Conversation,
@@ -159,8 +179,31 @@ fn agent_is_available(state: &AppState, conversation: &Conversation) -> bool {
 }
 
 fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> {
+    let members = state.teams.list_members(&team.id)?;
+    let conversations = members
+        .iter()
+        .map(|member| {
+            state
+                .agent_runtime
+                .store()
+                .get_conversation(&member.conversation_id)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let leader_conversation = conversations
+        .iter()
+        .find(|conversation| {
+            members.iter().any(|member| {
+                member.id == team.leader_member_id && member.conversation_id == conversation.id
+            })
+        })
+        .cloned()
+        .ok_or_else(|| {
+            TeamApiError::Team(TeamError::MemberNotFound(team.leader_member_id.clone()))
+        })?;
     Ok(TeamSnapshot {
-        members: state.teams.list_members(&team.id)?,
+        leader_conversation,
+        conversations,
+        members,
         tasks: state.teams.list_tasks(&team.id)?,
         team,
     })

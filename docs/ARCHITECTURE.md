@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0176.
+active production boundary is defined by ADRs 0161–0177.
 
 ## Runtime topology
 
@@ -10,13 +10,15 @@ at a Kubeflow Notebook subpath. `KubecodeApi` derives HTTP, SSE, and WebSocket
 routes from the current browser pathname. Health probes remain unprefixed at
 `/healthz` and `/readyz`.
 
-The Axum server composes five services:
+The Axum server composes seven services:
 
 - `WorkspaceService` registers Project roots and contains filesystem access.
 - `AgentStore` persists Sessions, runs, normalized events, and workspace events.
 - `AgentRuntime` owns long-lived ACP actors for Claude Code, Codex, and OpenCode.
 - `TerminalManager` owns reconnectable PTYs independently of browser sockets.
 - `GitService` performs Project-scoped Git operations without shell interpolation.
+- `TeamStore` persists Team authority, membership, tasks, and mailboxes.
+- `TeamCoordinator` creates teammate Agent Sessions and applies Team scheduling rules.
 
 SQLite is application metadata, not project content. Project files remain on
 disk at their original absolute paths.
@@ -87,9 +89,17 @@ searchable add palette lists the current session's dynamic
 `@path` reference; Kubecode does not invent a separate cross-Agent skill
 registry or copy file contents into the prompt.
 
-Team members are independent Agent Chats that share the parent's Agent Session
-by default. Explicit isolation creates a nested Agent Session and worktree from
-the parent workspace HEAD, so sharing versus isolation remains a user choice.
+Team Sessions start with one fixed Leader and dynamically add teammate Agent
+Chats through the in-process `kubecode-team` MCP server. Leader-only operations
+are transactionally enforced; teammates can claim unblocked tasks, message one
+another, and submit results into the Leader mailbox. An idle Leader is
+automatically continued when a result arrives. Provider-native subagents remain
+nested under their owning member and are not promoted into Team membership.
+
+Shared Team members execute at the Team root. Explicit isolation creates a
+separate Agent Session and worktree while recording the base tree for Leader
+review. Existing Solo Sessions can be promoted without replacing their Chat
+history or provider identity.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

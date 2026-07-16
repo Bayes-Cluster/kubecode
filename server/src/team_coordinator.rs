@@ -27,6 +27,7 @@ pub enum CoordinatorError {
     Workspace(#[from] WorkspaceError),
 }
 
+#[derive(Clone)]
 pub struct TeamCoordinator {
     workspace: Arc<WorkspaceService>,
     agents: Arc<AgentStore>,

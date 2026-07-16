@@ -37,9 +37,16 @@ selected run, and has a fresh provider Session ID. `recreated_context` is shown
 to the user whenever Kubecode had to rebuild provider context from the durable
 timeline instead of using a native provider checkpoint.
 
-A Team member is another Agent Chat linked to a parent Chat. Shared members keep
-the parent's `agent_session_id` and cwd. An explicitly isolated member receives
-a new Agent Session ID and a nested worktree based on the parent workspace.
+A Team Session is a durable coordination boundary with one fixed Leader, a
+dynamic set of teammates, a task dependency graph, and member mailboxes. Every
+member owns an independent Agent Chat and provider Session. Shared members use
+the Team cwd; an explicitly isolated member receives a worktree and stores its
+base Git tree. Only the Leader may add members, review results, and author the
+final Team response.
+
+The `kubecode-team` MCP server is injected into new Team ACP sessions. It is the
+cross-Agent control plane for spawning, tasks, review, and messaging; it does
+not replace provider-native tools or subagents.
 
 ## Turn checkpoint
 

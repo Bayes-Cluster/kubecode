@@ -43,12 +43,14 @@ import {
   type Conversation,
   type KubecodeApi,
   type SessionEvent,
+  type TeamSnapshot,
   type WorkspaceEvent,
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { ComposerAddMenu } from './ComposerAddMenu'
 import { AgentConfigMenu, type AgentConfigGroup } from './AgentConfigMenu'
 import { useSystemMessages } from './systemMessages'
+import { TeamSessionOverview } from './TeamSessionOverview'
 
 type Translator = (key: TranslationKey) => string
 type PermissionChoice = { id: string; label: string; kind: string }
@@ -83,10 +85,12 @@ type AgentSessionWorkspaceProps = {
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
+  onTeamCreated?: (team: TeamSnapshot) => void
+  onSelectTeamMember?: (conversationId: string) => void
   projectId: string | null
   t: Translator
   workspaceEvents: WorkspaceEvent[]
-  workspacesEnabled?: boolean
+  team?: TeamSnapshot | null
 }
 
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
@@ -118,10 +122,12 @@ export function AgentSessionWorkspace({
   onConversationCreated,
   onConversationRemoved,
   onConversationUpdated,
+  onTeamCreated,
+  onSelectTeamMember,
   projectId,
   t,
   workspaceEvents,
-  workspacesEnabled = false,
+  team,
 }: AgentSessionWorkspaceProps) {
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
@@ -134,9 +140,6 @@ export function AgentSessionWorkspace({
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
-  const [teamOpen, setTeamOpen] = useState(false)
-  const [teamAgentId, setTeamAgentId] = useState<Conversation['agent_id']>('codex')
-  const [teamIsolated, setTeamIsolated] = useState(false)
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const knownRunIdsRef = useRef(new Set<string>())
@@ -357,16 +360,12 @@ export function AgentSessionWorkspace({
     if (message) await branchAtRun(runId, message)
   }
 
-  const addTeamMember = async () => {
+  const promoteToTeam = async () => {
     if (!conversation) return
     try {
-      const member = await api.createTeamMember(conversation.id, teamAgentId, teamIsolated)
-      onConversationCreated(member)
-      setTeamOpen(false)
-      trackEvent('kubecode_team_member_created', {
-        agent_id: teamAgentId,
-        isolated: Number(teamIsolated),
-      })
+      const team = await api.promoteToTeam(conversation.id, agentName(conversation.agent_id))
+      onTeamCreated?.(team)
+      trackEvent('kubecode_session_promoted_to_team', { leader_agent_id: conversation.agent_id })
     } catch (cause) {
       reportError(cause)
     }
@@ -488,12 +487,8 @@ export function AgentSessionWorkspace({
                   {t('kubecode.forkSession')}
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={() => {
-                setTeamAgentId(agents.find((candidate) => candidate.available)?.id ?? conversation.agent_id)
-                setTeamIsolated(false)
-                setTeamOpen(true)
-              }}>
-                {t('kubecode.addTeamMember')}
+              <DropdownMenuItem onSelect={() => void promoteToTeam()}>
+                {t('kubecode.promoteToTeam')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void removeLocally()}>
@@ -503,6 +498,13 @@ export function AgentSessionWorkspace({
           </DropdownMenu>
         </div>
       </header>
+      {team && conversation && (
+        <TeamSessionOverview
+          activeConversationId={conversation.id}
+          onSelectMember={onSelectTeamMember ?? (() => undefined)}
+          snapshot={team}
+        />
+      )}
       <div className="kubecode-session-timeline">
         <AiPanelMessageHistory
           agentLabel={agentLabel}
@@ -714,40 +716,6 @@ export function AgentSessionWorkspace({
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
             <Button onClick={() => void rename()}>{t('kubecode.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={teamOpen} onOpenChange={setTeamOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.addTeamMember')}</DialogTitle>
-            <DialogDescription>{t('kubecode.addTeamMemberDescription')}</DialogDescription>
-          </DialogHeader>
-          <label className="kubecode-new-session-field">
-            <span>{t('kubecode.agent')}</span>
-            <Select value={teamAgentId} onValueChange={(value) => setTeamAgentId(value as Conversation['agent_id'])}>
-              <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {agents.map((candidate) => (
-                  <SelectItem disabled={!candidate.available} key={candidate.id} value={candidate.id}>
-                    <AiAgentIcon agent={candidate.id} size={18} /> {agentName(candidate.id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          {workspacesEnabled && (
-            <label className="kubecode-team-isolation">
-              <Switch checked={teamIsolated} onCheckedChange={setTeamIsolated} />
-              <span>
-                <strong>{t('kubecode.isolateTeamMember')}</strong>
-                <small>{t('kubecode.isolateTeamMemberDescription')}</small>
-              </span>
-            </label>
-          )}
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-            <Button onClick={() => void addTeamMember()}>{t('kubecode.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

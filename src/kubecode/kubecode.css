@@ -505,6 +505,107 @@
   font-size: 12px;
 }
 
+.kubecode-team-overview {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.kubecode-team-overview-title,
+.kubecode-team-member-tree,
+.kubecode-team-task-strip {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+}
+
+.kubecode-team-overview-title {
+  gap: 7px;
+}
+
+.kubecode-team-overview-title svg {
+  height: 17px;
+  width: 17px;
+}
+
+.kubecode-team-overview-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-team-overview-title small {
+  color: var(--muted-foreground);
+  margin-left: auto;
+}
+
+.kubecode-team-member-tree {
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.kubecode-team-member-tree button {
+  gap: 6px;
+  height: 28px;
+  padding-inline: 7px;
+}
+
+.kubecode-team-member-tree button[data-active='true'] {
+  background: var(--accent);
+}
+
+.kubecode-team-member-status {
+  background: var(--muted-foreground);
+  border-radius: 999px;
+  height: 6px;
+  width: 6px;
+}
+
+.kubecode-team-member-status[data-status='working'] {
+  background: var(--primary);
+}
+
+.kubecode-team-member-status[data-status='failed'],
+.kubecode-team-member-status[data-status='waiting_input'] {
+  background: var(--destructive);
+}
+
+.kubecode-team-task-strip {
+  gap: 12px;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.kubecode-team-task-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.kubecode-team-task-strip span {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kubecode-team-task-strip svg {
+  height: 14px;
+  width: 14px;
+}
+
+.kubecode-spin {
+  animation: kubecode-team-spin 1s linear infinite;
+}
+
+@keyframes kubecode-team-spin {
+  to { transform: rotate(360deg); }
+}
+
 .kubecode-session-browser {
   display: flex;
   flex: 1;

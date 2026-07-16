@@ -55,11 +55,10 @@ impl AppState {
         ));
         let agents = supported_agents_unavailable();
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
-        let agent_runtime = Arc::new(AgentRuntime::new(
-            Arc::clone(&workspace),
-            agent_store,
-            agents.clone(),
-        ));
+        let agent_runtime = Arc::new(
+            AgentRuntime::new(Arc::clone(&workspace), agent_store, agents.clone())
+                .with_team_store(Arc::clone(&teams)),
+        );
         Self {
             workspace,
             terminals,
@@ -78,11 +77,14 @@ impl AppState {
             agents.clone(),
             terminal_event_sink(self.agent_runtime.store()),
         ));
-        self.agent_runtime = Arc::new(AgentRuntime::new(
-            Arc::clone(&self.workspace),
-            self.agent_runtime.store(),
-            agents.clone(),
-        ));
+        self.agent_runtime = Arc::new(
+            AgentRuntime::new(
+                Arc::clone(&self.workspace),
+                self.agent_runtime.store(),
+                agents.clone(),
+            )
+            .with_team_store(Arc::clone(&self.teams)),
+        );
         self.agents = Arc::new(agents);
         self
     }

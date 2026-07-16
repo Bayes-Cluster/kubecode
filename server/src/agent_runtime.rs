@@ -15,7 +15,7 @@ use agent_client_protocol::schema::v1::{
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
-use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
+use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -28,6 +28,7 @@ use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
     PermissionMode, RunStatus, StoreError,
 };
+use crate::teams::TeamStore;
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Error)]
@@ -74,6 +75,7 @@ pub struct AgentRuntime {
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
+    teams: Option<Arc<TeamStore>>,
 }
 
 #[derive(Clone)]
@@ -115,6 +117,84 @@ impl AgentRuntime {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
+            teams: None,
+        }
+    }
+
+    pub fn with_team_store(mut self, teams: Arc<TeamStore>) -> Self {
+        self.teams = Some(teams);
+        self
+    }
+
+    pub fn team_store(&self) -> Option<Arc<TeamStore>> {
+        self.teams.clone()
+    }
+
+    pub fn workspace_service(&self) -> Arc<WorkspaceService> {
+        Arc::clone(&self.workspace)
+    }
+
+    pub fn agent_available(&self, agent_id: AgentId) -> bool {
+        self.agents
+            .get(&agent_id)
+            .is_some_and(|agent| agent.available)
+    }
+
+    pub fn wake_team_leader(&self, team_id: &str) -> Result<Option<AgentRun>, RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(None);
+        };
+        let team = teams
+            .get_team(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let leader = teams
+            .get_member(&team.leader_member_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let messages = teams
+            .unread_messages(&leader.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if messages.is_empty() {
+            return Ok(None);
+        }
+        let summary = messages
+            .iter()
+            .map(|message| {
+                format!(
+                    "- {:?} from member {}: {}",
+                    message.kind, message.from_member_id, message.body
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let run = match self.start(StartAgentRun {
+            conversation_id: leader.conversation_id,
+            project_id: team.project_id,
+            message: format!(
+                "Kubecode Team mailbox has new updates. Review them, decide next actions, and continue coordinating the Team.\n{summary}"
+            ),
+        }) {
+            Ok(run) => run,
+            Err(RuntimeError::Store(StoreError::ActiveRun(_))) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        teams
+            .mark_messages_read(&leader.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        Ok(Some(run))
+    }
+
+    fn wake_team_leader_for_conversation(&self, conversation_id: &str) {
+        let Some(teams) = self.team_store() else {
+            return;
+        };
+        let Ok(Some(team)) = teams.team_for_conversation(conversation_id) else {
+            return;
+        };
+        let Ok(leader) = teams.get_member(&team.leader_member_id) else {
+            return;
+        };
+        if leader.conversation_id == conversation_id {
+            let _ = self.wake_team_leader(&team.id);
         }
     }
 
@@ -999,7 +1079,7 @@ async fn run_acp_session(
                 &initialization.agent_capabilities,
             );
 
-            let session_id = if let Some(session_id) = provider_session_id {
+            let (session_id, _team_session) = if let Some(session_id) = provider_session_id {
                 if hydrate_provider_history && initialization.agent_capabilities.load_session {
                     let response = connection
                         .send_request(LoadSessionRequest::new(session_id.clone(), cwd.clone()))
@@ -1011,7 +1091,7 @@ async fn run_acp_session(
                         "session_loaded",
                         response,
                     );
-                    session_id.into()
+                    (session_id.into(), None)
                 } else {
                     let resumed = if initialization
                     .agent_capabilities
@@ -1039,7 +1119,7 @@ async fn run_acp_session(
                         false
                     };
                     if resumed {
-                        session_id.into()
+                        (session_id.into(), None)
                     } else {
                         match connection
                             .send_request(LoadSessionRequest::new(
@@ -1056,17 +1136,22 @@ async fn run_acp_session(
                                     "session_loaded",
                                     response,
                                 );
-                                session_id.into()
+                                (session_id.into(), None)
                             }
                             Err(_) => {
-                                create_provider_session(&connection, &store, &conversation_id, cwd)
-                                    .await?
+                                create_provider_session(
+                                    &connection,
+                                    &runtime,
+                                    &conversation_id,
+                                    cwd,
+                                )
+                                .await?
                             }
                         }
                     }
                 }
             } else {
-                create_provider_session(&connection, &store, &conversation_id, cwd).await?
+                create_provider_session(&connection, &runtime, &conversation_id, cwd).await?
             };
             store
                 .set_provider_session(&conversation_id, &session_id.to_string())
@@ -1157,6 +1242,7 @@ async fn run_acp_session(
                     &json!({"run_id":command.run.id, "status":status}),
                 );
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
+                runtime.wake_team_leader_for_conversation(&conversation_id);
             }
             Ok(())
         })
@@ -1167,17 +1253,46 @@ async fn run_acp_session(
 
 async fn create_provider_session(
     connection: &ConnectionTo<Agent>,
-    store: &AgentStore,
+    runtime: &AgentRuntime,
     conversation_id: &str,
     cwd: PathBuf,
-) -> Result<agent_client_protocol::schema::v1::SessionId, agent_client_protocol::Error> {
+) -> Result<
+    (
+        agent_client_protocol::schema::v1::SessionId,
+        Option<ActiveSession<'static, Agent>>,
+    ),
+    agent_client_protocol::Error,
+> {
+    if let Some(mcp_server) = crate::team_mcp::build_team_mcp(runtime.clone(), conversation_id)
+        .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?
+    {
+        let active_session = connection
+            .build_session(&cwd)
+            .with_mcp_server(mcp_server)?
+            .block_task()
+            .start_session()
+            .await?;
+        let session_id = active_session.session_id().clone();
+        persist_serialized_session_event(
+            &runtime.store,
+            conversation_id,
+            "session_created_state",
+            active_session.response(),
+        );
+        return Ok((session_id, Some(active_session)));
+    }
     let response = connection
         .send_request(NewSessionRequest::new(cwd))
         .block_task()
         .await?;
     let session_id = response.session_id.clone();
-    persist_serialized_session_event(store, conversation_id, "session_created_state", response);
-    Ok(session_id)
+    persist_serialized_session_event(
+        &runtime.store,
+        conversation_id,
+        "session_created_state",
+        response,
+    );
+    Ok((session_id, None))
 }
 
 fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent, RuntimeError> {

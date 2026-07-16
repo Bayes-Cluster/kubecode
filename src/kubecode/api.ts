@@ -57,6 +57,55 @@ export type Conversation = {
   workspace_path: string | null
   recreated_context: boolean
 }
+export type TeamWorkspace = 'shared' | 'worktree'
+export type Team = {
+  id: string
+  project_id: string
+  leader_member_id: string
+  agent_session_id: string
+  title: string
+  status: 'active' | 'completed' | 'archived'
+  workspace: TeamWorkspace
+  workspace_path: string | null
+  created_at: string
+  updated_at: string
+}
+export type TeamMember = {
+  id: string
+  team_id: string
+  conversation_id: string
+  name: string
+  role: 'leader' | 'teammate'
+  status: 'starting' | 'idle' | 'working' | 'waiting_input' | 'failed' | 'stopped'
+  workspace_mode: 'shared' | 'isolated'
+  base_tree: string | null
+  created_at: string
+  updated_at: string
+}
+export type TeamTask = {
+  id: string
+  team_id: string
+  creator_member_id: string
+  assignee_member_id: string | null
+  title: string
+  description: string
+  status: string
+  requires_plan_approval: boolean
+  mutates_files: boolean
+  result: string | null
+  verification: string | null
+  dependencies: string[]
+  owned_paths: string[]
+  created_at: string
+  updated_at: string
+}
+export type TeamSnapshot = {
+  team: Team
+  leader_conversation: Conversation
+  conversations: Conversation[]
+  members: TeamMember[]
+  tasks: TeamTask[]
+}
 export type RunStatus =
   | 'running'
   | 'waiting_permission'
@@ -307,6 +356,39 @@ export class KubecodeApi {
         title: title || undefined,
         workspace_mode: workspaceMode === 'worktree' ? workspaceMode : undefined,
       }),
+    })
+  }
+
+  listTeams(projectId: string): Promise<TeamSnapshot[]> {
+    return this.request(`${this.projectPath(projectId)}/teams`)
+  }
+
+  createTeam(
+    projectId: string,
+    agentId: AgentId,
+    leaderName: string,
+    title?: string,
+    workspace: TeamWorkspace = 'shared',
+  ): Promise<TeamSnapshot> {
+    return this.request(`${this.projectPath(projectId)}/teams`, {
+      method: 'POST',
+      body: JSON.stringify({
+        agent_id: agentId,
+        leader_name: leaderName,
+        title: title || undefined,
+        workspace,
+      }),
+    })
+  }
+
+  promoteToTeam(
+    conversationId: string,
+    leaderName: string,
+    title?: string,
+  ): Promise<TeamSnapshot> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/promote-to-team`, {
+      method: 'POST',
+      body: JSON.stringify({ leader_name: leaderName, title: title || undefined }),
     })
   }
 

@@ -107,6 +107,27 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('creates a Team with an explicit Leader and workspace', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ team: { id: 'team-1' } })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.createTeam('project-1', 'codex', 'Lead', 'Investigate', 'worktree')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/teams',
+      expect.objectContaining({
+        body: JSON.stringify({
+          agent_id: 'codex',
+          leader_name: 'Lead',
+          title: 'Investigate',
+          workspace: 'worktree',
+        }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('previews and resolves the protected Workspaces migration', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

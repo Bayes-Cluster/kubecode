@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input'
 import { createTranslator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import type { Conversation, KubecodeApi } from './api'
+import type { Conversation, KubecodeApi, TeamSnapshot } from './api'
 import {
   buildSessionSections,
   readSessionListPreferences,
@@ -48,6 +48,7 @@ type SessionSidebarListProps = {
   onError: (cause: unknown) => void
   onSelect: (conversationId: string) => void
   t: Translator
+  teams?: TeamSnapshot[]
 }
 
 export function SessionSidebarList({
@@ -60,6 +61,7 @@ export function SessionSidebarList({
   onError,
   onSelect,
   t,
+  teams = [],
 }: SessionSidebarListProps) {
   const [preferences, setPreferences] = useState<SessionListPreferences>(() => (
     readSessionListPreferences(localStorage)
@@ -72,6 +74,12 @@ export function SessionSidebarList({
     () => new Map(conversations.map((conversation) => [conversation.id, conversation])),
     [conversations],
   )
+  const teamByConversation = useMemo(() => new Map(
+    teams.flatMap((team) => team.members.map((member) => [member.conversation_id, {
+      member,
+      team: team.team,
+    }] as const)),
+  ), [teams])
 
   useEffect(() => writeSessionListPreferences(localStorage, preferences), [preferences])
 
@@ -142,6 +150,14 @@ export function SessionSidebarList({
                   </span>
                   <span className="kubecode-session-row-copy">
                     <span>{conversation.title || t('kubecode.untitledSession')}</span>
+                    {teamByConversation.has(conversation.id) && (
+                      <small>
+                        <GitFork />
+                        {teamByConversation.get(conversation.id)?.member.role === 'leader'
+                          ? t('kubecode.teamLeader')
+                          : t('kubecode.teamTeammate')}
+                      </small>
+                    )}
                     {conversation.relationship && (
                       <small>
                         <GitFork />

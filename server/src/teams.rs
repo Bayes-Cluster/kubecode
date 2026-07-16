@@ -317,6 +317,31 @@ impl TeamStore {
             .ok_or_else(|| TeamError::TeamNotFound(team_id.to_owned()))
     }
 
+    pub fn list_teams(&self, project_id: &str) -> Result<Vec<Team>, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, project_id, leader_member_id, agent_session_id, title, status,
+                    workspace, workspace_path, created_at, updated_at
+             FROM teams WHERE project_id = ?1 ORDER BY updated_at DESC, id",
+        )?;
+        statement
+            .query_map([project_id], team_from_row)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TeamError::from)
+    }
+
+    pub fn delete_team(&self, team_id: &str) -> Result<(), TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute("DELETE FROM teams WHERE id = ?1", [team_id])?;
+        if changed == 0 {
+            return Err(TeamError::TeamNotFound(team_id.to_owned()));
+        }
+        Ok(())
+    }
+
     pub fn team_for_conversation(&self, conversation_id: &str) -> Result<Option<Team>, TeamError> {
         self.database
             .lock()

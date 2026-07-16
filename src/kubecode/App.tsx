@@ -66,6 +66,7 @@ import type {
   ProviderSessionInfo,
   RunStatus,
   TerminalInfo,
+  TeamSnapshot,
   WorkspaceEvent,
 } from './api'
 import { TerminalWorkspace } from './TerminalWorkspace'
@@ -98,6 +99,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
   const [terminalsLoadedForProjectId, setTerminalsLoadedForProjectId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [teams, setTeams] = useState<TeamSnapshot[]>([])
   const [allConversations, setAllConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [projectDialog, setProjectDialog] = useState(false)
@@ -131,6 +133,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const activeProjectIdRef = useRef(projectId)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
+  const activeTeam = teams.find((team) => (
+    team.members.some((member) => member.conversation_id === conversationId)
+  )) ?? null
   const sessionCatalog = useMemo(
     () => mergeConversations(allConversations, conversations),
     [allConversations, conversations],
@@ -220,12 +225,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => {
     if (!projectId) return
     let current = true
-    Promise.all([api.listTerminals(projectId), api.listConversations(projectId)])
-      .then(([nextTerminals, nextConversations]) => {
+    const nextTeams = typeof api.listTeams === 'function' ? api.listTeams(projectId) : Promise.resolve([])
+    Promise.all([api.listTerminals(projectId), api.listConversations(projectId), nextTeams])
+      .then(([nextTerminals, nextConversations, projectTeams]) => {
         if (!current) return
         setTerminals(nextTerminals)
         setTerminalsLoadedForProjectId(projectId)
         setConversations(nextConversations)
+        setTeams(projectTeams)
         setAllConversations((current) => mergeConversations(current, nextConversations))
         setConversationId((selected) => (
           nextConversations.some((item) => item.id === selected)
@@ -236,6 +243,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
   }, [api, projectId, t])
+
+  useEffect(() => {
+    if (!projectId || teams.length === 0) return
+    const timer = window.setInterval(() => {
+      void api.listTeams(projectId).then(setTeams).catch(() => undefined)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [api, projectId, teams.length])
 
   useEffect(() => {
     if (!projectId) return
@@ -309,6 +324,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const selectProject = (nextProjectId: string) => {
     setConversationId(null)
     setConversations([])
+    setTeams([])
     setTerminals([])
     setTerminalsLoadedForProjectId(null)
     applyProjectLayout(nextProjectId)
@@ -328,6 +344,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         return next
       })
       setConversations([])
+      setTeams([])
       setAllConversations((current) => current.filter((item) => item.project_id !== project.id))
       setConversationId(null)
       setTerminals([])
@@ -551,6 +568,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
                 onSelect={setConversationId}
                 t={t}
+                teams={teams}
               />
             </aside>
             <ResizeHandle onResize={resizeSessionSidebar} />
@@ -568,9 +586,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               projectId={projectId}
               onConversationRemoved={handleConversationRemoved}
               onConversationUpdated={handleConversationUpdated}
+              onTeamCreated={(team) => setTeams((current) => [
+                ...current.filter((item) => item.team.id !== team.team.id),
+                team,
+              ])}
               t={t}
+              team={activeTeam}
+              onSelectTeamMember={setConversationId}
               workspaceEvents={workspaceEvents}
-              workspacesEnabled={project?.workspaces_enabled}
               key={conversationId ?? projectId ?? 'no-project'}
             />
             {contextOpen && (
@@ -677,6 +700,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         projectId={projectId}
         onOpenChange={setSessionDialog}
         onSession={handleConversationCreated}
+        onTeam={(team) => {
+          setTeams((current) => [...current.filter((item) => item.team.id !== team.team.id), team])
+          handleConversationCreated(team.leader_conversation)
+        }}
         t={t}
       />
         <KubecodeSettingsDialog
@@ -843,6 +870,7 @@ function NewSessionDialog({
   projectId,
   onOpenChange,
   onSession,
+  onTeam,
   t,
 }: {
   agents: AgentDescriptor[]
@@ -852,12 +880,14 @@ function NewSessionDialog({
   projectId: string | null
   onOpenChange: (open: boolean) => void
   onSession: (conversation: Conversation) => void
+  onTeam: (team: TeamSnapshot) => void
   t: Translator
 }) {
   const availableAgent = agents.find((agent) => agent.available)
   const [agentId, setAgentId] = useState<AgentId>(availableAgent?.id ?? 'codex')
   const [title, setTitle] = useState('')
   const [mode, setMode] = useState<'new' | 'import'>('new')
+  const [sessionKind, setSessionKind] = useState<'solo' | 'team'>('solo')
   const [executionMode, setExecutionMode] = useState<'shared' | 'worktree'>('shared')
   const [providerSessions, setProviderSessions] = useState<ProviderSessionInfo[]>([])
   const [providerSessionId, setProviderSessionId] = useState<string | null>(null)
@@ -904,6 +934,23 @@ function NewSessionDialog({
     setCreating(true)
     setCreateError(null)
     try {
+      if (mode === 'new' && sessionKind === 'team') {
+        const team = await api.createTeam(
+          projectId,
+          selectedAgentId,
+          agentName(selectedAgentId),
+          title.trim() || undefined,
+          executionMode,
+        )
+        trackEvent('kubecode_team_created', {
+          leader_agent_id: selectedAgentId,
+          execution_mode: executionMode,
+        })
+        setTitle('')
+        onTeam(team)
+        onOpenChange(false)
+        return
+      }
       const providerSession = providerSessions.find((item) => item.session_id === providerSessionId)
       const session = await api.createConversation(
         projectId,
@@ -944,6 +991,16 @@ function NewSessionDialog({
               {t('kubecode.importAgentSession')}
             </Button>
           </div>
+          {mode === 'new' && (
+            <div className="kubecode-mode-switch" role="group" aria-label={t('kubecode.sessionType')}>
+              <Button data-active={sessionKind === 'solo'} size="sm" variant="ghost" onClick={() => setSessionKind('solo')}>
+                {t('kubecode.soloSession')}
+              </Button>
+              <Button data-active={sessionKind === 'team'} size="sm" variant="ghost" onClick={() => setSessionKind('team')}>
+                {t('kubecode.teamSession')}
+              </Button>
+            </div>
+          )}
           <label className="kubecode-new-session-field">
             <span>{t('kubecode.agent')}</span>
             <Select value={selectedAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
