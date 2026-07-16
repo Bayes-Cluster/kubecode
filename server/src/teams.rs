@@ -18,6 +18,8 @@ pub enum TeamError {
     TaskNotFound(String),
     #[error("only the team leader may perform this action")]
     LeaderRequired,
+    #[error("the team leader cannot be removed")]
+    LeaderCannotBeRemoved,
     #[error("team member does not belong to this team")]
     WrongTeam,
     #[error("team member name already exists: {0}")]
@@ -424,6 +426,59 @@ impl TeamStore {
             )
             .optional()?
             .ok_or_else(|| TeamError::MemberNotFound(member_id.to_owned()))
+    }
+
+    pub fn remove_teammate(
+        &self,
+        team_id: &str,
+        caller_member_id: &str,
+        teammate_id: &str,
+    ) -> Result<(), TeamError> {
+        let mut database = self.database.lock().expect("team database mutex poisoned");
+        let transaction = database.transaction()?;
+        require_leader(&transaction, team_id, caller_member_id)?;
+        if member_role(&transaction, team_id, teammate_id)? == TeamRole::Leader {
+            return Err(TeamError::LeaderCannotBeRemoved);
+        }
+        transaction.execute(
+            "DELETE FROM team_messages WHERE from_member_id = ?1 OR to_member_id = ?1",
+            [teammate_id],
+        )?;
+        transaction.execute(
+            "UPDATE team_tasks
+             SET creator_member_id = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE creator_member_id = ?1",
+            params![teammate_id, caller_member_id],
+        )?;
+        transaction.execute(
+            "UPDATE team_tasks
+             SET assignee_member_id = NULL,
+                 status = CASE
+                   WHEN status IN ('in_progress', 'plan_review', 'result_review',
+                                   'changes_requested', 'failed') THEN 'pending'
+                   ELSE status
+                 END,
+                 result = CASE
+                   WHEN status IN ('in_progress', 'plan_review', 'result_review',
+                                   'changes_requested', 'failed') THEN NULL
+                   ELSE result
+                 END,
+                 verification = CASE
+                   WHEN status IN ('in_progress', 'plan_review', 'result_review',
+                                   'changes_requested', 'failed') THEN NULL
+                   ELSE verification
+                 END,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE assignee_member_id = ?1",
+            [teammate_id],
+        )?;
+        transaction.execute("DELETE FROM team_members WHERE id = ?1", [teammate_id])?;
+        transaction.execute(
+            "UPDATE teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            [team_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn create_task(&self, input: NewTeamTask<'_>) -> Result<TeamTask, TeamError> {

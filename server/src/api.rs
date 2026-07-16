@@ -405,14 +405,38 @@ async fn remove_conversation(
     Path(conversation_id): Path<String>,
     Query(query): Query<RemoveConversationQuery>,
 ) -> Result<StatusCode, ApiError> {
+    state
+        .agent_runtime
+        .disconnect_conversation(&conversation_id)
+        .await?;
     if let Some(team) = state.teams.team_for_conversation(&conversation_id)? {
         let member = state
             .teams
             .list_members(&team.id)?
             .into_iter()
-            .find(|member| member.conversation_id == conversation_id);
-        if member.is_some_and(|member| member.id == team.leader_member_id) {
+            .find(|member| member.conversation_id == conversation_id)
+            .ok_or_else(|| TeamError::MemberNotFound(conversation_id.clone()))?;
+        if member.id == team.leader_member_id {
             state.teams.delete_team(&team.id)?;
+        } else {
+            if query.scope.as_deref() == Some("provider") {
+                state
+                    .agent_runtime
+                    .delete_provider_session(&conversation_id)
+                    .await?;
+                state
+                    .teams
+                    .remove_teammate(&team.id, &team.leader_member_id, &member.id)?;
+            } else {
+                state
+                    .teams
+                    .remove_teammate(&team.id, &team.leader_member_id, &member.id)?;
+                state
+                    .agent_runtime
+                    .store()
+                    .delete_conversation(&conversation_id)?;
+            }
+            return Ok(StatusCode::NO_CONTENT);
         }
     }
     if query.scope.as_deref() == Some("provider") {

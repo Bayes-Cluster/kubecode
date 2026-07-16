@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0178.
+active production boundary is defined by ADRs 0161–0179.
 
 ## Runtime topology
 
@@ -87,7 +87,9 @@ controls behind one summary button in its compact lower action row. Its
 searchable add palette lists the current session's dynamic
 `available_commands` and reuses the project file tree to insert a relative
 `@path` reference; Kubecode does not invent a separate cross-Agent skill
-registry or copy file contents into the prompt.
+registry or copy file contents into the prompt. Long prompts stop growing at a
+bounded editor height and scroll inside the Composer instead of resizing the
+Agent workspace.
 
 Team Sessions start with one fixed Leader and dynamically add teammate Agent
 Chats through the `kubecode-team` MCP server. Agents that advertise HTTP receive
@@ -98,6 +100,12 @@ unblocked tasks, message one another, and submit results into the Leader
 mailbox. An idle Leader is automatically continued when a result arrives.
 Provider-native subagents remain nested under their owning member and are not
 promoted into Team membership.
+
+Teammate creation may apply an Agent-native ACP mode and dynamic configuration
+map after the member Session is initialized. Any rejected option rolls back the
+member and its local conversation. The Leader can stop/remove a teammate through
+Team MCP; removal disconnects the ACP actor, releases active task assignments,
+and removes local Team/Session metadata without deleting Project files.
 
 Shared Team members execute at the Team root. Explicit isolation creates a
 separate Agent Session and worktree while recording the base tree for Leader
@@ -110,7 +118,9 @@ Team identity is read from durable Team and member records on every Project
 load. A stale record whose conversation was removed is isolated rather than
 failing the complete Team collection, and removing a Leader also removes its
 coordination record. Recreated ACP actors attach the current process's Team MCP
-URL to provider load/resume requests.
+URL to provider load/resume requests. The ordinary Session deletion path is
+Team-aware, so removing a teammate cannot leave a stale member or hide the
+Leader.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

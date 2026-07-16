@@ -213,7 +213,7 @@ done"#,
 }
 
 #[tokio::test]
-async fn changes_native_config_while_a_prompt_is_running() {
+async fn changes_native_config_and_disconnects_while_a_prompt_is_running() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
     let database = root.join(".state/kubecode/kubecode.sqlite3");
@@ -291,7 +291,25 @@ done"#,
         event.kind == "current_mode" && event.payload["currentModeId"] == "acceptEdits"
     }));
 
-    assert!(runtime.cancel(&run.id));
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runtime.disconnect_conversation(&conversation.id),
+    )
+    .await
+    .expect("disconnect must not wait for prompt completion")
+    .expect("disconnect session");
+    let stopped = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run stops after disconnect");
+    assert_eq!(stopped.status, RunStatus::Cancelled);
 }
 
 #[tokio::test]

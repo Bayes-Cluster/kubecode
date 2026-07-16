@@ -1280,6 +1280,7 @@ async fn run_acp_session(
                     .block_task();
                 tokio::pin!(prompt);
                 let mut controls_open = true;
+                let mut shutdown_response = None;
                 let outcome = loop {
                     tokio::select! {
                         response = &mut prompt => {
@@ -1292,6 +1293,11 @@ async fn run_acp_session(
                         }
                         next = receiver.recv(), if controls_open => {
                             if let Some(next) = next {
+                                if let SessionCommand::Shutdown { response } = next {
+                                    connection.send_notification(CancelNotification::new(session_id.clone()))?;
+                                    shutdown_response = Some(response);
+                                    break AcpRunOutcome::Cancelled;
+                                }
                                 if let Some(queued_prompt) = process_session_control(
                                     &connection,
                                     &session_id,
@@ -1330,6 +1336,10 @@ async fn run_acp_session(
                 );
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
                 runtime.wake_team_leader_for_conversation(&conversation_id);
+                if let Some(response) = shutdown_response {
+                    let _ = response.send(());
+                    break;
+                }
             }
             Ok(())
         })

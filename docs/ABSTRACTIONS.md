@@ -50,6 +50,13 @@ subagents. ACP transport capabilities choose how it is attached. HTTP-capable
 agents receive a tokenized streamable HTTP endpoint on new, load, and resume;
 other agents retain the in-process bridge for new sessions.
 
+Teammate spawn accepts opaque Agent-native ACP mode/configuration IDs rather
+than a Kubecode model abstraction. Teammate removal is a Leader-only lifecycle
+transition: the ACP actor is disconnected, active assignments return to
+pending, and member/local conversation metadata is removed while Project files
+and provider history remain untouched. Deleting the same conversation through
+the Session API invokes this Team-aware transition.
+
 ## Turn checkpoint
 
 A turn checkpoint stores optional before/after Git tree IDs for one run. Trees

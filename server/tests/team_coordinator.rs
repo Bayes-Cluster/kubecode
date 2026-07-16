@@ -186,3 +186,58 @@ fn members_can_message_each_other_without_changing_final_authority() {
         fixture.leader_id
     );
 }
+
+#[test]
+fn leader_removes_a_teammate_and_releases_its_task() {
+    let fixture = fixture();
+    let member = fixture
+        .coordinator
+        .spawn_teammate(SpawnTeammate {
+            team_id: &fixture.team_id,
+            caller_member_id: &fixture.leader_id,
+            agent_id: AgentId::OpenCode,
+            name: "Backend Reviewer",
+            workspace_mode: MemberWorkspaceMode::Shared,
+        })
+        .expect("spawn teammate");
+    let task = fixture
+        .teams
+        .create_task(NewTeamTask {
+            team_id: &fixture.team_id,
+            creator_member_id: &fixture.leader_id,
+            title: "Review backend",
+            description: "Review the backend implementation",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("task");
+    fixture
+        .teams
+        .claim_task(&task.id, &member.id)
+        .expect("claim task");
+
+    fixture
+        .coordinator
+        .remove_teammate(&fixture.team_id, &fixture.leader_id, &member.id)
+        .expect("remove teammate");
+
+    assert!(matches!(
+        fixture.teams.get_member(&member.id),
+        Err(TeamError::MemberNotFound(_))
+    ));
+    assert!(
+        fixture
+            .coordinator
+            .agent_store()
+            .get_conversation(&member.conversation_id)
+            .is_err()
+    );
+    let released = fixture.teams.get_task(&task.id).expect("released task");
+    assert_eq!(
+        released.status,
+        kubecode_server::teams::TeamTaskStatus::Pending
+    );
+    assert_eq!(released.assignee_member_id, None);
+}

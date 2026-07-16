@@ -83,6 +83,38 @@ impl TeamCoordinator {
         member.map_err(CoordinatorError::from)
     }
 
+    pub fn removable_teammate(
+        &self,
+        team_id: &str,
+        caller_member_id: &str,
+        teammate_id: &str,
+    ) -> Result<TeamMember, CoordinatorError> {
+        let team = self.teams.get_team(team_id)?;
+        let caller = self.teams.get_member(caller_member_id)?;
+        ensure_leader(&team, &caller)?;
+        let teammate = self.teams.get_member(teammate_id)?;
+        if teammate.team_id != team.id {
+            return Err(TeamError::WrongTeam.into());
+        }
+        if teammate.role == TeamRole::Leader {
+            return Err(TeamError::LeaderCannotBeRemoved.into());
+        }
+        Ok(teammate)
+    }
+
+    pub fn remove_teammate(
+        &self,
+        team_id: &str,
+        caller_member_id: &str,
+        teammate_id: &str,
+    ) -> Result<TeamMember, CoordinatorError> {
+        let teammate = self.removable_teammate(team_id, caller_member_id, teammate_id)?;
+        self.teams
+            .remove_teammate(team_id, caller_member_id, teammate_id)?;
+        self.agents.delete_conversation(&teammate.conversation_id)?;
+        Ok(teammate)
+    }
+
     pub fn submit_result(
         &self,
         task_id: &str,

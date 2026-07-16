@@ -106,4 +106,26 @@ describe('AiPanelComposer', () => {
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Agent settings' }))
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Send message' }))
   })
+
+  it('keeps long prompts inside a bounded scrolling editor', () => {
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        controls={<button type="button">Agent settings</button>}
+        entries={[]}
+        input={Array.from({ length: 20 }, (_, index) => `Line ${index + 1}`).join('\n')}
+        inputRef={createRef<HTMLDivElement>()}
+        isActive={false}
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('agent-input')).toHaveStyle({
+      maxHeight: '96px',
+      overflowY: 'auto',
+    })
+  })
 })

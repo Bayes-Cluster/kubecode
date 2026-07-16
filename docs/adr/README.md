@@ -23,3 +23,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0176](0176-team-members-and-nested-agent-sessions.md) | Team members and nested Agent Sessions |
 | [0177](0177-leader-governed-team-sessions-over-acp-mcp.md) | Leader-governed Team Sessions over ACP and MCP |
 | [0178](0178-capability-aware-team-mcp-transport.md) | Capability-aware Team MCP transport |
+| [0179](0179-agent-native-teammate-configuration-and-lifecycle.md) | Agent-native teammate configuration and lifecycle |

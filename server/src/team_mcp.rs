@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use agent_client_protocol::mcp_server::McpServer;
@@ -18,7 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tower::ServiceExt;
 
-use crate::agent_runtime::{AgentRuntime, RuntimeError};
+use crate::agent_runtime::{AgentRuntime, RuntimeError, SessionConfigInput};
 use crate::agents::AgentId;
 use crate::api::AppState;
 use crate::team_coordinator::{SpawnTeammate, TeamCoordinator};
@@ -56,6 +57,23 @@ struct SpawnInput {
     name: String,
     #[serde(default = "shared_workspace")]
     workspace_mode: String,
+    /// Optional native ACP session mode ID for this teammate.
+    mode: Option<String>,
+    /// Agent-native ACP config option IDs and values, such as {"model":"zhipu/glm-5.2"}.
+    #[serde(default)]
+    session_options: BTreeMap<String, SpawnConfigValue>,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum SpawnConfigValue {
+    Boolean(bool),
+    ValueId(String),
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RemoveTeammateInput {
+    teammate_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -101,7 +119,7 @@ struct SendMessageInput {
 #[tool_router]
 impl TeamMcpServer {
     #[tool(
-        description = "Leader only: create a teammate backed by Codex, Claude Code, or OpenCode."
+        description = "Leader only: create a teammate backed by Codex, Claude Code, or OpenCode. Use mode and session_options to apply the agent's native ACP settings after startup; for example session_options {\"model\":\"zhipu/glm-5.2\"}. Config IDs and values are agent-specific."
     )]
     async fn team_spawn_teammate(
         &self,
@@ -124,12 +142,50 @@ impl TeamMcpServer {
                 workspace_mode,
             })
             .map_err(mcp_error)?;
+        if let Err(error) = self
+            .configure_spawned_teammate(&member, input.mode, input.session_options)
+            .await
+        {
+            let _ = self
+                .context
+                .runtime
+                .disconnect_conversation(&member.conversation_id)
+                .await;
+            let _ = coordinator(&self.context).remove_teammate(
+                &self.context.member.team_id,
+                &self.context.member.id,
+                &member.id,
+            );
+            return Err(mcp_error(error));
+        }
+        json_output(&member)
+    }
+
+    #[tool(
+        description = "Leader only: stop a teammate's Agent process, remove it from this Team, and release any assigned task back to pending. This does not delete project files."
+    )]
+    async fn team_remove_teammate(
+        &self,
+        Parameters(input): Parameters<RemoveTeammateInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let team_id = &self.context.member.team_id;
+        let caller_id = &self.context.member.id;
+        let teammate = coordinator(&self.context)
+            .removable_teammate(team_id, caller_id, &input.teammate_id)
+            .map_err(mcp_error)?;
         self.context
             .runtime
-            .initialize_conversation(&member.conversation_id)
+            .disconnect_conversation(&teammate.conversation_id)
             .await
             .map_err(mcp_error)?;
-        json_output(&member)
+        coordinator(&self.context)
+            .remove_teammate(team_id, caller_id, &teammate.id)
+            .map_err(mcp_error)?;
+        json_output(&serde_json::json!({
+            "removed": true,
+            "teammate_id": teammate.id,
+            "name": teammate.name,
+        }))
     }
 
     #[tool(
@@ -251,6 +307,42 @@ impl TeamMcpServer {
             .mark_messages_read(&self.context.member.id)
             .map_err(mcp_error)?;
         json_output(&messages)
+    }
+}
+
+impl TeamMcpServer {
+    async fn configure_spawned_teammate(
+        &self,
+        member: &TeamMember,
+        mode: Option<String>,
+        session_options: BTreeMap<String, SpawnConfigValue>,
+    ) -> Result<(), RuntimeError> {
+        self.context
+            .runtime
+            .initialize_conversation(&member.conversation_id)
+            .await?;
+        if let Some(mode) = mode {
+            self.context
+                .runtime
+                .set_session_mode(&member.conversation_id, mode)
+                .await?;
+        }
+        for (config_id, value) in session_options {
+            self.context
+                .runtime
+                .set_session_config(&member.conversation_id, config_id, value.into())
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+impl From<SpawnConfigValue> for SessionConfigInput {
+    fn from(value: SpawnConfigValue) -> Self {
+        match value {
+            SpawnConfigValue::Boolean(value) => Self::Boolean(value),
+            SpawnConfigValue::ValueId(value) => Self::ValueId(value),
+        }
     }
 }
 

@@ -140,10 +140,10 @@ function ComposerInput({
       placeholderClassName={hasControls ? 'px-2 pb-1 pt-2 text-[13px] leading-5' : undefined}
       inputRef={inputRef}
       editorClassName={cn(
-        'max-h-[120px] overflow-y-auto overscroll-contain',
+        'min-h-0 max-h-24 overflow-y-auto overscroll-contain',
         hasControls && 'min-h-[34px] border-0 px-2 pb-1 pt-2 leading-5',
       )}
-      editorStyle={{ maxHeight: 120, overflowY: 'auto', overscrollBehavior: 'contain' }}
+      editorStyle={{ maxHeight: 96, overflowY: 'auto', overscrollBehavior: 'contain' }}
     />
   )
 }
@@ -561,7 +561,7 @@ export function AiPanelComposer({
       <div
         className={cn(
           hasControls
-            ? 'flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-2 shadow-xs'
+            ? 'flex max-h-28 items-center gap-1 overflow-hidden rounded-[24px] border border-border bg-background px-2.5 py-2 shadow-xs'
             : 'flex items-end gap-2',
         )}
         data-layout={hasControls ? 'single-row' : undefined}

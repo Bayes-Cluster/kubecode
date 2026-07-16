@@ -9,7 +9,7 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::AgentId;
 use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router};
-use kubecode_server::teams::TeamStore;
+use kubecode_server::teams::{MemberWorkspaceMode, NewTeammate, TeamStore};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -79,6 +79,45 @@ fn mcp_response_json(bytes: &[u8]) -> Value {
             .and_then(|data| serde_json::from_str(data).ok())
             .expect("MCP JSON or SSE data")
     })
+}
+
+async fn call_mcp_tool(
+    router: &Router,
+    path: &str,
+    session_id: &str,
+    id: u64,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(path)
+                .header(header::HOST, "127.0.0.1:9999")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header("mcp-session-id", session_id)
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments}
+                    })
+                    .to_string(),
+                ))
+                .expect("MCP tool request"),
+        )
+        .await
+        .expect("MCP tool response");
+    assert_eq!(response.status(), StatusCode::OK);
+    mcp_response_json(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("MCP tool body"),
+    )
 }
 
 #[tokio::test]
@@ -164,6 +203,66 @@ async fn reads_a_team_snapshot_by_id() {
 }
 
 #[tokio::test]
+async fn deleting_a_teammate_session_preserves_the_team_leader() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (status, created) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Leader"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let database_path = temp.path().join("srv/.state/kubecode/kubecode.sqlite3");
+    let agents = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let teammate_conversation = agents
+        .create_conversation(&project_id, AgentId::OpenCode, Some("Backend Reviewer"))
+        .expect("teammate conversation");
+    let teammate = teams
+        .add_teammate(NewTeammate {
+            team_id: created["team"]["id"].as_str().expect("team id"),
+            caller_member_id: created["team"]["leader_member_id"]
+                .as_str()
+                .expect("leader id"),
+            conversation_id: &teammate_conversation.id,
+            name: "Backend Reviewer",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+
+    let (status, _) = request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/sessions/{}", teammate.conversation_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, snapshot) = request(
+        &app,
+        Method::GET,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{}",
+            created["team"]["id"].as_str().unwrap()
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(snapshot["members"].as_array().expect("members").len(), 1);
+    assert_eq!(snapshot["members"][0]["role"], "leader");
+    assert_eq!(
+        snapshot["leader_conversation"]["id"],
+        created["leader_conversation"]["id"]
+    );
+}
+
+#[tokio::test]
 async fn an_orphaned_team_does_not_hide_persisted_team_leaders() {
     let (temp, app) = app();
     let project_id = create_project(&app, temp.path()).await;
@@ -239,6 +338,9 @@ while IFS= read -r line; do
       ;;
     *'"method":"session/resume"'*)
       printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{}}}}"
+      ;;
+    *'"method":"session/set_config_option"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"configOptions\":[{{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"zhipu/glm-5.2\",\"options\":[]}}]}}}}"
       ;;
   esac
 done"#,
@@ -407,6 +509,69 @@ done"#,
             .is_some_and(|tools| tools
                 .iter()
                 .any(|tool| tool["name"] == "team_spawn_teammate"))
+    );
+    let tools = tools_body["result"]["tools"].as_array().expect("tools");
+    let spawn = tools
+        .iter()
+        .find(|tool| tool["name"] == "team_spawn_teammate")
+        .expect("spawn tool");
+    assert!(spawn["inputSchema"]["properties"]["mode"].is_object());
+    assert!(spawn["inputSchema"]["properties"]["session_options"].is_object());
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool["name"] == "team_remove_teammate")
+    );
+
+    let spawned = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        3,
+        "team_spawn_teammate",
+        json!({
+            "agent_id": "opencode",
+            "name": "Backend Reviewer",
+            "workspace_mode": "shared",
+            "session_options": {"model": "zhipu/glm-5.2"}
+        }),
+    )
+    .await;
+    let teammate: Value = serde_json::from_str(
+        spawned["result"]["content"][0]["text"]
+            .as_str()
+            .expect("spawned teammate JSON"),
+    )
+    .expect("spawned teammate");
+    let teammate_id = teammate["id"].as_str().expect("teammate id");
+    let transcript_text = fs::read_to_string(&transcript_path).expect("updated ACP transcript");
+    assert!(transcript_text.contains("session/set_config_option"));
+    assert!(transcript_text.contains("zhipu/glm-5.2"));
+
+    let removed = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        4,
+        "team_remove_teammate",
+        json!({"teammate_id": teammate_id}),
+    )
+    .await;
+    assert_eq!(removed["result"]["isError"], false);
+    let (status, snapshot_after_remove) = request(
+        &router,
+        Method::GET,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{}",
+            snapshot["team"]["id"].as_str().unwrap()
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        snapshot_after_remove["members"].as_array().unwrap().len(),
+        1
     );
 
     state
