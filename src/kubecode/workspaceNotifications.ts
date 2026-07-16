@@ -21,3 +21,7 @@ export function shouldNotify(
   if (!preferences.enabled[category] || preferences.systemMode === 'off') return false
   return preferences.systemMode === 'always' || !windowFocused
 }
+
+export function notificationPermission(): NotificationPermission | 'unsupported' {
+  return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
+}

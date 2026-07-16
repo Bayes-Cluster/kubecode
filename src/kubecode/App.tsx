@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Bell,
   DotsThree,
   Folder,
   Gear,
@@ -67,6 +68,14 @@ import type {
   WorkspaceEvent,
 } from './api'
 import { TerminalWorkspace } from './TerminalWorkspace'
+import {
+  readKubecodeNotifications,
+  writeKubecodeNotifications,
+  type KubecodeNotifications,
+  type NotificationCategory,
+} from './notificationPreferences'
+import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
+import { notificationPermission } from './workspaceNotifications'
 import './kubecode.css'
 
 const browserApi = new KubecodeApi()
@@ -79,6 +88,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [allConversations, setAllConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
@@ -89,7 +99,12 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [error, setError] = useState<string | null>(null)
   const [connectionLost, setConnectionLost] = useState(false)
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
+  const [workspaceCursor, setWorkspaceCursor] = useState<number | null>(null)
   const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
+  const [notifications, setNotifications] = useState<KubecodeNotifications>(() => (
+    readKubecodeNotifications(localStorage)
+  ))
+  const [notificationOnboardingSuppressed, setNotificationOnboardingSuppressed] = useState(false)
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
@@ -98,8 +113,21 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   ))
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
+  const activeProjectIdRef = useRef(projectId)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
+  const sessionCatalog = useMemo(
+    () => mergeConversations(allConversations, conversations),
+    [allConversations, conversations],
+  )
+  const attentionSessions = useMemo(
+    () => sessionsRequiringInput(projectRuns, sessionCatalog),
+    [projectRuns, sessionCatalog],
+  )
+  const notificationOnboardingOpen = !notificationOnboardingSuppressed
+    && !notifications.onboardingDismissed
+    && notificationPermission() === 'default'
+    && workspaceEvents.some((event) => event.kind === 'run_started')
 
   useEffect(() => {
     applyKubecodeAppearance(document, appearance)
@@ -110,6 +138,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     systemTheme.addEventListener('change', applySystemTheme)
     return () => systemTheme.removeEventListener('change', applySystemTheme)
   }, [appearance])
+
+  useEffect(() => {
+    writeKubecodeNotifications(localStorage, notifications)
+  }, [notifications])
+
+  useEffect(() => {
+    activeProjectIdRef.current = projectId
+  }, [projectId])
 
   const applyProjectLayout = useCallback((nextProjectId: string) => {
     const layout = readProjectLayout(nextProjectId)
@@ -145,6 +181,28 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [api, applyProjectLayout, t])
 
   useEffect(() => {
+    let current = true
+    const sessions = typeof api.listSessions === 'function'
+      ? api.listSessions()
+      : Promise.resolve<Conversation[]>([])
+    const cursor = typeof api.workspaceEventCursor === 'function'
+      ? api.workspaceEventCursor()
+      : Promise.resolve(0)
+    void Promise.all([sessions, cursor])
+      .then(([nextConversations, nextCursor]) => {
+        if (!current) return
+        setAllConversations(nextConversations)
+        setWorkspaceCursor(nextCursor)
+      })
+      .catch((cause: unknown) => {
+        if (!current) return
+        setWorkspaceCursor(0)
+        setError(errorMessage(cause, t('kubecode.error')))
+      })
+    return () => { current = false }
+  }, [api, t])
+
+  useEffect(() => {
     if (!projectId) return
     let current = true
     Promise.all([api.listTerminals(projectId), api.listConversations(projectId)])
@@ -152,6 +210,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         if (!current) return
         setTerminals(nextTerminals)
         setConversations(nextConversations)
+        setAllConversations((current) => mergeConversations(current, nextConversations))
         setConversationId((selected) => (
           nextConversations.some((item) => item.id === selected)
             ? selected
@@ -175,43 +234,47 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [contextOpen, contextWidth, projectId, sessionSidebarOpen, sessionSidebarWidth, terminalHeight, terminalOpen])
 
   useEffect(() => {
-    if (typeof EventSource === 'undefined') return
-    const stream = new EventSource(api.workspaceEventStreamUrl())
+    if (typeof EventSource === 'undefined' || workspaceCursor === null) return
+    const stream = new EventSource(api.workspaceEventStreamUrl(workspaceCursor))
     const receive = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as WorkspaceEvent
       setWorkspaceEvents((current) => [...current, event].slice(-2048))
       setProjectRuns((current) => applyWorkspaceRunEvent(current, event))
-      if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)
-        && event.project_id === projectId && projectId) {
-        void api.listConversations(projectId).then(setConversations)
+      setAllConversations((current) => applyWorkspaceConversationEvent(current, event))
+      const activeProjectId = activeProjectIdRef.current
+      if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)) {
+        if (typeof api.listSessions === 'function') void api.listSessions().then(setAllConversations)
+        if (event.project_id === activeProjectId && activeProjectId) {
+          void api.listConversations(activeProjectId).then(setConversations)
+        }
       }
       if (isCleanTerminalExit(event)) {
         const terminalId = event.payload.terminal_id
         if (typeof terminalId === 'string') {
           void api.closeTerminal(terminalId)
             .then(() => trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' }))
-            .then(() => event.project_id === projectId && projectId
-              ? api.listTerminals(projectId).then(setTerminals)
+            .then(() => event.project_id === activeProjectId && activeProjectId
+              ? api.listTerminals(activeProjectId).then(setTerminals)
               : undefined)
             .catch((cause: unknown) => {
               setError(errorMessage(cause, t('kubecode.error')))
-              return event.project_id === projectId && projectId
-                ? api.listTerminals(projectId).then(setTerminals)
+              return event.project_id === activeProjectId && activeProjectId
+                ? api.listTerminals(activeProjectId).then(setTerminals)
                 : undefined
             })
         }
         return
       }
       if (['terminal_created', 'terminal_updated', 'terminal_exited', 'terminal_closed'].includes(event.kind)
-        && event.project_id === projectId && projectId) {
-        void api.listTerminals(projectId).then(setTerminals)
+        && event.project_id === activeProjectId && activeProjectId) {
+        void api.listTerminals(activeProjectId).then(setTerminals)
       }
     }
     stream.addEventListener('workspace_event', receive as EventListener)
     stream.onopen = () => setConnectionLost(false)
     stream.onerror = () => setConnectionLost(true)
     return () => stream.close()
-  }, [api, projectId, t])
+  }, [api, t, workspaceCursor])
 
   const resizeSessionSidebar = useCallback((delta: number) => {
     setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
@@ -247,6 +310,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         return next
       })
       setConversations([])
+      setAllConversations((current) => current.filter((item) => item.project_id !== project.id))
       setConversationId(null)
       setTerminals([])
       if (nextProjectId) applyProjectLayout(nextProjectId)
@@ -256,6 +320,40 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       setError(errorMessage(cause, t('kubecode.error')))
     }
   }
+
+  const openSession = useCallback((nextProjectId: string, nextConversationId: string) => {
+    if (nextProjectId !== projectId) {
+      applyProjectLayout(nextProjectId)
+      setTerminals([])
+      setConversations([])
+      setProjectId(nextProjectId)
+    }
+    setConversationId(nextConversationId)
+  }, [applyProjectLayout, projectId])
+
+  const requestNotificationPermission = useCallback(async () => {
+    if (typeof Notification === 'undefined') return
+    const permission = await Notification.requestPermission()
+    setNotifications((current) => ({ ...current, onboardingDismissed: true }))
+    setNotificationOnboardingSuppressed(true)
+    trackEvent('kubecode_notification_permission_requested', { result: permission })
+  }, [])
+
+  const dismissNotificationOnboarding = useCallback(() => {
+    setNotifications((current) => ({ ...current, onboardingDismissed: true }))
+    setNotificationOnboardingSuppressed(true)
+    trackEvent('kubecode_notification_onboarding_dismissed')
+  }, [])
+
+  const sendTestNotification = useCallback(() => {
+    if (notificationPermission() !== 'granted') return
+    new Notification(t('kubecode.notificationTestTitle'), {
+      body: t('kubecode.notificationTestBody'),
+      silent: notifications.sound.completion === 'none',
+      tag: 'kubecode:test',
+    })
+    trackEvent('kubecode_notification_tested')
+  }, [notifications.sound.completion, t])
 
   return (
     <main className="kubecode-app">
@@ -279,6 +377,35 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
             >
               <WarningCircle weight="fill" />
             </span>
+          )}
+          {attentionSessions.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label={t('kubecode.sessionsRequireInput', { count: attentionSessions.length })}
+                  className="kubecode-attention-trigger"
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Bell weight="fill" />
+                  <span>{attentionSessions.length}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="kubecode-attention-menu">
+                {attentionSessions.map((item) => (
+                  <DropdownMenuItem
+                    key={item.id}
+                    onSelect={() => openSession(item.project_id, item.id)}
+                  >
+                    <AiAgentIcon agent={item.agent_id} size={18} />
+                    <span>
+                      <strong>{item.title || t('kubecode.untitledSession')}</strong>
+                      <small>{projects.find((projectItem) => projectItem.id === item.project_id)?.name}</small>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
             <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
@@ -373,6 +500,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               locale={locale}
               onConversationCreated={(created) => {
                 setConversations((current) => upsertConversation(current, created))
+                setAllConversations((current) => upsertConversation(current, created))
                 setConversationId(created.id)
               }}
               projectId={projectId}
@@ -382,9 +510,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                   setConversationId((selected) => selected === removedId ? next.at(-1)?.id ?? null : selected)
                   return next
                 })
+                setAllConversations((current) => current.filter((item) => item.id !== removedId))
               }}
               onConversationUpdated={(updated) => {
                 setConversations((current) => current.map((item) => item.id === updated.id ? updated : item))
+                setAllConversations((current) => upsertConversation(current, updated))
               }}
               t={t}
               workspaceEvents={workspaceEvents}
@@ -433,6 +563,33 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         </div>
       </div>
 
+      <WorkspaceNotificationBridge
+        conversations={sessionCatalog}
+        copy={{
+          body: (category, projectName) => notificationBody(t, category, projectName),
+          untitledSession: t('kubecode.untitledSession'),
+        }}
+        events={workspaceEvents}
+        onOpenSession={openSession}
+        preferences={notifications}
+        projects={projects}
+      />
+      {notificationOnboardingOpen && (
+        <aside className="kubecode-notification-onboarding" role="status">
+          <Bell weight="fill" />
+          <div>
+            <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
+            <span>{t('kubecode.notificationOnboardingDescription')}</span>
+          </div>
+          <Button size="sm" onClick={() => void requestNotificationPermission()}>
+            {t('kubecode.enableNotifications')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
+            {t('kubecode.notNow')}
+          </Button>
+        </aside>
+      )}
+
       <ProjectDialog
         api={api}
         open={projectDialog}
@@ -451,6 +608,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         onOpenChange={setSessionDialog}
         onSession={(created) => {
           setConversations((current) => upsertConversation(current, created))
+          setAllConversations((current) => upsertConversation(current, created))
           setConversationId(created.id)
         }}
         t={t}
@@ -458,9 +616,13 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       <KubecodeSettingsDialog
         agents={agents}
         appearance={appearance}
+        notifications={notifications}
         open={settingsOpen}
         onAppearanceChange={setAppearance}
+        onNotificationsChange={setNotifications}
         onOpenChange={setSettingsOpen}
+        onRequestNotificationPermission={requestNotificationPermission}
+        onTestNotification={sendTestNotification}
         t={t}
       />
     </main>
@@ -469,6 +631,31 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 
 function upsertConversation(current: Conversation[], conversation: Conversation): Conversation[] {
   return [...current.filter((item) => item.id !== conversation.id), conversation]
+}
+
+function mergeConversations(...groups: Conversation[][]): Conversation[] {
+  const merged = new Map<string, Conversation>()
+  for (const group of groups) {
+    for (const conversation of group) merged.set(conversation.id, conversation)
+  }
+  return [...merged.values()]
+}
+
+function sessionsRequiringInput(
+  projectRuns: Record<string, AgentRun[]>,
+  conversations: Conversation[],
+): Conversation[] {
+  const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
+  const requiringInput = new Map<string, Conversation>()
+  for (const runs of Object.values(projectRuns)) {
+    const latestRuns = new Map<string, AgentRun>()
+    for (const run of runs) latestRuns.set(run.conversation_id, run)
+    for (const run of latestRuns.values()) {
+      const conversation = conversationsById.get(run.conversation_id)
+      if (run.status === 'waiting_permission' && conversation) requiringInput.set(conversation.id, conversation)
+    }
+  }
+  return [...requiringInput.values()]
 }
 
 type ProjectSessionStatus = 'running' | 'stuck'
@@ -531,6 +718,21 @@ function applyWorkspaceRunEvent(
   }
 }
 
+function applyWorkspaceConversationEvent(
+  current: Conversation[],
+  event: WorkspaceEvent,
+): Conversation[] {
+  if (!event.conversation_id) return current
+  if (event.kind === 'session_removed') {
+    return current.filter((conversation) => conversation.id !== event.conversation_id)
+  }
+  const status = eventRunStatus(event)
+  if (!status) return current
+  return current.map((conversation) => conversation.id === event.conversation_id
+    ? { ...conversation, latest_run_status: status }
+    : conversation)
+}
+
 function eventRunStatus(event: WorkspaceEvent): RunStatus | null {
   if (event.kind === 'run_started') return 'running'
   if (event.kind === 'permission_requested' || event.kind === 'elicitation_requested') {
@@ -553,6 +755,16 @@ function isRunStatus(value: unknown): value is RunStatus {
 }
 
 type Translator = ReturnType<typeof createTranslator>
+
+function notificationBody(
+  t: Translator,
+  category: NotificationCategory,
+  projectName: string,
+): string {
+  if (category === 'attention') return t('kubecode.notificationAttentionBody', { project: projectName })
+  if (category === 'error') return t('kubecode.notificationErrorBody', { project: projectName })
+  return t('kubecode.notificationCompletionBody', { project: projectName })
+}
 
 function NewSessionDialog({
   agents,
@@ -822,19 +1034,27 @@ function ProjectDialog({
 function KubecodeSettingsDialog({
   agents,
   appearance,
+  notifications,
   open,
   onAppearanceChange,
+  onNotificationsChange,
   onOpenChange,
+  onRequestNotificationPermission,
+  onTestNotification,
   t,
 }: {
   agents: AgentDescriptor[]
   appearance: KubecodeAppearance
+  notifications: KubecodeNotifications
   open: boolean
   onAppearanceChange: (appearance: KubecodeAppearance) => void
+  onNotificationsChange: (notifications: KubecodeNotifications) => void
   onOpenChange: (open: boolean) => void
+  onRequestNotificationPermission: () => Promise<void>
+  onTestNotification: () => void
   t: Translator
 }) {
-  const [section, setSection] = useState<'general' | 'agents' | 'terminal' | 'editor'>('general')
+  const [section, setSection] = useState<'general' | 'notifications' | 'agents' | 'terminal' | 'editor'>('general')
 
   const updateAppearance = <Key extends keyof KubecodeAppearance>(
     key: Key,
@@ -846,6 +1066,28 @@ function KubecodeSettingsDialog({
     }
   }
 
+  const updateNotificationCategory = (
+    category: NotificationCategory,
+    enabled: boolean,
+  ) => {
+    onNotificationsChange({
+      ...notifications,
+      enabled: { ...notifications.enabled, [category]: enabled },
+    })
+    trackEvent('kubecode_notification_preference_changed', { category, setting: 'enabled' })
+  }
+
+  const updateNotificationSound = (
+    category: NotificationCategory,
+    sound: KubecodeNotifications['sound'][NotificationCategory],
+  ) => {
+    onNotificationsChange({
+      ...notifications,
+      sound: { ...notifications.sound, [category]: sound },
+    })
+    trackEvent('kubecode_notification_preference_changed', { category, setting: 'sound', value: sound })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="kubecode-settings-dialog">
@@ -855,7 +1097,7 @@ function KubecodeSettingsDialog({
         </DialogHeader>
         <aside className="kubecode-settings-nav">
           <strong>{t('kubecode.settings')}</strong>
-          {(['general', 'agents', 'terminal', 'editor'] as const).map((item) => (
+          {(['general', 'notifications', 'agents', 'terminal', 'editor'] as const).map((item) => (
             <Button key={item} variant={section === item ? 'secondary' : 'ghost'} onClick={() => setSection(item)}>
               {t(`kubecode.settings.${item}`)}
             </Button>
@@ -922,6 +1164,91 @@ function KubecodeSettingsDialog({
                   onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'terminalFont' })}
                   onChange={(event) => updateAppearance('terminalFont', event.target.value)}
                 />
+              </div>
+            </div>
+          )}
+          {section === 'notifications' && (
+            <div className="kubecode-settings-group">
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.systemNotifications')}</strong>
+                  <span>{t('kubecode.systemNotificationsDescription')}</span>
+                </div>
+                <Select
+                  value={notifications.systemMode}
+                  onValueChange={(value) => {
+                    onNotificationsChange({
+                      ...notifications,
+                      systemMode: value as KubecodeNotifications['systemMode'],
+                    })
+                    trackEvent('kubecode_notification_preference_changed', { setting: 'mode', value })
+                  }}
+                >
+                  <SelectTrigger aria-label={t('kubecode.systemNotifications')} className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="always">{t('kubecode.notifications.always')}</SelectItem>
+                    <SelectItem value="unfocused">{t('kubecode.notifications.unfocused')}</SelectItem>
+                    <SelectItem value="off">{t('kubecode.notifications.off')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(['completion', 'attention', 'error'] as const).map((category) => (
+                <div className="kubecode-setting-row kubecode-notification-category" key={category}>
+                  <div>
+                    <strong>{t(`kubecode.notifications.${category}`)}</strong>
+                    <span>{t(`kubecode.notifications.${category}Description`)}</span>
+                  </div>
+                  <div className="kubecode-notification-controls">
+                    <Switch
+                      aria-label={t(`kubecode.notifications.${category}`)}
+                      checked={notifications.enabled[category]}
+                      onCheckedChange={(checked) => updateNotificationCategory(category, checked)}
+                    />
+                    <Select
+                      value={notifications.sound[category]}
+                      onValueChange={(value) => updateNotificationSound(
+                        category,
+                        value as KubecodeNotifications['sound'][NotificationCategory],
+                      )}
+                    >
+                      <SelectTrigger
+                        aria-label={t('kubecode.notificationSound', {
+                          category: t(`kubecode.notifications.${category}`),
+                        })}
+                        className="w-36"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="system">{t('kubecode.notifications.systemSound')}</SelectItem>
+                        <SelectItem value="none">{t('kubecode.notifications.noSound')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.notificationPermission')}</strong>
+                  <span>{t(`kubecode.notifications.permission.${notificationPermission()}`)}</span>
+                </div>
+                <div className="kubecode-notification-controls">
+                  {notificationPermission() === 'default' && (
+                    <Button size="sm" variant="outline" onClick={() => void onRequestNotificationPermission()}>
+                      {t('kubecode.enableNotifications')}
+                    </Button>
+                  )}
+                  <Button
+                    disabled={notificationPermission() !== 'granted'}
+                    size="sm"
+                    variant="outline"
+                    onClick={onTestNotification}
+                  >
+                    {t('kubecode.testNotification')}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

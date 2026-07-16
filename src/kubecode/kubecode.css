@@ -73,6 +73,7 @@
   height: 100vh;
   line-height: 1.45;
   overflow: hidden;
+  position: relative;
 }
 
 .kubecode-app code,
@@ -199,6 +200,48 @@
   width: 20px;
 }
 .kubecode-topbar-error > svg { height: 18px; width: 18px; }
+
+.kubecode-attention-trigger {
+  color: var(--accent-blue);
+  gap: 4px;
+  min-width: 34px;
+  padding-inline: 6px;
+}
+
+.kubecode-attention-menu { min-width: 260px; }
+.kubecode-attention-menu [role='menuitem'] { gap: 8px; }
+.kubecode-attention-menu [role='menuitem'] > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kubecode-attention-menu strong,
+.kubecode-attention-menu small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kubecode-attention-menu small { color: var(--text-secondary); }
+
+.kubecode-notification-onboarding {
+  align-items: center;
+  background: var(--surface-popover);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  bottom: 18px;
+  box-shadow: 0 12px 36px color-mix(in srgb, #000 22%, transparent);
+  display: flex;
+  gap: 10px;
+  left: 50%;
+  max-width: min(680px, calc(100vw - 32px));
+  padding: 10px 12px;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+.kubecode-notification-onboarding > svg { color: var(--accent-blue); flex: 0 0 auto; height: 20px; width: 20px; }
+.kubecode-notification-onboarding > div { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.kubecode-notification-onboarding > div > span { color: var(--text-secondary); font-size: 12px; }
 
 .kubecode-workspace {
   display: flex;
@@ -1199,6 +1242,12 @@
 .kubecode-setting-row > span[data-available='false'] { color: var(--feedback-error-text); }
 .kubecode-font-input { flex: 0 1 46%; max-width: 360px; min-width: 180px; }
 .kubecode-font-input-mono { font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace); }
+.kubecode-setting-row > .kubecode-notification-controls {
+  align-items: center;
+  flex-direction: row;
+  flex-shrink: 0;
+  gap: 10px;
+}
 .kubecode-settings-placeholder { color: var(--text-secondary); padding: 32px 0; }
 
 .kubecode-empty-small {
