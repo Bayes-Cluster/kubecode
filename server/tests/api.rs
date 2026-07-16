@@ -10,6 +10,7 @@ use axum::http::{Method, Request, StatusCode, header};
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::api::{AppState, app_router, app_router_with_static};
+use kubecode_server::teams::TeamStore;
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -22,11 +23,12 @@ fn app() -> (TempDir, Router) {
     let root = temp.path().join("srv");
     let state = root.join(".state/kubecode");
     fs::create_dir_all(&state).expect("state directory");
-    let workspace =
-        WorkspaceService::open(&root, state.join("kubecode.sqlite3")).expect("workspace service");
-    let agent_store = AgentStore::open(state.join("kubecode.sqlite3")).expect("agent store");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
     let router = app_router(
-        AppState::new(Arc::new(workspace), Arc::new(agent_store)),
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
         BASE_PATH,
     );
     (temp, router)
@@ -403,12 +405,17 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
     let root = temp.path().join("srv");
     let state = root.join(".state/kubecode");
     fs::create_dir_all(&state).expect("state directory");
-    let workspace = Arc::new(
-        WorkspaceService::open(&root, state.join("kubecode.sqlite3")).expect("workspace service"),
-    );
-    let store = Arc::new(AgentStore::open(state.join("kubecode.sqlite3")).expect("agent store"));
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
     let app = app_router(
-        AppState::new(Arc::clone(&workspace), Arc::clone(&store)),
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
         BASE_PATH,
     );
     let project = workspace
@@ -554,11 +561,12 @@ async fn serves_the_spa_only_below_the_configured_base_path() {
     fs::create_dir_all(&state_dir).expect("state directory");
     fs::create_dir_all(&static_dir).expect("static directory");
     fs::write(static_dir.join("index.html"), "<main>Kubecode</main>").expect("index");
-    let workspace = WorkspaceService::open(&root, state_dir.join("kubecode.sqlite3"))
-        .expect("workspace service");
-    let agent_store = AgentStore::open(state_dir.join("kubecode.sqlite3")).expect("agent store");
+    let database_path = state_dir.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
     let app = app_router_with_static(
-        AppState::new(Arc::new(workspace), Arc::new(agent_store)),
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
         BASE_PATH,
         &static_dir,
     );
@@ -969,8 +977,9 @@ async fn exposes_completed_run_details_replay_and_event_stream() {
   esac
 done"#,
     );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),

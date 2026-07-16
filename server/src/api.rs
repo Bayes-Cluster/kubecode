@@ -21,6 +21,7 @@ use crate::agents::{
     AgentEvent, AgentId, AgentStore, ExecutionMode, RunStatus, StoreError, WorkspaceEvent,
 };
 use crate::git::{GitError, GitMutation, GitService};
+use crate::teams::TeamStore;
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
@@ -36,10 +37,15 @@ pub struct AppState {
     pub agents: Arc<Vec<AgentDescriptor>>,
     pub agent_runtime: Arc<AgentRuntime>,
     pub git: Arc<GitService>,
+    pub teams: Arc<TeamStore>,
 }
 
 impl AppState {
-    pub fn new(workspace: Arc<WorkspaceService>, agent_store: Arc<AgentStore>) -> Self {
+    pub fn new(
+        workspace: Arc<WorkspaceService>,
+        agent_store: Arc<AgentStore>,
+        teams: Arc<TeamStore>,
+    ) -> Self {
         let terminals = Arc::new(TerminalManager::with_agents_and_events(
             Arc::clone(&workspace),
             8,
@@ -60,6 +66,7 @@ impl AppState {
             agents: Arc::new(agents),
             agent_runtime,
             git,
+            teams,
         }
     }
 
@@ -241,6 +248,7 @@ fn api_router(state: AppState) -> Router {
             "/projects/{project_id}/file",
             get(read_file).put(write_file),
         )
+        .merge(crate::team_api::routes())
         .with_state(state)
 }
 
