@@ -4,12 +4,15 @@ import {
   ArrowRight,
   ArrowUp,
   Bell,
+  DownloadSimple,
   DotsThree,
   Folder,
   Gear,
   MagnifyingGlass,
   Plus,
   Question,
+  User,
+  UsersThree,
   WarningCircle,
 } from '@phosphor-icons/react'
 
@@ -983,22 +986,53 @@ function NewSessionDialog({
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
         <div className="kubecode-new-session-form">
-          <div className="kubecode-mode-switch" role="group">
-            <Button data-active={mode === 'new'} size="sm" variant="ghost" onClick={() => setMode('new')}>
-              {t('kubecode.startNewSession')}
+          <div className="kubecode-choice-grid kubecode-session-choice-grid" role="group">
+            <Button
+              aria-label={t('kubecode.startNewSession')}
+              aria-pressed={mode === 'new'}
+              data-active={mode === 'new'}
+              variant="outline"
+              onClick={() => setMode('new')}
+            >
+              <Plus />
+              <span>{t('kubecode.startNewSession')}</span>
             </Button>
-            <Button data-active={mode === 'import'} size="sm" variant="ghost" onClick={() => setMode('import')}>
-              {t('kubecode.importAgentSession')}
+            <Button
+              aria-label={t('kubecode.importAgentSession')}
+              aria-pressed={mode === 'import'}
+              data-active={mode === 'import'}
+              variant="outline"
+              onClick={() => setMode('import')}
+            >
+              <DownloadSimple />
+              <span>{t('kubecode.importAgentSession')}</span>
             </Button>
           </div>
           {mode === 'new' && (
-            <div className="kubecode-mode-switch" role="group" aria-label={t('kubecode.sessionType')}>
-              <Button data-active={sessionKind === 'solo'} size="sm" variant="ghost" onClick={() => setSessionKind('solo')}>
-                {t('kubecode.soloSession')}
-              </Button>
-              <Button data-active={sessionKind === 'team'} size="sm" variant="ghost" onClick={() => setSessionKind('team')}>
-                {t('kubecode.teamSession')}
-              </Button>
+            <div className="kubecode-new-session-field">
+              <span>{t('kubecode.sessionType')}</span>
+              <div className="kubecode-choice-grid kubecode-session-choice-grid" role="group" aria-label={t('kubecode.sessionType')}>
+                <Button
+                  aria-label={t('kubecode.soloSession')}
+                  aria-pressed={sessionKind === 'solo'}
+                  data-active={sessionKind === 'solo'}
+                  variant="outline"
+                  onClick={() => setSessionKind('solo')}
+                >
+                  <User />
+                  <span>{t('kubecode.soloSession')}</span>
+                </Button>
+                <Button
+                  aria-label={t('kubecode.teamSession')}
+                  aria-pressed={sessionKind === 'team'}
+                  data-active={sessionKind === 'team'}
+                  variant="outline"
+                  onClick={() => setSessionKind('team')}
+                >
+                  <UsersThree />
+                  <span>{t('kubecode.teamSession')}</span>
+                </Button>
+              </div>
             </div>
           )}
           <label className="kubecode-new-session-field">
@@ -1023,12 +1057,12 @@ function NewSessionDialog({
               {project?.workspaces_enabled && (
                 <div className="kubecode-new-session-field">
                   <span>{t('kubecode.executionWorkspace')}</span>
-                  <div className="kubecode-workspace-mode" role="group" aria-label={t('kubecode.executionWorkspace')}>
-                    <Button data-active={executionMode === 'worktree'} variant="outline" onClick={() => setExecutionMode('worktree')}>
+                  <div className="kubecode-choice-grid" role="group" aria-label={t('kubecode.executionWorkspace')}>
+                    <Button aria-pressed={executionMode === 'worktree'} data-active={executionMode === 'worktree'} variant="outline" onClick={() => setExecutionMode('worktree')}>
                       <span>{t('kubecode.newWorkspace')}</span>
                       <small>{t('kubecode.newWorkspaceDescription')}</small>
                     </Button>
-                    <Button data-active={executionMode === 'shared'} variant="outline" onClick={() => setExecutionMode('shared')}>
+                    <Button aria-pressed={executionMode === 'shared'} data-active={executionMode === 'shared'} variant="outline" onClick={() => setExecutionMode('shared')}>
                       <span>{t('kubecode.projectRoot')}</span>
                       <small>{t('kubecode.projectRootDescription')}</small>
                     </Button>

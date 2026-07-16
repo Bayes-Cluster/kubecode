@@ -358,36 +358,16 @@
   padding: 0;
 }
 
-.kubecode-new-session-dialog > header {
+.kubecode-new-session-dialog > [data-slot='dialog-header'] {
   border-bottom: 1px solid var(--border-subtle);
   gap: 5px;
-  padding: 20px 22px 17px;
+  padding: 22px 50px 17px 22px;
 }
 
 .kubecode-new-session-form {
   display: grid;
   gap: 17px;
   padding: 18px 22px 22px;
-}
-
-.kubecode-new-session-dialog .kubecode-mode-switch {
-  background: var(--surface-sidebar);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 3px;
-}
-
-.kubecode-new-session-dialog .kubecode-mode-switch > button {
-  color: var(--text-secondary);
-  width: 100%;
-}
-
-.kubecode-new-session-dialog .kubecode-mode-switch > button[data-active='true'] {
-  background: var(--surface-app);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-primary) 12%, transparent);
-  color: var(--text-primary);
 }
 
 .kubecode-new-session-field {
@@ -411,13 +391,13 @@
   padding: 13px 22px;
 }
 
-.kubecode-workspace-mode {
+.kubecode-choice-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.kubecode-workspace-mode > button {
+.kubecode-choice-grid > button {
   align-items: flex-start;
   flex-direction: column;
   height: auto;
@@ -426,18 +406,36 @@
   text-align: left;
 }
 
-.kubecode-workspace-mode > button[data-active='true'] {
+.kubecode-choice-grid > button[data-active='true'] {
   border-color: var(--accent-blue);
   background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
-.kubecode-workspace-mode small {
+.kubecode-choice-grid small {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+}
+
+.kubecode-session-choice-grid > button {
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.kubecode-session-choice-grid > button > svg {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  height: 18px;
+  width: 18px;
+}
+
+.kubecode-session-choice-grid > button[data-active='true'] > svg {
+  color: var(--accent-blue);
 }
 
 .kubecode-disable-workspaces-dialog {

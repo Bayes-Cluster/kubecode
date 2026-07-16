@@ -176,7 +176,7 @@ while IFS= read -r line; do
       printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
       ;;
     *'"method":"session/new"'*)
-      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"team-session\"}}}}"
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"team-session\",\"configOptions\":[{{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"model-1\",\"options\":[{{\"value\":\"model-1\",\"name\":\"Model 1\"}},{{\"value\":\"model-2\",\"name\":\"Model 2\"}}]}}]}}}}"
       ;;
   esac
 done"#,
@@ -201,7 +201,7 @@ done"#,
     );
     let project_id = create_project(&router, temp.path()).await;
 
-    let (status, _) = request(
+    let (status, snapshot) = request(
         &router,
         Method::POST,
         &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
@@ -211,10 +211,31 @@ done"#,
 
     assert_eq!(status, StatusCode::CREATED);
     let transcript = fs::read_to_string(transcript).expect("ACP transcript");
+    let initialize = transcript
+        .lines()
+        .find(|line| line.contains("initialize"))
+        .expect("initialize request");
+    assert!(initialize.contains("configOptions"), "{initialize}");
     let session_new = transcript
         .lines()
         .find(|line| line.contains("session/new"))
         .expect("session/new request");
     assert!(session_new.contains("mcpServers"), "{session_new}");
     assert!(session_new.contains("kubecode-team"), "{session_new}");
+
+    let leader_id = snapshot["leader_conversation"]["id"]
+        .as_str()
+        .expect("leader conversation id");
+    let (status, session_state) = request(
+        &router,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{leader_id}/state"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        session_state["config_options"]["configOptions"][0]["id"],
+        "model"
+    );
 }

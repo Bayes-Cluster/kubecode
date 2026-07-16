@@ -5,17 +5,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ClientCapabilities, ContentBlock, ContentChunk, CreateElicitationRequest,
+    BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
+    ClientSessionCapabilities, ContentBlock, ContentChunk, CreateElicitationRequest,
     CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
     ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, EnvVariable,
     ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerStdio, NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
-    SelectedPermissionOutcome, SessionConfigOptionValue, SessionNotification, SessionUpdate,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
+    SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
-use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo};
+use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo, LineDirection};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -793,6 +795,8 @@ struct AgentSessionConfig {
     cwd: PathBuf,
 }
 
+type SessionResponseCapture = Arc<Mutex<HashMap<String, NewSessionResponse>>>;
+
 struct AgentCommand {
     run: AgentRun,
     message: String,
@@ -909,7 +913,12 @@ async fn run_acp_session(
             .store
             .session_events_after(&config.conversation_id, 0)?
             .is_empty();
-    let agent = acp_agent(config.agent_id, &config.descriptor)?;
+    let session_responses = SessionResponseCapture::default();
+    let response_capture = Arc::clone(&session_responses);
+    let agent =
+        acp_agent(config.agent_id, &config.descriptor)?.with_debug(move |line, direction| {
+            capture_new_session_response(&response_capture, line, direction)
+        });
     let update_store = Arc::clone(&runtime.store);
     let update_run_id = Arc::clone(&active_run_id);
     let update_conversation_id = config.conversation_id.clone();
@@ -923,6 +932,7 @@ async fn run_acp_session(
     let conversation_id = config.conversation_id;
     let provider_session_id = config.provider_session_id;
     let cwd = config.cwd;
+    let captured_session_responses = Arc::clone(&session_responses);
 
     let result = agent_client_protocol::Client
         .builder()
@@ -1065,9 +1075,15 @@ async fn run_acp_session(
             let initialization = connection
                 .send_request(
                     InitializeRequest::new(ProtocolVersion::V1).client_capabilities(
-                        ClientCapabilities::new().elicitation(
-                            ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
-                        ),
+                        ClientCapabilities::new()
+                            .session(ClientSessionCapabilities::new().config_options(
+                                SessionConfigOptionsCapabilities::new()
+                                    .boolean(BooleanConfigOptionCapabilities::new()),
+                            ))
+                            .elicitation(
+                                ElicitationCapabilities::new()
+                                    .form(ElicitationFormCapabilities::new()),
+                            ),
                     ),
                 )
                 .block_task()
@@ -1144,6 +1160,7 @@ async fn run_acp_session(
                                     &runtime,
                                     &conversation_id,
                                     cwd,
+                                    &captured_session_responses,
                                 )
                                 .await?
                             }
@@ -1151,7 +1168,14 @@ async fn run_acp_session(
                     }
                 }
             } else {
-                create_provider_session(&connection, &runtime, &conversation_id, cwd).await?
+                create_provider_session(
+                    &connection,
+                    &runtime,
+                    &conversation_id,
+                    cwd,
+                    &captured_session_responses,
+                )
+                .await?
             };
             store
                 .set_provider_session(&conversation_id, &session_id.to_string())
@@ -1256,6 +1280,7 @@ async fn create_provider_session(
     runtime: &AgentRuntime,
     conversation_id: &str,
     cwd: PathBuf,
+    captured_responses: &SessionResponseCapture,
 ) -> Result<
     (
         agent_client_protocol::schema::v1::SessionId,
@@ -1273,11 +1298,13 @@ async fn create_provider_session(
             .start_session()
             .await?;
         let session_id = active_session.session_id().clone();
+        let response = take_captured_session_response(captured_responses, &session_id)
+            .unwrap_or_else(|| active_session.response());
         persist_serialized_session_event(
             &runtime.store,
             conversation_id,
             "session_created_state",
-            active_session.response(),
+            response,
         );
         return Ok((session_id, Some(active_session)));
     }
@@ -1286,6 +1313,7 @@ async fn create_provider_session(
         .block_task()
         .await?;
     let session_id = response.session_id.clone();
+    let _ = take_captured_session_response(captured_responses, &session_id);
     persist_serialized_session_event(
         &runtime.store,
         conversation_id,
@@ -1293,6 +1321,39 @@ async fn create_provider_session(
         response,
     );
     Ok((session_id, None))
+}
+
+fn capture_new_session_response(
+    captured_responses: &SessionResponseCapture,
+    line: &str,
+    direction: LineDirection,
+) {
+    if direction != LineDirection::Stdout {
+        return;
+    }
+    let Some(result) = serde_json::from_str::<Value>(line)
+        .ok()
+        .and_then(|message| message.get("result").cloned())
+    else {
+        return;
+    };
+    let Ok(response) = serde_json::from_value::<NewSessionResponse>(result) else {
+        return;
+    };
+    captured_responses
+        .lock()
+        .expect("session response capture mutex poisoned")
+        .insert(response.session_id.to_string(), response);
+}
+
+fn take_captured_session_response(
+    captured_responses: &SessionResponseCapture,
+    session_id: &agent_client_protocol::schema::v1::SessionId,
+) -> Option<NewSessionResponse> {
+    captured_responses
+        .lock()
+        .expect("session response capture mutex poisoned")
+        .remove(&session_id.to_string())
 }
 
 fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent, RuntimeError> {
