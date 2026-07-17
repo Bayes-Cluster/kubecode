@@ -116,11 +116,12 @@ Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool
 calls, permissions, and response visible. The browser separates this member
 Chat navigation from a Team control view containing runtime summary, attention,
-lineup approval, roster, task board, dependency, and activity projections.
+lineup approval, task board, dependency, and activity projections.
 Workspace `team_*` events refresh the projection without merging member
 transcripts into the Leader Chat. The Team task board is the flexible main
-surface and shows only task title and assignee; a collapsible compact member
-rail on the right shows Agent, name, role, and runtime status.
+surface: full-width status columns use the active application theme, and each
+card shows only its task title and assigned member. There is no separate roster
+inside this view; member Sessions remain available through Session navigation.
 
 Teammate ACP permission requests are persisted as Team permission records and
 sent to the Leader mailbox before any human controls are shown. The Leader uses

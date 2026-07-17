@@ -5,7 +5,6 @@ import {
   Clock,
   GitBranch,
   ListChecks,
-  SidebarSimple,
   SpinnerGap,
   UsersThree,
   WarningCircle,
@@ -45,7 +44,6 @@ export function TeamWorkspaceView({
 }) {
   const [error, setError] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'tasks' | 'activity' | 'dependencies'>('tasks')
-  const [memberRailCollapsed, setMemberRailCollapsed] = useState(false)
   const conversations = useMemo(
     () => new Map(snapshot.conversations.map((conversation) => [conversation.id, conversation])),
     [snapshot.conversations],
@@ -192,9 +190,13 @@ export function TeamWorkspaceView({
           <TabsContent value="tasks">
             <div className="kubecode-team-board">
               {TASK_COLUMNS.map((column) => (
-                <section key={column.id}>
+                <section
+                  data-column={column.id}
+                  data-testid={`team-board-column-${column.id}`}
+                  key={column.id}
+                >
                   <header>
-                    <span>{t(column.label)}</span>
+                    <span><i />{t(column.label)}</span>
                     <small>{tasksByColumn[column.id].length}</small>
                   </header>
                   <div>
@@ -203,6 +205,7 @@ export function TeamWorkspaceView({
                         conversations={conversations}
                         key={task.id}
                         members={snapshot.members}
+                        onSelectMember={onSelectMember}
                         task={task}
                       />
                     ))}
@@ -238,53 +241,6 @@ export function TeamWorkspaceView({
             </div>
           </TabsContent>
         </Tabs>
-
-        <section
-          className="kubecode-team-members"
-          data-collapsed={memberRailCollapsed}
-          data-testid="team-member-rail"
-        >
-          <header>
-            <span>{t('kubecode.teamMembers')}</span>
-            <Button
-              aria-label={t(memberRailCollapsed ? 'sidebar.action.expand' : 'sidebar.action.collapse')}
-              size="icon-xs"
-              variant="ghost"
-              onClick={() => {
-                setMemberRailCollapsed((collapsed) => {
-                  trackEvent('kubecode_team_member_rail_toggled', { collapsed: collapsed ? 0 : 1 })
-                  return !collapsed
-                })
-              }}
-            >
-              <SidebarSimple />
-            </Button>
-          </header>
-          <div>
-            {snapshot.members.map((member) => {
-              const conversation = conversations.get(member.conversation_id)
-              if (!conversation) return null
-              return (
-                <Button
-                  aria-label={`${member.name} ${t(memberStatusKey(member.status))}`}
-                  className="kubecode-team-member-row"
-                  key={member.id}
-                  variant="ghost"
-                  onClick={() => onSelectMember(member.conversation_id)}
-                >
-                  <AiAgentIcon agent={conversation.agent_id} size={22} />
-                  <span className="kubecode-team-member-copy">
-                    <strong>{member.name}</strong>
-                    <small>{member.role === 'leader' ? t('kubecode.teamLeader') : t('kubecode.teamTeammate')}</small>
-                  </span>
-                  <span className="kubecode-team-runtime-state" data-status={member.status}>
-                    <i /><span>{t(memberStatusKey(member.status))}</span>
-                  </span>
-                </Button>
-              )
-            })}
-          </div>
-        </section>
       </div>
     </section>
   )
@@ -328,20 +284,35 @@ function Metric({ icon, label, name, value }: {
 function TaskCard({
   conversations,
   members,
+  onSelectMember,
   task,
 }: {
   conversations: Map<string, TeamSnapshot['conversations'][number]>
   members: TeamMember[]
+  onSelectMember: (conversationId: string) => void
   task: TeamTask
 }) {
   const assignee = members.find((member) => member.id === task.assignee_member_id)
   const conversation = assignee ? conversations.get(assignee.conversation_id) : undefined
   return (
-    <article className="kubecode-team-task-card" data-status={task.status}>
+    <article
+      className="kubecode-team-task-card"
+      data-status={task.status}
+      data-testid={`team-task-card-${task.id}`}
+    >
       <strong>{task.title}</strong>
       <footer>
-        {conversation && <AiAgentIcon agent={conversation.agent_id} size={14} />}
-        <span>{assignee?.name || '—'}</span>
+        {assignee && conversation ? (
+          <Button
+            aria-label={assignee.name}
+            size="sm"
+            variant="ghost"
+            onClick={() => onSelectMember(assignee.conversation_id)}
+          >
+            <AiAgentIcon agent={conversation.agent_id} size={14} />
+            <span>{assignee.name}</span>
+          </Button>
+        ) : <span>—</span>}
       </footer>
     </article>
   )
@@ -375,19 +346,4 @@ function parseProposalMembers(value: string): string[] {
   } catch {
     return []
   }
-}
-
-function memberStatusKey(status: TeamMember['status']): TranslationKey {
-  const keys: Record<TeamMember['status'], TranslationKey> = {
-    starting: 'kubecode.teamStatusStarting',
-    configuring: 'kubecode.teamStatusConfiguring',
-    queued: 'kubecode.teamStatusQueued',
-    idle: 'kubecode.teamStatusIdle',
-    working: 'kubecode.teamStatusWorking',
-    waiting_input: 'kubecode.teamStatusWaitingInput',
-    waiting_permission: 'kubecode.teamStatusWaitingPermission',
-    failed: 'kubecode.teamStatusFailed',
-    stopped: 'kubecode.teamStatusStopped',
-  }
-  return keys[status]
 }

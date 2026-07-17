@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TeamWorkspaceView } from './TeamWorkspaceView'
@@ -37,7 +37,7 @@ const snapshot = {
 const t = ((key: string) => key) as never
 
 describe('TeamWorkspaceView', () => {
-  it('shows runtime summary, members, tasks, activity, and attention', async () => {
+  it('shows a full-width task board without a separate member list', async () => {
     const selectMember = vi.fn()
     render(
       <TeamWorkspaceView
@@ -53,12 +53,12 @@ describe('TeamWorkspaceView', () => {
     expect(screen.getByText('Review parser')).toBeInTheDocument()
     expect(screen.queryByText('Explore', { exact: true })).not.toBeInTheDocument()
     expect(screen.queryByText('Review', { exact: true })).not.toBeInTheDocument()
-    expect(screen.getByTestId('team-workspace-body')).toContainElement(
-      screen.getByTestId('team-member-rail'),
-    )
+    expect(screen.queryByTestId('team-member-rail')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId(/^team-board-column-/)).toHaveLength(5)
+    expect(within(screen.getByTestId('team-board-column-review')).getByText('1')).toBeInTheDocument()
     expect(screen.getByText('Reviewer needs permission')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', {
-      name: 'Reviewer kubecode.teamStatusWaitingPermission',
+    fireEvent.click(within(screen.getByTestId('team-task-card-task-2')).getByRole('button', {
+      name: 'Reviewer',
     }))
     expect(selectMember).toHaveBeenCalledWith('reviewer')
     const activityTab = screen.getByRole('tab', { name: 'kubecode.teamActivity' })
@@ -68,7 +68,7 @@ describe('TeamWorkspaceView', () => {
     expect(await screen.findByText('Delegated Review parser')).toBeInTheDocument()
   })
 
-  it('collapses the right-side member rail without removing the member controls', () => {
+  it('keeps unassigned tasks visually explicit without rendering roster-only members', () => {
     render(
       <TeamWorkspaceView
         api={{} as KubecodeApi}
@@ -79,13 +79,9 @@ describe('TeamWorkspaceView', () => {
       />,
     )
 
-    const rail = screen.getByTestId('team-member-rail')
-    expect(rail).toHaveAttribute('data-collapsed', 'false')
-    fireEvent.click(screen.getByRole('button', { name: 'sidebar.action.collapse' }))
-    expect(rail).toHaveAttribute('data-collapsed', 'true')
-    expect(screen.getByRole('button', {
-      name: 'Reviewer kubecode.teamStatusWaitingPermission',
-    })).toBeInTheDocument()
+    expect(screen.getByTestId('team-task-card-task-1')).toHaveTextContent('—')
+    expect(screen.queryByText('Lead')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reviewer' })).toBeInTheDocument()
   })
 
   it('persists automatic member management through the Team API', async () => {
