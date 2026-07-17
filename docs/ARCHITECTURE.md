@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0187.
+active production boundary is defined by ADRs 0161–0188.
 
 ## Runtime topology
 
@@ -28,6 +28,10 @@ at the shared Project root or in a server-managed Git worktree below the private
 state directory. The chosen cwd is durable and is used by every ACP lifecycle
 operation, not only the first prompt. Existing and imported Sessions remain
 shared unless the user explicitly creates an isolated Session.
+
+Every ACP stdio adapter process also starts with that execution path as its
+operating-system cwd. New, load, resume, list, fork, hydrate, reconnect, and
+delete therefore use the same directory at both the process and protocol layers.
 
 Disabling Workspaces is a protected migration rather than a preference flip.
 The server blocks on active runs, requires Merge, Export patch, or Discard for
@@ -118,7 +122,14 @@ permission, protocol, process, timeout, and interruption failures. One missing
 result reminder is automatic; a second unreported completion fails the Attempt
 and wakes the Leader. Runtime reconciliation resumes queued work after Team
 reads, server restart, or workspace reconnect without creating a new member
-Session.
+Session. Delivered mailbox messages use an acknowledgement lease; reading Team
+context acknowledges them, while the supervisor retries an expired lease at
+most three times.
+
+A server-owned supervisor runs at startup and every 30 seconds. It reconciles
+all non-terminal Teams, recovers interrupted startup, wakes queued members,
+detects a Leader that has not established a task graph, and processes provider
+cleanup without depending on a browser connection or Team API read.
 
 Team mode has separate requested and effective values. A requested YOLO Team
 uses exact provider-native permission controls: Codex
@@ -164,11 +175,11 @@ invalid when the workspace fingerprint changes; exhausting the configured
 review rounds moves the Team to Needs Attention.
 
 Teammate creation may apply an Agent-native ACP mode and dynamic configuration
-map after the member Session is initialized. Any rejected option rolls back the
-member and its local conversation. The Leader can stop/remove a teammate through
-Team MCP; removal disconnects the ACP actor, releases active task assignments,
-deletes its provider-native and Kubecode Session records, and does not delete
-Project files.
+map after the member Session is initialized. Provisioning is durable. Transport
+failure rolls back the temporary member and conversation while retaining the
+diagnostic; rejected configuration keeps the member in `configuring`. The
+Leader can reconfigure or replace the member, retry or cancel concrete work,
+and remains the only semantic scheduler.
 
 Shared Team members execute at the Team root. Explicit isolation creates a
 separate Agent Session and worktree while recording the base tree for Leader
@@ -196,13 +207,19 @@ below it; only Solo Sessions participate in activity/time sections.
 The browser does not expose `Delete` for teammates. The Leader discovers current
 member IDs with `team_list_members` and removes a teammate with
 `team_remove_teammate`; that operation affects only the selected member.
-Deleting the fixed Leader is a confirmed Team disband operation that disconnects
-and deletes every member Session before removing Team coordination state. Provider-backed Sessions are
-deleted through ACP `session/delete`. OpenCode falls back to its native
-`session delete` command when its ACP adapter advertises only close; close itself
-is never presented as deletion. A conversation without a provider Session is
-deleted locally. Provider failure is surfaced instead of silently degrading to
-local-only removal.
+Teammate removal and fixed-Leader disband are local-first operations. Kubecode
+immediately removes roster and local Session state, releases assignments, and
+never deletes Project files. Provider history cleanup runs from a durable
+target after local removal. ACP `session/delete` is preferred; OpenCode falls
+back to native `session delete` when ACP advertises only close. Failure schedules
+bounded retries and remains available for manual retry without restoring the
+member or blocking Team removal.
+
+The Leader can call `team_request_user_input` for a semantic decision it cannot
+safely make. The durable request moves the Team to Needs Attention and pauses
+teammate scheduling. The browser answers inline; the server resumes the prior
+Team state and delivers the answer through the Leader mailbox. Completed and
+disbanding Teams keep MCP coordination state read-only.
 
 ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active

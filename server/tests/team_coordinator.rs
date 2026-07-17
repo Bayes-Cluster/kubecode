@@ -1,11 +1,14 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
+use kubecode_server::agent_discovery::AgentDescriptor;
+use kubecode_server::agent_runtime::AgentRuntime;
 use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::team_coordinator::{CoordinatorError, SpawnTeammate, TeamCoordinator};
 use kubecode_server::teams::{
-    MemberWorkspaceMode, NewTeam, NewTeamTask, StartTeam, TeamError, TeamMessageKind, TeamMode,
-    TeamStore, TeamWorkspace,
+    MemberWorkspaceMode, NewTeam, NewTeamTask, NewTeammate, StartTeam, TeamError,
+    TeamLifecycleOperationStatus, TeamMessageKind, TeamMode, TeamStore, TeamWorkspace,
 };
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
@@ -62,6 +65,7 @@ fn fixture() -> Fixture {
             max_review_rounds: 3,
         })
         .expect("start team");
+    teams.activate_team(&team.id).expect("activate team");
     let coordinator = TeamCoordinator::new(
         Arc::clone(&workspace),
         Arc::clone(&agents),
@@ -258,4 +262,103 @@ fn leader_removes_a_teammate_and_releases_its_task() {
         kubecode_server::teams::TeamTaskStatus::Pending
     );
     assert_eq!(released.assignee_member_id, None);
+}
+
+#[tokio::test]
+async fn provider_failure_does_not_put_a_removed_teammate_back_in_the_team() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let agents = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let project = workspace
+        .create_project_at(root.join("project"))
+        .expect("project");
+    let leader = agents
+        .create_conversation(&project.id, AgentId::Codex, Some("Leader"))
+        .expect("leader");
+    let teammate = agents
+        .create_imported_conversation(
+            &project.id,
+            AgentId::OpenCode,
+            "provider-session",
+            Some("Worker"),
+        )
+        .expect("teammate conversation");
+    let team = teams
+        .create_team(NewTeam {
+            project_id: &project.id,
+            leader_conversation_id: &leader.id,
+            agent_session_id: &leader.agent_session_id,
+            leader_name: "Leader",
+            title: Some("Cleanup"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let member = teams
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &team.leader_member_id,
+            conversation_id: &teammate.id,
+            name: "Worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("member");
+    let executable = temp.path().join("failing-opencode");
+    fs::write(
+        &executable,
+        r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"sessionCapabilities\":{\"delete\":{}}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/delete"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"error\":{\"code\":-32603,\"message\":\"provider offline\"}}"
+      ;;
+  esac
+done"#,
+    )
+    .expect("mock Agent");
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&executable, permissions).expect("executable permissions");
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&agents),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: executable.to_string_lossy().into_owned(),
+            error: None,
+        }],
+    )
+    .with_team_store(Arc::clone(&teams));
+
+    let removal = runtime
+        .remove_team_member_local_first(&team.id, &team.leader_member_id, &member.id)
+        .await
+        .expect("local-first removal");
+
+    assert!(teams.get_member(&member.id).is_err());
+    assert!(agents.get_conversation(&teammate.id).is_err());
+    let operation = removal.cleanup_operation.expect("cleanup operation");
+    for _ in 0..100 {
+        let current = teams
+            .get_lifecycle_operation(&operation.id)
+            .expect("operation");
+        if current.status == TeamLifecycleOperationStatus::RetryScheduled {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("provider cleanup was not scheduled for retry");
 }

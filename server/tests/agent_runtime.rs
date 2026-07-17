@@ -19,6 +19,66 @@ fn executable(directory: &TempDir, body: &str) -> String {
 }
 
 #[tokio::test]
+async fn starts_the_acp_process_in_the_session_execution_directory() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "directory-sensitive-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let observed_cwd = temp.path().join("observed-cwd");
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"pwd > '{}'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"cwd-session\"}}}}"
+      ;;
+  esac
+done"#,
+            observed_cwd.display()
+        ),
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+
+    runtime
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("initialize");
+
+    assert_eq!(
+        fs::read_to_string(observed_cwd)
+            .expect("observed cwd")
+            .trim(),
+        workspace
+            .project_path(&project.id)
+            .expect("project path")
+            .to_string_lossy(),
+    );
+}
+
+#[tokio::test]
 async fn initializes_provider_session_and_commands_before_the_first_prompt() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");

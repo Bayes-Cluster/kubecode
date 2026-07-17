@@ -10,7 +10,8 @@ use kubecode_server::agents::AgentId;
 use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router};
 use kubecode_server::teams::{
-    MemberWorkspaceMode, NewTeamProposal, NewTeammate, StartTeam, TeamMode, TeamStore,
+    MemberWorkspaceMode, NewTeam, NewTeamProposal, NewTeammate, StartTeam, TeamMode, TeamStatus,
+    TeamStore, TeamWorkspace,
 };
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -122,6 +123,16 @@ async fn call_mcp_tool(
     )
 }
 
+async fn wait_for_file_contains(path: &std::path::Path, needle: &str) {
+    for _ in 0..100 {
+        if fs::read_to_string(path).is_ok_and(|content| content.contains(needle)) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {needle} in {}", path.display());
+}
+
 #[tokio::test]
 async fn creates_a_team_with_only_its_leader() {
     let (temp, app) = app();
@@ -150,6 +161,78 @@ async fn creates_a_team_with_only_its_leader() {
     assert_eq!(snapshot["members"][0]["name"], "Lead");
     assert_eq!(snapshot["tasks"], json!([]));
     assert_eq!(snapshot["leader_conversation"]["agent_id"], "codex");
+}
+
+#[tokio::test]
+async fn supervisor_recovers_a_team_left_in_starting_without_a_ui_read() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_directory = root.join(".state/kubecode");
+    fs::create_dir_all(&state_directory).expect("state directory");
+    let database_path = state_directory.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let agents = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let project = workspace
+        .create_project_at(root.join("project"))
+        .expect("project");
+    let conversation = agents
+        .create_conversation(&project.id, AgentId::Codex, Some("Leader"))
+        .expect("conversation");
+    let team = teams
+        .create_team(NewTeam {
+            project_id: &project.id,
+            leader_conversation_id: &conversation.id,
+            agent_session_id: &conversation.agent_session_id,
+            leader_name: "Leader",
+            title: Some("Recover me"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    teams
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &team.leader_member_id,
+            goal: "Recover after restart",
+            acceptance_criteria: &["The Team becomes active".to_owned()],
+            allowed_agent_ids: &["codex".to_owned()],
+            mode: TeamMode::Standard,
+            max_teammates: 1,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .expect("start");
+    assert_eq!(
+        teams.get_team(&team.id).expect("starting Team").status,
+        TeamStatus::Starting
+    );
+    let state = AppState::new(workspace, agents, Arc::clone(&teams));
+
+    state
+        .reconcile_teams_once()
+        .await
+        .expect("supervisor reconciliation");
+
+    assert_eq!(
+        teams.get_team(&team.id).expect("active Team").status,
+        TeamStatus::Active
+    );
+
+    for _ in 0..3 {
+        state
+            .reconcile_teams_once()
+            .await
+            .expect("bounded no-progress reconciliation");
+    }
+    assert_eq!(
+        teams
+            .get_team(&team.id)
+            .expect("Team needing attention")
+            .status,
+        TeamStatus::NeedsAttention
+    );
 }
 
 #[tokio::test]
@@ -730,6 +813,10 @@ done"#,
             max_review_rounds: 3,
         })
         .expect("start Team");
+    state
+        .teams
+        .activate_team(&created_team.id)
+        .expect("activate Team");
     let transcript_text = fs::read_to_string(&transcript_path).expect("ACP transcript");
     let initialize = transcript_text
         .lines()
@@ -887,6 +974,7 @@ done"#,
         "team_configure_teammate",
         "team_delegate_task",
         "team_review_plan",
+        "team_request_user_input",
         "team_request_discrimination",
         "team_complete",
     ] {
@@ -929,6 +1017,38 @@ done"#,
     .expect("Team context");
     assert_eq!(context["role"], "leader");
     assert_eq!(context["members"].as_array().expect("members").len(), 1);
+
+    let input_request = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        31,
+        "team_request_user_input",
+        json!({
+            "title": "Choose scope",
+            "prompt": "Should the review include generated files?"
+        }),
+    )
+    .await;
+    let input_request: Value = serde_json::from_str(
+        input_request["result"]["content"][0]["text"]
+            .as_str()
+            .expect("user input request JSON"),
+    )
+    .expect("user input request");
+    let input_request_id = input_request["id"].as_str().expect("request id");
+    let (status, resumed) = request(
+        &router,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{}/attention/{input_request_id}/resolve",
+            snapshot["team"]["id"].as_str().unwrap()
+        ),
+        json!({"answer": "Exclude generated files"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resumed["team"]["status"], "active");
 
     let available = call_mcp_tool(
         &router,
@@ -1004,11 +1124,7 @@ done"#,
     )
     .await;
     assert_eq!(removed["result"]["isError"], false);
-    assert!(
-        fs::read_to_string(&transcript_path)
-            .expect("delete transcript")
-            .contains("\"method\":\"session/delete\"")
-    );
+    wait_for_file_contains(&transcript_path, "\"method\":\"session/delete\"").await;
     let (status, snapshot_after_remove) = request(
         &router,
         Method::GET,

@@ -833,6 +833,31 @@
 .kubecode-team-attention > div { display: flex; flex-wrap: wrap; gap: 4px; }
 .kubecode-team-attention button { justify-content: space-between; }
 .kubecode-team-attention button svg { height: 14px; width: 14px; }
+.kubecode-team-user-input {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto;
+  width: 100%;
+}
+.kubecode-team-user-input > div { display: grid; gap: 2px; }
+.kubecode-team-user-input > div > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.kubecode-team-user-input textarea {
+  max-height: 88px;
+  min-height: 34px;
+  resize: vertical;
+}
+.kubecode-team-cleanup {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+}
 .kubecode-team-verification > div {
   border-top: 1px solid color-mix(in srgb, var(--feedback-warning-text) 18%, transparent);
   display: grid;
@@ -847,6 +872,7 @@
   .kubecode-team-native-options {
     grid-template-columns: 1fr;
   }
+  .kubecode-team-user-input { grid-template-columns: 1fr; }
 }
 
 .kubecode-team-workspace-body {

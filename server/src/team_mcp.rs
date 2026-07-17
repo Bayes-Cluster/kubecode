@@ -29,7 +29,7 @@ use crate::teams::{
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -68,9 +68,11 @@ impl TeamMcpServer {
                 "team_create_task",
                 "team_delegate_task",
                 "team_retry_task",
+                "team_cancel_task",
                 "team_review_plan",
                 "team_review_result",
                 "team_review_permission",
+                "team_request_user_input",
                 "team_request_discrimination",
                 "team_complete",
                 "team_submit_verdict",
@@ -86,6 +88,7 @@ impl TeamMcpServer {
                 "team_create_task",
                 "team_delegate_task",
                 "team_retry_task",
+                "team_cancel_task",
                 "team_list_tasks",
                 "team_claim_task",
                 "team_report_status",
@@ -94,6 +97,7 @@ impl TeamMcpServer {
                 "team_submit_result",
                 "team_review_result",
                 "team_review_permission",
+                "team_request_user_input",
                 "team_request_discrimination",
                 "team_complete",
                 "team_send_message",
@@ -152,6 +156,12 @@ struct CreateTaskInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct TaskInput {
     task_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CancelTaskInput {
+    task_id: String,
+    reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -249,6 +259,12 @@ struct ReviewPermissionInput {
     reason: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RequestUserInput {
+    title: String,
+    prompt: String,
+}
+
 #[tool_router]
 impl TeamMcpServer {
     #[tool(
@@ -277,6 +293,8 @@ impl TeamMcpServer {
             "discrimination_rounds": self.context.teams.list_discrimination_rounds(&team.id)
                 .map_err(mcp_error)?,
             "pending_permissions": self.context.teams.pending_permission_requests(&team.id)
+                .map_err(mcp_error)?,
+            "pending_user_input": self.context.teams.pending_user_input_requests(&team.id)
                 .map_err(mcp_error)?,
         }))
     }
@@ -345,6 +363,7 @@ impl TeamMcpServer {
         Parameters(input): Parameters<ProposeLineupInput>,
     ) -> Result<CallToolResult, McpError> {
         self.require_leader()?;
+        self.require_mutable_team()?;
         let members_json = serde_json::to_string(&input.members).map_err(mcp_error)?;
         let proposal = self
             .context
@@ -376,6 +395,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<SpawnInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let agent_id = input
             .agent_id
             .parse::<AgentId>()
@@ -392,6 +412,27 @@ impl TeamMcpServer {
                 name: &input.name,
                 workspace_mode,
             })
+            .map_err(mcp_error)?;
+        let provisioning = self
+            .context
+            .teams
+            .create_lifecycle_operation(
+                &member.team_id,
+                &self
+                    .context
+                    .teams
+                    .get_team(&member.team_id)
+                    .map_err(mcp_error)?
+                    .project_id,
+                crate::teams::TeamLifecycleOperationKind::Provisioning,
+                Some(&member.id),
+                Some(&member.conversation_id),
+                &serde_json::json!({"agent_id": input.agent_id}).to_string(),
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .mark_lifecycle_operation_running(&provisioning.id)
             .map_err(mcp_error)?;
         if let Err(error) = self
             .context
@@ -415,6 +456,10 @@ impl TeamMcpServer {
                     .teams
                     .set_member_status(&member.id, TeamMemberStatus::Idle)
                     .map_err(mcp_error)?;
+                self.context
+                    .teams
+                    .mark_lifecycle_operation_completed(&provisioning.id)
+                    .map_err(mcp_error)?;
                 publish_team_event(
                     &self.context,
                     "team_mode_fallback",
@@ -427,11 +472,28 @@ impl TeamMcpServer {
                 .runtime
                 .disconnect_conversation(&member.conversation_id)
                 .await;
-            let _ = coordinator(&self.context).remove_teammate(
-                &self.context.member.team_id,
-                &self.context.member.id,
-                &member.id,
+            let _ = self
+                .context
+                .teams
+                .mark_lifecycle_operation_terminal_failure(&provisioning.id, &error.to_string());
+            let _ = self
+                .context
+                .runtime
+                .remove_team_member_local_first(
+                    &self.context.member.team_id,
+                    &self.context.member.id,
+                    &member.id,
+                )
+                .await;
+            let _ = self.context.teams.append_activity(
+                &member.team_id,
+                None,
+                None,
+                "member_provision_failed",
+                &format!("Could not start teammate {}", member.name),
+                Some(&provisioning.id),
             );
+            publish_team_event(&self.context, "team_member_provision_failed", None);
             return Err(mcp_error(error));
         }
         let team = self
@@ -449,6 +511,10 @@ impl TeamMcpServer {
             .apply_teammate_configuration(&member, input.mode, input.session_options)
             .await
         {
+            let _ = self
+                .context
+                .teams
+                .mark_lifecycle_operation_terminal_failure(&provisioning.id, &error.to_string());
             let _ = self
                 .context
                 .teams
@@ -476,6 +542,10 @@ impl TeamMcpServer {
             .context
             .teams
             .set_member_status(&member.id, TeamMemberStatus::Idle);
+        self.context
+            .teams
+            .mark_lifecycle_operation_completed(&provisioning.id)
+            .map_err(mcp_error)?;
         let _ = self.context.teams.append_activity(
             &self.context.member.team_id,
             Some(&member.id),
@@ -500,6 +570,7 @@ impl TeamMcpServer {
         Parameters(input): Parameters<ConfigureTeammateInput>,
     ) -> Result<CallToolResult, McpError> {
         self.require_leader()?;
+        self.require_mutable_team()?;
         let member = self
             .context
             .teams
@@ -527,6 +598,24 @@ impl TeamMcpServer {
             .context
             .teams
             .set_member_status(&member.id, TeamMemberStatus::Idle);
+        if let Some(operation) = self
+            .context
+            .teams
+            .list_lifecycle_operations(&member.team_id)
+            .map_err(mcp_error)?
+            .into_iter()
+            .rev()
+            .find(|operation| {
+                operation.kind == crate::teams::TeamLifecycleOperationKind::Provisioning
+                    && operation.member_id.as_deref() == Some(member.id.as_str())
+                    && operation.status == crate::teams::TeamLifecycleOperationStatus::Failed
+            })
+        {
+            self.context
+                .teams
+                .mark_lifecycle_operation_completed(&operation.id)
+                .map_err(mcp_error)?;
+        }
         let _ = self.context.teams.append_activity(
             &member.team_id,
             Some(&member.id),
@@ -539,36 +628,30 @@ impl TeamMcpServer {
     }
 
     #[tool(
-        description = "Leader only: stop a teammate, delete its Agent-native and Kubecode Session, remove it from this Team, and release assigned work back to pending. This does not delete project files or disband the Team."
+        description = "Leader only: immediately remove a teammate from this Team and release assigned work. Provider-native Session cleanup runs in the background when the provider is unavailable. Project files are never deleted."
     )]
     async fn team_remove_teammate(
         &self,
         Parameters(input): Parameters<RemoveTeammateInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let team_id = &self.context.member.team_id;
         let caller_id = &self.context.member.id;
         let teammate = coordinator(&self.context)
             .removable_teammate(team_id, caller_id, &input.teammate_id)
             .map_err(mcp_error)?;
-        self.context
+        let removal = self
+            .context
             .runtime
-            .disconnect_conversation(&teammate.conversation_id)
+            .remove_team_member_local_first(team_id, caller_id, &teammate.id)
             .await
-            .map_err(mcp_error)?;
-        self.context
-            .runtime
-            .delete_session(&teammate.conversation_id)
-            .await
-            .map_err(mcp_error)?;
-        self.context
-            .teams
-            .remove_teammate(team_id, caller_id, &teammate.id)
             .map_err(mcp_error)?;
         publish_team_event(&self.context, "team_member_updated", None);
         json_output(&serde_json::json!({
             "removed": true,
             "teammate_id": teammate.id,
             "name": teammate.name,
+            "cleanup": removal.cleanup_operation,
         }))
     }
 
@@ -591,6 +674,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<CreateTaskInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
@@ -616,6 +700,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<DelegateTaskInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
@@ -644,10 +729,43 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<TaskInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
             .retry_task(&input.task_id, &self.context.member.id)
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_task_updated", None);
+        json_output(&task)
+    }
+
+    #[tool(
+        description = "Leader only: cancel concrete work that is no longer required. This closes any active attempt and never assigns implementation work to the Leader."
+    )]
+    async fn team_cancel_task(
+        &self,
+        Parameters(input): Parameters<CancelTaskInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
+        let task = self
+            .context
+            .teams
+            .cancel_task(
+                &input.task_id,
+                &self.context.member.id,
+                input.reason.as_deref(),
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .append_activity(
+                &task.team_id,
+                Some(&self.context.member.id),
+                Some(&task.id),
+                "task_cancelled",
+                &task.title,
+                None,
+            )
             .map_err(mcp_error)?;
         publish_team_event(&self.context, "team_task_updated", None);
         json_output(&task)
@@ -668,6 +786,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<TaskInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
@@ -684,6 +803,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<SubmitPlanInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
@@ -720,6 +840,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<ReportStatusInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let team = self
             .context
             .teams
@@ -767,12 +888,47 @@ impl TeamMcpServer {
     }
 
     #[tool(
+        description = "Leader only: pause Team scheduling and ask the user for a semantic decision that the Leader cannot safely make. The answer is delivered back to the Leader's durable mailbox."
+    )]
+    async fn team_request_user_input(
+        &self,
+        Parameters(input): Parameters<RequestUserInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_leader()?;
+        self.require_mutable_team()?;
+        let request = self
+            .context
+            .teams
+            .request_user_input(
+                &self.context.member.team_id,
+                &self.context.member.id,
+                &input.title,
+                &input.prompt,
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .append_activity(
+                &self.context.member.team_id,
+                Some(&self.context.member.id),
+                None,
+                "user_input_requested",
+                &input.title,
+                Some(&request.id),
+            )
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_user_input_requested", None);
+        json_output(&request)
+    }
+
+    #[tool(
         description = "Submit a completed task result and verification to wake the Leader for review."
     )]
     async fn team_submit_result(
         &self,
         Parameters(input): Parameters<SubmitResultInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         coordinator(&self.context)
             .submit_result(
                 &input.task_id,
@@ -794,6 +950,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<ReviewPlanInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = self
             .context
             .teams
@@ -835,6 +992,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<ReviewResultInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let task = coordinator(&self.context)
             .review_result(
                 &input.task_id,
@@ -860,6 +1018,7 @@ impl TeamMcpServer {
     )]
     async fn team_request_discrimination(&self) -> Result<CallToolResult, McpError> {
         self.require_leader()?;
+        self.require_mutable_team()?;
         let team = self
             .context
             .teams
@@ -931,6 +1090,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<SubmitVerdictInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let round = self
             .context
             .teams
@@ -979,6 +1139,7 @@ impl TeamMcpServer {
         Parameters(input): Parameters<CompleteTeamInput>,
     ) -> Result<CallToolResult, McpError> {
         self.require_leader()?;
+        self.require_mutable_team()?;
         let team = self
             .context
             .teams
@@ -1037,6 +1198,7 @@ impl TeamMcpServer {
         Parameters(input): Parameters<ReviewPermissionInput>,
     ) -> Result<CallToolResult, McpError> {
         self.require_leader()?;
+        self.require_mutable_team()?;
         let request = self
             .context
             .teams
@@ -1131,6 +1293,7 @@ impl TeamMcpServer {
         &self,
         Parameters(input): Parameters<SendMessageInput>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_mutable_team()?;
         let message = self
             .context
             .teams
@@ -1174,6 +1337,25 @@ impl TeamMcpServer {
             Ok(())
         } else {
             Err(mcp_error("only the Team Leader may perform this action"))
+        }
+    }
+
+    fn require_mutable_team(&self) -> Result<(), McpError> {
+        let team = self
+            .context
+            .teams
+            .get_team(&self.context.member.team_id)
+            .map_err(mcp_error)?;
+        if matches!(
+            team.status,
+            crate::teams::TeamStatus::Completed
+                | crate::teams::TeamStatus::Archived
+                | crate::teams::TeamStatus::Disbanding
+                | crate::teams::TeamStatus::Removed
+        ) {
+            Err(mcp_error("the Team lifecycle is read-only"))
+        } else {
+            Ok(())
         }
     }
 

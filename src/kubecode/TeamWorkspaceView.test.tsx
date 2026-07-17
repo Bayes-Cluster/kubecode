@@ -118,6 +118,55 @@ describe('TeamWorkspaceView', () => {
     )
   })
 
+  it('lets the user answer a durable Leader question inline', async () => {
+    const updated = { ...snapshot, user_input_requests: [], attention: [] }
+    const resolveTeamUserInput = vi.fn().mockResolvedValue(updated)
+    const onSnapshotChange = vi.fn()
+    render(
+      <TeamWorkspaceView
+        api={{ resolveTeamUserInput } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={onSnapshotChange}
+        snapshot={{
+          ...snapshot,
+          team: { ...snapshot.team, status: 'needs_attention' },
+          attention: [{
+            id: 'input-1',
+            kind: 'user_input',
+            member_id: 'member-1',
+            task_id: null,
+            summary: 'Choose the evaluation dataset',
+          }],
+          user_input_requests: [{
+            id: 'input-1',
+            team_id: 'team-1',
+            requester_member_id: 'member-1',
+            title: 'Dataset choice',
+            prompt: 'Choose the evaluation dataset',
+            resume_status: 'active',
+            status: 'pending',
+            answer: null,
+            created_at: '2026-07-17 10:00:00',
+            resolved_at: null,
+          }],
+        }}
+        t={t}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Dataset choice' }), {
+      target: { value: 'Use the public benchmark' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamSubmitAnswer' }))
+
+    await waitFor(() => expect(resolveTeamUserInput).toHaveBeenCalledWith(
+      'team-1',
+      'input-1',
+      'Use the public benchmark',
+    ))
+    expect(onSnapshotChange).toHaveBeenCalledWith(updated)
+  })
+
   it('starts a draft Team only after goal, criteria, and autonomy are configured', async () => {
     const startTeam = vi.fn().mockResolvedValue({
       ...snapshot,

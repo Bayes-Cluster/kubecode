@@ -60,6 +60,12 @@ pub enum TeamError {
     CompletionBlocked,
     #[error("team discrimination round not found: {0}")]
     DiscriminationNotFound(String),
+    #[error("team lifecycle operation not found: {0}")]
+    LifecycleOperationNotFound(String),
+    #[error("team user input request not found: {0}")]
+    UserInputRequestNotFound(String),
+    #[error("team user input request is no longer pending")]
+    UserInputRequestNotPending,
     #[error("only a Team discriminator may submit a verdict")]
     DiscriminatorRequired,
     #[error("a discriminator cannot perform concrete Team work")]
@@ -113,17 +119,22 @@ pub enum TeamMemberStatus {
     WaitingPermission,
     Failed,
     Stopped,
+    Removing,
+    Removed,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TeamStatus {
     Draft,
+    Starting,
     Active,
     Verifying,
     NeedsAttention,
     Completed,
     Archived,
+    Disbanding,
+    Removed,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -201,6 +212,31 @@ pub enum TeamMessageDeliveryStatus {
     Delivered,
     Acknowledged,
     Failed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamLifecycleOperationKind {
+    Provisioning,
+    ProviderCleanup,
+    Disband,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamLifecycleOperationStatus {
+    Pending,
+    Running,
+    RetryScheduled,
+    Failed,
+    Completed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamUserInputStatus {
+    Pending,
+    Resolved,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -309,6 +345,38 @@ pub struct TeamMessage {
     pub delivered_at: Option<String>,
     pub last_error: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TeamLifecycleOperation {
+    pub id: String,
+    pub team_id: String,
+    pub project_id: String,
+    pub kind: TeamLifecycleOperationKind,
+    pub status: TeamLifecycleOperationStatus,
+    pub member_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub payload_json: String,
+    pub attempt_count: u32,
+    pub next_attempt_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TeamUserInputRequest {
+    pub id: String,
+    pub team_id: String,
+    pub requester_member_id: String,
+    pub title: String,
+    pub prompt: String,
+    pub resume_status: TeamStatus,
+    pub status: TeamUserInputStatus,
+    pub answer: Option<String>,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -606,6 +674,34 @@ impl TeamStore {
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                completed_at TEXT
+             );
+             CREATE TABLE IF NOT EXISTS team_lifecycle_operations (
+               id TEXT PRIMARY KEY,
+               team_id TEXT NOT NULL,
+               project_id TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               status TEXT NOT NULL DEFAULT 'pending',
+               member_id TEXT,
+               conversation_id TEXT,
+               payload_json TEXT NOT NULL DEFAULT '{}',
+               attempt_count INTEGER NOT NULL DEFAULT 0,
+               next_attempt_at TEXT,
+               last_error TEXT,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               completed_at TEXT
+             );
+             CREATE TABLE IF NOT EXISTS team_user_input_requests (
+               id TEXT PRIMARY KEY,
+               team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+               requester_member_id TEXT NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+               title TEXT NOT NULL,
+               prompt TEXT NOT NULL,
+               resume_status TEXT NOT NULL DEFAULT 'active',
+               status TEXT NOT NULL DEFAULT 'pending',
+               answer TEXT,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               resolved_at TEXT
              );",
         )?;
         ensure_column(
@@ -700,6 +796,12 @@ impl TeamStore {
         ensure_column(&database, "team_messages", "last_error", "TEXT")?;
         ensure_column(
             &database,
+            "team_user_input_requests",
+            "resume_status",
+            "TEXT NOT NULL DEFAULT 'active'",
+        )?;
+        ensure_column(
+            &database,
             "team_tasks",
             "completion_required",
             "INTEGER NOT NULL DEFAULT 1",
@@ -722,6 +824,21 @@ impl TeamStore {
                    SELECT COUNT(*) FROM team_members
                    WHERE team_members.team_id = teams.id AND role = 'teammate'
                  )))",
+            [],
+        )?;
+        database.execute(
+            "UPDATE team_lifecycle_operations
+             SET status = CASE
+                   WHEN kind = 'provider_cleanup' THEN 'pending'
+                   ELSE 'failed'
+                 END,
+                 next_attempt_at = NULL,
+                 last_error = CASE
+                   WHEN kind = 'provider_cleanup' THEN last_error
+                   ELSE 'operation interrupted by server restart'
+                 END,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE status = 'running'",
             [],
         )?;
         Ok(Self {
@@ -839,7 +956,7 @@ impl TeamStore {
         let transaction = database.transaction()?;
         require_leader(&transaction, input.team_id, input.leader_member_id)?;
         let changed = transaction.execute(
-            "UPDATE teams SET status = 'active', requested_mode = ?3, mode = ?3,
+            "UPDATE teams SET status = 'starting', requested_mode = ?3, mode = ?3,
                     mode_fallback_agent_id = NULL, mode_fallback_reason_code = NULL,
                     mode_fallback_reason = NULL, mode_fallback_at = NULL, goal = ?4,
                     acceptance_criteria_json = ?5, allowed_agent_ids_json = ?6,
@@ -849,7 +966,11 @@ impl TeamStore {
                     final_summary = NULL, started_at = CURRENT_TIMESTAMP, completed_at = NULL,
                     updated_at = CURRENT_TIMESTAMP
              WHERE id = ?1 AND status IN ('draft', 'needs_attention')
-               AND (status = 'draft' OR ?9 > current_review_round)",
+               AND (status = 'draft' OR ?9 > current_review_round)
+               AND NOT EXISTS (
+                 SELECT 1 FROM team_user_input_requests
+                 WHERE team_id = teams.id AND status = 'pending'
+               )",
             params![
                 input.team_id,
                 input.leader_member_id,
@@ -868,6 +989,38 @@ impl TeamStore {
         transaction.commit()?;
         drop(database);
         self.get_team(input.team_id)
+    }
+
+    pub fn activate_team(&self, team_id: &str) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'active', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'starting'",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
+    }
+
+    pub fn mark_team_needs_attention(&self, team_id: &str) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'needs_attention', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status IN ('active', 'verifying')",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
     }
 
     pub fn downgrade_to_standard(
@@ -905,7 +1058,7 @@ impl TeamStore {
                         mode_fallback_reason_code = NULL, mode_fallback_reason = NULL,
                         mode_fallback_at = NULL, started_at = NULL,
                         updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ?1 AND status = 'active'",
+                 WHERE id = ?1 AND status IN ('starting', 'active')",
                 [team_id],
             )?;
         if changed == 0 {
@@ -996,7 +1149,8 @@ impl TeamStore {
                (SELECT COUNT(*) FROM team_permission_requests
                 WHERE team_id = ?1 AND status IN ('pending_leader', 'waiting_user'))
                + (SELECT COUNT(*) FROM team_messages
-                  WHERE team_id = ?1 AND delivery_status IN ('pending', 'failed'))",
+                  WHERE team_id = ?1
+                    AND delivery_status IN ('pending', 'delivered', 'failed'))",
             [team_id],
             |row| row.get(0),
         )?;
@@ -1047,6 +1201,27 @@ impl TeamStore {
             .map_err(TeamError::from)
     }
 
+    pub fn list_reconcilable_teams(&self) -> Result<Vec<Team>, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, project_id, leader_member_id, agent_session_id, title, status,
+                    workspace, workspace_path, member_management_policy, max_parallel_runs,
+                    requested_mode, mode, mode_fallback_agent_id,
+                    mode_fallback_reason_code, mode_fallback_reason, mode_fallback_at,
+                    goal, acceptance_criteria_json, allowed_agent_ids_json,
+                    max_teammates, max_review_rounds, current_review_round,
+                    workspace_fingerprint, final_summary, started_at, completed_at,
+                    created_at, updated_at
+             FROM teams
+             WHERE status IN ('starting', 'active', 'verifying', 'needs_attention', 'disbanding')
+             ORDER BY updated_at, id",
+        )?;
+        statement
+            .query_map([], team_from_row)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TeamError::from)
+    }
+
     pub fn delete_team(&self, team_id: &str) -> Result<(), TeamError> {
         let changed = self
             .database
@@ -1057,6 +1232,27 @@ impl TeamStore {
             return Err(TeamError::TeamNotFound(team_id.to_owned()));
         }
         Ok(())
+    }
+
+    pub fn mark_team_disbanding(&self, team_id: &str) -> Result<Team, TeamError> {
+        let current = self.get_team(team_id)?;
+        if current.status == TeamStatus::Disbanding {
+            return Ok(current);
+        }
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'disbanding', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1
+                   AND status NOT IN ('disbanding', 'removed')",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
     }
 
     pub fn team_for_conversation(&self, conversation_id: &str) -> Result<Option<Team>, TeamError> {
@@ -1119,7 +1315,7 @@ impl TeamStore {
         let inserted = transaction.execute(
             "INSERT INTO team_members
              (id, team_id, conversation_id, name, role, status, workspace_mode, base_tree)
-             VALUES (?1, ?2, ?3, ?4, 'teammate', 'idle', ?5, ?6)",
+             VALUES (?1, ?2, ?3, ?4, 'teammate', 'starting', ?5, ?6)",
             params![
                 member_id,
                 input.team_id,
@@ -1244,6 +1440,11 @@ impl TeamStore {
             TeamRole::Discriminator => return Err(TeamError::DiscriminatorCannotWork),
             TeamRole::Teammate => {}
         }
+        transaction.execute(
+            "UPDATE team_members SET status = 'removing', updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1",
+            [teammate_id],
+        )?;
         transaction.execute(
             "DELETE FROM team_messages WHERE from_member_id = ?1 OR to_member_id = ?1",
             [teammate_id],
@@ -1510,6 +1711,24 @@ impl TeamStore {
             .map_err(TeamError::from)
     }
 
+    pub fn requeue_expired_deliveries(&self, lease_seconds: u64) -> Result<usize, TeamError> {
+        let modifier = format!("-{} seconds", lease_seconds.min(i64::MAX as u64));
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_messages
+                 SET delivery_status = 'pending', delivered_at = NULL,
+                     last_error = 'delivery acknowledgement lease expired'
+                 WHERE delivery_status = 'delivered'
+                   AND read_at IS NULL
+                   AND delivery_attempts < 3
+                   AND delivered_at <= datetime('now', ?1)",
+                [modifier],
+            )
+            .map_err(TeamError::from)
+    }
+
     pub fn mark_message_delivered(&self, message_id: &str) -> Result<(), TeamError> {
         self.database
             .lock()
@@ -1518,7 +1737,7 @@ impl TeamStore {
                 "UPDATE team_messages
                  SET delivery_status = 'delivered', delivered_at = CURRENT_TIMESTAMP,
                      delivery_attempts = delivery_attempts + 1, last_error = NULL
-                 WHERE id = ?1",
+                 WHERE id = ?1 AND delivery_status IN ('pending', 'failed')",
                 [message_id],
             )?;
         Ok(())
@@ -1531,7 +1750,8 @@ impl TeamStore {
             .execute(
                 "UPDATE team_messages
                  SET delivery_status = 'failed', delivery_attempts = delivery_attempts + 1,
-                     last_error = ?2 WHERE id = ?1",
+                     last_error = ?2
+                 WHERE id = ?1 AND delivery_status != 'acknowledged'",
                 params![message_id, error],
             )?;
         Ok(())
@@ -1548,6 +1768,356 @@ impl TeamStore {
                 [member_id],
             )
             .map_err(TeamError::from)
+    }
+
+    pub fn create_lifecycle_operation(
+        &self,
+        team_id: &str,
+        project_id: &str,
+        kind: TeamLifecycleOperationKind,
+        member_id: Option<&str>,
+        conversation_id: Option<&str>,
+        payload_json: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let operation_id = Uuid::new_v4().to_string();
+        serde_json::from_str::<serde_json::Value>(payload_json)
+            .map_err(|error| TeamError::InvalidStoredValue(error.to_string()))?;
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "INSERT INTO team_lifecycle_operations
+                 (id, team_id, project_id, kind, member_id, conversation_id, payload_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    operation_id,
+                    team_id,
+                    project_id,
+                    kind.as_str(),
+                    member_id,
+                    conversation_id,
+                    payload_json,
+                ],
+            )?;
+        self.get_lifecycle_operation(&operation_id)
+    }
+
+    pub fn get_lifecycle_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .query_row(
+                "SELECT id, team_id, project_id, kind, status, member_id, conversation_id,
+                        payload_json, attempt_count, next_attempt_at, last_error,
+                        created_at, updated_at, completed_at
+                 FROM team_lifecycle_operations WHERE id = ?1",
+                [operation_id],
+                team_lifecycle_operation_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| TeamError::LifecycleOperationNotFound(operation_id.to_owned()))
+    }
+
+    pub fn list_lifecycle_operations(
+        &self,
+        team_id: &str,
+    ) -> Result<Vec<TeamLifecycleOperation>, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, team_id, project_id, kind, status, member_id, conversation_id,
+                    payload_json, attempt_count, next_attempt_at, last_error,
+                    created_at, updated_at, completed_at
+             FROM team_lifecycle_operations
+             WHERE team_id = ?1
+             ORDER BY created_at, id",
+        )?;
+        statement
+            .query_map([team_id], team_lifecycle_operation_from_row)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TeamError::from)
+    }
+
+    pub fn due_lifecycle_operations(&self) -> Result<Vec<TeamLifecycleOperation>, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, team_id, project_id, kind, status, member_id, conversation_id,
+                    payload_json, attempt_count, next_attempt_at, last_error,
+                    created_at, updated_at, completed_at
+             FROM team_lifecycle_operations
+             WHERE kind = 'provider_cleanup'
+               AND status IN ('pending', 'retry_scheduled')
+               AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+             ORDER BY created_at, id",
+        )?;
+        statement
+            .query_map([], team_lifecycle_operation_from_row)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TeamError::from)
+    }
+
+    pub fn mark_lifecycle_operation_running(
+        &self,
+        operation_id: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_lifecycle_operations
+                 SET status = 'running', attempt_count = attempt_count + 1,
+                     next_attempt_at = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status IN ('pending', 'retry_scheduled')",
+                [operation_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::LifecycleOperationNotFound(
+                operation_id.to_owned(),
+            ));
+        }
+        self.get_lifecycle_operation(operation_id)
+    }
+
+    pub fn mark_lifecycle_operation_failed(
+        &self,
+        operation_id: &str,
+        error: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let operation = self.get_lifecycle_operation(operation_id)?;
+        let retry_delay_seconds = match operation.attempt_count {
+            0 | 1 => Some(5),
+            2 => Some(30),
+            3 => Some(2 * 60),
+            4 => Some(10 * 60),
+            5 => Some(60 * 60),
+            _ => None,
+        };
+        let (status, next_attempt_at) = retry_delay_seconds.map_or_else(
+            || (TeamLifecycleOperationStatus::Failed, None),
+            |seconds| {
+                (
+                    TeamLifecycleOperationStatus::RetryScheduled,
+                    Some(format!("+{seconds} seconds")),
+                )
+            },
+        );
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_lifecycle_operations
+                 SET status = ?2,
+                     next_attempt_at = CASE
+                       WHEN ?3 IS NULL THEN NULL
+                       ELSE datetime('now', ?3)
+                     END,
+                     last_error = ?4, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![operation_id, status.as_str(), next_attempt_at, error.trim(),],
+            )?;
+        self.get_lifecycle_operation(operation_id)
+    }
+
+    pub fn mark_lifecycle_operation_completed(
+        &self,
+        operation_id: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_lifecycle_operations
+                 SET status = 'completed', next_attempt_at = NULL, last_error = NULL,
+                     completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                [operation_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::LifecycleOperationNotFound(
+                operation_id.to_owned(),
+            ));
+        }
+        self.get_lifecycle_operation(operation_id)
+    }
+
+    pub fn mark_lifecycle_operation_terminal_failure(
+        &self,
+        operation_id: &str,
+        error: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_lifecycle_operations
+                 SET status = 'failed', next_attempt_at = NULL, last_error = ?2,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![operation_id, error.trim()],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::LifecycleOperationNotFound(
+                operation_id.to_owned(),
+            ));
+        }
+        self.get_lifecycle_operation(operation_id)
+    }
+
+    pub fn retry_lifecycle_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<TeamLifecycleOperation, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_lifecycle_operations
+                 SET status = 'pending', attempt_count = 0, next_attempt_at = NULL,
+                     last_error = NULL, completed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'failed'",
+                [operation_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::LifecycleOperationNotFound(
+                operation_id.to_owned(),
+            ));
+        }
+        self.get_lifecycle_operation(operation_id)
+    }
+
+    pub fn request_user_input(
+        &self,
+        team_id: &str,
+        leader_member_id: &str,
+        title: &str,
+        prompt: &str,
+    ) -> Result<TeamUserInputRequest, TeamError> {
+        let request_id = Uuid::new_v4().to_string();
+        let mut database = self.database.lock().expect("team database mutex poisoned");
+        let transaction = database.transaction()?;
+        require_leader(&transaction, team_id, leader_member_id)?;
+        let status: String =
+            transaction.query_row("SELECT status FROM teams WHERE id = ?1", [team_id], |row| {
+                row.get(0)
+            })?;
+        if !matches!(status.as_str(), "active" | "verifying") {
+            return Err(TeamError::InvalidTeamState);
+        }
+        transaction.execute(
+            "INSERT INTO team_user_input_requests
+             (id, team_id, requester_member_id, title, prompt, resume_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                request_id,
+                team_id,
+                leader_member_id,
+                title.trim(),
+                prompt.trim(),
+                status,
+            ],
+        )?;
+        transaction.execute(
+            "UPDATE teams SET status = 'needs_attention', updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1",
+            [team_id],
+        )?;
+        transaction.commit()?;
+        drop(database);
+        self.get_user_input_request(&request_id)
+    }
+
+    pub fn get_user_input_request(
+        &self,
+        request_id: &str,
+    ) -> Result<TeamUserInputRequest, TeamError> {
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .query_row(
+                "SELECT id, team_id, requester_member_id, title, prompt, resume_status,
+                        status, answer, created_at, resolved_at
+                 FROM team_user_input_requests WHERE id = ?1",
+                [request_id],
+                team_user_input_request_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| TeamError::UserInputRequestNotFound(request_id.to_owned()))
+    }
+
+    pub fn pending_user_input_requests(
+        &self,
+        team_id: &str,
+    ) -> Result<Vec<TeamUserInputRequest>, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT id, team_id, requester_member_id, title, prompt, resume_status,
+                    status, answer, created_at, resolved_at
+             FROM team_user_input_requests
+             WHERE team_id = ?1 AND status = 'pending'
+             ORDER BY created_at, id",
+        )?;
+        statement
+            .query_map([team_id], team_user_input_request_from_row)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TeamError::from)
+    }
+
+    pub fn resolve_user_input(
+        &self,
+        team_id: &str,
+        request_id: &str,
+        answer: &str,
+    ) -> Result<TeamUserInputRequest, TeamError> {
+        let mut database = self.database.lock().expect("team database mutex poisoned");
+        let transaction = database.transaction()?;
+        let changed = transaction.execute(
+            "UPDATE team_user_input_requests
+             SET status = 'resolved', answer = ?3, resolved_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND team_id = ?2 AND status = 'pending'",
+            params![request_id, team_id, answer.trim()],
+        )?;
+        if changed == 0 {
+            let exists = transaction
+                .query_row(
+                    "SELECT 1 FROM team_user_input_requests WHERE id = ?1 AND team_id = ?2",
+                    params![request_id, team_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            return Err(if exists {
+                TeamError::UserInputRequestNotPending
+            } else {
+                TeamError::UserInputRequestNotFound(request_id.to_owned())
+            });
+        }
+        let pending: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM team_user_input_requests
+             WHERE team_id = ?1 AND status = 'pending'",
+            [team_id],
+            |row| row.get(0),
+        )?;
+        if pending == 0 {
+            let resume_status: String = transaction.query_row(
+                "SELECT resume_status FROM team_user_input_requests WHERE id = ?1",
+                [request_id],
+                |row| row.get(0),
+            )?;
+            transaction.execute(
+                "UPDATE teams SET status = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'needs_attention'",
+                params![team_id, resume_status],
+            )?;
+        }
+        transaction.commit()?;
+        drop(database);
+        self.get_user_input_request(request_id)
     }
 
     pub fn create_proposal(&self, input: NewTeamProposal<'_>) -> Result<TeamProposal, TeamError> {
@@ -2297,6 +2867,46 @@ impl TeamStore {
         self.get_task(task_id)
     }
 
+    pub fn cancel_task(
+        &self,
+        task_id: &str,
+        leader_member_id: &str,
+        reason: Option<&str>,
+    ) -> Result<TeamTask, TeamError> {
+        let mut database = self.database.lock().expect("team database mutex poisoned");
+        let transaction = database.transaction()?;
+        let team_id = task_team_id(&transaction, task_id)?;
+        require_leader(&transaction, &team_id, leader_member_id)?;
+        let changed = transaction.execute(
+            "UPDATE team_tasks
+             SET status = 'cancelled', assignee_member_id = NULL,
+                 verification = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status NOT IN ('accepted', 'cancelled')",
+            params![
+                task_id,
+                reason.map(str::trim).filter(|value| !value.is_empty())
+            ],
+        )?;
+        if changed == 0 {
+            return Err(TeamError::TaskUnavailable);
+        }
+        transaction.execute(
+            "UPDATE team_task_attempts
+             SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE task_id = ?1
+               AND status IN ('queued', 'running', 'needs_report', 'result_submitted')",
+            [task_id],
+        )?;
+        transaction.execute(
+            "UPDATE teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            [team_id],
+        )?;
+        transaction.commit()?;
+        drop(database);
+        self.get_task(task_id)
+    }
+
     fn get_discrimination_round(
         &self,
         round_id: &str,
@@ -2663,6 +3273,46 @@ fn team_message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TeamMessag
     })
 }
 
+fn team_lifecycle_operation_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<TeamLifecycleOperation> {
+    Ok(TeamLifecycleOperation {
+        id: row.get(0)?,
+        team_id: row.get(1)?,
+        project_id: row.get(2)?,
+        kind: TeamLifecycleOperationKind::parse(&row.get::<_, String>(3)?)
+            .map_err(sql_value_error)?,
+        status: TeamLifecycleOperationStatus::parse(&row.get::<_, String>(4)?)
+            .map_err(sql_value_error)?,
+        member_id: row.get(5)?,
+        conversation_id: row.get(6)?,
+        payload_json: row.get(7)?,
+        attempt_count: row.get(8)?,
+        next_attempt_at: row.get(9)?,
+        last_error: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+        completed_at: row.get(13)?,
+    })
+}
+
+fn team_user_input_request_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<TeamUserInputRequest> {
+    Ok(TeamUserInputRequest {
+        id: row.get(0)?,
+        team_id: row.get(1)?,
+        requester_member_id: row.get(2)?,
+        title: row.get(3)?,
+        prompt: row.get(4)?,
+        resume_status: TeamStatus::parse(&row.get::<_, String>(5)?).map_err(sql_value_error)?,
+        status: TeamUserInputStatus::parse(&row.get::<_, String>(6)?).map_err(sql_value_error)?,
+        answer: row.get(7)?,
+        created_at: row.get(8)?,
+        resolved_at: row.get(9)?,
+    })
+}
+
 fn team_proposal_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TeamProposal> {
     Ok(TeamProposal {
         id: row.get(0)?,
@@ -2830,14 +3480,19 @@ stored_enum!(TeamMemberStatus {
     WaitingPermission => "waiting_permission",
     Failed => "failed",
     Stopped => "stopped",
+    Removing => "removing",
+    Removed => "removed",
 });
 stored_enum!(TeamStatus {
     Draft => "draft",
+    Starting => "starting",
     Active => "active",
     Verifying => "verifying",
     NeedsAttention => "needs_attention",
     Completed => "completed",
-    Archived => "archived"
+    Archived => "archived",
+    Disbanding => "disbanding",
+    Removed => "removed"
 });
 stored_enum!(TeamMode { Standard => "standard", Yolo => "yolo" });
 stored_enum!(DiscriminationStatus {
@@ -2890,6 +3545,22 @@ stored_enum!(TeamMessageDeliveryStatus {
     Delivered => "delivered",
     Acknowledged => "acknowledged",
     Failed => "failed",
+});
+stored_enum!(TeamLifecycleOperationKind {
+    Provisioning => "provisioning",
+    ProviderCleanup => "provider_cleanup",
+    Disband => "disband",
+});
+stored_enum!(TeamLifecycleOperationStatus {
+    Pending => "pending",
+    Running => "running",
+    RetryScheduled => "retry_scheduled",
+    Failed => "failed",
+    Completed => "completed",
+});
+stored_enum!(TeamUserInputStatus {
+    Pending => "pending",
+    Resolved => "resolved",
 });
 stored_enum!(TeamProposalStatus {
     Pending => "pending",

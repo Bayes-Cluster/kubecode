@@ -77,6 +77,26 @@ pub struct ProviderSessionInfo {
     pub updated_at: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProviderCleanupTarget {
+    pub agent_id: AgentId,
+    pub provider_session_id: String,
+    pub project_id: String,
+    pub workspace_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TeamMemberRemoval {
+    pub member: crate::teams::TeamMember,
+    pub cleanup_operation: Option<crate::teams::TeamLifecycleOperation>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TeamDisbandResult {
+    pub team_id: String,
+    pub cleanup_operations: Vec<crate::teams::TeamLifecycleOperation>,
+}
+
 #[derive(Clone)]
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
@@ -268,6 +288,16 @@ impl AgentRuntime {
             return Err(RuntimeError::Acp(
                 "team member does not belong to this team".into(),
             ));
+        }
+        if matches!(
+            team.status,
+            TeamStatus::Completed
+                | TeamStatus::Archived
+                | TeamStatus::Disbanding
+                | TeamStatus::Removed
+        ) || (team.status == TeamStatus::NeedsAttention && member.role != TeamRole::Leader)
+        {
+            return Ok(None);
         }
         let messages = teams
             .pending_messages(&member.id)
@@ -681,7 +711,7 @@ impl AgentRuntime {
     ) -> Result<Vec<ProviderSessionInfo>, RuntimeError> {
         let descriptor = self.available_descriptor(agent_id)?;
         let cwd = self.workspace.project_path(project_id)?;
-        let agent = acp_agent(agent_id, &descriptor, AgentPermissionProfile::Default)?;
+        let agent = acp_agent(agent_id, &descriptor, AgentPermissionProfile::Default, &cwd)?;
         agent_client_protocol::Client
             .builder()
             .name("Kubecode")
@@ -752,6 +782,7 @@ impl AgentRuntime {
             conversation.agent_id,
             &descriptor,
             AgentPermissionProfile::Default,
+            &cwd,
         )?;
         let update_store = Arc::clone(&self.store);
         let update_conversation_id = conversation.id.clone();
@@ -804,13 +835,32 @@ impl AgentRuntime {
         let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
             StoreError::InvalidStoredValue("conversation has no provider session".into())
         })?;
-        let descriptor = self.available_descriptor(conversation.agent_id)?;
+        self.cleanup_provider_target(&ProviderCleanupTarget {
+            agent_id: conversation.agent_id,
+            provider_session_id,
+            project_id: conversation.project_id,
+            workspace_path: conversation.workspace_path,
+        })
+        .await?;
+        self.store.delete_provider_conversation(conversation_id)?;
+        Ok(())
+    }
+
+    pub async fn cleanup_provider_target(
+        &self,
+        target: &ProviderCleanupTarget,
+    ) -> Result<(), RuntimeError> {
+        let descriptor = self.available_descriptor(target.agent_id)?;
+        let cwd = self
+            .workspace
+            .execution_path(&target.project_id, target.workspace_path.as_deref())?;
         let agent = acp_agent(
-            conversation.agent_id,
+            target.agent_id,
             &descriptor,
             AgentPermissionProfile::Default,
+            &cwd,
         )?;
-        let acp_session_id = provider_session_id.clone();
+        let acp_session_id = target.provider_session_id.clone();
         let deleted_by_acp = agent_client_protocol::Client
             .builder()
             .name("Kubecode")
@@ -836,19 +886,15 @@ impl AgentRuntime {
             .await
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
         if !deleted_by_acp {
-            if conversation.agent_id != AgentId::OpenCode {
+            if target.agent_id != AgentId::OpenCode {
                 return Err(RuntimeError::SessionDeletion(format!(
                     "{:?} does not support ACP session/delete",
-                    conversation.agent_id
+                    target.agent_id
                 )));
             }
-            let cwd = self.workspace.execution_path(
-                &conversation.project_id,
-                conversation.workspace_path.as_deref(),
-            )?;
             let mut command = Command::new(&descriptor.executable);
             command
-                .args(["session", "delete", provider_session_id.as_str()])
+                .args(["session", "delete", target.provider_session_id.as_str()])
                 .current_dir(cwd)
                 .kill_on_drop(true);
             let output = tokio::time::timeout(Duration::from_secs(30), command.output())
@@ -868,8 +914,264 @@ impl AgentRuntime {
                 )));
             }
         }
-        self.store.delete_provider_conversation(conversation_id)?;
         Ok(())
+    }
+
+    pub async fn remove_team_member_local_first(
+        &self,
+        team_id: &str,
+        leader_member_id: &str,
+        teammate_id: &str,
+    ) -> Result<TeamMemberRemoval, RuntimeError> {
+        let teams = self
+            .team_store()
+            .ok_or_else(|| RuntimeError::Acp("Team store is not configured".into()))?;
+        let team = teams
+            .get_team(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let member = teams
+            .get_member(teammate_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if member.team_id != team.id || member.role != TeamRole::Teammate {
+            return Err(RuntimeError::Acp(
+                "only a teammate in this Team can be removed".into(),
+            ));
+        }
+        let conversation = self.store.get_conversation(&member.conversation_id)?;
+        let cleanup_operation = conversation
+            .provider_session_id
+            .as_ref()
+            .map(|provider_session_id| ProviderCleanupTarget {
+                agent_id: conversation.agent_id,
+                provider_session_id: provider_session_id.clone(),
+                project_id: conversation.project_id.clone(),
+                workspace_path: conversation.workspace_path.clone(),
+            })
+            .map(|target| {
+                let payload = serde_json::to_string(&target)
+                    .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+                teams
+                    .create_lifecycle_operation(
+                        &team.id,
+                        &team.project_id,
+                        crate::teams::TeamLifecycleOperationKind::ProviderCleanup,
+                        Some(&member.id),
+                        Some(&member.conversation_id),
+                        &payload,
+                    )
+                    .map_err(|error| RuntimeError::Acp(error.to_string()))
+            })
+            .transpose()?;
+
+        let _ = self.disconnect_conversation(&member.conversation_id).await;
+        let _ = teams.append_activity(
+            &team.id,
+            Some(&member.id),
+            None,
+            "member_removing",
+            &format!("Removing teammate {}", member.name),
+            None,
+        );
+        teams
+            .remove_teammate(team_id, leader_member_id, teammate_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        self.store.delete_conversation(&member.conversation_id)?;
+        let _ = teams.append_activity(
+            &team.id,
+            None,
+            None,
+            "member_removed",
+            &format!("Removed teammate {}", member.name),
+            cleanup_operation
+                .as_ref()
+                .map(|operation| operation.id.as_str()),
+        );
+
+        if let Some(operation) = cleanup_operation.clone() {
+            let runtime = self.clone();
+            tokio::spawn(async move {
+                let _ = runtime.process_lifecycle_operation(&operation.id).await;
+            });
+        }
+        Ok(TeamMemberRemoval {
+            member,
+            cleanup_operation,
+        })
+    }
+
+    pub async fn disband_team_local_first(
+        &self,
+        team_id: &str,
+    ) -> Result<TeamDisbandResult, RuntimeError> {
+        let teams = self
+            .team_store()
+            .ok_or_else(|| RuntimeError::Acp("Team store is not configured".into()))?;
+        let team = teams
+            .mark_team_disbanding(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let disband = teams
+            .create_lifecycle_operation(
+                &team.id,
+                &team.project_id,
+                crate::teams::TeamLifecycleOperationKind::Disband,
+                None,
+                None,
+                "{}",
+            )
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        teams
+            .mark_lifecycle_operation_running(&disband.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let members = teams
+            .list_members(&team.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let existing_operations = teams
+            .list_lifecycle_operations(&team.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let mut cleanup_operations = Vec::new();
+        for member in &members {
+            if let Some(existing) = existing_operations.iter().find(|operation| {
+                operation.kind == crate::teams::TeamLifecycleOperationKind::ProviderCleanup
+                    && operation.conversation_id.as_deref() == Some(member.conversation_id.as_str())
+            }) {
+                cleanup_operations.push(existing.clone());
+                continue;
+            }
+            let Ok(conversation) = self.store.get_conversation(&member.conversation_id) else {
+                continue;
+            };
+            if let Some(provider_session_id) = conversation.provider_session_id {
+                let payload = serde_json::to_string(&ProviderCleanupTarget {
+                    agent_id: conversation.agent_id,
+                    provider_session_id,
+                    project_id: conversation.project_id,
+                    workspace_path: conversation.workspace_path,
+                })
+                .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+                cleanup_operations.push(
+                    teams
+                        .create_lifecycle_operation(
+                            &team.id,
+                            &team.project_id,
+                            crate::teams::TeamLifecycleOperationKind::ProviderCleanup,
+                            Some(&member.id),
+                            Some(&member.conversation_id),
+                            &payload,
+                        )
+                        .map_err(|error| RuntimeError::Acp(error.to_string()))?,
+                );
+            }
+        }
+        for member in &members {
+            let _ = self.disconnect_conversation(&member.conversation_id).await;
+        }
+        teams
+            .delete_team(&team.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        for member in &members {
+            if self.store.get_conversation(&member.conversation_id).is_ok() {
+                self.store.delete_conversation(&member.conversation_id)?;
+            }
+        }
+        teams
+            .mark_lifecycle_operation_completed(&disband.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        for operation in &cleanup_operations {
+            let runtime = self.clone();
+            let operation_id = operation.id.clone();
+            tokio::spawn(async move {
+                let _ = runtime.process_lifecycle_operation(&operation_id).await;
+            });
+        }
+        Ok(TeamDisbandResult {
+            team_id: team.id,
+            cleanup_operations,
+        })
+    }
+
+    pub async fn process_due_lifecycle_operations(&self) -> Result<usize, RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(0);
+        };
+        let operations = teams
+            .due_lifecycle_operations()
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let count = operations.len();
+        for operation in operations {
+            let _ = self.process_lifecycle_operation(&operation.id).await;
+        }
+        Ok(count)
+    }
+
+    pub async fn process_lifecycle_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<crate::teams::TeamLifecycleOperation, RuntimeError> {
+        let teams = self
+            .team_store()
+            .ok_or_else(|| RuntimeError::Acp("Team store is not configured".into()))?;
+        let operation = teams
+            .mark_lifecycle_operation_running(operation_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if operation.kind != crate::teams::TeamLifecycleOperationKind::ProviderCleanup {
+            return teams
+                .mark_lifecycle_operation_completed(operation_id)
+                .map_err(|error| RuntimeError::Acp(error.to_string()));
+        }
+        let target = serde_json::from_str::<ProviderCleanupTarget>(&operation.payload_json)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        match self.cleanup_provider_target(&target).await {
+            Ok(()) => {
+                let completed = teams
+                    .mark_lifecycle_operation_completed(operation_id)
+                    .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+                let _ = self.store.append_workspace_event(
+                    "team_cleanup_succeeded",
+                    Some(&completed.project_id),
+                    completed.conversation_id.as_deref(),
+                    None,
+                    &json!({"team_id":completed.team_id, "operation_id":completed.id}),
+                );
+                if teams.get_team(&completed.team_id).is_ok() {
+                    let _ = teams.append_activity(
+                        &completed.team_id,
+                        None,
+                        None,
+                        "provider_cleanup_succeeded",
+                        "Provider Session cleanup completed",
+                        Some(&completed.id),
+                    );
+                }
+                Ok(completed)
+            }
+            Err(error) => {
+                let pending = teams
+                    .mark_lifecycle_operation_failed(operation_id, &error.to_string())
+                    .map_err(|store_error| RuntimeError::Acp(store_error.to_string()))?;
+                let _ = self.store.append_workspace_event(
+                    "team_cleanup_pending",
+                    Some(&pending.project_id),
+                    pending.conversation_id.as_deref(),
+                    None,
+                    &json!({
+                        "team_id":pending.team_id,
+                        "operation_id":pending.id,
+                        "attempt_count":pending.attempt_count,
+                    }),
+                );
+                if teams.get_team(&pending.team_id).is_ok() {
+                    let _ = teams.append_activity(
+                        &pending.team_id,
+                        None,
+                        None,
+                        "provider_cleanup_pending",
+                        "Provider Session cleanup will be retried",
+                        Some(&pending.id),
+                    );
+                }
+                Ok(pending)
+            }
+        }
     }
 
     pub async fn delete_session(&self, conversation_id: &str) -> Result<(), RuntimeError> {
@@ -899,6 +1201,7 @@ impl AgentRuntime {
             conversation.agent_id,
             &descriptor,
             AgentPermissionProfile::Default,
+            &cwd,
         )?;
         let forked_session_id = agent_client_protocol::Client
             .builder()
@@ -1421,6 +1724,7 @@ async fn run_acp_session(
         config.agent_id,
         &config.descriptor,
         config.permission_profile,
+        &config.cwd,
     )?
     .with_debug(move |line, direction| {
         capture_new_session_response(&response_capture, line, direction)
@@ -2090,6 +2394,7 @@ fn acp_agent(
     agent_id: AgentId,
     descriptor: &AgentDescriptor,
     permission_profile: AgentPermissionProfile,
+    cwd: &Path,
 ) -> Result<AcpAgent, RuntimeError> {
     let (name, command, args, agent_environment) = match agent_id {
         AgentId::ClaudeCode => (
@@ -2123,14 +2428,26 @@ fn acp_agent(
             (
                 "OpenCode",
                 PathBuf::from(&descriptor.executable),
-                vec!["acp".to_owned()],
+                vec![
+                    "acp".to_owned(),
+                    "--cwd".to_owned(),
+                    cwd.to_string_lossy().into_owned(),
+                ],
                 environment,
             )
         }
     };
+    let mut launcher_args = vec![
+        "-c".to_owned(),
+        "cd \"$1\" || exit 126\nshift\nexec \"$@\"".to_owned(),
+        "kubecode-agent-launcher".to_owned(),
+        cwd.to_string_lossy().into_owned(),
+        command.to_string_lossy().into_owned(),
+    ];
+    launcher_args.extend(args);
     Ok(AcpAgent::new(McpServer::Stdio(
-        McpServerStdio::new(name, command)
-            .args(args)
+        McpServerStdio::new(name, PathBuf::from("/bin/sh"))
+            .args(launcher_args)
             .env(agent_environment),
     )))
 }
@@ -2331,14 +2648,27 @@ mod tests {
             AgentId::OpenCode,
             &descriptor,
             AgentPermissionProfile::Default,
+            Path::new("/workspace/project"),
         )
         .expect("native ACP agent")
         .into_server();
         let McpServer::Stdio(server) = server else {
             panic!("stdio adapter")
         };
-        assert_eq!(server.command, PathBuf::from("/opt/bin/opencode"));
-        assert_eq!(server.args, ["acp"]);
+        assert_eq!(server.command, PathBuf::from("/bin/sh"));
+        assert_eq!(
+            server.args,
+            [
+                "-c",
+                "cd \"$1\" || exit 126\nshift\nexec \"$@\"",
+                "kubecode-agent-launcher",
+                "/workspace/project",
+                "/opt/bin/opencode",
+                "acp",
+                "--cwd",
+                "/workspace/project",
+            ],
+        );
         assert!(
             !server
                 .env
@@ -2350,6 +2680,7 @@ mod tests {
             AgentId::OpenCode,
             &descriptor,
             AgentPermissionProfile::Maximum,
+            Path::new("/workspace/project"),
         )
         .expect("maximum ACP agent")
         .into_server();
@@ -2383,13 +2714,24 @@ mod tests {
             executable: "/opt/homebrew/bin/codex".into(),
             error: None,
         };
-        let server = acp_agent(AgentId::Codex, &descriptor, AgentPermissionProfile::Default)
-            .expect("project ACP adapter")
-            .into_server();
+        let server = acp_agent(
+            AgentId::Codex,
+            &descriptor,
+            AgentPermissionProfile::Default,
+            Path::new("/workspace/project"),
+        )
+        .expect("project ACP adapter")
+        .into_server();
         let McpServer::Stdio(server) = server else {
             panic!("stdio adapter")
         };
-        assert!(server.command.ends_with("node_modules/.bin/codex-acp"));
+        assert_eq!(server.command, PathBuf::from("/bin/sh"));
+        assert!(
+            server
+                .args
+                .iter()
+                .any(|argument| argument.ends_with("node_modules/.bin/codex-acp"))
+        );
         assert!(server.env.iter().any(|variable| {
             variable.name == "CODEX_PATH" && variable.value == "/opt/homebrew/bin/codex"
         }));
@@ -2408,16 +2750,19 @@ mod tests {
             AgentId::ClaudeCode,
             &descriptor,
             AgentPermissionProfile::Default,
+            Path::new("/workspace/project"),
         )
         .expect("project ACP adapter")
         .into_server();
         let McpServer::Stdio(server) = server else {
             panic!("stdio adapter")
         };
+        assert_eq!(server.command, PathBuf::from("/bin/sh"));
         assert!(
             server
-                .command
-                .ends_with("node_modules/.bin/claude-agent-acp")
+                .args
+                .iter()
+                .any(|argument| { argument.ends_with("node_modules/.bin/claude-agent-acp") })
         );
         assert!(server.env.iter().any(|variable| {
             variable.name == "CLAUDE_CODE_EXECUTABLE"

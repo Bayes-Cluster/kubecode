@@ -40,13 +40,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             base_path.trim_end_matches('/')
         )
     });
-    let app = app_router_with_static(
-        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams))
-            .with_agents(agents)
-            .with_team_mcp_http_origin(internal_origin),
-        &base_path,
-        static_directory,
-    );
+    let state = AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams))
+        .with_agents(agents)
+        .with_team_mcp_http_origin(internal_origin);
+    state.start_team_supervisor();
+    let app = app_router_with_static(state, &base_path, static_directory);
     println!("Kubecode listening on http://{host}:{port}{base_path}");
     axum::serve(listener, app).await?;
     Ok(())

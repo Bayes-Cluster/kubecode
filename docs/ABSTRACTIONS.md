@@ -42,7 +42,8 @@ the durable timeline instead of using a native provider checkpoint.
 
 A Team Session is a durable coordination boundary with one fixed Leader, a
 dynamic set of teammates, a task dependency graph, member mailboxes, and an
-explicit lifecycle. A Draft becomes Active only after the user supplies its
+explicit supervised lifecycle. A Draft passes through Starting and becomes
+Active only after the user supplies its
 goal, acceptance criteria, allowed installed Agents, and teammate/concurrency
 budget. Every member owns an independent Agent Chat and provider Session.
 Shared members use the Team cwd; an explicitly isolated member receives a
@@ -59,11 +60,24 @@ Standard. A Member Permission Snapshot records whether Kubecode applied the
 profile and the prior mode needed for restoration.
 
 A Team mailbox message has a durable delivery lifecycle: pending, delivered,
-acknowledged, or failed. Delegation atomically assigns a task and writes the
-recipient message. The scheduler wakes the recipient in its own Agent Chat,
-respects the Team's maximum parallel-run setting, and retries failed delivery a
-finite number of times. A Team activity event is a structured coordination
-projection; it is not a replacement for the member's Chat transcript.
+acknowledged, or failed. Delivered is a lease, not proof of receipt. Reading
+Team context acknowledges the message; an expired unacknowledged lease is
+retried up to the finite delivery limit. Delegation atomically assigns a task
+and writes the recipient message. The scheduler wakes the recipient in its own
+Agent Chat and respects the Team's maximum parallel-run setting. A Team
+activity event is a structured coordination projection; it is not a replacement
+for the member's Chat transcript.
+
+A Team Lifecycle Operation is durable metadata for provisioning, provider
+cleanup, or disbanding. It carries its target independently of Team/member
+foreign keys, attempt count, retry time, diagnostic, and terminal result. The
+server supervisor owns retries. Local Team state never depends on a successful
+provider cleanup transaction.
+
+A Team User Input Request is a durable Leader escalation with a title, prompt,
+prior Team state, answer, and resolution time. While one is pending, the Team is
+Needs Attention and teammate scheduling is paused. Resolution restores the
+prior Active or Verifying state and enqueues the answer for the Leader.
 
 A Team Task Attempt binds one concrete task assignment to one teammate and,
 once awakened, one ACP run. It persists queued, running, missing-report,
@@ -105,14 +119,16 @@ new, load, and resume; other agents retain the in-process bridge for new
 sessions.
 
 Teammate spawn accepts opaque Agent-native ACP mode/configuration IDs rather
-than a Kubecode model abstraction. Teammate removal is a Leader-only lifecycle
-transition: the ACP actor is disconnected, active assignments return to
-pending, and both provider-native and Kubecode Session records are deleted while
-Project files remain untouched. The Leader first discovers durable member IDs
-through `team_list_members`, then invokes `team_remove_teammate`. The ordinary
-Session API rejects teammate deletion before disconnecting its actor; the
-browser does not expose that action. Deleting the fixed Leader instead disbands
-the Team and applies the deletion lifecycle to every member.
+than a Kubecode model abstraction. Teammate removal is a Leader-only,
+local-first lifecycle transition: the ACP actor is disconnected, active
+assignments return to pending, and Team membership plus the Kubecode Session
+disappear immediately. Provider-native history cleanup is a durable background
+operation and does not restore a removed member when it fails. Project files
+remain untouched. The Leader first discovers durable member IDs through
+`team_list_members`, then invokes `team_remove_teammate`. The ordinary Session
+API rejects teammate deletion before disconnecting its actor; the browser does
+not expose that action. Deleting the fixed Leader disbands the Team with the
+same local-first rule for every member.
 
 ## Turn checkpoint
 
@@ -156,6 +172,14 @@ provider Session when possible and falls back to loading it.
 
 Agent discovery and ACP adapter discovery are separate. CLI authentication,
 models, and provider settings remain external to Kubecode.
+
+An ACP stdio launcher sets the process cwd to the Agent Session execution path
+before executing the adapter. Executable, cwd, and arguments are positional
+values rather than interpolated shell text. ACP request cwd is retained as
+protocol context but is not relied upon as the process directory. OpenCode
+also receives the execution path through its native `acp --cwd` option so
+directory-service initialization and later ACP requests share the same
+boundary.
 
 ## Terminal
 

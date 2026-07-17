@@ -36,6 +36,9 @@ or any files below it.
 - Long-lived ACP sessions with resume, fork, native commands, modes,
   configuration, plans, permissions, and structured questions when supported
   by the selected agent
+- Durable Team Sessions with a fixed Leader, independent teammate chats,
+  dependency-aware tasks, restart-safe mailbox delivery, inline user decisions,
+  and background provider cleanup
 - Searchable Session navigation grouped by live status and activity, with
   archive controls and provider-native fork/subagent relationships
 - Cross-Project input-required indicators and browser/system notifications for

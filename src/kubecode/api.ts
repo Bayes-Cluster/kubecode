@@ -75,7 +75,16 @@ export type Team = {
   leader_member_id: string
   agent_session_id: string
   title: string
-  status: 'draft' | 'active' | 'verifying' | 'needs_attention' | 'completed' | 'archived'
+  status:
+    | 'draft'
+    | 'starting'
+    | 'active'
+    | 'verifying'
+    | 'needs_attention'
+    | 'completed'
+    | 'archived'
+    | 'disbanding'
+    | 'removed'
   workspace: TeamWorkspace
   workspace_path: string | null
   member_management_policy: 'ask' | 'auto'
@@ -117,6 +126,8 @@ export type TeamMember = {
     | 'waiting_permission'
     | 'failed'
     | 'stopped'
+    | 'removing'
+    | 'removed'
   workspace_mode: 'shared' | 'isolated'
   base_tree: string | null
   permission_profile_applied: boolean
@@ -161,7 +172,43 @@ export type TeamSnapshot = {
   permissions: TeamPermissionRequest[]
   activity: TeamActivity[]
   attention: TeamAttention[]
+  next_actions?: TeamNextAction[]
+  user_input_requests?: TeamUserInputRequest[]
+  lifecycle_operations?: TeamLifecycleOperation[]
   discrimination_rounds: TeamDiscriminationRound[]
+}
+export type TeamNextAction = {
+  id: string
+  kind: 'answer_user_input' | 'configure_member' | 'retry_cleanup'
+  label: string
+}
+export type TeamUserInputRequest = {
+  id: string
+  team_id: string
+  requester_member_id: string
+  title: string
+  prompt: string
+  resume_status: Team['status']
+  status: 'pending' | 'resolved'
+  answer: string | null
+  created_at: string
+  resolved_at: string | null
+}
+export type TeamLifecycleOperation = {
+  id: string
+  team_id: string
+  project_id: string
+  kind: 'provisioning' | 'provider_cleanup' | 'disband'
+  status: 'pending' | 'running' | 'retry_scheduled' | 'failed' | 'completed'
+  member_id: string | null
+  conversation_id: string | null
+  payload_json: string
+  attempt_count: number
+  next_attempt_at: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  completed_at: string | null
 }
 export type TeamTaskAttempt = {
   id: string
@@ -519,6 +566,24 @@ export class KubecodeApi {
         final_summary: finalSummary,
       }),
     })
+  }
+
+  resolveTeamUserInput(
+    teamId: string,
+    requestId: string,
+    answer: string,
+  ): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/attention/${encodeURIComponent(requestId)}/resolve`,
+      { method: 'POST', body: JSON.stringify({ answer }) },
+    )
+  }
+
+  retryTeamCleanup(teamId: string, operationId: string): Promise<TeamLifecycleOperation> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/cleanup/${encodeURIComponent(operationId)}/retry`,
+      { method: 'POST' },
+    )
   }
 
   updateTeamSettings(

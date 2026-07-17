@@ -1,9 +1,9 @@
 use kubecode_server::teams::{
     MemberManagementPolicy, MemberWorkspaceMode, NewDiscriminator, NewTeam,
     NewTeamPermissionRequest, NewTeamProposal, NewTeamTask, NewTeammate, StartTeam,
-    TeamMessageDeliveryStatus, TeamMode, TeamPermissionStatus, TeamProposalStatus, TeamRole,
-    TeamStatus, TeamStore, TeamTaskAttemptStatus, TeamTaskFailureKind, TeamTaskStatus,
-    TeamWorkspace,
+    TeamLifecycleOperationKind, TeamLifecycleOperationStatus, TeamMessageDeliveryStatus, TeamMode,
+    TeamPermissionStatus, TeamProposalStatus, TeamRole, TeamStatus, TeamStore,
+    TeamTaskAttemptStatus, TeamTaskFailureKind, TeamTaskStatus, TeamWorkspace,
 };
 use tempfile::TempDir;
 
@@ -142,7 +142,7 @@ fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
         })
         .expect("start team");
 
-    assert_eq!(started.status, TeamStatus::Active);
+    assert_eq!(started.status, TeamStatus::Starting);
     assert_eq!(started.requested_mode, TeamMode::Yolo);
     assert_eq!(started.mode, TeamMode::Yolo);
     assert_eq!(started.goal, "Reproduce the published experiment");
@@ -152,6 +152,10 @@ fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
     assert_eq!(started.max_parallel_runs, 2);
     assert_eq!(started.max_review_rounds, 4);
     assert!(started.started_at.is_some());
+    assert_eq!(
+        store.activate_team(&team.id).expect("activate").status,
+        TeamStatus::Active
+    );
 
     let marked = store
         .mark_permission_profile_applied(&leader.id, Some("agent"))
@@ -228,6 +232,7 @@ fn leader_and_discriminator_cannot_claim_concrete_tasks() {
             max_review_rounds: 3,
         })
         .expect("start");
+    store.activate_team(&team.id).expect("activate");
     let discriminator = store
         .add_discriminator(NewDiscriminator {
             team_id: &team.id,
@@ -289,6 +294,7 @@ fn explicit_completion_requires_accepted_work_and_a_yolo_verdict() {
             max_review_rounds: 3,
         })
         .expect("start");
+    store.activate_team(&team.id).expect("activate");
 
     assert!(
         store
@@ -872,4 +878,244 @@ fn failed_message_delivery_stops_retrying_after_three_attempts() {
     let unread = store.unread_messages(&teammate.id).expect("unread");
     assert_eq!(unread[0].delivery_attempts, 3);
     assert_eq!(unread[0].delivery_status, TeamMessageDeliveryStatus::Failed);
+}
+
+#[test]
+fn delivered_but_unacknowledged_messages_return_after_the_delivery_lease() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let teammate = store
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-worker",
+            name: "worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+    let message = store
+        .send_message(
+            &team.id,
+            &leader.id,
+            &teammate.id,
+            kubecode_server::teams::TeamMessageKind::Direct,
+            None,
+            "Review the result",
+        )
+        .expect("message");
+    store
+        .mark_message_delivered(&message.id)
+        .expect("delivery lease");
+
+    assert!(
+        store
+            .pending_messages(&teammate.id)
+            .expect("leased message")
+            .is_empty()
+    );
+    store
+        .requeue_expired_deliveries(0)
+        .expect("expire delivery lease");
+    let retry = store
+        .pending_messages(&teammate.id)
+        .expect("message available for retry");
+    assert_eq!(retry.len(), 1);
+    assert_eq!(retry[0].id, message.id);
+    assert_eq!(retry[0].delivery_attempts, 1);
+    store.read_messages(&teammate.id).expect("acknowledge");
+    store
+        .mark_message_delivered(&message.id)
+        .expect("late delivery update");
+    store
+        .requeue_expired_deliveries(0)
+        .expect("second lease scan");
+    assert!(
+        store
+            .pending_messages(&teammate.id)
+            .expect("acknowledged message")
+            .is_empty()
+    );
+}
+
+#[test]
+fn lifecycle_operations_survive_member_removal_and_retry_provider_cleanup() {
+    let (temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let operation = store
+        .create_lifecycle_operation(
+            &team.id,
+            "project-1",
+            TeamLifecycleOperationKind::ProviderCleanup,
+            Some("member-removed"),
+            Some("conversation-removed"),
+            r#"{"agent_id":"opencode","provider_session_id":"provider-1"}"#,
+        )
+        .expect("cleanup operation");
+    let running = store
+        .mark_lifecycle_operation_running(&operation.id)
+        .expect("running cleanup");
+    assert_eq!(running.attempt_count, 1);
+    let retrying = store
+        .mark_lifecycle_operation_failed(&operation.id, "directory service unavailable")
+        .expect("scheduled retry");
+    assert_eq!(
+        retrying.status,
+        TeamLifecycleOperationStatus::RetryScheduled
+    );
+    assert!(retrying.next_attempt_at.is_some());
+    assert_eq!(
+        store
+            .list_lifecycle_operations(&team.id)
+            .expect("durable operations")
+            .len(),
+        1
+    );
+    let interrupted = store
+        .create_lifecycle_operation(
+            &team.id,
+            "project-1",
+            TeamLifecycleOperationKind::ProviderCleanup,
+            None,
+            Some("conversation-interrupted"),
+            r#"{"agent_id":"codex","provider_session_id":"provider-2"}"#,
+        )
+        .expect("interrupted operation");
+    store
+        .mark_lifecycle_operation_running(&interrupted.id)
+        .expect("operation in progress");
+    drop(store);
+
+    let reopened =
+        TeamStore::open(temp.path().join("kubecode.sqlite3")).expect("reopen team store");
+    let recovered = reopened
+        .get_lifecycle_operation(&interrupted.id)
+        .expect("recovered cleanup");
+    assert_eq!(recovered.status, TeamLifecycleOperationStatus::Pending);
+    assert!(
+        reopened
+            .due_lifecycle_operations()
+            .expect("due cleanup")
+            .iter()
+            .any(|operation| operation.id == interrupted.id)
+    );
+}
+
+#[test]
+fn leader_user_input_requests_pause_and_resume_the_team_durably() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Resolve an ambiguous requirement",
+            acceptance_criteria: &["The user confirms the target".to_owned()],
+            allowed_agent_ids: &["codex".to_owned()],
+            mode: TeamMode::Standard,
+            max_teammates: 1,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .expect("start");
+    store.activate_team(&team.id).expect("activate");
+
+    let request = store
+        .request_user_input(
+            &team.id,
+            &leader.id,
+            "Choose a dataset",
+            "Should the Team use the public or private dataset?",
+        )
+        .expect("request input");
+    assert_eq!(
+        store.get_team(&team.id).expect("paused Team").status,
+        TeamStatus::NeedsAttention
+    );
+    assert_eq!(
+        store
+            .pending_user_input_requests(&team.id)
+            .expect("pending requests"),
+        vec![request.clone()]
+    );
+
+    let resolved = store
+        .resolve_user_input(&team.id, &request.id, "Use the public dataset")
+        .expect("resolve input");
+    assert_eq!(resolved.answer.as_deref(), Some("Use the public dataset"));
+    assert_eq!(
+        store.get_team(&team.id).expect("resumed Team").status,
+        TeamStatus::Active
+    );
+}
+
+#[test]
+fn leader_can_cancel_concrete_work_without_assigning_the_task_to_itself() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Discarded direction",
+            description: "This work is no longer needed",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("task");
+
+    let cancelled = store
+        .cancel_task(
+            &task.id,
+            &leader.id,
+            Some("The Leader selected another approach"),
+        )
+        .expect("cancel task");
+    assert_eq!(cancelled.status, TeamTaskStatus::Cancelled);
+    assert!(cancelled.assignee_member_id.is_none());
 }

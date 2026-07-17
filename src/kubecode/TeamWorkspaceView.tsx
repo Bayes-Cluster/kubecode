@@ -53,6 +53,7 @@ export function TeamWorkspaceView({
   const [error, setError] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [detailTab, setDetailTab] = useState<'tasks' | 'activity' | 'dependencies'>('tasks')
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const conversations = useMemo(
     () => new Map((snapshot.conversations ?? []).map((conversation) => [conversation.id, conversation])),
     [snapshot.conversations],
@@ -78,6 +79,60 @@ export function TeamWorkspaceView({
       requested_mode: snapshot.team.requested_mode,
     })
   }, [activity, snapshot.team.id, snapshot.team.requested_mode])
+
+  useEffect(() => {
+    for (const item of activity) {
+      if (item.kind === 'leader_no_progress') {
+        trackTeamLifecycleEvent('kubecode_team_leader_no_progress', String(item.id), item.kind)
+      }
+    }
+  }, [activity])
+
+  useEffect(() => {
+    for (const request of snapshot.user_input_requests ?? []) {
+      trackTeamLifecycleEvent('kubecode_team_user_input_requested', request.id, request.status)
+    }
+    for (const operation of snapshot.lifecycle_operations ?? []) {
+      if (operation.kind === 'provisioning' && operation.status === 'failed') {
+        trackTeamLifecycleEvent(
+          'kubecode_team_member_provision_failed',
+          operation.id,
+          operation.status,
+        )
+      }
+      if (operation.kind !== 'provider_cleanup') continue
+      if (operation.status === 'completed') {
+        trackTeamLifecycleEvent('kubecode_team_cleanup_succeeded', operation.id, operation.status)
+      } else if (operation.status === 'retry_scheduled' || operation.status === 'failed') {
+        trackTeamLifecycleEvent('kubecode_team_cleanup_pending', operation.id, operation.status, {
+          attempt_count: operation.attempt_count,
+        })
+      }
+    }
+  }, [snapshot.lifecycle_operations, snapshot.user_input_requests])
+
+  const resolveUserInput = async (requestId: string) => {
+    const answer = answers[requestId]?.trim()
+    if (!answer) return
+    setError(null)
+    try {
+      const updated = await api.resolveTeamUserInput(snapshot.team.id, requestId, answer)
+      setAnswers((current) => ({ ...current, [requestId]: '' }))
+      onSnapshotChange(updated)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('kubecode.error'))
+    }
+  }
+
+  const retryCleanup = async (operationId: string) => {
+    setError(null)
+    try {
+      await api.retryTeamCleanup(snapshot.team.id, operationId)
+      onSnapshotChange(await api.getTeam(snapshot.team.id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('kubecode.error'))
+    }
+  }
 
   if (snapshot.team.status === 'draft' || setupOpen) {
     return (
@@ -142,20 +197,61 @@ export function TeamWorkspaceView({
         <section className="kubecode-team-attention">
           <header><WarningCircle weight="fill" /> {t('kubecode.teamNeedsAttention')}</header>
           <div>
-            {attention.map((attentionItem) => (
-              <Button
-                key={attentionItem.id}
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  const member = snapshot.members.find((candidate) => candidate.id === attentionItem.member_id)
-                  if (member) onSelectMember(member.conversation_id)
-                }}
-              >
-                <span>{attentionItem.summary}</span>
-                <ArrowRight />
-              </Button>
-            ))}
+            {attention.map((attentionItem) => {
+              const userRequest = snapshot.user_input_requests?.find(
+                (request) => request.id === attentionItem.id,
+              )
+              if (userRequest) {
+                return (
+                  <article className="kubecode-team-user-input" key={attentionItem.id}>
+                    <div>
+                      <strong>{userRequest.title}</strong>
+                      <span>{userRequest.prompt}</span>
+                    </div>
+                    <Textarea
+                      aria-label={userRequest.title}
+                      placeholder={t('kubecode.teamAnswerPlaceholder')}
+                      value={answers[userRequest.id] ?? ''}
+                      onChange={(event) => setAnswers((current) => ({
+                        ...current,
+                        [userRequest.id]: event.target.value,
+                      }))}
+                    />
+                    <Button
+                      disabled={!answers[userRequest.id]?.trim()}
+                      size="sm"
+                      onClick={() => void resolveUserInput(userRequest.id)}
+                    >
+                      {t('kubecode.teamSubmitAnswer')}
+                    </Button>
+                  </article>
+                )
+              }
+              if (attentionItem.kind === 'cleanup_failed') {
+                return (
+                  <article className="kubecode-team-cleanup" key={attentionItem.id}>
+                    <span>{t('kubecode.teamCleanupPending')}</span>
+                    <Button size="sm" variant="outline" onClick={() => void retryCleanup(attentionItem.id)}>
+                      {t('kubecode.teamRetryCleanup')}
+                    </Button>
+                  </article>
+                )
+              }
+              return (
+                <Button
+                  key={attentionItem.id}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    const member = snapshot.members.find((candidate) => candidate.id === attentionItem.member_id)
+                    if (member) onSelectMember(member.conversation_id)
+                  }}
+                >
+                  <span>{attentionItem.summary}</span>
+                  <ArrowRight />
+                </Button>
+              )
+            })}
           </div>
         </section>
       )}
@@ -586,13 +682,28 @@ function selectValues(value: unknown): Array<{ name: string; value: string }> {
 function teamStatusLabel(status: TeamSnapshot['team']['status'], t: Translator): string {
   const keys = {
     draft: 'kubecode.teamStatusDraft',
+    starting: 'kubecode.teamStatusStarting',
     active: 'kubecode.teamStatusActive',
     verifying: 'kubecode.teamStatusVerifying',
     needs_attention: 'kubecode.teamNeedsAttention',
     completed: 'kubecode.teamStatusCompleted',
     archived: 'kubecode.teamStatusArchived',
+    disbanding: 'kubecode.teamStatusDisbanding',
+    removed: 'kubecode.teamStatusRemoved',
   } as const satisfies Record<TeamSnapshot['team']['status'], TranslationKey>
   return t(keys[status] ?? keys.active)
+}
+
+function trackTeamLifecycleEvent(
+  event: string,
+  id: string,
+  status: string,
+  properties: Record<string, string | number> = {},
+) {
+  const key = `kubecode:team-lifecycle:${event}:${id}:${status}`
+  if (globalThis.sessionStorage?.getItem(key)) return
+  globalThis.sessionStorage?.setItem(key, '1')
+  trackEvent(event, properties)
 }
 
 const TASK_COLUMNS = [

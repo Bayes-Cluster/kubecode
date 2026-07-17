@@ -11,8 +11,9 @@ use crate::api::AppState;
 use crate::team_coordinator::TeamCoordinator;
 use crate::teams::{
     MemberManagementPolicy, NewTeam, StartTeam, Team, TeamActivity, TeamDiscriminationRound,
-    TeamError, TeamMember, TeamMemberStatus, TeamMessageKind, TeamMode, TeamPermissionRequest,
-    TeamProposal, TeamProposalStatus, TeamTask, TeamTaskAttempt, TeamWorkspace,
+    TeamError, TeamLifecycleOperation, TeamLifecycleOperationStatus, TeamMember, TeamMemberStatus,
+    TeamMessageKind, TeamMode, TeamPermissionRequest, TeamProposal, TeamProposalStatus, TeamTask,
+    TeamTaskAttempt, TeamUserInputRequest, TeamWorkspace,
 };
 use crate::workspace::WorkspaceError;
 
@@ -25,6 +26,14 @@ pub fn routes() -> Router<AppState> {
         .route("/teams/{team_id}", get(get_team))
         .route("/teams/{team_id}/start", post(start_team))
         .route("/teams/{team_id}/complete", post(complete_team))
+        .route(
+            "/teams/{team_id}/attention/{request_id}/resolve",
+            post(resolve_team_user_input),
+        )
+        .route(
+            "/teams/{team_id}/cleanup/{operation_id}/retry",
+            post(retry_team_cleanup),
+        )
         .route("/teams/{team_id}/settings", patch(update_team_settings))
         .route(
             "/teams/{team_id}/proposals/{proposal_id}/decision",
@@ -80,6 +89,11 @@ struct ResolveProposalRequest {
     decision: TeamProposalStatus,
 }
 
+#[derive(Debug, Deserialize)]
+struct ResolveUserInputRequest {
+    answer: String,
+}
+
 #[derive(Debug, Serialize)]
 struct TeamRuntimeSummary {
     running: usize,
@@ -99,6 +113,13 @@ struct TeamAttention {
 }
 
 #[derive(Debug, Serialize)]
+struct TeamNextAction {
+    id: String,
+    kind: &'static str,
+    label: String,
+}
+
+#[derive(Debug, Serialize)]
 struct TeamSnapshot {
     team: Team,
     leader_conversation: Conversation,
@@ -111,6 +132,9 @@ struct TeamSnapshot {
     permissions: Vec<TeamPermissionRequest>,
     activity: Vec<TeamActivity>,
     attention: Vec<TeamAttention>,
+    next_actions: Vec<TeamNextAction>,
+    user_input_requests: Vec<TeamUserInputRequest>,
+    lifecycle_operations: Vec<TeamLifecycleOperation>,
     discrimination_rounds: Vec<TeamDiscriminationRound>,
 }
 
@@ -296,6 +320,7 @@ async fn start_team(
         }
         None => started,
     };
+    let started = state.teams.activate_team(&started.id)?;
     state.teams.send_message(
         &started.id,
         &started.leader_member_id,
@@ -524,6 +549,59 @@ async fn complete_team(
     Ok(Json(snapshot(&state, completed)?))
 }
 
+async fn resolve_team_user_input(
+    State(state): State<AppState>,
+    Path((team_id, request_id)): Path<(String, String)>,
+    Json(request): Json<ResolveUserInputRequest>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let resolved = state
+        .teams
+        .resolve_user_input(&team_id, &request_id, &request.answer)?;
+    let team = state.teams.get_team(&team_id)?;
+    state.teams.send_message(
+        &team.id,
+        &team.leader_member_id,
+        &team.leader_member_id,
+        TeamMessageKind::System,
+        None,
+        &format!(
+            "User answered '{}': {}",
+            resolved.title,
+            request.answer.trim()
+        ),
+    )?;
+    state.teams.append_activity(
+        &team.id,
+        Some(&team.leader_member_id),
+        None,
+        "user_input_resolved",
+        &resolved.title,
+        Some(&resolved.id),
+    )?;
+    let _ = state.agent_runtime.wake_team_leader(&team.id);
+    publish_team_event(&state, &team.id, "team_user_input_resolved");
+    Ok(Json(snapshot(&state, team)?))
+}
+
+async fn retry_team_cleanup(
+    State(state): State<AppState>,
+    Path((team_id, operation_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let operation = state.teams.get_lifecycle_operation(&operation_id)?;
+    if operation.team_id != team_id
+        || operation.kind != crate::teams::TeamLifecycleOperationKind::ProviderCleanup
+    {
+        return Err(TeamError::WrongTeam.into());
+    }
+    state.teams.retry_lifecycle_operation(&operation_id)?;
+    let operation = state
+        .agent_runtime
+        .process_lifecycle_operation(&operation_id)
+        .await?;
+    publish_team_event(&state, &team_id, "team_cleanup_updated");
+    Ok(Json(operation))
+}
+
 async fn update_team_settings(
     State(state): State<AppState>,
     Path(team_id): Path<String>,
@@ -644,7 +722,33 @@ fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> 
             TeamApiError::Team(TeamError::MemberNotFound(team.leader_member_id.clone()))
         })?;
     let tasks = state.teams.list_tasks(&team.id)?;
-    let attention = team_attention(&members, &tasks);
+    let user_input_requests = state.teams.pending_user_input_requests(&team.id)?;
+    let lifecycle_operations = state.teams.list_lifecycle_operations(&team.id)?;
+    let activity = state.teams.list_activity(&team.id, 100)?;
+    let mut attention = team_attention(
+        &members,
+        &tasks,
+        &user_input_requests,
+        &lifecycle_operations,
+    );
+    if team.status == crate::teams::TeamStatus::NeedsAttention
+        && attention.is_empty()
+        && activity
+            .iter()
+            .take_while(|item| item.kind != "team_started")
+            .filter(|item| item.kind == "leader_no_progress")
+            .count()
+            >= 3
+    {
+        attention.push(TeamAttention {
+            id: format!("team:{}:leader_no_progress", team.id),
+            kind: "leader_no_progress",
+            member_id: Some(team.leader_member_id.clone()),
+            task_id: None,
+            summary: "The Leader could not establish a concrete task graph".into(),
+        });
+    }
+    let next_actions = team_next_actions(&members, &user_input_requests, &lifecycle_operations);
     let summary = TeamRuntimeSummary {
         running: members
             .iter()
@@ -670,8 +774,11 @@ fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> 
         summary,
         proposal: state.teams.latest_proposal(&team.id)?,
         permissions: state.teams.pending_permission_requests(&team.id)?,
-        activity: state.teams.list_activity(&team.id, 100)?,
+        activity,
         attention,
+        next_actions,
+        user_input_requests,
+        lifecycle_operations,
         discrimination_rounds: state.teams.list_discrimination_rounds(&team.id)?,
         team,
     })
@@ -696,7 +803,12 @@ fn runtime_member_status(
     }
 }
 
-fn team_attention(members: &[TeamMember], tasks: &[TeamTask]) -> Vec<TeamAttention> {
+fn team_attention(
+    members: &[TeamMember],
+    tasks: &[TeamTask],
+    user_input_requests: &[TeamUserInputRequest],
+    lifecycle_operations: &[TeamLifecycleOperation],
+) -> Vec<TeamAttention> {
     let member_attention = members.iter().filter_map(|member| {
         let (kind, summary) = match member.status {
             TeamMemberStatus::WaitingInput => {
@@ -736,7 +848,67 @@ fn team_attention(members: &[TeamMember], tasks: &[TeamTask]) -> Vec<TeamAttenti
             summary: task.title.clone(),
         })
     });
-    member_attention.chain(task_attention).collect()
+    let user_attention = user_input_requests.iter().map(|request| TeamAttention {
+        id: request.id.clone(),
+        kind: "user_input",
+        member_id: Some(request.requester_member_id.clone()),
+        task_id: None,
+        summary: request.prompt.clone(),
+    });
+    let lifecycle_attention = lifecycle_operations
+        .iter()
+        .filter(|operation| operation.status == TeamLifecycleOperationStatus::Failed)
+        .map(|operation| TeamAttention {
+            id: operation.id.clone(),
+            kind: match operation.kind {
+                crate::teams::TeamLifecycleOperationKind::Provisioning => "provisioning_failed",
+                crate::teams::TeamLifecycleOperationKind::ProviderCleanup => "cleanup_failed",
+                crate::teams::TeamLifecycleOperationKind::Disband => "disband_failed",
+            },
+            member_id: operation.member_id.clone(),
+            task_id: None,
+            summary: operation
+                .last_error
+                .clone()
+                .unwrap_or_else(|| "Provider cleanup needs a manual retry".into()),
+        });
+    member_attention
+        .chain(task_attention)
+        .chain(user_attention)
+        .chain(lifecycle_attention)
+        .collect()
+}
+
+fn team_next_actions(
+    members: &[TeamMember],
+    user_input_requests: &[TeamUserInputRequest],
+    lifecycle_operations: &[TeamLifecycleOperation],
+) -> Vec<TeamNextAction> {
+    let answer = user_input_requests.iter().map(|request| TeamNextAction {
+        id: request.id.clone(),
+        kind: "answer_user_input",
+        label: request.title.clone(),
+    });
+    let configure = members
+        .iter()
+        .filter(|member| member.status == TeamMemberStatus::Configuring)
+        .map(|member| TeamNextAction {
+            id: member.id.clone(),
+            kind: "configure_member",
+            label: member.name.clone(),
+        });
+    let cleanup = lifecycle_operations
+        .iter()
+        .filter(|operation| {
+            operation.kind == crate::teams::TeamLifecycleOperationKind::ProviderCleanup
+                && operation.status == TeamLifecycleOperationStatus::Failed
+        })
+        .map(|operation| TeamNextAction {
+            id: operation.id.clone(),
+            kind: "retry_cleanup",
+            label: "Retry provider cleanup".into(),
+        });
+    answer.chain(configure).chain(cleanup).collect()
 }
 
 fn publish_team_event(state: &AppState, team_id: &str, kind: &str) {
@@ -799,7 +971,9 @@ impl IntoResponse for TeamApiError {
             Self::Team(
                 error @ (TeamError::MemberNotFound(_)
                 | TeamError::TaskNotFound(_)
-                | TeamError::DiscriminationNotFound(_)),
+                | TeamError::DiscriminationNotFound(_)
+                | TeamError::LifecycleOperationNotFound(_)
+                | TeamError::UserInputRequestNotFound(_)),
             ) => (StatusCode::NOT_FOUND, "not_found", error.to_string()),
             Self::Team(
                 error @ (TeamError::LeaderRequired
@@ -813,7 +987,8 @@ impl IntoResponse for TeamApiError {
                 error @ (TeamError::TaskUnavailable
                 | TeamError::TaskNotAssigned
                 | TeamError::InvalidTeamState
-                | TeamError::CompletionBlocked),
+                | TeamError::CompletionBlocked
+                | TeamError::UserInputRequestNotPending),
             ) => (StatusCode::CONFLICT, "task_conflict", error.to_string()),
             Self::Team(
                 error @ (TeamError::InvalidConcurrency

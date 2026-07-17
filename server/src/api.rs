@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::Router;
@@ -98,6 +99,211 @@ impl AppState {
                 .with_team_mcp_http_origin(origin),
         );
         self
+    }
+
+    pub fn start_team_supervisor(&self) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let _ = state.reconcile_teams_once().await;
+            }
+        });
+    }
+
+    pub async fn reconcile_teams_once(&self) -> Result<(), RuntimeError> {
+        self.teams
+            .requeue_expired_deliveries(90)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let _ = self
+            .agent_runtime
+            .process_due_lifecycle_operations()
+            .await?;
+        let teams = self
+            .teams
+            .list_reconcilable_teams()
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        for team in teams {
+            if team.status == crate::teams::TeamStatus::Disbanding {
+                let _ = self.agent_runtime.disband_team_local_first(&team.id).await;
+                continue;
+            }
+            let team = if team.status == crate::teams::TeamStatus::Starting {
+                if team.mode == crate::teams::TeamMode::Yolo {
+                    self.teams
+                        .mark_permission_profile_applied(&team.leader_member_id, None)
+                        .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+                }
+                let activated = self
+                    .teams
+                    .activate_team(&team.id)
+                    .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+                let _ = self.teams.send_message(
+                    &activated.id,
+                    &activated.leader_member_id,
+                    &activated.leader_member_id,
+                    crate::teams::TeamMessageKind::System,
+                    None,
+                    "Team startup was recovered after a server restart. Re-read Team context and continue coordination.",
+                );
+                activated
+            } else {
+                team
+            };
+            if matches!(
+                team.status,
+                crate::teams::TeamStatus::Active | crate::teams::TeamStatus::Verifying
+            ) {
+                self.recover_starting_team_members(&team).await;
+                let _ = self.agent_runtime.reconcile_team(&team.id);
+                self.remind_idle_leader_without_progress(&team)?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn recover_starting_team_members(&self, team: &crate::teams::Team) {
+        let Ok(members) = self.teams.list_members(&team.id) else {
+            return;
+        };
+        for member in members
+            .into_iter()
+            .filter(|member| member.status == crate::teams::TeamMemberStatus::Starting)
+        {
+            let provisioning = self
+                .teams
+                .list_lifecycle_operations(&team.id)
+                .ok()
+                .and_then(|operations| {
+                    operations.into_iter().rev().find(|operation| {
+                        operation.kind == crate::teams::TeamLifecycleOperationKind::Provisioning
+                            && operation.member_id.as_deref() == Some(member.id.as_str())
+                    })
+                });
+            match self
+                .agent_runtime
+                .initialize_conversation(&member.conversation_id)
+                .await
+            {
+                Ok(()) => {
+                    let _ = self
+                        .teams
+                        .set_member_status(&member.id, crate::teams::TeamMemberStatus::Idle);
+                    if let Some(operation) = provisioning {
+                        let _ = self.teams.mark_lifecycle_operation_completed(&operation.id);
+                    }
+                }
+                Err(error) => {
+                    if let Some(operation) = provisioning {
+                        let _ = self.teams.mark_lifecycle_operation_terminal_failure(
+                            &operation.id,
+                            &error.to_string(),
+                        );
+                    }
+                    let _ = self.teams.append_activity(
+                        &team.id,
+                        Some(&member.id),
+                        None,
+                        "member_provision_failed",
+                        &format!("Could not recover teammate {}", member.name),
+                        None,
+                    );
+                    if member.role == TeamRole::Teammate {
+                        let _ = self
+                            .agent_runtime
+                            .remove_team_member_local_first(
+                                &team.id,
+                                &team.leader_member_id,
+                                &member.id,
+                            )
+                            .await;
+                    } else {
+                        let _ = self
+                            .teams
+                            .set_member_status(&member.id, crate::teams::TeamMemberStatus::Failed);
+                    }
+                }
+            }
+        }
+    }
+
+    fn remind_idle_leader_without_progress(
+        &self,
+        team: &crate::teams::Team,
+    ) -> Result<(), RuntimeError> {
+        if !self
+            .teams
+            .list_tasks(&team.id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?
+            .is_empty()
+        {
+            return Ok(());
+        }
+        let activity = self
+            .teams
+            .list_activity(&team.id, 200)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let no_progress_attempts = activity
+            .iter()
+            .take_while(|item| item.kind != "team_started")
+            .filter(|item| item.kind == "leader_no_progress")
+            .count();
+        if no_progress_attempts >= 3 {
+            let _ = self.teams.mark_team_needs_attention(&team.id);
+            let _ = self.agent_runtime.store().append_workspace_event(
+                "team_attention_updated",
+                Some(&team.project_id),
+                None,
+                None,
+                &json!({"team_id":team.id, "reason":"leader_no_progress"}),
+            );
+            return Ok(());
+        }
+        let leader = self
+            .teams
+            .get_member(&team.leader_member_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let conversation = self
+            .agent_runtime
+            .store()
+            .get_conversation(&leader.conversation_id)?;
+        if matches!(
+            conversation.latest_run_status,
+            Some(RunStatus::Running | RunStatus::WaitingPermission)
+        ) {
+            return Ok(());
+        }
+        self.teams
+            .send_message(
+                &team.id,
+                &leader.id,
+                &leader.id,
+                crate::teams::TeamMessageKind::System,
+                None,
+                "The Team is active but has no concrete tasks. Re-read Team context, create the minimum useful task graph, and delegate work or ask the user only when a semantic decision is genuinely blocked.",
+            )
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        self.teams
+            .append_activity(
+                &team.id,
+                Some(&leader.id),
+                None,
+                "leader_no_progress",
+                "Leader was reminded to establish the Team task graph",
+                Some(&json!({"attempt":no_progress_attempts + 1}).to_string()),
+            )
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let _ = self.agent_runtime.store().append_workspace_event(
+            "team_leader_no_progress",
+            Some(&team.project_id),
+            Some(&leader.conversation_id),
+            None,
+            &json!({"team_id":team.id}),
+        );
+        let _ = self.agent_runtime.wake_team_leader(&team.id);
+        Ok(())
     }
 }
 
@@ -460,27 +666,21 @@ async fn delete_conversation(
         if member.id != team.leader_member_id {
             return Err(ApiError::TeammateDeletionRequiresLeader);
         }
-        state
+        let project_id = team.project_id.clone();
+        let result = state
             .agent_runtime
-            .disconnect_conversation(&conversation_id)
+            .disband_team_local_first(&team.id)
             .await?;
-        for teammate in state
-            .teams
-            .list_members(&team.id)?
-            .into_iter()
-            .filter(|candidate| candidate.id != team.leader_member_id)
-        {
-            state
-                .agent_runtime
-                .disconnect_conversation(&teammate.conversation_id)
-                .await?;
-            delete_session_with_revisions(&state, &teammate.conversation_id).await?;
-            state
-                .teams
-                .remove_teammate(&team.id, &team.leader_member_id, &teammate.id)?;
-        }
-        delete_session_with_revisions(&state, &conversation_id).await?;
-        state.teams.delete_team(&team.id)?;
+        let _ = state.agent_runtime.store().append_workspace_event(
+            "team_disbanded",
+            Some(&project_id),
+            None,
+            None,
+            &json!({
+                "team_id":result.team_id,
+                "cleanup_operations":result.cleanup_operations.len(),
+            }),
+        );
     } else {
         state
             .agent_runtime
