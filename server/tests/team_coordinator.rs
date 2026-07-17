@@ -4,7 +4,8 @@ use std::sync::Arc;
 use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::team_coordinator::{CoordinatorError, SpawnTeammate, TeamCoordinator};
 use kubecode_server::teams::{
-    MemberWorkspaceMode, NewTeam, NewTeamTask, TeamError, TeamMessageKind, TeamStore, TeamWorkspace,
+    MemberWorkspaceMode, NewTeam, NewTeamTask, StartTeam, TeamError, TeamMessageKind, TeamMode,
+    TeamStore, TeamWorkspace,
 };
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
@@ -44,6 +45,23 @@ fn fixture() -> Fixture {
             workspace_path: None,
         })
         .expect("team");
+    teams
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &team.leader_member_id,
+            goal: "Complete the Team test",
+            acceptance_criteria: &["All delegated work is accepted".to_owned()],
+            allowed_agent_ids: &[
+                "claude_code".to_owned(),
+                "codex".to_owned(),
+                "opencode".to_owned(),
+            ],
+            mode: TeamMode::Standard,
+            max_teammates: 8,
+            max_parallel_runs: 3,
+            max_review_rounds: 3,
+        })
+        .expect("start team");
     let coordinator = TeamCoordinator::new(
         Arc::clone(&workspace),
         Arc::clone(&agents),

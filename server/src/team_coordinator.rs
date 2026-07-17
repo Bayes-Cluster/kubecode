@@ -4,8 +4,8 @@ use thiserror::Error;
 
 use crate::agents::{AgentId, AgentStore, Conversation, ExecutionMode, StoreError};
 use crate::teams::{
-    MemberWorkspaceMode, NewTeammate, Team, TeamError, TeamMember, TeamMessageKind, TeamRole,
-    TeamStore,
+    MemberWorkspaceMode, NewDiscriminator, NewTeammate, Team, TeamError, TeamMember,
+    TeamMessageKind, TeamRole, TeamStatus, TeamStore,
 };
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
@@ -15,6 +15,13 @@ pub struct SpawnTeammate<'a> {
     pub agent_id: AgentId,
     pub name: &'a str,
     pub workspace_mode: MemberWorkspaceMode,
+}
+
+pub struct SpawnDiscriminator<'a> {
+    pub team_id: &'a str,
+    pub caller_member_id: &'a str,
+    pub agent_id: AgentId,
+    pub name: &'a str,
 }
 
 #[derive(Debug, Error)]
@@ -55,6 +62,20 @@ impl TeamCoordinator {
         let team = self.teams.get_team(input.team_id)?;
         let caller = self.teams.get_member(input.caller_member_id)?;
         ensure_leader(&team, &caller)?;
+        if team.status != TeamStatus::Active {
+            return Err(TeamError::InvalidTeamState.into());
+        }
+        if !team
+            .allowed_agent_ids
+            .iter()
+            .any(|allowed| allowed == agent_id_value(input.agent_id))
+        {
+            return Err(TeamError::InvalidStoredValue(format!(
+                "Agent is outside the Team budget: {}",
+                agent_id_value(input.agent_id)
+            ))
+            .into());
+        }
 
         let conversation =
             self.agents
@@ -83,6 +104,46 @@ impl TeamCoordinator {
         member.map_err(CoordinatorError::from)
     }
 
+    pub fn spawn_discriminator(
+        &self,
+        input: SpawnDiscriminator<'_>,
+    ) -> Result<TeamMember, CoordinatorError> {
+        let team = self.teams.get_team(input.team_id)?;
+        let caller = self.teams.get_member(input.caller_member_id)?;
+        ensure_leader(&team, &caller)?;
+        let conversation =
+            self.agents
+                .create_conversation(&team.project_id, input.agent_id, Some(input.name))?;
+        let conversation_id = conversation.id.clone();
+        let conversation =
+            match self.configure_workspace(&team, conversation, MemberWorkspaceMode::Shared) {
+                Ok(conversation) => conversation,
+                Err(error) => {
+                    let _ = self.agents.delete_conversation(&conversation_id);
+                    return Err(error);
+                }
+            };
+        let member = self.teams.add_discriminator(NewDiscriminator {
+            team_id: &team.id,
+            caller_member_id: &caller.id,
+            conversation_id: &conversation.id,
+            name: input.name,
+        });
+        if member.is_err() {
+            let _ = self.agents.delete_conversation(&conversation.id);
+        }
+        member.map_err(CoordinatorError::from)
+    }
+
+    pub fn capture_team_fingerprint(&self, team: &Team) -> Result<String, CoordinatorError> {
+        self.capture_team_tree(team)?.ok_or_else(|| {
+            TeamError::InvalidStoredValue(
+                "independent Team verification requires a Git workspace".into(),
+            )
+            .into()
+        })
+    }
+
     pub fn removable_teammate(
         &self,
         team_id: &str,
@@ -98,6 +159,9 @@ impl TeamCoordinator {
         }
         if teammate.role == TeamRole::Leader {
             return Err(TeamError::LeaderCannotBeRemoved.into());
+        }
+        if teammate.role == TeamRole::Discriminator {
+            return Err(TeamError::DiscriminatorCannotWork.into());
         }
         Ok(teammate)
     }
@@ -248,4 +312,12 @@ fn ensure_leader(team: &Team, member: &TeamMember) -> Result<(), TeamError> {
         return Err(TeamError::LeaderRequired);
     }
     Ok(())
+}
+
+fn agent_id_value(agent_id: AgentId) -> &'static str {
+    match agent_id {
+        AgentId::ClaudeCode => "claude_code",
+        AgentId::Codex => "codex",
+        AgentId::OpenCode => "opencode",
+    }
 }

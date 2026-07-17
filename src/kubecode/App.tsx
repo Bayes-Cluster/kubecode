@@ -920,7 +920,7 @@ function NewSessionDialog({
   const [agentId, setAgentId] = useState<AgentId>(availableAgent?.id ?? 'codex')
   const [title, setTitle] = useState('')
   const [mode, setMode] = useState<'new' | 'import'>('new')
-  const [sessionKind, setSessionKind] = useState<'solo' | 'team'>('solo')
+  const [sessionKind, setSessionKind] = useState<'session' | 'team'>('session')
   const [executionMode, setExecutionMode] = useState<'shared' | 'worktree'>('shared')
   const [providerSessions, setProviderSessions] = useState<ProviderSessionInfo[]>([])
   const [providerSessionId, setProviderSessionId] = useState<string | null>(null)
@@ -968,13 +968,11 @@ function NewSessionDialog({
     setCreateError(null)
     try {
       if (mode === 'new' && sessionKind === 'team') {
-        const teamName = title.trim()
-        if (!teamName) return
         const team = await api.createTeam(
           projectId,
           selectedAgentId,
           agentName(selectedAgentId),
-          teamName,
+          title.trim() || undefined,
           executionMode,
         )
         trackEvent('kubecode_team_created', {
@@ -1045,14 +1043,14 @@ function NewSessionDialog({
               <span>{t('kubecode.sessionType')}</span>
               <div className="kubecode-choice-grid kubecode-session-choice-grid" role="group" aria-label={t('kubecode.sessionType')}>
                 <Button
-                  aria-label={t('kubecode.soloSession')}
-                  aria-pressed={sessionKind === 'solo'}
-                  data-active={sessionKind === 'solo'}
+                  aria-label={t('kubecode.session')}
+                  aria-pressed={sessionKind === 'session'}
+                  data-active={sessionKind === 'session'}
                   variant="outline"
-                  onClick={() => setSessionKind('solo')}
+                  onClick={() => setSessionKind('session')}
                 >
                   <User />
-                  <span>{t('kubecode.soloSession')}</span>
+                  <span>{t('kubecode.session')}</span>
                 </Button>
                 <Button
                   aria-label={t('kubecode.teamSession')}
@@ -1087,7 +1085,6 @@ function NewSessionDialog({
                 <Input
                   aria-label={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}
                   placeholder={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.optionalSessionTitle')}
-                  required={sessionKind === 'team'}
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                 />
@@ -1151,8 +1148,7 @@ function NewSessionDialog({
             disabled={creating
               || !projectId
               || !availableAgent
-              || (mode === 'import' && !providerSessionId)
-              || (mode === 'new' && sessionKind === 'team' && !title.trim())}
+              || (mode === 'import' && !providerSessionId)}
             onClick={() => void create()}
           >
             {creating ? t('kubecode.loading') : mode === 'import' ? t('kubecode.import') : t('kubecode.create')}

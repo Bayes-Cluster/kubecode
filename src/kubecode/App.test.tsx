@@ -471,8 +471,8 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Start new' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Team' }))
     expect(screen.getByRole('button', { name: 'Team' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('textbox', { name: 'Team name' })).toBeRequired()
-    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Team name' })).not.toBeRequired()
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Team name' }), {
       target: { value: 'Research team' },
     })

@@ -41,11 +41,14 @@ an explicit visible Fork; it is not the implementation of message editing.
 the durable timeline instead of using a native provider checkpoint.
 
 A Team Session is a durable coordination boundary with one fixed Leader, a
-dynamic set of teammates, a task dependency graph, and member mailboxes. Every
-member owns an independent Agent Chat and provider Session. Shared members use
-the Team cwd; an explicitly isolated member receives a worktree and stores its
-base Git tree. Only the Leader may add members, review results, and author the
-final Team response.
+dynamic set of teammates, a task dependency graph, member mailboxes, and an
+explicit lifecycle. A Draft becomes Active only after the user supplies its
+goal, acceptance criteria, allowed installed Agents, and teammate/concurrency
+budget. Every member owns an independent Agent Chat and provider Session.
+Shared members use the Team cwd; an explicitly isolated member receives a
+worktree and stores its base Git tree. Only the Leader may add members, review
+plans/results, integrate accepted work, and author the final Team response.
+The Leader may edit the workspace but can never be a concrete task assignee.
 
 A Team mailbox message has a durable delivery lifecycle: pending, delivered,
 acknowledged, or failed. Delegation atomically assigns a task and writes the
@@ -54,23 +57,42 @@ respects the Team's maximum parallel-run setting, and retries failed delivery a
 finite number of times. A Team activity event is a structured coordination
 projection; it is not a replacement for the member's Chat transcript.
 
+A Team Task Attempt binds one concrete task assignment to one teammate and,
+once awakened, one ACP run. It persists queued, running, missing-report,
+submitted, completed, and failed states. Failures use a provider-neutral
+classification while retaining the original diagnostic. A completed Agent turn
+without a structured result receives one durable reminder; repeating that
+condition fails the Attempt so the Leader can retry or reassign the task.
+
 A Team permission request is a durable projection of one Teammate ACP
 permission callback, including the exact tool input and Agent-provided options.
 It moves from `pending_leader` to either `resolved`, `waiting_user`, or
 `cancelled`. Only the fixed Leader may resolve or escalate it; the user can
 resolve it only after escalation. The ACP callback itself remains live until a
-decision, cancellation, or Agent disconnect.
+decision, cancellation, or Agent disconnect. In YOLO mode escalation is
+disabled: the Leader must choose an advertised native option or the Team stops
+for attention.
+
+A Team Discriminator is a fresh, read-only Agent Session used only by YOLO
+Teams. It cannot own tasks, edit implementation, or send arbitrary coordination
+messages. It evaluates the Team goal and evidence against acceptance criteria
+and submits one pass/reject verdict tied to a Git tree fingerprint. Rejection
+cannot be overridden; a later pass requires a new round after the workspace
+changes. The Discriminator does not count as a teammate or consume the
+teammate budget.
 
 An internal Team run is a normal persisted Agent run owned by the recipient's
 Session, but its synthetic wake prompt is hidden from the browser timeline and
 cannot retitle or branch the Chat. Agent output and interactive ACP events remain
 visible so users can inspect and continue each teammate independently.
 
-The `kubecode-team` MCP server is the cross-Agent control plane for spawning,
-tasks, review, and messaging; it does not replace provider-native tools or
-subagents. ACP transport capabilities choose how it is attached. HTTP-capable
-agents receive a tokenized streamable HTTP endpoint on new, load, and resume;
-other agents retain the in-process bridge for new sessions.
+The `kubecode-team` MCP server is the cross-Agent control plane for bounded
+member creation, task attempts, plan/result/permission review, independent
+verification, explicit completion, and messaging. It does not replace
+provider-native tools or subagents. ACP transport capabilities choose how it is
+attached. HTTP-capable agents receive a tokenized streamable HTTP endpoint on
+new, load, and resume; other agents retain the in-process bridge for new
+sessions.
 
 Teammate spawn accepts opaque Agent-native ACP mode/configuration IDs rather
 than a Kubecode model abstraction. Teammate removal is a Leader-only lifecycle

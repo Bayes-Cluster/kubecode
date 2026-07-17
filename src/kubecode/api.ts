@@ -9,6 +9,7 @@ export type DirectoryListing = { path: string; parent: string | null; entries: D
 export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
+export type TeamRole = 'leader' | 'teammate' | 'discriminator'
 export type ExecutionMode = 'shared' | 'worktree'
 export type WorkspaceMigrationStrategy = 'merge' | 'export_patch' | 'discard'
 export type WorkspaceMigrationItem = {
@@ -57,7 +58,7 @@ export type Conversation = {
   workspace_path: string | null
   recreated_context: boolean
   team_id?: string | null
-  team_role?: 'leader' | 'teammate' | null
+  team_role?: TeamRole | null
 }
 export type ConversationRevision = {
   id: string
@@ -67,17 +68,29 @@ export type ConversationRevision = {
   created_at: string
 }
 export type TeamWorkspace = 'shared' | 'worktree'
+export type TeamMode = 'standard' | 'yolo'
 export type Team = {
   id: string
   project_id: string
   leader_member_id: string
   agent_session_id: string
   title: string
-  status: 'active' | 'completed' | 'archived'
+  status: 'draft' | 'active' | 'verifying' | 'needs_attention' | 'completed' | 'archived'
   workspace: TeamWorkspace
   workspace_path: string | null
   member_management_policy: 'ask' | 'auto'
   max_parallel_runs: number
+  mode: TeamMode
+  goal: string
+  acceptance_criteria: string[]
+  allowed_agent_ids: AgentId[]
+  max_teammates: number
+  max_review_rounds: number
+  current_review_round: number
+  workspace_fingerprint: string | null
+  final_summary: string | null
+  started_at: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -86,7 +99,7 @@ export type TeamMember = {
   team_id: string
   conversation_id: string
   name: string
-  role: 'leader' | 'teammate'
+  role: TeamRole
   status:
     | 'starting'
     | 'configuring'
@@ -110,7 +123,9 @@ export type TeamTask = {
   title: string
   description: string
   status: string
+  completion_required: boolean
   requires_plan_approval: boolean
+  plan: string | null
   mutates_files: boolean
   result: string | null
   verification: string | null
@@ -125,6 +140,7 @@ export type TeamSnapshot = {
   conversations: Conversation[]
   members: TeamMember[]
   tasks: TeamTask[]
+  task_attempts: TeamTaskAttempt[]
   summary: {
     running: number
     queued: number
@@ -136,6 +152,41 @@ export type TeamSnapshot = {
   permissions: TeamPermissionRequest[]
   activity: TeamActivity[]
   attention: TeamAttention[]
+  discrimination_rounds: TeamDiscriminationRound[]
+}
+export type TeamTaskAttempt = {
+  id: string
+  team_id: string
+  task_id: string
+  member_id: string
+  run_id: string | null
+  status: 'queued' | 'running' | 'needs_report' | 'result_submitted' | 'completed' | 'failed' | 'cancelled'
+  failure_kind: 'rate_limit' | 'quota' | 'auth' | 'permission_denied' | 'process' | 'protocol' | 'timeout' | 'interrupted' | 'unknown' | null
+  error: string | null
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+export type StartTeamInput = {
+  goal: string
+  acceptance_criteria: string[]
+  allowed_agent_ids: AgentId[]
+  mode: TeamMode
+  max_teammates: number
+  max_parallel_runs: number
+  max_review_rounds: number
+}
+export type TeamDiscriminationRound = {
+  id: string
+  team_id: string
+  discriminator_member_id: string
+  round: number
+  workspace_fingerprint: string
+  status: 'running' | 'passed' | 'rejected' | 'error'
+  verdict: string | null
+  evidence: string | null
+  created_at: string
+  resolved_at: string | null
 }
 export type TeamPermissionRequest = {
   id: string
@@ -440,6 +491,25 @@ export class KubecodeApi {
 
   getTeam(teamId: string): Promise<TeamSnapshot> {
     return this.request(`/teams/${encodeURIComponent(teamId)}`)
+  }
+
+  startTeam(teamId: string, input: StartTeamInput): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}/start`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  completeTeam(
+    teamId: string,
+    finalSummary: string,
+  ): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({
+        final_summary: finalSummary,
+      }),
+    })
   }
 
   updateTeamSettings(

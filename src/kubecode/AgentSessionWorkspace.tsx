@@ -152,7 +152,9 @@ export function AgentSessionWorkspace({
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteTeamOpen, setDeleteTeamOpen] = useState(false)
-  const [teamView, setTeamView] = useState<'chat' | 'team'>('chat')
+  const [teamView, setTeamView] = useState<'chat' | 'team'>(
+    conversation?.team_role === 'leader' ? 'team' : 'chat',
+  )
   const [draftTitle, setDraftTitle] = useState('')
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
@@ -196,6 +198,10 @@ export function AgentSessionWorkspace({
   useEffect(() => {
     setPrompt(conversationId ? conversationDraftsRef.current.get(conversationId) ?? '' : '')
   }, [conversationId])
+
+  useEffect(() => {
+    setTeamView(conversation?.team_role === 'leader' ? 'team' : 'chat')
+  }, [conversation?.team_role, conversationId])
 
   const attachRun = useCallback((nextRun: AgentRun) => {
     knownRunIdsRef.current.add(nextRun.id)
@@ -562,8 +568,9 @@ export function AgentSessionWorkspace({
                 {t('kubecode.promoteToTeam')}
               </DropdownMenuItem>
               {conversation.team_role !== 'teammate'
+                && conversation.team_role !== 'discriminator'
                 && !team?.members.some((member) => (
-                  member.conversation_id === conversation.id && member.role === 'teammate'
+                  member.conversation_id === conversation.id && member.role !== 'leader'
                 )) && (
                 <>
                   <DropdownMenuSeparator />

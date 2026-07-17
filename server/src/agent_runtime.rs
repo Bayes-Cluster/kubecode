@@ -116,6 +116,32 @@ impl PendingPermission {
 
 const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
+fn classify_team_failure(run: &AgentRun) -> crate::teams::TeamTaskFailureKind {
+    let error = run.error.as_deref().unwrap_or_default().to_lowercase();
+    if error.contains("rate limit") || error.contains("too many requests") || error.contains("429")
+    {
+        crate::teams::TeamTaskFailureKind::RateLimit
+    } else if error.contains("quota") || error.contains("limit reached") {
+        crate::teams::TeamTaskFailureKind::Quota
+    } else if error.contains("auth") || error.contains("unauthorized") || error.contains("401") {
+        crate::teams::TeamTaskFailureKind::Auth
+    } else if error.contains("permission") || error.contains("denied") {
+        crate::teams::TeamTaskFailureKind::PermissionDenied
+    } else {
+        match run.status {
+            RunStatus::TimedOut => crate::teams::TeamTaskFailureKind::Timeout,
+            RunStatus::Interrupted | RunStatus::Cancelled => {
+                crate::teams::TeamTaskFailureKind::Interrupted
+            }
+            RunStatus::Failed if error.contains("protocol") || error.contains("acp") => {
+                crate::teams::TeamTaskFailureKind::Protocol
+            }
+            RunStatus::Failed => crate::teams::TeamTaskFailureKind::Process,
+            _ => crate::teams::TeamTaskFailureKind::Unknown,
+        }
+    }
+}
+
 impl AgentRuntime {
     pub fn new(
         workspace: Arc<WorkspaceService>,
@@ -285,7 +311,11 @@ impl AgentRuntime {
             message: format!(
                 "You are {} {} in Kubecode Team '{}'. Process these durable Team updates now. Use team_get_context for the full current state, communicate through Team MCP, and do not claim work is complete until you report it through the appropriate Team tool.\n{summary}",
                 if member.role == crate::teams::TeamRole::Leader { "the" } else { "a" },
-                if member.role == crate::teams::TeamRole::Leader { "Leader" } else { "Teammate" },
+                match member.role {
+                    crate::teams::TeamRole::Leader => "Leader",
+                    crate::teams::TeamRole::Teammate => "Teammate",
+                    crate::teams::TeamRole::Discriminator => "read-only Discriminator",
+                },
                 team.title,
             ),
         }) {
@@ -307,6 +337,7 @@ impl AgentRuntime {
                 return Err(error);
             }
         };
+        let _ = teams.bind_task_attempt_run(&member.id, &run.id);
         for message in &messages {
             teams
                 .mark_message_delivered(&message.id)
@@ -347,7 +378,66 @@ impl AgentRuntime {
         let Ok(Some(member)) = teams.member_for_conversation(conversation_id) else {
             return;
         };
-        let _ = teams.set_member_status(&member.id, TeamMemberStatus::Idle);
+        let run = self
+            .store
+            .list_runs(conversation_id)
+            .ok()
+            .and_then(|runs| runs.into_iter().last());
+        let failed_attempt = if member.role == crate::teams::TeamRole::Teammate {
+            run.as_ref().and_then(|run| match run.status {
+                RunStatus::Failed
+                | RunStatus::TimedOut
+                | RunStatus::Interrupted
+                | RunStatus::Cancelled => {
+                    let kind = classify_team_failure(run);
+                    teams
+                        .fail_active_attempt(
+                            &member.id,
+                            kind,
+                            run.error
+                                .as_deref()
+                                .unwrap_or("Agent turn ended before reporting a result"),
+                        )
+                        .ok()
+                        .flatten()
+                }
+                _ => None,
+            })
+        } else {
+            None
+        };
+        if let Some(attempt) = failed_attempt {
+            let summary = format!(
+                "{} failed task {} ({})",
+                member.name,
+                attempt.task_id,
+                attempt
+                    .failure_kind
+                    .map(|kind| kind.as_str())
+                    .unwrap_or("unknown")
+            );
+            let _ = teams.set_member_status(&member.id, TeamMemberStatus::Failed);
+            let _ = teams.append_activity(
+                &team.id,
+                Some(&member.id),
+                Some(&attempt.task_id),
+                "task_attempt_failed",
+                &summary,
+                attempt.error.as_deref(),
+            );
+            let _ = teams.send_message(
+                &team.id,
+                &member.id,
+                &team.leader_member_id,
+                crate::teams::TeamMessageKind::System,
+                Some(&attempt.task_id),
+                &summary,
+            );
+            let _ = self.wake_team_leader(&team.id);
+        } else {
+            let _ = teams.set_member_status(&member.id, TeamMemberStatus::Idle);
+            self.request_missing_team_report(&teams, &team, &member, run.as_ref());
+        }
         let _ = teams.append_activity(
             &team.id,
             Some(&member.id),
@@ -363,6 +453,63 @@ impl AgentRuntime {
                     let _ = self.wake_team_member(&team.id, &queued.id);
                 }
             }
+        }
+    }
+
+    fn request_missing_team_report(
+        &self,
+        teams: &TeamStore,
+        team: &crate::teams::Team,
+        member: &crate::teams::TeamMember,
+        run: Option<&AgentRun>,
+    ) {
+        if member.role != crate::teams::TeamRole::Teammate
+            || !run.is_some_and(|run| run.status == RunStatus::Completed)
+        {
+            return;
+        }
+        let Ok(Some(attempt)) = teams.active_attempt_for_member(&member.id) else {
+            return;
+        };
+        let Ok(task) = teams.get_task(&attempt.task_id) else {
+            return;
+        };
+        if task.status == crate::teams::TeamTaskStatus::PlanReview {
+            return;
+        }
+        if attempt.status == crate::teams::TeamTaskAttemptStatus::NeedsReport {
+            if let Ok(Some(failed)) = teams.fail_active_attempt(
+                &member.id,
+                crate::teams::TeamTaskFailureKind::Protocol,
+                "Agent completed twice without submitting a Team result",
+            ) {
+                let _ = teams.send_message(
+                    &team.id,
+                    &member.id,
+                    &team.leader_member_id,
+                    crate::teams::TeamMessageKind::System,
+                    Some(&failed.task_id),
+                    "Teammate completed without submitting a result after one reminder.",
+                );
+                let _ = self.wake_team_leader(&team.id);
+            }
+            return;
+        }
+        if teams
+            .mark_attempt_needs_report(&member.id)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            let _ = teams.send_message(
+                &team.id,
+                &team.leader_member_id,
+                &member.id,
+                crate::teams::TeamMessageKind::System,
+                Some(&attempt.task_id),
+                "Your Agent turn ended without a structured result. Submit the task result now with team_submit_result, or report a blocker.",
+            );
+            let _ = self.wake_team_member(&team.id, &member.id);
         }
     }
 
@@ -1220,16 +1367,23 @@ async fn run_acp_session(
                     .expect("active run mutex poisoned")
                     .clone();
                 let request_id = Uuid::new_v4().to_string();
-                let team_permission = permission_runtime
+                let team_member = permission_runtime
                     .team_store()
                     .and_then(|teams| {
                         teams
                             .member_for_conversation(&permission_conversation_id)
                             .ok()
                             .flatten()
-                            .filter(|member| member.role == crate::teams::TeamRole::Teammate)
                             .map(|member| (teams, member))
                     });
+                let discriminator_request = team_member
+                    .as_ref()
+                    .is_some_and(|(_, member)| {
+                        member.role == crate::teams::TeamRole::Discriminator
+                    });
+                let team_permission = team_member.filter(|(_, member)| {
+                    member.role == crate::teams::TeamRole::Teammate
+                });
                 let reviewer = if team_permission.is_some() { "leader" } else { "user" };
                 let should_route_to_leader = team_permission.is_some();
                 let request_payload = json!({
@@ -1244,7 +1398,9 @@ async fn run_acp_session(
                         "kind": option.kind,
                     })).collect::<Vec<_>>(),
                 });
-                let outcome = if let Some(run_id) = run_id {
+                let outcome = if discriminator_request {
+                    RequestPermissionOutcome::Cancelled
+                } else if let Some(run_id) = run_id {
                     let _ = permission_store
                         .set_run_status(&run_id, RunStatus::WaitingPermission);
                     let _ = permission_store.append_event(

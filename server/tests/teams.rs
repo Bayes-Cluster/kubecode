@@ -1,7 +1,9 @@
 use kubecode_server::teams::{
-    MemberManagementPolicy, MemberWorkspaceMode, NewTeam, NewTeamPermissionRequest,
-    NewTeamProposal, NewTeamTask, NewTeammate, TeamMessageDeliveryStatus, TeamPermissionStatus,
-    TeamProposalStatus, TeamRole, TeamStore, TeamTaskStatus, TeamWorkspace,
+    MemberManagementPolicy, MemberWorkspaceMode, NewDiscriminator, NewTeam,
+    NewTeamPermissionRequest, NewTeamProposal, NewTeamTask, NewTeammate, StartTeam,
+    TeamMessageDeliveryStatus, TeamMode, TeamPermissionStatus, TeamProposalStatus, TeamRole,
+    TeamStatus, TeamStore, TeamTaskAttemptStatus, TeamTaskFailureKind, TeamTaskStatus,
+    TeamWorkspace,
 };
 use tempfile::TempDir;
 
@@ -91,6 +93,8 @@ fn creates_a_team_with_a_fixed_leader() {
     assert_eq!(members[0].role, TeamRole::Leader);
     assert_eq!(members[0].conversation_id, "conversation-lead");
     assert_eq!(team.leader_member_id, members[0].id);
+    assert_eq!(team.status, TeamStatus::Draft);
+    assert_eq!(team.mode, TeamMode::Standard);
     assert_eq!(
         store
             .team_for_conversation("conversation-lead")
@@ -98,6 +102,221 @@ fn creates_a_team_with_a_fixed_leader() {
             .expect("team membership")
             .id,
         team.id,
+    );
+}
+
+#[test]
+fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: Some("Reproduce the paper"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let criteria = vec![
+        "Tests pass".to_owned(),
+        "Results are reproducible".to_owned(),
+    ];
+    let agents = vec!["codex".to_owned(), "claude_code".to_owned()];
+
+    let started = store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Reproduce the published experiment",
+            acceptance_criteria: &criteria,
+            allowed_agent_ids: &agents,
+            mode: TeamMode::Yolo,
+            max_teammates: 3,
+            max_parallel_runs: 2,
+            max_review_rounds: 4,
+        })
+        .expect("start team");
+
+    assert_eq!(started.status, TeamStatus::Active);
+    assert_eq!(started.mode, TeamMode::Yolo);
+    assert_eq!(started.goal, "Reproduce the published experiment");
+    assert_eq!(started.acceptance_criteria, criteria);
+    assert_eq!(started.allowed_agent_ids, agents);
+    assert_eq!(started.max_teammates, 3);
+    assert_eq!(started.max_parallel_runs, 2);
+    assert_eq!(started.max_review_rounds, 4);
+    assert!(started.started_at.is_some());
+}
+
+#[test]
+fn leader_and_discriminator_cannot_claim_concrete_tasks() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Implement and independently verify the fix",
+            acceptance_criteria: &["The fix is verified".to_owned()],
+            allowed_agent_ids: &["codex".to_owned()],
+            mode: TeamMode::Yolo,
+            max_teammates: 3,
+            max_parallel_runs: 2,
+            max_review_rounds: 3,
+        })
+        .expect("start");
+    let discriminator = store
+        .add_discriminator(NewDiscriminator {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-discriminator",
+            name: "Verifier",
+        })
+        .expect("discriminator");
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Implement the fix",
+            description: "Make the concrete code change",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: true,
+        })
+        .expect("task");
+
+    assert_eq!(discriminator.role, TeamRole::Discriminator);
+    assert!(store.claim_task(&task.id, &leader.id).is_err());
+    assert!(store.claim_task(&task.id, &discriminator.id).is_err());
+    assert!(
+        store
+            .delegate_task(&task.id, &leader.id, &discriminator.id)
+            .is_err()
+    );
+}
+
+#[test]
+fn explicit_completion_requires_accepted_work_and_a_yolo_verdict() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let criteria = vec!["The regression is fixed".to_owned()];
+    let agents = vec!["codex".to_owned()];
+    store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Fix the regression",
+            acceptance_criteria: &criteria,
+            allowed_agent_ids: &agents,
+            mode: TeamMode::Yolo,
+            max_teammates: 3,
+            max_parallel_runs: 2,
+            max_review_rounds: 3,
+        })
+        .expect("start");
+
+    assert!(
+        store
+            .complete_team(&team.id, &leader.id, "Done", "tree-a")
+            .is_err()
+    );
+    assert!(
+        store
+            .validate_discrimination_request(&team.id, &leader.id)
+            .is_err(),
+        "verification must not create a Discriminator before required work is accepted",
+    );
+    let teammate = store
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-worker",
+            name: "worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Fix it",
+            description: "Implement and test",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: true,
+        })
+        .expect("task");
+    store.claim_task(&task.id, &teammate.id).expect("claim");
+    store
+        .submit_result(&task.id, &teammate.id, "Fixed", "cargo test")
+        .expect("result");
+    store
+        .review_result(&task.id, &leader.id, true, None)
+        .expect("accept");
+    assert!(
+        store
+            .complete_team(&team.id, &leader.id, "Done", "tree-a")
+            .is_err()
+    );
+    store
+        .validate_discrimination_request(&team.id, &leader.id)
+        .expect("verification preflight");
+
+    let discriminator = store
+        .add_discriminator(NewDiscriminator {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-verifier",
+            name: "Verifier",
+        })
+        .expect("discriminator");
+    let round = store
+        .request_discrimination(&team.id, &leader.id, &discriminator.id, "tree-a")
+        .expect("request review");
+    store
+        .submit_discrimination_verdict(
+            &round.id,
+            &discriminator.id,
+            true,
+            "All criteria passed",
+            "cargo test passed",
+        )
+        .expect("pass");
+    let completed = store
+        .complete_team(&team.id, &leader.id, "Integrated and verified", "tree-a")
+        .expect("complete");
+    assert_eq!(completed.status, TeamStatus::Completed);
+    assert_eq!(
+        completed.final_summary.as_deref(),
+        Some("Integrated and verified")
     );
 }
 
@@ -366,6 +585,86 @@ fn delegation_assigns_the_task_and_enqueues_one_message_atomically() {
             .unread_messages(&teammate.id)
             .expect("unread")
             .is_empty()
+    );
+}
+
+#[test]
+fn task_attempts_expose_missing_reports_and_structured_retryable_failures() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let teammate = store
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-worker",
+            name: "worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Run the experiment",
+            description: "Execute and report the result",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("task");
+    store
+        .delegate_task(&task.id, &leader.id, &teammate.id)
+        .expect("delegate");
+    let queued = store
+        .active_attempt_for_member(&teammate.id)
+        .expect("attempt")
+        .expect("queued attempt");
+    assert_eq!(queued.status, TeamTaskAttemptStatus::Queued);
+
+    let running = store
+        .bind_task_attempt_run(&teammate.id, "run-1")
+        .expect("bind")
+        .expect("running attempt");
+    assert_eq!(running.status, TeamTaskAttemptStatus::Running);
+    assert_eq!(running.run_id.as_deref(), Some("run-1"));
+    let needs_report = store
+        .mark_attempt_needs_report(&teammate.id)
+        .expect("missing report")
+        .expect("attempt");
+    assert_eq!(needs_report.status, TeamTaskAttemptStatus::NeedsReport);
+    let failed = store
+        .fail_active_attempt(
+            &teammate.id,
+            TeamTaskFailureKind::RateLimit,
+            "429 rate limit",
+        )
+        .expect("failure")
+        .expect("failed attempt");
+    assert_eq!(failed.status, TeamTaskAttemptStatus::Failed);
+    assert_eq!(failed.failure_kind, Some(TeamTaskFailureKind::RateLimit));
+    assert_eq!(
+        store.get_task(&task.id).expect("task").status,
+        TeamTaskStatus::Failed
+    );
+    assert_eq!(
+        store
+            .retry_task(&task.id, &leader.id)
+            .expect("retry")
+            .status,
+        TeamTaskStatus::Pending
     );
 }
 

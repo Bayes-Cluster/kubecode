@@ -159,6 +159,52 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('starts and explicitly completes a Team through its lifecycle API', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ team: { id: 'team-1', status: 'active' } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ team: { id: 'team-1', status: 'completed' } })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.startTeam('team-1', {
+      goal: 'Reproduce the experiment',
+      acceptance_criteria: ['Tests pass'],
+      allowed_agent_ids: ['codex', 'opencode'],
+      mode: 'yolo',
+      max_teammates: 3,
+      max_parallel_runs: 2,
+      max_review_rounds: 3,
+    })
+    await api.completeTeam('team-1', 'Integrated and verified')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/user/alice/kubecode/api/v1/teams/team-1/start',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          goal: 'Reproduce the experiment',
+          acceptance_criteria: ['Tests pass'],
+          allowed_agent_ids: ['codex', 'opencode'],
+          mode: 'yolo',
+          max_teammates: 3,
+          max_parallel_runs: 2,
+          max_review_rounds: 3,
+        }),
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/user/alice/kubecode/api/v1/teams/team-1/complete',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          final_summary: 'Integrated and verified',
+        }),
+      }),
+    )
+  })
+
   it('previews and resolves the protected Workspaces migration', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

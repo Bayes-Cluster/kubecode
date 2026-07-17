@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input'
 import { createTranslator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import type { Conversation, KubecodeApi, TeamSnapshot } from './api'
+import type { Conversation, KubecodeApi, TeamRole, TeamSnapshot } from './api'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
 import {
   buildSessionSections,
@@ -238,7 +238,7 @@ export function SessionSidebarList({
                   conversationsById={conversationsById}
                   fork={fork}
                   key={conversation.id}
-                  nested={role === 'teammate'}
+                  nested={role !== 'leader'}
                   onSelect={onSelect}
                   remove={remove}
                   t={t}
@@ -310,7 +310,7 @@ type SessionRowProps = {
   onSelect: (conversationId: string) => void
   remove: (conversation: Conversation) => Promise<void>
   t: Translator
-  teamRole?: 'leader' | 'teammate' | null
+  teamRole?: TeamRole | null
 }
 
 function SessionRow({
@@ -348,7 +348,9 @@ function SessionRow({
               <GitFork />
               {teamRole === 'leader'
                 ? t('kubecode.teamLeader')
-                : t('kubecode.teamTeammate')}
+                : teamRole === 'discriminator'
+                  ? t('kubecode.teamDiscriminator')
+                  : t('kubecode.teamTeammate')}
             </small>
           )}
           {conversation.relationship && (
@@ -382,7 +384,7 @@ function SessionRow({
               <GitFork /> {t('kubecode.forkSession')}
             </DropdownMenuItem>
           )}
-          {teamRole !== 'teammate' && (
+          {(!teamRole || teamRole === 'leader') && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void remove(conversation)}>
@@ -401,7 +403,7 @@ type TeamSessionGroup = {
   title: string
   members: Array<{
     conversation: Conversation
-    role: 'leader' | 'teammate'
+    role: TeamRole
   }>
 }
 

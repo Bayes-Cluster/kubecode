@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0179.
+active production boundary is defined by ADRs 0161–0186.
 
 ## Runtime topology
 
@@ -93,30 +93,38 @@ Agent workspace. While an Agent turn is running, the editor remains writable
 and stores an isolated draft per Session; submission resumes after the current
 turn completes or is stopped.
 
-Team Sessions start with one fixed Leader and dynamically add teammate Agent
-Chats through the `kubecode-team` MCP server. Agents that advertise HTTP receive
+Team Sessions are created as Drafts with one fixed Leader. Before execution the
+Team Board requires a goal, acceptance criteria, allowed installed Agents,
+teammate/concurrency limits, and Standard or YOLO mode. The Leader then
+dynamically adds teammate Agent Chats through the `kubecode-team` MCP server
+without a second lineup-approval step. Agents that advertise HTTP receive
 an authenticated streamable HTTP endpoint on new, load, and resume; the
 in-process ACP bridge remains a new-session fallback for other agents.
-Leader-only operations are transactionally enforced; teammates can claim
-unblocked tasks, message one another, and submit results into the Leader
-mailbox. An idle Leader is automatically continued when a result arrives.
+Leader-only operations are transactionally enforced. The Leader cannot be a
+task assignee, but may inspect and edit the workspace to integrate accepted
+results and owns the final synthesis. Teammates claim unblocked tasks, message
+one another, and submit plans or results into the Leader mailbox. An idle
+Leader is automatically continued when a result or failure arrives.
 Provider-native subagents remain nested under their owning member and are not
 promoted into Team membership.
 
-The Team runtime persists member-management policy, a parallel-run limit,
-lineup proposals, structured activity, and delivery state for every mailbox
-message. Delegation assigns the task and enqueues its message in one SQLite
-transaction. Pending messages wake the recipient's existing ACP Session with an
-internal run; delivery is acknowledged when the member reads Team context and
-failed delivery stops retrying after three attempts. Runtime reconciliation on
-Team reads and workspace reconnects resumes queued work without creating a new
-member Session.
+The Team runtime persists its lifecycle, goal, acceptance criteria, Agent
+allowlist, parallel/member/review limits, structured activity, and delivery
+state for every mailbox message. Delegation assigns the task, creates a durable
+Task Attempt, and enqueues its message in one SQLite transaction. The Attempt
+binds to the internal ACP run and records queued, running, missing-report,
+submitted, completed, or failed state with structured rate-limit, quota, auth,
+permission, protocol, process, timeout, and interruption failures. One missing
+result reminder is automatic; a second unreported completion fails the Attempt
+and wakes the Leader. Runtime reconciliation resumes queued work after Team
+reads, server restart, or workspace reconnect without creating a new member
+Session.
 
 Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool
 calls, permissions, and response visible. The browser separates this member
-Chat navigation from a Team control view containing runtime summary, attention,
-lineup approval, task board, dependency, and activity projections.
+Chat navigation from a Team control view containing setup, runtime summary,
+attention, task board, dependency, verification, and activity projections.
 Workspace `team_*` events refresh the projection without merging member
 transcripts into the Leader Chat. The Team task board is the flexible main
 surface: full-width status columns use the active application theme, and each
@@ -126,9 +134,22 @@ inside this view; member Sessions remain available through Session navigation.
 Teammate ACP permission requests are persisted as Team permission records and
 sent to the Leader mailbox before any human controls are shown. The Leader uses
 `team_review_permission` with an exact Agent-provided option or explicitly
-escalates the request to the user. Permission waits have no timer-based
+escalates the request to the user in Standard mode. YOLO mode disables
+escalation and requires a Leader decision; failure to decide becomes Team
+attention rather than an implicit approval. Permission waits have no timer-based
 escalation. A waiting Teammate does not consume the Leader's coordination slot,
 preventing a scheduling deadlock. Leader permissions remain user-owned.
+
+`team_complete` is the only normal Team completion transition. At least one
+required task must be accepted and no permission or failed delivery may remain.
+YOLO Teams additionally create a fresh Discriminator Session after required work
+is accepted. Runtime chooses an allowed backend in deterministic rotation,
+requires its advertised read-only mode, and captures the Git tree fingerprint.
+The Discriminator can inspect evidence and submit a pass/reject verdict but
+cannot own tasks, edit implementation, or communicate outside that verdict. A
+rejection returns findings to the Leader and cannot be overridden. A pass is
+invalid when the workspace fingerprint changes; exhausting the configured
+review rounds moves the Team to Needs Attention.
 
 Teammate creation may apply an Agent-native ACP mode and dynamic configuration
 map after the member Session is initialized. Any rejected option rolls back the

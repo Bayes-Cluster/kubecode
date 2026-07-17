@@ -22,14 +22,14 @@ use tower::ServiceExt;
 use crate::agent_runtime::{AgentRuntime, RuntimeError, SessionConfigInput};
 use crate::agents::AgentId;
 use crate::api::AppState;
-use crate::team_coordinator::{SpawnTeammate, TeamCoordinator};
+use crate::team_coordinator::{SpawnDiscriminator, SpawnTeammate, TeamCoordinator};
 use crate::teams::{
     MemberWorkspaceMode, NewTeamProposal, NewTeamTask, TeamMember, TeamMemberStatus,
-    TeamMessageKind, TeamRole, TeamStore,
+    TeamMessageKind, TeamMode, TeamRole, TeamStore,
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin coordination decisions with team_get_context. The Leader has final authority and can discover installed backends, propose a flexible lineup, create/configure/remove teammates, create or delegate tasks, review results, and review teammate permission requests. Teammates claim or receive tasks, report progress/blockers, submit results, and may message any member directly. team_send_message and task delegation wake idle recipients automatically; never assume another member saw prose in your own chat. When pending_permissions is non-empty, the Leader must use team_review_permission to choose an exact Agent-provided option or escalate to the user. Use agent-native ACP mode/session_options exactly as advertised by that Agent and never invent model IDs.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. Use agent-native mode/session_options exactly as advertised; never invent model IDs.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -48,15 +48,17 @@ struct TeamMcpServer {
 impl TeamMcpServer {
     fn new(context: ToolContext) -> Self {
         let mut tool_router = Self::tool_router();
-        let disabled: &[&str] = if context.member.role == TeamRole::Leader {
-            &[
+        let disabled: &[&str] = match context.member.role {
+            TeamRole::Leader => &[
                 "team_claim_task",
                 "team_report_status",
+                "team_submit_plan",
                 "team_submit_result",
+                "team_submit_verdict",
                 "team_read_inbox",
-            ]
-        } else {
-            &[
+                "team_propose_lineup",
+            ],
+            TeamRole::Teammate => &[
                 "team_list_available_agents",
                 "team_propose_lineup",
                 "team_spawn_teammate",
@@ -65,10 +67,38 @@ impl TeamMcpServer {
                 "team_list_members",
                 "team_create_task",
                 "team_delegate_task",
+                "team_retry_task",
+                "team_review_plan",
                 "team_review_result",
                 "team_review_permission",
+                "team_request_discrimination",
+                "team_complete",
+                "team_submit_verdict",
                 "team_read_inbox",
-            ]
+            ],
+            TeamRole::Discriminator => &[
+                "team_list_available_agents",
+                "team_propose_lineup",
+                "team_spawn_teammate",
+                "team_configure_teammate",
+                "team_remove_teammate",
+                "team_list_members",
+                "team_create_task",
+                "team_delegate_task",
+                "team_retry_task",
+                "team_list_tasks",
+                "team_claim_task",
+                "team_report_status",
+                "team_submit_plan",
+                "team_review_plan",
+                "team_submit_result",
+                "team_review_result",
+                "team_review_permission",
+                "team_request_discrimination",
+                "team_complete",
+                "team_send_message",
+                "team_read_inbox",
+            ],
         };
         for name in disabled {
             tool_router.disable_route((*name).to_owned());
@@ -139,6 +169,32 @@ struct ReviewResultInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct SubmitPlanInput {
+    task_id: String,
+    plan: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReviewPlanInput {
+    task_id: String,
+    accepted: bool,
+    feedback: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SubmitVerdictInput {
+    round_id: String,
+    passed: bool,
+    verdict: String,
+    evidence: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CompleteTeamInput {
+    final_summary: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct SendMessageInput {
     to_member_id: String,
     body: String,
@@ -196,7 +252,7 @@ struct ReviewPermissionInput {
 #[tool_router]
 impl TeamMcpServer {
     #[tool(
-        description = "Return the current caller role, Team settings, roster, task board, unread messages, latest lineup proposal, and recent structured activity. Use this before deciding the next Team action."
+        description = "Return the durable caller role, Team goal and policy, roster, task board, unread messages, permissions, verification rounds, and recent activity. Reading context acknowledges the caller mailbox."
     )]
     async fn team_get_context(&self) -> Result<CallToolResult, McpError> {
         let team = self
@@ -215,9 +271,11 @@ impl TeamMcpServer {
             "team": team,
             "members": self.context.teams.list_members(&team.id).map_err(mcp_error)?,
             "tasks": self.context.teams.list_tasks(&team.id).map_err(mcp_error)?,
+            "task_attempts": self.context.teams.list_task_attempts(&team.id).map_err(mcp_error)?,
             "unread_messages": unread_messages,
-            "proposal": self.context.teams.latest_proposal(&team.id).map_err(mcp_error)?,
             "activity": self.context.teams.list_activity(&team.id, 40).map_err(mcp_error)?,
+            "discrimination_rounds": self.context.teams.list_discrimination_rounds(&team.id)
+                .map_err(mcp_error)?,
             "pending_permissions": self.context.teams.pending_permission_requests(&team.id)
                 .map_err(mcp_error)?,
         }))
@@ -545,6 +603,22 @@ impl TeamMcpServer {
         json_output(&task)
     }
 
+    #[tool(
+        description = "Leader only: reopen a failed task after inspecting its structured attempt failure, so it can be assigned again or claimed by another teammate."
+    )]
+    async fn team_retry_task(
+        &self,
+        Parameters(input): Parameters<TaskInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let task = self
+            .context
+            .teams
+            .retry_task(&input.task_id, &self.context.member.id)
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_task_updated", None);
+        json_output(&task)
+    }
+
     #[tool(description = "List the current Team task board.")]
     async fn team_list_tasks(&self) -> Result<CallToolResult, McpError> {
         let tasks = self
@@ -564,6 +638,42 @@ impl TeamMcpServer {
             .context
             .teams
             .claim_task(&input.task_id, &self.context.member.id)
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_task_updated", None);
+        json_output(&task)
+    }
+
+    #[tool(
+        description = "Teammate only: submit the implementation or research plan for a task that requires Leader plan approval."
+    )]
+    async fn team_submit_plan(
+        &self,
+        Parameters(input): Parameters<SubmitPlanInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let task = self
+            .context
+            .teams
+            .submit_plan(&input.task_id, &self.context.member.id, &input.plan)
+            .map_err(mcp_error)?;
+        let team = self
+            .context
+            .teams
+            .get_team(&task.team_id)
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .send_message(
+                &team.id,
+                &self.context.member.id,
+                &team.leader_member_id,
+                TeamMessageKind::PlanReady,
+                Some(&task.id),
+                &input.plan,
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .runtime
+            .wake_team_leader(&team.id)
             .map_err(mcp_error)?;
         publish_team_event(&self.context, "team_task_updated", None);
         json_output(&task)
@@ -645,6 +755,47 @@ impl TeamMcpServer {
         json_output(&serde_json::json!({"submitted": true}))
     }
 
+    #[tool(description = "Leader only: approve a teammate plan or request a revised plan.")]
+    async fn team_review_plan(
+        &self,
+        Parameters(input): Parameters<ReviewPlanInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let task = self
+            .context
+            .teams
+            .review_plan(
+                &input.task_id,
+                &self.context.member.id,
+                input.accepted,
+                input.feedback.as_deref(),
+            )
+            .map_err(mcp_error)?;
+        if let Some(member_id) = task.assignee_member_id.as_deref() {
+            let body = if input.accepted {
+                "The Leader approved your plan. Continue the task."
+            } else {
+                input.feedback.as_deref().unwrap_or("Revise the plan.")
+            };
+            self.context
+                .teams
+                .send_message(
+                    &task.team_id,
+                    &self.context.member.id,
+                    member_id,
+                    TeamMessageKind::System,
+                    Some(&task.id),
+                    body,
+                )
+                .map_err(mcp_error)?;
+            self.context
+                .runtime
+                .wake_team_member(&task.team_id, member_id)
+                .map_err(mcp_error)?;
+        }
+        publish_team_event(&self.context, "team_task_updated", None);
+        json_output(&task)
+    }
+
     #[tool(description = "Leader only: accept a teammate result or request changes.")]
     async fn team_review_result(
         &self,
@@ -671,6 +822,165 @@ impl TeamMcpServer {
     }
 
     #[tool(
+        description = "Leader only, YOLO Teams: start a fresh independent read-only discrimination round after all required tasks are accepted. Kubecode selects the verifier backend and records the workspace fingerprint."
+    )]
+    async fn team_request_discrimination(&self) -> Result<CallToolResult, McpError> {
+        self.require_leader()?;
+        let team = self
+            .context
+            .teams
+            .get_team(&self.context.member.team_id)
+            .map_err(mcp_error)?;
+        if team.mode != TeamMode::Yolo {
+            return Err(mcp_error(
+                "independent discrimination is only available in Team YOLO",
+            ));
+        }
+        self.context
+            .teams
+            .validate_discrimination_request(&team.id, &self.context.member.id)
+            .map_err(mcp_error)?;
+        let fingerprint = coordinator(&self.context)
+            .capture_team_fingerprint(&team)
+            .map_err(mcp_error)?;
+        let agent_id = self.select_discriminator_agent(&team)?;
+        let member = coordinator(&self.context)
+            .spawn_discriminator(SpawnDiscriminator {
+                team_id: &team.id,
+                caller_member_id: &self.context.member.id,
+                agent_id,
+                name: &format!("Verifier {}", team.current_review_round + 1),
+            })
+            .map_err(mcp_error)?;
+        if let Err(error) = self
+            .context
+            .runtime
+            .initialize_conversation(&member.conversation_id)
+            .await
+        {
+            return Err(mcp_error(error));
+        }
+        self.apply_discriminator_read_only(&member).await?;
+        let round = self
+            .context
+            .teams
+            .request_discrimination(&team.id, &self.context.member.id, &member.id, &fingerprint)
+            .map_err(mcp_error)?;
+        let review_message = format!(
+            "Independently evaluate Team goal '{}' against these acceptance criteria: {}. Inspect the current workspace and submitted task evidence without modifying anything. Submit exactly one verdict with team_submit_verdict for round {}.",
+            team.goal,
+            team.acceptance_criteria.join("; "),
+            round.id,
+        );
+        self.context
+            .teams
+            .send_message(
+                &team.id,
+                &self.context.member.id,
+                &member.id,
+                TeamMessageKind::System,
+                None,
+                &review_message,
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .runtime
+            .wake_team_member(&team.id, &member.id)
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_discrimination_started", None);
+        json_output(&serde_json::json!({"round": round, "discriminator": member}))
+    }
+
+    #[tool(
+        description = "Discriminator only: submit an independent pass or reject verdict with concrete evidence. A rejection cannot be overridden by the Leader."
+    )]
+    async fn team_submit_verdict(
+        &self,
+        Parameters(input): Parameters<SubmitVerdictInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let round = self
+            .context
+            .teams
+            .submit_discrimination_verdict(
+                &input.round_id,
+                &self.context.member.id,
+                input.passed,
+                &input.verdict,
+                &input.evidence,
+            )
+            .map_err(mcp_error)?;
+        let team = self
+            .context
+            .teams
+            .get_team(&round.team_id)
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .send_message(
+                &team.id,
+                &self.context.member.id,
+                &team.leader_member_id,
+                TeamMessageKind::System,
+                None,
+                &format!(
+                    "Independent review round {} {}: {}",
+                    round.round,
+                    if input.passed { "passed" } else { "rejected" },
+                    input.verdict
+                ),
+            )
+            .map_err(mcp_error)?;
+        self.context
+            .runtime
+            .wake_team_leader(&team.id)
+            .map_err(mcp_error)?;
+        publish_team_event(&self.context, "team_discrimination_completed", None);
+        json_output(&round)
+    }
+
+    #[tool(
+        description = "Leader only: explicitly complete the Team after every required task is accepted, permissions/messages are resolved, and the latest YOLO workspace fingerprint has a passing verdict."
+    )]
+    async fn team_complete(
+        &self,
+        Parameters(input): Parameters<CompleteTeamInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_leader()?;
+        let team = self
+            .context
+            .teams
+            .get_team(&self.context.member.team_id)
+            .map_err(mcp_error)?;
+        let fingerprint = if team.mode == TeamMode::Yolo {
+            coordinator(&self.context)
+                .capture_team_fingerprint(&team)
+                .map_err(mcp_error)?
+        } else {
+            team.updated_at.clone()
+        };
+        let completed = self
+            .context
+            .teams
+            .complete_team(
+                &team.id,
+                &self.context.member.id,
+                &input.final_summary,
+                &fingerprint,
+            )
+            .map_err(mcp_error)?;
+        let _ = self.context.teams.append_activity(
+            &team.id,
+            Some(&self.context.member.id),
+            None,
+            "team_completed",
+            "Leader completed the Team",
+            None,
+        );
+        publish_team_event(&self.context, "team_completed", None);
+        json_output(&completed)
+    }
+
+    #[tool(
         description = "Leader only: review a pending teammate permission. Use decision='resolve' with an exact option_id advertised in pending_permissions, or decision='escalate' with a reason to ask the user."
     )]
     async fn team_review_permission(
@@ -685,6 +995,16 @@ impl TeamMcpServer {
             .map_err(mcp_error)?;
         if request.team_id != self.context.member.team_id {
             return Err(mcp_error("permission request does not belong to this team"));
+        }
+        let team = self
+            .context
+            .teams
+            .get_team(&request.team_id)
+            .map_err(mcp_error)?;
+        if input.decision == "escalate" && team.mode == TeamMode::Yolo {
+            return Err(mcp_error(
+                "Team YOLO permissions must be resolved by the Leader; escalation is disabled",
+            ));
         }
         let updated = match input.decision.as_str() {
             "resolve" => {
@@ -828,6 +1148,179 @@ impl TeamMcpServer {
         }
         Ok(())
     }
+
+    fn select_discriminator_agent(&self, team: &crate::teams::Team) -> Result<AgentId, McpError> {
+        let leader = self
+            .context
+            .runtime
+            .store()
+            .get_conversation(
+                &self
+                    .context
+                    .teams
+                    .get_member(&team.leader_member_id)
+                    .map_err(mcp_error)?
+                    .conversation_id,
+            )
+            .map_err(mcp_error)?;
+        let agents = [AgentId::ClaudeCode, AgentId::Codex, AgentId::OpenCode];
+        let leader_index = agents
+            .iter()
+            .position(|candidate| *candidate == leader.agent_id)
+            .unwrap_or_default();
+        (1..=agents.len())
+            .map(|offset| agents[(leader_index + offset) % agents.len()])
+            .find(|candidate| {
+                team.allowed_agent_ids
+                    .iter()
+                    .any(|allowed| allowed == agent_id_value(*candidate))
+                    && self.context.runtime.agent_available(*candidate)
+            })
+            .ok_or_else(|| mcp_error("no allowed and available Agent can run the discriminator"))
+    }
+
+    async fn apply_discriminator_read_only(&self, member: &TeamMember) -> Result<(), McpError> {
+        let events = self
+            .context
+            .runtime
+            .store()
+            .session_events_after(&member.conversation_id, 0)
+            .map_err(mcp_error)?;
+        if let Some(mode) = events
+            .iter()
+            .rev()
+            .filter(|event| {
+                matches!(
+                    event.kind.as_str(),
+                    "current_mode" | "session_created_state"
+                )
+            })
+            .find_map(|event| read_only_mode_from_value(&event.payload))
+        {
+            self.context
+                .runtime
+                .set_session_mode(&member.conversation_id, mode)
+                .await
+                .map_err(mcp_error)?;
+            return Ok(());
+        }
+        let sandbox = events
+            .iter()
+            .rev()
+            .filter(|event| {
+                matches!(
+                    event.kind.as_str(),
+                    "config_options" | "session_created_state"
+                )
+            })
+            .find_map(|event| {
+                config_selection_from_value(&event.payload, "sandbox", &["read-only", "read only"])
+            });
+        let Some((sandbox_id, sandbox_value)) = sandbox else {
+            return Err(mcp_error(
+                "the selected Agent does not advertise an enforceable read-only mode",
+            ));
+        };
+        self.context
+            .runtime
+            .set_session_config(
+                &member.conversation_id,
+                sandbox_id,
+                SessionConfigInput::ValueId(sandbox_value),
+            )
+            .await
+            .map_err(mcp_error)?;
+        if let Some((approval_id, approval_value)) = events
+            .iter()
+            .rev()
+            .filter(|event| {
+                matches!(
+                    event.kind.as_str(),
+                    "config_options" | "session_created_state"
+                )
+            })
+            .find_map(|event| config_selection_from_value(&event.payload, "approval", &["never"]))
+        {
+            self.context
+                .runtime
+                .set_session_config(
+                    &member.conversation_id,
+                    approval_id,
+                    SessionConfigInput::ValueId(approval_value),
+                )
+                .await
+                .map_err(mcp_error)?;
+        }
+        Ok(())
+    }
+}
+
+fn agent_id_value(agent_id: AgentId) -> &'static str {
+    match agent_id {
+        AgentId::ClaudeCode => "claude_code",
+        AgentId::Codex => "codex",
+        AgentId::OpenCode => "opencode",
+    }
+}
+
+fn read_only_mode_from_value(value: &serde_json::Value) -> Option<String> {
+    let modes = value
+        .get("availableModes")
+        .or_else(|| value.get("modes"))
+        .and_then(serde_json::Value::as_array)?;
+    modes.iter().find_map(|mode| {
+        let id = mode
+            .get("id")
+            .or_else(|| mode.get("value"))
+            .and_then(serde_json::Value::as_str)?;
+        let name = mode
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(id);
+        let searchable = format!("{id} {name}").to_lowercase();
+        (searchable.contains("plan") || searchable.contains("read-only")).then(|| id.to_owned())
+    })
+}
+
+fn config_selection_from_value(
+    value: &serde_json::Value,
+    selector_term: &str,
+    value_terms: &[&str],
+) -> Option<(String, String)> {
+    let configs = value
+        .get("configOptions")
+        .and_then(serde_json::Value::as_array)?;
+    configs.iter().find_map(|config| {
+        let id = config.get("id").and_then(serde_json::Value::as_str)?;
+        let name = config
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(id);
+        if !format!("{id} {name}")
+            .to_lowercase()
+            .contains(selector_term)
+        {
+            return None;
+        }
+        let options = config
+            .get("options")
+            .and_then(serde_json::Value::as_array)?;
+        options.iter().find_map(|option| {
+            let option_id = option
+                .get("value")
+                .or_else(|| option.get("id"))
+                .and_then(serde_json::Value::as_str)?;
+            let option_name = option
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(option_id);
+            let searchable = format!("{option_id} {option_name}").to_lowercase();
+            value_terms
+                .iter()
+                .any(|term| searchable.contains(term))
+                .then(|| (id.to_owned(), option_id.to_owned()))
+        })
+    })
 }
 
 impl From<SpawnConfigValue> for SessionConfigInput {

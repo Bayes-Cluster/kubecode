@@ -9,7 +9,9 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::AgentId;
 use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router};
-use kubecode_server::teams::{MemberWorkspaceMode, NewTeamProposal, NewTeammate, TeamStore};
+use kubecode_server::teams::{
+    MemberWorkspaceMode, NewTeamProposal, NewTeammate, StartTeam, TeamMode, TeamStore,
+};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -141,11 +143,53 @@ async fn creates_a_team_with_only_its_leader() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(snapshot["team"]["project_id"], project_id);
     assert_eq!(snapshot["team"]["title"], "Investigate failure");
+    assert_eq!(snapshot["team"]["status"], "draft");
+    assert_eq!(snapshot["team"]["mode"], "standard");
     assert_eq!(snapshot["members"].as_array().expect("members").len(), 1);
     assert_eq!(snapshot["members"][0]["role"], "leader");
     assert_eq!(snapshot["members"][0]["name"], "Lead");
     assert_eq!(snapshot["tasks"], json!([]));
     assert_eq!(snapshot["leader_conversation"]["agent_id"], "codex");
+}
+
+#[tokio::test]
+async fn starts_a_team_with_a_goal_and_bounded_agent_autonomy() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (_, created) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Leader"}),
+    )
+    .await;
+    let team_id = created["team"]["id"].as_str().expect("team id");
+
+    let (status, started) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/teams/{team_id}/start"),
+        json!({
+            "goal": "Reproduce the experiment",
+            "acceptance_criteria": ["All tests pass", "Results are documented"],
+            "allowed_agent_ids": ["codex", "opencode"],
+            "mode": "standard",
+            "max_teammates": 3,
+            "max_parallel_runs": 2,
+            "max_review_rounds": 3
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(started["team"]["status"], "active");
+    assert_eq!(started["team"]["goal"], "Reproduce the experiment");
+    assert_eq!(started["team"]["mode"], "standard");
+    assert_eq!(
+        started["team"]["allowed_agent_ids"],
+        json!(["codex", "opencode"])
+    );
+    assert_eq!(started["discrimination_rounds"], json!([]));
 }
 
 #[tokio::test]
@@ -668,6 +712,24 @@ done"#,
     .await;
 
     assert_eq!(status, StatusCode::CREATED);
+    let created_team = state
+        .teams
+        .get_team(snapshot["team"]["id"].as_str().expect("team id"))
+        .expect("created Team");
+    state
+        .teams
+        .start_team(StartTeam {
+            team_id: &created_team.id,
+            leader_member_id: &created_team.leader_member_id,
+            goal: "Review backend changes",
+            acceptance_criteria: &["All required tasks are accepted".to_owned()],
+            allowed_agent_ids: &["opencode".to_owned()],
+            mode: TeamMode::Standard,
+            max_teammates: 3,
+            max_parallel_runs: 2,
+            max_review_rounds: 3,
+        })
+        .expect("start Team");
     let transcript_text = fs::read_to_string(&transcript_path).expect("ACP transcript");
     let initialize = transcript_text
         .lines()
@@ -822,15 +884,23 @@ done"#,
     for expected in [
         "team_get_context",
         "team_list_available_agents",
-        "team_propose_lineup",
         "team_configure_teammate",
         "team_delegate_task",
+        "team_review_plan",
+        "team_request_discrimination",
+        "team_complete",
     ] {
         assert!(
             tools.iter().any(|tool| tool["name"] == expected),
             "missing {expected}"
         );
     }
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool["name"] == "team_propose_lineup"),
+        "lineup proposals are replaced by bounded Leader autonomy",
+    );
     for teammate_only in [
         "team_claim_task",
         "team_report_status",
@@ -877,32 +947,6 @@ done"#,
     .expect("available Agents");
     assert_eq!(available.as_array().expect("Agent list").len(), 1);
     assert_eq!(available[0]["agent"]["id"], "opencode");
-
-    let proposal = call_mcp_tool(
-        &router,
-        mcp_path,
-        &session_header,
-        5,
-        "team_propose_lineup",
-        json!({
-            "summary": "Add a backend reviewer",
-            "members": [{
-                "name": "Backend Reviewer",
-                "purpose": "Review backend changes",
-                "agent_id": "opencode",
-                "workspace_mode": "shared",
-                "session_options": {"model": "zhipu/glm-5.2"}
-            }]
-        }),
-    )
-    .await;
-    let proposal: Value = serde_json::from_str(
-        proposal["result"]["content"][0]["text"]
-            .as_str()
-            .expect("proposal JSON"),
-    )
-    .expect("proposal");
-    assert_eq!(proposal["status"], "pending");
 
     let spawned = call_mcp_tool(
         &router,

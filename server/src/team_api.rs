@@ -5,12 +5,14 @@ use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::agent_runtime::RuntimeError;
+use crate::agent_runtime::{RuntimeError, SessionConfigInput};
 use crate::agents::{AgentId, Conversation, ExecutionMode, RunStatus, StoreError};
 use crate::api::AppState;
+use crate::team_coordinator::TeamCoordinator;
 use crate::teams::{
-    MemberManagementPolicy, NewTeam, Team, TeamActivity, TeamError, TeamMember, TeamMemberStatus,
-    TeamPermissionRequest, TeamProposal, TeamProposalStatus, TeamTask, TeamWorkspace,
+    MemberManagementPolicy, NewTeam, StartTeam, Team, TeamActivity, TeamDiscriminationRound,
+    TeamError, TeamMember, TeamMemberStatus, TeamMessageKind, TeamMode, TeamPermissionRequest,
+    TeamProposal, TeamProposalStatus, TeamTask, TeamTaskAttempt, TeamWorkspace,
 };
 use crate::workspace::WorkspaceError;
 
@@ -21,6 +23,8 @@ pub fn routes() -> Router<AppState> {
             get(list_teams).post(create_team),
         )
         .route("/teams/{team_id}", get(get_team))
+        .route("/teams/{team_id}/start", post(start_team))
+        .route("/teams/{team_id}/complete", post(complete_team))
         .route("/teams/{team_id}/settings", patch(update_team_settings))
         .route(
             "/teams/{team_id}/proposals/{proposal_id}/decision",
@@ -55,6 +59,23 @@ struct UpdateTeamSettingsRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct StartTeamRequest {
+    goal: String,
+    acceptance_criteria: Vec<String>,
+    allowed_agent_ids: Vec<String>,
+    #[serde(default)]
+    mode: TeamMode,
+    max_teammates: u8,
+    max_parallel_runs: u8,
+    max_review_rounds: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompleteTeamRequest {
+    final_summary: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct ResolveProposalRequest {
     decision: TeamProposalStatus,
 }
@@ -84,11 +105,13 @@ struct TeamSnapshot {
     conversations: Vec<Conversation>,
     members: Vec<TeamMember>,
     tasks: Vec<TeamTask>,
+    task_attempts: Vec<TeamTaskAttempt>,
     summary: TeamRuntimeSummary,
     proposal: Option<TeamProposal>,
     permissions: Vec<TeamPermissionRequest>,
     activity: Vec<TeamActivity>,
     attention: Vec<TeamAttention>,
+    discrimination_rounds: Vec<TeamDiscriminationRound>,
 }
 
 async fn create_team(
@@ -180,6 +203,281 @@ async fn get_team(
     let _ = state.agent_runtime.reconcile_team(&team_id);
     let team = state.teams.get_team(&team_id)?;
     Ok(Json(snapshot(&state, team)?))
+}
+
+async fn start_team(
+    State(state): State<AppState>,
+    Path(team_id): Path<String>,
+    Json(request): Json<StartTeamRequest>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    if state.agents.iter().any(|agent| agent.available)
+        && let Some(agent_id) = request.allowed_agent_ids.iter().find(|agent_id| {
+            agent_id.parse::<AgentId>().ok().is_none_or(|requested| {
+                !state
+                    .agents
+                    .iter()
+                    .any(|agent| agent.id == requested && agent.available)
+            })
+        })
+    {
+        return Err(TeamError::NativeAutonomyUnavailable(format!(
+            "Agent is not installed: {agent_id}"
+        ))
+        .into());
+    }
+    if request.mode == TeamMode::Yolo {
+        prepare_native_yolo(&state, &team).await?;
+    }
+    let started = state.teams.start_team(StartTeam {
+        team_id: &team.id,
+        leader_member_id: &team.leader_member_id,
+        goal: &request.goal,
+        acceptance_criteria: &request.acceptance_criteria,
+        allowed_agent_ids: &request.allowed_agent_ids,
+        mode: request.mode,
+        max_teammates: request.max_teammates,
+        max_parallel_runs: request.max_parallel_runs,
+        max_review_rounds: request.max_review_rounds,
+    })?;
+    state.teams.send_message(
+        &started.id,
+        &started.leader_member_id,
+        &started.leader_member_id,
+        TeamMessageKind::System,
+        None,
+        "The Team has started. Read the durable Team context, create concrete tasks, and coordinate teammates within the configured policy.",
+    )?;
+    state.teams.append_activity(
+        &started.id,
+        Some(&started.leader_member_id),
+        None,
+        "team_started",
+        "Team started",
+        None,
+    )?;
+    let _ = state.agent_runtime.wake_team_leader(&started.id);
+    publish_team_event(&state, &started.id, "team_started");
+    Ok(Json(snapshot(&state, started)?))
+}
+
+#[derive(Clone)]
+enum NativeSetting {
+    Mode(String),
+    Config(String, SessionConfigInput),
+}
+
+#[derive(Clone)]
+struct NativeChoice {
+    selector_id: String,
+    selector_name: String,
+    value: String,
+    value_name: String,
+    mode: bool,
+}
+
+async fn prepare_native_yolo(state: &AppState, team: &Team) -> Result<(), TeamApiError> {
+    let leader = state.teams.get_member(&team.leader_member_id)?;
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&leader.conversation_id)?;
+    let events = state
+        .agent_runtime
+        .store()
+        .session_events_after(&conversation.id, 0)?;
+    let mut choices = Vec::new();
+    let mut booleans = Vec::new();
+    for event in events.iter().rev().filter(|event| {
+        matches!(
+            event.kind.as_str(),
+            "current_mode" | "config_options" | "session_created_state"
+        )
+    }) {
+        collect_native_choices(&event.payload, &mut choices, &mut booleans);
+    }
+    let settings =
+        native_yolo_settings(conversation.agent_id, &choices, &booleans).ok_or_else(|| {
+            TeamError::NativeAutonomyUnavailable(format!(
+                "{:?} exposes no safe-to-identify native autonomous option",
+                conversation.agent_id
+            ))
+        })?;
+    for setting in settings {
+        match setting {
+            NativeSetting::Mode(value) => {
+                state
+                    .agent_runtime
+                    .set_session_mode(&conversation.id, value)
+                    .await?;
+            }
+            NativeSetting::Config(config_id, value) => {
+                state
+                    .agent_runtime
+                    .set_session_config(&conversation.id, config_id, value)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_yolo_settings(
+    agent_id: AgentId,
+    choices: &[NativeChoice],
+    booleans: &[(String, String)],
+) -> Option<Vec<NativeSetting>> {
+    let direct_terms: &[&str] = match agent_id {
+        AgentId::ClaudeCode => &["bypasspermissions", "bypass permissions"],
+        AgentId::OpenCode => &["auto"],
+        AgentId::Codex => &["yolo", "dangerously bypass", "danger-full-access"],
+    };
+    if let Some(choice) = choices.iter().find(|choice| {
+        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
+        direct_terms.iter().any(|term| value.contains(term))
+    }) {
+        return Some(vec![native_choice_setting(choice)]);
+    }
+    if let Some((id, _)) = booleans.iter().find(|(id, name)| {
+        let value = format!("{id} {name}").to_lowercase();
+        direct_terms.iter().any(|term| value.contains(term))
+    }) {
+        return Some(vec![NativeSetting::Config(
+            id.clone(),
+            SessionConfigInput::Boolean(true),
+        )]);
+    }
+    if agent_id != AgentId::Codex {
+        return None;
+    }
+    let approval = choices.iter().find(|choice| {
+        let selector = format!("{} {}", choice.selector_id, choice.selector_name).to_lowercase();
+        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
+        selector.contains("approval") && value == "never"
+    })?;
+    let sandbox = choices.iter().find(|choice| {
+        let selector = format!("{} {}", choice.selector_id, choice.selector_name).to_lowercase();
+        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
+        selector.contains("sandbox")
+            && (value.contains("danger-full-access") || value.contains("full access"))
+    })?;
+    Some(vec![
+        native_choice_setting(approval),
+        native_choice_setting(sandbox),
+    ])
+}
+
+fn native_choice_setting(choice: &NativeChoice) -> NativeSetting {
+    if choice.mode {
+        NativeSetting::Mode(choice.value.clone())
+    } else {
+        NativeSetting::Config(
+            choice.selector_id.clone(),
+            SessionConfigInput::ValueId(choice.value.clone()),
+        )
+    }
+}
+
+fn collect_native_choices(
+    value: &serde_json::Value,
+    choices: &mut Vec<NativeChoice>,
+    booleans: &mut Vec<(String, String)>,
+) {
+    if let Some(modes) = value
+        .get("availableModes")
+        .or_else(|| value.get("modes"))
+        .and_then(serde_json::Value::as_array)
+    {
+        for mode in modes {
+            if let Some((id, name)) = native_id_name(mode) {
+                choices.push(NativeChoice {
+                    selector_id: "mode".into(),
+                    selector_name: "Mode".into(),
+                    value: id,
+                    value_name: name,
+                    mode: true,
+                });
+            }
+        }
+    }
+    if let Some(configs) = value
+        .get("configOptions")
+        .and_then(serde_json::Value::as_array)
+    {
+        for config in configs {
+            let Some(id) = config.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let name = config
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(id);
+            if config.get("type").and_then(serde_json::Value::as_str) == Some("boolean") {
+                booleans.push((id.to_owned(), name.to_owned()));
+                continue;
+            }
+            if let Some(options) = config.get("options").and_then(serde_json::Value::as_array) {
+                for option in options {
+                    if let Some((value, value_name)) = native_id_name(option) {
+                        choices.push(NativeChoice {
+                            selector_id: id.to_owned(),
+                            selector_name: name.to_owned(),
+                            value,
+                            value_name,
+                            mode: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn native_id_name(value: &serde_json::Value) -> Option<(String, String)> {
+    let id = value
+        .get("id")
+        .or_else(|| value.get("value"))
+        .and_then(serde_json::Value::as_str)?;
+    let name = value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(id);
+    Some((id.to_owned(), name.to_owned()))
+}
+
+async fn complete_team(
+    State(state): State<AppState>,
+    Path(team_id): Path<String>,
+    Json(request): Json<CompleteTeamRequest>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    let workspace_fingerprint = if team.mode == TeamMode::Yolo {
+        TeamCoordinator::new(
+            state.workspace.clone(),
+            state.agent_runtime.store(),
+            state.teams.clone(),
+        )
+        .capture_team_fingerprint(&team)
+        .map_err(|error| TeamApiError::Team(TeamError::InvalidStoredValue(error.to_string())))?
+    } else {
+        team.updated_at.clone()
+    };
+    let completed = state.teams.complete_team(
+        &team.id,
+        &team.leader_member_id,
+        &request.final_summary,
+        &workspace_fingerprint,
+    )?;
+    state.teams.append_activity(
+        &completed.id,
+        Some(&completed.leader_member_id),
+        None,
+        "team_completed",
+        "Leader completed the Team",
+        None,
+    )?;
+    publish_team_event(&state, &completed.id, "team_completed");
+    Ok(Json(snapshot(&state, completed)?))
 }
 
 async fn update_team_settings(
@@ -324,11 +622,13 @@ fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> 
         conversations,
         members,
         tasks,
+        task_attempts: state.teams.list_task_attempts(&team.id)?,
         summary,
         proposal: state.teams.latest_proposal(&team.id)?,
         permissions: state.teams.pending_permission_requests(&team.id)?,
         activity: state.teams.list_activity(&team.id, 100)?,
         attention,
+        discrimination_rounds: state.teams.list_discrimination_rounds(&team.id)?,
         team,
     })
 }
@@ -452,20 +752,35 @@ impl IntoResponse for TeamApiError {
             Self::Team(TeamError::TeamNotFound(message)) => {
                 (StatusCode::NOT_FOUND, "team_not_found", message)
             }
-            Self::Team(error @ (TeamError::MemberNotFound(_) | TeamError::TaskNotFound(_))) => {
-                (StatusCode::NOT_FOUND, "not_found", error.to_string())
-            }
-            Self::Team(error @ (TeamError::LeaderRequired | TeamError::WrongTeam)) => {
-                (StatusCode::FORBIDDEN, "team_forbidden", error.to_string())
-            }
+            Self::Team(
+                error @ (TeamError::MemberNotFound(_)
+                | TeamError::TaskNotFound(_)
+                | TeamError::DiscriminationNotFound(_)),
+            ) => (StatusCode::NOT_FOUND, "not_found", error.to_string()),
+            Self::Team(
+                error @ (TeamError::LeaderRequired
+                | TeamError::DiscriminatorRequired
+                | TeamError::WrongTeam),
+            ) => (StatusCode::FORBIDDEN, "team_forbidden", error.to_string()),
             Self::Team(error @ (TeamError::DuplicateMemberName(_) | TeamError::MemberLimit)) => {
                 (StatusCode::CONFLICT, "team_conflict", error.to_string())
             }
-            Self::Team(error @ (TeamError::TaskUnavailable | TeamError::TaskNotAssigned)) => {
-                (StatusCode::CONFLICT, "task_conflict", error.to_string())
-            }
             Self::Team(
-                error @ (TeamError::InvalidConcurrency | TeamError::InvalidProposalDecision),
+                error @ (TeamError::TaskUnavailable
+                | TeamError::TaskNotAssigned
+                | TeamError::InvalidTeamState
+                | TeamError::CompletionBlocked),
+            ) => (StatusCode::CONFLICT, "task_conflict", error.to_string()),
+            Self::Team(
+                error @ (TeamError::InvalidConcurrency
+                | TeamError::InvalidMemberLimit
+                | TeamError::InvalidReviewRounds
+                | TeamError::GoalRequired
+                | TeamError::AcceptanceCriteriaRequired
+                | TeamError::AllowedAgentsRequired
+                | TeamError::NativeAutonomyUnavailable(_)
+                | TeamError::InvalidProposalDecision
+                | TeamError::DiscriminatorCannotWork),
             ) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_team_request",
@@ -490,5 +805,42 @@ impl IntoResponse for TeamApiError {
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NativeChoice, NativeSetting, native_yolo_settings};
+    use crate::agent_runtime::SessionConfigInput;
+    use crate::agents::AgentId;
+
+    #[test]
+    fn maps_only_explicit_provider_native_yolo_choices() {
+        let claude = vec![NativeChoice {
+            selector_id: "permission_mode".into(),
+            selector_name: "Permission mode".into(),
+            value: "bypassPermissions".into(),
+            value_name: "Bypass permissions".into(),
+            mode: false,
+        }];
+        let settings =
+            native_yolo_settings(AgentId::ClaudeCode, &claude, &[]).expect("Claude profile");
+        assert!(matches!(
+            settings.as_slice(),
+            [NativeSetting::Config(id, SessionConfigInput::ValueId(value))]
+                if id == "permission_mode" && value == "bypassPermissions"
+        ));
+
+        let unsafe_guess = vec![NativeChoice {
+            selector_id: "mode".into(),
+            selector_name: "Mode".into(),
+            value: "default".into(),
+            value_name: "Default".into(),
+            mode: true,
+        }];
+        assert!(
+            native_yolo_settings(AgentId::OpenCode, &unsafe_guess, &[]).is_none(),
+            "Kubecode must not invent an autonomous provider option",
+        );
     }
 }

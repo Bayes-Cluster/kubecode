@@ -674,6 +674,65 @@
 
 .kubecode-team-workspace::-webkit-scrollbar { display: none; }
 
+.kubecode-team-setup {
+  margin: 0 auto;
+  max-width: 920px;
+  padding-block: 24px;
+  width: 100%;
+}
+
+.kubecode-team-setup > header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.kubecode-team-setup > header > svg { height: 24px; width: 24px; }
+.kubecode-team-setup > header > div { display: grid; gap: 2px; }
+.kubecode-team-setup > header span { color: var(--text-muted); font-size: 12px; }
+.kubecode-team-setup-grid { display: grid; gap: 18px; }
+.kubecode-team-setup textarea { min-height: 86px; resize: vertical; }
+.kubecode-team-setup > footer { display: flex; gap: 8px; justify-content: flex-end; }
+.kubecode-team-setup > footer button { min-width: 110px; }
+
+.kubecode-team-agent-budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.kubecode-team-agent-budget button { gap: 6px; }
+.kubecode-team-agent-budget button[data-active='true'] {
+  background: var(--surface-selected);
+  border-color: var(--border-strong);
+}
+
+.kubecode-team-budget-grid,
+.kubecode-team-native-options {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kubecode-team-budget-grid label,
+.kubecode-team-native-options label {
+  display: grid;
+  gap: 6px;
+}
+
+.kubecode-team-budget-grid label > span,
+.kubecode-team-native-options label > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.kubecode-team-yolo-warning {
+  color: var(--feedback-warning-text);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+
 .kubecode-team-control-header,
 .kubecode-team-control-header > div,
 .kubecode-team-settings,
@@ -695,6 +754,14 @@
 .kubecode-team-settings { gap: 10px; }
 .kubecode-team-settings label { gap: 7px; }
 .kubecode-team-settings [data-slot='select-trigger'] { width: 72px; }
+.kubecode-team-status {
+  background: var(--surface-selected);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  padding: 3px 8px;
+}
+.kubecode-team-status[data-status='needs_attention'] { color: var(--feedback-warning-text); }
+.kubecode-team-status[data-status='completed'] { color: var(--feedback-success-text); }
 
 .kubecode-team-metrics {
   align-items: center;
@@ -724,7 +791,7 @@
 .kubecode-team-metrics small { color: var(--text-muted); font-size: 11px; }
 
 .kubecode-team-attention,
-.kubecode-team-proposal {
+.kubecode-team-verification {
   background: var(--feedback-warning-bg);
   border: 1px solid color-mix(in srgb, var(--feedback-warning-text) 25%, transparent);
   border-radius: 8px;
@@ -732,7 +799,7 @@
 }
 
 .kubecode-team-attention > header,
-.kubecode-team-proposal > header {
+.kubecode-team-verification > header {
   align-items: center;
   color: var(--feedback-warning-text);
   display: flex;
@@ -745,16 +812,21 @@
 .kubecode-team-attention > div { display: flex; flex-wrap: wrap; gap: 4px; }
 .kubecode-team-attention button { justify-content: space-between; }
 .kubecode-team-attention button svg { height: 14px; width: 14px; }
-.kubecode-team-proposal p { margin: 4px 0 8px; }
-.kubecode-team-proposal > div { display: flex; flex-wrap: wrap; gap: 5px; }
-.kubecode-team-proposal > div span {
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  font-size: 12px;
-  padding: 5px 7px;
+.kubecode-team-verification > div {
+  border-top: 1px solid color-mix(in srgb, var(--feedback-warning-text) 18%, transparent);
+  display: grid;
+  gap: 3px;
+  padding-block: 7px;
 }
-.kubecode-team-proposal footer { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+.kubecode-team-verification > div > span { color: var(--text-muted); font-size: 11px; }
+.kubecode-team-verification > div > p { margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 720px) {
+  .kubecode-team-budget-grid,
+  .kubecode-team-native-options {
+    grid-template-columns: 1fr;
+  }
+}
 
 .kubecode-team-workspace-body {
   display: block;

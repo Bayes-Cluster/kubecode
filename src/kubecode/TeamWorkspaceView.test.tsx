@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TeamWorkspaceView } from './TeamWorkspaceView'
@@ -6,7 +6,10 @@ import type { KubecodeApi, TeamSnapshot } from './api'
 
 const snapshot = {
   team: {
-    id: 'team-1', title: 'Compiler team', member_management_policy: 'ask', max_parallel_runs: 3,
+    id: 'team-1', title: 'Compiler team', status: 'active', mode: 'standard',
+    member_management_policy: 'ask', max_parallel_runs: 3, max_teammates: 3,
+    max_review_rounds: 3, current_review_round: 0, goal: 'Fix the compiler',
+    acceptance_criteria: ['Tests pass'], allowed_agent_ids: ['codex', 'claude_code'],
   },
   leader_conversation: { id: 'leader', title: 'Compiler team', agent_id: 'codex' },
   conversations: [
@@ -32,6 +35,7 @@ const snapshot = {
     id: 'member:member-2:waiting_permission', kind: 'waiting_permission',
     member_id: 'member-2', task_id: null, summary: 'Reviewer needs permission',
   }],
+  discrimination_rounds: [],
 } as TeamSnapshot
 
 const t = ((key: string) => key) as never
@@ -84,22 +88,62 @@ describe('TeamWorkspaceView', () => {
     expect(screen.getByRole('button', { name: 'Reviewer' })).toBeInTheDocument()
   })
 
-  it('persists automatic member management through the Team API', async () => {
-    const updateTeamSettings = vi.fn().mockResolvedValue({
+  it('starts a draft Team only after goal, criteria, and autonomy are configured', async () => {
+    const startTeam = vi.fn().mockResolvedValue({
       ...snapshot,
-      team: { ...snapshot.team, member_management_policy: 'auto' },
+      team: { ...snapshot.team, status: 'active' },
     })
     render(
       <TeamWorkspaceView
-        api={{ updateTeamSettings } as unknown as KubecodeApi}
+        api={{
+          getSessionState: vi.fn().mockResolvedValue({
+            capabilities: null,
+            available_commands: null,
+            current_mode: null,
+            config_options: null,
+            plan: null,
+            usage: null,
+          }),
+          listAgents: vi.fn().mockResolvedValue([
+            { id: 'codex', available: true },
+            { id: 'opencode', available: true },
+            { id: 'claude_code', available: false },
+          ]),
+          startTeam,
+        } as unknown as KubecodeApi}
         onSelectMember={vi.fn()}
         onSnapshotChange={vi.fn()}
-        snapshot={snapshot}
+        snapshot={{
+          ...snapshot,
+          team: {
+            ...snapshot.team,
+            status: 'draft',
+            goal: '',
+            acceptance_criteria: [],
+            allowed_agent_ids: [],
+          },
+        }}
         t={t}
       />,
     )
 
-    fireEvent.click(screen.getByRole('switch', { name: 'kubecode.teamAutoManage' }))
-    expect(updateTeamSettings).toHaveBeenCalledWith('team-1', 'auto', 3)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'OpenCode' })).toBeEnabled())
+    fireEvent.change(screen.getByRole('textbox', { name: 'kubecode.teamGoal' }), {
+      target: { value: 'Reproduce the experiment' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'kubecode.teamAcceptanceCriteria' }), {
+      target: { value: 'Tests pass\nResults are documented' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'OpenCode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamStart' }))
+
+    expect(startTeam).toHaveBeenCalledWith('team-1', expect.objectContaining({
+      goal: 'Reproduce the experiment',
+      acceptance_criteria: ['Tests pass', 'Results are documented'],
+      allowed_agent_ids: ['codex'],
+      mode: 'standard',
+    }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'kubecode.teamStart' }))
+      .toHaveAttribute('aria-busy', 'false'))
   })
 })
