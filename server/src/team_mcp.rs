@@ -29,7 +29,7 @@ use crate::teams::{
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. Use agent-native mode/session_options exactly as advertised; never invent model IDs.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -399,6 +399,29 @@ impl TeamMcpServer {
             .initialize_conversation(&member.conversation_id)
             .await
         {
+            if error.is_native_permission_unavailable() {
+                self.fallback_yolo_team(agent_id, &error.to_string())
+                    .await?;
+                self.context
+                    .runtime
+                    .initialize_conversation(&member.conversation_id)
+                    .await
+                    .map_err(mcp_error)?;
+                self.apply_teammate_configuration(&member, input.mode, input.session_options)
+                    .await
+                    .map_err(mcp_error)?;
+                let member = self
+                    .context
+                    .teams
+                    .set_member_status(&member.id, TeamMemberStatus::Idle)
+                    .map_err(mcp_error)?;
+                publish_team_event(
+                    &self.context,
+                    "team_mode_fallback",
+                    Some(&member.conversation_id),
+                );
+                return json_output(&member);
+            }
             let _ = self
                 .context
                 .runtime
@@ -410,6 +433,17 @@ impl TeamMcpServer {
                 &member.id,
             );
             return Err(mcp_error(error));
+        }
+        let team = self
+            .context
+            .teams
+            .get_team(&member.team_id)
+            .map_err(mcp_error)?;
+        if team.mode == TeamMode::Yolo {
+            self.context
+                .teams
+                .mark_permission_profile_applied(&member.id, None)
+                .map_err(mcp_error)?;
         }
         if let Err(error) = self
             .apply_teammate_configuration(&member, input.mode, input.session_options)
@@ -860,7 +894,6 @@ impl TeamMcpServer {
         {
             return Err(mcp_error(error));
         }
-        self.apply_discriminator_read_only(&member).await?;
         let round = self
             .context
             .teams
@@ -968,6 +1001,12 @@ impl TeamMcpServer {
                 &fingerprint,
             )
             .map_err(mcp_error)?;
+        let restored = self
+            .context
+            .runtime
+            .restore_team_permissions(&team.id)
+            .await
+            .map_err(mcp_error)?;
         let _ = self.context.teams.append_activity(
             &team.id,
             Some(&self.context.member.id),
@@ -976,6 +1015,16 @@ impl TeamMcpServer {
             "Leader completed the Team",
             None,
         );
+        if restored {
+            let _ = self.context.teams.append_activity(
+                &team.id,
+                Some(&self.context.member.id),
+                None,
+                "team_native_permission_restored",
+                "Restored the Team's previous native permission profiles",
+                None,
+            );
+        }
         publish_team_event(&self.context, "team_completed", None);
         json_output(&completed)
     }
@@ -1134,18 +1183,73 @@ impl TeamMcpServer {
         mode: Option<String>,
         session_options: BTreeMap<String, SpawnConfigValue>,
     ) -> Result<(), RuntimeError> {
-        if let Some(mode) = mode {
+        let force_native_permission = self
+            .context
+            .teams
+            .get_team(&member.team_id)
+            .is_ok_and(|team| team.mode == TeamMode::Yolo);
+        if let Some(mode) = mode.filter(|_| !force_native_permission) {
             self.context
                 .runtime
                 .set_session_mode(&member.conversation_id, mode)
                 .await?;
         }
         for (config_id, value) in session_options {
+            if force_native_permission && config_id == "mode" {
+                continue;
+            }
             self.context
                 .runtime
                 .set_session_config(&member.conversation_id, config_id, value.into())
                 .await?;
         }
+        Ok(())
+    }
+
+    async fn fallback_yolo_team(&self, agent_id: AgentId, reason: &str) -> Result<(), McpError> {
+        let team_id = &self.context.member.team_id;
+        self.context
+            .teams
+            .downgrade_to_standard(
+                team_id,
+                agent_id_value(agent_id),
+                "native_permission_unavailable",
+                reason,
+            )
+            .map_err(mcp_error)?;
+        for discriminator in self
+            .context
+            .teams
+            .remove_discriminators(team_id)
+            .map_err(mcp_error)?
+        {
+            self.context
+                .runtime
+                .disconnect_conversation(&discriminator.conversation_id)
+                .await
+                .map_err(mcp_error)?;
+            self.context
+                .runtime
+                .store()
+                .delete_conversation(&discriminator.conversation_id)
+                .map_err(mcp_error)?;
+        }
+        self.context
+            .runtime
+            .restore_team_permissions(team_id)
+            .await
+            .map_err(mcp_error)?;
+        self.context
+            .teams
+            .append_activity(
+                team_id,
+                Some(&self.context.member.id),
+                None,
+                "team_mode_fallback",
+                &format!("YOLO fell back to Standard: {reason}"),
+                None,
+            )
+            .map_err(mcp_error)?;
         Ok(())
     }
 
@@ -1178,81 +1282,6 @@ impl TeamMcpServer {
             })
             .ok_or_else(|| mcp_error("no allowed and available Agent can run the discriminator"))
     }
-
-    async fn apply_discriminator_read_only(&self, member: &TeamMember) -> Result<(), McpError> {
-        let events = self
-            .context
-            .runtime
-            .store()
-            .session_events_after(&member.conversation_id, 0)
-            .map_err(mcp_error)?;
-        if let Some(mode) = events
-            .iter()
-            .rev()
-            .filter(|event| {
-                matches!(
-                    event.kind.as_str(),
-                    "current_mode" | "session_created_state"
-                )
-            })
-            .find_map(|event| read_only_mode_from_value(&event.payload))
-        {
-            self.context
-                .runtime
-                .set_session_mode(&member.conversation_id, mode)
-                .await
-                .map_err(mcp_error)?;
-            return Ok(());
-        }
-        let sandbox = events
-            .iter()
-            .rev()
-            .filter(|event| {
-                matches!(
-                    event.kind.as_str(),
-                    "config_options" | "session_created_state"
-                )
-            })
-            .find_map(|event| {
-                config_selection_from_value(&event.payload, "sandbox", &["read-only", "read only"])
-            });
-        let Some((sandbox_id, sandbox_value)) = sandbox else {
-            return Err(mcp_error(
-                "the selected Agent does not advertise an enforceable read-only mode",
-            ));
-        };
-        self.context
-            .runtime
-            .set_session_config(
-                &member.conversation_id,
-                sandbox_id,
-                SessionConfigInput::ValueId(sandbox_value),
-            )
-            .await
-            .map_err(mcp_error)?;
-        if let Some((approval_id, approval_value)) = events
-            .iter()
-            .rev()
-            .filter(|event| {
-                matches!(
-                    event.kind.as_str(),
-                    "config_options" | "session_created_state"
-                )
-            })
-            .find_map(|event| config_selection_from_value(&event.payload, "approval", &["never"]))
-        {
-            self.context
-                .runtime
-                .set_session_config(
-                    &member.conversation_id,
-                    approval_id,
-                    SessionConfigInput::ValueId(approval_value),
-                )
-                .await
-                .map_err(mcp_error)?;
-        }
-        Ok(())
-    }
 }
 
 fn agent_id_value(agent_id: AgentId) -> &'static str {
@@ -1261,66 +1290,6 @@ fn agent_id_value(agent_id: AgentId) -> &'static str {
         AgentId::Codex => "codex",
         AgentId::OpenCode => "opencode",
     }
-}
-
-fn read_only_mode_from_value(value: &serde_json::Value) -> Option<String> {
-    let modes = value
-        .get("availableModes")
-        .or_else(|| value.get("modes"))
-        .and_then(serde_json::Value::as_array)?;
-    modes.iter().find_map(|mode| {
-        let id = mode
-            .get("id")
-            .or_else(|| mode.get("value"))
-            .and_then(serde_json::Value::as_str)?;
-        let name = mode
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(id);
-        let searchable = format!("{id} {name}").to_lowercase();
-        (searchable.contains("plan") || searchable.contains("read-only")).then(|| id.to_owned())
-    })
-}
-
-fn config_selection_from_value(
-    value: &serde_json::Value,
-    selector_term: &str,
-    value_terms: &[&str],
-) -> Option<(String, String)> {
-    let configs = value
-        .get("configOptions")
-        .and_then(serde_json::Value::as_array)?;
-    configs.iter().find_map(|config| {
-        let id = config.get("id").and_then(serde_json::Value::as_str)?;
-        let name = config
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(id);
-        if !format!("{id} {name}")
-            .to_lowercase()
-            .contains(selector_term)
-        {
-            return None;
-        }
-        let options = config
-            .get("options")
-            .and_then(serde_json::Value::as_array)?;
-        options.iter().find_map(|option| {
-            let option_id = option
-                .get("value")
-                .or_else(|| option.get("id"))
-                .and_then(serde_json::Value::as_str)?;
-            let option_name = option
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(option_id);
-            let searchable = format!("{option_id} {option_name}").to_lowercase();
-            value_terms
-                .iter()
-                .any(|term| searchable.contains(term))
-                .then(|| (id.to_owned(), option_id.to_owned()))
-        })
-    })
 }
 
 impl From<SpawnConfigValue> for SessionConfigInput {

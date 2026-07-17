@@ -59,7 +59,7 @@ export function TeamWorkspaceView({
   )
   const tasks = useMemo(() => snapshot.tasks ?? [], [snapshot.tasks])
   const attention = snapshot.attention ?? []
-  const activity = snapshot.activity ?? []
+  const activity = useMemo(() => snapshot.activity ?? [], [snapshot.activity])
   const summary = snapshot.summary ?? {
     running: 0,
     queued: 0,
@@ -68,6 +68,16 @@ export function TeamWorkspaceView({
     total_tasks: tasks.length,
   }
   const tasksByColumn = useMemo(() => groupTasks(tasks), [tasks])
+
+  useEffect(() => {
+    if (!activity.some((item) => item.kind === 'team_native_permission_restored')) return
+    const key = `kubecode:team-native-permission-restored:${snapshot.team.id}`
+    if (globalThis.sessionStorage?.getItem(key)) return
+    globalThis.sessionStorage?.setItem(key, '1')
+    trackEvent('kubecode_team_native_permission_restored', {
+      requested_mode: snapshot.team.requested_mode,
+    })
+  }, [activity, snapshot.team.id, snapshot.team.requested_mode])
 
   if (snapshot.team.status === 'draft' || setupOpen) {
     return (
@@ -111,6 +121,13 @@ export function TeamWorkspaceView({
           level="error"
           message={error}
           onDismiss={() => setError(null)}
+        />
+      )}
+      {snapshot.team.mode_fallback && (
+        <SystemMessageNotice
+          dismissLabel={t('window.close')}
+          level="warning"
+          message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}
         />
       )}
 
@@ -247,7 +264,7 @@ function TeamSetup({
 }) {
   const [goal, setGoal] = useState(snapshot.team.goal)
   const [criteria, setCriteria] = useState(snapshot.team.acceptance_criteria.join('\n'))
-  const [mode, setMode] = useState<TeamMode>(snapshot.team.mode)
+  const [mode, setMode] = useState<TeamMode>(snapshot.team.requested_mode)
   const [allowedAgents, setAllowedAgents] = useState<AgentId[]>(snapshot.team.allowed_agent_ids)
   const [availableAgents, setAvailableAgents] = useState<AgentId[]>([])
   const [maxTeammates, setMaxTeammates] = useState(snapshot.team.max_teammates || 3)
@@ -305,6 +322,17 @@ function TeamSetup({
         max_teammates: maxTeammates,
         max_parallel_runs: concurrency,
       })
+      if (mode === 'yolo' && updated.team.mode === 'yolo') {
+        trackEvent('kubecode_team_native_permission_applied', {
+          agent_id: snapshot.leader_conversation.agent_id,
+        })
+      }
+      if (mode === 'yolo' && updated.team.mode_fallback) {
+        trackEvent('kubecode_team_mode_fallback', {
+          agent_id: updated.team.mode_fallback.agent_id,
+          reason_code: updated.team.mode_fallback.reason_code,
+        })
+      }
       onSnapshotChange(updated)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('kubecode.error'))
@@ -388,8 +416,10 @@ function TeamSetup({
         </div>
 
         <NativeLeaderOptions
+          agentId={snapshot.leader_conversation.agent_id}
           api={api}
           conversationId={snapshot.leader_conversation.id}
+          mode={mode}
           sessionState={sessionState}
           setSessionState={setSessionState}
           t={t}
@@ -447,19 +477,28 @@ function NumberSelect({ label, max, onChange, value }: {
   )
 }
 
-function NativeLeaderOptions({ api, conversationId, sessionState, setSessionState, t }: {
+function NativeLeaderOptions({ agentId, api, conversationId, mode, sessionState, setSessionState, t }: {
+  agentId: AgentId
   api: KubecodeApi
   conversationId: string
+  mode: TeamMode
   sessionState: AgentSessionState | null
   setSessionState: (state: AgentSessionState | null) => void
   t: Translator
 }) {
   const options = nativeSessionSelects(sessionState)
-  if (options.length === 0) return null
+    .filter((option) => mode !== 'yolo' || option.id !== 'mode')
+  if (options.length === 0 && mode !== 'yolo') return null
   return (
     <div className="kubecode-new-session-field">
       <span>{t('kubecode.teamLeaderConfiguration')}</span>
       <div className="kubecode-team-native-options">
+        {mode === 'yolo' && (
+          <div className="kubecode-team-native-permission">
+            <strong>{t('kubecode.teamYoloNativePermission')}</strong>
+            <span>{nativePermissionLabel(agentId, t)}</span>
+          </div>
+        )}
         {options.map((option) => (
           <label key={`${option.kind}:${option.id}`}>
             <span>{option.kind === 'mode' ? t('kubecode.agentMode') : option.name}</span>
@@ -484,6 +523,15 @@ function NativeLeaderOptions({ api, conversationId, sessionState, setSessionStat
       </div>
     </div>
   )
+}
+
+function nativePermissionLabel(agentId: AgentId, t: Translator): string {
+  const labels = {
+    claude_code: 'kubecode.teamYoloPermissionClaude',
+    codex: 'kubecode.teamYoloPermissionCodex',
+    opencode: 'kubecode.teamYoloPermissionOpenCode',
+  } as const satisfies Record<AgentId, TranslationKey>
+  return t(labels[agentId])
 }
 
 type NativeSelect = {

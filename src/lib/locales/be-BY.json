@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Украінская",
   "locale.svSE": "Шведская",
   "locale.skSK": "Славацкая",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Лідар можа перадаць вам рашэнні, якія патрабуюць вашага ўдзелу.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Каманда працуе аўтаномна і павінна прайсці незалежную праверку.",
-  "kubecode.teamYoloWarning": "YOLO дае лідару натыўныя аўтаномныя дазволы выбранага Agent. Перад пачаткам праверце workspace і налады Agent.",
+  "kubecode.teamYoloWarning": "YOLO аўтаматычна выкарыстоўвае максімальны ўласны профіль дазволаў кожнага Agent. Налады мадэлі, effort і прадукцыйнасці застаюцца пад вашым кантролем.",
   "kubecode.teamAllowedAgents": "Дазволеныя Agent-удзельнікі",
   "kubecode.teamLeaderConfiguration": "Мадэль і рэжым лідара",
   "kubecode.teamMemberLimit": "Ліміт удзельнікаў",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Актыўная",
   "kubecode.teamStatusVerifying": "Правяраецца",
   "kubecode.teamStatusCompleted": "Завершана",
-  "kubecode.teamStatusArchived": "У архіве"
+  "kubecode.teamStatusArchived": "У архіве",
+  "kubecode.teamYoloNativePermission": "Уласны дазвол",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO не ўдалося ўжыць; гэтая Team працуе ў рэжыме Standard"
 }

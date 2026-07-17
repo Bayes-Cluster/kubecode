@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Ukrainska",
   "locale.svSE": "Svenska",
   "locale.skSK": "Slovakiska",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leadern kan eskalera beslut som kräver dig.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Teamet arbetar självständigt och måste klara en oberoende granskning.",
-  "kubecode.teamYoloWarning": "YOLO ger Leadern den valda Agentens inbyggda autonoma behörigheter. Granska workspace och Agent-inställningarna innan du startar.",
+  "kubecode.teamYoloWarning": "YOLO använder automatiskt varje Agents maximala inbyggda behörighetsprofil. Inställningar för modell, effort och prestanda förblir under din kontroll.",
   "kubecode.teamAllowedAgents": "Tillåtna team-Agenter",
   "kubecode.teamLeaderConfiguration": "Leadermodell och -läge",
   "kubecode.teamMemberLimit": "Gräns för teammedlemmar",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Aktivt",
   "kubecode.teamStatusVerifying": "Granskas",
   "kubecode.teamStatusCompleted": "Slutfört",
-  "kubecode.teamStatusArchived": "Arkiverat"
+  "kubecode.teamStatusArchived": "Arkiverat",
+  "kubecode.teamYoloNativePermission": "Inbyggd behörighet",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO kunde inte tillämpas; detta Team körs i Standard-läge"
 }

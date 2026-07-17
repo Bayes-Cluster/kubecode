@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Ukrajinčina",
   "locale.svSE": "Švédčina",
   "locale.skSK": "Slovenčina",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leader vám môže postúpiť rozhodnutia, ktoré vyžadujú váš zásah.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Tím pracuje autonómne a musí prejsť nezávislým overením.",
-  "kubecode.teamYoloWarning": "YOLO udelí Leaderovi natívne autonómne oprávnenia vybraného Agenta. Pred spustením skontrolujte workspace a nastavenia Agenta.",
+  "kubecode.teamYoloWarning": "YOLO automaticky používa maximálny natívny profil oprávnení každého Agenta. Nastavenia modelu, effort a výkonu zostávajú pod vašou kontrolou.",
   "kubecode.teamAllowedAgents": "Povolení tímoví Agenti",
   "kubecode.teamLeaderConfiguration": "Model a režim Leadera",
   "kubecode.teamMemberLimit": "Limit členov tímu",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Aktívny",
   "kubecode.teamStatusVerifying": "Overuje sa",
   "kubecode.teamStatusCompleted": "Dokončený",
-  "kubecode.teamStatusArchived": "Archivovaný"
+  "kubecode.teamStatusArchived": "Archivovaný",
+  "kubecode.teamYoloNativePermission": "Natívne oprávnenie",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO sa nepodarilo použiť; táto Team beží v režime Standard"
 }

@@ -31,7 +31,7 @@ use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
     PermissionMode, RunStatus, StoreError,
 };
-use crate::teams::{TeamMemberStatus, TeamStore};
+use crate::teams::{TeamMemberStatus, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Error)]
@@ -54,6 +54,12 @@ pub enum RuntimeError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+}
+
+impl RuntimeError {
+    pub fn is_native_permission_unavailable(&self) -> bool {
+        matches!(self, Self::Acp(message) if message.contains("native_permission_unavailable"))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -592,6 +598,7 @@ impl AgentRuntime {
             descriptor,
             provider_session_id: conversation.provider_session_id,
             cwd,
+            permission_profile: self.permission_profile(&request.conversation_id),
         };
         self.dispatch(config, SessionCommand::Prompt(command));
         Ok(run)
@@ -612,8 +619,7 @@ impl AgentRuntime {
             .sessions
             .lock()
             .expect("agent session mutex poisoned")
-            .get(conversation_id)
-            .cloned();
+            .remove(conversation_id);
         let Some(handle) = handle else {
             return Ok(());
         };
@@ -629,6 +635,45 @@ impl AgentRuntime {
         Ok(())
     }
 
+    pub async fn reconnect_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
+        self.disconnect_conversation(conversation_id).await?;
+        self.initialize_conversation(conversation_id).await
+    }
+
+    pub async fn restore_team_permissions(&self, team_id: &str) -> Result<bool, RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(false);
+        };
+        let members = teams
+            .list_members(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let applied = members
+            .into_iter()
+            .filter(|member| member.permission_profile_applied)
+            .collect::<Vec<_>>();
+        let restored = !applied.is_empty();
+        for member in applied {
+            let conversation = self.store.get_conversation(&member.conversation_id)?;
+            let restore_mode = member
+                .previous_permission_mode
+                .as_deref()
+                .or_else(|| default_native_permission_mode(conversation.agent_id));
+            if let Some(previous_mode) = restore_mode {
+                self.set_session_config(
+                    &member.conversation_id,
+                    "mode".to_owned(),
+                    SessionConfigInput::ValueId(previous_mode.to_owned()),
+                )
+                .await?;
+            }
+            teams
+                .clear_permission_profile(&member.id)
+                .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+            self.reconnect_conversation(&member.conversation_id).await?;
+        }
+        Ok(restored)
+    }
+
     pub async fn list_provider_sessions(
         &self,
         project_id: &str,
@@ -636,7 +681,7 @@ impl AgentRuntime {
     ) -> Result<Vec<ProviderSessionInfo>, RuntimeError> {
         let descriptor = self.available_descriptor(agent_id)?;
         let cwd = self.workspace.project_path(project_id)?;
-        let agent = acp_agent(agent_id, &descriptor)?;
+        let agent = acp_agent(agent_id, &descriptor, AgentPermissionProfile::Default)?;
         agent_client_protocol::Client
             .builder()
             .name("Kubecode")
@@ -703,7 +748,11 @@ impl AgentRuntime {
             &conversation.project_id,
             conversation.workspace_path.as_deref(),
         )?;
-        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        let agent = acp_agent(
+            conversation.agent_id,
+            &descriptor,
+            AgentPermissionProfile::Default,
+        )?;
         let update_store = Arc::clone(&self.store);
         let update_conversation_id = conversation.id.clone();
         let state_store = Arc::clone(&self.store);
@@ -756,7 +805,11 @@ impl AgentRuntime {
             StoreError::InvalidStoredValue("conversation has no provider session".into())
         })?;
         let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        let agent = acp_agent(
+            conversation.agent_id,
+            &descriptor,
+            AgentPermissionProfile::Default,
+        )?;
         let acp_session_id = provider_session_id.clone();
         let deleted_by_acp = agent_client_protocol::Client
             .builder()
@@ -842,7 +895,11 @@ impl AgentRuntime {
             &conversation.project_id,
             conversation.workspace_path.as_deref(),
         )?;
-        let agent = acp_agent(conversation.agent_id, &descriptor)?;
+        let agent = acp_agent(
+            conversation.agent_id,
+            &descriptor,
+            AgentPermissionProfile::Default,
+        )?;
         let forked_session_id = agent_client_protocol::Client
             .builder()
             .name("Kubecode")
@@ -1188,8 +1245,47 @@ impl AgentRuntime {
             descriptor,
             provider_session_id: conversation.provider_session_id,
             cwd,
+            permission_profile: self.permission_profile(conversation_id),
         })
     }
+
+    fn permission_profile(&self, conversation_id: &str) -> AgentPermissionProfile {
+        let Some(teams) = self.team_store() else {
+            return AgentPermissionProfile::Default;
+        };
+        let Ok(Some(member)) = teams.member_for_conversation(conversation_id) else {
+            return AgentPermissionProfile::Default;
+        };
+        if member.role == TeamRole::Discriminator {
+            return AgentPermissionProfile::ReadOnly;
+        }
+        let Ok(team) = teams.get_team(&member.team_id) else {
+            return AgentPermissionProfile::Default;
+        };
+        if team.mode == TeamMode::Yolo
+            && matches!(team.status, TeamStatus::Active | TeamStatus::Verifying)
+        {
+            AgentPermissionProfile::Maximum
+        } else {
+            AgentPermissionProfile::Default
+        }
+    }
+}
+
+fn default_native_permission_mode(agent_id: AgentId) -> Option<&'static str> {
+    match agent_id {
+        AgentId::ClaudeCode => Some("default"),
+        AgentId::Codex => Some("agent"),
+        AgentId::OpenCode => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum AgentPermissionProfile {
+    #[default]
+    Default,
+    Maximum,
+    ReadOnly,
 }
 
 struct AgentSessionConfig {
@@ -1198,6 +1294,7 @@ struct AgentSessionConfig {
     descriptor: AgentDescriptor,
     provider_session_id: Option<String>,
     cwd: PathBuf,
+    permission_profile: AgentPermissionProfile,
 }
 
 type SessionResponseCapture = Arc<Mutex<HashMap<String, NewSessionResponse>>>;
@@ -1320,10 +1417,14 @@ async fn run_acp_session(
             .is_empty();
     let session_responses = SessionResponseCapture::default();
     let response_capture = Arc::clone(&session_responses);
-    let agent =
-        acp_agent(config.agent_id, &config.descriptor)?.with_debug(move |line, direction| {
-            capture_new_session_response(&response_capture, line, direction)
-        });
+    let agent = acp_agent(
+        config.agent_id,
+        &config.descriptor,
+        config.permission_profile,
+    )?
+    .with_debug(move |line, direction| {
+        capture_new_session_response(&response_capture, line, direction)
+    });
     let update_store = Arc::clone(&runtime.store);
     let update_run_id = Arc::clone(&active_run_id);
     let update_conversation_id = config.conversation_id.clone();
@@ -1705,6 +1806,13 @@ async fn run_acp_session(
                 .map_err(|error| {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 })?;
+            apply_native_permission_profile(
+                &connection,
+                &session_id,
+                config.agent_id,
+                config.permission_profile,
+            )
+            .await?;
             loop {
                 let command =
                     match tokio::time::timeout(SESSION_IDLE_TIMEOUT, receiver.recv()).await {
@@ -1905,7 +2013,84 @@ fn take_captured_session_response(
         .remove(&session_id.to_string())
 }
 
-fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent, RuntimeError> {
+async fn apply_native_permission_profile(
+    connection: &ConnectionTo<Agent>,
+    session_id: &agent_client_protocol::schema::v1::SessionId,
+    agent_id: AgentId,
+    profile: AgentPermissionProfile,
+) -> Result<(), agent_client_protocol::Error> {
+    let config_value = |value: &str| SessionConfigOptionValue::value_id(value.to_owned());
+    match (profile, agent_id) {
+        (AgentPermissionProfile::Default, _)
+        | (AgentPermissionProfile::Maximum, AgentId::OpenCode) => Ok(()),
+        (AgentPermissionProfile::Maximum, AgentId::Codex) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("agent-full-access"),
+                ))
+                .block_task()
+                .await
+                .map_err(native_permission_error)?;
+            Ok(())
+        }
+        (AgentPermissionProfile::Maximum, AgentId::ClaudeCode) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("bypassPermissions"),
+                ))
+                .block_task()
+                .await
+                .map_err(native_permission_error)?;
+            Ok(())
+        }
+        (AgentPermissionProfile::ReadOnly, AgentId::Codex) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("read-only"),
+                ))
+                .block_task()
+                .await?;
+            Ok(())
+        }
+        (AgentPermissionProfile::ReadOnly, AgentId::ClaudeCode) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("plan"),
+                ))
+                .block_task()
+                .await?;
+            Ok(())
+        }
+        (AgentPermissionProfile::ReadOnly, AgentId::OpenCode) => {
+            connection
+                .send_request(SetSessionModeRequest::new(session_id.clone(), "plan"))
+                .block_task()
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+fn native_permission_error(error: agent_client_protocol::Error) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::internal_error().data(serde_json::json!({
+        "kind": "native_permission_unavailable",
+        "error": error.to_string(),
+    }))
+}
+
+fn acp_agent(
+    agent_id: AgentId,
+    descriptor: &AgentDescriptor,
+    permission_profile: AgentPermissionProfile,
+) -> Result<AcpAgent, RuntimeError> {
     let (name, command, args, agent_environment) = match agent_id {
         AgentId::ClaudeCode => (
             "Claude Agent",
@@ -1929,12 +2114,19 @@ fn acp_agent(agent_id: AgentId, descriptor: &AgentDescriptor) -> Result<AcpAgent
                 descriptor.executable.clone(),
             )],
         ),
-        AgentId::OpenCode => (
-            "OpenCode",
-            PathBuf::from(&descriptor.executable),
-            vec!["acp".to_owned()],
-            Vec::new(),
-        ),
+        AgentId::OpenCode => {
+            let environment = if permission_profile == AgentPermissionProfile::Maximum {
+                vec![EnvVariable::new("OPENCODE_PERMISSION", r#""allow""#)]
+            } else {
+                Vec::new()
+            };
+            (
+                "OpenCode",
+                PathBuf::from(&descriptor.executable),
+                vec!["acp".to_owned()],
+                environment,
+            )
+        }
     };
     Ok(AcpAgent::new(McpServer::Stdio(
         McpServerStdio::new(name, command)
@@ -2135,14 +2327,51 @@ mod tests {
             executable: "/opt/bin/opencode".into(),
             error: None,
         };
-        let server = acp_agent(AgentId::OpenCode, &descriptor)
-            .expect("native ACP agent")
-            .into_server();
+        let server = acp_agent(
+            AgentId::OpenCode,
+            &descriptor,
+            AgentPermissionProfile::Default,
+        )
+        .expect("native ACP agent")
+        .into_server();
         let McpServer::Stdio(server) = server else {
             panic!("stdio adapter")
         };
         assert_eq!(server.command, PathBuf::from("/opt/bin/opencode"));
         assert_eq!(server.args, ["acp"]);
+        assert!(
+            !server
+                .env
+                .iter()
+                .any(|variable| variable.name == "OPENCODE_PERMISSION")
+        );
+
+        let maximum = acp_agent(
+            AgentId::OpenCode,
+            &descriptor,
+            AgentPermissionProfile::Maximum,
+        )
+        .expect("maximum ACP agent")
+        .into_server();
+        let McpServer::Stdio(maximum) = maximum else {
+            panic!("stdio adapter")
+        };
+        assert!(maximum.env.iter().any(|variable| {
+            variable.name == "OPENCODE_PERMISSION" && variable.value == r#""allow""#
+        }));
+    }
+
+    #[test]
+    fn restores_provider_defaults_without_treating_opencode_agent_mode_as_permission() {
+        assert_eq!(
+            default_native_permission_mode(AgentId::ClaudeCode),
+            Some("default")
+        );
+        assert_eq!(
+            default_native_permission_mode(AgentId::Codex),
+            Some("agent")
+        );
+        assert_eq!(default_native_permission_mode(AgentId::OpenCode), None);
     }
 
     #[test]
@@ -2154,7 +2383,7 @@ mod tests {
             executable: "/opt/homebrew/bin/codex".into(),
             error: None,
         };
-        let server = acp_agent(AgentId::Codex, &descriptor)
+        let server = acp_agent(AgentId::Codex, &descriptor, AgentPermissionProfile::Default)
             .expect("project ACP adapter")
             .into_server();
         let McpServer::Stdio(server) = server else {
@@ -2175,9 +2404,13 @@ mod tests {
             executable: "/home/jovyan/.local/bin/claude".into(),
             error: None,
         };
-        let server = acp_agent(AgentId::ClaudeCode, &descriptor)
-            .expect("project ACP adapter")
-            .into_server();
+        let server = acp_agent(
+            AgentId::ClaudeCode,
+            &descriptor,
+            AgentPermissionProfile::Default,
+        )
+        .expect("project ACP adapter")
+        .into_server();
         let McpServer::Stdio(server) = server else {
             panic!("stdio adapter")
         };

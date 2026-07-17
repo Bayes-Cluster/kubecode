@@ -6,7 +6,8 @@ import type { KubecodeApi, TeamSnapshot } from './api'
 
 const snapshot = {
   team: {
-    id: 'team-1', title: 'Compiler team', status: 'active', mode: 'standard',
+    id: 'team-1', title: 'Compiler team', status: 'active', requested_mode: 'standard',
+    mode: 'standard', mode_fallback: null,
     member_management_policy: 'ask', max_parallel_runs: 3, max_teammates: 3,
     max_review_rounds: 3, current_review_round: 0, goal: 'Fix the compiler',
     acceptance_criteria: ['Tests pass'], allowed_agent_ids: ['codex', 'claude_code'],
@@ -88,6 +89,35 @@ describe('TeamWorkspaceView', () => {
     expect(screen.getByRole('button', { name: 'Reviewer' })).toBeInTheDocument()
   })
 
+  it('keeps an automatic YOLO fallback visible after hydration', () => {
+    render(
+      <TeamWorkspaceView
+        api={{} as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={{
+          ...snapshot,
+          team: {
+            ...snapshot.team,
+            requested_mode: 'yolo',
+            mode: 'standard',
+            mode_fallback: {
+              agent_id: 'claude_code',
+              reason_code: 'native_permission_unavailable',
+              reason: 'Host policy disabled bypassPermissions',
+              occurred_at: '2026-07-17 18:00:00',
+            },
+          },
+        }}
+        t={t}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'kubecode.teamYoloFallback: Host policy disabled bypassPermissions',
+    )
+  })
+
   it('starts a draft Team only after goal, criteria, and autonomy are configured', async () => {
     const startTeam = vi.fn().mockResolvedValue({
       ...snapshot,
@@ -145,5 +175,45 @@ describe('TeamWorkspaceView', () => {
     }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'kubecode.teamStart' }))
       .toHaveAttribute('aria-busy', 'false'))
+  })
+
+  it('forces the provider-native permission in YOLO while keeping model options editable', async () => {
+    render(
+      <TeamWorkspaceView
+        api={{
+          getSessionState: vi.fn().mockResolvedValue({
+            capabilities: null,
+            available_commands: null,
+            current_mode: null,
+            config_options: {
+              configOptions: [
+                {
+                  type: 'select', id: 'mode', name: 'Mode', currentValue: 'agent',
+                  options: [{ value: 'agent', name: 'Agent' }],
+                },
+                {
+                  type: 'select', id: 'model', name: 'Model', currentValue: 'gpt-5.6',
+                  options: [{ value: 'gpt-5.6', name: 'GPT-5.6' }],
+                },
+              ],
+            },
+            plan: null,
+            usage: null,
+          }),
+          listAgents: vi.fn().mockResolvedValue([{ id: 'codex', available: true }]),
+        } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={{
+          ...snapshot,
+          team: { ...snapshot.team, status: 'draft', requested_mode: 'yolo', mode: 'standard' },
+        }}
+        t={t}
+      />,
+    )
+
+    expect(await screen.findByText('kubecode.teamYoloPermissionCodex')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'kubecode.agentMode' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
   })
 })

@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Tiếng Ukraina",
   "locale.svSE": "Tiếng Thụy Điển",
   "locale.skSK": "Tiếng Slovak",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leader có thể chuyển cho bạn các quyết định cần sự tham gia của bạn.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Nhóm hoạt động tự chủ và phải vượt qua kiểm định độc lập.",
-  "kubecode.teamYoloWarning": "YOLO cấp cho Leader quyền tự chủ gốc của Agent đã chọn. Hãy kiểm tra workspace và cài đặt Agent trước khi bắt đầu.",
+  "kubecode.teamYoloWarning": "YOLO tự động sử dụng hồ sơ quyền native tối đa của từng Agent. Các cài đặt model, effort và hiệu năng vẫn do bạn kiểm soát.",
   "kubecode.teamAllowedAgents": "Agent đồng đội được phép",
   "kubecode.teamLeaderConfiguration": "Mô hình và chế độ của Leader",
   "kubecode.teamMemberLimit": "Giới hạn đồng đội",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Đang hoạt động",
   "kubecode.teamStatusVerifying": "Đang kiểm định",
   "kubecode.teamStatusCompleted": "Đã hoàn thành",
-  "kubecode.teamStatusArchived": "Đã lưu trữ"
+  "kubecode.teamStatusArchived": "Đã lưu trữ",
+  "kubecode.teamYoloNativePermission": "Quyền native",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "Không thể áp dụng YOLO; Team này đang chạy ở chế độ Standard"
 }

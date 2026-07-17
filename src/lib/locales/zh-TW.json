@@ -1089,7 +1089,7 @@
   "locale.ukUA": "烏克蘭語",
   "locale.svSE": "瑞典語",
   "locale.skSK": "斯洛伐克語",
- "kubecode.appName": "庫貝程式碼",
+  "kubecode.appName": "庫貝程式碼",
   "kubecode.projectActions": "專案操作",
   "kubecode.enableWorkspaces": "啟用工作區",
   "kubecode.disableWorkspaces": "停用工作區",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leader 可以將需要你參與的決策升級給你。",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "團隊自主運作，並且必須通過獨立驗收。",
-  "kubecode.teamYoloWarning": "YOLO 會向 Leader 授予所選 Agent 的原生自主權限。開始前請檢查 workspace 和 Agent 設定。",
+  "kubecode.teamYoloWarning": "YOLO 會自動使用每個 Agent 的最大原生權限設定。模型、effort 和效能設定仍由你控制。",
   "kubecode.teamAllowedAgents": "允許使用的隊友 Agent",
   "kubecode.teamLeaderConfiguration": "Leader 模型與模式",
   "kubecode.teamMemberLimit": "隊友數量上限",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "進行中",
   "kubecode.teamStatusVerifying": "驗收中",
   "kubecode.teamStatusCompleted": "已完成",
-  "kubecode.teamStatusArchived": "已封存"
+  "kubecode.teamStatusArchived": "已封存",
+  "kubecode.teamYoloNativePermission": "原生權限",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "無法套用 YOLO；此 Team 已改用 Standard 模式執行"
 }

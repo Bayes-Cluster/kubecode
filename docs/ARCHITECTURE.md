@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0186.
+active production boundary is defined by ADRs 0161–0187.
 
 ## Runtime topology
 
@@ -120,6 +120,17 @@ and wakes the Leader. Runtime reconciliation resumes queued work after Team
 reads, server restart, or workspace reconnect without creating a new member
 Session.
 
+Team mode has separate requested and effective values. A requested YOLO Team
+uses exact provider-native permission controls: Codex
+`mode=agent-full-access`, Claude Code `mode=bypassPermissions`, and a
+process-scoped OpenCode `OPENCODE_PERMISSION="allow"`. If an exact native
+profile is unavailable, the effective mode becomes Standard and the Agent,
+stable reason code, diagnostic, and timestamp are persisted. Each member also
+persists whether Kubecode applied a native permission profile and its prior
+mode, allowing completion or fallback to restore permissions after a server
+restart. Model, effort, fast mode, and other Agent settings are not part of the
+Team permission policy.
+
 Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool
 calls, permissions, and response visible. The browser separates this member
@@ -144,7 +155,8 @@ preventing a scheduling deadlock. Leader permissions remain user-owned.
 required task must be accepted and no permission or failed delivery may remain.
 YOLO Teams additionally create a fresh Discriminator Session after required work
 is accepted. Runtime chooses an allowed backend in deterministic rotation,
-requires its advertised read-only mode, and captures the Git tree fingerprint.
+applies its exact read-only control (Codex `read-only`, Claude Code `plan`, or
+OpenCode `plan`), and captures the Git tree fingerprint.
 The Discriminator can inspect evidence and submit a pass/reject verdict but
 cannot own tasks, edit implementation, or communicate outside that verdict. A
 rejection returns findings to the Leader and cannot be overridden. A pass is

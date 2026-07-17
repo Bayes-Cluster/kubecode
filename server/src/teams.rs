@@ -232,7 +232,9 @@ pub struct Team {
     pub workspace_path: Option<String>,
     pub member_management_policy: MemberManagementPolicy,
     pub max_parallel_runs: u8,
+    pub requested_mode: TeamMode,
     pub mode: TeamMode,
+    pub mode_fallback: Option<TeamModeFallback>,
     pub goal: String,
     pub acceptance_criteria: Vec<String>,
     pub allowed_agent_ids: Vec<String>,
@@ -248,6 +250,14 @@ pub struct Team {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TeamModeFallback {
+    pub agent_id: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TeamMember {
     pub id: String,
     pub team_id: String,
@@ -257,6 +267,8 @@ pub struct TeamMember {
     pub status: TeamMemberStatus,
     pub workspace_mode: MemberWorkspaceMode,
     pub base_tree: Option<String>,
+    pub permission_profile_applied: bool,
+    pub previous_permission_mode: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -457,7 +469,12 @@ impl TeamStore {
                workspace_path TEXT,
                member_management_policy TEXT NOT NULL DEFAULT 'ask',
                max_parallel_runs INTEGER NOT NULL DEFAULT 3,
+               requested_mode TEXT NOT NULL DEFAULT 'standard',
                mode TEXT NOT NULL DEFAULT 'standard',
+               mode_fallback_agent_id TEXT,
+               mode_fallback_reason_code TEXT,
+               mode_fallback_reason TEXT,
+               mode_fallback_at TEXT,
                goal TEXT NOT NULL DEFAULT '',
                acceptance_criteria_json TEXT NOT NULL DEFAULT '[]',
                allowed_agent_ids_json TEXT NOT NULL DEFAULT '[\"claude_code\",\"codex\",\"opencode\"]',
@@ -480,6 +497,8 @@ impl TeamStore {
                status TEXT NOT NULL DEFAULT 'idle',
                workspace_mode TEXT NOT NULL DEFAULT 'shared',
                base_tree TEXT,
+               permission_profile_applied INTEGER NOT NULL DEFAULT 0,
+               previous_permission_mode TEXT,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                UNIQUE(team_id, name)
@@ -639,6 +658,28 @@ impl TeamStore {
             "current_review_round",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        ensure_column(
+            &database,
+            "teams",
+            "requested_mode",
+            "TEXT NOT NULL DEFAULT 'standard'",
+        )?;
+        ensure_column(&database, "teams", "mode_fallback_agent_id", "TEXT")?;
+        ensure_column(&database, "teams", "mode_fallback_reason_code", "TEXT")?;
+        ensure_column(&database, "teams", "mode_fallback_reason", "TEXT")?;
+        ensure_column(&database, "teams", "mode_fallback_at", "TEXT")?;
+        ensure_column(
+            &database,
+            "team_members",
+            "permission_profile_applied",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(
+            &database,
+            "team_members",
+            "previous_permission_mode",
+            "TEXT",
+        )?;
         ensure_column(&database, "teams", "workspace_fingerprint", "TEXT")?;
         ensure_column(&database, "teams", "final_summary", "TEXT")?;
         ensure_column(&database, "teams", "started_at", "TEXT")?;
@@ -671,6 +712,12 @@ impl TeamStore {
         )?;
         database.execute(
             "UPDATE teams SET mode = CASE WHEN mode IS NULL OR mode = '' THEN 'standard' ELSE mode END,
+                 requested_mode = CASE
+                   WHEN requested_mode IS NULL OR requested_mode = '' THEN mode
+                   WHEN requested_mode = 'standard' AND mode = 'yolo'
+                     AND mode_fallback_reason_code IS NULL THEN mode
+                   ELSE requested_mode
+                 END,
                  max_teammates = MIN(8, MAX(max_teammates, (
                    SELECT COUNT(*) FROM team_members
                    WHERE team_members.team_id = teams.id AND role = 'teammate'
@@ -724,7 +771,9 @@ impl TeamStore {
             .query_row(
                 "SELECT id, project_id, leader_member_id, agent_session_id, title, status,
                         workspace, workspace_path, member_management_policy, max_parallel_runs,
-                        mode, goal, acceptance_criteria_json, allowed_agent_ids_json,
+                        requested_mode, mode, mode_fallback_agent_id,
+                        mode_fallback_reason_code, mode_fallback_reason, mode_fallback_at,
+                        goal, acceptance_criteria_json, allowed_agent_ids_json,
                         max_teammates, max_review_rounds, current_review_round,
                         workspace_fingerprint, final_summary, started_at, completed_at,
                         created_at, updated_at
@@ -790,7 +839,9 @@ impl TeamStore {
         let transaction = database.transaction()?;
         require_leader(&transaction, input.team_id, input.leader_member_id)?;
         let changed = transaction.execute(
-            "UPDATE teams SET status = 'active', mode = ?3, goal = ?4,
+            "UPDATE teams SET status = 'active', requested_mode = ?3, mode = ?3,
+                    mode_fallback_agent_id = NULL, mode_fallback_reason_code = NULL,
+                    mode_fallback_reason = NULL, mode_fallback_at = NULL, goal = ?4,
                     acceptance_criteria_json = ?5, allowed_agent_ids_json = ?6,
                     max_teammates = ?7, max_parallel_runs = ?8, max_review_rounds = ?9,
                     current_review_round = CASE WHEN status = 'draft' THEN 0 ELSE current_review_round END,
@@ -817,6 +868,104 @@ impl TeamStore {
         transaction.commit()?;
         drop(database);
         self.get_team(input.team_id)
+    }
+
+    pub fn downgrade_to_standard(
+        &self,
+        team_id: &str,
+        agent_id: &str,
+        reason_code: &str,
+        reason: &str,
+    ) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET mode = 'standard', mode_fallback_agent_id = ?2,
+                        mode_fallback_reason_code = ?3, mode_fallback_reason = ?4,
+                        mode_fallback_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND requested_mode = 'yolo'",
+                params![team_id, agent_id, reason_code, reason.trim()],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
+    }
+
+    pub fn abort_start(&self, team_id: &str) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'draft', requested_mode = 'standard',
+                        mode = 'standard', mode_fallback_agent_id = NULL,
+                        mode_fallback_reason_code = NULL, mode_fallback_reason = NULL,
+                        mode_fallback_at = NULL, started_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'active'",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
+    }
+
+    pub fn mark_permission_profile_applied(
+        &self,
+        member_id: &str,
+        previous_mode: Option<&str>,
+    ) -> Result<TeamMember, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_members SET permission_profile_applied = 1,
+                        previous_permission_mode = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![member_id, previous_mode],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::MemberNotFound(member_id.to_owned()));
+        }
+        self.get_member(member_id)
+    }
+
+    pub fn clear_permission_profile(&self, member_id: &str) -> Result<TeamMember, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE team_members SET permission_profile_applied = 0,
+                        previous_permission_mode = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                [member_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::MemberNotFound(member_id.to_owned()));
+        }
+        self.get_member(member_id)
+    }
+
+    pub fn remove_discriminators(&self, team_id: &str) -> Result<Vec<TeamMember>, TeamError> {
+        let discriminators = self
+            .list_members(team_id)?
+            .into_iter()
+            .filter(|member| member.role == TeamRole::Discriminator)
+            .collect::<Vec<_>>();
+        self.database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "DELETE FROM team_members WHERE team_id = ?1 AND role = 'discriminator'",
+                [team_id],
+            )?;
+        Ok(discriminators)
     }
 
     pub fn complete_team(
@@ -884,7 +1033,9 @@ impl TeamStore {
         let mut statement = database.prepare(
             "SELECT id, project_id, leader_member_id, agent_session_id, title, status,
                     workspace, workspace_path, member_management_policy, max_parallel_runs,
-                    mode, goal, acceptance_criteria_json, allowed_agent_ids_json,
+                    requested_mode, mode, mode_fallback_agent_id,
+                    mode_fallback_reason_code, mode_fallback_reason, mode_fallback_at,
+                    goal, acceptance_criteria_json, allowed_agent_ids_json,
                     max_teammates, max_review_rounds, current_review_round,
                     workspace_fingerprint, final_summary, started_at, completed_at,
                     created_at, updated_at
@@ -915,7 +1066,10 @@ impl TeamStore {
             .query_row(
                 "SELECT t.id, t.project_id, t.leader_member_id, t.agent_session_id, t.title,
                         t.status, t.workspace, t.workspace_path, t.member_management_policy,
-                        t.max_parallel_runs, t.mode, t.goal, t.acceptance_criteria_json,
+                        t.max_parallel_runs, t.requested_mode, t.mode,
+                        t.mode_fallback_agent_id, t.mode_fallback_reason_code,
+                        t.mode_fallback_reason, t.mode_fallback_at,
+                        t.goal, t.acceptance_criteria_json,
                         t.allowed_agent_ids_json, t.max_teammates, t.max_review_rounds,
                         t.current_review_round, t.workspace_fingerprint, t.final_summary,
                         t.started_at, t.completed_at, t.created_at, t.updated_at
@@ -932,7 +1086,8 @@ impl TeamStore {
         let database = self.database.lock().expect("team database mutex poisoned");
         let mut statement = database.prepare(
             "SELECT id, team_id, conversation_id, name, role, status, workspace_mode,
-                    base_tree, created_at, updated_at
+                    base_tree, permission_profile_applied, previous_permission_mode,
+                    created_at, updated_at
              FROM team_members WHERE team_id = ?1
              ORDER BY CASE role WHEN 'leader' THEN 0 ELSE 1 END, created_at, id",
         )?;
@@ -1026,7 +1181,8 @@ impl TeamStore {
             .expect("team database mutex poisoned")
             .query_row(
                 "SELECT id, team_id, conversation_id, name, role, status, workspace_mode,
-                        base_tree, created_at, updated_at
+                        base_tree, permission_profile_applied, previous_permission_mode,
+                        created_at, updated_at
                  FROM team_members WHERE id = ?1",
                 [member_id],
                 team_member_from_row,
@@ -1044,7 +1200,8 @@ impl TeamStore {
             .expect("team database mutex poisoned")
             .query_row(
                 "SELECT id, team_id, conversation_id, name, role, status, workspace_mode,
-                        base_tree, created_at, updated_at
+                        base_tree, permission_profile_applied, previous_permission_mode,
+                        created_at, updated_at
                  FROM team_members WHERE conversation_id = ?1",
                 [conversation_id],
                 team_member_from_row,
@@ -2375,21 +2532,40 @@ fn team_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Team> {
         member_management_policy: MemberManagementPolicy::parse(&row.get::<_, String>(8)?)
             .map_err(sql_value_error)?,
         max_parallel_runs: row.get(9)?,
-        mode: TeamMode::parse(&row.get::<_, String>(10)?).map_err(sql_value_error)?,
-        goal: row.get(11)?,
-        acceptance_criteria: json_string_list(&row.get::<_, String>(12)?)
+        requested_mode: TeamMode::parse(&row.get::<_, String>(10)?).map_err(sql_value_error)?,
+        mode: TeamMode::parse(&row.get::<_, String>(11)?).map_err(sql_value_error)?,
+        mode_fallback: team_mode_fallback_from_row(row)?,
+        goal: row.get(16)?,
+        acceptance_criteria: json_string_list(&row.get::<_, String>(17)?)
             .map_err(sql_value_error)?,
-        allowed_agent_ids: json_string_list(&row.get::<_, String>(13)?).map_err(sql_value_error)?,
-        max_teammates: row.get(14)?,
-        max_review_rounds: row.get(15)?,
-        current_review_round: row.get(16)?,
-        workspace_fingerprint: row.get(17)?,
-        final_summary: row.get(18)?,
-        started_at: row.get(19)?,
-        completed_at: row.get(20)?,
-        created_at: row.get(21)?,
-        updated_at: row.get(22)?,
+        allowed_agent_ids: json_string_list(&row.get::<_, String>(18)?).map_err(sql_value_error)?,
+        max_teammates: row.get(19)?,
+        max_review_rounds: row.get(20)?,
+        current_review_round: row.get(21)?,
+        workspace_fingerprint: row.get(22)?,
+        final_summary: row.get(23)?,
+        started_at: row.get(24)?,
+        completed_at: row.get(25)?,
+        created_at: row.get(26)?,
+        updated_at: row.get(27)?,
     })
+}
+
+fn team_mode_fallback_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Option<TeamModeFallback>> {
+    let agent_id = row.get::<_, Option<String>>(12)?;
+    let reason_code = row.get::<_, Option<String>>(13)?;
+    let reason = row.get::<_, Option<String>>(14)?;
+    let occurred_at = row.get::<_, Option<String>>(15)?;
+    Ok(agent_id.zip(reason_code).zip(reason).zip(occurred_at).map(
+        |(((agent_id, reason_code), reason), occurred_at)| TeamModeFallback {
+            agent_id,
+            reason_code,
+            reason,
+            occurred_at,
+        },
+    ))
 }
 
 fn team_member_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TeamMember> {
@@ -2403,8 +2579,10 @@ fn team_member_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TeamMember>
         workspace_mode: MemberWorkspaceMode::parse(&row.get::<_, String>(6)?)
             .map_err(sql_value_error)?,
         base_tree: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        permission_profile_applied: row.get(8)?,
+        previous_permission_mode: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 

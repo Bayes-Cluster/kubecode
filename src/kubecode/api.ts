@@ -80,7 +80,14 @@ export type Team = {
   workspace_path: string | null
   member_management_policy: 'ask' | 'auto'
   max_parallel_runs: number
+  requested_mode: TeamMode
   mode: TeamMode
+  mode_fallback: {
+    agent_id: string
+    reason_code: string
+    reason: string
+    occurred_at: string
+  } | null
   goal: string
   acceptance_criteria: string[]
   allowed_agent_ids: AgentId[]
@@ -112,6 +119,8 @@ export type TeamMember = {
     | 'stopped'
   workspace_mode: 'shared' | 'isolated'
   base_tree: string | null
+  permission_profile_applied: boolean
+  previous_permission_mode: string | null
   created_at: string
   updated_at: string
 }

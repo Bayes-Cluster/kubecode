@@ -31,3 +31,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0184](0184-hidden-agent-chat-revisions.md) | Hidden Agent Chat revisions |
 | [0185](0185-leader-reviewed-teammate-permissions.md) | Leader-reviewed teammate permissions |
 | [0186](0186-bounded-team-control-plane-and-independent-verification.md) | Bounded Team control plane and independent verification |
+| [0187](0187-provider-native-team-permission-profiles.md) | Provider-native Team permission profiles |

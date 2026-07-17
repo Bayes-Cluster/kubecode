@@ -50,6 +50,14 @@ worktree and stores its base Git tree. Only the Leader may add members, review
 plans/results, integrate accepted work, and author the final Team response.
 The Leader may edit the workspace but can never be a concrete task assignee.
 
+A Team mode has a requested value and an effective value. YOLO is Kubecode
+policy language, not an Agent-native mode name. Its native permission profile
+is an exact, versioned mapping owned by the runtime, while model, effort, fast
+mode, and other non-permission configuration remain user-owned. A Team Mode
+Fallback is the durable reason that a requested YOLO Team is effectively
+Standard. A Member Permission Snapshot records whether Kubecode applied the
+profile and the prior mode needed for restoration.
+
 A Team mailbox message has a durable delivery lifecycle: pending, delivered,
 acknowledged, or failed. Delegation atomically assigns a task and writes the
 recipient message. The scheduler wakes the recipient in its own Agent Chat,
@@ -79,7 +87,9 @@ messages. It evaluates the Team goal and evidence against acceptance criteria
 and submits one pass/reject verdict tied to a Git tree fingerprint. Rejection
 cannot be overridden; a later pass requires a new round after the workspace
 changes. The Discriminator does not count as a teammate or consume the
-teammate budget.
+teammate budget. Read-only enforcement uses exact provider controls rather than
+matching translated or display labels: Codex `read-only`, Claude Code `plan`,
+and OpenCode `plan`.
 
 An internal Team run is a normal persisted Agent run owned by the recipient's
 Session, but its synthetic wake prompt is hidden from the browser timeline and

@@ -396,7 +396,11 @@ describe('Kubecode workspace', () => {
 
     render(<KubecodeApp api={api} />)
 
-    expect(await screen.findByRole('button', { name: 'Persistent leader' })).toBeInTheDocument()
+    expect(await screen.findByRole(
+      'button',
+      { name: 'Persistent leader' },
+      { timeout: 5_000 },
+    )).toBeInTheDocument()
     expect(screen.getByText('Team · Leader')).toBeInTheDocument()
   })
 

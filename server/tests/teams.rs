@@ -94,7 +94,9 @@ fn creates_a_team_with_a_fixed_leader() {
     assert_eq!(members[0].conversation_id, "conversation-lead");
     assert_eq!(team.leader_member_id, members[0].id);
     assert_eq!(team.status, TeamStatus::Draft);
+    assert_eq!(team.requested_mode, TeamMode::Standard);
     assert_eq!(team.mode, TeamMode::Standard);
+    assert!(team.mode_fallback.is_none());
     assert_eq!(
         store
             .team_for_conversation("conversation-lead")
@@ -107,7 +109,7 @@ fn creates_a_team_with_a_fixed_leader() {
 
 #[test]
 fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
-    let (_temp, store) = store();
+    let (temp, store) = store();
     let team = store
         .create_team(NewTeam {
             project_id: "project-1",
@@ -141,6 +143,7 @@ fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
         .expect("start team");
 
     assert_eq!(started.status, TeamStatus::Active);
+    assert_eq!(started.requested_mode, TeamMode::Yolo);
     assert_eq!(started.mode, TeamMode::Yolo);
     assert_eq!(started.goal, "Reproduce the published experiment");
     assert_eq!(started.acceptance_criteria, criteria);
@@ -149,6 +152,52 @@ fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
     assert_eq!(started.max_parallel_runs, 2);
     assert_eq!(started.max_review_rounds, 4);
     assert!(started.started_at.is_some());
+
+    let marked = store
+        .mark_permission_profile_applied(&leader.id, Some("agent"))
+        .expect("mark native profile");
+    assert!(marked.permission_profile_applied);
+    assert_eq!(marked.previous_permission_mode.as_deref(), Some("agent"));
+
+    let fallback = store
+        .downgrade_to_standard(
+            &team.id,
+            "claude_code",
+            "native_permission_unavailable",
+            "Bypass permissions is disabled by the host policy",
+        )
+        .expect("fallback");
+    assert_eq!(fallback.requested_mode, TeamMode::Yolo);
+    assert_eq!(fallback.mode, TeamMode::Standard);
+    let fallback_reason = fallback.mode_fallback.expect("fallback metadata");
+    assert_eq!(fallback_reason.agent_id, "claude_code");
+    assert_eq!(fallback_reason.reason_code, "native_permission_unavailable");
+
+    let restored = store
+        .clear_permission_profile(&leader.id)
+        .expect("clear native profile");
+    assert!(!restored.permission_profile_applied);
+    assert!(restored.previous_permission_mode.is_none());
+
+    drop(store);
+    let reopened =
+        TeamStore::open(temp.path().join("kubecode.sqlite3")).expect("reopen team store");
+    let persisted = reopened.get_team(&team.id).expect("persisted team");
+    assert_eq!(persisted.requested_mode, TeamMode::Yolo);
+    assert_eq!(persisted.mode, TeamMode::Standard);
+    assert_eq!(
+        persisted
+            .mode_fallback
+            .expect("persisted fallback")
+            .reason_code,
+        "native_permission_unavailable"
+    );
+    assert!(
+        !reopened
+            .get_member(&leader.id)
+            .expect("persisted leader")
+            .permission_profile_applied
+    );
 }
 
 #[test]

@@ -5,7 +5,7 @@ use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::agent_runtime::{RuntimeError, SessionConfigInput};
+use crate::agent_runtime::RuntimeError;
 use crate::agents::{AgentId, Conversation, ExecutionMode, RunStatus, StoreError};
 use crate::api::AppState;
 use crate::team_coordinator::TeamCoordinator;
@@ -226,9 +226,9 @@ async fn start_team(
         ))
         .into());
     }
-    if request.mode == TeamMode::Yolo {
-        prepare_native_yolo(&state, &team).await?;
-    }
+    let native_preparation = (request.mode == TeamMode::Yolo)
+        .then(|| inspect_native_yolo(&state, &team))
+        .transpose()?;
     let started = state.teams.start_team(StartTeam {
         team_id: &team.id,
         leader_member_id: &team.leader_member_id,
@@ -240,6 +240,62 @@ async fn start_team(
         max_parallel_runs: request.max_parallel_runs,
         max_review_rounds: request.max_review_rounds,
     })?;
+    let started = match native_preparation {
+        Some(NativePreparation::Supported {
+            agent_id,
+            previous_mode,
+            conversation_id,
+        }) => {
+            state.teams.mark_permission_profile_applied(
+                &started.leader_member_id,
+                previous_mode.as_deref(),
+            )?;
+            if let Err(error) = state
+                .agent_runtime
+                .reconnect_conversation(&conversation_id)
+                .await
+            {
+                let _ = state
+                    .teams
+                    .clear_permission_profile(&started.leader_member_id);
+                let _ = state.teams.abort_start(&started.id);
+                let _ = state
+                    .agent_runtime
+                    .reconnect_conversation(&conversation_id)
+                    .await;
+                return Err(error.into());
+            }
+            state.teams.append_activity(
+                &started.id,
+                Some(&started.leader_member_id),
+                None,
+                "team_native_permission_applied",
+                &format!("Applied the {agent_id} maximum native permission profile"),
+                None,
+            )?;
+            started
+        }
+        Some(NativePreparation::Unsupported {
+            agent_id,
+            reason_code,
+            reason,
+        }) => {
+            let downgraded =
+                state
+                    .teams
+                    .downgrade_to_standard(&started.id, &agent_id, reason_code, &reason)?;
+            state.teams.append_activity(
+                &started.id,
+                Some(&started.leader_member_id),
+                None,
+                "team_mode_fallback",
+                &format!("YOLO fell back to Standard: {reason}"),
+                None,
+            )?;
+            downgraded
+        }
+        None => started,
+    };
     state.teams.send_message(
         &started.id,
         &started.leader_member_id,
@@ -262,21 +318,25 @@ async fn start_team(
 }
 
 #[derive(Clone)]
-enum NativeSetting {
-    Mode(String),
-    Config(String, SessionConfigInput),
-}
-
-#[derive(Clone)]
 struct NativeChoice {
     selector_id: String,
-    selector_name: String,
     value: String,
-    value_name: String,
-    mode: bool,
 }
 
-async fn prepare_native_yolo(state: &AppState, team: &Team) -> Result<(), TeamApiError> {
+enum NativePreparation {
+    Supported {
+        agent_id: &'static str,
+        previous_mode: Option<String>,
+        conversation_id: String,
+    },
+    Unsupported {
+        agent_id: String,
+        reason_code: &'static str,
+        reason: String,
+    },
+}
+
+fn inspect_native_yolo(state: &AppState, team: &Team) -> Result<NativePreparation, TeamApiError> {
     let leader = state.teams.get_member(&team.leader_member_id)?;
     let conversation = state
         .agent_runtime
@@ -287,115 +347,96 @@ async fn prepare_native_yolo(state: &AppState, team: &Team) -> Result<(), TeamAp
         .store()
         .session_events_after(&conversation.id, 0)?;
     let mut choices = Vec::new();
-    let mut booleans = Vec::new();
     for event in events.iter().rev().filter(|event| {
         matches!(
             event.kind.as_str(),
             "current_mode" | "config_options" | "session_created_state"
         )
     }) {
-        collect_native_choices(&event.payload, &mut choices, &mut booleans);
+        collect_native_choices(&event.payload, &mut choices);
     }
-    let settings =
-        native_yolo_settings(conversation.agent_id, &choices, &booleans).ok_or_else(|| {
-            TeamError::NativeAutonomyUnavailable(format!(
-                "{:?} exposes no safe-to-identify native autonomous option",
-                conversation.agent_id
-            ))
-        })?;
-    for setting in settings {
-        match setting {
-            NativeSetting::Mode(value) => {
-                state
-                    .agent_runtime
-                    .set_session_mode(&conversation.id, value)
-                    .await?;
-            }
-            NativeSetting::Config(config_id, value) => {
-                state
-                    .agent_runtime
-                    .set_session_config(&conversation.id, config_id, value)
-                    .await?;
-            }
+    let agent_id = native_agent_id(conversation.agent_id);
+    if conversation.agent_id != AgentId::OpenCode
+        && !has_maximum_permission_profile(conversation.agent_id, &choices)
+    {
+        return Ok(NativePreparation::Unsupported {
+            agent_id: agent_id.to_owned(),
+            reason_code: "native_permission_unavailable",
+            reason: format!(
+                "{agent_id} does not advertise the required maximum native permission profile"
+            ),
+        });
+    }
+    Ok(NativePreparation::Supported {
+        agent_id,
+        previous_mode: (conversation.agent_id != AgentId::OpenCode)
+            .then(|| current_native_mode(&events))
+            .flatten(),
+        conversation_id: conversation.id,
+    })
+}
+
+fn native_agent_id(agent_id: AgentId) -> &'static str {
+    match agent_id {
+        AgentId::ClaudeCode => "claude_code",
+        AgentId::Codex => "codex",
+        AgentId::OpenCode => "opencode",
+    }
+}
+
+fn current_native_mode(events: &[crate::agents::SessionEvent]) -> Option<String> {
+    for event in events.iter().rev() {
+        if let Some(value) = event
+            .payload
+            .get("currentModeId")
+            .and_then(serde_json::Value::as_str)
+        {
+            return Some(value.to_owned());
+        }
+        let Some(options) = event
+            .payload
+            .get("configOptions")
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        if let Some(value) = options.iter().find_map(|option| {
+            (option.get("id").and_then(serde_json::Value::as_str) == Some("mode"))
+                .then(|| {
+                    option
+                        .get("currentValue")
+                        .and_then(serde_json::Value::as_str)
+                })
+                .flatten()
+        }) {
+            return Some(value.to_owned());
         }
     }
-    Ok(())
+    None
 }
 
-fn native_yolo_settings(
-    agent_id: AgentId,
-    choices: &[NativeChoice],
-    booleans: &[(String, String)],
-) -> Option<Vec<NativeSetting>> {
-    let direct_terms: &[&str] = match agent_id {
-        AgentId::ClaudeCode => &["bypasspermissions", "bypass permissions"],
-        AgentId::OpenCode => &["auto"],
-        AgentId::Codex => &["yolo", "dangerously bypass", "danger-full-access"],
+fn has_maximum_permission_profile(agent_id: AgentId, choices: &[NativeChoice]) -> bool {
+    let required_value = match agent_id {
+        AgentId::ClaudeCode => "bypassPermissions",
+        AgentId::Codex => "agent-full-access",
+        AgentId::OpenCode => return true,
     };
-    if let Some(choice) = choices.iter().find(|choice| {
-        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
-        direct_terms.iter().any(|term| value.contains(term))
-    }) {
-        return Some(vec![native_choice_setting(choice)]);
-    }
-    if let Some((id, _)) = booleans.iter().find(|(id, name)| {
-        let value = format!("{id} {name}").to_lowercase();
-        direct_terms.iter().any(|term| value.contains(term))
-    }) {
-        return Some(vec![NativeSetting::Config(
-            id.clone(),
-            SessionConfigInput::Boolean(true),
-        )]);
-    }
-    if agent_id != AgentId::Codex {
-        return None;
-    }
-    let approval = choices.iter().find(|choice| {
-        let selector = format!("{} {}", choice.selector_id, choice.selector_name).to_lowercase();
-        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
-        selector.contains("approval") && value == "never"
-    })?;
-    let sandbox = choices.iter().find(|choice| {
-        let selector = format!("{} {}", choice.selector_id, choice.selector_name).to_lowercase();
-        let value = format!("{} {}", choice.value, choice.value_name).to_lowercase();
-        selector.contains("sandbox")
-            && (value.contains("danger-full-access") || value.contains("full access"))
-    })?;
-    Some(vec![
-        native_choice_setting(approval),
-        native_choice_setting(sandbox),
-    ])
+    choices
+        .iter()
+        .any(|choice| choice.selector_id == "mode" && choice.value == required_value)
 }
 
-fn native_choice_setting(choice: &NativeChoice) -> NativeSetting {
-    if choice.mode {
-        NativeSetting::Mode(choice.value.clone())
-    } else {
-        NativeSetting::Config(
-            choice.selector_id.clone(),
-            SessionConfigInput::ValueId(choice.value.clone()),
-        )
-    }
-}
-
-fn collect_native_choices(
-    value: &serde_json::Value,
-    choices: &mut Vec<NativeChoice>,
-    booleans: &mut Vec<(String, String)>,
-) {
+fn collect_native_choices(value: &serde_json::Value, choices: &mut Vec<NativeChoice>) {
     if let Some(modes) = value
         .get("availableModes")
         .or_else(|| value.get("modes"))
         .and_then(serde_json::Value::as_array)
     {
         for mode in modes {
-            if let Some((id, name)) = native_id_name(mode) {
+            if let Some((id, _)) = native_id_name(mode) {
                 choices.push(NativeChoice {
                     selector_id: "mode".into(),
-                    selector_name: "Mode".into(),
                     value: id,
-                    value_name: name,
-                    mode: true,
                 });
             }
         }
@@ -408,23 +449,12 @@ fn collect_native_choices(
             let Some(id) = config.get("id").and_then(serde_json::Value::as_str) else {
                 continue;
             };
-            let name = config
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(id);
-            if config.get("type").and_then(serde_json::Value::as_str) == Some("boolean") {
-                booleans.push((id.to_owned(), name.to_owned()));
-                continue;
-            }
             if let Some(options) = config.get("options").and_then(serde_json::Value::as_array) {
                 for option in options {
-                    if let Some((value, value_name)) = native_id_name(option) {
+                    if let Some((value, _)) = native_id_name(option) {
                         choices.push(NativeChoice {
                             selector_id: id.to_owned(),
-                            selector_name: name.to_owned(),
                             value,
-                            value_name,
-                            mode: false,
                         });
                     }
                 }
@@ -468,6 +498,10 @@ async fn complete_team(
         &request.final_summary,
         &workspace_fingerprint,
     )?;
+    let restored = state
+        .agent_runtime
+        .restore_team_permissions(&team.id)
+        .await?;
     state.teams.append_activity(
         &completed.id,
         Some(&completed.leader_member_id),
@@ -476,6 +510,16 @@ async fn complete_team(
         "Leader completed the Team",
         None,
     )?;
+    if restored {
+        state.teams.append_activity(
+            &completed.id,
+            Some(&completed.leader_member_id),
+            None,
+            "team_native_permission_restored",
+            "Restored the Team's previous native permission profiles",
+            None,
+        )?;
+    }
     publish_team_event(&state, &completed.id, "team_completed");
     Ok(Json(snapshot(&state, completed)?))
 }
@@ -810,37 +854,34 @@ impl IntoResponse for TeamApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::{NativeChoice, NativeSetting, native_yolo_settings};
-    use crate::agent_runtime::SessionConfigInput;
+    use super::{NativeChoice, has_maximum_permission_profile};
     use crate::agents::AgentId;
 
     #[test]
-    fn maps_only_explicit_provider_native_yolo_choices() {
+    fn maps_exact_provider_maximum_permission_choices() {
         let claude = vec![NativeChoice {
-            selector_id: "permission_mode".into(),
-            selector_name: "Permission mode".into(),
-            value: "bypassPermissions".into(),
-            value_name: "Bypass permissions".into(),
-            mode: false,
-        }];
-        let settings =
-            native_yolo_settings(AgentId::ClaudeCode, &claude, &[]).expect("Claude profile");
-        assert!(matches!(
-            settings.as_slice(),
-            [NativeSetting::Config(id, SessionConfigInput::ValueId(value))]
-                if id == "permission_mode" && value == "bypassPermissions"
-        ));
-
-        let unsafe_guess = vec![NativeChoice {
             selector_id: "mode".into(),
-            selector_name: "Mode".into(),
-            value: "default".into(),
-            value_name: "Default".into(),
-            mode: true,
+            value: "bypassPermissions".into(),
+        }];
+        assert!(has_maximum_permission_profile(AgentId::ClaudeCode, &claude));
+
+        let codex = vec![NativeChoice {
+            selector_id: "mode".into(),
+            value: "agent-full-access".into(),
+        }];
+        assert!(has_maximum_permission_profile(AgentId::Codex, &codex));
+        assert!(has_maximum_permission_profile(AgentId::OpenCode, &[]));
+    }
+
+    #[test]
+    fn never_guesses_maximum_permission_from_display_names() {
+        let misleading = vec![NativeChoice {
+            selector_id: "mode".into(),
+            value: "custom-auto".into(),
         }];
         assert!(
-            native_yolo_settings(AgentId::OpenCode, &unsafe_guess, &[]).is_none(),
-            "Kubecode must not invent an autonomous provider option",
+            !has_maximum_permission_profile(AgentId::Codex, &misleading),
+            "Kubecode must match provider wire IDs, not labels",
         );
     }
 }

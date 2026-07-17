@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Ucraniano",
   "locale.svSE": "Sueco",
   "locale.skSK": "Eslovaco",
- "kubecode.appName": "código Kube",
+  "kubecode.appName": "código Kube",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "El líder puede escalarte las decisiones que requieran tu intervención.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "El equipo trabaja de forma autónoma y debe superar una verificación independiente.",
-  "kubecode.teamYoloWarning": "YOLO concede al líder los permisos autónomos nativos del Agent seleccionado. Revisa el workspace y la configuración del Agent antes de empezar.",
+  "kubecode.teamYoloWarning": "YOLO usa automáticamente el perfil máximo de permisos nativos de cada Agent. La configuración de modelo, effort y rendimiento permanece bajo tu control.",
   "kubecode.teamAllowedAgents": "Agents de equipo permitidos",
   "kubecode.teamLeaderConfiguration": "Modelo y modo del líder",
   "kubecode.teamMemberLimit": "Límite de compañeros",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Activo",
   "kubecode.teamStatusVerifying": "En verificación",
   "kubecode.teamStatusCompleted": "Completado",
-  "kubecode.teamStatusArchived": "Archivado"
+  "kubecode.teamStatusArchived": "Archivado",
+  "kubecode.teamYoloNativePermission": "Permiso nativo",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "No se pudo aplicar YOLO; este Team se está ejecutando en modo Standard"
 }

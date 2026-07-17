@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Ukrainskaja",
   "locale.svSE": "Šviedskaja",
   "locale.skSK": "Słavackaja",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Lider moža pieradaci vam rašenni, jakija patrabujuć vašaha ŭdziełu.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Kamanda pracuje aŭtanomna i pavinna prajści niezaliežnuju pravierku.",
-  "kubecode.teamYoloWarning": "YOLO daje lideru natyŭnyja aŭtanomnyja dazvoły vybranaha Agent. Pierad pačatkam praviercie workspace i nałady Agent.",
+  "kubecode.teamYoloWarning": "YOLO aŭtamatyčna vykarystoŭvaje maksymalny ŭłasny profil dazvołaŭ kožnaha Agent. Nałady madeli, effort i pradukcyjnści zastajucca pad vašym kantrolem.",
   "kubecode.teamAllowedAgents": "Dazvolenyja Agent-udzielniki",
   "kubecode.teamLeaderConfiguration": "Madel i režym lidera",
   "kubecode.teamMemberLimit": "Limit udzielnikaŭ",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Aktyŭnaja",
   "kubecode.teamStatusVerifying": "Praviarajecca",
   "kubecode.teamStatusCompleted": "Zavieršana",
-  "kubecode.teamStatusArchived": "U archiwie"
+  "kubecode.teamStatusArchived": "U archiwie",
+  "kubecode.teamYoloNativePermission": "Ułasny dazvoł",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO nie ŭdałosia ŭžyć; hetaja Team pracuje ŭ režymie Standard"
 }

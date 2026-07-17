@@ -726,6 +726,27 @@
   font-size: 12px;
 }
 
+.kubecode-team-native-permission {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.kubecode-team-native-permission strong { font-size: 12px; font-weight: 550; }
+.kubecode-team-native-permission span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
 .kubecode-team-yolo-warning {
   color: var(--feedback-warning-text);
   font-size: 12px;

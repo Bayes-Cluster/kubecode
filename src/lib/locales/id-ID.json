@@ -1089,7 +1089,7 @@
   "locale.ukUA": "Ukraina",
   "locale.svSE": "Swedia",
   "locale.skSK": "Slovakia",
- "kubecode.appName": "Kubecode",
+  "kubecode.appName": "Kubecode",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leader dapat mengeskalasikan keputusan yang memerlukan keterlibatan Anda.",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "Tim berjalan secara otonom dan harus lulus pemeriksaan independen.",
-  "kubecode.teamYoloWarning": "YOLO memberi Leader izin otonom native dari Agent yang dipilih. Tinjau workspace dan pengaturan Agent sebelum memulai.",
+  "kubecode.teamYoloWarning": "YOLO secara otomatis menggunakan profil izin native maksimum setiap Agent. Pengaturan model, effort, dan performa tetap dalam kendali Anda.",
   "kubecode.teamAllowedAgents": "Agent rekan tim yang diizinkan",
   "kubecode.teamLeaderConfiguration": "Model dan mode Leader",
   "kubecode.teamMemberLimit": "Batas rekan tim",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "Aktif",
   "kubecode.teamStatusVerifying": "Sedang diperiksa",
   "kubecode.teamStatusCompleted": "Selesai",
-  "kubecode.teamStatusArchived": "Diarsipkan"
+  "kubecode.teamStatusArchived": "Diarsipkan",
+  "kubecode.teamYoloNativePermission": "Izin native",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO tidak dapat diterapkan; Team ini berjalan dalam mode Standard"
 }

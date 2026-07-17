@@ -1089,7 +1089,7 @@
   "locale.ukUA": "ウクライナ語",
   "locale.svSE": "スウェーデン語",
   "locale.skSK": "スロバキア語",
- "kubecode.appName": "キューブコード",
+  "kubecode.appName": "キューブコード",
   "kubecode.projectActions": "Project actions",
   "kubecode.enableWorkspaces": "Enable Workspaces",
   "kubecode.disableWorkspaces": "Disable Workspaces",
@@ -1327,7 +1327,7 @@
   "kubecode.teamStandardDescription": "Leader は、あなたの判断が必要な決定をエスカレーションできます。",
   "kubecode.teamYolo": "YOLO",
   "kubecode.teamYoloDescription": "チームは自律的に実行され、独立検証に合格する必要があります。",
-  "kubecode.teamYoloWarning": "YOLO は、選択した Agent のネイティブな自律権限を Leader に付与します。開始前に workspace と Agent の設定を確認してください。",
+  "kubecode.teamYoloWarning": "YOLO は各 Agent の最大ネイティブ権限プロファイルを自動的に使用します。モデル、effort、パフォーマンスの設定は引き続きユーザーが管理できます。",
   "kubecode.teamAllowedAgents": "許可するチームメイト Agent",
   "kubecode.teamLeaderConfiguration": "Leader のモデルとモード",
   "kubecode.teamMemberLimit": "チームメイト上限",
@@ -1340,5 +1340,10 @@
   "kubecode.teamStatusActive": "実行中",
   "kubecode.teamStatusVerifying": "検証中",
   "kubecode.teamStatusCompleted": "完了",
-  "kubecode.teamStatusArchived": "アーカイブ済み"
+  "kubecode.teamStatusArchived": "アーカイブ済み",
+  "kubecode.teamYoloNativePermission": "ネイティブ権限",
+  "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
+  "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
+  "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
+  "kubecode.teamYoloFallback": "YOLO を適用できなかったため、この Team は Standard モードで実行されています"
 }
