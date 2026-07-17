@@ -295,6 +295,111 @@ describe('Kubecode workspace', () => {
     }
   })
 
+  it('rehydrates Team snapshots when the workspace event stream reconnects', async () => {
+    const originalEventSource = globalThis.EventSource
+    class ReconnectingEventSource {
+      static current: ReconnectingEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      onopen: ((event: Event) => void) | null = null
+
+      constructor() { ReconnectingEventSource.current = this }
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
+    const listTeams = vi.fn().mockResolvedValue([])
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      listSessions: vi.fn().mockResolvedValue([]),
+      listTeams,
+      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
+
+      act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
+
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
+  it('keeps polling Team snapshots after an empty response', async () => {
+    const intervalSpy = vi.spyOn(window, 'setInterval')
+    const listTeams = vi.fn().mockResolvedValue([])
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      listSessions: vi.fn().mockResolvedValue([]),
+      listTeams,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000))
+      const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 3000)?.[0]
+      expect(poll).toBeTypeOf('function')
+
+      act(() => { if (typeof poll === 'function') poll() })
+
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+    } finally {
+      intervalSpy.mockRestore()
+    }
+  })
+
+  it('hydrates Sessions and Teams when the Terminal snapshot fails', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockRejectedValue(new Error('terminal unavailable')),
+      listConversations: vi.fn().mockResolvedValue([{
+        id: 'session-1',
+        agent_session_id: 'agent-session-1',
+        project_id: 'project-1',
+        agent_id: 'codex',
+        provider_session_id: null,
+        title: 'Persistent leader',
+        manual_title: null,
+        agent_title: 'Persistent leader',
+        execution_mode: 'shared',
+        workspace_path: null,
+        recreated_context: false,
+        team_id: 'team-1',
+        team_role: 'leader',
+      }]),
+      listTeams: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+
+    expect(await screen.findByRole('button', { name: 'Persistent leader' })).toBeInTheDocument()
+    expect(screen.getByText('Team · Leader')).toBeInTheDocument()
+  })
+
   it('closes a terminal after a clean shell exit event', async () => {
     const originalEventSource = globalThis.EventSource
     class TerminalEventSource {
@@ -366,6 +471,12 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Start new' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Team' }))
     expect(screen.getByRole('button', { name: 'Team' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('textbox', { name: 'Team name' })).toBeRequired()
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Team name' }), {
+      target: { value: 'Research team' },
+    })
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
     fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }))
     const claudeOption = screen.getByRole('option', { name: /Claude Code/ })
     expect(claudeOption).toBeInTheDocument()
@@ -493,7 +604,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('shows functional session actions and preserves an Agent title separately', async () => {
-    const removeConversation = vi.fn().mockResolvedValue(undefined)
+    const deleteConversation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
       listAgents: vi.fn().mockResolvedValue([
@@ -520,7 +631,7 @@ describe('Kubecode workspace', () => {
         plan: null,
         usage: null,
       }),
-      removeConversation,
+      deleteConversation,
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
     render(<KubecodeApp api={api} />)
@@ -537,8 +648,7 @@ describe('Kubecode workspace', () => {
     expect(screen.queryByText('Delete from Agent')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Delete'))
-    await waitFor(() => expect(removeConversation).toHaveBeenCalledWith('session-1'))
-    expect(removeConversation).not.toHaveBeenCalledWith('session-1', 'provider')
+    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith('session-1'))
   })
 
   it('removes the active project registration from the project menu', async () => {

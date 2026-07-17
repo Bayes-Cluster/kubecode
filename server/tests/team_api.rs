@@ -9,7 +9,7 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::AgentId;
 use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router};
-use kubecode_server::teams::{MemberWorkspaceMode, NewTeammate, TeamStore};
+use kubecode_server::teams::{MemberWorkspaceMode, NewTeamProposal, NewTeammate, TeamStore};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -149,6 +149,79 @@ async fn creates_a_team_with_only_its_leader() {
 }
 
 #[tokio::test]
+async fn session_summaries_preserve_team_roles_after_a_server_restart() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let router = app_router(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
+        BASE_PATH,
+    );
+    let project_id = create_project(&router, temp.path()).await;
+    let (status, created) = request(
+        &router,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Leader"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let leader_id = created["leader_conversation"]["id"]
+        .as_str()
+        .expect("leader conversation id")
+        .to_owned();
+    drop(router);
+
+    let workspace = WorkspaceService::open(&root, &database_path).expect("restarted workspace");
+    let agent_store = AgentStore::open(&database_path).expect("restarted agent store");
+    let teams = TeamStore::open(&database_path).expect("restarted team store");
+    let restarted = app_router(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
+        BASE_PATH,
+    );
+
+    let (status, sessions) = request(
+        &restarted,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        Value::Null,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let leader = sessions
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .find(|session| session["id"] == leader_id)
+        .expect("persisted leader summary");
+    assert_eq!(leader["team_id"], created["team"]["id"]);
+    assert_eq!(leader["team_role"], "leader");
+
+    let (status, all_sessions) = request(
+        &restarted,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let global_leader = all_sessions
+        .as_array()
+        .expect("global sessions")
+        .iter()
+        .find(|session| session["id"] == leader_id)
+        .expect("global persisted leader summary");
+    assert_eq!(global_leader["team_id"], created["team"]["id"]);
+    assert_eq!(global_leader["team_role"], "leader");
+}
+
+#[tokio::test]
 async fn promotes_an_existing_solo_session_without_replacing_it() {
     let (temp, app) = app();
     let project_id = create_project(&app, temp.path()).await;
@@ -203,7 +276,75 @@ async fn reads_a_team_snapshot_by_id() {
 }
 
 #[tokio::test]
-async fn deleting_a_teammate_session_preserves_the_team_leader() {
+async fn updates_team_scheduling_and_resolves_only_its_own_proposal() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (_, first) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "First"}),
+    )
+    .await;
+    let (_, second) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "claude_code", "leader_name": "Second"}),
+    )
+    .await;
+    let first_id = first["team"]["id"].as_str().expect("first team id");
+    let second_id = second["team"]["id"].as_str().expect("second team id");
+    let database_path = temp.path().join("srv/.state/kubecode/kubecode.sqlite3");
+    let teams = TeamStore::open(database_path).expect("team store");
+    let proposal = teams
+        .create_proposal(NewTeamProposal {
+            team_id: first_id,
+            summary: "Add a backend reviewer",
+            members_json: r#"[{"agent_id":"opencode","name":"Reviewer"}]"#,
+        })
+        .expect("proposal");
+
+    let (status, updated) = request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/teams/{first_id}/settings"),
+        json!({"member_management_policy": "auto", "max_parallel_runs": 4}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["team"]["member_management_policy"], "auto");
+    assert_eq!(updated["team"]["max_parallel_runs"], 4);
+
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{second_id}/proposals/{}/decision",
+            proposal.id
+        ),
+        json!({"decision": "approved"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, resolved) = request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{first_id}/proposals/{}/decision",
+            proposal.id
+        ),
+        json!({"decision": "approved"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resolved["proposal"]["status"], "approved");
+    assert_eq!(resolved["activity"][0]["kind"], "proposal_approved");
+}
+
+#[tokio::test]
+async fn deleting_a_teammate_session_requires_the_team_leader() {
     let (temp, app) = app();
     let project_id = create_project(&app, temp.path()).await;
     let (status, created) = request(
@@ -234,14 +375,15 @@ async fn deleting_a_teammate_session_preserves_the_team_leader() {
         })
         .expect("teammate");
 
-    let (status, _) = request(
+    let (status, error) = request(
         &app,
         Method::DELETE,
         &format!("{BASE_PATH}/api/v1/sessions/{}", teammate.conversation_id),
         Value::Null,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "teammate_delete_requires_leader");
 
     let (status, snapshot) = request(
         &app,
@@ -254,12 +396,163 @@ async fn deleting_a_teammate_session_preserves_the_team_leader() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(snapshot["members"].as_array().expect("members").len(), 1);
+    assert_eq!(snapshot["members"].as_array().expect("members").len(), 2);
     assert_eq!(snapshot["members"][0]["role"], "leader");
+    assert_eq!(snapshot["members"][1]["role"], "teammate");
     assert_eq!(
         snapshot["leader_conversation"]["id"],
         created["leader_conversation"]["id"]
     );
+}
+
+#[tokio::test]
+async fn deleting_a_team_leader_deletes_every_team_session() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (status, created) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Leader"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let database_path = temp.path().join("srv/.state/kubecode/kubecode.sqlite3");
+    let agents = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let team_id = created["team"]["id"].as_str().expect("team id");
+    let leader_id = created["leader_conversation"]["id"]
+        .as_str()
+        .expect("leader conversation id");
+    let mut member_conversation_ids = Vec::new();
+    for (name, agent_id) in [
+        ("Frontend Engineer", AgentId::ClaudeCode),
+        ("Backend Engineer", AgentId::OpenCode),
+    ] {
+        let conversation = agents
+            .create_conversation(&project_id, agent_id, Some(name))
+            .expect("teammate conversation");
+        teams
+            .add_teammate(NewTeammate {
+                team_id,
+                caller_member_id: created["team"]["leader_member_id"]
+                    .as_str()
+                    .expect("leader member id"),
+                conversation_id: &conversation.id,
+                name,
+                workspace_mode: MemberWorkspaceMode::Shared,
+                base_tree: None,
+            })
+            .expect("teammate");
+        member_conversation_ids.push(conversation.id);
+    }
+
+    let (status, _) = request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/sessions/{leader_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    assert!(agents.get_conversation(leader_id).is_err());
+    for conversation_id in member_conversation_ids {
+        assert!(
+            agents.get_conversation(&conversation_id).is_err(),
+            "teammate conversation {conversation_id} should be deleted"
+        );
+    }
+    assert!(teams.get_team(team_id).is_err());
+}
+
+#[tokio::test]
+async fn deleting_an_opencode_session_uses_the_native_cli_when_acp_only_supports_close() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let transcript_path = temp.path().join("delete-acp.jsonl");
+    let executable = temp.path().join("opencode-delete");
+    fs::write(
+        &executable,
+        format!(
+            r#"#!/bin/sh
+if [ "$1" = "session" ] && [ "$2" = "delete" ]; then
+  printf 'cli session delete %s\n' "$3" >> '{}'
+  exit 0
+fi
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> '{}'
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{\"sessionCapabilities\":{{\"close\":{{}}}}}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"native-session-to-delete\"}}}}"
+      ;;
+  esac
+done"#,
+            transcript_path.display(),
+            transcript_path.display()
+        ),
+    )
+    .expect("mock agent");
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&executable, permissions).expect("executable permissions");
+    let router = app_router(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)).with_agents(
+            vec![AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: executable.to_string_lossy().into_owned(),
+                error: None,
+            }],
+        ),
+        BASE_PATH,
+    );
+    let project_id = create_project(&router, temp.path()).await;
+    let (status, conversation) = request(
+        &router,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id": "opencode", "title": "Delete me"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+
+    let (status, _) = request(
+        &router,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let transcript = fs::read_to_string(&transcript_path).expect("ACP transcript");
+    assert!(transcript.contains("cli session delete native-session-to-delete"));
+    let events = AgentStore::open(&database_path)
+        .expect("event store")
+        .workspace_events_after(0)
+        .expect("workspace events");
+    let removed = events
+        .iter()
+        .find(|event| {
+            event.kind == "session_removed"
+                && event.conversation_id.as_deref() == Some(conversation_id)
+        })
+        .expect("provider deletion event");
+    assert_eq!(removed.payload["scope"], "provider");
 }
 
 #[tokio::test]
@@ -331,7 +624,7 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{\"mcpCapabilities\":{{\"http\":true,\"sse\":false}},\"sessionCapabilities\":{{\"resume\":{{}}}}}},\"authMethods\":[]}}}}"
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{\"mcpCapabilities\":{{\"http\":true,\"sse\":false}},\"sessionCapabilities\":{{\"resume\":{{}},\"delete\":{{}}}}}},\"authMethods\":[]}}}}"
       ;;
     *'"method":"session/new"'*)
       printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"team-session\",\"configOptions\":[{{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"model-1\",\"options\":[{{\"value\":\"model-1\",\"name\":\"Model 1\"}},{{\"value\":\"model-2\",\"name\":\"Model 2\"}}]}}]}}}}"
@@ -341,6 +634,9 @@ while IFS= read -r line; do
       ;;
     *'"method":"session/set_config_option"'*)
       printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"configOptions\":[{{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"zhipu/glm-5.2\",\"options\":[]}}]}}}}"
+      ;;
+    *'"method":"session/delete"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{}}}}"
       ;;
   esac
 done"#,
@@ -522,12 +818,97 @@ done"#,
             .iter()
             .any(|tool| tool["name"] == "team_remove_teammate")
     );
+    assert!(tools.iter().any(|tool| tool["name"] == "team_list_members"));
+    for expected in [
+        "team_get_context",
+        "team_list_available_agents",
+        "team_propose_lineup",
+        "team_configure_teammate",
+        "team_delegate_task",
+    ] {
+        assert!(
+            tools.iter().any(|tool| tool["name"] == expected),
+            "missing {expected}"
+        );
+    }
+    for teammate_only in [
+        "team_claim_task",
+        "team_report_status",
+        "team_submit_result",
+    ] {
+        assert!(
+            !tools.iter().any(|tool| tool["name"] == teammate_only),
+            "Leader must not receive {teammate_only}",
+        );
+    }
+
+    let context = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        3,
+        "team_get_context",
+        json!({}),
+    )
+    .await;
+    let context: Value = serde_json::from_str(
+        context["result"]["content"][0]["text"]
+            .as_str()
+            .expect("Team context JSON"),
+    )
+    .expect("Team context");
+    assert_eq!(context["role"], "leader");
+    assert_eq!(context["members"].as_array().expect("members").len(), 1);
+
+    let available = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        4,
+        "team_list_available_agents",
+        json!({}),
+    )
+    .await;
+    let available: Value = serde_json::from_str(
+        available["result"]["content"][0]["text"]
+            .as_str()
+            .expect("available Agents JSON"),
+    )
+    .expect("available Agents");
+    assert_eq!(available.as_array().expect("Agent list").len(), 1);
+    assert_eq!(available[0]["agent"]["id"], "opencode");
+
+    let proposal = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        5,
+        "team_propose_lineup",
+        json!({
+            "summary": "Add a backend reviewer",
+            "members": [{
+                "name": "Backend Reviewer",
+                "purpose": "Review backend changes",
+                "agent_id": "opencode",
+                "workspace_mode": "shared",
+                "session_options": {"model": "zhipu/glm-5.2"}
+            }]
+        }),
+    )
+    .await;
+    let proposal: Value = serde_json::from_str(
+        proposal["result"]["content"][0]["text"]
+            .as_str()
+            .expect("proposal JSON"),
+    )
+    .expect("proposal");
+    assert_eq!(proposal["status"], "pending");
 
     let spawned = call_mcp_tool(
         &router,
         mcp_path,
         &session_header,
-        3,
+        6,
         "team_spawn_teammate",
         json!({
             "agent_id": "opencode",
@@ -548,16 +929,42 @@ done"#,
     assert!(transcript_text.contains("session/set_config_option"));
     assert!(transcript_text.contains("zhipu/glm-5.2"));
 
-    let removed = call_mcp_tool(
+    let members = call_mcp_tool(
         &router,
         mcp_path,
         &session_header,
         4,
+        "team_list_members",
+        json!({}),
+    )
+    .await;
+    let members: Value = serde_json::from_str(
+        members["result"]["content"][0]["text"]
+            .as_str()
+            .expect("member list JSON"),
+    )
+    .expect("member list");
+    assert!(
+        members
+            .as_array()
+            .is_some_and(|members| { members.iter().any(|member| member["id"] == teammate_id) })
+    );
+
+    let removed = call_mcp_tool(
+        &router,
+        mcp_path,
+        &session_header,
+        5,
         "team_remove_teammate",
         json!({"teammate_id": teammate_id}),
     )
     .await;
     assert_eq!(removed["result"]["isError"], false);
+    assert!(
+        fs::read_to_string(&transcript_path)
+            .expect("delete transcript")
+            .contains("\"method\":\"session/delete\"")
+    );
     let (status, snapshot_after_remove) = request(
         &router,
         Method::GET,

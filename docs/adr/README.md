@@ -24,3 +24,9 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0177](0177-leader-governed-team-sessions-over-acp-mcp.md) | Leader-governed Team Sessions over ACP and MCP |
 | [0178](0178-capability-aware-team-mcp-transport.md) | Capability-aware Team MCP transport |
 | [0179](0179-agent-native-teammate-configuration-and-lifecycle.md) | Agent-native teammate configuration and lifecycle |
+| [0180](0180-provider-native-session-deletion-and-team-disbanding.md) | Provider-native Session deletion and Team disbanding |
+| [0181](0181-capability-aware-provider-session-deletion.md) | Capability-aware provider Session deletion |
+| [0182](0182-leader-owned-teammate-deletion.md) | Leader-owned teammate deletion |
+| [0183](0183-durable-team-runtime-and-member-chat-isolation.md) | Durable Team runtime and member Chat isolation |
+| [0184](0184-hidden-agent-chat-revisions.md) | Hidden Agent Chat revisions |
+| [0185](0185-leader-reviewed-teammate-permissions.md) | Leader-reviewed teammate permissions |

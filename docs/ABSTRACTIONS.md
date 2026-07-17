@@ -32,10 +32,13 @@ stored conversation is both the Agent Chat and its one-to-one Agent Session;
 `agent_session_id` makes the boundary durable for an additive one-to-many
 migration later.
 
-An Agent Chat branch references its parent Chat, retains events before a
-selected run, and has a fresh provider Session ID. `recreated_context` is shown
-to the user whenever Kubecode had to rebuild provider context from the durable
-timeline instead of using a native provider checkpoint.
+An Agent Chat revision is an immutable hidden snapshot of the Chat before a
+selected run. Editing, regenerating, or undoing truncates only the active
+revision, resets its provider identity, and keeps the logical Session ID stable.
+Earlier revisions remain read-only and navigable. An Agent Chat branch is still
+an explicit visible Fork; it is not the implementation of message editing.
+`recreated_context` is shown whenever Kubecode rebuilds provider context from
+the durable timeline instead of using a native provider checkpoint.
 
 A Team Session is a durable coordination boundary with one fixed Leader, a
 dynamic set of teammates, a task dependency graph, and member mailboxes. Every
@@ -43,6 +46,25 @@ member owns an independent Agent Chat and provider Session. Shared members use
 the Team cwd; an explicitly isolated member receives a worktree and stores its
 base Git tree. Only the Leader may add members, review results, and author the
 final Team response.
+
+A Team mailbox message has a durable delivery lifecycle: pending, delivered,
+acknowledged, or failed. Delegation atomically assigns a task and writes the
+recipient message. The scheduler wakes the recipient in its own Agent Chat,
+respects the Team's maximum parallel-run setting, and retries failed delivery a
+finite number of times. A Team activity event is a structured coordination
+projection; it is not a replacement for the member's Chat transcript.
+
+A Team permission request is a durable projection of one Teammate ACP
+permission callback, including the exact tool input and Agent-provided options.
+It moves from `pending_leader` to either `resolved`, `waiting_user`, or
+`cancelled`. Only the fixed Leader may resolve or escalate it; the user can
+resolve it only after escalation. The ACP callback itself remains live until a
+decision, cancellation, or Agent disconnect.
+
+An internal Team run is a normal persisted Agent run owned by the recipient's
+Session, but its synthetic wake prompt is hidden from the browser timeline and
+cannot retitle or branch the Chat. Agent output and interactive ACP events remain
+visible so users can inspect and continue each teammate independently.
 
 The `kubecode-team` MCP server is the cross-Agent control plane for spawning,
 tasks, review, and messaging; it does not replace provider-native tools or
@@ -53,9 +75,12 @@ other agents retain the in-process bridge for new sessions.
 Teammate spawn accepts opaque Agent-native ACP mode/configuration IDs rather
 than a Kubecode model abstraction. Teammate removal is a Leader-only lifecycle
 transition: the ACP actor is disconnected, active assignments return to
-pending, and member/local conversation metadata is removed while Project files
-and provider history remain untouched. Deleting the same conversation through
-the Session API invokes this Team-aware transition.
+pending, and both provider-native and Kubecode Session records are deleted while
+Project files remain untouched. The Leader first discovers durable member IDs
+through `team_list_members`, then invokes `team_remove_teammate`. The ordinary
+Session API rejects teammate deletion before disconnecting its actor; the
+browser does not expose that action. Deleting the fixed Leader instead disbands
+the Team and applies the deletion lifecycle to every member.
 
 ## Turn checkpoint
 
@@ -63,8 +88,8 @@ A turn checkpoint stores optional before/after Git tree IDs for one run. Trees
 are captured with a private alternate index, so staging remains user-owned.
 Shared-workspace restoration requires an after-tree fingerprint match; a
 mismatch is a conflict, not an overwrite. A legacy run without a complete
-checkpoint may still create an immutable Chat branch, but it does not restore
-files and the browser warns the user about that degraded behavior.
+checkpoint cannot participate in an explicit safe file restore. Chat revision
+creation remains available because it never changes Project files.
 
 ## Composer reference
 
@@ -79,8 +104,11 @@ A Session is a durable relationship between one Agent Session and one Agent. It 
 the provider Session ID, manual and Agent titles, retained ACP state, archive
 state, activity timestamps, and an ordered Session event history. A Session may
 reference a parent as a provider-native fork or subagent; imported subagent
-transcripts may be marked read-only. Removing a Session from Kubecode never asks
-the provider to delete its native history.
+transcripts may be marked read-only. The user-facing `Delete` operation requests
+ACP provider deletion first and removes Kubecode state only after the Agent
+accepts it. OpenCode may use its native `session delete` command when its ACP
+adapter lacks delete; ACP close is not deletion. Sessions without provider
+identity are deleted locally.
 
 A run is one user prompt and its normalized Agent events. A Session has at most
 one active run, while different Sessions can run concurrently. Runs may be
@@ -126,9 +154,11 @@ use a revision token and return HTTP 409 on stale content.
 ## Workspace attention
 
 Global Session summaries project durable state needed by navigation: Project,
-Agent, title, latest run status, activity, archive state, and parent relation.
-The browser combines these summaries with new workspace events to render
-cross-Project input-required navigation.
+Agent, title, latest run status, activity, archive state, parent relation, and
+optional durable Team identity (`team_id` and `team_role`). The browser combines
+these summaries with new workspace events to render cross-Project
+input-required navigation. Rich Team snapshots remain a separate task/member
+view and are independently recoverable after a partial load or SSE reconnect.
 
 Notification preferences are versioned browser-local state. Workspace events
 map to completion, attention, or error categories. The browser's native

@@ -1,5 +1,6 @@
 import { CaretDown, CaretRight, Check } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Button } from '@/components/ui/button'
 import type { TranslationKey } from '@/lib/i18n'
@@ -25,14 +26,17 @@ function selectedOption(group: AgentConfigGroup): string {
 export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
   const [open, setOpen] = useState(false)
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
+  const [position, setPosition] = useState({ bottom: 8, maxHeight: 520, right: 8 })
   const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const primary = groups[0]
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null
 
   useEffect(() => {
     if (!open) return
     const closeOutside = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
@@ -42,6 +46,26 @@ export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
     return () => {
       document.removeEventListener('mousedown', closeOutside)
       document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const updatePosition = () => {
+      const trigger = rootRef.current?.getBoundingClientRect()
+      if (!trigger) return
+      setPosition({
+        bottom: Math.max(8, window.innerHeight - trigger.top + 10),
+        maxHeight: Math.max(96, Math.min(520, trigger.top - 18)),
+        right: Math.max(8, window.innerWidth - trigger.right),
+      })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
     }
   }, [open])
 
@@ -84,12 +108,17 @@ export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
         <span className="truncate">{selectedOption(primary)}</span>
         <CaretDown className="shrink-0" />
       </Button>
-      {open && (
-        <div className="absolute bottom-[calc(100%+10px)] right-0 z-50">
+      {open && createPortal(
+        <div
+          className="fixed z-[100]"
+          ref={menuRef}
+          style={{ bottom: position.bottom, right: position.right }}
+        >
           <section
             aria-label={t('kubecode.agentSettings')}
             className="max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
             role="dialog"
+            style={{ maxHeight: position.maxHeight }}
           >
             <div className="px-3 py-2 text-sm text-muted-foreground">{primary.name}</div>
             {options(primary)}
@@ -116,12 +145,14 @@ export function AgentConfigMenu({ groups, onChange, t }: AgentConfigMenuProps) {
               aria-label={activeGroup.name}
               className="absolute bottom-0 right-[calc(100%+8px)] max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
               role="menu"
+              style={{ maxHeight: position.maxHeight }}
             >
               <div className="px-3 py-2 text-sm text-muted-foreground">{activeGroup.name}</div>
               {options(activeGroup)}
             </section>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

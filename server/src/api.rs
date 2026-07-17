@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
 use std::sync::Arc;
@@ -18,10 +18,11 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
 use crate::agents::{
-    AgentEvent, AgentId, AgentStore, ExecutionMode, RunStatus, StoreError, WorkspaceEvent,
+    AgentEvent, AgentId, AgentStore, Conversation, ExecutionMode, RunStatus, StoreError,
+    WorkspaceEvent,
 };
 use crate::git::{GitError, GitMutation, GitService};
-use crate::teams::{TeamError, TeamStore};
+use crate::teams::{TeamError, TeamRole, TeamStore};
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
@@ -181,7 +182,7 @@ fn api_router(state: AppState) -> Router {
         )
         .route(
             "/sessions/{conversation_id}",
-            axum::routing::patch(update_conversation).delete(remove_conversation),
+            axum::routing::patch(update_conversation).delete(delete_conversation),
         )
         .route(
             "/sessions/{conversation_id}/fork",
@@ -190,6 +191,14 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/sessions/{conversation_id}/turns/{run_id}/branch",
             axum::routing::post(branch_conversation_at_run),
+        )
+        .route(
+            "/sessions/{conversation_id}/turns/{run_id}/revise",
+            axum::routing::post(revise_conversation_at_run),
+        )
+        .route(
+            "/sessions/{conversation_id}/revisions",
+            get(list_conversation_revisions),
         )
         .route(
             "/sessions/{conversation_id}/team-members",
@@ -281,17 +290,24 @@ struct CreateConversationRequest {
     workspace_mode: Option<ExecutionMode>,
 }
 
+#[derive(Debug, Serialize)]
+struct ConversationSummary {
+    #[serde(flatten)]
+    conversation: Conversation,
+    team_id: Option<String>,
+    team_role: Option<TeamRole>,
+}
+
 async fn list_conversations(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     state.workspace.project_path(&project_id)?;
-    Ok(Json(
-        state
-            .agent_runtime
-            .store()
-            .list_conversations(&project_id)?,
-    ))
+    let conversations = state
+        .agent_runtime
+        .store()
+        .list_conversations(&project_id)?;
+    Ok(Json(conversation_summaries(&state, conversations)?))
 }
 
 async fn create_conversation(
@@ -389,7 +405,37 @@ async fn update_conversation(
 async fn list_all_conversations(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(state.agent_runtime.store().list_all_conversations()?))
+    let conversations = state.agent_runtime.store().list_all_conversations()?;
+    Ok(Json(conversation_summaries(&state, conversations)?))
+}
+
+fn conversation_summaries(
+    state: &AppState,
+    conversations: Vec<Conversation>,
+) -> Result<Vec<ConversationSummary>, ApiError> {
+    let project_ids = conversations
+        .iter()
+        .map(|conversation| conversation.project_id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut memberships = BTreeMap::new();
+    for project_id in project_ids {
+        for team in state.teams.list_teams(&project_id)? {
+            for member in state.teams.list_members(&team.id)? {
+                memberships.insert(member.conversation_id, (team.id.clone(), member.role));
+            }
+        }
+    }
+    Ok(conversations
+        .into_iter()
+        .map(|conversation| {
+            let membership = memberships.get(&conversation.id);
+            ConversationSummary {
+                team_id: membership.map(|(team_id, _)| team_id.clone()),
+                team_role: membership.map(|(_, role)| *role),
+                conversation,
+            }
+        })
+        .collect())
 }
 
 async fn get_workspace_event_cursor(
@@ -400,15 +446,10 @@ async fn get_workspace_event_cursor(
     })))
 }
 
-async fn remove_conversation(
+async fn delete_conversation(
     State(state): State<AppState>,
     Path(conversation_id): Path<String>,
-    Query(query): Query<RemoveConversationQuery>,
 ) -> Result<StatusCode, ApiError> {
-    state
-        .agent_runtime
-        .disconnect_conversation(&conversation_id)
-        .await?;
     if let Some(team) = state.teams.team_for_conversation(&conversation_id)? {
         let member = state
             .teams
@@ -416,46 +457,60 @@ async fn remove_conversation(
             .into_iter()
             .find(|member| member.conversation_id == conversation_id)
             .ok_or_else(|| TeamError::MemberNotFound(conversation_id.clone()))?;
-        if member.id == team.leader_member_id {
-            state.teams.delete_team(&team.id)?;
-        } else {
-            if query.scope.as_deref() == Some("provider") {
-                state
-                    .agent_runtime
-                    .delete_provider_session(&conversation_id)
-                    .await?;
-                state
-                    .teams
-                    .remove_teammate(&team.id, &team.leader_member_id, &member.id)?;
-            } else {
-                state
-                    .teams
-                    .remove_teammate(&team.id, &team.leader_member_id, &member.id)?;
-                state
-                    .agent_runtime
-                    .store()
-                    .delete_conversation(&conversation_id)?;
-            }
-            return Ok(StatusCode::NO_CONTENT);
+        if member.id != team.leader_member_id {
+            return Err(ApiError::TeammateDeletionRequiresLeader);
         }
-    }
-    if query.scope.as_deref() == Some("provider") {
         state
             .agent_runtime
-            .delete_provider_session(&conversation_id)
+            .disconnect_conversation(&conversation_id)
             .await?;
+        for teammate in state
+            .teams
+            .list_members(&team.id)?
+            .into_iter()
+            .filter(|candidate| candidate.id != team.leader_member_id)
+        {
+            state
+                .agent_runtime
+                .disconnect_conversation(&teammate.conversation_id)
+                .await?;
+            delete_session_with_revisions(&state, &teammate.conversation_id).await?;
+            state
+                .teams
+                .remove_teammate(&team.id, &team.leader_member_id, &teammate.id)?;
+        }
+        delete_session_with_revisions(&state, &conversation_id).await?;
+        state.teams.delete_team(&team.id)?;
     } else {
         state
             .agent_runtime
-            .store()
-            .delete_conversation(&conversation_id)?;
+            .disconnect_conversation(&conversation_id)
+            .await?;
+        delete_session_with_revisions(&state, &conversation_id).await?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RemoveConversationQuery {
-    scope: Option<String>,
+async fn delete_session_with_revisions(
+    state: &AppState,
+    conversation_id: &str,
+) -> Result<(), ApiError> {
+    let revisions = state
+        .agent_runtime
+        .store()
+        .list_revisions(conversation_id)?;
+    for revision in revisions {
+        state
+            .agent_runtime
+            .disconnect_conversation(&revision.snapshot_conversation_id)
+            .await?;
+        state
+            .agent_runtime
+            .delete_session(&revision.snapshot_conversation_id)
+            .await?;
+    }
+    state.agent_runtime.delete_session(conversation_id).await?;
+    Ok(())
 }
 
 async fn fork_conversation(
@@ -501,6 +556,33 @@ async fn branch_conversation_at_run(
     }
     let conversation = store.branch_conversation_at_run(&conversation_id, &run_id)?;
     Ok((StatusCode::CREATED, Json(conversation)))
+}
+
+async fn revise_conversation_at_run(
+    State(state): State<AppState>,
+    Path((conversation_id, run_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    state
+        .agent_runtime
+        .disconnect_conversation(&conversation_id)
+        .await?;
+    let revision = state
+        .agent_runtime
+        .store()
+        .revise_conversation_at_run(&conversation_id, &run_id)?;
+    Ok((StatusCode::CREATED, Json(revision)))
+}
+
+async fn list_conversation_revisions(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(
+        state
+            .agent_runtime
+            .store()
+            .list_revisions(&conversation_id)?,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -627,11 +709,42 @@ async fn resolve_permission(
             "option_id must not be empty".into(),
         ));
     }
+    let team_permission = if let Some(teams) = state.agent_runtime.team_store() {
+        teams
+            .resolve_permission_as_user(&request_id, &request.option_id)
+            .map_err(|error| ApiError::InvalidRequest(error.to_string()))?
+    } else {
+        None
+    };
     if !state
         .agent_runtime
         .resolve_permission(&request_id, &request.option_id)
     {
         return Err(ApiError::PermissionNotFound(request_id));
+    }
+    if let Some(permission) = team_permission
+        && let Some(teams) = state.agent_runtime.team_store()
+    {
+        let _ = teams.append_activity(
+            &permission.team_id,
+            Some(&permission.member_id),
+            None,
+            "permission_user_resolved",
+            "User resolved a teammate permission",
+            None,
+        );
+        if let Ok(team) = teams.get_team(&permission.team_id) {
+            let _ = state.agent_runtime.store().append_workspace_event(
+                "team_permission_updated",
+                Some(&team.project_id),
+                Some(&permission.conversation_id),
+                Some(&permission.run_id),
+                &serde_json::json!({
+                    "team_id": permission.team_id,
+                    "request_id": permission.id,
+                }),
+            );
+        }
     }
     Ok(StatusCode::ACCEPTED)
 }
@@ -1550,6 +1663,7 @@ enum ApiError {
     CheckpointUnavailable(String),
     WorkspaceMigration(String),
     Team(TeamError),
+    TeammateDeletionRequiresLeader,
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -1633,6 +1747,11 @@ impl IntoResponse for ApiError {
                     "agent_error",
                     error.to_string(),
                 ),
+                RuntimeError::SessionDeletion(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "session_delete_failed",
+                    error.to_string(),
+                ),
                 RuntimeError::AdapterUnavailable { .. } => (
                     StatusCode::SERVICE_UNAVAILABLE,
                     "agent_adapter_unavailable",
@@ -1680,6 +1799,11 @@ impl IntoResponse for ApiError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "team_error",
                 error.to_string(),
+            ),
+            ApiError::TeammateDeletionRequiresLeader => (
+                StatusCode::CONFLICT,
+                "teammate_delete_requires_leader",
+                "Team teammates can only be deleted by their Leader".to_owned(),
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

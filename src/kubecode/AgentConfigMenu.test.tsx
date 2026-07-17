@@ -40,7 +40,9 @@ describe('AgentConfigMenu', () => {
     const trigger = screen.getByRole('button', { name: 'Agent settings' })
     expect(trigger).toHaveTextContent('Instant')
     fireEvent.click(trigger)
-    expect(screen.getByRole('dialog', { name: 'Agent settings' })).toBeInTheDocument()
+    const menu = screen.getByRole('dialog', { name: 'Agent settings' })
+    expect(menu).toBeInTheDocument()
+    expect(menu.parentElement?.parentElement).toBe(document.body)
     fireEvent.click(screen.getByRole('button', { name: /GPT-5.6 Sol.*Model/i }))
     fireEvent.click(screen.getByRole('button', { name: 'GPT-5.5' }))
 

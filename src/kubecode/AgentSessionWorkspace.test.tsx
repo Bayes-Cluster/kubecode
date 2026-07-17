@@ -6,7 +6,13 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { createTranslator } from '@/lib/i18n'
 
 import { AgentSessionWorkspace } from './AgentSessionWorkspace'
-import { ApiError, type AgentRun, type KubecodeApi, type WorkspaceEvent } from './api'
+import {
+  ApiError,
+  type AgentRun,
+  type KubecodeApi,
+  type TeamSnapshot,
+  type WorkspaceEvent,
+} from './api'
 
 vi.mock('@/components/AiPanelChrome', () => ({
   AiPanelMessageHistory: ({ leadingContent, messages, onEditMessage, onRegenerateMessage }: {
@@ -32,8 +38,17 @@ vi.mock('@/components/AiPanelChrome', () => ({
       </article>
     ))}</div>
   ),
-  AiPanelComposer: ({ controls, leadingControl }: { controls?: ReactNode; leadingControl?: ReactNode }) => (
-    <div data-testid="composer">{leadingControl}{controls}</div>
+  AiPanelComposer: ({ controls, input, leadingControl, onChange }: {
+    controls?: ReactNode
+    input: string
+    leadingControl?: ReactNode
+    onChange: (value: string) => void
+  }) => (
+    <div data-testid="composer">
+      {leadingControl}{controls}
+      <span data-testid="composer-draft">{input}</span>
+      <button onClick={() => onChange('Prepared follow-up')}>Type follow-up</button>
+    </div>
   ),
 }))
 
@@ -67,6 +82,91 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('confirms deleting a Team Leader before deleting every member', async () => {
+    const leader = { ...conversation, team_id: 'team-1', team_role: 'leader' as const }
+    const teammate = { ...conversation, id: 'session-2', title: 'Reviewer' }
+    const deleteConversation = vi.fn().mockResolvedValue(undefined)
+    const onConversationRemoved = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      deleteConversation,
+    } as unknown as KubecodeApi
+    const team = {
+      team: { id: 'team-1', title: 'Research team' },
+      leader_conversation: leader,
+      conversations: [leader, teammate],
+      members: [
+        { id: 'member-leader', conversation_id: leader.id, role: 'leader' },
+        { id: 'member-reviewer', conversation_id: teammate.id, role: 'teammate' },
+      ],
+      tasks: [],
+    } as unknown as TeamSnapshot
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={leader}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={onConversationRemoved}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      team={team}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Session actions' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByText('Delete'))
+
+    expect(deleteConversation).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Delete Research team?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(deleteConversation).toHaveBeenCalledWith(leader.id))
+    expect(onConversationRemoved).toHaveBeenCalledWith(leader.id)
+    expect(onConversationRemoved).toHaveBeenCalledWith(teammate.id)
+  })
+
+  it('does not expose direct deletion for a Team teammate', async () => {
+    const teammate = { ...conversation, team_id: 'team-1', team_role: 'teammate' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      deleteConversation: vi.fn(),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={teammate}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Session actions' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument()
+  })
+
   it('places Agent skills, commands, and project files behind the Composer add button', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
@@ -96,26 +196,24 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByRole('button', { name: 'Add context' })).toBeInTheDocument()
   })
 
-  it('regenerates a completed turn in a new immutable Agent Chat branch', async () => {
-    const branch = {
-      ...conversation,
-      id: 'session-branch',
-      agent_session_id: 'session-1',
-      execution_mode: 'shared' as const,
-      workspace_path: null,
-      recreated_context: true,
-      parent_conversation_id: conversation.id,
-      relationship: 'branch' as const,
+  it('regenerates a completed turn as a hidden revision in the same Session', async () => {
+    const revision = {
+      id: 'revision-1',
+      conversation_id: conversation.id,
+      snapshot_conversation_id: 'revision-snapshot-1',
+      forked_at_run_id: run.id,
+      created_at: '2026-07-17 12:00:00',
     }
-    const branchConversationAtRun = vi.fn().mockResolvedValue(branch)
-    const startRun = vi.fn().mockResolvedValue({ ...run, id: 'run-branch' })
+    const reviseConversationAtRun = vi.fn().mockResolvedValue(revision)
+    const startRun = vi.fn().mockResolvedValue({ ...run, id: 'run-revised' })
     const onConversationCreated = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([run]),
       listEvents: vi.fn().mockResolvedValue([]),
       listSessionEvents: vi.fn().mockResolvedValue([]),
       getSessionState: vi.fn().mockResolvedValue(emptySessionState),
-      branchConversationAtRun,
+      listConversationRevisions: vi.fn().mockResolvedValue([revision]),
+      reviseConversationAtRun,
       startRun,
     } as unknown as KubecodeApi
 
@@ -134,36 +232,27 @@ describe('AgentSessionWorkspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerate response' }))
 
-    await waitFor(() => expect(branchConversationAtRun).toHaveBeenCalledWith('session-1', 'run-1', true))
-    expect(startRun).toHaveBeenCalledWith('project-1', 'session-branch', 'Implement it')
-    expect(onConversationCreated).toHaveBeenCalledWith(branch)
+    await waitFor(() => expect(reviseConversationAtRun).toHaveBeenCalledWith('session-1', 'run-1'))
+    expect(startRun).toHaveBeenCalledWith('project-1', 'session-1', 'Implement it')
+    expect(onConversationCreated).not.toHaveBeenCalled()
+    expect(await screen.findByText('Version 2 / 2')).toBeInTheDocument()
   })
 
-  it('continues a branch without file restoration when an old checkpoint is incomplete', async () => {
-    const branch = {
-      ...conversation,
-      id: 'session-branch',
-      agent_session_id: 'session-1',
-      execution_mode: 'shared' as const,
-      workspace_path: null,
-      recreated_context: true,
-      parent_conversation_id: conversation.id,
-      relationship: 'branch' as const,
-    }
-    const branchConversationAtRun = vi.fn()
-      .mockRejectedValueOnce(new ApiError(
-        'checkpoint_unavailable',
-        'cannot safely restore a Shared workspace without an after-turn fingerprint',
-        409,
-      ))
-      .mockResolvedValueOnce(branch)
+  it('keeps the current history when creating a revision fails', async () => {
+    const reviseConversationAtRun = vi.fn().mockRejectedValue(new ApiError(
+      'revision_failed',
+      'Could not create a Session revision',
+      409,
+    ))
+    const startRun = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([run]),
       listEvents: vi.fn().mockResolvedValue([]),
       listSessionEvents: vi.fn().mockResolvedValue([]),
       getSessionState: vi.fn().mockResolvedValue(emptySessionState),
-      branchConversationAtRun,
-      startRun: vi.fn().mockResolvedValue({ ...run, id: 'run-branch' }),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      reviseConversationAtRun,
+      startRun,
     } as unknown as KubecodeApi
 
     render(<AgentSessionWorkspace
@@ -181,13 +270,12 @@ describe('AgentSessionWorkspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerate response' }))
 
-    await waitFor(() => expect(branchConversationAtRun).toHaveBeenNthCalledWith(
-      2,
+    await waitFor(() => expect(reviseConversationAtRun).toHaveBeenCalledWith(
       'session-1',
       'run-1',
-      false,
     ))
-    expect(await screen.findByText(/files could not be restored/i)).toBeInTheDocument()
+    expect(startRun).not.toHaveBeenCalled()
+    expect(await screen.findByText('Could not create a Session revision')).toBeInTheDocument()
   })
 
   it('keeps recreated context inside the single message history column', async () => {
@@ -528,6 +616,74 @@ describe('AgentSessionWorkspace', () => {
     expect(container.querySelectorAll('article')).toHaveLength(0)
   })
 
+  it('hydrates an internal Team turn in the teammate Chat without showing its wake prompt', async () => {
+    const internalRun = {
+      ...run,
+      conversation_id: 'session-reviewer',
+      id: 'run-reviewer',
+      internal: true,
+      message: 'Kubecode Team mailbox has new updates',
+    }
+    const teammate = {
+      ...conversation,
+      id: 'session-reviewer',
+      title: 'Backend Reviewer',
+      team_id: 'team-1',
+      team_role: 'teammate' as const,
+    }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([internalRun]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([
+        {
+          conversation_id: teammate.id,
+          seq: 1,
+          kind: 'user_message',
+          payload: { run_id: internalRun.id, text: internalRun.message, internal: true },
+          created_at: 'now',
+        },
+        {
+          conversation_id: teammate.id,
+          seq: 2,
+          kind: 'thinking_delta',
+          payload: { run_id: internalRun.id, text: 'Reviewing backend. ' },
+          created_at: 'now',
+        },
+        {
+          conversation_id: teammate.id,
+          seq: 3,
+          kind: 'text_delta',
+          payload: { run_id: internalRun.id, text: 'I found one race.' },
+          created_at: 'now',
+        },
+        {
+          conversation_id: teammate.id,
+          seq: 4,
+          kind: 'run_completed',
+          payload: { run_id: internalRun.id, status: 'completed' },
+          created_at: 'now',
+        },
+      ]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={teammate}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByText('Reviewing backend. I found one race.')).toBeInTheDocument()
+    expect(screen.queryByText('Kubecode Team mailbox has new updates')).not.toBeInTheDocument()
+  })
+
   it('replays a fast slash-command response that arrives before its run is loaded', async () => {
     let resolveRun: ((value: AgentRun) => void) | undefined
     const pendingRun = new Promise<AgentRun>((resolve) => { resolveRun = resolve })
@@ -743,6 +899,100 @@ describe('AgentSessionWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-restored', 'allow')
+    })
+  })
+
+  it('routes a teammate permission to the Leader before showing human controls', async () => {
+    const waitingRun = { ...run, status: 'waiting_permission' as const }
+    const leaderReviewEvent = {
+      run_id: run.id,
+      seq: 3,
+      kind: 'permission_requested',
+      payload: {
+        request_id: 'permission-team',
+        reviewer: 'leader',
+        tool: 'Run command',
+        options: [{ id: 'allow', label: 'Allow once', kind: 'allow_once' }],
+      },
+      created_at: 'now',
+    }
+    const listEvents = vi.fn().mockResolvedValue([leaderReviewEvent])
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([waitingRun]),
+      listEvents,
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      resolvePermission: vi.fn().mockResolvedValue(undefined),
+    } as unknown as KubecodeApi
+    const teammate = { ...conversation, team_id: 'team-1', team_role: 'teammate' as const }
+    const { rerender } = render(
+      <AgentSessionWorkspace
+        agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+        api={api}
+        conversation={teammate}
+        locale="en"
+        projectId="project-1"
+        t={createTranslator('en')}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findAllByText('Waiting for Team Leader review')).toHaveLength(2)
+    expect(screen.queryByText('Run command')).not.toBeInTheDocument()
+
+    listEvents.mockResolvedValue([{
+      ...leaderReviewEvent,
+      seq: 4,
+      payload: { ...leaderReviewEvent.payload, reviewer: 'user' },
+    }])
+    rerender(
+      <AgentSessionWorkspace
+        agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+        api={api}
+        conversation={{ ...teammate }}
+        locale="en"
+        projectId="project-1"
+        t={createTranslator('en')}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findByText('Run command')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument()
+  })
+
+  it('keeps a prepared Composer draft isolated per Session during generation', async () => {
+    const running = { ...run, status: 'running' as const }
+    const secondConversation = { ...conversation, id: 'session-2', title: 'Second session' }
+    const api = {
+      listRuns: vi.fn().mockImplementation((conversationId: string) => (
+        Promise.resolve(conversationId === conversation.id ? [running] : [])
+      )),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      locale: 'en' as const,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      workspaceEvents: [] as WorkspaceEvent[],
+    }
+    const { rerender } = render(
+      <AgentSessionWorkspace {...props} conversation={conversation} />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Type follow-up' }))
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
+
+    rerender(<AgentSessionWorkspace {...props} conversation={secondConversation} />)
+    await waitFor(() => expect(screen.getByTestId('composer-draft')).toBeEmptyDOMElement())
+
+    rerender(<AgentSessionWorkspace {...props} conversation={conversation} />)
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
     })
   })
 })

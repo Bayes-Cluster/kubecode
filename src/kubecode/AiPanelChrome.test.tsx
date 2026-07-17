@@ -83,6 +83,29 @@ describe('AiPanelMessageHistory', () => {
 })
 
 describe('AiPanelComposer', () => {
+  it('keeps the editor writable while an Agent is running without submitting another prompt', () => {
+    const onSend = vi.fn()
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        entries={[]}
+        input="Prepare the follow-up"
+        inputRef={createRef<HTMLDivElement>()}
+        isActive
+        onChange={vi.fn()}
+        onSend={onSend}
+        onStop={vi.fn()}
+      />,
+    )
+
+    const input = screen.getByTestId('agent-input')
+    expect(input).toHaveAttribute('contenteditable', 'true')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Stop response' })).toBeEnabled()
+  })
+
   it('keeps add, input, Agent settings, and send controls in one row', () => {
     render(
       <AiPanelComposer
@@ -107,7 +130,7 @@ describe('AiPanelComposer', () => {
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Send message' }))
   })
 
-  it('keeps long prompts inside a bounded scrolling editor', () => {
+  it('keeps multiline prompts inside a fixed-height scrolling editor', () => {
     render(
       <AiPanelComposer
         agentLabel="Codex"
@@ -124,8 +147,11 @@ describe('AiPanelComposer', () => {
     )
 
     expect(screen.getByTestId('agent-input')).toHaveStyle({
-      maxHeight: '96px',
+      height: '34px',
+      maxHeight: '34px',
+      minHeight: '34px',
       overflowY: 'auto',
     })
+    expect(screen.getByTestId('agent-composer-surface')).toHaveClass('h-[50px]', 'max-h-[50px]')
   })
 })

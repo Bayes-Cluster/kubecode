@@ -49,4 +49,20 @@ describe('AiMessage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy message' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Copy this prompt'))
   })
+
+  it('keeps an internally woken teammate response visible without a fake user bubble', () => {
+    render(
+      <AiMessage
+        actions={[]}
+        internal
+        messageId="team-run-1"
+        response="I reviewed the backend and submitted the result."
+        userMessage="Kubecode Team mailbox has new updates"
+      />,
+    )
+
+    expect(screen.getByText('I reviewed the backend and submitted the result.')).toBeInTheDocument()
+    expect(screen.queryByText('Kubecode Team mailbox has new updates')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ai-user-message-actions')).not.toBeInTheDocument()
+  })
 })

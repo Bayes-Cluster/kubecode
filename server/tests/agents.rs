@@ -42,6 +42,47 @@ fn assigns_an_execution_workspace_to_the_agent_session() {
 }
 
 #[test]
+fn internal_team_runs_persist_in_the_teammate_session_without_retitling_it() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::OpenCode, Some("Backend Reviewer"))
+        .expect("conversation");
+    let run = store
+        .start_internal_run(
+            &conversation.id,
+            "project",
+            "Kubecode Team mailbox has new updates",
+            PermissionMode::Safe,
+        )
+        .expect("internal run");
+    store
+        .append_event(
+            &run.id,
+            AgentEventKind::TextDelta,
+            &serde_json::json!({"text":"I reviewed the backend."}),
+        )
+        .expect("response");
+
+    let persisted = store.list_runs(&conversation.id).expect("runs");
+    assert_eq!(persisted.len(), 1);
+    assert!(persisted[0].internal);
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("conversation")
+            .title,
+        "Backend Reviewer",
+    );
+    assert!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("session events")
+            .iter()
+            .any(|event| event.kind == "user_message" && event.payload["internal"] == true)
+    );
+}
+
+#[test]
 fn branches_chat_history_without_rewriting_the_source_session() {
     let (_temp, store) = store();
     let source = store
@@ -100,6 +141,81 @@ fn branches_chat_history_without_rewriting_the_source_session() {
     assert!(!history.iter().any(|event| {
         event.kind == "user_message" && event.payload["text"] == "Second question"
     }));
+}
+
+#[test]
+fn revises_chat_history_without_creating_a_visible_session() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, Some("Stable session"))
+        .expect("conversation");
+    store
+        .set_provider_session(&conversation.id, "provider-original")
+        .expect("provider session");
+    let first = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "First question",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    store
+        .finish_run(&first.id, RunStatus::Completed, None)
+        .expect("finish first");
+    let second = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Second question",
+            PermissionMode::Safe,
+        )
+        .expect("second run");
+    store
+        .append_event(
+            &second.id,
+            AgentEventKind::TextDelta,
+            &serde_json::json!({"text":"Original second answer"}),
+        )
+        .expect("second answer");
+    store
+        .finish_run(&second.id, RunStatus::Completed, None)
+        .expect("finish second");
+
+    let revision = store
+        .revise_conversation_at_run(&conversation.id, &second.id)
+        .expect("revision");
+
+    assert_eq!(revision.conversation_id, conversation.id);
+    assert_eq!(
+        store.list_conversations("project").expect("sessions").len(),
+        1
+    );
+    assert_eq!(
+        store
+            .list_runs(&conversation.id)
+            .expect("current runs")
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .list_runs(&revision.snapshot_conversation_id)
+            .expect("snapshot runs")
+            .len(),
+        2,
+    );
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("current conversation")
+            .provider_session_id,
+        None,
+    );
+    assert_eq!(
+        store.list_revisions(&conversation.id).expect("revisions"),
+        vec![revision],
+    );
 }
 
 #[test]

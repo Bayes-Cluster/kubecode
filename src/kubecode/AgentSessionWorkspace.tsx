@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CaretDown, Check, DotsThree, LockKey, ShieldWarning } from '@phosphor-icons/react'
+import {
+  CaretDown,
+  CaretLeft,
+  CaretRight,
+  Check,
+  DotsThree,
+  LockKey,
+  ShieldWarning,
+} from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { AiPanelComposer, AiPanelMessageHistory } from '@/components/AiPanelChrome'
@@ -31,16 +39,16 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
-import type { AppLocale, TranslationKey } from '@/lib/i18n'
+import type { AppLocale, TranslationKey, TranslationValues } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import {
-  ApiError,
   type AgentDescriptor,
   type AgentEvent,
   type AgentRun,
   type AgentSessionState,
   type Conversation,
+  type ConversationRevision,
   type KubecodeApi,
   type SessionEvent,
   type TeamSnapshot,
@@ -49,10 +57,12 @@ import {
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { ComposerAddMenu } from './ComposerAddMenu'
 import { AgentConfigMenu, type AgentConfigGroup } from './AgentConfigMenu'
+import { DeleteTeamDialog } from './DeleteTeamDialog'
 import { useSystemMessages } from './systemMessages'
 import { TeamSessionOverview } from './TeamSessionOverview'
+import { TeamWorkspaceView } from './TeamWorkspaceView'
 
-type Translator = (key: TranslationKey) => string
+type Translator = (key: TranslationKey, values?: TranslationValues) => string
 type PermissionChoice = { id: string; label: string; kind: string }
 type PendingPermission = { requestId: string; tool: string; options: PermissionChoice[] }
 type ElicitationAnswer = string | boolean
@@ -86,6 +96,7 @@ type AgentSessionWorkspaceProps = {
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
   onTeamCreated?: (team: TeamSnapshot) => void
+  onTeamUpdated?: (team: TeamSnapshot) => void
   onSelectTeamMember?: (conversationId: string) => void
   projectId: string | null
   t: Translator
@@ -123,6 +134,7 @@ export function AgentSessionWorkspace({
   onConversationRemoved,
   onConversationUpdated,
   onTeamCreated,
+  onTeamUpdated,
   onSelectTeamMember,
   projectId,
   t,
@@ -139,18 +151,28 @@ export function AgentSessionWorkspace({
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
   const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [deleteTeamOpen, setDeleteTeamOpen] = useState(false)
+  const [teamView, setTeamView] = useState<'chat' | 'team'>('chat')
   const [draftTitle, setDraftTitle] = useState('')
+  const [revisions, setRevisions] = useState<ConversationRevision[]>([])
+  const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
+  const conversationDraftsRef = useRef(new Map<string, string>())
   const knownRunIdsRef = useRef(new Set<string>())
   const loadingRunsRef = useRef(new Map<string, Promise<AgentRun>>())
   const pendingRunEventsRef = useRef(new Map<string, AgentEvent[]>())
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const latestWorkspaceEventIdRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   latestWorkspaceEventIdRef.current = workspaceEvents.at(-1)?.id ?? 0
+  const conversationId = conversation?.id ?? null
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
+  const historyConversationId = viewRevisionId ?? conversation?.id ?? null
+  const leaderReviewPending = conversation?.team_role === 'teammate'
+    && run?.status === 'waiting_permission'
+    && pendingPermission === null
   const waitingForInput = run?.status === 'waiting_permission'
     || pendingPermission !== null
     || pendingElicitation !== null
@@ -162,6 +184,18 @@ export function AgentSessionWorkspace({
       setError(message)
     }
   }, [agentLabel, systemMessages, t])
+
+  const updatePrompt = useCallback((next: string | ((current: string) => string)) => {
+    setPrompt((current) => {
+      const value = typeof next === 'function' ? next(current) : next
+      if (conversationId) conversationDraftsRef.current.set(conversationId, value)
+      return value
+    })
+  }, [conversationId])
+
+  useEffect(() => {
+    setPrompt(conversationId ? conversationDraftsRef.current.get(conversationId) ?? '' : '')
+  }, [conversationId])
 
   const attachRun = useCallback((nextRun: AgentRun) => {
     knownRunIdsRef.current.add(nextRun.id)
@@ -195,13 +229,21 @@ export function AgentSessionWorkspace({
   }, [api, attachRun])
 
   useEffect(() => {
-    if (!conversation) return
+    setViewRevisionId(null)
+    setRevisions([])
+    if (!conversationId) return
+    if (typeof api.listConversationRevisions !== 'function') return
+    void api.listConversationRevisions(conversationId).then(setRevisions).catch(reportError)
+  }, [api, conversationId, reportError])
+
+  useEffect(() => {
+    if (!conversation || !historyConversationId) return
     knownRunIdsRef.current.clear()
     loadingRunsRef.current.clear()
     pendingRunEventsRef.current.clear()
     processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
     let current = true
-    void hydrateConversation(api, conversation.id).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState }) => {
+    void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState }) => {
       if (!current) return
       setMessages(history)
       knownRunIdsRef.current = new Set(history.flatMap((message) => message.id ? [message.id] : []))
@@ -214,10 +256,10 @@ export function AgentSessionWorkspace({
       if (current) reportError(cause)
     })
     return () => { current = false }
-  }, [api, conversation, reportError])
+  }, [api, conversation, historyConversationId, reportError])
 
   useEffect(() => {
-    if (!conversation) return
+    if (!conversation || viewRevisionId) return
     const nextEvents = workspaceEvents.filter((event) => (
       event.id > processedWorkspaceEventRef.current
         && event.conversation_id === conversation.id
@@ -262,7 +304,7 @@ export function AgentSessionWorkspace({
       refreshState ||= SESSION_STATE_EVENT_KINDS.has(event.kind)
     }
     if (refreshState) void api.getSessionState(conversation.id).then(setSessionState)
-  }, [api, attachRun, conversation, loadRun, workspaceEvents])
+  }, [api, attachRun, conversation, loadRun, viewRevisionId, workspaceEvents])
 
   const send = async (text: string) => {
     const message = text.trim()
@@ -275,7 +317,7 @@ export function AgentSessionWorkspace({
         message,
       )
       attachRun(nextRun)
-      setPrompt('')
+      updatePrompt('')
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
       })
@@ -315,11 +357,31 @@ export function AgentSessionWorkspace({
     onConversationUpdated(await api.updateConversation(conversation.id, null))
   }
 
-  const removeLocally = async () => {
+  const deleteSession = async () => {
     if (!conversation) return
-    await api.removeConversation(conversation.id)
-    onConversationRemoved(conversation.id)
-    trackEvent('kubecode_session_removed', { agent_id: conversation.agent_id, scope: 'local' })
+    try {
+      await api.deleteConversation(conversation.id)
+      const removedConversationIds = conversation.team_role === 'leader' && team
+        ? team.members.map((member) => member.conversation_id)
+        : [conversation.id]
+      for (const conversationId of removedConversationIds) onConversationRemoved(conversationId)
+      setDeleteTeamOpen(false)
+      trackEvent('kubecode_session_deleted', {
+        agent_id: conversation.agent_id,
+        team_size: removedConversationIds.length,
+      })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
+  const requestDelete = () => {
+    if (conversation?.team_role === 'leader'
+      || team?.leader_conversation.id === conversation?.id) {
+      setDeleteTeamOpen(true)
+      return
+    }
+    void deleteSession()
   }
 
   const forkSession = async () => {
@@ -329,24 +391,25 @@ export function AgentSessionWorkspace({
     trackEvent('kubecode_agent_session_forked', { agent_id: conversation.agent_id })
   }
 
-  const branchAtRun = async (runId: string, replacement?: string) => {
-    if (!conversation || !projectId || active) return
+  const reviseAtRun = async (runId: string, replacement?: string) => {
+    if (!conversation || !projectId || active || viewRevisionId) return
     try {
-      let branch: Conversation
-      try {
-        branch = await api.branchConversationAtRun(conversation.id, runId, true)
-      } catch (cause) {
-        if (!(cause instanceof ApiError) || cause.code !== 'checkpoint_unavailable') throw cause
-        branch = await api.branchConversationAtRun(conversation.id, runId, false)
-        const message = t('kubecode.branchFilesNotRestored')
-        if (systemMessages) systemMessages.publish({ level: 'warning', message, source: agentLabel })
-        else setError(message)
-      }
-      onConversationCreated(branch)
+      await api.reviseConversationAtRun(conversation.id, runId)
+      const hydrated = await hydrateConversation(api, conversation.id)
+      knownRunIdsRef.current = new Set(
+        hydrated.messages.flatMap((message) => message.id ? [message.id] : []),
+      )
+      setMessages(hydrated.messages)
+      setRun(hydrated.activeRun)
+      setPendingPermission(hydrated.pendingPermission)
+      setPendingElicitation(hydrated.pendingElicitation)
+      setSessionState(hydrated.sessionState)
+      setViewRevisionId(null)
+      setRevisions(await api.listConversationRevisions(conversation.id))
       if (replacement?.trim()) {
-        await api.startRun(projectId, branch.id, replacement.trim())
+        attachRun(await api.startRun(projectId, conversation.id, replacement.trim()))
       }
-      trackEvent('kubecode_agent_chat_branched', {
+      trackEvent('agent_message_revision_created', {
         action: replacement ? 'regenerate' : 'undo',
         agent_id: conversation.agent_id,
       })
@@ -357,7 +420,7 @@ export function AgentSessionWorkspace({
 
   const regenerate = async (runId: string) => {
     const message = messages.find((candidate) => candidate.id === runId)?.userMessage
-    if (message) await branchAtRun(runId, message)
+    if (message) await reviseAtRun(runId, message)
   }
 
   const promoteToTeam = async () => {
@@ -397,7 +460,7 @@ export function AgentSessionWorkspace({
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   const insertComposerText = (text: string, kind: 'command' | 'file') => {
-    setPrompt((current) => {
+    updatePrompt((current) => {
       if (!current) return text
       return `${current}${current.endsWith(' ') ? '' : ' '}${text}`
     })
@@ -453,7 +516,11 @@ export function AgentSessionWorkspace({
   }
 
   return (
-    <section className="kubecode-agent-session" data-testid="agent-session-workspace">
+    <section
+      className="kubecode-agent-session"
+      data-team-view={team ? teamView : 'chat'}
+      data-testid="agent-session-workspace"
+    >
       <header className="kubecode-session-header">
         <div className="kubecode-session-title">
           <AiAgentIcon agent={conversation.agent_id} size={20} />
@@ -462,7 +529,11 @@ export function AgentSessionWorkspace({
         <div className="kubecode-session-status">
           <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
           {waitingForInput
-            ? t(pendingElicitation ? 'kubecode.answerAgentQuestion' : 'kubecode.permissionRequired')
+            ? t(pendingElicitation
+              ? 'kubecode.answerAgentQuestion'
+              : leaderReviewPending
+                ? 'kubecode.waitingForLeaderPermission'
+                : 'kubecode.permissionRequired')
             : active ? t('kubecode.running') : t('kubecode.ready')}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -490,20 +561,67 @@ export function AgentSessionWorkspace({
               <DropdownMenuItem onSelect={() => void promoteToTeam()}>
                 {t('kubecode.promoteToTeam')}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => void removeLocally()}>
-                {t('kubecode.delete')}
-              </DropdownMenuItem>
+              {conversation.team_role !== 'teammate'
+                && !team?.members.some((member) => (
+                  member.conversation_id === conversation.id && member.role === 'teammate'
+                )) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={requestDelete}>
+                    {t('kubecode.delete')}
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
       {team && conversation && (
-        <TeamSessionOverview
-          activeConversationId={conversation.id}
-          onSelectMember={onSelectTeamMember ?? (() => undefined)}
-          snapshot={team}
-        />
+        <>
+          <div className="kubecode-team-view-switch" role="tablist">
+            <Button
+              aria-selected={teamView === 'chat'}
+              role="tab"
+              size="sm"
+              variant={teamView === 'chat' ? 'secondary' : 'ghost'}
+              onClick={() => setTeamView('chat')}
+            >
+              {t('kubecode.chat')}
+            </Button>
+            <Button
+              aria-selected={teamView === 'team'}
+              role="tab"
+              size="sm"
+              variant={teamView === 'team' ? 'secondary' : 'ghost'}
+              onClick={() => {
+                setTeamView('team')
+                trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
+              }}
+            >
+              {t('kubecode.teamSession')}
+              {team.summary?.needs_attention > 0 && <span>{team.summary.needs_attention}</span>}
+            </Button>
+          </div>
+          {teamView === 'chat' && (
+            <TeamSessionOverview
+              activeConversationId={conversation.id}
+              onSelectMember={onSelectTeamMember ?? (() => undefined)}
+              snapshot={team}
+            />
+          )}
+          {teamView === 'team' && (
+            <TeamWorkspaceView
+              api={api}
+              onSelectMember={(conversationId) => {
+                setTeamView('chat')
+                onSelectTeamMember?.(conversationId)
+              }}
+              onSnapshotChange={onTeamUpdated ?? onTeamCreated ?? (() => undefined)}
+              snapshot={team}
+              t={t}
+            />
+          )}
+        </>
       )}
       <div className="kubecode-session-timeline">
         <AiPanelMessageHistory
@@ -511,13 +629,35 @@ export function AgentSessionWorkspace({
           agentReadiness={readiness}
           hasContext
           isActive={active}
-          leadingContent={conversation.recreated_context ? (
-            <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
-          ) : undefined}
+          leadingContent={(
+            <>
+              {conversation.recreated_context && !viewRevisionId && (
+                <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
+              )}
+              {revisions.length > 0 && (
+                <RevisionNavigator
+                  activeIndex={viewRevisionId
+                    ? revisions.findIndex((revision) => (
+                      revision.snapshot_conversation_id === viewRevisionId
+                    ))
+                    : revisions.length}
+                  onSelect={(index) => {
+                    setViewRevisionId(index === revisions.length
+                      ? null
+                      : revisions[index]?.snapshot_conversation_id ?? null)
+                  }}
+                  t={t}
+                  total={revisions.length + 1}
+                />
+              )}
+            </>
+          )}
           locale={locale}
           messages={messages}
-          onEditMessage={(runId, userMessage) => void branchAtRun(runId, userMessage)}
-          onRegenerateMessage={(runId) => void regenerate(runId)}
+          onEditMessage={viewRevisionId
+            ? undefined
+            : (runId, userMessage) => void reviseAtRun(runId, userMessage)}
+          onRegenerateMessage={viewRevisionId ? undefined : (runId) => void regenerate(runId)}
         />
       </div>
       {error && (
@@ -547,6 +687,14 @@ export function AgentSessionWorkspace({
                 {permissionChoiceLabel(option, t)}
               </Button>
             ))}
+          </div>
+        </div>
+      )}
+      {leaderReviewPending && (
+        <div aria-live="polite" className="kubecode-permission-dock kubecode-permission-leader-review">
+          <div className="kubecode-permission-heading">
+            <ShieldWarning size={17} />
+            <strong>{t('kubecode.waitingForLeaderPermission')}</strong>
           </div>
         </div>
       )}
@@ -646,22 +794,24 @@ export function AgentSessionWorkspace({
         </div>
       )}
       <div className="kubecode-session-composer">
-        {conversation.read_only ? (
+        {conversation.read_only || viewRevisionId ? (
           <div className="kubecode-read-only-session">
             <LockKey />
-            <span>{t('kubecode.readOnlySubagent')}</span>
+            <span>{viewRevisionId
+              ? t('kubecode.revisionReadOnly')
+              : t('kubecode.readOnlySubagent')}</span>
           </div>
         ) : (
           <>
             {run && ['cancelled', 'failed', 'interrupted'].includes(run.status) && (
-              <Button className="kubecode-undo-turn" size="sm" variant="ghost" onClick={() => void branchAtRun(run.id)}>
+              <Button className="kubecode-undo-turn" size="sm" variant="ghost" onClick={() => void reviseAtRun(run.id)}>
                 {t('kubecode.undoTurn')}
               </Button>
             )}
             {visibleCommands.length > 0 && (
               <div className="kubecode-command-suggestions">
                 {visibleCommands.map((command) => (
-                  <Button key={command.name} variant="ghost" onClick={() => setPrompt(`/${command.name} `)}>
+                  <Button key={command.name} variant="ghost" onClick={() => updatePrompt(`/${command.name} `)}>
                     <code>/{command.name}</code>
                     {command.description && <span>{command.description}</span>}
                   </Button>
@@ -692,7 +842,7 @@ export function AgentSessionWorkspace({
               inputRef={inputRef}
               isActive={active}
               locale={locale}
-              onChange={setPrompt}
+              onChange={updatePrompt}
               onSend={(text) => void send(text)}
               onStop={() => void stop()}
             />
@@ -719,7 +869,56 @@ export function AgentSessionWorkspace({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DeleteTeamDialog
+        onConfirm={deleteSession}
+        onOpenChange={setDeleteTeamOpen}
+        open={deleteTeamOpen}
+        t={t}
+        teamName={team?.team.title.trim() || conversation.title || t('kubecode.teamSession')}
+        teammateCount={team
+          ? team.members.filter((member) => member.role === 'teammate').length
+          : 0}
+      />
     </section>
+  )
+}
+
+function RevisionNavigator({
+  activeIndex,
+  onSelect,
+  t,
+  total,
+}: {
+  activeIndex: number
+  onSelect: (index: number) => void
+  t: Translator
+  total: number
+}) {
+  return (
+    <div className="kubecode-revision-navigator">
+      <Button
+        aria-label={t('kubecode.previousRevision')}
+        disabled={activeIndex <= 0}
+        size="icon-xs"
+        variant="ghost"
+        onClick={() => onSelect(activeIndex - 1)}
+      >
+        <CaretLeft />
+      </Button>
+      <span>{t('kubecode.revisionPosition', {
+        current: activeIndex + 1,
+        total,
+      })}</span>
+      <Button
+        aria-label={t('kubecode.nextRevision')}
+        disabled={activeIndex >= total - 1}
+        size="icon-xs"
+        variant="ghost"
+        onClick={() => onSelect(activeIndex + 1)}
+      >
+        <CaretRight />
+      </Button>
+    </div>
   )
 }
 
@@ -765,6 +964,13 @@ function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): Ai
     const runId = textValue(event.payload.run_id)
     if (event.kind === 'user_message') {
       const run = runById.get(runId)
+      if (run?.internal || event.payload.internal === true) {
+        return [...messages, {
+          ...(run ? messageFromRun(run) : nativeMessage(event, '')),
+          internal: true,
+          userMessage: '',
+        }]
+      }
       return [...messages, run ? messageFromRun(run) : nativeMessage(event, textValue(event.payload.text))]
     }
     if (event.kind === 'user_message_delta') {
@@ -1097,6 +1303,7 @@ function messageFromRun(run: AgentRun): AiAgentMessage {
     isStreaming: ACTIVE_RUN_STATUSES.has(run.status),
     reasoningDone: !ACTIVE_RUN_STATUSES.has(run.status),
     userMessage: run.message,
+    internal: Boolean(run.internal),
   }
 }
 
@@ -1166,6 +1373,7 @@ function textValue(value: unknown): string {
 
 function permissionFromEvent(event: AgentEvent): PendingPermission | null {
   const requestId = textValue(event.payload.request_id)
+  if (textValue(event.payload.reviewer) === 'leader') return null
   if (!requestId || !Array.isArray(event.payload.options)) return null
   const options = event.payload.options.flatMap((value) => {
     if (!value || typeof value !== 'object') return []

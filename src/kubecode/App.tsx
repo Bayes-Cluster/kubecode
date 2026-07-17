@@ -229,31 +229,42 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     if (!projectId) return
     let current = true
     const nextTeams = typeof api.listTeams === 'function' ? api.listTeams(projectId) : Promise.resolve([])
-    Promise.all([api.listTerminals(projectId), api.listConversations(projectId), nextTeams])
-      .then(([nextTerminals, nextConversations, projectTeams]) => {
+    void Promise.allSettled([api.listTerminals(projectId), api.listConversations(projectId), nextTeams])
+      .then(([terminalResult, conversationResult, teamResult]) => {
         if (!current) return
-        setTerminals(nextTerminals)
-        setTerminalsLoadedForProjectId(projectId)
-        setConversations(nextConversations)
-        setTeams(projectTeams)
-        setAllConversations((current) => mergeConversations(current, nextConversations))
-        setConversationId((selected) => (
-          nextConversations.some((item) => item.id === selected)
-            ? selected
-            : nextConversations.at(-1)?.id ?? null
-        ))
+        if (terminalResult.status === 'fulfilled') {
+          setTerminals(terminalResult.value)
+          setTerminalsLoadedForProjectId(projectId)
+        }
+        if (conversationResult.status === 'fulfilled') {
+          const nextConversations = conversationResult.value
+          setConversations(nextConversations)
+          setAllConversations((current) => mergeConversations(current, nextConversations))
+          setConversationId((selected) => (
+            nextConversations.some((item) => item.id === selected)
+              ? selected
+              : nextConversations.at(-1)?.id ?? null
+          ))
+        }
+        if (teamResult.status === 'fulfilled') setTeams(teamResult.value)
+        const failure = [terminalResult, conversationResult, teamResult]
+          .find((result) => result.status === 'rejected')
+        if (failure?.status === 'rejected') {
+          setError(errorMessage(failure.reason, t('kubecode.error')))
+        }
       })
-      .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
   }, [api, projectId, t])
 
   useEffect(() => {
-    if (!projectId || teams.length === 0) return
+    if (!projectId || typeof api.listTeams !== 'function') return
     const timer = window.setInterval(() => {
-      void api.listTeams(projectId).then(setTeams).catch(() => undefined)
+      void api.listTeams(projectId).then((nextTeams) => {
+        if (activeProjectIdRef.current === projectId) setTeams(nextTeams)
+      }).catch(() => undefined)
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [api, projectId, teams.length])
+  }, [api, projectId])
 
   useEffect(() => {
     if (!projectId) return
@@ -283,6 +294,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           void api.listConversations(activeProjectId).then(setConversations)
         }
       }
+      if (event.kind.startsWith('team_') && event.project_id === activeProjectId && activeProjectId) {
+        void api.listTeams(activeProjectId).then((nextTeams) => {
+          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
+        }).catch(() => undefined)
+      }
       if (isCleanTerminalExit(event)) {
         const terminalId = event.payload.terminal_id
         if (typeof terminalId === 'string') {
@@ -306,7 +322,15 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       }
     }
     stream.addEventListener('workspace_event', receive as EventListener)
-    stream.onopen = () => setConnectionLost(false)
+    stream.onopen = () => {
+      setConnectionLost(false)
+      const activeProjectId = activeProjectIdRef.current
+      if (activeProjectId && typeof api.listTeams === 'function') {
+        void api.listTeams(activeProjectId).then((nextTeams) => {
+          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
+        }).catch(() => undefined)
+      }
+    }
     stream.onerror = () => setConnectionLost(true)
     return () => stream.close()
   }, [api, t, workspaceCursor])
@@ -593,6 +617,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 ...current.filter((item) => item.team.id !== team.team.id),
                 team,
               ])}
+              onTeamUpdated={(team) => setTeams((current) => [
+                ...current.filter((item) => item.team.id !== team.team.id),
+                team,
+              ])}
               t={t}
               team={activeTeam}
               onSelectTeamMember={setConversationId}
@@ -729,7 +757,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 }
 
 function upsertConversation(current: Conversation[], conversation: Conversation): Conversation[] {
-  return [...current.filter((item) => item.id !== conversation.id), conversation]
+  const existing = current.find((item) => item.id === conversation.id)
+  const updated = existing ? { ...existing, ...conversation } : conversation
+  return [...current.filter((item) => item.id !== conversation.id), updated]
 }
 
 function mergeConversations(...groups: Conversation[][]): Conversation[] {
@@ -938,11 +968,13 @@ function NewSessionDialog({
     setCreateError(null)
     try {
       if (mode === 'new' && sessionKind === 'team') {
+        const teamName = title.trim()
+        if (!teamName) return
         const team = await api.createTeam(
           projectId,
           selectedAgentId,
           agentName(selectedAgentId),
-          title.trim() || undefined,
+          teamName,
           executionMode,
         )
         trackEvent('kubecode_team_created', {
@@ -1051,8 +1083,14 @@ function NewSessionDialog({
           {mode === 'new' ? (
             <>
               <label className="kubecode-new-session-field">
-                <span>{t('kubecode.sessionTitle')}</span>
-                <Input aria-label={t('kubecode.sessionTitle')} placeholder={t('kubecode.optionalSessionTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+                <span>{sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}</span>
+                <Input
+                  aria-label={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}
+                  placeholder={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.optionalSessionTitle')}
+                  required={sessionKind === 'team'}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                />
               </label>
               {project?.workspaces_enabled && (
                 <div className="kubecode-new-session-field">
@@ -1110,7 +1148,11 @@ function NewSessionDialog({
           <DialogClose asChild><Button disabled={creating} variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
           <Button
             aria-busy={creating}
-            disabled={creating || !projectId || !availableAgent || (mode === 'import' && !providerSessionId)}
+            disabled={creating
+              || !projectId
+              || !availableAgent
+              || (mode === 'import' && !providerSessionId)
+              || (mode === 'new' && sessionKind === 'team' && !title.trim())}
             onClick={() => void create()}
           >
             {creating ? t('kubecode.loading') : mode === 'import' ? t('kubecode.import') : t('kubecode.create')}

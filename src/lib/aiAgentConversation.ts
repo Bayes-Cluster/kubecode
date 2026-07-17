@@ -10,6 +10,7 @@ export interface AiAgentMessage {
   actions: AiAction[]
   response?: string
   isStreaming?: boolean
+  internal?: boolean
   id?: string
 }
 

@@ -21,6 +21,7 @@ use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo, LineDi
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -30,7 +31,7 @@ use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
     PermissionMode, RunStatus, StoreError,
 };
-use crate::teams::TeamStore;
+use crate::teams::{TeamMemberStatus, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Error)]
@@ -39,6 +40,8 @@ pub enum RuntimeError {
     AgentUnavailable(AgentId),
     #[error("ACP connection failed: {0}")]
     Acp(String),
+    #[error("agent session deletion failed: {0}")]
+    SessionDeletion(String),
     #[error(
         "ACP adapter for {agent:?} is not installed: {binary}. Install it or set {variable} to its executable path"
     )]
@@ -95,6 +98,7 @@ struct SessionActorHandle {
 
 struct PendingPermission {
     allowed_options: HashSet<String>,
+    request_payload: Value,
     run_id: String,
     sender: oneshot::Sender<RequestPermissionOutcome>,
 }
@@ -191,6 +195,16 @@ impl AgentRuntime {
             .is_some_and(|agent| agent.available)
     }
 
+    pub fn available_agents(&self) -> Vec<AgentDescriptor> {
+        let mut agents = self.agents.values().cloned().collect::<Vec<_>>();
+        agents.sort_by_key(|agent| match agent.id {
+            AgentId::ClaudeCode => 0,
+            AgentId::Codex => 1,
+            AgentId::OpenCode => 2,
+        });
+        agents
+    }
+
     pub fn wake_team_leader(&self, team_id: &str) -> Result<Option<AgentRun>, RuntimeError> {
         let Some(teams) = self.team_store() else {
             return Ok(None);
@@ -201,10 +215,58 @@ impl AgentRuntime {
         let leader = teams
             .get_member(&team.leader_member_id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        self.wake_team_member(team_id, &leader.id)
+    }
+
+    pub fn wake_team_member(
+        &self,
+        team_id: &str,
+        member_id: &str,
+    ) -> Result<Option<AgentRun>, RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(None);
+        };
+        let team = teams
+            .get_team(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        let member = teams
+            .get_member(member_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if member.team_id != team.id {
+            return Err(RuntimeError::Acp(
+                "team member does not belong to this team".into(),
+            ));
+        }
         let messages = teams
-            .unread_messages(&leader.id)
+            .pending_messages(&member.id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
         if messages.is_empty() {
+            return Ok(None);
+        }
+        let active_members = teams
+            .list_members(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?
+            .into_iter()
+            .filter_map(|candidate| self.store.get_conversation(&candidate.conversation_id).ok())
+            .filter(|conversation| {
+                matches!(
+                    conversation.latest_run_status,
+                    Some(RunStatus::Running | RunStatus::WaitingPermission)
+                )
+            })
+            .count();
+        let conversation = self.store.get_conversation(&member.conversation_id)?;
+        if matches!(
+            conversation.latest_run_status,
+            Some(RunStatus::Running | RunStatus::WaitingPermission)
+        ) {
+            let _ = teams.set_member_status(&member.id, TeamMemberStatus::Working);
+            return Ok(None);
+        }
+        if member.role != crate::teams::TeamRole::Leader
+            && active_members >= usize::from(team.max_parallel_runs)
+        {
+            let _ = teams.set_member_status(&member.id, TeamMemberStatus::Queued);
             return Ok(None);
         }
         let summary = messages
@@ -217,35 +279,90 @@ impl AgentRuntime {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let run = match self.start(StartAgentRun {
-            conversation_id: leader.conversation_id,
-            project_id: team.project_id,
+        let run = match self.start_internal(StartAgentRun {
+            conversation_id: member.conversation_id.clone(),
+            project_id: team.project_id.clone(),
             message: format!(
-                "Kubecode Team mailbox has new updates. Review them, decide next actions, and continue coordinating the Team.\n{summary}"
+                "You are {} {} in Kubecode Team '{}'. Process these durable Team updates now. Use team_get_context for the full current state, communicate through Team MCP, and do not claim work is complete until you report it through the appropriate Team tool.\n{summary}",
+                if member.role == crate::teams::TeamRole::Leader { "the" } else { "a" },
+                if member.role == crate::teams::TeamRole::Leader { "Leader" } else { "Teammate" },
+                team.title,
             ),
         }) {
             Ok(run) => run,
             Err(RuntimeError::Store(StoreError::ActiveRun(_))) => return Ok(None),
-            Err(error) => return Err(error),
+            Err(error) => {
+                let _ = teams.set_member_status(&member.id, TeamMemberStatus::Failed);
+                for message in &messages {
+                    let _ = teams.mark_message_failed(&message.id, &error.to_string());
+                }
+                let _ = teams.append_activity(
+                    team_id,
+                    Some(&member.id),
+                    None,
+                    "delivery_failed",
+                    "Team message delivery failed",
+                    None,
+                );
+                return Err(error);
+            }
         };
-        teams
-            .mark_messages_read(&leader.id)
-            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        for message in &messages {
+            teams
+                .mark_message_delivered(&message.id)
+                .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        }
+        let _ = teams.set_member_status(&member.id, TeamMemberStatus::Working);
+        let _ = teams.append_activity(
+            team_id,
+            Some(&member.id),
+            None,
+            "member_woken",
+            "Team member started processing queued work",
+            None,
+        );
         Ok(Some(run))
     }
 
-    fn wake_team_leader_for_conversation(&self, conversation_id: &str) {
+    pub fn reconcile_team(&self, team_id: &str) -> Result<(), RuntimeError> {
+        let Some(teams) = self.team_store() else {
+            return Ok(());
+        };
+        for member in teams
+            .list_members(team_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))?
+        {
+            let _ = self.wake_team_member(team_id, &member.id);
+        }
+        Ok(())
+    }
+
+    fn wake_team_member_for_conversation(&self, conversation_id: &str) {
         let Some(teams) = self.team_store() else {
             return;
         };
         let Ok(Some(team)) = teams.team_for_conversation(conversation_id) else {
             return;
         };
-        let Ok(leader) = teams.get_member(&team.leader_member_id) else {
+        let Ok(Some(member)) = teams.member_for_conversation(conversation_id) else {
             return;
         };
-        if leader.conversation_id == conversation_id {
-            let _ = self.wake_team_leader(&team.id);
+        let _ = teams.set_member_status(&member.id, TeamMemberStatus::Idle);
+        let _ = teams.append_activity(
+            &team.id,
+            Some(&member.id),
+            None,
+            "turn_completed",
+            &format!("{} completed an Agent turn", member.name),
+            None,
+        );
+        let _ = self.wake_team_member(&team.id, &member.id);
+        if let Ok(members) = teams.list_members(&team.id) {
+            for queued in members {
+                if queued.id != member.id {
+                    let _ = self.wake_team_member(&team.id, &queued.id);
+                }
+            }
         }
     }
 
@@ -254,6 +371,18 @@ impl AgentRuntime {
     }
 
     pub fn start(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
+        self.start_with_visibility(request, false)
+    }
+
+    fn start_internal(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
+        self.start_with_visibility(request, true)
+    }
+
+    fn start_with_visibility(
+        &self,
+        request: StartAgentRun,
+        internal: bool,
+    ) -> Result<AgentRun, RuntimeError> {
         let conversation = self.store.get_conversation(&request.conversation_id)?;
         if conversation.project_id != request.project_id {
             return Err(StoreError::ConversationNotFound(request.conversation_id).into());
@@ -267,12 +396,21 @@ impl AgentRuntime {
         let cwd = self
             .workspace
             .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
-        let run = self.store.start_run(
-            &request.conversation_id,
-            &request.project_id,
-            &request.message,
-            PermissionMode::Safe,
-        )?;
+        let run = if internal {
+            self.store.start_internal_run(
+                &request.conversation_id,
+                &request.project_id,
+                &request.message,
+                PermissionMode::Safe,
+            )?
+        } else {
+            self.store.start_run(
+                &request.conversation_id,
+                &request.project_id,
+                &request.message,
+                PermissionMode::Safe,
+            )?
+        };
         if let Ok(Some(tree)) = self
             .workspace
             .capture_git_tree(&cwd, &format!("{}-before", run.id))
@@ -472,7 +610,8 @@ impl AgentRuntime {
         })?;
         let descriptor = self.available_descriptor(conversation.agent_id)?;
         let agent = acp_agent(conversation.agent_id, &descriptor)?;
-        agent_client_protocol::Client
+        let acp_session_id = provider_session_id.clone();
+        let deleted_by_acp = agent_client_protocol::Client
             .builder()
             .name("Kubecode")
             .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
@@ -486,18 +625,61 @@ impl AgentRuntime {
                     .delete
                     .is_none()
                 {
-                    return Err(agent_client_protocol::Error::method_not_found());
+                    return Ok(false);
                 }
                 connection
-                    .send_request(DeleteSessionRequest::new(provider_session_id))
+                    .send_request(DeleteSessionRequest::new(acp_session_id))
                     .block_task()
                     .await?;
-                Ok(())
+                Ok(true)
             })
             .await
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        self.store.delete_conversation(conversation_id)?;
+        if !deleted_by_acp {
+            if conversation.agent_id != AgentId::OpenCode {
+                return Err(RuntimeError::SessionDeletion(format!(
+                    "{:?} does not support ACP session/delete",
+                    conversation.agent_id
+                )));
+            }
+            let cwd = self.workspace.execution_path(
+                &conversation.project_id,
+                conversation.workspace_path.as_deref(),
+            )?;
+            let mut command = Command::new(&descriptor.executable);
+            command
+                .args(["session", "delete", provider_session_id.as_str()])
+                .current_dir(cwd)
+                .kill_on_drop(true);
+            let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+                .await
+                .map_err(|_| {
+                    RuntimeError::SessionDeletion(
+                        "OpenCode session delete timed out after 30 seconds".into(),
+                    )
+                })?
+                .map_err(|error| RuntimeError::SessionDeletion(error.to_string()))?;
+            if !output.status.success() {
+                let detail = String::from_utf8_lossy(&output.stderr);
+                return Err(RuntimeError::SessionDeletion(format!(
+                    "OpenCode exited with {}: {}",
+                    output.status,
+                    detail.trim().chars().take(1024).collect::<String>()
+                )));
+            }
+        }
+        self.store.delete_provider_conversation(conversation_id)?;
         Ok(())
+    }
+
+    pub async fn delete_session(&self, conversation_id: &str) -> Result<(), RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        if conversation.provider_session_id.is_some() {
+            self.delete_provider_session(conversation_id).await
+        } else {
+            self.store.delete_conversation(conversation_id)?;
+            Ok(())
+        }
     }
 
     pub async fn fork_provider_session(
@@ -584,6 +766,33 @@ impl AgentRuntime {
                 ))
                 .is_ok()
         })
+    }
+
+    pub fn escalate_team_permission(&self, request_id: &str) -> Result<(), RuntimeError> {
+        let (run_id, mut payload) = {
+            let permissions = self
+                .pending_permissions
+                .lock()
+                .expect("pending permission mutex poisoned");
+            let pending = permissions.get(request_id).ok_or_else(|| {
+                RuntimeError::Acp("permission request is no longer active".into())
+            })?;
+            (pending.run_id.clone(), pending.request_payload.clone())
+        };
+        if let Value::Object(object) = &mut payload {
+            object.insert("reviewer".into(), Value::String("user".into()));
+        }
+        self.store
+            .append_event(&run_id, AgentEventKind::PermissionRequested, &payload)?;
+        let run = self.store.get_run(&run_id)?;
+        self.store.append_workspace_event(
+            "permission_requested",
+            Some(&run.project_id),
+            Some(&run.conversation_id),
+            Some(&run.id),
+            &payload,
+        )?;
+        Ok(())
     }
 
     pub fn resolve_elicitation(
@@ -974,6 +1183,8 @@ async fn run_acp_session(
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
+    let permission_runtime = runtime.clone();
+    let permission_conversation_id = config.conversation_id.clone();
     let elicitation_store = Arc::clone(&runtime.store);
     let elicitation_run_id = Arc::clone(&active_run_id);
     let pending_elicitations = Arc::clone(&runtime.pending_elicitations);
@@ -1009,11 +1220,24 @@ async fn run_acp_session(
                     .expect("active run mutex poisoned")
                     .clone();
                 let request_id = Uuid::new_v4().to_string();
+                let team_permission = permission_runtime
+                    .team_store()
+                    .and_then(|teams| {
+                        teams
+                            .member_for_conversation(&permission_conversation_id)
+                            .ok()
+                            .flatten()
+                            .filter(|member| member.role == crate::teams::TeamRole::Teammate)
+                            .map(|member| (teams, member))
+                    });
+                let reviewer = if team_permission.is_some() { "leader" } else { "user" };
+                let should_route_to_leader = team_permission.is_some();
                 let request_payload = json!({
                     "request_id": request_id,
                     "tool_id": request.tool_call.tool_call_id.to_string(),
                     "tool": request.tool_call.fields.title,
                     "input": request.tool_call.fields.raw_input,
+                    "reviewer": reviewer,
                     "options": request.options.iter().map(|option| json!({
                         "id": option.option_id.to_string(),
                         "label": option.name,
@@ -1028,6 +1252,15 @@ async fn run_acp_session(
                         AgentEventKind::PermissionRequested,
                         &request_payload,
                     );
+                    if let Ok(run) = permission_store.get_run(&run_id) {
+                        let _ = permission_store.append_workspace_event(
+                            "permission_requested",
+                            Some(&run.project_id),
+                            Some(&run.conversation_id),
+                            Some(&run.id),
+                            &request_payload,
+                        );
+                    }
                     let (sender, receiver) = oneshot::channel();
                     pending_permissions
                         .lock()
@@ -1040,19 +1273,90 @@ async fn run_acp_session(
                                     .iter()
                                     .map(|option| option.option_id.to_string())
                                     .collect(),
+                                request_payload: request_payload.clone(),
                                 run_id: run_id.clone(),
                                 sender,
                             },
                         );
-                    let outcome = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
+                    let mut routed_to_leader = false;
+                    if let Some((teams, member)) = team_permission {
+                        let team = teams.get_team(&member.team_id).ok();
+                        let input_json = serde_json::to_string(
+                            &request_payload.get("input").cloned().unwrap_or(Value::Null),
+                        )
+                        .unwrap_or_else(|_| "null".into());
+                        let options_json = serde_json::to_string(
+                            &request_payload.get("options").cloned().unwrap_or_else(|| json!([])),
+                        )
+                        .unwrap_or_else(|_| "[]".into());
+                        if let Some(team) = team
+                            && teams
+                                .create_permission_request(
+                                    crate::teams::NewTeamPermissionRequest {
+                                        id: &request_id,
+                                        team_id: &team.id,
+                                        member_id: &member.id,
+                                        conversation_id: &permission_conversation_id,
+                                        run_id: &run_id,
+                                        tool: request_payload
+                                            .get("tool")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("Tool"),
+                                        input_json: &input_json,
+                                        options_json: &options_json,
+                                    },
+                                )
+                                .is_ok()
+                        {
+                            routed_to_leader = true;
+                            let _ = teams.set_member_status(
+                                &member.id,
+                                TeamMemberStatus::WaitingPermission,
+                            );
+                            let _ = teams.append_activity(
+                                &team.id,
+                                Some(&member.id),
+                                None,
+                                "permission_requested",
+                                &format!("{} requested permission", member.name),
+                                Some(&request_id),
+                            );
+                            let _ = teams.send_message(
+                                &team.id,
+                                &member.id,
+                                &team.leader_member_id,
+                                crate::teams::TeamMessageKind::System,
+                                None,
+                                &format!(
+                                    "Teammate {} needs a permission review. Request ID: {}. Call team_get_context, then team_review_permission.",
+                                    member.name, request_id
+                                ),
+                            );
+                            let _ = permission_runtime.store.append_workspace_event(
+                                "team_permission_updated",
+                                Some(&team.project_id),
+                                Some(&permission_conversation_id),
+                                Some(&run_id),
+                                &json!({"team_id":team.id, "request_id":request_id}),
+                            );
+                            let _ = permission_runtime.wake_team_leader(&team.id);
+                        }
+                    }
+                    if should_route_to_leader && !routed_to_leader {
+                        let _ = permission_runtime.escalate_team_permission(&request_id);
+                    }
+                    let outcome = receiver
                         .await
-                        .ok()
-                        .and_then(Result::ok)
                         .unwrap_or(RequestPermissionOutcome::Cancelled);
                     pending_permissions
                         .lock()
                         .expect("pending permission mutex poisoned")
                         .remove(&request_id);
+                    if matches!(outcome, RequestPermissionOutcome::Cancelled)
+                        && let Some(teams) = permission_runtime.team_store()
+                    {
+                        let _ = teams.cancel_permission_request(&request_id);
+                    }
                     let _ = permission_store.set_run_status(&run_id, RunStatus::Running);
                     let _ = permission_store.append_event(
                         &run_id,
@@ -1335,7 +1639,7 @@ async fn run_acp_session(
                     &json!({"run_id":command.run.id, "status":status}),
                 );
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
-                runtime.wake_team_leader_for_conversation(&conversation_id);
+                runtime.wake_team_member_for_conversation(&conversation_id);
                 if let Some(response) = shutdown_response {
                     let _ = response.send(());
                     break;
@@ -1789,6 +2093,7 @@ mod tests {
                 "permission-1".to_owned(),
                 PendingPermission {
                     allowed_options: HashSet::from(["allow_once".to_owned()]),
+                    request_payload: json!({"request_id":"permission-1"}),
                     run_id: "run-1".to_owned(),
                     sender,
                 },
@@ -1801,6 +2106,74 @@ mod tests {
             "allow_once"
         );
         assert!(!runtime.resolve_permission("permission-1", "allow_once"));
+    }
+
+    #[tokio::test]
+    async fn escalating_a_team_permission_publishes_a_user_review_event() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let project = workspace
+            .create_project_at(temp.path().join("permission-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Review access",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let runtime = AgentRuntime::new(workspace, Arc::clone(&store), Vec::new());
+        let (sender, receiver) = oneshot::channel();
+        runtime
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex")
+            .insert(
+                "permission-1".to_owned(),
+                PendingPermission {
+                    allowed_options: HashSet::from(["allow_once".to_owned()]),
+                    request_payload: json!({
+                        "request_id":"permission-1",
+                        "reviewer":"leader",
+                        "options":[{"id":"allow_once","label":"Allow"}],
+                    }),
+                    run_id: run.id.clone(),
+                    sender,
+                },
+            );
+
+        runtime
+            .escalate_team_permission("permission-1")
+            .expect("escalation");
+
+        let event = store
+            .events_after(&run.id, 0)
+            .expect("run events")
+            .pop()
+            .expect("permission event");
+        assert_eq!(event.kind, AgentEventKind::PermissionRequested);
+        assert_eq!(event.payload["reviewer"], "user");
+        let workspace_event = store
+            .workspace_events_after(0)
+            .expect("workspace events")
+            .into_iter()
+            .find(|event| event.kind == "permission_requested")
+            .expect("workspace permission event");
+        assert_eq!(workspace_event.conversation_id, Some(conversation.id));
+        assert_eq!(workspace_event.payload["reviewer"], "user");
+
+        assert!(runtime.resolve_permission("permission-1", "allow_once"));
+        assert_eq!(
+            selected_option(receiver.await.expect("permission outcome")),
+            "allow_once"
+        );
     }
 
     #[test]

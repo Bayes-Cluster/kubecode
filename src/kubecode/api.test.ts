@@ -128,6 +128,37 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('updates Team scheduling and resolves a lineup proposal', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ team: { id: 'team/1' } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ team: { id: 'team/1' } })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.updateTeamSettings('team/1', 'auto', 4)
+    await api.resolveTeamProposal('team/1', 'proposal/1', 'approved')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/teams/team%2F1/settings',
+      expect.objectContaining({
+        body: JSON.stringify({
+          member_management_policy: 'auto',
+          max_parallel_runs: 4,
+        }),
+        method: 'PATCH',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/teams/team%2F1/proposals/proposal%2F1/decision',
+      expect.objectContaining({
+        body: JSON.stringify({ decision: 'approved' }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('previews and resolves the protected Workspaces migration', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -179,6 +210,41 @@ describe('Kubecode API client', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/sessions/session%2F1/turns/run%2F1/branch',
       expect.objectContaining({ body: JSON.stringify({ restore_files: true }), method: 'POST' }),
+    )
+  })
+
+  it('creates and lists hidden revisions without changing the Session id', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'revision-1' })))
+      .mockResolvedValueOnce(new Response('[]'))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.reviseConversationAtRun('session/1', 'run/1')
+    await api.listConversationRevisions('session/1')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/sessions/session%2F1/turns/run%2F1/revise',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/sessions/session%2F1/revisions',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
+
+  it('deletes a Session without a local-only scope', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.deleteConversation('session/1')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/sessions/session%2F1',
+      expect.objectContaining({ method: 'DELETE' }),
     )
   })
 

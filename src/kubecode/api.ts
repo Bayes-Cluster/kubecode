@@ -56,6 +56,15 @@ export type Conversation = {
   execution_mode: ExecutionMode
   workspace_path: string | null
   recreated_context: boolean
+  team_id?: string | null
+  team_role?: 'leader' | 'teammate' | null
+}
+export type ConversationRevision = {
+  id: string
+  conversation_id: string
+  snapshot_conversation_id: string
+  forked_at_run_id: string
+  created_at: string
 }
 export type TeamWorkspace = 'shared' | 'worktree'
 export type Team = {
@@ -67,6 +76,8 @@ export type Team = {
   status: 'active' | 'completed' | 'archived'
   workspace: TeamWorkspace
   workspace_path: string | null
+  member_management_policy: 'ask' | 'auto'
+  max_parallel_runs: number
   created_at: string
   updated_at: string
 }
@@ -76,7 +87,16 @@ export type TeamMember = {
   conversation_id: string
   name: string
   role: 'leader' | 'teammate'
-  status: 'starting' | 'idle' | 'working' | 'waiting_input' | 'failed' | 'stopped'
+  status:
+    | 'starting'
+    | 'configuring'
+    | 'queued'
+    | 'idle'
+    | 'working'
+    | 'waiting_input'
+    | 'waiting_permission'
+    | 'failed'
+    | 'stopped'
   workspace_mode: 'shared' | 'isolated'
   base_tree: string | null
   created_at: string
@@ -105,6 +125,60 @@ export type TeamSnapshot = {
   conversations: Conversation[]
   members: TeamMember[]
   tasks: TeamTask[]
+  summary: {
+    running: number
+    queued: number
+    needs_attention: number
+    done: number
+    total_tasks: number
+  }
+  proposal: TeamProposal | null
+  permissions: TeamPermissionRequest[]
+  activity: TeamActivity[]
+  attention: TeamAttention[]
+}
+export type TeamPermissionRequest = {
+  id: string
+  team_id: string
+  member_id: string
+  conversation_id: string
+  run_id: string
+  tool: string
+  input_json: string
+  options_json: string
+  status: 'pending_leader' | 'waiting_user' | 'resolved' | 'cancelled'
+  selected_option_id: string | null
+  reason: string | null
+  decided_by: string | null
+  decided_by_member_id: string | null
+  created_at: string
+  resolved_at: string | null
+}
+export type TeamProposal = {
+  id: string
+  team_id: string
+  summary: string
+  members_json: string
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  resolved_at: string | null
+}
+export type TeamActivity = {
+  id: number
+  team_id: string
+  member_id: string | null
+  task_id: string | null
+  kind: string
+  summary: string
+  metadata_json: string | null
+  created_at: string
+}
+export type TeamAttention = {
+  id: string
+  kind: string
+  member_id: string | null
+  task_id: string | null
+  summary: string
 }
 export type RunStatus =
   | 'running'
@@ -122,6 +196,7 @@ export type AgentRun = {
   status: RunStatus
   permission_mode: 'safe' | 'power'
   error: string | null
+  internal?: boolean
 }
 export type AgentEvent = {
   run_id: string
@@ -363,6 +438,35 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/teams`)
   }
 
+  getTeam(teamId: string): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}`)
+  }
+
+  updateTeamSettings(
+    teamId: string,
+    memberManagementPolicy: Team['member_management_policy'],
+    maxParallelRuns: number,
+  ): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        member_management_policy: memberManagementPolicy,
+        max_parallel_runs: maxParallelRuns,
+      }),
+    })
+  }
+
+  resolveTeamProposal(
+    teamId: string,
+    proposalId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/proposals/${encodeURIComponent(proposalId)}/decision`,
+      { method: 'POST', body: JSON.stringify({ decision }) },
+    )
+  }
+
   createTeam(
     projectId: string,
     agentId: AgentId,
@@ -406,8 +510,8 @@ export class KubecodeApi {
     })
   }
 
-  removeConversation(conversationId: string, scope: 'local' | 'provider' = 'local'): Promise<void> {
-    return this.request(`/sessions/${encodeURIComponent(conversationId)}?${query({ scope })}`, {
+  deleteConversation(conversationId: string): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}`, {
       method: 'DELETE',
     })
   }
@@ -425,6 +529,20 @@ export class KubecodeApi {
       `/sessions/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(runId)}/branch`,
       { method: 'POST', body: JSON.stringify({ restore_files: restoreFiles }) },
     )
+  }
+
+  reviseConversationAtRun(
+    conversationId: string,
+    runId: string,
+  ): Promise<ConversationRevision> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(runId)}/revise`,
+      { method: 'POST' },
+    )
+  }
+
+  listConversationRevisions(conversationId: string): Promise<ConversationRevision[]> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/revisions`)
   }
 
   createTeamMember(

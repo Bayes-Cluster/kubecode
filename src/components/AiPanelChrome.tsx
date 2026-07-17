@@ -140,10 +140,18 @@ function ComposerInput({
       placeholderClassName={hasControls ? 'px-2 pb-1 pt-2 text-[13px] leading-5' : undefined}
       inputRef={inputRef}
       editorClassName={cn(
-        'min-h-0 max-h-24 overflow-y-auto overscroll-contain',
-        hasControls && 'min-h-[34px] border-0 px-2 pb-1 pt-2 leading-5',
+        'overflow-y-auto overscroll-contain',
+        hasControls
+          ? 'h-[34px] min-h-[34px] max-h-[34px] border-0 px-2 pb-1 pt-2 leading-5'
+          : 'min-h-0 max-h-24',
       )}
-      editorStyle={{ maxHeight: 96, overflowY: 'auto', overscrollBehavior: 'contain' }}
+      editorStyle={hasControls ? {
+        height: 34,
+        maxHeight: 34,
+        minHeight: 34,
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+      } : { maxHeight: 96, overflowY: 'auto', overscrollBehavior: 'contain' }}
     />
   )
 }
@@ -536,8 +544,8 @@ export function AiPanelComposer({
   onUnsupportedAiPaste,
 }: AiPanelComposerProps) {
   const t = createTranslator(locale)
-  const composerDisabled = isActive || agentReadiness !== 'ready'
-  const canSend = !composerDisabled && input.trim().length > 0
+  const inputDisabled = agentReadiness !== 'ready'
+  const canSend = !isActive && !inputDisabled && input.trim().length > 0
   const placeholder = getComposerPlaceholder(agentLabel, agentReadiness, t)
   const hasControls = (controls !== undefined && controls !== null)
     || (leadingControl !== undefined && leadingControl !== null)
@@ -561,22 +569,24 @@ export function AiPanelComposer({
       <div
         className={cn(
           hasControls
-            ? 'flex max-h-28 items-center gap-1 overflow-hidden rounded-[24px] border border-border bg-background px-2.5 py-2 shadow-xs'
+            ? 'flex h-[50px] max-h-[50px] items-center gap-1 overflow-hidden rounded-[24px] border border-border bg-background px-2.5 py-2 shadow-xs'
             : 'flex items-end gap-2',
         )}
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"
       >
         {hasControls && leadingControl}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <ComposerInput
-            disabled={composerDisabled}
+            disabled={inputDisabled}
             entries={entries}
             hasControls={hasControls}
             input={input}
             inputRef={inputRef}
             onChange={onChange}
-            onSend={onSend}
+            onSend={(text, references) => {
+              if (!isActive) onSend(text, references)
+            }}
             onUnsupportedAiPaste={onUnsupportedAiPaste}
             placeholder={placeholder}
           />

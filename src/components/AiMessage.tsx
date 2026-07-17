@@ -30,6 +30,7 @@ export interface AiMessageProps {
   actions: AiAction[]
   response?: string
   isStreaming?: boolean
+  internal?: boolean
   onFork?: (messageId: string) => void
   onEdit?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
@@ -439,7 +440,7 @@ export function AiMessage(props: AiMessageProps) {
   return <ConversationMessage {...props} />
 }
 
-function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, isStreaming, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
+function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, isStreaming, internal = false, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
   // Manual override: null = follow auto behavior, true/false = user forced
   const [userOverride, setUserOverride] = useState(false)
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set())
@@ -461,7 +462,9 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
 
   return (
     <div className="min-w-0 max-w-full" data-testid="ai-message" style={{ marginBottom: 16 }}>
-      <UserBubble content={userMessage} locale={locale} messageId={messageId} onEdit={onEdit} references={references} onOpenNote={onOpenNote} />
+      {!internal && (
+        <UserBubble content={userMessage} locale={locale} messageId={messageId} onEdit={onEdit} references={references} onOpenNote={onOpenNote} />
+      )}
       {reasoning && (
         <ReasoningBlock
           locale={locale}
@@ -486,9 +489,9 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
           locale={locale}
           messageId={messageId}
           text={response}
-          onFork={onFork}
+          onFork={internal ? undefined : onFork}
           onNavigateWikilink={onNavigateWikilink}
-          onRegenerate={onRegenerate}
+          onRegenerate={internal ? undefined : onRegenerate}
         />
       )}
       {isStreaming && !response && <StreamingIndicator />}
