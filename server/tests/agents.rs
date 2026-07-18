@@ -219,6 +219,56 @@ fn revises_chat_history_without_creating_a_visible_session() {
 }
 
 #[test]
+fn pages_conversation_runs_from_newest_to_oldest_without_reordering_turns() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let mut run_ids = Vec::new();
+    for index in 0..5 {
+        let run = store
+            .start_run(
+                &conversation.id,
+                "project",
+                &format!("Question {index}"),
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        store
+            .finish_run(&run.id, RunStatus::Completed, None)
+            .expect("finish");
+        run_ids.push(run.id);
+    }
+
+    let (newest, has_more) = store
+        .list_runs_page(&conversation.id, None, 2)
+        .expect("newest page");
+    assert_eq!(
+        newest.iter().map(|run| &run.id).collect::<Vec<_>>(),
+        vec![&run_ids[3], &run_ids[4]]
+    );
+    assert!(has_more);
+
+    let (older, has_more) = store
+        .list_runs_page(&conversation.id, Some(&run_ids[3]), 2)
+        .expect("older page");
+    assert_eq!(
+        older.iter().map(|run| &run.id).collect::<Vec<_>>(),
+        vec![&run_ids[1], &run_ids[2]]
+    );
+    assert!(has_more);
+
+    let (oldest, has_more) = store
+        .list_runs_page(&conversation.id, Some(&run_ids[1]), 2)
+        .expect("oldest page");
+    assert_eq!(
+        oldest.iter().map(|run| &run.id).collect::<Vec<_>>(),
+        vec![&run_ids[0]]
+    );
+    assert!(!has_more);
+}
+
+#[test]
 fn persists_before_and_after_git_trees_for_a_run() {
     let (_temp, store) = store();
     let conversation = store

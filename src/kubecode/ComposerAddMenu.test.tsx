@@ -67,7 +67,7 @@ describe('ComposerAddMenu', () => {
     expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
   })
 
-  it('inserts a project file reference selected from the file tree', async () => {
+  it('inserts a project file reference selected from the flat file picker', async () => {
     const onInsert = vi.fn()
     const api = {
       listEntries: vi.fn().mockResolvedValue([
@@ -87,7 +87,7 @@ describe('ComposerAddMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
     fireEvent.click(screen.getByRole('button', { name: /Reference file/i }))
-    fireEvent.click(await screen.findByRole('treeitem', { name: /README\.md/i }))
+    fireEvent.click(await screen.findByRole('option', { name: /README\.md/i }))
 
     await waitFor(() => expect(onInsert).toHaveBeenCalledWith('@README.md ', 'file'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

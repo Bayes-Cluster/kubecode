@@ -70,6 +70,24 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('loads bounded Session history below the notebook prefix', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      runs: [],
+      events: {},
+      session_events: [],
+      next_cursor: null,
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.getConversationHistory('session/1', 'run/51', 50)
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/sessions/session%2F1/history?before=run%2F51&limit=50',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
+
   it('updates the project Workspaces preference with an explicit boolean', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       id: 'project-1',
@@ -202,6 +220,58 @@ describe('Kubecode API client', () => {
           final_summary: 'Integrated and verified',
         }),
       }),
+    )
+  })
+
+  it('pauses, resumes, and directly intervenes in Team work', async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      team: { id: 'team/1', status: 'active' },
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.pauseTeam('team/1')
+    await api.resumeTeam('team/1')
+    await api.assignTeamTask('team/1', 'task/1', 'member/1')
+    await api.retryTeamTask('team/1', 'task/1')
+    await api.cancelTeamTask('team/1', 'task/1', 'No longer needed')
+    await api.removeTeamMember('team/1', 'member/1')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/teams/team%2F1/pause',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/teams/team%2F1/resume',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/teams/team%2F1/tasks/task%2F1/assign',
+      expect.objectContaining({
+        body: JSON.stringify({ member_id: 'member/1' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/teams/team%2F1/tasks/task%2F1/retry',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      '/api/v1/teams/team%2F1/tasks/task%2F1/cancel',
+      expect.objectContaining({
+        body: JSON.stringify({ reason: 'No longer needed' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      6,
+      '/api/v1/teams/team%2F1/members/member%2F1',
+      expect.objectContaining({ method: 'DELETE' }),
     )
   })
 

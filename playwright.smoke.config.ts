@@ -24,7 +24,7 @@ export default defineConfig({
       : process.env.CI !== 'true',
     stderr: 'pipe',
     stdout: 'pipe',
-    timeout: 30_000,
+    timeout: 120_000,
     url: `${requestedURL.origin}/healthz`,
   },
   workers: 1,

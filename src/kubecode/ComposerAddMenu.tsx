@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import type { TranslationKey } from '@/lib/i18n'
 
 import type { KubecodeApi } from './api'
-import { ProjectFileTree } from './ProjectFileTree'
+import { ProjectFilePicker } from './ProjectFilePicker'
 
 export type ComposerAgentCommand = { name: string; description: string }
 
@@ -111,14 +111,14 @@ export function ComposerAddMenu({
                   <span className="truncate">{t('kubecode.referenceFile')}</span>
                 </Button>
               </div>
-              <div className="min-h-0 flex-1 overflow-auto p-2">
-                <ProjectFileTree
+              <div className="min-h-0 flex-1">
+                <ProjectFilePicker
                   api={api}
-                  onDirectoryChange={() => undefined}
+                  onEscape={() => setShowFiles(false)}
                   onOpenFile={(entry) => closeAndInsert(`@${entry.path} `, 'file')}
                   projectId={projectId}
-                  projectName={t('kubecode.files')}
                   refreshVersion={0}
+                  t={t}
                 />
               </div>
             </>

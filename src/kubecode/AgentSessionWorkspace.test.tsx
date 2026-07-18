@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { createTranslator } from '@/lib/i18n'
@@ -38,19 +38,30 @@ vi.mock('@/components/AiPanelChrome', () => ({
       </article>
     ))}</div>
   ),
-  AiPanelComposer: ({ controls, input, leadingControl, onChange }: {
+  AiPanelComposer: ({ controls, disabled, disabledPlaceholder, input, isActive, leadingControl, onChange, onStop }: {
     controls?: ReactNode
+    disabled?: boolean
+    disabledPlaceholder?: string
     input: string
+    isActive: boolean
     leadingControl?: ReactNode
     onChange: (value: string) => void
+    onStop: () => void
   }) => (
-    <div data-testid="composer">
+    <div
+      data-disabled={disabled}
+      data-disabled-placeholder={disabledPlaceholder}
+      data-testid="composer"
+    >
       {leadingControl}{controls}
       <span data-testid="composer-draft">{input}</span>
-      <button onClick={() => onChange('Prepared follow-up')}>Type follow-up</button>
+      <button disabled={disabled} onClick={() => onChange('Prepared follow-up')}>Type follow-up</button>
+      {isActive && <button onClick={onStop}>Stop Agent</button>}
     </div>
   ),
 }))
+
+afterEach(() => globalThis.sessionStorage?.clear())
 
 const conversation = {
   id: 'session-1',
@@ -240,6 +251,8 @@ describe('AgentSessionWorkspace', () => {
       snapshot_conversation_id: 'revision-snapshot-1',
       forked_at_run_id: run.id,
       created_at: '2026-07-17 12:00:00',
+      workspace_restore: 'kept' as const,
+      workspace_restore_reason: 'checkpoint_unavailable' as const,
     }
     const reviseConversationAtRun = vi.fn().mockResolvedValue(revision)
     const startRun = vi.fn().mockResolvedValue({ ...run, id: 'run-revised' })
@@ -273,6 +286,9 @@ describe('AgentSessionWorkspace', () => {
     expect(startRun).toHaveBeenCalledWith('project-1', 'session-1', 'Implement it')
     expect(onConversationCreated).not.toHaveBeenCalled()
     expect(await screen.findByText('Version 2 / 2')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The conversation was revised, but workspace files were kept',
+    )
   })
 
   it('keeps the current history when creating a revision fails', async () => {
@@ -364,6 +380,113 @@ describe('AgentSessionWorkspace', () => {
 
     expect(await screen.findByText('Read-only subagent transcript')).toBeInTheDocument()
     expect(screen.queryByTestId('composer')).not.toBeInTheDocument()
+  })
+
+  it('keeps teammate transcripts visible but gates direct turn actions by default', async () => {
+    const teammate = {
+      ...conversation,
+      team_id: 'team-1',
+      team_role: 'teammate' as const,
+    }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([run]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'review', description: 'Review changes' }],
+        },
+      }),
+    } as unknown as KubecodeApi
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={teammate}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByTestId('composer')).toHaveAttribute('data-disabled', 'true')
+    expect(screen.getByTestId('composer')).toHaveAttribute(
+      'data-disabled-placeholder',
+      'Direct teammate chat is disabled in Settings',
+    )
+    expect(screen.queryByRole('button', { name: 'Edit message' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Regenerate response' })).not.toBeInTheDocument()
+    expect(screen.queryByText('/review')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add context' })).not.toBeInTheDocument()
+  })
+
+  it('restores direct teammate turn actions when the preference is enabled', async () => {
+    const teammate = {
+      ...conversation,
+      team_id: 'team-1',
+      team_role: 'teammate' as const,
+    }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([run]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      allowTeammateChat
+      api={api}
+      conversation={teammate}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByTestId('composer')).toHaveAttribute('data-disabled', 'false')
+    expect(screen.getByRole('button', { name: 'Edit message' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Regenerate response' })).toBeInTheDocument()
+  })
+
+  it('keeps Stop available for a running teammate when direct chat is disabled', async () => {
+    const teammate = {
+      ...conversation,
+      team_id: 'team-1',
+      team_role: 'teammate' as const,
+    }
+    const cancelRun = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      cancelRun,
+      listRuns: vi.fn().mockResolvedValue([{ ...run, status: 'running' as const }]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={teammate}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop Agent' }))
+    expect(cancelRun).toHaveBeenCalledWith('run-1')
   })
 
   it('keeps native Agent permission configuration selectable during a run', async () => {
@@ -1039,5 +1162,72 @@ describe('AgentSessionWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
     })
+  })
+
+  it('restores a Composer draft after the workspace remounts', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      workspaceEvents: [] as WorkspaceEvent[],
+    }
+    const mounted = render(<AgentSessionWorkspace {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Type follow-up' }))
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
+    mounted.unmount()
+
+    render(<AgentSessionWorkspace {...props} />)
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
+    })
+  })
+
+  it('loads bounded older history without replacing the newest turns', async () => {
+    const newer = { ...run, id: 'run-2', message: 'Newer question' }
+    const older = { ...run, id: 'run-1', message: 'Older question' }
+    const getConversationHistory = vi.fn()
+      .mockResolvedValueOnce({
+        runs: [newer],
+        events: { 'run-2': [] },
+        session_events: [],
+        next_cursor: 'run-2',
+      })
+      .mockResolvedValueOnce({
+        runs: [older],
+        events: { 'run-1': [] },
+        session_events: [],
+        next_cursor: null,
+      })
+    const api = {
+      getConversationHistory,
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+    } as unknown as KubecodeApi
+    render(
+      <AgentSessionWorkspace
+        agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+        api={api}
+        conversation={conversation}
+        locale="en"
+        projectId="project-1"
+        t={createTranslator('en')}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findByText('Newer question')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier messages' }))
+    expect(await screen.findByText('Older question')).toBeInTheDocument()
+    expect(screen.getByText('Newer question')).toBeInTheDocument()
+    expect(getConversationHistory).toHaveBeenNthCalledWith(2, 'session-1', 'run-2')
   })
 })

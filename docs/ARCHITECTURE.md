@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0190.
+active production boundary is defined by ADRs 0161–0193.
 
 ## Runtime topology
 
@@ -46,7 +46,9 @@ primary Agent timeline/composer, a docked Explorer, and a Terminal dock. The
 single 44-pixel title bar contains the active Session identity, global Session
 search, attention, and layout controls. Navigator visibility is global; Explorer
 and Terminal geometry remain Project-scoped. All surrounding panels are
-resizable and independently collapsible.
+resizable and independently collapsible. Below 980 pixels, the navigator and
+Explorer are mutually exclusive overlay panels with a dismissible backdrop;
+desktop geometry and resizing remain unchanged.
 
 The navigator searches, filters, sorts, groups, archives, forks, and deletes
 Sessions beneath their owning Project. Query matches temporarily reveal
@@ -55,10 +57,21 @@ Project indicators. Provider-native fork or subagent relationships remain
 visible, and read-only subagent transcripts do not expose a composer.
 
 The Explorer presents independently collapsible Changes, Agent Plan, and Files
-sections. Opening a file or diff creates a contextual CodeMirror or diff tab
-without replacing the active Agent Session. The Agent timeline and Composer use
-one bounded content width; the Composer shows only a Plan progress summary and
-opens the full checklist in Explorer.
+sections. Opening files creates Project-relative CodeMirror tabs without
+replacing the active Agent Session; each open document retains independent
+saved content and draft state. Dirty tabs require confirmation before close,
+and optional browser-local Auto Save writes after one second without input.
+The lazy Project tree persists expansion per Project and hides hidden,
+Git-ignored, and common generated directories unless the user reveals them.
+File search is a separate flat quick-open surface available from Explorer and
+Command/Ctrl-P. It traverses only the current registered Project, is bounded to
+2,000 visited entries and 100 displayed results, and ignores stale asynchronous
+responses. New file/folder paths and Composer file references reuse the same
+keyboard-navigable path picker rather than embedding another tree. Opening a
+diff remains contextual. The Agent timeline and Composer use one bounded
+content width; their scroll containers retain wheel, touch, keyboard, and
+auto-follow behavior without drawing scrollbar chrome. The Composer shows only
+a Plan progress summary and opens the full checklist in Explorer.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,
@@ -93,10 +106,16 @@ boundary. Failed ACP runs also capture their final tree so interrupted-turn
 Undo remains available. The real Git index and branch are never changed by
 capture.
 
+Session history is exposed as bounded cursor pages. The initial request loads
+the newest 50 runs with their normalized run and Session events in chronological
+display order; older pages prepend without replacing live events. Once more
+than 100 runs are loaded, the browser virtualizes the variable-height timeline
+while preserving the visible scroll anchor.
+
 The Agent Composer keeps ACP-native mode, model, effort, and configuration
 controls behind one summary button in its compact lower action row. Its
 searchable add palette lists the current session's dynamic
-`available_commands` and reuses the project file tree to insert a relative
+`available_commands` and uses the flat Project file picker to insert a relative
 `@path` reference; Kubecode does not invent a separate cross-Agent skill
 registry or copy file contents into the prompt. Long prompts stop growing at a
 bounded editor height and scroll inside the Composer instead of resizing the
@@ -119,7 +138,8 @@ Leader is automatically continued when a result or failure arrives.
 Provider-native subagents remain nested under their owning member and are not
 promoted into Team membership.
 
-The Team runtime persists its lifecycle, goal, acceptance criteria, Agent
+The Team runtime persists its lifecycle, including an explicit Paused state,
+goal, acceptance criteria, Agent
 allowlist, parallel/member/review limits, structured activity, and delivery
 state for every mailbox message. Delegation assigns the task, creates a durable
 Task Attempt, and enqueues its message in one SQLite transaction. The Attempt
@@ -135,25 +155,29 @@ most three times.
 
 A server-owned supervisor runs at startup and every 30 seconds. It reconciles
 all non-terminal Teams, recovers interrupted startup, wakes queued members,
-detects a Leader that has not established a task graph, and processes provider
-cleanup without depending on a browser connection or Team API read.
+detects a Leader that has not established a task graph, and processes lifecycle
+recovery without depending on a browser connection or Team API read.
 
 Team mode has separate requested and effective values. A requested YOLO Team
 uses exact provider-native permission controls: Codex
 `mode=agent-full-access`, Claude Code `mode=bypassPermissions`, and a
-process-scoped OpenCode `OPENCODE_PERMISSION="allow"`. If an exact native
-profile is unavailable, the effective mode becomes Standard and the Agent,
-stable reason code, diagnostic, and timestamp are persisted. Each member also
-persists whether Kubecode applied a native permission profile and its prior
-mode, allowing completion or fallback to restore permissions after a server
-restart. Model, effort, fast mode, and other Agent settings are not part of the
-Team permission policy.
+process-scoped OpenCode `OPENCODE_PERMISSION='{"*":"allow"}'`. If an exact
+native profile is unavailable, the effective mode becomes Standard and the
+Agent, stable reason code, diagnostic, and timestamp are persisted. Each member
+also persists whether Kubecode applied a native permission profile and its
+prior mode, allowing completion or fallback to restore permissions after a
+server restart. Model, effort, fast mode, and other Agent settings are not part
+of the Team permission policy.
 
 Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool
 calls, permissions, and response visible. The browser separates this member
 Chat navigation from a Team control view containing setup, runtime summary,
 attention, task board, dependency, verification, and activity projections.
+The Team control view can pause or resume the complete Team and inspect a
+selected task without opening its full prompt on every card. From the Inspector,
+the user can assign, retry, cancel, open the assignee Session, or remove a
+non-Leader member; destructive operations require confirmation.
 Workspace `team_*` events refresh the projection without merging member
 transcripts into the Leader Chat. The Team task board is the flexible main
 surface: full-width status columns use the active application theme, and each
@@ -216,11 +240,8 @@ member IDs with `team_list_members` and removes a teammate with
 `team_remove_teammate`; that operation affects only the selected member.
 Teammate removal and fixed-Leader disband are local-first operations. Kubecode
 immediately removes roster and local Session state, releases assignments, and
-never deletes Project files. Provider history cleanup runs from a durable
-target after local removal. ACP `session/delete` is preferred; OpenCode falls
-back to native `session delete` when ACP advertises only close. Failure schedules
-bounded retries and remains available for manual retry without restoring the
-member or blocking Team removal.
+never deletes Project files or provider-native Session history. Historical
+provider-cleanup records are completed without contacting the provider.
 
 The Leader can call `team_request_user_input` for a semantic decision it cannot
 safely make. The durable request moves the Team to Needs Attention and pauses
@@ -232,7 +253,8 @@ ACP capabilities drive the UI. Commands, fork, modes, configuration, plans,
 permissions, elicitation, and usage appear only when advertised by the active
 Agent. Kubecode does not implement a second permission-mode abstraction.
 
-Session deletion removes the provider-native history and Kubecode's record.
+Session deletion disconnects the active actor and removes only Kubecode's
+record. Provider-native history remains owned by the Agent.
 Project deletion unregisters the Project and does not modify its directory.
 
 Browser system notifications are derived from live workspace events for

@@ -11,16 +11,15 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   const projectName = `kubecode-playwright-${Date.now()}`
   const projectPath = `/tmp/${projectName}`
   await page.getByRole('button', { name: 'Add project' }).click()
-  await page.getByRole('textbox', { name: 'Full path on this server' }).fill(projectPath)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
+  await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
 
   await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
-  await expect(page.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('button', { name: 'New file' }).click()
-  await page.getByRole('textbox', { name: 'Relative path' }).fill('main.py')
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await page.getByRole('treeitem', { name: 'main.py' }).click()
+  await page.getByRole('combobox', { name: 'Relative path' }).fill('main.py')
+  await page.getByRole('option', { name: 'Create main.py' }).click()
   await expect(page.locator('.cm-editor')).toBeVisible()
 
   await page.getByRole('button', { name: 'Toggle terminal' }).click()

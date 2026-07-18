@@ -491,6 +491,67 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
 }
 
 #[tokio::test]
+async fn revises_chat_history_without_failing_when_file_restore_is_unsafe() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project = workspace
+        .create_project_at(root.join("chat-revision"))
+        .expect("project");
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Change this",
+            kubecode_server::agents::PermissionMode::Safe,
+        )
+        .expect("run");
+    store
+        .finish_run(&run.id, kubecode_server::agents::RunStatus::Completed, None)
+        .expect("complete run");
+    store
+        .set_run_checkpoint(&run.id, Some("before-tree"), None)
+        .expect("incomplete checkpoint");
+
+    let (status, revision) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/turns/{}/revise",
+            conversation.id, run.id
+        ),
+        Value::Null,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(revision["conversation_id"], conversation.id);
+    assert_eq!(revision["workspace_restore"], "kept");
+    assert_eq!(
+        revision["workspace_restore_reason"],
+        "checkpoint_unavailable"
+    );
+    assert!(store.list_runs(&conversation.id).expect("runs").is_empty());
+}
+
+#[tokio::test]
 async fn creates_reads_and_revision_checks_files_over_http() {
     let (temp, app) = app();
     let (_, project) = json_request(

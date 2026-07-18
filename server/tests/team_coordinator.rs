@@ -7,8 +7,8 @@ use kubecode_server::agent_runtime::AgentRuntime;
 use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::team_coordinator::{CoordinatorError, SpawnTeammate, TeamCoordinator};
 use kubecode_server::teams::{
-    MemberWorkspaceMode, NewTeam, NewTeamTask, NewTeammate, StartTeam, TeamError,
-    TeamLifecycleOperationStatus, TeamMessageKind, TeamMode, TeamStore, TeamWorkspace,
+    MemberWorkspaceMode, NewTeam, NewTeamTask, NewTeammate, StartTeam, TeamError, TeamMessageKind,
+    TeamMode, TeamStore, TeamWorkspace,
 };
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
@@ -350,15 +350,11 @@ done"#,
 
     assert!(teams.get_member(&member.id).is_err());
     assert!(agents.get_conversation(&teammate.id).is_err());
-    let operation = removal.cleanup_operation.expect("cleanup operation");
-    for _ in 0..100 {
-        let current = teams
-            .get_lifecycle_operation(&operation.id)
-            .expect("operation");
-        if current.status == TeamLifecycleOperationStatus::RetryScheduled {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    panic!("provider cleanup was not scheduled for retry");
+    assert!(removal.cleanup_operation.is_none());
+    assert!(
+        teams
+            .list_lifecycle_operations(&team.id)
+            .expect("lifecycle operations")
+            .is_empty()
+    );
 }

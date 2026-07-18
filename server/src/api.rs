@@ -387,6 +387,10 @@ fn api_router(state: AppState) -> Router {
             get(list_conversation_runs),
         )
         .route(
+            "/sessions/{conversation_id}/history",
+            get(list_conversation_history),
+        )
+        .route(
             "/sessions/{conversation_id}",
             axum::routing::patch(update_conversation).delete(delete_conversation),
         )
@@ -747,6 +751,10 @@ async fn branch_conversation_at_run(
 ) -> Result<impl IntoResponse, ApiError> {
     let store = state.agent_runtime.store();
     let source = store.get_conversation(&conversation_id)?;
+    let target = store.get_run(&run_id)?;
+    if target.conversation_id != source.id {
+        return Err(StoreError::RunNotFound(run_id).into());
+    }
     if request.restore_files
         && let Some(checkpoint) = store.run_checkpoint(&run_id)?
         && let Some(before_tree) = checkpoint.before_tree
@@ -774,15 +782,48 @@ async fn revise_conversation_at_run(
     State(state): State<AppState>,
     Path((conversation_id, run_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let store = state.agent_runtime.store();
+    let source = store.get_conversation(&conversation_id)?;
+    let (workspace_restore, workspace_restore_reason) = match store.run_checkpoint(&run_id)? {
+        Some(checkpoint) if checkpoint.before_tree.is_some() && checkpoint.after_tree.is_some() => {
+            let cwd = state
+                .workspace
+                .execution_path(&source.project_id, source.workspace_path.as_deref())?;
+            match state.workspace.restore_git_tree(
+                &cwd,
+                checkpoint
+                    .before_tree
+                    .as_deref()
+                    .expect("checked before tree"),
+                checkpoint.after_tree.as_deref(),
+            ) {
+                Ok(()) => ("restored", None),
+                Err(_) => ("kept", Some("workspace_changed")),
+            }
+        }
+        _ => ("kept", Some("checkpoint_unavailable")),
+    };
     state
         .agent_runtime
         .disconnect_conversation(&conversation_id)
         .await?;
-    let revision = state
-        .agent_runtime
-        .store()
-        .revise_conversation_at_run(&conversation_id, &run_id)?;
-    Ok((StatusCode::CREATED, Json(revision)))
+    let revision = store.revise_conversation_at_run(&conversation_id, &run_id)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ReviseConversationResponse {
+            revision,
+            workspace_restore,
+            workspace_restore_reason,
+        }),
+    ))
+}
+
+#[derive(Debug, Serialize)]
+struct ReviseConversationResponse {
+    #[serde(flatten)]
+    revision: crate::agents::ConversationRevision,
+    workspace_restore: &'static str,
+    workspace_restore_reason: Option<&'static str>,
 }
 
 async fn list_conversation_revisions(
@@ -883,6 +924,71 @@ async fn list_conversation_runs(
     Ok(Json(
         state.agent_runtime.store().list_runs(&conversation_id)?,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryPageQuery {
+    before: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConversationHistoryPage {
+    runs: Vec<crate::agents::AgentRun>,
+    events: BTreeMap<String, Vec<AgentEvent>>,
+    session_events: Vec<crate::agents::SessionEvent>,
+    next_cursor: Option<String>,
+}
+
+async fn list_conversation_history(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Query(query): Query<HistoryPageQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let store = state.agent_runtime.store();
+    let (runs, has_more) =
+        store.list_runs_page(&conversation_id, query.before.as_deref(), limit)?;
+    let mut events = BTreeMap::new();
+    for run in &runs {
+        events.insert(run.id.clone(), store.events_after(&run.id, 0)?);
+    }
+    let all_session_events = store.session_events_after(&conversation_id, 0)?;
+    let session_events = runs.first().map_or_else(Vec::new, |first| {
+        let start = all_session_events
+            .iter()
+            .position(|event| {
+                event
+                    .payload
+                    .get("run_id")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(first.id.as_str())
+            })
+            .unwrap_or(all_session_events.len());
+        let end = query
+            .before
+            .as_deref()
+            .and_then(|before| {
+                all_session_events.iter().position(|event| {
+                    event
+                        .payload
+                        .get("run_id")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(before)
+                })
+            })
+            .unwrap_or(all_session_events.len());
+        all_session_events[start..end.max(start)].to_vec()
+    });
+    let next_cursor = has_more
+        .then(|| runs.first().map(|run| run.id.clone()))
+        .flatten();
+    Ok(Json(ConversationHistoryPage {
+        runs,
+        events,
+        session_events,
+        next_cursor,
+    }))
 }
 
 async fn list_project_runs(
@@ -1957,11 +2063,6 @@ impl IntoResponse for ApiError {
                 RuntimeError::Acp(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "agent_error",
-                    error.to_string(),
-                ),
-                RuntimeError::SessionDeletion(_) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "session_delete_failed",
                     error.to_string(),
                 ),
                 RuntimeError::AdapterUnavailable { .. } => (

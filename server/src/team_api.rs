@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
@@ -25,14 +25,28 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/teams/{team_id}", get(get_team))
         .route("/teams/{team_id}/start", post(start_team))
+        .route("/teams/{team_id}/pause", post(pause_team))
+        .route("/teams/{team_id}/resume", post(resume_team))
         .route("/teams/{team_id}/complete", post(complete_team))
+        .route(
+            "/teams/{team_id}/tasks/{task_id}/retry",
+            post(retry_team_task),
+        )
+        .route(
+            "/teams/{team_id}/tasks/{task_id}/cancel",
+            post(cancel_team_task),
+        )
+        .route(
+            "/teams/{team_id}/tasks/{task_id}/assign",
+            post(assign_team_task),
+        )
+        .route(
+            "/teams/{team_id}/members/{member_id}",
+            delete(remove_team_member),
+        )
         .route(
             "/teams/{team_id}/attention/{request_id}/resolve",
             post(resolve_team_user_input),
-        )
-        .route(
-            "/teams/{team_id}/cleanup/{operation_id}/retry",
-            post(retry_team_cleanup),
         )
         .route("/teams/{team_id}/settings", patch(update_team_settings))
         .route(
@@ -92,6 +106,16 @@ struct ResolveProposalRequest {
 #[derive(Debug, Deserialize)]
 struct ResolveUserInputRequest {
     answer: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AssignTeamTaskRequest {
+    member_id: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CancelTeamTaskRequest {
+    reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -549,6 +573,176 @@ async fn complete_team(
     Ok(Json(snapshot(&state, completed)?))
 }
 
+async fn pause_team(
+    State(state): State<AppState>,
+    Path(team_id): Path<String>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    for member in state.teams.list_members(&team.id)? {
+        if let Ok(runs) = state
+            .agent_runtime
+            .store()
+            .list_runs(&member.conversation_id)
+            && let Some(run) = runs.last()
+            && matches!(
+                run.status,
+                RunStatus::Running | RunStatus::WaitingPermission
+            )
+        {
+            let _ = state.agent_runtime.cancel(&run.id);
+        }
+        let _ = state.teams.fail_active_attempt(
+            &member.id,
+            crate::teams::TeamTaskFailureKind::Interrupted,
+            "Team paused by user",
+        );
+        if !matches!(
+            member.status,
+            TeamMemberStatus::Removed | TeamMemberStatus::Removing
+        ) {
+            let _ = state
+                .teams
+                .set_member_status(&member.id, TeamMemberStatus::Stopped);
+        }
+    }
+    let paused = state.teams.pause_team(&team.id)?;
+    state.teams.append_activity(
+        &paused.id,
+        Some(&paused.leader_member_id),
+        None,
+        "team_paused",
+        "User paused the Team",
+        None,
+    )?;
+    publish_team_event(&state, &paused.id, "team_paused");
+    Ok(Json(snapshot(&state, paused)?))
+}
+
+async fn resume_team(
+    State(state): State<AppState>,
+    Path(team_id): Path<String>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let resumed = state.teams.resume_team(&team_id)?;
+    for member in state.teams.list_members(&resumed.id)? {
+        if member.status == TeamMemberStatus::Stopped {
+            let _ = state
+                .teams
+                .set_member_status(&member.id, TeamMemberStatus::Idle);
+        }
+    }
+    state.teams.send_message(
+        &resumed.id,
+        &resumed.leader_member_id,
+        &resumed.leader_member_id,
+        TeamMessageKind::System,
+        None,
+        "The user resumed the Team. Review interrupted tasks and retry or reassign them before continuing.",
+    )?;
+    state.teams.append_activity(
+        &resumed.id,
+        Some(&resumed.leader_member_id),
+        None,
+        "team_resumed",
+        "User resumed the Team",
+        None,
+    )?;
+    let _ = state.agent_runtime.wake_team_leader(&resumed.id);
+    publish_team_event(&state, &resumed.id, "team_resumed");
+    Ok(Json(snapshot(&state, resumed)?))
+}
+
+async fn retry_team_task(
+    State(state): State<AppState>,
+    Path((team_id, task_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    let task = state.teams.get_task(&task_id)?;
+    if task.team_id != team.id {
+        return Err(TeamError::WrongTeam.into());
+    }
+    state.teams.retry_task(&task.id, &team.leader_member_id)?;
+    state.teams.append_activity(
+        &team.id,
+        Some(&team.leader_member_id),
+        Some(&task.id),
+        "task_retried",
+        &format!("User made {} ready to retry", task.title),
+        None,
+    )?;
+    let _ = state.agent_runtime.wake_team_leader(&team.id);
+    publish_team_event(&state, &team.id, "team_task_updated");
+    Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))
+}
+
+async fn cancel_team_task(
+    State(state): State<AppState>,
+    Path((team_id, task_id)): Path<(String, String)>,
+    Json(request): Json<CancelTeamTaskRequest>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    let task = state.teams.get_task(&task_id)?;
+    if task.team_id != team.id {
+        return Err(TeamError::WrongTeam.into());
+    }
+    if let Some(run_id) = state
+        .teams
+        .list_task_attempts(&team.id)?
+        .into_iter()
+        .rev()
+        .find(|attempt| attempt.task_id == task.id)
+        .and_then(|attempt| attempt.run_id)
+    {
+        let _ = state.agent_runtime.cancel(&run_id);
+    }
+    state
+        .teams
+        .cancel_task(&task.id, &team.leader_member_id, request.reason.as_deref())?;
+    state.teams.append_activity(
+        &team.id,
+        Some(&team.leader_member_id),
+        Some(&task.id),
+        "task_cancelled",
+        &format!("User cancelled {}", task.title),
+        request.reason.as_deref(),
+    )?;
+    let _ = state.agent_runtime.wake_team_leader(&team.id);
+    publish_team_event(&state, &team.id, "team_task_updated");
+    Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))
+}
+
+async fn assign_team_task(
+    State(state): State<AppState>,
+    Path((team_id, task_id)): Path<(String, String)>,
+    Json(request): Json<AssignTeamTaskRequest>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    let task = state.teams.get_task(&task_id)?;
+    if task.team_id != team.id {
+        return Err(TeamError::WrongTeam.into());
+    }
+    state
+        .teams
+        .delegate_task(&task.id, &team.leader_member_id, &request.member_id)?;
+    let _ = state
+        .agent_runtime
+        .wake_team_member(&team.id, &request.member_id);
+    publish_team_event(&state, &team.id, "team_task_updated");
+    Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))
+}
+
+async fn remove_team_member(
+    State(state): State<AppState>,
+    Path((team_id, member_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, TeamApiError> {
+    let team = state.teams.get_team(&team_id)?;
+    state
+        .agent_runtime
+        .remove_team_member_local_first(&team.id, &team.leader_member_id, &member_id)
+        .await?;
+    publish_team_event(&state, &team.id, "team_member_removed");
+    Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))
+}
+
 async fn resolve_team_user_input(
     State(state): State<AppState>,
     Path((team_id, request_id)): Path<(String, String)>,
@@ -583,25 +777,6 @@ async fn resolve_team_user_input(
     Ok(Json(snapshot(&state, team)?))
 }
 
-async fn retry_team_cleanup(
-    State(state): State<AppState>,
-    Path((team_id, operation_id)): Path<(String, String)>,
-) -> Result<impl IntoResponse, TeamApiError> {
-    let operation = state.teams.get_lifecycle_operation(&operation_id)?;
-    if operation.team_id != team_id
-        || operation.kind != crate::teams::TeamLifecycleOperationKind::ProviderCleanup
-    {
-        return Err(TeamError::WrongTeam.into());
-    }
-    state.teams.retry_lifecycle_operation(&operation_id)?;
-    let operation = state
-        .agent_runtime
-        .process_lifecycle_operation(&operation_id)
-        .await?;
-    publish_team_event(&state, &team_id, "team_cleanup_updated");
-    Ok(Json(operation))
-}
-
 async fn update_team_settings(
     State(state): State<AppState>,
     Path(team_id): Path<String>,
@@ -622,9 +797,22 @@ async fn resolve_team_proposal(
     Path((team_id, proposal_id)): Path<(String, String)>,
     Json(request): Json<ResolveProposalRequest>,
 ) -> Result<impl IntoResponse, TeamApiError> {
-    state
+    let proposal = state
         .teams
         .resolve_proposal(&team_id, &proposal_id, request.decision)?;
+    let team = state.teams.get_team(&team_id)?;
+    state.teams.send_message(
+        &team.id,
+        &team.leader_member_id,
+        &team.leader_member_id,
+        TeamMessageKind::System,
+        None,
+        if request.decision == TeamProposalStatus::Approved {
+            "The user approved the proposed Team lineup. You may create the approved teammates and delegate tasks."
+        } else {
+            "The user rejected the proposed Team lineup. Revise the lineup before creating teammates."
+        },
+    )?;
     state.teams.append_activity(
         &team_id,
         None,
@@ -639,10 +827,10 @@ async fn resolve_team_proposal(
         } else {
             "User rejected the Team lineup"
         },
-        None,
+        Some(&proposal.id),
     )?;
+    let _ = state.agent_runtime.wake_team_leader(&team.id);
     publish_team_event(&state, &team_id, "team_proposal_updated");
-    let team = state.teams.get_team(&team_id)?;
     Ok(Json(snapshot(&state, team)?))
 }
 
@@ -748,7 +936,7 @@ fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> 
             summary: "The Leader could not establish a concrete task graph".into(),
         });
     }
-    let next_actions = team_next_actions(&members, &user_input_requests, &lifecycle_operations);
+    let next_actions = team_next_actions(&members, &user_input_requests);
     let summary = TeamRuntimeSummary {
         running: members
             .iter()
@@ -857,12 +1045,15 @@ fn team_attention(
     });
     let lifecycle_attention = lifecycle_operations
         .iter()
-        .filter(|operation| operation.status == TeamLifecycleOperationStatus::Failed)
+        .filter(|operation| {
+            operation.status == TeamLifecycleOperationStatus::Failed
+                && operation.kind != crate::teams::TeamLifecycleOperationKind::ProviderCleanup
+        })
         .map(|operation| TeamAttention {
             id: operation.id.clone(),
             kind: match operation.kind {
                 crate::teams::TeamLifecycleOperationKind::Provisioning => "provisioning_failed",
-                crate::teams::TeamLifecycleOperationKind::ProviderCleanup => "cleanup_failed",
+                crate::teams::TeamLifecycleOperationKind::ProviderCleanup => unreachable!(),
                 crate::teams::TeamLifecycleOperationKind::Disband => "disband_failed",
             },
             member_id: operation.member_id.clone(),
@@ -882,7 +1073,6 @@ fn team_attention(
 fn team_next_actions(
     members: &[TeamMember],
     user_input_requests: &[TeamUserInputRequest],
-    lifecycle_operations: &[TeamLifecycleOperation],
 ) -> Vec<TeamNextAction> {
     let answer = user_input_requests.iter().map(|request| TeamNextAction {
         id: request.id.clone(),
@@ -897,18 +1087,7 @@ fn team_next_actions(
             kind: "configure_member",
             label: member.name.clone(),
         });
-    let cleanup = lifecycle_operations
-        .iter()
-        .filter(|operation| {
-            operation.kind == crate::teams::TeamLifecycleOperationKind::ProviderCleanup
-                && operation.status == TeamLifecycleOperationStatus::Failed
-        })
-        .map(|operation| TeamNextAction {
-            id: operation.id.clone(),
-            kind: "retry_cleanup",
-            label: "Retry provider cleanup".into(),
-        });
-    answer.chain(configure).chain(cleanup).collect()
+    answer.chain(configure).collect()
 }
 
 fn publish_team_event(state: &AppState, team_id: &str, kind: &str) {

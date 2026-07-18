@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CaretDown, CaretRight } from '@phosphor-icons/react'
+import { CaretDown, CaretRight, Eye, EyeSlash } from '@phosphor-icons/react'
 
 import { Button } from '@/components/ui/button'
+import type { TranslationKey } from '@/lib/i18n'
 
 import type { Entry, KubecodeApi } from './api'
 import { ProjectEntryIcon } from './fileIcons'
+import { isExcludedProjectEntry } from './projectPathSearch'
 
 type ProjectFileTreeProps = {
   api: KubecodeApi
@@ -13,6 +15,7 @@ type ProjectFileTreeProps = {
   projectId: string
   projectName: string
   refreshVersion: number
+  t: (key: TranslationKey) => string
 }
 
 export function ProjectFileTree({
@@ -22,10 +25,16 @@ export function ProjectFileTree({
   projectId,
   projectName,
   refreshVersion,
+  t,
 }: ProjectFileTreeProps) {
-  const [expanded, setExpanded] = useState(() => new Set(['']))
+  const [expanded, setExpanded] = useState(() => readExpandedPaths(projectId))
   const [children, setChildren] = useState(() => new Map<string, Entry[]>())
+  const [showExcluded, setShowExcluded] = useState(false)
   const expandedPaths = useMemo(() => [...expanded].sort(), [expanded])
+
+  useEffect(() => {
+    writeExpandedPaths(projectId, expanded)
+  }, [expanded, projectId])
 
   useEffect(() => {
     let current = true
@@ -53,14 +62,30 @@ export function ProjectFileTree({
   }
 
   return (
-    <div aria-label={projectName} className="kubecode-project-file-tree" role="tree">
-      <TreeDirectoryRow
-        entry={{ kind: 'directory', name: projectName, path: '' }}
-        expanded={expanded}
-        childrenByPath={children}
-        onOpenFile={onOpenFile}
-        onToggle={toggleDirectory}
-      />
+    <div className="kubecode-project-file-browser">
+      <div className="kubecode-file-tree-controls">
+        <Button
+          aria-label={showExcluded
+            ? t('kubecode.hideExcludedFiles')
+            : t('kubecode.showExcludedFiles')}
+          aria-pressed={showExcluded}
+          size="icon-xs"
+          variant="ghost"
+          onClick={() => setShowExcluded((current) => !current)}
+        >
+          {showExcluded ? <Eye /> : <EyeSlash />}
+        </Button>
+      </div>
+      <div aria-label={projectName} className="kubecode-project-file-tree" role="tree">
+        <TreeDirectoryRow
+          entry={{ kind: 'directory', name: projectName, path: '' }}
+          expanded={expanded}
+          childrenByPath={children}
+          onOpenFile={onOpenFile}
+          onToggle={toggleDirectory}
+          showExcluded={showExcluded}
+        />
+      </div>
     </div>
   )
 }
@@ -71,15 +96,18 @@ function TreeDirectoryRow({
   expanded,
   onOpenFile,
   onToggle,
+  showExcluded,
 }: {
   childrenByPath: Map<string, Entry[]>
   entry: Entry
   expanded: Set<string>
   onOpenFile: (entry: Entry) => void
   onToggle: (path: string) => void
+  showExcluded: boolean
 }) {
   const isExpanded = expanded.has(entry.path)
-  const children = childrenByPath.get(entry.path) ?? []
+  const children = (childrenByPath.get(entry.path) ?? [])
+    .filter((child) => showExcluded || !isExcludedProjectEntry(child))
 
   return (
     <>
@@ -104,6 +132,7 @@ function TreeDirectoryRow({
               key={child.path}
               onOpenFile={onOpenFile}
               onToggle={onToggle}
+              showExcluded={showExcluded}
             />
           ) : (
             <Button
@@ -122,4 +151,28 @@ function TreeDirectoryRow({
       )}
     </>
   )
+}
+
+function readExpandedPaths(projectId: string): Set<string> {
+  try {
+    const stored = globalThis.sessionStorage?.getItem(`kubecode:file-tree:${projectId}`)
+    const paths = stored ? JSON.parse(stored) as unknown : null
+    if (Array.isArray(paths) && paths.every((path) => typeof path === 'string')) {
+      return new Set(['', ...paths])
+    }
+  } catch {
+    // Ignore unavailable or malformed browser storage.
+  }
+  return new Set([''])
+}
+
+function writeExpandedPaths(projectId: string, paths: Set<string>) {
+  try {
+    globalThis.sessionStorage?.setItem(
+      `kubecode:file-tree:${projectId}`,
+      JSON.stringify([...paths]),
+    )
+  } catch {
+    // Tree navigation remains usable without browser storage.
+  }
 }

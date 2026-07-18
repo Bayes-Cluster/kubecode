@@ -129,6 +129,7 @@ pub enum TeamStatus {
     Draft,
     Starting,
     Active,
+    Paused,
     Verifying,
     NeedsAttention,
     Completed,
@@ -999,6 +1000,38 @@ impl TeamStore {
             .execute(
                 "UPDATE teams SET status = 'active', updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?1 AND status = 'starting'",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
+    }
+
+    pub fn pause_team(&self, team_id: &str) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status IN ('active', 'verifying', 'needs_attention')",
+                [team_id],
+            )?;
+        if changed == 0 {
+            return Err(TeamError::InvalidTeamState);
+        }
+        self.get_team(team_id)
+    }
+
+    pub fn resume_team(&self, team_id: &str) -> Result<Team, TeamError> {
+        let changed = self
+            .database
+            .lock()
+            .expect("team database mutex poisoned")
+            .execute(
+                "UPDATE teams SET status = 'active', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'paused'",
                 [team_id],
             )?;
         if changed == 0 {
@@ -3487,6 +3520,7 @@ stored_enum!(TeamStatus {
     Draft => "draft",
     Starting => "starting",
     Active => "active",
+    Paused => "paused",
     Verifying => "verifying",
     NeedsAttention => "needs_attention",
     Completed => "completed",

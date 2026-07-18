@@ -205,6 +205,54 @@ fn starts_a_draft_with_an_explicit_goal_and_bounded_autonomy() {
 }
 
 #[test]
+fn pauses_and_resumes_an_active_team_without_reconciling_it() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: Some("Pause lifecycle"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let agents = vec!["codex".to_owned()];
+    store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Exercise pause",
+            acceptance_criteria: &["Team resumes".to_owned()],
+            allowed_agent_ids: &agents,
+            mode: TeamMode::Standard,
+            max_teammates: 1,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .expect("start");
+    store.activate_team(&team.id).expect("activate");
+
+    assert_eq!(
+        store.pause_team(&team.id).expect("pause").status,
+        TeamStatus::Paused
+    );
+    assert!(
+        store
+            .list_reconcilable_teams()
+            .expect("reconcilable")
+            .iter()
+            .all(|candidate| candidate.id != team.id)
+    );
+    assert_eq!(
+        store.resume_team(&team.id).expect("resume").status,
+        TeamStatus::Active
+    );
+}
+
+#[test]
 fn leader_and_discriminator_cannot_claim_concrete_tasks() {
     let (_temp, store) = store();
     let team = store

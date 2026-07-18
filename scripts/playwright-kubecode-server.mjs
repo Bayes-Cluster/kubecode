@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 const port = process.argv[2] ?? '41741'
 const root = await mkdtemp(join(tmpdir(), `kubecode-playwright-${port}-`))
 const state = join(root, '.state', 'kubecode')
+const configuredServerBinary = process.env.KUBECODE_SERVER_BIN
 
 async function run(command, args, options = {}) {
   return await new Promise((resolve, reject) => {
@@ -26,7 +27,15 @@ if (!existsSync('dist/index.html')) {
   await run('pnpm', ['build'])
 }
 
-const server = spawn('cargo', ['run', '--manifest-path', 'server/Cargo.toml'], {
+if (configuredServerBinary && !existsSync(configuredServerBinary)) {
+  throw new Error(`KUBECODE_SERVER_BIN does not exist: ${configuredServerBinary}`)
+}
+
+const serverCommand = configuredServerBinary ?? 'cargo'
+const serverArguments = configuredServerBinary
+  ? []
+  : ['run', '--locked', '--manifest-path', 'server/Cargo.toml']
+const server = spawn(serverCommand, serverArguments, {
   env: {
     ...process.env,
     HOST: '127.0.0.1',

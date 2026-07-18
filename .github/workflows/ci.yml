@@ -30,20 +30,7 @@ jobs:
 
   server:
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy,rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: server
-      - run: cargo fmt --manifest-path server/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
-      - run: cargo test --manifest-path server/Cargo.toml
-
-  smoke:
-    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -54,6 +41,44 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Install ACP adapter dependencies
+        run: pnpm install --prod --frozen-lockfile --ignore-scripts
+      - name: Verify ACP adapters
+        run: |
+          test -x node_modules/.bin/claude-agent-acp
+          test -x node_modules/.bin/codex-acp
+      - run: cargo fmt --manifest-path server/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path server/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path server/Cargo.toml
+
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
       - run: pnpm install --frozen-lockfile
+      - name: Build frontend
+        run: pnpm build
+      - name: Build server
+        run: cargo build --locked --manifest-path server/Cargo.toml
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm playwright:smoke
+      - name: Run browser smoke test
+        run: pnpm playwright:smoke
+        env:
+          KUBECODE_SERVER_BIN: ${{ github.workspace }}/server/target/debug/kubecode-server

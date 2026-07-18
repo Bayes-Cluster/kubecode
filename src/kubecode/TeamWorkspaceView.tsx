@@ -1,17 +1,29 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
+  ArrowsClockwise,
   CheckCircle,
   Clock,
   GitBranch,
   ListChecks,
+  Pause,
+  Play,
   SpinnerGap,
+  Trash,
   UsersThree,
   WarningCircle,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -52,6 +64,9 @@ export function TeamWorkspaceView({
 }) {
   const [error, setError] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
+  const [pauseConfirmationOpen, setPauseConfirmationOpen] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'tasks' | 'activity' | 'dependencies'>('tasks')
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const conversations = useMemo(
@@ -69,6 +84,7 @@ export function TeamWorkspaceView({
     total_tasks: tasks.length,
   }
   const tasksByColumn = useMemo(() => groupTasks(tasks), [tasks])
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null
 
   useEffect(() => {
     if (!activity.some((item) => item.kind === 'team_native_permission_restored')) return
@@ -100,14 +116,6 @@ export function TeamWorkspaceView({
           operation.status,
         )
       }
-      if (operation.kind !== 'provider_cleanup') continue
-      if (operation.status === 'completed') {
-        trackTeamLifecycleEvent('kubecode_team_cleanup_succeeded', operation.id, operation.status)
-      } else if (operation.status === 'retry_scheduled' || operation.status === 'failed') {
-        trackTeamLifecycleEvent('kubecode_team_cleanup_pending', operation.id, operation.status, {
-          attempt_count: operation.attempt_count,
-        })
-      }
     }
   }, [snapshot.lifecycle_operations, snapshot.user_input_requests])
 
@@ -124,14 +132,30 @@ export function TeamWorkspaceView({
     }
   }
 
-  const retryCleanup = async (operationId: string) => {
+  const updateTeam = async (action: string, request: () => Promise<TeamSnapshot>) => {
+    setBusyAction(action)
     setError(null)
     try {
-      await api.retryTeamCleanup(snapshot.team.id, operationId)
-      onSnapshotChange(await api.getTeam(snapshot.team.id))
+      onSnapshotChange(await request())
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('kubecode.error'))
+    } finally {
+      setBusyAction(null)
     }
+  }
+
+  const pause = async () => {
+    setPauseConfirmationOpen(false)
+    await updateTeam('pause', () => api.pauseTeam(snapshot.team.id))
+  }
+
+  const resolveProposal = async (decision: 'approved' | 'rejected') => {
+    if (!snapshot.proposal) return
+    await updateTeam(`proposal:${decision}`, () => api.resolveTeamProposal(
+      snapshot.team.id,
+      snapshot.proposal!.id,
+      decision,
+    ))
   }
 
   if (snapshot.team.status === 'draft' || setupOpen) {
@@ -160,13 +184,33 @@ export function TeamWorkspaceView({
           <span className="kubecode-team-status" data-status={snapshot.team.status}>
             {teamStatusLabel(snapshot.team.status, t)}
           </span>
-          <span>{snapshot.team.mode === 'yolo' ? t('kubecode.teamYolo') : t('kubecode.teamStandard')}</span>
-          <span>{t('kubecode.teamConcurrency')}: {snapshot.team.max_parallel_runs}</span>
+          <span className="kubecode-team-mode-badge" data-mode={snapshot.team.mode}>
+            {snapshot.team.mode === 'yolo' ? t('kubecode.teamYolo') : t('kubecode.teamStandard')}
+          </span>
           {snapshot.team.status === 'needs_attention' && (
             <Button size="sm" variant="outline" onClick={() => setSetupOpen(true)}>
               {t('kubecode.teamReconfigure')}
             </Button>
           )}
+          {snapshot.team.status === 'paused' ? (
+            <Button
+              disabled={busyAction !== null}
+              size="sm"
+              variant="outline"
+              onClick={() => void updateTeam('resume', () => api.resumeTeam(snapshot.team.id))}
+            >
+              <Play weight="fill" /> {t('kubecode.teamResume')}
+            </Button>
+          ) : ['active', 'verifying', 'needs_attention'].includes(snapshot.team.status) ? (
+            <Button
+              disabled={busyAction !== null}
+              size="sm"
+              variant="outline"
+              onClick={() => setPauseConfirmationOpen(true)}
+            >
+              <Pause weight="fill" /> {t('kubecode.teamPause')}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -184,6 +228,33 @@ export function TeamWorkspaceView({
           level="warning"
           message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}
         />
+      )}
+
+      {snapshot.proposal?.status === 'pending' && (
+        <section className="kubecode-team-proposal" data-testid="team-lineup-proposal">
+          <div>
+            <strong>{t('kubecode.teamProposalTitle')}</strong>
+            <span>{snapshot.proposal.summary}</span>
+            <ProposalMembers membersJson={snapshot.proposal.members_json} />
+          </div>
+          <footer>
+            <Button
+              disabled={busyAction !== null}
+              size="sm"
+              variant="ghost"
+              onClick={() => void resolveProposal('rejected')}
+            >
+              {t('kubecode.teamProposalReject')}
+            </Button>
+            <Button
+              disabled={busyAction !== null}
+              size="sm"
+              onClick={() => void resolveProposal('approved')}
+            >
+              {t('kubecode.teamProposalApprove')}
+            </Button>
+          </footer>
+        </section>
       )}
 
       <div className="kubecode-team-metrics">
@@ -223,16 +294,6 @@ export function TeamWorkspaceView({
                       onClick={() => void resolveUserInput(userRequest.id)}
                     >
                       {t('kubecode.teamSubmitAnswer')}
-                    </Button>
-                  </article>
-                )
-              }
-              if (attentionItem.kind === 'cleanup_failed') {
-                return (
-                  <article className="kubecode-team-cleanup" key={attentionItem.id}>
-                    <span>{t('kubecode.teamCleanupPending')}</span>
-                    <Button size="sm" variant="outline" onClick={() => void retryCleanup(attentionItem.id)}>
-                      {t('kubecode.teamRetryCleanup')}
                     </Button>
                   </article>
                 )
@@ -305,6 +366,7 @@ export function TeamWorkspaceView({
                         key={task.id}
                         members={snapshot.members}
                         onSelectMember={onSelectMember}
+                        onSelectTask={setSelectedTaskId}
                         task={task}
                       />
                     ))}
@@ -341,7 +403,266 @@ export function TeamWorkspaceView({
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={pauseConfirmationOpen} onOpenChange={setPauseConfirmationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('kubecode.teamPauseTitle')}</DialogTitle>
+            <DialogDescription>{t('kubecode.teamPauseDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPauseConfirmationOpen(false)}>
+              {t('kubecode.cancel')}
+            </Button>
+            <Button onClick={() => void pause()}>
+              <Pause weight="fill" /> {t('kubecode.teamPauseConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TaskInspector
+        api={api}
+        busyAction={busyAction}
+        members={snapshot.members}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTaskId(null)
+        }}
+        onSelectMember={onSelectMember}
+        onSnapshotChange={onSnapshotChange}
+        setBusyAction={setBusyAction}
+        setError={setError}
+        snapshot={snapshot}
+        task={selectedTask}
+        t={t}
+      />
     </section>
+  )
+}
+
+function ProposalMembers({ membersJson }: { membersJson: string }) {
+  let names: string[] = []
+  try {
+    const parsed = JSON.parse(membersJson) as unknown
+    if (Array.isArray(parsed)) {
+      names = parsed.flatMap((value) => {
+        if (typeof value === 'string') return [value]
+        if (!value || typeof value !== 'object') return []
+        const member = value as Record<string, unknown>
+        const name = typeof member.name === 'string'
+          ? member.name
+          : typeof member.role === 'string'
+            ? member.role
+            : null
+        return name ? [name] : []
+      })
+    }
+  } catch {
+    names = []
+  }
+  if (names.length === 0) return null
+  return <div className="kubecode-team-proposal-members">{names.map((name) => <span key={name}>{name}</span>)}</div>
+}
+
+function TaskInspector({
+  api,
+  busyAction,
+  members,
+  onOpenChange,
+  onSelectMember,
+  onSnapshotChange,
+  setBusyAction,
+  setError,
+  snapshot,
+  task,
+  t,
+}: {
+  api: KubecodeApi
+  busyAction: string | null
+  members: TeamMember[]
+  onOpenChange: (open: boolean) => void
+  onSelectMember: (conversationId: string) => void
+  onSnapshotChange: (snapshot: TeamSnapshot) => void
+  setBusyAction: (value: string | null) => void
+  setError: (value: string | null) => void
+  snapshot: TeamSnapshot
+  task: TeamTask | null
+  t: Translator
+}) {
+  const [confirmation, setConfirmation] = useState<'cancel' | 'remove' | null>(null)
+  const assignee = members.find((member) => member.id === task?.assignee_member_id)
+  const teammates = members.filter((member) => (
+    member.role === 'teammate' && !['removed', 'removing'].includes(member.status)
+  ))
+  const act = async (key: string, request: () => Promise<TeamSnapshot>) => {
+    setBusyAction(key)
+    setError(null)
+    try {
+      onSnapshotChange(await request())
+      onOpenChange(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('kubecode.error'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  return (
+    <>
+      <Dialog open={Boolean(task)} onOpenChange={onOpenChange}>
+        <DialogContent className="kubecode-team-task-dialog">
+          {task && (
+            <>
+            <DialogHeader>
+              <DialogTitle>{task.title}</DialogTitle>
+              <DialogDescription>{t('kubecode.teamTaskDetails')}</DialogDescription>
+            </DialogHeader>
+            <div className="kubecode-team-task-dialog-body">
+              <dl>
+                <div><dt>{t('kubecode.teamTaskStatus')}</dt><dd>{task.status}</dd></div>
+                <div>
+                  <dt>{t('kubecode.teamTaskAssignee')}</dt>
+                  <dd>{assignee?.name ?? t('kubecode.teamTaskUnassigned')}</dd>
+                </div>
+              </dl>
+              {task.description && (
+                <section>
+                  <strong>{t('kubecode.teamTaskDescription')}</strong>
+                  <p>{task.description}</p>
+                </section>
+              )}
+              {task.result && (
+                <section>
+                  <strong>{t('kubecode.teamTaskResult')}</strong>
+                  <p>{task.result}</p>
+                </section>
+              )}
+              {task.verification && (
+                <section>
+                  <strong>{t('kubecode.teamTaskVerification')}</strong>
+                  <p>{task.verification}</p>
+                </section>
+              )}
+              {!task.assignee_member_id && task.status === 'pending' && teammates.length > 0 && (
+                <label>
+                  <span>{t('kubecode.teamTaskAssign')}</span>
+                  <Select
+                    onValueChange={(memberId) => void act(
+                      `assign:${task.id}`,
+                      () => api.assignTeamTask(snapshot.team.id, task.id, memberId),
+                    )}
+                  >
+                    <SelectTrigger aria-label={t('kubecode.teamTaskAssign')}>
+                      <SelectValue placeholder={t('kubecode.teamTaskUnassigned')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teammates.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+              )}
+            </div>
+            <DialogFooter className="kubecode-team-task-dialog-actions">
+              {assignee && (
+                <>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      onSelectMember(assignee.conversation_id)
+                      onOpenChange(false)
+                    }}
+                  >
+                    {t('kubecode.teamOpenSession')}
+                  </Button>
+                  {assignee.role === 'teammate' && (
+                    <Button
+                      disabled={busyAction !== null}
+                      variant="ghost"
+                      onClick={() => setConfirmation('remove')}
+                    >
+                      <Trash /> {t('kubecode.teamRemoveMember')}
+                    </Button>
+                  )}
+                </>
+              )}
+              {task.status === 'failed' && (
+                <Button
+                  disabled={busyAction !== null}
+                  variant="outline"
+                  onClick={() => void act(
+                    `retry:${task.id}`,
+                    () => api.retryTeamTask(snapshot.team.id, task.id),
+                  )}
+                >
+                  <ArrowsClockwise /> {t('kubecode.teamTaskRetry')}
+                </Button>
+              )}
+              {!['accepted', 'cancelled'].includes(task.status) && (
+                <Button
+                  disabled={busyAction !== null}
+                  variant="outline"
+                  onClick={() => setConfirmation('cancel')}
+                >
+                  {t('kubecode.teamTaskCancel')}
+                </Button>
+              )}
+            </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={confirmation !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmation(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t(confirmation === 'remove'
+                ? 'kubecode.teamRemoveMemberTitle'
+                : 'kubecode.teamTaskCancelTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(confirmation === 'remove'
+                ? 'kubecode.teamRemoveMemberDescription'
+                : 'kubecode.teamTaskCancelDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmation(null)}>
+              {t('kubecode.cancel')}
+            </Button>
+            <Button
+              variant={confirmation === 'remove' ? 'destructive' : 'default'}
+              onClick={() => {
+                if (!task) return
+                const action = confirmation
+                setConfirmation(null)
+                if (action === 'remove' && assignee) {
+                  void act(
+                    `remove:${assignee.id}`,
+                    () => api.removeTeamMember(snapshot.team.id, assignee.id),
+                  )
+                } else if (action === 'cancel') {
+                  void act(
+                    `cancel:${task.id}`,
+                    () => api.cancelTeamTask(snapshot.team.id, task.id),
+                  )
+                }
+              }}
+            >
+              {t(confirmation === 'remove'
+                ? 'kubecode.teamRemoveMember'
+                : 'kubecode.teamTaskCancel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -501,7 +822,7 @@ function TeamSetup({
                 disabled={!availableAgents.includes(agentId)}
                 key={agentId}
                 size="sm"
-                variant="outline"
+                variant={allowedAgents.includes(agentId) ? 'default' : 'outline'}
                 onClick={() => toggleAgent(agentId)}
               >
                 <AiAgentIcon agent={agentId} size={16} />
@@ -684,6 +1005,7 @@ function teamStatusLabel(status: TeamSnapshot['team']['status'], t: Translator):
     draft: 'kubecode.teamStatusDraft',
     starting: 'kubecode.teamStatusStarting',
     active: 'kubecode.teamStatusActive',
+    paused: 'kubecode.teamStatusPaused',
     verifying: 'kubecode.teamStatusVerifying',
     needs_attention: 'kubecode.teamNeedsAttention',
     completed: 'kubecode.teamStatusCompleted',
@@ -745,11 +1067,13 @@ function TaskCard({
   conversations,
   members,
   onSelectMember,
+  onSelectTask,
   task,
 }: {
   conversations: Map<string, TeamSnapshot['conversations'][number]>
   members: TeamMember[]
   onSelectMember: (conversationId: string) => void
+  onSelectTask: (taskId: string) => void
   task: TeamTask
 }) {
   const assignee = members.find((member) => member.id === task.assignee_member_id)
@@ -759,6 +1083,12 @@ function TaskCard({
       className="kubecode-team-task-card"
       data-status={task.status}
       data-testid={`team-task-card-${task.id}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelectTask(task.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onSelectTask(task.id)
+      }}
     >
       <strong>{task.title}</strong>
       <footer>
@@ -767,7 +1097,10 @@ function TaskCard({
             aria-label={assignee.name}
             size="sm"
             variant="ghost"
-            onClick={() => onSelectMember(assignee.conversation_id)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelectMember(assignee.conversation_id)
+            }}
           >
             <AiAgentIcon agent={conversation.agent_id} size={14} />
             <span>{assignee.name}</span>

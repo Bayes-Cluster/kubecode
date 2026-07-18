@@ -3,7 +3,8 @@ import {
   ArrowUp,
   Bell,
   DownloadSimple,
-  Folder,
+  Eye,
+  EyeSlash,
   Gear,
   MagnifyingGlass,
   Plus,
@@ -45,6 +46,11 @@ import { createTranslator, resolveEffectiveLocale } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from './AgentSessionWorkspace'
+import {
+  readAgentPreferences,
+  writeAgentPreferences,
+  type KubecodeAgentPreferences,
+} from './agentPreferences'
 import { ContextWorkbench } from './ContextWorkbench'
 import { DisableWorkspacesDialog } from './DisableWorkspacesDialog'
 import {
@@ -57,6 +63,12 @@ import {
   type KubecodeTheme,
 } from './appearancePreferences'
 import { KubecodeApi } from './api'
+import { PathPicker, type PathPickerRow } from './PathPicker'
+import {
+  readEditorPreferences,
+  writeEditorPreferences,
+  type KubecodeEditorPreferences,
+} from './editorPreferences'
 import type {
   AgentDescriptor,
   AgentId,
@@ -141,6 +153,13 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [appearance, setAppearance] = useState<KubecodeAppearance>(() => (
     readKubecodeAppearance(localStorage)
   ))
+  const [editorPreferences, setEditorPreferences] = useState<KubecodeEditorPreferences>(() => (
+    readEditorPreferences(localStorage)
+  ))
+  const [agentPreferences, setAgentPreferences] = useState<KubecodeAgentPreferences>(() => (
+    readAgentPreferences(localStorage)
+  ))
+  const narrowLayout = useNarrowWorkbench()
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const navigatorSearchRef = useRef<HTMLInputElement>(null)
@@ -174,6 +193,14 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [appearance])
 
   useEffect(() => {
+    writeEditorPreferences(localStorage, editorPreferences)
+  }, [editorPreferences])
+
+  useEffect(() => {
+    writeAgentPreferences(localStorage, agentPreferences)
+  }, [agentPreferences])
+
+  useEffect(() => {
     const focusNavigatorSearch = (event: KeyboardEvent) => {
       if (event.key.toLocaleLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
       event.preventDefault()
@@ -191,6 +218,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => {
     activeProjectIdRef.current = projectId
   }, [projectId])
+
+  useEffect(() => {
+    if (!narrowLayout || (!sessionSidebarOpen && !contextOpen)) return
+    const closeOverlayPanels = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return
+      setSessionSidebarOpen(false)
+      setContextOpen(false)
+    }
+    document.addEventListener('keydown', closeOverlayPanels)
+    return () => document.removeEventListener('keydown', closeOverlayPanels)
+  }, [contextOpen, narrowLayout, sessionSidebarOpen])
 
   const applyProjectLayout = useCallback((nextProjectId: string) => {
     const layout = readProjectWorkbenchLayout(localStorage, nextProjectId)
@@ -582,19 +620,38 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
+          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => {
+            const nextOpen = togglePanel('sessions', sessionSidebarOpen)
+            setSessionSidebarOpen(nextOpen)
+            if (narrowLayout && nextOpen) setContextOpen(false)
+          }}>
             <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
           </Button>
           <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setTerminalOpen((open) => togglePanel('terminal', open))}>
             <PanelToggleIcon active={terminalOpen} panel="bottom" />
           </Button>
-          <Button aria-label={t('kubecode.toggleContext')} aria-pressed={contextOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setContextOpen((open) => togglePanel('context', open))}>
+          <Button aria-label={t('kubecode.toggleContext')} aria-pressed={contextOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => {
+            const nextOpen = togglePanel('context', contextOpen)
+            setContextOpen(nextOpen)
+            if (narrowLayout && nextOpen) setSessionSidebarOpen(false)
+          }}>
             <PanelToggleIcon active={contextOpen} panel="right" />
           </Button>
         </div>
       </header>
 
-      <div className="kubecode-workspace" ref={workspaceRef}>
+      <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
+        {(sessionSidebarOpen || contextOpen) && (
+          <button
+            aria-label={t('kubecode.closeSidePanels')}
+            className="kubecode-panel-backdrop"
+            type="button"
+            onClick={() => {
+              setSessionSidebarOpen(false)
+              setContextOpen(false)
+            }}
+          />
+        )}
         {sessionSidebarOpen && (
           <>
             <nav
@@ -654,6 +711,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           <div className="kubecode-session-context-row">
             <AgentSessionWorkspace
               agents={agents}
+              allowTeammateChat={agentPreferences.allowTeammateChat}
               api={api}
               conversation={conversation}
               locale={locale}
@@ -687,7 +745,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 <ResizeHandle onResize={resizeContext} />
                 <ContextWorkbench
                   api={api}
-                  key={projectId}
+                  autoSave={editorPreferences.autoSave}
                   planEntries={activeSessionPlan}
                   planRevealVersion={planRevealVersion}
                   projectName={project?.name ?? undefined}
@@ -795,13 +853,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         t={t}
       />
         <KubecodeSettingsDialog
+        agentPreferences={agentPreferences}
         agents={agents}
         appearance={appearance}
+        editorPreferences={editorPreferences}
         notifications={notifications}
         notificationPermission={browserPermission}
         notificationTestStatus={notificationTestStatus}
         open={settingsOpen}
         onAppearanceChange={setAppearance}
+        onAgentPreferencesChange={setAgentPreferences}
+        onEditorPreferencesChange={setEditorPreferences}
         onNotificationsChange={setNotifications}
         onOpenChange={setSettingsOpen}
         onRequestNotificationPermission={requestNotificationPermission}
@@ -1243,33 +1305,115 @@ function ProjectDialog({
     try {
       const nextListing = await api.listDirectories(nextPath)
       setListing(nextListing)
-      setPath(nextListing.path)
+      return nextListing
     } catch (cause) {
       setBrowserError(errorMessage(cause, t('kubecode.directoryLoadFailed')))
+      return null
     } finally {
       setLoadingDirectories(false)
     }
   }, [api, t])
 
   useEffect(() => {
-    if (open && mode === 'import' && !listing) void browse()
-  }, [browse, listing, mode, open])
+    if (!open) return
+    let current = true
+    const timeout = window.setTimeout(() => {
+      const split = splitAbsolutePath(path)
+      void browse(split?.parent).then((nextListing) => {
+        if (!current || path || !nextListing) return
+        setPath(withTrailingSlash(nextListing.path))
+      })
+    }, path ? 120 : 0)
+    return () => {
+      current = false
+      window.clearTimeout(timeout)
+    }
+  }, [browse, open, path])
 
   const submit = async () => {
-    const project = mode === 'create'
-      ? await api.createProject(path)
-      : await api.importProject(path)
-    trackEvent('kubecode_project_registered', { mode })
-    onProject(project)
-    setPath('')
-    setListing(null)
-    onOpenChange(false)
+    const targetPath = normalizeAbsolutePath(path)
+    if (!targetPath) return
+    setBrowserError(null)
+    try {
+      const project = mode === 'create'
+        ? await api.createProject(targetPath)
+        : await api.importProject(targetPath)
+      trackEvent('kubecode_project_registered', { mode })
+      onProject(project)
+      setPath('')
+      setListing(null)
+      onOpenChange(false)
+    } catch (cause) {
+      setBrowserError(errorMessage(cause, t('kubecode.error')))
+    }
   }
+
+  const split = splitAbsolutePath(path)
+  const targetPath = normalizeAbsolutePath(path)
+  const exactDirectoryExists = Boolean(targetPath && (
+    listing?.path === targetPath
+    || listing?.entries.some((entry) => entry.path === targetPath)
+  ))
+  const visibleDirectories = (listing?.entries ?? []).filter((entry) => (
+    (showHidden || !entry.hidden)
+    && (!split?.filter
+      || entry.name.toLocaleLowerCase().includes(split.filter.toLocaleLowerCase()))
+  ))
+  const actionDisabled = !targetPath
+    || (mode === 'create' ? exactDirectoryExists : !exactDirectoryExists)
+  const rows = useMemo<PathPickerRow[]>(() => {
+    const actionLabel = mode === 'create'
+      ? `${t('kubecode.create')} ${targetPath || path}`
+      : `${t('kubecode.import')} ${targetPath || path}`
+    const nextRows: PathPickerRow[] = path.trim() ? [{
+      description: mode === 'create'
+        ? exactDirectoryExists
+          ? t('kubecode.pathAlreadyExistsImportInstead')
+          : t('kubecode.pressEnterToCreate')
+        : exactDirectoryExists
+          ? t('kubecode.pressEnterToImport')
+          : t('kubecode.directoryMustExist'),
+      disabled: actionDisabled,
+      id: `project-${mode}`,
+      kind: 'action',
+      label: actionLabel,
+      path: targetPath,
+    }] : []
+    if (listing?.parent) {
+      nextRows.push({
+        icon: <ArrowUp />,
+        id: 'parent-directory',
+        kind: 'directory',
+        label: '..',
+        path: listing.parent,
+        description: listing.parent,
+      })
+    }
+    visibleDirectories.forEach((entry) => {
+      nextRows.push({
+        id: `directory-${entry.path}`,
+        kind: 'directory',
+        label: entry.name,
+        path: entry.path,
+        description: entry.path,
+      })
+    })
+    return nextRows
+  }, [
+    actionDisabled,
+    exactDirectoryExists,
+    listing?.parent,
+    mode,
+    path,
+    t,
+    targetPath,
+    visibleDirectories,
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="kubecode-path-picker-dialog kubecode-project-path-dialog" showCloseButton={false}>
+        <DialogHeader className="kubecode-path-picker-heading">
           <DialogTitle>{mode === 'create' ? t('kubecode.createProject') : t('kubecode.importProject')}</DialogTitle>
           <DialogDescription>{t('kubecode.projectPath')}</DialogDescription>
         </DialogHeader>
@@ -1277,84 +1421,102 @@ function ProjectDialog({
           <Button variant={mode === 'create' ? 'default' : 'outline'} onClick={() => setMode('create')}>{t('kubecode.createProject')}</Button>
           <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')}>{t('kubecode.importProject')}</Button>
         </div>
-        {mode === 'create' ? (
-          <Input
-            aria-label={t('kubecode.projectPath')}
-            placeholder={t('kubecode.absoluteProjectPath')}
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-          />
-        ) : (
-          <div className="kubecode-directory-browser">
-            <div className="kubecode-directory-location">
-              <Button
-                aria-label={t('kubecode.parentDirectory')}
-                disabled={!listing?.parent || loadingDirectories}
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => void browse(listing?.parent ?? undefined)}
-              >
-                <ArrowUp />
-              </Button>
-              <code title={listing?.path ?? path}>{listing?.path ?? path}</code>
-            </div>
-            <div className="kubecode-directory-list" aria-label={t('kubecode.selectDirectory')}>
-              {listing?.entries
-                .filter((entry) => showHidden || !entry.hidden)
-                .map((entry) => (
-                  <Button key={entry.path} variant="ghost" onClick={() => void browse(entry.path)}>
-                    <Folder /> <span>{entry.name}</span>
-                  </Button>
-                ))}
-              {!loadingDirectories && listing?.entries.length === 0 && (
-                <div className="kubecode-empty-small">{t('kubecode.emptyDirectory')}</div>
+        <PathPicker
+          ariaLabel={t('kubecode.projectPath')}
+          emptyMessage={t('kubecode.noDirectoriesFound')}
+          footer={(
+            <>
+              <div className="kubecode-path-picker-footer">
+                <Button
+                  aria-pressed={showHidden}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowHidden((current) => !current)}
+                >
+                  {showHidden ? <Eye /> : <EyeSlash />}
+                  {t('kubecode.showHiddenDirectories')}
+                </Button>
+              </div>
+              {browserError && (
+                <div className="kubecode-path-picker-error" role="alert">{browserError}</div>
               )}
-              {loadingDirectories && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
-            </div>
-            <label className="kubecode-show-hidden">
-              <Switch checked={showHidden} onCheckedChange={setShowHidden} />
-              <span>{t('kubecode.showHiddenDirectories')}</span>
-            </label>
-            {browserError && (
-              <SystemMessageNotice
-                dismissLabel={t('window.close')}
-                level="error"
-                message={browserError}
-                onDismiss={() => setBrowserError(null)}
-              />
-            )}
-          </div>
-        )}
-        <DialogFooter>
-          <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-          <Button disabled={!path.trim() || loadingDirectories} onClick={() => void submit()}>{mode === 'create' ? t('kubecode.create') : t('kubecode.import')}</Button>
-        </DialogFooter>
+            </>
+          )}
+          loading={loadingDirectories}
+          loadingMessage={t('kubecode.loading')}
+          onEscape={() => onOpenChange(false)}
+          onQueryChange={setPath}
+          onSelect={(row) => {
+            if (row.id === `project-${mode}`) {
+              void submit()
+            } else {
+              setPath(withTrailingSlash(row.path))
+            }
+          }}
+          placeholder={t('kubecode.absoluteProjectPath')}
+          query={path}
+          rows={rows}
+        />
       </DialogContent>
     </Dialog>
   )
 }
 
+function splitAbsolutePath(path: string): { filter: string; parent?: string } | null {
+  const trimmed = path.trim()
+  if (!trimmed) return { filter: '', parent: undefined }
+  if (!trimmed.startsWith('/')) return null
+  if (trimmed.endsWith('/')) {
+    return { filter: '', parent: normalizeAbsolutePath(trimmed) || '/' }
+  }
+  const separator = trimmed.lastIndexOf('/')
+  return {
+    filter: trimmed.slice(separator + 1),
+    parent: separator === 0 ? '/' : trimmed.slice(0, separator),
+  }
+}
+
+function normalizeAbsolutePath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed.startsWith('/')) return ''
+  if (trimmed === '/') return '/'
+  return trimmed.replace(/\/+$/g, '')
+}
+
+function withTrailingSlash(path: string): string {
+  return path === '/' ? '/' : `${path.replace(/\/+$/g, '')}/`
+}
+
 function KubecodeSettingsDialog({
+  agentPreferences,
   agents,
   appearance,
+  editorPreferences,
   notifications,
   notificationPermission: browserPermission,
   notificationTestStatus,
   open,
   onAppearanceChange,
+  onAgentPreferencesChange,
+  onEditorPreferencesChange,
   onNotificationsChange,
   onOpenChange,
   onRequestNotificationPermission,
   onTestNotification,
   t,
 }: {
+  agentPreferences: KubecodeAgentPreferences
   agents: AgentDescriptor[]
   appearance: KubecodeAppearance
+  editorPreferences: KubecodeEditorPreferences
   notifications: KubecodeNotifications
   notificationPermission: BrowserNotificationPermission
   notificationTestStatus: BrowserNotificationDelivery['status'] | null
   open: boolean
   onAppearanceChange: (appearance: KubecodeAppearance) => void
+  onAgentPreferencesChange: (preferences: KubecodeAgentPreferences) => void
+  onEditorPreferencesChange: (preferences: KubecodeEditorPreferences) => void
   onNotificationsChange: (notifications: KubecodeNotifications) => void
   onOpenChange: (open: boolean) => void
   onRequestNotificationPermission: () => Promise<void>
@@ -1598,13 +1760,57 @@ function KubecodeSettingsDialog({
               </div>
             </div>
           )}
-          {section === 'agents' && agents.map((agent) => (
-            <div className="kubecode-setting-row" key={agent.id}>
-              <div><strong><AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}</strong><span>{agent.executable}</span></div>
-              <span data-available={agent.available}>{agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}</span>
+          {section === 'agents' && (
+            <div className="kubecode-settings-group">
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.allowTeammateChat')}</strong>
+                  <span>{t('kubecode.allowTeammateChatDescription')}</span>
+                </div>
+                <Switch
+                  aria-label={t('kubecode.allowTeammateChat')}
+                  checked={agentPreferences.allowTeammateChat}
+                  onCheckedChange={(allowTeammateChat) => {
+                    onAgentPreferencesChange({ ...agentPreferences, allowTeammateChat })
+                    trackEvent('kubecode_agent_preference_changed', {
+                      setting: 'allowTeammateChat',
+                      value: allowTeammateChat ? 'on' : 'off',
+                    })
+                  }}
+                />
+              </div>
+              {agents.map((agent) => (
+                <div className="kubecode-setting-row" key={agent.id}>
+                  <div><strong><AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}</strong><span>{agent.executable}</span></div>
+                  <span data-available={agent.available}>{agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}</span>
+                </div>
+              ))}
             </div>
-          ))}
-          {(section === 'terminal' || section === 'editor') && <div className="kubecode-settings-placeholder">{t('kubecode.settingsComingSoon')}</div>}
+          )}
+          {section === 'editor' && (
+            <div className="kubecode-settings-group">
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.autoSave')}</strong>
+                  <span>{t('kubecode.autoSaveDescription')}</span>
+                </div>
+                <Switch
+                  aria-label={t('kubecode.autoSave')}
+                  checked={editorPreferences.autoSave}
+                  onCheckedChange={(autoSave) => {
+                    onEditorPreferencesChange({ ...editorPreferences, autoSave })
+                    trackEvent('kubecode_editor_preference_changed', {
+                      setting: 'autoSave',
+                      value: autoSave ? 'on' : 'off',
+                    })
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {section === 'terminal' && (
+            <div className="kubecode-settings-placeholder">{t('kubecode.settingsComingSoon')}</div>
+          )}
         </section>
       </DialogContent>
     </Dialog>
@@ -1661,6 +1867,30 @@ function togglePanel(panel: 'sessions' | 'terminal' | 'context', open: boolean):
   const nextOpen = !open
   trackEvent('kubecode_panel_toggled', { next_state: nextOpen ? 'open' : 'closed', panel })
   return nextOpen
+}
+
+function useNarrowWorkbench(): boolean {
+  const query = '(max-width: 980px)'
+  const readMatch = () => (
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : window.innerWidth <= 980
+  )
+  const [narrow, setNarrow] = useState(readMatch)
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      const handleResize = () => setNarrow(readMatch())
+      window.addEventListener('resize', handleResize)
+      return () => window.removeEventListener('resize', handleResize)
+    }
+    const media = window.matchMedia(query)
+    const handleChange = (event: MediaQueryListEvent) => setNarrow(event.matches)
+    media.addEventListener('change', handleChange)
+    return () => media.removeEventListener('change', handleChange)
+  }, [])
+
+  return narrow
 }
 
 function isCleanTerminalExit(event: WorkspaceEvent): boolean {

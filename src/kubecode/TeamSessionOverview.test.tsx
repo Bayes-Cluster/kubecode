@@ -22,7 +22,7 @@ const snapshot = {
 } as TeamSnapshot
 
 describe('TeamSessionOverview', () => {
-  it('shows live members and switches directly to a teammate chat', () => {
+  it('shows live members without duplicating task progress and switches to a teammate chat', () => {
     const onSelectMember = vi.fn()
     render(
       <TeamSessionOverview
@@ -33,7 +33,9 @@ describe('TeamSessionOverview', () => {
     )
 
     expect(screen.getByText('Compiler team')).toBeInTheDocument()
-    expect(screen.getByText('1/2')).toBeInTheDocument()
+    expect(screen.queryByText('1/2')).not.toBeInTheDocument()
+    expect(screen.queryByText('Implement parser')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review parser')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reviewer' }))
     expect(onSelectMember).toHaveBeenCalledWith('reviewer')
   })

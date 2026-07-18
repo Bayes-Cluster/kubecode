@@ -245,7 +245,10 @@
   display: flex;
   min-height: 0;
   min-width: 0;
+  position: relative;
 }
+
+.kubecode-panel-backdrop { display: none; }
 
 .kubecode-project-rail {
   align-items: center;
@@ -526,8 +529,7 @@
 }
 
 .kubecode-team-overview-title,
-.kubecode-team-member-tree,
-.kubecode-team-task-strip {
+.kubecode-team-member-tree {
   align-items: center;
   display: flex;
   min-width: 0;
@@ -546,11 +548,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.kubecode-team-overview-title small {
-  color: var(--muted-foreground);
-  margin-left: auto;
 }
 
 .kubecode-team-member-tree {
@@ -588,41 +585,6 @@
 .kubecode-team-member-status[data-status='queued'],
 .kubecode-team-member-status[data-status='configuring'] {
   background: var(--feedback-warning-text);
-}
-
-.kubecode-team-task-strip {
-  gap: 12px;
-  overflow: auto hidden;
-  scrollbar-width: none;
-}
-
-.kubecode-team-task-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.kubecode-team-task-strip span {
-  align-items: center;
-  color: var(--muted-foreground);
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 5px;
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-team-task-strip svg {
-  height: 14px;
-  width: 14px;
-}
-
-.kubecode-spin {
-  animation: kubecode-team-spin 1s linear infinite;
-}
-
-@keyframes kubecode-team-spin {
-  to { transform: rotate(360deg); }
 }
 
 .kubecode-team-view-switch {
@@ -693,10 +655,12 @@
   gap: 7px;
 }
 
-.kubecode-team-agent-budget button { gap: 6px; }
-.kubecode-team-agent-budget button[data-active='true'] {
-  background: var(--surface-selected);
-  border-color: var(--border-strong);
+.kubecode-team-agent-budget button {
+  gap: 6px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 .kubecode-team-budget-grid,
@@ -774,7 +738,51 @@
   padding: 3px 8px;
 }
 .kubecode-team-status[data-status='needs_attention'] { color: var(--feedback-warning-text); }
+.kubecode-team-status[data-status='paused'] { color: var(--feedback-warning-text); }
 .kubecode-team-status[data-status='completed'] { color: var(--feedback-success-text); }
+.kubecode-team-mode-badge {
+  background: var(--surface-selected);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary) !important;
+  padding: 3px 8px;
+}
+.kubecode-team-mode-badge[data-mode='yolo'] {
+  background: var(--feedback-warning-bg);
+  border-color: var(--feedback-warning-border);
+  color: var(--feedback-warning-text) !important;
+}
+
+.kubecode-team-proposal {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.kubecode-team-proposal > div { display: grid; gap: 4px; min-width: 0; }
+.kubecode-team-proposal strong { font-size: 12px; }
+.kubecode-team-proposal > div > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.kubecode-team-proposal footer {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+.kubecode-team-proposal-members { display: flex; flex-wrap: wrap; gap: 4px; }
+.kubecode-team-proposal-members span {
+  background: var(--surface-selected);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 7px;
+}
 
 .kubecode-team-metrics {
   align-items: center;
@@ -965,6 +973,13 @@
   gap: 10px;
   min-width: 0;
   padding: 10px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.kubecode-team-task-card:hover,
+.kubecode-team-task-card:focus-visible {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  outline: none;
 }
 .kubecode-team-task-card strong {
   font-size: 13px;
@@ -996,6 +1011,80 @@
   text-overflow: ellipsis;
 }
 .kubecode-team-task-card footer svg { height: 12px; width: 12px; }
+
+[data-slot='dialog-content'].kubecode-team-task-dialog {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100dvh - 32px);
+  max-width: min(640px, calc(100vw - 32px));
+  overflow: hidden;
+  padding: 20px;
+  width: min(640px, calc(100vw - 32px));
+}
+[data-slot='dialog-content'].kubecode-team-task-dialog > [data-slot='dialog-header'] {
+  padding-right: 28px;
+}
+.kubecode-team-task-dialog-body {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.kubecode-team-task-dialog-body::-webkit-scrollbar { display: none; }
+.kubecode-team-task-dialog-body dl { display: grid; gap: 1px; margin: 0; }
+.kubecode-team-task-dialog-body dl > div {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 7px 0;
+}
+.kubecode-team-task-dialog-body dt { color: var(--text-muted); font-size: 12px; }
+.kubecode-team-task-dialog-body dd { font-size: 12px; margin: 0; }
+.kubecode-team-task-dialog-body section,
+.kubecode-team-task-dialog-body label { display: grid; gap: 6px; }
+.kubecode-team-task-dialog-body section strong,
+.kubecode-team-task-dialog-body label > span { color: var(--text-secondary); font-size: 12px; }
+.kubecode-team-task-dialog-body p {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.kubecode-team-task-dialog-actions { flex-wrap: wrap; }
+
+.kubecode-virtual-message-history {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+.kubecode-virtual-message-history [data-virtuoso-scroller='true'] {
+  scrollbar-width: none;
+}
+.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar {
+  display: none;
+}
+.kubecode-virtual-message-history [data-viewport-type='window'],
+.kubecode-virtual-message-history [data-viewport-type='element'] {
+  padding: 12px;
+}
+.kubecode-load-earlier {
+  display: flex;
+  margin: 0 auto 8px;
+}
+
+@media (max-width: 720px) {
+  .kubecode-team-control-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .kubecode-team-settings { flex-wrap: wrap; justify-content: flex-end; }
+  .kubecode-team-proposal { align-items: stretch; flex-direction: column; }
+  .kubecode-team-proposal footer { justify-content: flex-end; }
+}
 
 .kubecode-team-activity-list,
 .kubecode-team-dependency-list { display: grid; gap: 0; margin: 0; padding: 0; }
@@ -1682,11 +1771,32 @@
   white-space: pre;
 }
 
+.kubecode-project-file-browser {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.kubecode-file-tree-controls {
+  align-items: center;
+  display: flex;
+  flex: 0 0 28px;
+  gap: 3px;
+  justify-content: flex-end;
+  padding: 2px 5px 0;
+}
 .kubecode-project-file-tree {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 6px 5px 12px;
+}
+.kubecode-file-search-results { padding-top: 5px; }
+.kubecode-file-tree-empty {
+  color: var(--text-muted);
+  display: block;
+  font-size: 12px;
+  padding: 12px 8px;
 }
 
 .kubecode-file-tree-row {
@@ -2721,6 +2831,161 @@
   background: color-mix(in srgb, var(--text-muted) 55%, transparent);
 }
 
+.kubecode-path-picker-dialog {
+  background: var(--surface-dialog);
+  border-color: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: min(620px, calc(100vh - 48px));
+  overflow: hidden;
+  padding: 0;
+  width: min(720px, calc(100vw - 32px));
+}
+.kubecode-path-picker-heading {
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 4px;
+  padding: 16px 18px 13px;
+}
+.kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }
+.kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }
+.kubecode-path-picker {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.kubecode-path-picker-input {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+  flex: 0 0 48px;
+  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 14px;
+  height: 48px;
+  padding: 0 18px;
+}
+.kubecode-path-picker-input:focus-visible {
+  border-bottom-color: var(--border-strong);
+  box-shadow: none;
+  outline: none;
+}
+.kubecode-path-picker-results {
+  flex: 1 1 auto;
+  max-height: min(420px, 48vh);
+  min-height: 96px;
+  overflow: auto;
+  padding: 6px;
+}
+.kubecode-path-picker-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 10px;
+  text-align: left;
+  width: 100%;
+}
+.kubecode-path-picker-row:hover,
+.kubecode-path-picker-row[data-active='true'] {
+  background: var(--state-hover);
+}
+.kubecode-path-picker-row:focus-visible {
+  box-shadow: 0 0 0 1px var(--state-focus-ring) inset;
+  outline: none;
+}
+.kubecode-path-picker-row:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+.kubecode-path-picker-row > svg {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  height: 18px;
+  width: 18px;
+}
+.kubecode-path-picker-row-copy {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 1px;
+  min-width: 0;
+}
+.kubecode-path-picker-row-copy strong,
+.kubecode-path-picker-row-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kubecode-path-picker-row-copy strong { font-size: 13px; font-weight: 500; }
+.kubecode-path-picker-row-copy small {
+  color: var(--text-muted);
+  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  font-weight: 400;
+}
+.kubecode-path-picker-row-action { opacity: 0.5; }
+.kubecode-path-picker-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 18px 12px;
+}
+.kubecode-path-picker-footer {
+  align-items: center;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex: 0 0 38px;
+  padding: 3px 8px;
+}
+.kubecode-path-picker-footer button {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.kubecode-path-picker-error {
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  padding: 8px 12px;
+  text-align: left;
+}
+.kubecode-project-path-dialog .kubecode-mode-switch {
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 4px;
+  padding: 7px 10px;
+}
+.kubecode-project-path-dialog .kubecode-mode-switch button {
+  border: 0;
+  box-shadow: none;
+  height: 28px;
+}
+
+/* Agent Chat remains scrollable, but its timeline and Composer never expose chrome. */
+.kubecode-message-history,
+.kubecode-composer-editor,
+.kubecode-virtual-message-history,
+.kubecode-virtual-message-history [data-virtuoso-scroller='true'],
+.kubecode-path-picker-results {
+  scrollbar-color: transparent transparent !important;
+  scrollbar-width: none !important;
+}
+.kubecode-message-history::-webkit-scrollbar,
+.kubecode-composer-editor::-webkit-scrollbar,
+.kubecode-virtual-message-history::-webkit-scrollbar,
+.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar,
+.kubecode-path-picker-results::-webkit-scrollbar {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kubecode-app *,
   .kubecode-app *::before,
@@ -2731,7 +2996,38 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-session-sidebar { bottom: 0; left: 0; top: 44px; }
+  .kubecode-workspace[data-narrow='true'] .kubecode-panel-backdrop {
+    background: color-mix(in srgb, #000 24%, transparent);
+    border: 0;
+    display: block;
+    inset: 0;
+    padding: 0;
+    position: absolute;
+    z-index: 39;
+  }
+  .kubecode-workspace[data-narrow='true'] > .kubecode-session-sidebar {
+    bottom: 0;
+    box-shadow: 12px 0 30px color-mix(in srgb, #000 22%, transparent);
+    left: 0;
+    max-width: min(86vw, 420px);
+    position: absolute;
+    top: 0;
+    z-index: 40;
+  }
+  .kubecode-workspace[data-narrow='true'] .kubecode-context-workbench {
+    bottom: 0;
+    box-shadow: -12px 0 30px color-mix(in srgb, #000 22%, transparent);
+    display: flex;
+    max-width: min(92vw, 560px);
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 40;
+  }
+  .kubecode-workspace[data-narrow='true'] > .cursor-col-resize,
+  .kubecode-workspace[data-narrow='true'] .kubecode-session-context-row > .cursor-col-resize {
+    display: none;
+  }
   .kubecode-topbar { grid-template-columns: minmax(180px, 1fr) minmax(200px, 360px) auto; }
   .kubecode-session-status-label { display: none; }
 }

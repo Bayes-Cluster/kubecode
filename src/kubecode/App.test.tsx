@@ -194,6 +194,21 @@ describe('Kubecode workspace', () => {
     })
   })
 
+  it('persists the browser-wide teammate chat preference from Agent settings', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow direct teammate chat' }))
+
+    await waitFor(() => expect(localStorage.getItem('kubecode:agent-preferences:v1'))
+      .toBe('{"allowTeammateChat":true}'))
+  })
+
   it('surfaces running and stuck Agent sessions on their project icons', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([
@@ -546,6 +561,38 @@ describe('Kubecode workspace', () => {
     expect(screen.getByTestId('agent-session-workspace')).toBeVisible()
   })
 
+  it('uses mutually exclusive overlay side panels on a narrow workbench', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 980px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const { container } = render(<KubecodeApp api={api} />)
+
+    await screen.findByRole('button', { name: 'Demo' })
+    expect(container.querySelector('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
+    expect(screen.getByRole('button', { name: 'Close side panels' })).toBeInTheDocument()
+
+    const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
+    fireEvent.click(contextToggle)
+    fireEvent.click(contextToggle)
+    expect(contextToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: 'Close side panels' })).not.toBeInTheDocument()
+  })
+
   it('restores the saved pane layout for a project', async () => {
     localStorage.setItem('kubecode:layout:project-1', JSON.stringify({
       contextOpen: true,
@@ -639,11 +686,10 @@ describe('Kubecode workspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
     expect(screen.queryByRole('textbox', { name: 'Project name' })).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Full path on this server' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Full path on this server' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Import project' }))
-    expect(await screen.findByText('/srv/projects')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /demo/ })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /demo/ })).toBeInTheDocument()
     expect(api.listDirectories).toHaveBeenCalledWith(undefined)
   })
 

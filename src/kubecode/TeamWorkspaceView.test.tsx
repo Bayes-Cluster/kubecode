@@ -89,6 +89,132 @@ describe('TeamWorkspaceView', () => {
     expect(screen.getByRole('button', { name: 'Reviewer' })).toBeInTheDocument()
   })
 
+  it('confirms an immediate Team pause and can resume a paused Team', async () => {
+    const paused = { ...snapshot, team: { ...snapshot.team, status: 'paused' as const } }
+    const pauseTeam = vi.fn().mockResolvedValue(paused)
+    const resumeTeam = vi.fn().mockResolvedValue(snapshot)
+    const onSnapshotChange = vi.fn()
+    const { rerender } = render(
+      <TeamWorkspaceView
+        api={{ pauseTeam, resumeTeam } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={onSnapshotChange}
+        snapshot={snapshot}
+        t={t}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamPause' }))
+    expect(screen.getByText('kubecode.teamPauseDescription')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamPauseConfirm' }))
+    await waitFor(() => expect(pauseTeam).toHaveBeenCalledWith('team-1'))
+    expect(onSnapshotChange).toHaveBeenCalledWith(paused)
+
+    rerender(
+      <TeamWorkspaceView
+        api={{ pauseTeam, resumeTeam } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={onSnapshotChange}
+        snapshot={paused}
+        t={t}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamResume' }))
+    await waitFor(() => expect(resumeTeam).toHaveBeenCalledWith('team-1'))
+  })
+
+  it('lets the user approve a durable lineup proposal', async () => {
+    const updated = { ...snapshot, proposal: null }
+    const resolveTeamProposal = vi.fn().mockResolvedValue(updated)
+    const onSnapshotChange = vi.fn()
+    render(
+      <TeamWorkspaceView
+        api={{ resolveTeamProposal } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={onSnapshotChange}
+        snapshot={{
+          ...snapshot,
+          proposal: {
+            id: 'proposal-1',
+            team_id: 'team-1',
+            summary: 'Use a reviewer and an implementer',
+            members_json: JSON.stringify([{ name: 'Reviewer' }, { name: 'Implementer' }]),
+            status: 'pending',
+            created_at: '2026-07-18 10:00:00',
+            resolved_at: null,
+          },
+        }}
+        t={t}
+      />,
+    )
+
+    expect(screen.getByTestId('team-lineup-proposal')).toHaveTextContent('Reviewer')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamProposalApprove' }))
+    await waitFor(() => expect(resolveTeamProposal).toHaveBeenCalledWith(
+      'team-1',
+      'proposal-1',
+      'approved',
+    ))
+    expect(onSnapshotChange).toHaveBeenCalledWith(updated)
+  })
+
+  it('opens task details in a centered modal and can assign a teammate', async () => {
+    const updated = {
+      ...snapshot,
+      tasks: [{ ...snapshot.tasks[0], assignee_member_id: 'member-2', status: 'in_progress' }],
+    }
+    const assignTeamTask = vi.fn().mockResolvedValue(updated)
+    render(
+      <TeamWorkspaceView
+        api={{ assignTeamTask } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={snapshot}
+        t={t}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Explore parser')
+    expect(dialog).toHaveClass('kubecode-team-task-dialog')
+    expect(dialog).not.toHaveClass('kubecode-team-inspector')
+    fireEvent.click(screen.getByRole('combobox', { name: 'kubecode.teamTaskAssign' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Reviewer' }))
+    await waitFor(() => expect(assignTeamTask).toHaveBeenCalledWith(
+      'team-1',
+      'task-1',
+      'member-2',
+    ))
+  })
+
+  it('requires confirmation before cancelling a task', async () => {
+    const cancelTeamTask = vi.fn().mockResolvedValue(snapshot)
+    render(
+      <TeamWorkspaceView
+        api={{ cancelTeamTask } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={snapshot}
+        t={t}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamTaskCancel' }))
+    expect(cancelTeamTask).not.toHaveBeenCalled()
+    expect(screen.getByText('kubecode.teamTaskCancelDescription')).toBeInTheDocument()
+    const confirmation = screen.getAllByRole('dialog').at(-1)
+    expect(confirmation).toBeDefined()
+    fireEvent.click(within(confirmation as HTMLElement).getByRole('button', {
+      name: 'kubecode.teamTaskCancel',
+    }))
+    await waitFor(() => expect(cancelTeamTask).toHaveBeenCalledWith(
+      'team-1',
+      'task-1',
+    ))
+  })
+
   it('keeps an automatic YOLO fallback visible after hydration', () => {
     render(
       <TeamWorkspaceView
@@ -116,6 +242,24 @@ describe('TeamWorkspaceView', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'kubecode.teamYoloFallback: Host policy disabled bypassPermissions',
     )
+    expect(screen.getByText('kubecode.teamStandard')).toHaveAttribute('data-mode', 'standard')
+  })
+
+  it('shows the effective Team mode as a badge without runtime configuration limits', () => {
+    render(
+      <TeamWorkspaceView
+        api={{} as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={snapshot}
+        t={t}
+      />,
+    )
+
+    expect(screen.getByText('kubecode.teamStandard')).toHaveClass('kubecode-team-mode-badge')
+    expect(screen.getByText('kubecode.teamStandard')).toHaveAttribute('data-mode', 'standard')
+    expect(screen.queryByText(/kubecode\.teamConcurrency/)).not.toBeInTheDocument()
+    expect(screen.getByText('1', { selector: '[data-metric="running"] strong' })).toBeInTheDocument()
   })
 
   it('lets the user answer a durable Leader question inline', async () => {
@@ -207,13 +351,22 @@ describe('TeamWorkspaceView', () => {
     )
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'OpenCode' })).toBeEnabled())
+    const codexButton = screen.getByRole('button', { name: 'Codex' })
+    const openCodeButton = screen.getByRole('button', { name: 'OpenCode' })
+    expect(codexButton).toHaveAttribute('data-variant', 'default')
+    expect(openCodeButton).toHaveAttribute('data-variant', 'default')
     fireEvent.change(screen.getByRole('textbox', { name: 'kubecode.teamGoal' }), {
       target: { value: 'Reproduce the experiment' },
     })
     fireEvent.change(screen.getByRole('textbox', { name: 'kubecode.teamAcceptanceCriteria' }), {
       target: { value: 'Tests pass\nResults are documented' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'OpenCode' }))
+    fireEvent.click(openCodeButton)
+    expect(openCodeButton).toHaveAttribute('data-variant', 'outline')
+    fireEvent.click(openCodeButton)
+    expect(openCodeButton).toHaveAttribute('data-variant', 'default')
+    fireEvent.click(openCodeButton)
+    expect(openCodeButton).toHaveAttribute('data-variant', 'outline')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamStart' }))
 
     expect(startTeam).toHaveBeenCalledWith('team-1', expect.objectContaining({

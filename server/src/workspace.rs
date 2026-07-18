@@ -66,6 +66,8 @@ pub struct FileEntry {
     pub path: String,
     pub kind: EntryKind,
     pub size: u64,
+    pub hidden: bool,
+    pub ignored: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -664,6 +666,7 @@ impl WorkspaceService {
             let name = entry.file_name().to_string_lossy().into_owned();
             entries.push(FileEntry {
                 path: path_string(&relative.join(&name)),
+                hidden: name.starts_with('.'),
                 name,
                 kind: if metadata.is_dir() {
                     EntryKind::Directory
@@ -671,7 +674,15 @@ impl WorkspaceService {
                     EntryKind::File
                 },
                 size: metadata.len(),
+                ignored: false,
             });
+        }
+        let ignored = git_ignored_paths(
+            &project_root,
+            entries.iter().map(|entry| entry.path.as_str()),
+        );
+        for entry in &mut entries {
+            entry.ignored = ignored.contains(&entry.path);
         }
         entries.sort_by(|left, right| {
             entry_kind_rank(&left.kind)
@@ -954,6 +965,41 @@ fn git_command(cwd: &Path, args: &[&str]) -> Result<std::process::Output, Worksp
         .current_dir(cwd)
         .output()
         .map_err(WorkspaceError::from)
+}
+
+fn git_ignored_paths<'a>(
+    cwd: &Path,
+    paths: impl Iterator<Item = &'a str>,
+) -> std::collections::BTreeSet<String> {
+    let mut command = Command::new("git");
+    command
+        .args(["check-ignore", "--stdin", "-z"])
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let Ok(mut child) = command.spawn() else {
+        return std::collections::BTreeSet::new();
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        for path in paths {
+            if stdin.write_all(path.as_bytes()).is_err() || stdin.write_all(&[0]).is_err() {
+                return std::collections::BTreeSet::new();
+            }
+        }
+    }
+    let Ok(output) = child.wait_with_output() else {
+        return std::collections::BTreeSet::new();
+    };
+    if !output.status.success() && output.status.code() != Some(1) {
+        return std::collections::BTreeSet::new();
+    }
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| String::from_utf8_lossy(path).into_owned())
+        .collect()
 }
 
 fn git_failure(output: &std::process::Output) -> WorkspaceError {

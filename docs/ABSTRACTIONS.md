@@ -68,11 +68,11 @@ Agent Chat and respects the Team's maximum parallel-run setting. A Team
 activity event is a structured coordination projection; it is not a replacement
 for the member's Chat transcript.
 
-A Team Lifecycle Operation is durable metadata for provisioning, provider
-cleanup, or disbanding. It carries its target independently of Team/member
-foreign keys, attempt count, retry time, diagnostic, and terminal result. The
-server supervisor owns retries. Local Team state never depends on a successful
-provider cleanup transaction.
+A Team Lifecycle Operation is durable metadata for provisioning or disbanding.
+It carries its target independently of Team/member foreign keys, attempt count,
+retry time, diagnostic, and terminal result. The server supervisor owns
+retries. Historical provider-cleanup records are completed without contacting
+the provider and no new provider-cleanup operation is created.
 
 A Team User Input Request is a durable Leader escalation with a title, prompt,
 prior Team state, answer, and resolution time. While one is pending, the Team is
@@ -122,9 +122,8 @@ Teammate spawn accepts opaque Agent-native ACP mode/configuration IDs rather
 than a Kubecode model abstraction. Teammate removal is a Leader-only,
 local-first lifecycle transition: the ACP actor is disconnected, active
 assignments return to pending, and Team membership plus the Kubecode Session
-disappear immediately. Provider-native history cleanup is a durable background
-operation and does not restore a removed member when it fails. Project files
-remain untouched. The Leader first discovers durable member IDs through
+disappear immediately. Provider-native history and Project files remain
+untouched. The Leader first discovers durable member IDs through
 `team_list_members`, then invokes `team_remove_teammate`. The ordinary Session
 API rejects teammate deletion before disconnecting its actor; the browser does
 not expose that action. Deleting the fixed Leader disbands the Team with the
@@ -142,9 +141,24 @@ creation remains available because it never changes Project files.
 ## Composer reference
 
 A Composer reference is a project-relative `@path` token selected through the
-same lazy file tree used by the workbench. Agent skills and commands remain
-Agent-owned: the UI renders ACP `available_commands` and inserts the selected
-native slash command instead of maintaining a Kubecode-only command catalog.
+shared flat Project path picker. Agent skills and commands remain Agent-owned:
+the UI renders ACP `available_commands` and inserts the selected native slash
+command instead of maintaining a Kubecode-only command catalog.
+
+## Project path picker
+
+The Project path picker is a browser presentation abstraction shared by quick
+file open, Composer references, and relative new-file/new-folder creation. It
+uses Project IDs plus validated relative entries from the existing Workspace
+API; it never resolves or exposes an unregistered absolute server path.
+Recursive search is bounded, defaults to excluding hidden, ignored, and common
+generated directories, and discards responses superseded by a newer query.
+
+Project registration uses the same keyboard and visual interaction but a
+server-directory adapter. Its value remains an absolute server path and calls
+only the existing create/import and directory-listing APIs. Create requires a
+non-existing target; Import requires an existing directory. Switching modes
+does not discard the typed path.
 
 ## Session and run
 
@@ -152,16 +166,28 @@ A Session is a durable relationship between one Agent Session and one Agent. It 
 the provider Session ID, manual and Agent titles, retained ACP state, archive
 state, activity timestamps, and an ordered Session event history. A Session may
 reference a parent as a provider-native fork or subagent; imported subagent
-transcripts may be marked read-only. The user-facing `Delete` operation requests
-ACP provider deletion first and removes Kubecode state only after the Agent
-accepts it. OpenCode may use its native `session delete` command when its ACP
-adapter lacks delete; ACP close is not deletion. Sessions without provider
-identity are deleted locally.
+transcripts may be marked read-only. The user-facing `Delete` operation removes
+only Kubecode state after disconnecting its active actor.
+Provider-native history remains owned by the Agent and can be imported again.
 
 A run is one user prompt and its normalized Agent events. A Session has at most
 one active run, while different Sessions can run concurrently. Runs may be
 running, waiting for input, completed, failed, cancelled, timed out, or
 interrupted.
+
+Session history is read in bounded cursor pages ordered by run insertion. Each
+page returns its run events and the corresponding Session events, while the
+browser preserves stable identities when older history is prepended or live
+events arrive. Pagination changes transfer and rendering cost, not ownership or
+retention: SQLite remains the complete durable history.
+
+## Open editor document
+
+An open editor document is browser presentation state identified by Project ID
+and validated relative path. It contains the latest server document plus an
+independent draft. A dirty close requires user confirmation. Optional Auto Save
+uses the same Project-scoped write API after an idle delay; it does not add
+another filesystem boundary or allow absolute paths.
 
 ## ACP actor
 

@@ -72,6 +72,41 @@ fn persists_the_project_workspaces_preference() {
 }
 
 #[test]
+fn annotates_hidden_and_git_ignored_project_entries() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("filtered-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    run_git(root, &["init"]);
+    fs::write(root.join(".gitignore"), "build/\n").expect("gitignore");
+    fs::write(root.join(".env"), "TOKEN=test\n").expect("hidden fixture");
+    fs::create_dir(root.join("build")).expect("ignored directory");
+    fs::create_dir(root.join("src")).expect("visible directory");
+
+    let entries = service.list_entries(&project.id, "").expect("entries");
+    let hidden = entries
+        .iter()
+        .find(|entry| entry.name == ".env")
+        .expect("hidden entry");
+    let ignored = entries
+        .iter()
+        .find(|entry| entry.name == "build")
+        .expect("ignored entry");
+    let visible = entries
+        .iter()
+        .find(|entry| entry.name == "src")
+        .expect("visible entry");
+
+    assert!(hidden.hidden);
+    assert!(!hidden.ignored);
+    assert!(!ignored.hidden);
+    assert!(ignored.ignored);
+    assert!(!visible.hidden);
+    assert!(!visible.ignored);
+}
+
+#[test]
 fn creates_an_isolated_git_worktree_for_an_agent_session() {
     let (_temp, service) = service();
     let project = service

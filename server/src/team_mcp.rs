@@ -628,7 +628,7 @@ impl TeamMcpServer {
     }
 
     #[tool(
-        description = "Leader only: immediately remove a teammate from this Team and release assigned work. Provider-native Session cleanup runs in the background when the provider is unavailable. Project files are never deleted."
+        description = "Leader only: immediately remove a teammate from this Team and release assigned work. This removes only Kubecode records; provider-native Session history and Project files are never deleted."
     )]
     async fn team_remove_teammate(
         &self,
@@ -640,8 +640,7 @@ impl TeamMcpServer {
         let teammate = coordinator(&self.context)
             .removable_teammate(team_id, caller_id, &input.teammate_id)
             .map_err(mcp_error)?;
-        let removal = self
-            .context
+        self.context
             .runtime
             .remove_team_member_local_first(team_id, caller_id, &teammate.id)
             .await
@@ -651,7 +650,7 @@ impl TeamMcpServer {
             "removed": true,
             "teammate_id": teammate.id,
             "name": teammate.name,
-            "cleanup": removal.cleanup_operation,
+            "provider_history_kept": true,
         }))
     }
 

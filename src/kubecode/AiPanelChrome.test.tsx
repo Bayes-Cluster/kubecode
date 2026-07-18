@@ -156,4 +156,28 @@ describe('AiPanelComposer', () => {
       'max-h-[202px]',
     )
   })
+
+  it('supports an explicit interaction gate while keeping its custom explanation visible', () => {
+    const onSend = vi.fn()
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        disabled
+        disabledPlaceholder="Direct teammate chat is disabled in Settings"
+        entries={[]}
+        input="Prepared draft"
+        inputRef={createRef<HTMLDivElement>()}
+        isActive={false}
+        onChange={vi.fn()}
+        onSend={onSend}
+        onStop={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('agent-input')).toHaveAttribute('contenteditable', 'false')
+    expect(screen.getByText('Direct teammate chat is disabled in Settings')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { ArrowUp, Sparkle, X, Plus, Link, Stop } from '@phosphor-icons/react'
+import { Virtuoso } from 'react-virtuoso'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import { ActionTooltip } from '@/components/ui/action-tooltip'
@@ -57,6 +58,8 @@ interface AiPanelComposerProps {
   entries: VaultEntry[]
   agentLabel: string
   agentReadiness: AiAgentReadiness
+  disabled?: boolean
+  disabledPlaceholder?: string
   locale?: AppLocale
   input: string
   inputRef: React.RefObject<HTMLDivElement | null>
@@ -482,6 +485,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   }, [onScrollStateChange])
 
   useEffect(() => {
+    if (messages.length > 100) return
     const followLatestMessage = () => {
       const element = containerRef.current
       if (element && autoFollowRef.current) element.scrollTop = element.scrollHeight
@@ -495,10 +499,44 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
     return () => window.cancelAnimationFrame(frame)
   }, [messages, isActive, updateScrollState])
 
+  if (messages.length > 100) {
+    return (
+      <Virtuoso
+        className="kubecode-virtual-message-history"
+        components={{
+          Header: () => <>{leadingContent}</>,
+        }}
+        data={messages}
+        data-testid="ai-message-history"
+        firstItemIndex={1_000_000 - messages.length}
+        followOutput={(isAtBottom) => (isActive && isAtBottom ? 'auto' : false)}
+        increaseViewportBy={{ top: 600, bottom: 800 }}
+        initialTopMostItemIndex={messages.length - 1}
+        itemContent={(index, message) => (
+          <AiMessage
+            key={message.id ?? index}
+            {...message}
+            locale={locale}
+            messageId={message.id}
+            onEdit={onEditMessage}
+            onFork={onForkMessage}
+            onOpenNote={onOpenNote}
+            onNavigateWikilink={onNavigateWikilink}
+            onRegenerate={onRegenerateMessage}
+          />
+        )}
+        atBottomStateChange={(atBottom) => {
+          autoFollowRef.current = atBottom
+          onScrollStateChange?.(!atBottom)
+        }}
+      />
+    )
+  }
+
   return (
     <div
       ref={containerRef}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      className="kubecode-message-history min-h-0 flex-1 overflow-y-auto overscroll-contain"
       data-testid="ai-message-history"
       style={{ overflowAnchor: 'none', padding: 12 }}
       onScroll={updateScrollState}
@@ -533,6 +571,8 @@ export function AiPanelComposer({
   entries,
   agentLabel,
   agentReadiness,
+  disabled = false,
+  disabledPlaceholder,
   locale = 'en',
   input,
   inputRef,
@@ -545,9 +585,11 @@ export function AiPanelComposer({
   onUnsupportedAiPaste,
 }: AiPanelComposerProps) {
   const t = createTranslator(locale)
-  const inputDisabled = agentReadiness !== 'ready'
+  const inputDisabled = disabled || agentReadiness !== 'ready'
   const canSend = !isActive && !inputDisabled && input.trim().length > 0
-  const placeholder = getComposerPlaceholder(agentLabel, agentReadiness, t)
+  const placeholder = disabled && disabledPlaceholder
+    ? disabledPlaceholder
+    : getComposerPlaceholder(agentLabel, agentReadiness, t)
   const hasControls = (controls !== undefined && controls !== null)
     || (leadingControl !== undefined && leadingControl !== null)
   const sendButton = isActive
@@ -567,6 +609,11 @@ export function AiPanelComposer({
       className="flex shrink-0 flex-col"
       style={{ padding: '6px 10px' }}
     >
+      {disabled && disabledPlaceholder && (
+        <span className="px-2 pb-1 text-xs text-muted-foreground">
+          {disabledPlaceholder}
+        </span>
+      )}
       <div
         className={cn(
           hasControls
@@ -586,7 +633,7 @@ export function AiPanelComposer({
             inputRef={inputRef}
             onChange={onChange}
             onSend={(text, references) => {
-              if (!isActive) onSend(text, references)
+              if (!isActive && !inputDisabled) onSend(text, references)
             }}
             onUnsupportedAiPaste={onUnsupportedAiPaste}
             placeholder={placeholder}

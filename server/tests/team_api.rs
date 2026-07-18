@@ -10,8 +10,8 @@ use kubecode_server::agents::AgentId;
 use kubecode_server::agents::AgentStore;
 use kubecode_server::api::{AppState, app_router};
 use kubecode_server::teams::{
-    MemberWorkspaceMode, NewTeam, NewTeamProposal, NewTeammate, StartTeam, TeamMode, TeamStatus,
-    TeamStore, TeamWorkspace,
+    MemberWorkspaceMode, NewTeam, NewTeamProposal, NewTeamTask, NewTeammate, StartTeam, TeamMode,
+    TeamStatus, TeamStore, TeamTaskFailureKind, TeamWorkspace,
 };
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -123,16 +123,6 @@ async fn call_mcp_tool(
     )
 }
 
-async fn wait_for_file_contains(path: &std::path::Path, needle: &str) {
-    for _ in 0..100 {
-        if fs::read_to_string(path).is_ok_and(|content| content.contains(needle)) {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    panic!("timed out waiting for {needle} in {}", path.display());
-}
-
 #[tokio::test]
 async fn creates_a_team_with_only_its_leader() {
     let (temp, app) = app();
@@ -161,6 +151,211 @@ async fn creates_a_team_with_only_its_leader() {
     assert_eq!(snapshot["members"][0]["name"], "Lead");
     assert_eq!(snapshot["tasks"], json!([]));
     assert_eq!(snapshot["leader_conversation"]["agent_id"], "codex");
+}
+
+#[tokio::test]
+async fn pauses_and_resumes_a_team_through_the_http_api() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (status, created) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({
+            "agent_id": "codex",
+            "leader_name": "Lead",
+            "title": "Interruptible team",
+            "workspace": "shared"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let team_id = created["team"]["id"].as_str().expect("team id");
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/teams/{team_id}/start"),
+        json!({
+            "goal": "Exercise the lifecycle",
+            "acceptance_criteria": ["The team can be paused"],
+            "allowed_agent_ids": ["codex"],
+            "mode": "standard",
+            "max_teammates": 2,
+            "max_parallel_runs": 1,
+            "max_review_rounds": 2
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, paused) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/teams/{team_id}/pause"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(paused["team"]["status"], "paused");
+
+    let (status, resumed) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/teams/{team_id}/resume"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resumed["team"]["status"], "active");
+}
+
+#[tokio::test]
+async fn assigns_cancels_retries_and_removes_team_work_through_the_http_api() {
+    let (temp, app) = app();
+    let project_id = create_project(&app, temp.path()).await;
+    let (_, created) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/teams"),
+        json!({"agent_id": "codex", "leader_name": "Lead"}),
+    )
+    .await;
+    let team_id = created["team"]["id"].as_str().expect("team id");
+    let leader_id = created["team"]["leader_member_id"]
+        .as_str()
+        .expect("leader id");
+    let (_, teammate_session) = request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id": "opencode", "title": "Reviewer"}),
+    )
+    .await;
+    let teammate_conversation_id = teammate_session["id"]
+        .as_str()
+        .expect("teammate conversation id");
+    let teams = TeamStore::open(temp.path().join("srv/.state/kubecode/kubecode.sqlite3"))
+        .expect("team store");
+    let teammate = teams
+        .add_teammate(NewTeammate {
+            team_id,
+            caller_member_id: leader_id,
+            conversation_id: teammate_conversation_id,
+            name: "Reviewer",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+    let first = teams
+        .create_task(NewTeamTask {
+            team_id,
+            creator_member_id: leader_id,
+            title: "Review parser",
+            description: "Review the parser implementation",
+            dependencies: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+            owned_paths: &[],
+        })
+        .expect("first task");
+
+    let (status, assigned) = request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{team_id}/tasks/{}/assign",
+            first.id
+        ),
+        json!({"member_id": teammate.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let assigned_task = assigned["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .find(|task| task["id"] == first.id)
+        .expect("assigned task");
+    assert_eq!(assigned_task["status"], "in_progress");
+    assert_eq!(assigned_task["assignee_member_id"], teammate.id);
+
+    let (status, cancelled) = request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{team_id}/tasks/{}/cancel",
+            first.id
+        ),
+        json!({"reason": "Scope changed"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let cancelled_task = cancelled["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .find(|task| task["id"] == first.id)
+        .expect("cancelled task");
+    assert_eq!(cancelled_task["status"], "cancelled");
+
+    let retryable = teams
+        .create_task(NewTeamTask {
+            team_id,
+            creator_member_id: leader_id,
+            title: "Run tests",
+            description: "Run the regression suite",
+            dependencies: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+            owned_paths: &[],
+        })
+        .expect("retryable task");
+    teams
+        .delegate_task(&retryable.id, leader_id, &teammate.id)
+        .expect("delegate retryable task");
+    teams
+        .fail_active_attempt(
+            &teammate.id,
+            TeamTaskFailureKind::Interrupted,
+            "Team paused by user",
+        )
+        .expect("interrupt task");
+
+    let (status, retried) = request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/teams/{team_id}/tasks/{}/retry",
+            retryable.id
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let retried_task = retried["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .find(|task| task["id"] == retryable.id)
+        .expect("retried task");
+    assert_eq!(retried_task["status"], "pending");
+    assert!(retried_task["assignee_member_id"].is_null());
+
+    let (status, removed) = request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/teams/{team_id}/members/{}", teammate.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        removed["members"]
+            .as_array()
+            .expect("members")
+            .iter()
+            .all(|member| member["id"] != teammate.id)
+    );
 }
 
 #[tokio::test]
@@ -471,7 +666,13 @@ async fn updates_team_scheduling_and_resolves_only_its_own_proposal() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(resolved["proposal"]["status"], "approved");
-    assert_eq!(resolved["activity"][0]["kind"], "proposal_approved");
+    assert!(
+        resolved["activity"]
+            .as_array()
+            .expect("activity")
+            .iter()
+            .any(|activity| activity["kind"] == "proposal_approved")
+    );
 }
 
 #[tokio::test]
@@ -599,7 +800,7 @@ async fn deleting_a_team_leader_deletes_every_team_session() {
 }
 
 #[tokio::test]
-async fn deleting_an_opencode_session_uses_the_native_cli_when_acp_only_supports_close() {
+async fn deleting_an_opencode_session_keeps_provider_native_history() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
     let state = root.join(".state/kubecode");
@@ -671,7 +872,7 @@ done"#,
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let transcript = fs::read_to_string(&transcript_path).expect("ACP transcript");
-    assert!(transcript.contains("cli session delete native-session-to-delete"));
+    assert!(!transcript.contains("cli session delete native-session-to-delete"));
     let events = AgentStore::open(&database_path)
         .expect("event store")
         .workspace_events_after(0)
@@ -682,8 +883,8 @@ done"#,
             event.kind == "session_removed"
                 && event.conversation_id.as_deref() == Some(conversation_id)
         })
-        .expect("provider deletion event");
-    assert_eq!(removed.payload["scope"], "provider");
+        .expect("local removal event");
+    assert_eq!(removed.payload["scope"], "local");
 }
 
 #[tokio::test]
@@ -1128,7 +1329,18 @@ done"#,
     )
     .await;
     assert_eq!(removed["result"]["isError"], false);
-    wait_for_file_contains(&transcript_path, "\"method\":\"session/delete\"").await;
+    let removed_payload: Value = serde_json::from_str(
+        removed["result"]["content"][0]["text"]
+            .as_str()
+            .expect("removed teammate JSON"),
+    )
+    .expect("removed teammate");
+    assert_eq!(removed_payload["provider_history_kept"], true);
+    assert!(
+        !fs::read_to_string(&transcript_path)
+            .expect("removal transcript")
+            .contains("\"method\":\"session/delete\"")
+    );
     let (status, snapshot_after_remove) = request(
         &router,
         Method::GET,

@@ -48,6 +48,7 @@ import {
   type AgentRun,
   type AgentSessionState,
   type Conversation,
+  type ConversationHistoryPage,
   type ConversationRevision,
   type KubecodeApi,
   type SessionEvent,
@@ -89,6 +90,7 @@ export type SessionPlanEntry = {
 
 type AgentSessionWorkspaceProps = {
   agents: AgentDescriptor[]
+  allowTeammateChat?: boolean
   api: KubecodeApi
   conversation: Conversation | null
   locale: AppLocale
@@ -128,8 +130,31 @@ const SESSION_TIMELINE_EVENT_KINDS = new Set([
   'user_message',
   'user_message_delta',
 ])
+const SESSION_DRAFT_PREFIX = 'kubecode:session-draft:'
+
+function readSessionDraft(conversationId: string): string {
+  try {
+    return globalThis.sessionStorage?.getItem(`${SESSION_DRAFT_PREFIX}${conversationId}`) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function writeSessionDraft(conversationId: string, value: string) {
+  try {
+    if (value) {
+      globalThis.sessionStorage?.setItem(`${SESSION_DRAFT_PREFIX}${conversationId}`, value)
+    } else {
+      globalThis.sessionStorage?.removeItem(`${SESSION_DRAFT_PREFIX}${conversationId}`)
+    }
+  } catch {
+    // Draft persistence must never make the Composer unavailable.
+  }
+}
+
 export function AgentSessionWorkspace({
   agents,
+  allowTeammateChat = false,
   api,
   conversation,
   locale,
@@ -151,6 +176,7 @@ export function AgentSessionWorkspace({
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
   const [run, setRun] = useState<AgentRun | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null)
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null)
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
@@ -163,6 +189,8 @@ export function AgentSessionWorkspace({
   const [draftTitle, setDraftTitle] = useState('')
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const conversationDraftsRef = useRef(new Map<string, string>())
@@ -176,6 +204,11 @@ export function AgentSessionWorkspace({
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
+  const directTeammateChatDisabled = conversation?.team_role === 'teammate'
+    && !allowTeammateChat
+  const hardReadOnly = Boolean(
+    conversation?.read_only || conversation?.team_role === 'discriminator',
+  )
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
   const leaderReviewPending = conversation?.team_role === 'teammate'
     && run?.status === 'waiting_permission'
@@ -199,13 +232,22 @@ export function AgentSessionWorkspace({
   const updatePrompt = useCallback((next: string | ((current: string) => string)) => {
     setPrompt((current) => {
       const value = typeof next === 'function' ? next(current) : next
-      if (conversationId) conversationDraftsRef.current.set(conversationId, value)
+      if (conversationId) {
+        conversationDraftsRef.current.set(conversationId, value)
+        writeSessionDraft(conversationId, value)
+      }
       return value
     })
   }, [conversationId])
 
   useEffect(() => {
-    setPrompt(conversationId ? conversationDraftsRef.current.get(conversationId) ?? '' : '')
+    if (!conversationId) {
+      setPrompt('')
+      return
+    }
+    const persisted = readSessionDraft(conversationId)
+    conversationDraftsRef.current.set(conversationId, persisted)
+    setPrompt(persisted)
   }, [conversationId])
 
   useEffect(() => {
@@ -262,7 +304,7 @@ export function AgentSessionWorkspace({
     pendingRunEventsRef.current.clear()
     processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
     let current = true
-    void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState }) => {
+    void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState, historyCursor: restoredCursor }) => {
       if (!current) return
       setMessages(history)
       knownRunIdsRef.current = new Set(history.flatMap((message) => message.id ? [message.id] : []))
@@ -271,6 +313,7 @@ export function AgentSessionWorkspace({
       setPendingElicitation(restoredElicitation)
       setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
       setSessionState(restoredState)
+      setHistoryCursor(restoredCursor)
     }).catch((cause: unknown) => {
       if (current) reportError(cause)
     })
@@ -327,7 +370,13 @@ export function AgentSessionWorkspace({
 
   const send = async (text: string) => {
     const message = text.trim()
-    if (!message || !conversation || !projectId || !agent?.available || active) return
+    if (!message
+      || !conversation
+      || !projectId
+      || !agent?.available
+      || active
+      || directTeammateChatDisabled
+      || hardReadOnly) return
     setError(null)
     try {
       const nextRun = await api.startRun(
@@ -411,9 +460,17 @@ export function AgentSessionWorkspace({
   }
 
   const reviseAtRun = async (runId: string, replacement?: string) => {
-    if (!conversation || !projectId || active || viewRevisionId) return
+    if (!conversation
+      || !projectId
+      || active
+      || viewRevisionId
+      || directTeammateChatDisabled
+      || hardReadOnly) return
     try {
-      await api.reviseConversationAtRun(conversation.id, runId)
+      const revision = await api.reviseConversationAtRun(conversation.id, runId)
+      if (revision.workspace_restore === 'kept') {
+        setWorkspaceWarning(t('kubecode.revisionFilesKept'))
+      }
       const hydrated = await hydrateConversation(api, conversation.id)
       knownRunIdsRef.current = new Set(
         hydrated.messages.flatMap((message) => message.id ? [message.id] : []),
@@ -423,6 +480,7 @@ export function AgentSessionWorkspace({
       setPendingPermission(hydrated.pendingPermission)
       setPendingElicitation(hydrated.pendingElicitation)
       setSessionState(hydrated.sessionState)
+      setHistoryCursor(hydrated.historyCursor)
       setViewRevisionId(null)
       setRevisions(await api.listConversationRevisions(conversation.id))
       if (replacement?.trim()) {
@@ -440,6 +498,27 @@ export function AgentSessionWorkspace({
   const regenerate = async (runId: string) => {
     const message = messages.find((candidate) => candidate.id === runId)?.userMessage
     if (message) await reviseAtRun(runId, message)
+  }
+
+  const loadEarlierHistory = async () => {
+    if (!historyConversationId || !historyCursor || loadingEarlier) return
+    setLoadingEarlier(true)
+    try {
+      const page = await api.getConversationHistory(historyConversationId, historyCursor)
+      const older = messagesFromHistoryPage(page)
+      setMessages((current) => {
+        const currentIds = new Set(current.flatMap((message) => message.id ? [message.id] : []))
+        return [
+          ...older.filter((message) => !message.id || !currentIds.has(message.id)),
+          ...current,
+        ]
+      })
+      setHistoryCursor(page.next_cursor)
+    } catch (cause) {
+      reportError(cause)
+    } finally {
+      setLoadingEarlier(false)
+    }
   }
 
   const promoteToTeam = async () => {
@@ -469,7 +548,7 @@ export function AgentSessionWorkspace({
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
-  const visibleCommands = prompt.startsWith('/')
+  const visibleCommands = !directTeammateChatDisabled && prompt.startsWith('/')
     ? commands.filter((command) => command.name.toLowerCase().includes(prompt.slice(1).toLowerCase()))
     : []
   const nativeMode = sessionMode(sessionState)
@@ -478,6 +557,7 @@ export function AgentSessionWorkspace({
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   const insertComposerText = (text: string, kind: 'command' | 'file') => {
+    if (directTeammateChatDisabled || hardReadOnly) return
     updatePrompt((current) => {
       if (!current) return text
       return `${current}${current.endsWith(' ') ? '' : ' '}${text}`
@@ -662,6 +742,17 @@ export function AgentSessionWorkspace({
           isActive={active}
           leadingContent={(
             <>
+              {historyCursor && (
+                <Button
+                  className="kubecode-load-earlier"
+                  disabled={loadingEarlier}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void loadEarlierHistory()}
+                >
+                  {loadingEarlier ? t('kubecode.loading') : t('kubecode.loadEarlierMessages')}
+                </Button>
+              )}
               {conversation.recreated_context && !viewRevisionId && (
                 <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
               )}
@@ -685,10 +776,12 @@ export function AgentSessionWorkspace({
           )}
           locale={locale}
           messages={messages}
-          onEditMessage={viewRevisionId
+          onEditMessage={viewRevisionId || directTeammateChatDisabled || hardReadOnly
             ? undefined
             : (runId, userMessage) => void reviseAtRun(runId, userMessage)}
-          onRegenerateMessage={viewRevisionId ? undefined : (runId) => void regenerate(runId)}
+          onRegenerateMessage={viewRevisionId || directTeammateChatDisabled || hardReadOnly
+            ? undefined
+            : (runId) => void regenerate(runId)}
         />
       </div>
         <div className="kubecode-session-composer-dock">
@@ -698,6 +791,14 @@ export function AgentSessionWorkspace({
           level="error"
           message={error}
           onDismiss={() => setError(null)}
+        />
+      )}
+      {workspaceWarning && (
+        <SystemMessageNotice
+          dismissLabel={t('window.close')}
+          level="warning"
+          message={workspaceWarning}
+          onDismiss={() => setWorkspaceWarning(null)}
         />
       )}
       {pendingPermission && (
@@ -810,7 +911,7 @@ export function AgentSessionWorkspace({
         </div>
       )}
       <div className="kubecode-session-composer">
-        {conversation.read_only || viewRevisionId ? (
+        {hardReadOnly || viewRevisionId ? (
           <div className="kubecode-read-only-session">
             <LockKey />
             <span>{viewRevisionId
@@ -819,7 +920,9 @@ export function AgentSessionWorkspace({
           </div>
         ) : (
           <>
-            {run && ['cancelled', 'failed', 'interrupted'].includes(run.status) && (
+            {!directTeammateChatDisabled
+              && run
+              && ['cancelled', 'failed', 'interrupted'].includes(run.status) && (
               <Button className="kubecode-undo-turn" size="sm" variant="ghost" onClick={() => void reviseAtRun(run.id)}>
                 {t('kubecode.undoTurn')}
               </Button>
@@ -837,7 +940,9 @@ export function AgentSessionWorkspace({
             <AiPanelComposer
               agentLabel={agentLabel}
               agentReadiness={readiness}
-              leadingControl={projectId ? (
+              disabled={directTeammateChatDisabled}
+              disabledPlaceholder={t('kubecode.teammateChatDisabled')}
+              leadingControl={projectId && !directTeammateChatDisabled ? (
                 <ComposerAddMenu
                   api={api}
                   commands={commands}
@@ -950,7 +1055,33 @@ async function hydrateConversation(
   pendingPermission: PendingPermission | null
   pendingElicitation: PendingElicitation | null
   sessionState: AgentSessionState
+  historyCursor: string | null
 }> {
+  if (typeof api.getConversationHistory === 'function') {
+    const [page, sessionState] = await Promise.all([
+      api.getConversationHistory(conversationId),
+      api.getSessionState(conversationId),
+    ])
+    const events = page.runs.map((run) => page.events[run.id] ?? [])
+    const activeRun = [...page.runs]
+      .reverse()
+      .find((item) => ACTIVE_RUN_STATUSES.has(item.status)) ?? null
+    const activeRunIndex = activeRun
+      ? page.runs.findIndex((item) => item.id === activeRun.id)
+      : -1
+    return {
+      messages: messagesFromHistoryPage(page),
+      activeRun: page.runs.at(-1) ?? null,
+      pendingPermission: activeRunIndex >= 0
+        ? pendingPermissionFromEvents(events[activeRunIndex])
+        : null,
+      pendingElicitation: activeRunIndex >= 0
+        ? pendingElicitationFromEvents(events[activeRunIndex])
+        : null,
+      sessionState,
+      historyCursor: page.next_cursor,
+    }
+  }
   const [runs, sessionEvents, sessionState] = await Promise.all([
     api.listRuns(conversationId),
     api.listSessionEvents(conversationId),
@@ -973,7 +1104,26 @@ async function hydrateConversation(
   const pendingElicitation = activeRunIndex >= 0
     ? pendingElicitationFromEvents(events[activeRunIndex])
     : null
-  return { messages, activeRun: runs.at(-1) ?? null, pendingPermission, pendingElicitation, sessionState }
+  return {
+    messages,
+    activeRun: runs.at(-1) ?? null,
+    pendingPermission,
+    pendingElicitation,
+    sessionState,
+    historyCursor: null,
+  }
+}
+
+function messagesFromHistoryPage(page: ConversationHistoryPage): AiAgentMessage[] {
+  if (page.session_events.length > 0) {
+    return messagesFromSessionEvents(page.session_events, page.runs)
+  }
+  return page.runs.map((run) => (
+    (page.events[run.id] ?? []).reduce(
+      (history, event) => applyAgentEvent(history, run.id, event),
+      [messageFromRun(run)],
+    )[0]
+  ))
 }
 
 function messagesFromSessionEvents(events: SessionEvent[], runs: AgentRun[]): AiAgentMessage[] {

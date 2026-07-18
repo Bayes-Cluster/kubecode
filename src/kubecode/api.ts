@@ -6,7 +6,13 @@ export type Project = {
 }
 export type DirectoryEntry = { name: string; path: string; hidden: boolean }
 export type DirectoryListing = { path: string; parent: string | null; entries: DirectoryEntry[] }
-export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
+export type Entry = {
+  name: string
+  path: string
+  kind: 'file' | 'directory'
+  hidden?: boolean
+  ignored?: boolean
+}
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
 export type TeamRole = 'leader' | 'teammate' | 'discriminator'
@@ -14,6 +20,7 @@ export type TeamStatus =
   | 'draft'
   | 'starting'
   | 'active'
+  | 'paused'
   | 'verifying'
   | 'needs_attention'
   | 'completed'
@@ -78,6 +85,8 @@ export type ConversationRevision = {
   snapshot_conversation_id: string
   forked_at_run_id: string
   created_at: string
+  workspace_restore?: 'restored' | 'kept'
+  workspace_restore_reason?: 'checkpoint_unavailable' | 'workspace_changed' | null
 }
 export type TeamWorkspace = 'shared' | 'worktree'
 export type TeamMode = 'standard' | 'yolo'
@@ -182,7 +191,7 @@ export type TeamSnapshot = {
 }
 export type TeamNextAction = {
   id: string
-  kind: 'answer_user_input' | 'configure_member' | 'retry_cleanup'
+  kind: 'answer_user_input' | 'configure_member'
   label: string
 }
 export type TeamUserInputRequest = {
@@ -307,6 +316,12 @@ export type AgentRun = {
   permission_mode: 'safe' | 'power'
   error: string | null
   internal?: boolean
+}
+export type ConversationHistoryPage = {
+  runs: AgentRun[]
+  events: Record<string, AgentEvent[]>
+  session_events: SessionEvent[]
+  next_cursor: string | null
 }
 export type AgentEvent = {
   run_id: string
@@ -559,6 +574,42 @@ export class KubecodeApi {
     })
   }
 
+  pauseTeam(teamId: string): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}/pause`, { method: 'POST' })
+  }
+
+  resumeTeam(teamId: string): Promise<TeamSnapshot> {
+    return this.request(`/teams/${encodeURIComponent(teamId)}/resume`, { method: 'POST' })
+  }
+
+  retryTeamTask(teamId: string, taskId: string): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/tasks/${encodeURIComponent(taskId)}/retry`,
+      { method: 'POST' },
+    )
+  }
+
+  cancelTeamTask(teamId: string, taskId: string, reason?: string): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+      { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) },
+    )
+  }
+
+  assignTeamTask(teamId: string, taskId: string, memberId: string): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/tasks/${encodeURIComponent(taskId)}/assign`,
+      { method: 'POST', body: JSON.stringify({ member_id: memberId }) },
+    )
+  }
+
+  removeTeamMember(teamId: string, memberId: string): Promise<TeamSnapshot> {
+    return this.request(
+      `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(memberId)}`,
+      { method: 'DELETE' },
+    )
+  }
+
   completeTeam(
     teamId: string,
     finalSummary: string,
@@ -579,13 +630,6 @@ export class KubecodeApi {
     return this.request(
       `/teams/${encodeURIComponent(teamId)}/attention/${encodeURIComponent(requestId)}/resolve`,
       { method: 'POST', body: JSON.stringify({ answer }) },
-    )
-  }
-
-  retryTeamCleanup(teamId: string, operationId: string): Promise<TeamLifecycleOperation> {
-    return this.request(
-      `/teams/${encodeURIComponent(teamId)}/cleanup/${encodeURIComponent(operationId)}/retry`,
-      { method: 'POST' },
     )
   }
 
@@ -719,6 +763,16 @@ export class KubecodeApi {
 
   listRuns(conversationId: string): Promise<AgentRun[]> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/runs`)
+  }
+
+  getConversationHistory(
+    conversationId: string,
+    before?: string,
+    limit = 50,
+  ): Promise<ConversationHistoryPage> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/history?${query({ before, limit })}`,
+    )
   }
 
   listProjectRuns(projectId: string): Promise<AgentRun[]> {

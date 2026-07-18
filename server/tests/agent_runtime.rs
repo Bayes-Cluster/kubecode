@@ -6,6 +6,9 @@ use std::time::Duration;
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_runtime::{AgentRuntime, SessionConfigInput, StartAgentRun};
 use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, RunStatus};
+use kubecode_server::teams::{
+    MemberWorkspaceMode, NewTeam, NewTeammate, StartTeam, TeamMode, TeamStore, TeamWorkspace,
+};
 use kubecode_server::workspace::WorkspaceService;
 use tempfile::TempDir;
 
@@ -76,6 +79,111 @@ done"#,
             .expect("project path")
             .to_string_lossy(),
     );
+}
+
+#[tokio::test]
+async fn initializes_an_opencode_yolo_teammate_with_an_object_permission_override() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "opencode-team-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let leader_conversation = store
+        .create_conversation(&project.id, AgentId::Codex, Some("Leader"))
+        .expect("leader conversation");
+    let team = teams
+        .create_team(NewTeam {
+            project_id: &project.id,
+            leader_conversation_id: &leader_conversation.id,
+            agent_session_id: &leader_conversation.id,
+            leader_name: "Leader",
+            title: Some("OpenCode permissions"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = teams.list_members(&team.id).expect("members")[0].clone();
+    let criteria = vec!["Teammate starts".to_owned()];
+    let allowed_agents = vec!["codex".to_owned(), "opencode".to_owned()];
+    teams
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Start the OpenCode teammate",
+            acceptance_criteria: &criteria,
+            allowed_agent_ids: &allowed_agents,
+            mode: TeamMode::Yolo,
+            max_teammates: 2,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .expect("start team");
+    teams.activate_team(&team.id).expect("activate team");
+    let teammate_conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Reviewer"))
+        .expect("teammate conversation");
+    teams
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: &teammate_conversation.id,
+            name: "Reviewer",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+
+    let binary = executable(
+        &temp,
+        r#"if [ "$OPENCODE_PERMISSION" != '{"*":"allow"}' ]; then
+  exit 88
+fi
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"mcpCapabilities\":{\"http\":true}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"opencode-yolo-teammate\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("1.17.20".into()),
+            executable: binary,
+            error: None,
+        }],
+    )
+    .with_team_store(Arc::clone(&teams))
+    .with_team_mcp_http_origin("http://127.0.0.1:9999/user/alice/kubecode");
+
+    runtime
+        .initialize_conversation(&teammate_conversation.id)
+        .await
+        .expect("initialize OpenCode teammate");
+    assert_eq!(
+        store
+            .get_conversation(&teammate_conversation.id)
+            .expect("initialized teammate")
+            .provider_session_id
+            .as_deref(),
+        Some("opencode-yolo-teammate"),
+    );
+    runtime
+        .disconnect_conversation(&teammate_conversation.id)
+        .await
+        .expect("disconnect teammate");
 }
 
 #[tokio::test]

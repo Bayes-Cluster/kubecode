@@ -38,7 +38,7 @@ or any files below it.
   by the selected agent
 - Durable Team Sessions with a fixed Leader, independent teammate chats,
   dependency-aware tasks, restart-safe mailbox delivery, inline user decisions,
-  and background provider cleanup
+  and local-only member removal
 - Searchable Session navigation grouped by live status and activity, with
   archive controls and provider-native fork/subagent relationships
 - Cross-Project input-required indicators and browser/system notifications for
@@ -122,6 +122,16 @@ KUBECODE_OPENCODE_PATH
 KUBECODE_CLAUDE_ACP_PATH
 KUBECODE_CODEX_ACP_PATH
 ```
+
+To verify an installed CLI and its real ACP adapter without sending a prompt,
+run the opt-in smoke test. It creates and closes a provider Session in a
+temporary Project, so use it only with a test-safe Agent account:
+
+```bash
+KUBECODE_REAL_AGENT=opencode pnpm test:agents:real
+```
+
+Use `claude_code`, `codex`, or `all` to select another installed Agent.
 
 ### Production-style local run
 

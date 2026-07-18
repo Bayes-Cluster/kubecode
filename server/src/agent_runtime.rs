@@ -7,11 +7,11 @@ use std::time::Duration;
 use agent_client_protocol::schema::v1::{
     BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
     ClientSessionCapabilities, ContentBlock, ContentChunk, CreateElicitationRequest,
-    CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
-    ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, EnvVariable,
-    ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerHttp, McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
+    ElicitationContentValue, ElicitationFormCapabilities, EnvVariable, ForkSessionRequest,
+    InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer, McpServerHttp,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
     SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
@@ -21,7 +21,6 @@ use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo, LineDi
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
-use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -40,8 +39,6 @@ pub enum RuntimeError {
     AgentUnavailable(AgentId),
     #[error("ACP connection failed: {0}")]
     Acp(String),
-    #[error("agent session deletion failed: {0}")]
-    SessionDeletion(String),
     #[error(
         "ACP adapter for {agent:?} is not installed: {binary}. Install it or set {variable} to its executable path"
     )]
@@ -75,14 +72,6 @@ pub struct ProviderSessionInfo {
     pub cwd: String,
     pub title: Option<String>,
     pub updated_at: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ProviderCleanupTarget {
-    pub agent_id: AgentId,
-    pub provider_session_id: String,
-    pub project_id: String,
-    pub workspace_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -141,6 +130,7 @@ impl PendingPermission {
 }
 
 const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const OPENCODE_MAXIMUM_PERMISSION: &str = r#"{"*":"allow"}"#;
 
 fn classify_team_failure(run: &AgentRun) -> crate::teams::TeamTaskFailureKind {
     let error = run.error.as_deref().unwrap_or_default().to_lowercase();
@@ -293,6 +283,7 @@ impl AgentRuntime {
             team.status,
             TeamStatus::Completed
                 | TeamStatus::Archived
+                | TeamStatus::Paused
                 | TeamStatus::Disbanding
                 | TeamStatus::Removed
         ) || (team.status == TeamStatus::NeedsAttention && member.role != TeamRole::Leader)
@@ -830,93 +821,6 @@ impl AgentRuntime {
             .map_err(|error| RuntimeError::Acp(error.to_string()))
     }
 
-    pub async fn delete_provider_session(&self, conversation_id: &str) -> Result<(), RuntimeError> {
-        let conversation = self.store.get_conversation(conversation_id)?;
-        let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
-            StoreError::InvalidStoredValue("conversation has no provider session".into())
-        })?;
-        self.cleanup_provider_target(&ProviderCleanupTarget {
-            agent_id: conversation.agent_id,
-            provider_session_id,
-            project_id: conversation.project_id,
-            workspace_path: conversation.workspace_path,
-        })
-        .await?;
-        self.store.delete_provider_conversation(conversation_id)?;
-        Ok(())
-    }
-
-    pub async fn cleanup_provider_target(
-        &self,
-        target: &ProviderCleanupTarget,
-    ) -> Result<(), RuntimeError> {
-        let descriptor = self.available_descriptor(target.agent_id)?;
-        let cwd = self
-            .workspace
-            .execution_path(&target.project_id, target.workspace_path.as_deref())?;
-        let agent = acp_agent(
-            target.agent_id,
-            &descriptor,
-            AgentPermissionProfile::Default,
-            &cwd,
-        )?;
-        let acp_session_id = target.provider_session_id.clone();
-        let deleted_by_acp = agent_client_protocol::Client
-            .builder()
-            .name("Kubecode")
-            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
-                let initialization = connection
-                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
-                    .block_task()
-                    .await?;
-                if initialization
-                    .agent_capabilities
-                    .session_capabilities
-                    .delete
-                    .is_none()
-                {
-                    return Ok(false);
-                }
-                connection
-                    .send_request(DeleteSessionRequest::new(acp_session_id))
-                    .block_task()
-                    .await?;
-                Ok(true)
-            })
-            .await
-            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        if !deleted_by_acp {
-            if target.agent_id != AgentId::OpenCode {
-                return Err(RuntimeError::SessionDeletion(format!(
-                    "{:?} does not support ACP session/delete",
-                    target.agent_id
-                )));
-            }
-            let mut command = Command::new(&descriptor.executable);
-            command
-                .args(["session", "delete", target.provider_session_id.as_str()])
-                .current_dir(cwd)
-                .kill_on_drop(true);
-            let output = tokio::time::timeout(Duration::from_secs(30), command.output())
-                .await
-                .map_err(|_| {
-                    RuntimeError::SessionDeletion(
-                        "OpenCode session delete timed out after 30 seconds".into(),
-                    )
-                })?
-                .map_err(|error| RuntimeError::SessionDeletion(error.to_string()))?;
-            if !output.status.success() {
-                let detail = String::from_utf8_lossy(&output.stderr);
-                return Err(RuntimeError::SessionDeletion(format!(
-                    "OpenCode exited with {}: {}",
-                    output.status,
-                    detail.trim().chars().take(1024).collect::<String>()
-                )));
-            }
-        }
-        Ok(())
-    }
-
     pub async fn remove_team_member_local_first(
         &self,
         team_id: &str,
@@ -937,32 +841,6 @@ impl AgentRuntime {
                 "only a teammate in this Team can be removed".into(),
             ));
         }
-        let conversation = self.store.get_conversation(&member.conversation_id)?;
-        let cleanup_operation = conversation
-            .provider_session_id
-            .as_ref()
-            .map(|provider_session_id| ProviderCleanupTarget {
-                agent_id: conversation.agent_id,
-                provider_session_id: provider_session_id.clone(),
-                project_id: conversation.project_id.clone(),
-                workspace_path: conversation.workspace_path.clone(),
-            })
-            .map(|target| {
-                let payload = serde_json::to_string(&target)
-                    .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-                teams
-                    .create_lifecycle_operation(
-                        &team.id,
-                        &team.project_id,
-                        crate::teams::TeamLifecycleOperationKind::ProviderCleanup,
-                        Some(&member.id),
-                        Some(&member.conversation_id),
-                        &payload,
-                    )
-                    .map_err(|error| RuntimeError::Acp(error.to_string()))
-            })
-            .transpose()?;
-
         let _ = self.disconnect_conversation(&member.conversation_id).await;
         let _ = teams.append_activity(
             &team.id,
@@ -982,20 +860,11 @@ impl AgentRuntime {
             None,
             "member_removed",
             &format!("Removed teammate {}", member.name),
-            cleanup_operation
-                .as_ref()
-                .map(|operation| operation.id.as_str()),
+            None,
         );
-
-        if let Some(operation) = cleanup_operation.clone() {
-            let runtime = self.clone();
-            tokio::spawn(async move {
-                let _ = runtime.process_lifecycle_operation(&operation.id).await;
-            });
-        }
         Ok(TeamMemberRemoval {
             member,
-            cleanup_operation,
+            cleanup_operation: None,
         })
     }
 
@@ -1025,43 +894,6 @@ impl AgentRuntime {
         let members = teams
             .list_members(&team.id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        let existing_operations = teams
-            .list_lifecycle_operations(&team.id)
-            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        let mut cleanup_operations = Vec::new();
-        for member in &members {
-            if let Some(existing) = existing_operations.iter().find(|operation| {
-                operation.kind == crate::teams::TeamLifecycleOperationKind::ProviderCleanup
-                    && operation.conversation_id.as_deref() == Some(member.conversation_id.as_str())
-            }) {
-                cleanup_operations.push(existing.clone());
-                continue;
-            }
-            let Ok(conversation) = self.store.get_conversation(&member.conversation_id) else {
-                continue;
-            };
-            if let Some(provider_session_id) = conversation.provider_session_id {
-                let payload = serde_json::to_string(&ProviderCleanupTarget {
-                    agent_id: conversation.agent_id,
-                    provider_session_id,
-                    project_id: conversation.project_id,
-                    workspace_path: conversation.workspace_path,
-                })
-                .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-                cleanup_operations.push(
-                    teams
-                        .create_lifecycle_operation(
-                            &team.id,
-                            &team.project_id,
-                            crate::teams::TeamLifecycleOperationKind::ProviderCleanup,
-                            Some(&member.id),
-                            Some(&member.conversation_id),
-                            &payload,
-                        )
-                        .map_err(|error| RuntimeError::Acp(error.to_string()))?,
-                );
-            }
-        }
         for member in &members {
             let _ = self.disconnect_conversation(&member.conversation_id).await;
         }
@@ -1076,16 +908,9 @@ impl AgentRuntime {
         teams
             .mark_lifecycle_operation_completed(&disband.id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        for operation in &cleanup_operations {
-            let runtime = self.clone();
-            let operation_id = operation.id.clone();
-            tokio::spawn(async move {
-                let _ = runtime.process_lifecycle_operation(&operation_id).await;
-            });
-        }
         Ok(TeamDisbandResult {
             team_id: team.id,
-            cleanup_operations,
+            cleanup_operations: Vec::new(),
         })
     }
 
@@ -1110,78 +935,17 @@ impl AgentRuntime {
         let teams = self
             .team_store()
             .ok_or_else(|| RuntimeError::Acp("Team store is not configured".into()))?;
-        let operation = teams
+        teams
             .mark_lifecycle_operation_running(operation_id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        if operation.kind != crate::teams::TeamLifecycleOperationKind::ProviderCleanup {
-            return teams
-                .mark_lifecycle_operation_completed(operation_id)
-                .map_err(|error| RuntimeError::Acp(error.to_string()));
-        }
-        let target = serde_json::from_str::<ProviderCleanupTarget>(&operation.payload_json)
-            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        match self.cleanup_provider_target(&target).await {
-            Ok(()) => {
-                let completed = teams
-                    .mark_lifecycle_operation_completed(operation_id)
-                    .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-                let _ = self.store.append_workspace_event(
-                    "team_cleanup_succeeded",
-                    Some(&completed.project_id),
-                    completed.conversation_id.as_deref(),
-                    None,
-                    &json!({"team_id":completed.team_id, "operation_id":completed.id}),
-                );
-                if teams.get_team(&completed.team_id).is_ok() {
-                    let _ = teams.append_activity(
-                        &completed.team_id,
-                        None,
-                        None,
-                        "provider_cleanup_succeeded",
-                        "Provider Session cleanup completed",
-                        Some(&completed.id),
-                    );
-                }
-                Ok(completed)
-            }
-            Err(error) => {
-                let pending = teams
-                    .mark_lifecycle_operation_failed(operation_id, &error.to_string())
-                    .map_err(|store_error| RuntimeError::Acp(store_error.to_string()))?;
-                let _ = self.store.append_workspace_event(
-                    "team_cleanup_pending",
-                    Some(&pending.project_id),
-                    pending.conversation_id.as_deref(),
-                    None,
-                    &json!({
-                        "team_id":pending.team_id,
-                        "operation_id":pending.id,
-                        "attempt_count":pending.attempt_count,
-                    }),
-                );
-                if teams.get_team(&pending.team_id).is_ok() {
-                    let _ = teams.append_activity(
-                        &pending.team_id,
-                        None,
-                        None,
-                        "provider_cleanup_pending",
-                        "Provider Session cleanup will be retried",
-                        Some(&pending.id),
-                    );
-                }
-                Ok(pending)
-            }
-        }
+        teams
+            .mark_lifecycle_operation_completed(operation_id)
+            .map_err(|error| RuntimeError::Acp(error.to_string()))
     }
 
     pub async fn delete_session(&self, conversation_id: &str) -> Result<(), RuntimeError> {
-        let conversation = self.store.get_conversation(conversation_id)?;
-        if conversation.provider_session_id.is_some() {
-            self.delete_provider_session(conversation_id).await
-        } else {
-            self.store.delete_conversation(conversation_id)?;
-            Ok(())
-        }
+        self.store.delete_conversation(conversation_id)?;
+        Ok(())
     }
 
     pub async fn fork_provider_session(
@@ -2421,7 +2185,10 @@ fn acp_agent(
         ),
         AgentId::OpenCode => {
             let environment = if permission_profile == AgentPermissionProfile::Maximum {
-                vec![EnvVariable::new("OPENCODE_PERMISSION", r#""allow""#)]
+                vec![EnvVariable::new(
+                    "OPENCODE_PERMISSION",
+                    OPENCODE_MAXIMUM_PERMISSION,
+                )]
             } else {
                 Vec::new()
             };
@@ -2687,9 +2454,15 @@ mod tests {
         let McpServer::Stdio(maximum) = maximum else {
             panic!("stdio adapter")
         };
-        assert!(maximum.env.iter().any(|variable| {
-            variable.name == "OPENCODE_PERMISSION" && variable.value == r#""allow""#
-        }));
+        let permission = maximum
+            .env
+            .iter()
+            .find(|variable| variable.name == "OPENCODE_PERMISSION")
+            .expect("OpenCode maximum permission environment");
+        assert_eq!(
+            serde_json::from_str::<Value>(&permission.value).expect("permission JSON"),
+            json!({"*": "allow"}),
+        );
     }
 
     #[test]

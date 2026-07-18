@@ -35,3 +35,6 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0188](0188-supervised-team-lifecycle-and-local-first-cleanup.md) | Supervised Team lifecycle and local-first cleanup |
 | [0189](0189-agent-first-workbench-visual-hierarchy.md) | Agent-first workbench visual hierarchy |
 | [0190](0190-adjustable-workbench-typography-and-view-specific-composition.md) | Adjustable workbench typography and view-specific composition |
+| [0191](0191-bounded-session-history-and-multi-document-context.md) | Bounded Session history and multi-document context |
+| [0192](0192-local-only-session-removal.md) | Local-only Session removal |
+| [0193](0193-opencode-team-permission-environment.md) | OpenCode Team permission environment |
