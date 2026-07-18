@@ -13,3 +13,20 @@ submitting a change:
 Run the checks listed in [README.md](README.md#quality-checks). Bug reports
 should include the commit, browser, deployment environment, reproduction steps,
 and relevant server logs without credentials or project content.
+
+## Documentation
+
+`README.md` and `docs/` are the canonical English sources. User-facing
+documentation has a complete Simplified Chinese mirror in `README.zh-CN.md` and
+`docs/zh-CN/`; update both languages in the same change. Architecture,
+abstraction, and ADR documents remain English-only.
+
+Keep commands, paths, configuration keys, Agent names, and behavior identical
+between translations. Do not add screenshots containing real user paths,
+project names, prompts, browser tabs, credentials, or file contents.
+
+Run the documentation check before submitting:
+
+```bash
+pnpm docs:check
+```

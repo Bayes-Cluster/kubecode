@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Kubecode monochrome mark for dark backgrounds</title>
+  <path fill="#F7F8FC" d="M8 10a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4v17h6.7l12.7-19.1A4 4 0 0 1 47.7 6H56L38.5 31.7 57 58H46.4a4 4 0 0 1-3.3-1.7L31.7 39H25v15a4 4 0 0 1-4 4h-9a4 4 0 0 1-4-4V10Z"/>
+  <rect width="8" height="8" x="27" y="28" fill="#111318" rx="2"/>
+</svg>
