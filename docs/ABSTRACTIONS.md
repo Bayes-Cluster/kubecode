@@ -238,5 +238,8 @@ notification bridge.
 ## Appearance
 
 Appearance is browser-local. A versioned preference record stores color scheme,
-theme, UI font, code font, and terminal font. Semantic CSS tokens feed the
-workspace, CodeMirror, and xterm so theme changes do not reconnect a PTY.
+theme, UI font, UI font size, code font, and terminal font. UI font size is an
+integer from 12 through 20 pixels and defaults to 14 when an older preference
+record has no value. It scales workbench chrome, Agent messages, and the
+Composer without changing CodeMirror or xterm metrics. Semantic CSS tokens feed
+the workspace, CodeMirror, and xterm so theme changes do not reconnect a PTY.

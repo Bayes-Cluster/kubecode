@@ -23,6 +23,7 @@ export type KubecodeAppearance = {
   colorScheme: ThemeMode
   theme: KubecodeTheme
   uiFont: string
+  uiFontSize: number
   codeFont: string
   terminalFont: string
 }
@@ -31,6 +32,7 @@ export const DEFAULT_KUBECODE_APPEARANCE: KubecodeAppearance = {
   colorScheme: 'system',
   theme: 'opencode',
   uiFont: 'System Sans',
+  uiFontSize: 14,
   codeFont: 'System Mono',
   terminalFont: 'JetBrainsMono Nerd Font Mono',
 }
@@ -47,6 +49,15 @@ function normalizedFont(value: unknown, fallback: string): string {
   return font && !invalid ? font : fallback
 }
 
+function normalizedUiFontSize(value: unknown): number {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= 12
+    && value <= 20
+    ? value
+    : DEFAULT_KUBECODE_APPEARANCE.uiFontSize
+}
+
 export function normalizeKubecodeAppearance(value: unknown): KubecodeAppearance {
   const stored = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const colorScheme = COLOR_SCHEMES.has(stored.colorScheme as ThemeMode)
@@ -60,6 +71,7 @@ export function normalizeKubecodeAppearance(value: unknown): KubecodeAppearance 
     colorScheme,
     theme,
     uiFont: normalizedFont(stored.uiFont, DEFAULT_KUBECODE_APPEARANCE.uiFont),
+    uiFontSize: normalizedUiFontSize(stored.uiFontSize),
     codeFont: normalizedFont(stored.codeFont, DEFAULT_KUBECODE_APPEARANCE.codeFont),
     terminalFont: normalizedFont(stored.terminalFont, DEFAULT_KUBECODE_APPEARANCE.terminalFont),
   }
@@ -93,6 +105,7 @@ export function applyKubecodeAppearance(
   const root = documentObject.documentElement
   root.setAttribute('data-kubecode-theme', appearance.theme)
   root.style.setProperty('--kubecode-ui-font', fontStack(appearance.uiFont, 'sans'))
+  root.style.setProperty('--kubecode-ui-font-size', `${appearance.uiFontSize}px`)
   root.style.setProperty('--kubecode-code-font', fontStack(appearance.codeFont, 'mono'))
   root.style.setProperty('--kubecode-terminal-font', fontStack(appearance.terminalFont, 'mono'))
 }

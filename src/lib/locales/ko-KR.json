@@ -1257,6 +1257,8 @@
   "kubecode.theme.one-dark": "One Dark",
   "kubecode.uiFont": "UI Font",
   "kubecode.uiFontDescription": "Customize the font used throughout the interface.",
+  "kubecode.uiFontSize": "UI 글꼴 크기",
+  "kubecode.uiFontSizeDescription": "인터페이스 전체에서 사용하는 텍스트 크기를 조정합니다.",
   "kubecode.codeFont": "Code Font",
   "kubecode.codeFontDescription": "Customize the font used in the editor and code blocks.",
   "kubecode.terminalFont": "Terminal Font",

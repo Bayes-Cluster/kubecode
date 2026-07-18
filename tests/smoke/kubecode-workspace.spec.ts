@@ -33,7 +33,7 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await expect(page.locator('.kubecode-terminal-toolbar')).toHaveText('')
 
   const terminalNavigator = page.getByRole('tree', { name: 'Terminal' })
-  const navigatorToggle = page.getByRole('button', { name: 'Collapse' })
+  const navigatorToggle = page.getByRole('button', { name: 'Collapse', exact: true })
   await navigatorToggle.click()
   await expect(terminalNavigator).toHaveAttribute('data-narrow', 'true')
   await navigatorToggle.click()

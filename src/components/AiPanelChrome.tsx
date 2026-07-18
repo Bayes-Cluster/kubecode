@@ -137,17 +137,19 @@ function ComposerInput({
       onUnsupportedPaste={onUnsupportedAiPaste}
       disabled={disabled}
       placeholder={placeholder}
-      placeholderClassName={hasControls ? 'px-2 pb-1 pt-2 text-[13px] leading-5' : undefined}
+      placeholderClassName={hasControls
+        ? 'kubecode-composer-placeholder px-2 py-1.5 leading-5'
+        : undefined}
       inputRef={inputRef}
       editorClassName={cn(
         'overflow-y-auto overscroll-contain',
         hasControls
-          ? 'min-h-[34px] max-h-[184px] border-0 px-2 pb-1 pt-2 leading-5'
+          ? 'kubecode-composer-editor min-h-[32px] max-h-[184px] border-0 px-2 py-1.5 leading-5'
           : 'min-h-0 max-h-24',
       )}
       editorStyle={hasControls ? {
         maxHeight: 184,
-        minHeight: 34,
+        minHeight: 32,
         overflowY: 'auto',
         overscrollBehavior: 'contain',
       } : { maxHeight: 96, overflowY: 'auto', overscrollBehavior: 'contain' }}
@@ -568,7 +570,7 @@ export function AiPanelComposer({
       <div
         className={cn(
           hasControls
-            ? 'flex min-h-[54px] max-h-[210px] items-end gap-1 overflow-hidden rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
+            ? 'flex min-h-[50px] max-h-[202px] items-end gap-1 overflow-hidden rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
             : 'flex items-end gap-2',
         )}
         data-layout={hasControls ? 'single-row' : undefined}

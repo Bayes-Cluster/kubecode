@@ -522,9 +522,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       <main className="kubecode-app">
       <header className="kubecode-topbar">
         <div className="kubecode-topbar-leading">
-          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
-            <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
-          </Button>
           <div className="kubecode-titlebar-session-slot" ref={setTitlebarTarget}>
             {!conversation && (
               <span className="kubecode-titlebar-project">
@@ -585,6 +582,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
+            <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
+          </Button>
           <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setTerminalOpen((open) => togglePanel('terminal', open))}>
             <PanelToggleIcon active={terminalOpen} panel="bottom" />
           </Button>
@@ -1458,6 +1458,31 @@ function KubecodeSettingsDialog({
                   onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'uiFont' })}
                   onChange={(event) => updateAppearance('uiFont', event.target.value)}
                 />
+              </div>
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.uiFontSize')}</strong>
+                  <span>{t('kubecode.uiFontSizeDescription')}</span>
+                </div>
+                <Select
+                  value={String(appearance.uiFontSize)}
+                  onValueChange={(value) => {
+                    updateAppearance('uiFontSize', Number(value))
+                    trackEvent('kubecode_appearance_changed', {
+                      setting: 'uiFontSize',
+                      value: Number(value),
+                    })
+                  }}
+                >
+                  <SelectTrigger aria-label={t('kubecode.uiFontSize')} className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 9 }, (_, index) => index + 12).map((size) => (
+                      <SelectItem key={size} value={String(size)}>{size}px</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="kubecode-setting-row">
                 <div><strong>{t('kubecode.codeFont')}</strong><span>{t('kubecode.codeFontDescription')}</span></div>

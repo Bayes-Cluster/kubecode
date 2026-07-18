@@ -138,7 +138,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
           color: 'var(--foreground)',
           borderRadius: '12px 12px 2px 12px',
           padding: '8px 12px',
-          fontSize: 14,
+          fontSize: 'var(--kubecode-ui-font-size, 14px)',
           lineHeight: 1.5,
           overflowWrap: 'anywhere',
         }}

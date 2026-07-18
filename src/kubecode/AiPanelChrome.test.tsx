@@ -148,12 +148,12 @@ describe('AiPanelComposer', () => {
 
     expect(screen.getByTestId('agent-input')).toHaveStyle({
       maxHeight: '184px',
-      minHeight: '34px',
+      minHeight: '32px',
       overflowY: 'auto',
     })
     expect(screen.getByTestId('agent-composer-surface')).toHaveClass(
-      'min-h-[54px]',
-      'max-h-[210px]',
+      'min-h-[50px]',
+      'max-h-[202px]',
     )
   })
 })

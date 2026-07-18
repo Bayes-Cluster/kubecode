@@ -82,6 +82,43 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('keeps the Agent Composer out of the Team board view', async () => {
+    const leader = { ...conversation, team_id: 'team-1', team_role: 'leader' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+    const team = {
+      team: { id: 'team-1', status: 'active', title: 'Research team' },
+      leader_conversation: leader,
+      conversations: [leader],
+      members: [{ id: 'member-leader', conversation_id: leader.id, role: 'leader' }],
+      tasks: [],
+    } as unknown as TeamSnapshot
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={leader}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      team={team}
+      workspaceEvents={[]}
+    />)
+
+    expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByTestId('composer')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }))
+    expect(await screen.findByTestId('composer')).toBeInTheDocument()
+  })
+
   it('confirms deleting a Team Leader before deleting every member', async () => {
     const leader = { ...conversation, team_id: 'team-1', team_role: 'leader' as const }
     const teammate = { ...conversation, id: 'session-2', title: 'Reviewer' }

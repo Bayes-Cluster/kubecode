@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0189.
+active production boundary is defined by ADRs 0161–0190.
 
 ## Runtime topology
 

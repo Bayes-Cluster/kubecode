@@ -652,7 +652,9 @@ export function AgentSessionWorkspace({
           )}
         </>
       )}
-      <div className="kubecode-session-timeline">
+      {(!team || teamView === 'chat') && (
+        <>
+        <div className="kubecode-session-timeline">
         <AiPanelMessageHistory
           agentLabel={agentLabel}
           agentReadiness={readiness}
@@ -689,7 +691,7 @@ export function AgentSessionWorkspace({
           onRegenerateMessage={viewRevisionId ? undefined : (runId) => void regenerate(runId)}
         />
       </div>
-      <div className="kubecode-session-composer-dock">
+        <div className="kubecode-session-composer-dock">
       {error && (
         <SystemMessageNotice
           dismissLabel={t('window.close')}
@@ -862,8 +864,10 @@ export function AgentSessionWorkspace({
             />
           </>
           )}
-      </div>
-      </div>
+        </div>
+        </div>
+        </>
+      )}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>
           <DialogHeader>

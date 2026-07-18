@@ -1257,6 +1257,8 @@
   "kubecode.theme.one-dark": "One Dark",
   "kubecode.uiFont": "界面字体",
   "kubecode.uiFontDescription": "自定义整个界面使用的字体。",
+  "kubecode.uiFontSize": "界面字号",
+  "kubecode.uiFontSizeDescription": "调整整个界面中使用的文字大小。",
   "kubecode.codeFont": "代码字体",
   "kubecode.codeFontDescription": "自定义编辑器和代码块使用的字体。",
   "kubecode.terminalFont": "终端字体",

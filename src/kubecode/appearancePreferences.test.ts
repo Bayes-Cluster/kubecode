@@ -14,6 +14,7 @@ describe('Kubecode appearance preferences', () => {
       colorScheme: 'dark',
       theme: 'nord',
       uiFont: 'Inter',
+      uiFontSize: 16,
       codeFont: '',
       terminalFont: 42,
     })).toEqual({
@@ -21,8 +22,16 @@ describe('Kubecode appearance preferences', () => {
       colorScheme: 'dark',
       theme: 'nord',
       uiFont: 'Inter',
+      uiFontSize: 16,
     })
   })
+
+  it.each([11, 20.5, 21, '16'])(
+    'falls back for an invalid UI font size of %s',
+    (uiFontSize) => {
+      expect(normalizeKubecodeAppearance({ uiFontSize }).uiFontSize).toBe(14)
+    },
+  )
 
   it('reads and writes one versioned local storage value', () => {
     const storage = {
@@ -46,6 +55,7 @@ describe('Kubecode appearance preferences', () => {
       colorScheme: 'dark',
       theme: 'tokyonight',
       uiFont: 'Inter',
+      uiFontSize: 16,
       codeFont: 'Berkeley Mono',
       terminalFont: 'JetBrainsMono Nerd Font Mono',
     })
@@ -53,6 +63,7 @@ describe('Kubecode appearance preferences', () => {
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(document.documentElement).toHaveAttribute('data-kubecode-theme', 'tokyonight')
     expect(document.documentElement.style.getPropertyValue('--kubecode-ui-font')).toContain('Inter')
+    expect(document.documentElement.style.getPropertyValue('--kubecode-ui-font-size')).toBe('16px')
     expect(document.documentElement.style.getPropertyValue('--kubecode-code-font')).toContain('Berkeley Mono')
     expect(document.documentElement.style.getPropertyValue('--kubecode-terminal-font')).toContain('JetBrainsMono Nerd Font Mono')
   })

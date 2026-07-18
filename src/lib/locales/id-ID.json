@@ -1257,6 +1257,8 @@
   "kubecode.theme.one-dark": "One Dark",
   "kubecode.uiFont": "UI Font",
   "kubecode.uiFontDescription": "Customize the font used throughout the interface.",
+  "kubecode.uiFontSize": "Ukuran Font UI",
+  "kubecode.uiFontSizeDescription": "Sesuaikan ukuran teks di seluruh antarmuka.",
   "kubecode.codeFont": "Code Font",
   "kubecode.codeFontDescription": "Customize the font used in the editor and code blocks.",
   "kubecode.terminalFont": "Terminal Font",

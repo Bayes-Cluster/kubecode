@@ -34,3 +34,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0187](0187-provider-native-team-permission-profiles.md) | Provider-native Team permission profiles |
 | [0188](0188-supervised-team-lifecycle-and-local-first-cleanup.md) | Supervised Team lifecycle and local-first cleanup |
 | [0189](0189-agent-first-workbench-visual-hierarchy.md) | Agent-first workbench visual hierarchy |
+| [0190](0190-adjustable-workbench-typography-and-view-specific-composition.md) | Adjustable workbench typography and view-specific composition |

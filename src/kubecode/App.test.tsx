@@ -132,7 +132,7 @@ describe('Kubecode workspace', () => {
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
 
-    render(<KubecodeApp api={api} />)
+    const { container } = render(<KubecodeApp api={api} />)
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New session' })).toBeInTheDocument()
@@ -140,6 +140,13 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
+    const titlebarActions = container.querySelector('.kubecode-topbar-actions')
+    expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle sessions' }))
+    expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle terminal' }))
+    expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle context panel' }))
+    expect(Array.from(titlebarActions?.querySelectorAll('.kubecode-layout-toggle') ?? []).map(
+      (button) => button.getAttribute('aria-label'),
+    )).toEqual(['Toggle sessions', 'Toggle terminal', 'Toggle context panel'])
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
     expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
@@ -169,6 +176,22 @@ describe('Kubecode workspace', () => {
       'Kubecode notifications are ready',
     ]))
     expect(screen.getByRole('status')).toHaveTextContent('Kubecode notifications are ready')
+  })
+
+  it('applies a user-selected UI font size from Appearance settings', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'UI Font Size' }))
+    fireEvent.click(await screen.findByRole('option', { name: '16px' }))
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--kubecode-ui-font-size')).toBe('16px')
+    })
   })
 
   it('surfaces running and stuck Agent sessions on their project icons', async () => {

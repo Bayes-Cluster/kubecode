@@ -67,7 +67,7 @@
   background: var(--surface-app);
   color: var(--text-primary);
   display: grid;
-  font-size: 14px;
+  font-size: var(--kubecode-ui-font-size, 14px);
   font-family: var(--kubecode-ui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   grid-template-rows: 42px minmax(0, 1fr);
   height: 100vh;
@@ -651,14 +651,6 @@
   justify-content: center;
   min-width: 17px;
   padding-inline: 4px;
-}
-
-.kubecode-agent-session[data-team-view='team'] > .kubecode-session-timeline,
-.kubecode-agent-session[data-team-view='team'] > .kubecode-permission-dock,
-.kubecode-agent-session[data-team-view='team'] > .kubecode-elicitation-dock,
-.kubecode-agent-session[data-team-view='team'] > .kubecode-session-plan,
-.kubecode-agent-session[data-team-view='team'] > .kubecode-session-composer {
-  display: none;
 }
 
 .kubecode-team-workspace {
@@ -2246,7 +2238,20 @@
   --workbench-running: var(--accent-blue);
   --workbench-attention: var(--feedback-warning-text);
   --workbench-failed: var(--feedback-error-text);
-  --chat-content-max: 48rem;
+  --chat-content-max: 60rem;
+}
+
+.kubecode-app {
+  --kubecode-ui-font-small: max(11px, calc(var(--kubecode-ui-font-size, 14px) - 1px));
+  --kubecode-ui-font-compact: max(10px, calc(var(--kubecode-ui-font-size, 14px) - 2px));
+  --kubecode-ui-font-tiny: max(9px, calc(var(--kubecode-ui-font-size, 14px) - 3px));
+  grid-template-rows: 44px minmax(0, 1fr);
+}
+
+.kubecode-app [data-slot='button'],
+.kubecode-app [data-slot='input'],
+.kubecode-app [data-slot='select-trigger'] {
+  font-size: inherit;
 }
 
 .kubecode-topbar {
@@ -2269,7 +2274,7 @@
 .kubecode-titlebar-session-slot { flex: 1; overflow: hidden; }
 .kubecode-titlebar-project {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--kubecode-ui-font-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2290,7 +2295,7 @@
 }
 
 .kubecode-session-title strong {
-  font-size: 13px;
+  font-size: var(--kubecode-ui-font-small);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2361,7 +2366,7 @@
 .kubecode-navigator-heading > strong,
 .kubecode-navigator-tools > span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--kubecode-ui-font-tiny);
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2430,7 +2435,7 @@
 
 .kubecode-project-new-session {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--kubecode-ui-font-compact);
   gap: 6px;
   height: 27px;
   justify-content: flex-start;
@@ -2450,7 +2455,7 @@
   align-items: center;
   color: var(--text-secondary);
   display: grid;
-  font-size: 12px;
+  font-size: var(--kubecode-ui-font-compact);
   gap: 6px;
   grid-template-columns: 16px minmax(0, 1fr) auto;
   height: 27px;
@@ -2462,7 +2467,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.kubecode-session-team-header > small { color: var(--text-muted); font-size: 10px; }
+.kubecode-session-team-header > small { color: var(--text-muted); font-size: var(--kubecode-ui-font-tiny); }
 .kubecode-session-team-tree { border-left: 1px solid var(--border-subtle); margin-left: 8px; padding-left: 4px; }
 
 .kubecode-session-row-shell {
@@ -2473,7 +2478,7 @@
 .kubecode-session-row {
   border-radius: 5px;
   display: grid;
-  font-size: 13px;
+  font-size: var(--kubecode-ui-font-small);
   gap: 7px;
   grid-template-columns: 18px minmax(0, 1fr) 10px;
   height: 28px;
@@ -2527,6 +2532,11 @@
   max-width: var(--chat-content-max);
   padding: 22px 10px 12px !important;
 }
+.kubecode-session-timeline .ai-markdown,
+.kubecode-composer-editor,
+.kubecode-composer-placeholder {
+  font-size: var(--kubecode-ui-font-size, 14px);
+}
 .kubecode-session-plan,
 .kubecode-permission-dock,
 .kubecode-elicitation-dock {
@@ -2541,7 +2551,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--kubecode-ui-font-compact);
   min-width: 0;
 }
 .ai-action-card:hover,
@@ -2554,7 +2564,7 @@
 }
 .ai-action-card-header {
   display: grid;
-  font-size: 12px;
+  font-size: var(--kubecode-ui-font-compact);
   font-weight: 500;
   gap: 7px;
   grid-template-columns: 16px minmax(0, 1fr) 16px 12px;
@@ -2627,7 +2637,7 @@
   color: var(--text-secondary);
   display: grid;
   flex: 0 0 27px;
-  font-size: 11px;
+  font-size: var(--kubecode-ui-font-tiny);
   font-weight: 650;
   gap: 5px;
   grid-template-columns: 14px minmax(0, 1fr) auto;
@@ -2646,7 +2656,7 @@
 .kubecode-explorer-section-trigger > svg[data-expanded='false'] { transform: rotate(-90deg); }
 .kubecode-explorer-section-trigger > small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--kubecode-ui-font-tiny);
   font-variant-numeric: tabular-nums;
 }
 .kubecode-explorer-section-content {
