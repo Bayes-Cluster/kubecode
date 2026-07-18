@@ -1,9 +1,10 @@
-import { type KeyboardEvent, type ReactNode, useCallback } from 'react'
+import { type ReactNode, useCallback } from 'react'
 import {
   PencilSimple, MagnifyingGlass,
   CircleNotch, CheckCircle, XCircle, CaretRight, CaretDown,
   Terminal, File, FolderOpen, NotePencil,
 } from '@phosphor-icons/react'
+import { Button } from '@/components/ui/button'
 
 export type AiActionStatus = 'pending' | 'done' | 'error'
 
@@ -20,11 +21,6 @@ export interface AiActionCardProps {
 }
 
 const MAX_DETAIL_LENGTH = 800
-const DEFAULT_ACTION_CARD_BACKGROUND = 'var(--accent-blue-bg)'
-const TOOL_BACKGROUND_MAP: Record<string, string> = {
-  open_note: 'var(--accent-blue-light)',
-}
-const TOOL_BACKGROUND_BY_NAME = new Map(Object.entries(TOOL_BACKGROUND_MAP))
 
 type IconRenderer = (size: number) => ReactNode
 
@@ -84,7 +80,6 @@ function ActionCardHeader({
   hasDetails,
   label,
   onClick,
-  onKeyDown,
   renderIcon,
   status,
 }: {
@@ -92,47 +87,37 @@ function ActionCardHeader({
   hasDetails: boolean
   label: string
   onClick: () => void
-  onKeyDown: (event: KeyboardEvent) => void
   renderIcon: IconRenderer
   status: AiActionStatus
 }) {
-  const setHeaderRef = useCallback((node: HTMLButtonElement | null) => {
-    if (!node) return
-    node.setAttribute('role', 'button')
-    node.setAttribute('tabindex', '0')
-  }, [])
-
   return (
-    <button
-      ref={setHeaderRef}
+    <Button
       type="button"
-      className="flex w-full items-center gap-2 border-0 bg-transparent text-left"
-      style={{ padding: '6px 10px', cursor: 'pointer' }}
-      aria-expanded={expanded}
+      className="ai-action-card-header"
+      aria-expanded={hasDetails ? expanded : undefined}
+      size="sm"
+      variant="ghost"
       onClick={onClick}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && expanded) {
+          event.preventDefault()
+          onClick()
+        }
+      }}
       data-testid="action-card-header"
     >
-      <span className="shrink-0 text-muted-foreground" style={{ width: 14, display: 'flex' }}>
-        <ActionIcon expanded={expanded} hasDetails={hasDetails} renderIcon={renderIcon} />
+      <span className="ai-action-card-icon" aria-hidden="true">
+        {renderIcon(14)}
       </span>
-      <span className="flex-1 truncate">{label}</span>
+      <span className="ai-action-card-label">{label}</span>
       <StatusIndicator status={status} />
-    </button>
+      {hasDetails && (
+        <span className="ai-action-card-caret" aria-hidden="true">
+          {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        </span>
+      )}
+    </Button>
   )
-}
-
-function ActionIcon({
-  expanded,
-  hasDetails,
-  renderIcon,
-}: {
-  expanded: boolean
-  hasDetails: boolean
-  renderIcon: IconRenderer
-}) {
-  if (!hasDetails) return <>{renderIcon(14)}</>
-  return expanded ? <CaretDown size={12} /> : <CaretRight size={12} />
 }
 
 function DetailBlock({ label, content, isError }: {
@@ -205,16 +190,6 @@ export function AiActionCard({
   const hasDetails = hasActionDetails(input, output)
   const directOpenPath = resolveDirectOpenPath({ path, onOpenNote, hasDetails })
 
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      onToggle()
-    } else if (e.key === 'Escape' && expanded) {
-      e.preventDefault()
-      onToggle()
-    }
-  }, [onToggle, expanded])
-
   const handleClick = useCallback(() => {
     if (directOpenPath && onOpenNote) {
       onOpenNote(directOpenPath)
@@ -227,18 +202,15 @@ export function AiActionCard({
   return (
     <div
       data-testid="ai-action-card"
-      className="rounded"
-      style={{
-        fontSize: 12,
-        background: TOOL_BACKGROUND_BY_NAME.get(tool) ?? DEFAULT_ACTION_CARD_BACKGROUND,
-      }}
+      className="ai-action-card"
+      data-density="compact"
+      data-status={status}
     >
       <ActionCardHeader
         expanded={expanded}
         hasDetails={hasDetails}
         label={label}
         onClick={handleClick}
-        onKeyDown={handleKeyDown}
         renderIcon={renderIcon}
         status={status}
       />

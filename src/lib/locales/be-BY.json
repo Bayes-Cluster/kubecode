@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "YOLO не ўдалося ўжыць; гэтая Team працуе ў рэжыме Standard"
+  "kubecode.teamYoloFallback": "YOLO не ўдалося ўжыць; гэтая Team працуе ў рэжыме Standard",
+  "kubecode.sessionsLabel": "Сеансы",
+  "kubecode.expandProject": "Разгарнуць праект",
+  "kubecode.collapseProject": "Згарнуць праект",
+  "kubecode.projectActionsFor": "Дзеянні для праекта {name}",
+  "kubecode.explorer": "Правадыр",
+  "kubecode.agentPlan": "План агента"
 }

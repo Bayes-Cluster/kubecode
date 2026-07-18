@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0188.
+active production boundary is defined by ADRs 0161–0189.
 
 ## Runtime topology
 
@@ -41,17 +41,24 @@ partial failures remain resumable while Workspaces stays enabled.
 
 ## Browser workspace
 
-`src/kubecode/App.tsx` renders a Project rail, grouped Session navigator,
-primary Agent timeline/composer, a docked Details pane, and a Terminal dock.
-All three surrounding panels are resizable and independently collapsible. The
-Details overview presents collapsible Changes and Files trees together; opening
-a file or diff switches that dock to CodeMirror or diff content without
-replacing the active Agent Session.
+`src/kubecode/App.tsx` renders one hierarchical Project/Session navigator, a
+primary Agent timeline/composer, a docked Explorer, and a Terminal dock. The
+single 44-pixel title bar contains the active Session identity, global Session
+search, attention, and layout controls. Navigator visibility is global; Explorer
+and Terminal geometry remain Project-scoped. All surrounding panels are
+resizable and independently collapsible.
 
-The Session navigator searches, filters, sorts, groups, archives, forks, and
-deletes Sessions. Needs-input and running Sessions are promoted above date
-groups. Provider-native fork or subagent relationships remain visible, and
-read-only subagent transcripts do not expose a composer.
+The navigator searches, filters, sorts, groups, archives, forks, and deletes
+Sessions beneath their owning Project. Query matches temporarily reveal
+collapsed Projects. Needs-input and running status appears as compact row and
+Project indicators. Provider-native fork or subagent relationships remain
+visible, and read-only subagent transcripts do not expose a composer.
+
+The Explorer presents independently collapsible Changes, Agent Plan, and Files
+sections. Opening a file or diff creates a contextual CodeMirror or diff tab
+without replacing the active Agent Session. The Agent timeline and Composer use
+one bounded content width; the Composer shows only a Plan progress summary and
+opens the full checklist in Explorer.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,

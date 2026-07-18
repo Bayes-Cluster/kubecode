@@ -37,7 +37,7 @@ describe('ContextWorkbench', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('shows Git changes in Review and stages a file', async () => {
+  it('shows Git changes in Explorer and stages a file', async () => {
     const cleanAfterStage = {
       is_repository: true,
       branch: 'main',
@@ -63,7 +63,7 @@ describe('ContextWorkbench', () => {
       />,
     )
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Changes' }), { button: 0 })
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
     expect(await screen.findByText('README.md')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Stage: README.md' }))
     await waitFor(() => {
@@ -88,7 +88,6 @@ describe('ContextWorkbench', () => {
       />,
     )
 
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Changes' }), { button: 0 })
     fireEvent.click(await screen.findByRole('button', { name: 'Create a Git repository' }))
     await waitFor(() => expect(api.initializeGit).toHaveBeenCalledWith('project-1'))
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
@@ -111,8 +110,9 @@ describe('ContextWorkbench', () => {
       width: 440,
     }
     const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
-    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(1))
 
     rerender(<ContextWorkbench {...props} workspaceEvents={[
@@ -139,5 +139,56 @@ describe('ContextWorkbench', () => {
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('new-file.ts')).toBeInTheDocument()
     expect(screen.getByText('new-folder')).toBeInTheDocument()
+  })
+
+  it('collapses Explorer sections without changing the active surface', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: true, branch: 'main', files: [] }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    await waitFor(() => expect(api.gitStatus).toHaveBeenCalled())
+    const files = screen.getByRole('button', { name: 'Files' })
+    fireEvent.click(files)
+    expect(files).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+  })
+
+  it('shows the active Agent plan in its own Explorer section', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: true, branch: 'main', files: [] }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        planEntries={[
+          { content: 'Inspect the project', priority: 'medium', status: 'completed' },
+          { content: 'Implement the change', priority: 'high', status: 'in_progress' },
+        ]}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findByRole('button', { name: /Agent plan/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByText('Inspect the project')).toBeInTheDocument()
+    expect(screen.getByText('Implement the change')).toBeInTheDocument()
   })
 })

@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "YOLO kunde inte tillämpas; detta Team körs i Standard-läge"
+  "kubecode.teamYoloFallback": "YOLO kunde inte tillämpas; detta Team körs i Standard-läge",
+  "kubecode.sessionsLabel": "Sessioner",
+  "kubecode.expandProject": "Expandera projekt",
+  "kubecode.collapseProject": "Fäll ihop projekt",
+  "kubecode.projectActionsFor": "Åtgärder för projektet {name}",
+  "kubecode.explorer": "Utforskaren",
+  "kubecode.agentPlan": "Agentplan"
 }

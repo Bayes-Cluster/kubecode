@@ -23,7 +23,7 @@ use crate::agents::{
     WorkspaceEvent,
 };
 use crate::git::{GitError, GitMutation, GitService};
-use crate::teams::{TeamError, TeamRole, TeamStore};
+use crate::teams::{TeamError, TeamRole, TeamStatus, TeamStore};
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
@@ -502,6 +502,8 @@ struct ConversationSummary {
     conversation: Conversation,
     team_id: Option<String>,
     team_role: Option<TeamRole>,
+    team_title: Option<String>,
+    team_status: Option<TeamStatus>,
 }
 
 async fn list_conversations(
@@ -627,7 +629,15 @@ fn conversation_summaries(
     for project_id in project_ids {
         for team in state.teams.list_teams(&project_id)? {
             for member in state.teams.list_members(&team.id)? {
-                memberships.insert(member.conversation_id, (team.id.clone(), member.role));
+                memberships.insert(
+                    member.conversation_id,
+                    (
+                        team.id.clone(),
+                        member.role,
+                        team.title.clone(),
+                        team.status,
+                    ),
+                );
             }
         }
     }
@@ -636,8 +646,10 @@ fn conversation_summaries(
         .map(|conversation| {
             let membership = memberships.get(&conversation.id);
             ConversationSummary {
-                team_id: membership.map(|(team_id, _)| team_id.clone()),
-                team_role: membership.map(|(_, role)| *role),
+                team_id: membership.map(|(team_id, _, _, _)| team_id.clone()),
+                team_role: membership.map(|(_, role, _, _)| *role),
+                team_title: membership.map(|(_, _, title, _)| title.clone()),
+                team_status: membership.map(|(_, _, _, status)| *status),
                 conversation,
             }
         })

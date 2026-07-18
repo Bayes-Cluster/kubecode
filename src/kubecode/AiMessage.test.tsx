@@ -65,4 +65,34 @@ describe('AiMessage', () => {
     expect(screen.queryByText('Kubecode Team mailbox has new updates')).not.toBeInTheDocument()
     expect(screen.queryByTestId('ai-user-message-actions')).not.toBeInTheDocument()
   })
+
+  it('renders tool work as compact rows and expands details on demand', () => {
+    render(
+      <AiMessage
+        actions={[{
+          tool: 'Bash',
+          toolId: 'tool-1',
+          label: 'Run test suite',
+          status: 'done',
+          input: '{"command":"pnpm test"}',
+          output: '129 tests passed',
+        }]}
+        messageId="run-1"
+        response="The tests pass."
+        userMessage="Run the tests"
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('tool-use-toggle'))
+    const row = screen.getByTestId('ai-action-card')
+    expect(row).toHaveAttribute('data-density', 'compact')
+    expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('action-card-header'))
+    expect(screen.getByTestId('detail-input')).toHaveTextContent('pnpm test')
+    expect(screen.getByTestId('detail-output')).toHaveTextContent('129 tests passed')
+
+    fireEvent.keyDown(screen.getByTestId('action-card-header'), { key: 'Escape' })
+    expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
+  })
 })

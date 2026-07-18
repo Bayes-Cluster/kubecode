@@ -132,13 +132,13 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
   return (
     <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
       <div
-        className="min-w-0 max-w-[85%] overflow-hidden"
+        className="min-w-0 max-w-[80%] overflow-hidden"
         style={{
           background: 'var(--state-hover)',
           color: 'var(--foreground)',
           borderRadius: '12px 12px 2px 12px',
           padding: '8px 12px',
-          fontSize: 13,
+          fontSize: 14,
           lineHeight: 1.5,
           overflowWrap: 'anywhere',
         }}

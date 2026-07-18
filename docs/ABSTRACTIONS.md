@@ -197,11 +197,12 @@ A workspace event is a durable, globally ordered metadata notification. One SSE
 connection carries Project, Session, run, file, Git, and terminal changes. The
 client retains a bounded ordered window rather than only the newest event.
 
-## Details workbench
+## Explorer workbench
 
-The default Details overview has two independently collapsible trees:
+The default Explorer has three independently collapsible sections:
 
 - Changes: Git status and file diffs with stage, unstage, discard, init, and commit.
+- Agent Plan: the active Session's complete dynamic checklist.
 - Files: a lazy Project tree and CodeMirror editor.
 
 Opening a file changes context without replacing the Agent Session. File writes
@@ -211,10 +212,11 @@ use a revision token and return HTTP 409 on stale content.
 
 Global Session summaries project durable state needed by navigation: Project,
 Agent, title, latest run status, activity, archive state, parent relation, and
-optional durable Team identity (`team_id` and `team_role`). The browser combines
-these summaries with new workspace events to render cross-Project
-input-required navigation. Rich Team snapshots remain a separate task/member
-view and are independently recoverable after a partial load or SSE reconnect.
+optional durable Team identity (`team_id`, `team_role`, `team_title`, and
+`team_status`). The browser combines these summaries with new workspace events
+to render cross-Project input-required navigation. Rich Team snapshots remain a
+separate task/member view and are independently recoverable after a partial load
+or SSE reconnect.
 
 Notification preferences are versioned browser-local state. Workspace events
 map to completion, attention, or error categories. The browser's native

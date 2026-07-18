@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "YOLO nie ŭdałosia ŭžyć; hetaja Team pracuje ŭ režymie Standard"
+  "kubecode.teamYoloFallback": "YOLO nie ŭdałosia ŭžyć; hetaja Team pracuje ŭ režymie Standard",
+  "kubecode.sessionsLabel": "Siesii",
+  "kubecode.expandProject": "Razharńuć prajekt",
+  "kubecode.collapseProject": "Zharńuć prajekt",
+  "kubecode.projectActionsFor": "Dziejańni dla prajekta {name}",
+  "kubecode.explorer": "Pravadnik",
+  "kubecode.agentPlan": "Plan ahienta"
 }

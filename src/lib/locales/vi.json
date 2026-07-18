@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "Không thể áp dụng YOLO; Team này đang chạy ở chế độ Standard"
+  "kubecode.teamYoloFallback": "Không thể áp dụng YOLO; Team này đang chạy ở chế độ Standard",
+  "kubecode.sessionsLabel": "Phiên",
+  "kubecode.expandProject": "Mở rộng dự án",
+  "kubecode.collapseProject": "Thu gọn dự án",
+  "kubecode.projectActionsFor": "Thao tác cho dự án {name}",
+  "kubecode.explorer": "Trình khám phá",
+  "kubecode.agentPlan": "Kế hoạch của agent"
 }

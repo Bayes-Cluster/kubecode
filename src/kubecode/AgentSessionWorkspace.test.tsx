@@ -503,6 +503,8 @@ describe('AgentSessionWorkspace', () => {
   })
 
   it('renders ACP plans as a progress checklist instead of raw JSON', async () => {
+    const onOpenPlan = vi.fn()
+    const onPlanChange = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
       listEvents: vi.fn().mockResolvedValue([]),
@@ -527,17 +529,23 @@ describe('AgentSessionWorkspace', () => {
       onConversationCreated={vi.fn()}
       onConversationRemoved={vi.fn()}
       onConversationUpdated={vi.fn()}
+      onOpenPlan={onOpenPlan}
+      onPlanChange={onPlanChange}
       projectId="project-1"
       t={createTranslator('en')}
       workspaceEvents={[]}
     />)
 
-    expect(await screen.findByRole('button', { name: /Hide Agent plan/ })).toBeInTheDocument()
-    expect(screen.getByText('Inspect the workspace')).toBeInTheDocument()
-    expect(screen.getByText('Implement the fix')).toBeInTheDocument()
-    expect(screen.getByText('Run verification')).toBeInTheDocument()
-    expect(container.querySelectorAll('.kubecode-session-plan-entry')).toHaveLength(3)
-    expect(container.querySelector('.kubecode-session-plan-entry[data-status="completed"]')).toBeTruthy()
+    const summary = await screen.findByRole('button', { name: /Show Agent plan/ })
+    expect(summary).toHaveTextContent('1 / 3')
+    await waitFor(() => expect(onPlanChange).toHaveBeenLastCalledWith([
+      { content: 'Inspect the workspace', priority: 'medium', status: 'completed' },
+      { content: 'Implement the fix', priority: 'high', status: 'in_progress' },
+      { content: 'Run verification', priority: 'low', status: 'pending' },
+    ]))
+    fireEvent.click(summary)
+    expect(onOpenPlan).toHaveBeenCalled()
+    expect(container.querySelectorAll('.kubecode-session-plan-entry')).toHaveLength(0)
     expect(container.querySelector('pre')).not.toBeInTheDocument()
   })
 

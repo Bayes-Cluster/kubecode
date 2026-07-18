@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "無法套用 YOLO；此 Team 已改用 Standard 模式執行"
+  "kubecode.teamYoloFallback": "無法套用 YOLO；此 Team 已改用 Standard 模式執行",
+  "kubecode.sessionsLabel": "工作階段",
+  "kubecode.expandProject": "展開專案",
+  "kubecode.collapseProject": "摺疊專案",
+  "kubecode.projectActionsFor": "專案 {name} 的操作",
+  "kubecode.explorer": "檔案總管",
+  "kubecode.agentPlan": "Agent 計畫"
 }

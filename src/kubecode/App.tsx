@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
-  ArrowLeft,
-  ArrowRight,
   ArrowUp,
   Bell,
   DownloadSimple,
-  DotsThree,
   Folder,
   Gear,
   MagnifyingGlass,
@@ -14,6 +11,7 @@ import {
   User,
   UsersThree,
   WarningCircle,
+  IconContext,
 } from '@phosphor-icons/react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -46,7 +44,7 @@ import {
 import { createTranslator, resolveEffectiveLocale } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import { AgentSessionWorkspace } from './AgentSessionWorkspace'
+import { AgentSessionWorkspace, type SessionPlanEntry } from './AgentSessionWorkspace'
 import { ContextWorkbench } from './ContextWorkbench'
 import { DisableWorkspacesDialog } from './DisableWorkspacesDialog'
 import {
@@ -83,6 +81,12 @@ import {
 } from './notificationPreferences'
 import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
 import {
+  readProjectWorkbenchLayout,
+  readWorkbenchNavigatorLayout,
+  writeProjectWorkbenchLayout,
+  writeWorkbenchNavigatorLayout,
+} from './workbenchLayout'
+import {
   deliverBrowserNotification,
   ensureBrowserNotificationPermission,
   notificationPermission,
@@ -112,6 +116,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
   const [contextOpen, setContextOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
+  const [navigatorQuery, setNavigatorQuery] = useState('')
+  const [layoutHydrated, setLayoutHydrated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [connectionLost, setConnectionLost] = useState(false)
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
@@ -128,11 +135,15 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [sessionSidebarWidth, setSessionSidebarWidth] = useState(280)
   const [contextWidth, setContextWidth] = useState(440)
   const [terminalHeight, setTerminalHeight] = useState(260)
+  const [titlebarTarget, setTitlebarTarget] = useState<HTMLDivElement | null>(null)
+  const [activeSessionPlan, setActiveSessionPlan] = useState<SessionPlanEntry[]>([])
+  const [planRevealVersion, setPlanRevealVersion] = useState(0)
   const [appearance, setAppearance] = useState<KubecodeAppearance>(() => (
     readKubecodeAppearance(localStorage)
   ))
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
+  const navigatorSearchRef = useRef<HTMLInputElement>(null)
   const activeProjectIdRef = useRef(projectId)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
@@ -163,6 +174,17 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [appearance])
 
   useEffect(() => {
+    const focusNavigatorSearch = (event: KeyboardEvent) => {
+      if (event.key.toLocaleLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
+      event.preventDefault()
+      navigatorSearchRef.current?.focus()
+      navigatorSearchRef.current?.select()
+    }
+    document.addEventListener('keydown', focusNavigatorSearch)
+    return () => document.removeEventListener('keydown', focusNavigatorSearch)
+  }, [])
+
+  useEffect(() => {
     writeKubecodeNotifications(localStorage, notifications)
   }, [notifications])
 
@@ -171,11 +193,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [projectId])
 
   const applyProjectLayout = useCallback((nextProjectId: string) => {
-    const layout = readProjectLayout(nextProjectId)
-    setSessionSidebarWidth(layout.sessionSidebarWidth)
+    const layout = readProjectWorkbenchLayout(localStorage, nextProjectId)
     setContextWidth(layout.contextWidth)
     setTerminalHeight(layout.terminalHeight)
-    setSessionSidebarOpen(layout.sessionSidebarOpen)
     setContextOpen(layout.contextOpen)
     setTerminalOpen(layout.terminalOpen)
   }, [])
@@ -189,6 +209,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         setAgents(nextAgents)
         const initialProjectId = nextProjects[0]?.id ?? null
         setProjectId(initialProjectId)
+        const navigatorLayout = readWorkbenchNavigatorLayout(localStorage, initialProjectId)
+        setSessionSidebarOpen(navigatorLayout.navigatorOpen)
+        setSessionSidebarWidth(navigatorLayout.navigatorWidth)
+        setExpandedProjectIds(navigatorLayout.expandedProjectIds)
+        setLayoutHydrated(true)
         if (initialProjectId) applyProjectLayout(initialProjectId)
         if (typeof api.listProjectRuns === 'function') {
           void Promise.all(nextProjects.map(async (item) => (
@@ -267,16 +292,23 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [api, projectId])
 
   useEffect(() => {
-    if (!projectId) return
-    writeProjectLayout(projectId, {
+    if (!layoutHydrated) return
+    writeWorkbenchNavigatorLayout(localStorage, {
+      expandedProjectIds,
+      navigatorOpen: sessionSidebarOpen,
+      navigatorWidth: sessionSidebarWidth,
+    })
+  }, [expandedProjectIds, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
+
+  useEffect(() => {
+    if (!layoutHydrated || !projectId) return
+    writeProjectWorkbenchLayout(localStorage, projectId, {
       contextOpen,
       contextWidth,
-      sessionSidebarOpen,
-      sessionSidebarWidth,
       terminalHeight,
       terminalOpen,
     })
-  }, [contextOpen, contextWidth, projectId, sessionSidebarOpen, sessionSidebarWidth, terminalHeight, terminalOpen])
+  }, [contextOpen, contextWidth, layoutHydrated, projectId, terminalHeight, terminalOpen])
 
   useEffect(() => {
     if (typeof EventSource === 'undefined' || workspaceCursor === null) return
@@ -350,29 +382,45 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 
   const selectProject = (nextProjectId: string) => {
     setConversationId(null)
+    setActiveSessionPlan([])
     setConversations([])
     setTeams([])
     setTerminals([])
     setTerminalsLoadedForProjectId(null)
     applyProjectLayout(nextProjectId)
     setProjectId(nextProjectId)
+    setExpandedProjectIds((current) => (
+      current.includes(nextProjectId) ? current : [...current, nextProjectId]
+    ))
   }
 
-  const deleteProject = async () => {
-    if (!project) return
+  const toggleProjectExpanded = useCallback((nextProjectId: string) => {
+    setExpandedProjectIds((current) => {
+      const expanded = current.includes(nextProjectId)
+      trackEvent('kubecode_navigator_project_toggled', {
+        next_state: expanded ? 'collapsed' : 'expanded',
+      })
+      return expanded
+        ? current.filter((candidate) => candidate !== nextProjectId)
+        : [...current, nextProjectId]
+    })
+  }, [])
+
+  const deleteProject = async (targetProject = project) => {
+    if (!targetProject) return
     try {
-      await api.unregisterProject(project.id)
-      const remainingProjects = projects.filter((item) => item.id !== project.id)
+      await api.unregisterProject(targetProject.id)
+      const remainingProjects = projects.filter((item) => item.id !== targetProject.id)
       const nextProjectId = remainingProjects[0]?.id ?? null
       setProjects(remainingProjects)
       setProjectRuns((current) => {
         const next = { ...current }
-        delete next[project.id]
+        delete next[targetProject.id]
         return next
       })
       setConversations([])
       setTeams([])
-      setAllConversations((current) => current.filter((item) => item.project_id !== project.id))
+      setAllConversations((current) => current.filter((item) => item.project_id !== targetProject.id))
       setConversationId(null)
       setTerminals([])
       setTerminalsLoadedForProjectId(null)
@@ -384,14 +432,15 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     }
   }
 
-  const setProjectWorkspacesEnabled = async (enabled: boolean) => {
-    if (!project) return
+  const setProjectWorkspacesEnabled = async (enabled: boolean, targetProject = project) => {
+    if (!targetProject) return
     if (!enabled) {
+      if (targetProject.id !== projectId) selectProject(targetProject.id)
       setDisableWorkspacesOpen(true)
       return
     }
     try {
-      const updated = await api.setProjectWorkspacesEnabled(project.id, enabled)
+      const updated = await api.setProjectWorkspacesEnabled(targetProject.id, enabled)
       setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
       trackEvent('kubecode_project_workspaces_changed', { enabled: Number(enabled) })
     } catch (cause) {
@@ -420,6 +469,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [])
 
   const openSession = useCallback((nextProjectId: string, nextConversationId: string) => {
+    setActiveSessionPlan([])
     if (nextProjectId !== projectId) {
       applyProjectLayout(nextProjectId)
       setTerminals([])
@@ -427,6 +477,9 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       setConversations([])
       setProjectId(nextProjectId)
     }
+    setExpandedProjectIds((current) => (
+      current.includes(nextProjectId) ? current : [...current, nextProjectId]
+    ))
     setConversationId(nextConversationId)
   }, [applyProjectLayout, projectId])
 
@@ -464,16 +517,32 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [notifications.sound.completion, t])
 
   return (
-    <SystemMessageProvider dismissLabel={t('window.close')}>
+    <IconContext.Provider value={{ size: 16, weight: 'regular' }}>
+      <SystemMessageProvider dismissLabel={t('window.close')}>
       <main className="kubecode-app">
       <header className="kubecode-topbar">
-        <div className="kubecode-history-controls">
-          <Button aria-label={t('kubecode.back')} disabled size="icon-xs" variant="ghost"><ArrowLeft /></Button>
-          <Button aria-label={t('kubecode.forward')} disabled size="icon-xs" variant="ghost"><ArrowRight /></Button>
+        <div className="kubecode-topbar-leading">
+          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
+            <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
+          </Button>
+          <div className="kubecode-titlebar-session-slot" ref={setTitlebarTarget}>
+            {!conversation && (
+              <span className="kubecode-titlebar-project">
+                {project?.name ?? t('kubecode.appName')}
+              </span>
+            )}
+          </div>
         </div>
         <div className="kubecode-search">
           <MagnifyingGlass />
-          <Input aria-label={t('kubecode.search')} placeholder={`${t('kubecode.search')} ${project?.name ?? ''}`.trim()} />
+          <Input
+            aria-label={t('kubecode.searchSessions')}
+            placeholder={t('kubecode.searchSessions')}
+            ref={navigatorSearchRef}
+            spellCheck={false}
+            value={navigatorQuery}
+            onChange={(event) => setNavigatorQuery(event.target.value)}
+          />
           <kbd>⌘K</kbd>
         </div>
         <div className="kubecode-topbar-actions">
@@ -516,9 +585,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setSessionSidebarOpen((open) => togglePanel('sessions', open))}>
-            <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
-          </Button>
           <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={() => setTerminalOpen((open) => togglePanel('terminal', open))}>
             <PanelToggleIcon active={terminalOpen} panel="bottom" />
           </Button>
@@ -529,75 +595,57 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       </header>
 
       <div className="kubecode-workspace" ref={workspaceRef}>
-        <nav className="kubecode-project-rail" aria-label={t('kubecode.projects')}>
-          <div className="kubecode-project-rail-list">
-            {projects.map((item) => (
-              <Button
-                aria-label={item.name}
-                className="kubecode-project-button"
-                data-active={item.id === projectId}
-                data-session-status={projectSessionStatus(projectRuns[item.id] ?? []) ?? undefined}
-                key={item.id}
-                size="icon"
-                variant="ghost"
-                onClick={() => selectProject(item.id)}
-              >
-                {projectInitial(item.name)}
-              </Button>
-            ))}
-            <Button aria-label={t('kubecode.addProject')} size="icon-sm" variant="ghost" onClick={() => setProjectDialog(true)}><Plus /></Button>
-          </div>
-          <div className="kubecode-project-rail-footer">
-            <Button aria-label={t('kubecode.settings')} size="icon-sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Gear /></Button>
-            <Button aria-label={t('kubecode.help')} size="icon-sm" variant="ghost"><Question /></Button>
-          </div>
-        </nav>
-
         {sessionSidebarOpen && (
           <>
-            <aside className="kubecode-session-sidebar" style={{ width: sessionSidebarWidth }}>
-              <div className="kubecode-project-heading">
+            <nav
+              aria-label={t('kubecode.projects')}
+              className="kubecode-session-sidebar"
+              style={{ width: sessionSidebarWidth }}
+            >
+              <div className="kubecode-navigator-heading">
+                <strong>{t('kubecode.projects')}</strong>
                 <div>
-                  <strong>{project?.name ?? t('kubecode.appName')}</strong>
-                  <span>{project?.path ?? t('kubecode.selectProject')}</span>
-                  {project?.workspaces_enabled && <small>{t('kubecode.workspacesEnabled')}</small>}
+                  <Button aria-label={t('kubecode.addProject')} size="icon-xs" variant="ghost" onClick={() => setProjectDialog(true)}><Plus /></Button>
+                  <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={() => setSettingsOpen(true)}><Gear /></Button>
+                  <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><Question /></Button>
                 </div>
-                {project && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button aria-label={t('kubecode.projectActions')} size="icon-xs" variant="ghost">
-                        <DotsThree />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => void setProjectWorkspacesEnabled(!project.workspaces_enabled)}>
-                        {project.workspaces_enabled
-                          ? t('kubecode.disableWorkspaces')
-                          : t('kubecode.enableWorkspaces')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem variant="destructive" onSelect={() => void deleteProject()}>
-                        {t('kubecode.delete')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
               </div>
-              <Button className="kubecode-new-session" disabled={!projectId} variant="outline" onClick={() => setSessionDialog(true)}>
-                <Plus /> {t('kubecode.newSession')}
-              </Button>
               <SessionSidebarList
                 activeConversationId={conversationId}
+                activeProjectId={projectId}
                 api={api}
-                conversations={conversations}
+                conversations={sessionCatalog}
+                expandedProjectIds={expandedProjectIds}
                 onConversationCreated={handleConversationCreated}
                 onConversationRemoved={handleConversationRemoved}
                 onConversationUpdated={handleConversationUpdated}
                 onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
-                onSelect={setConversationId}
+                onNewSession={(nextProjectId) => {
+                  if (nextProjectId !== projectId) selectProject(nextProjectId)
+                  setSessionDialog(true)
+                }}
+                onProjectDelete={(nextProjectId) => void deleteProject(
+                  projects.find((candidate) => candidate.id === nextProjectId),
+                )}
+                onProjectSelect={selectProject}
+                onProjectToggle={toggleProjectExpanded}
+                onProjectWorkspacesToggle={(nextProjectId) => {
+                  const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
+                  if (selectedProject) {
+                    void setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
+                  }
+                }}
+                onSelect={openSession}
+                projects={projects}
+                projectStatuses={Object.fromEntries(projects.map((item) => [
+                  item.id,
+                  projectSessionStatus(projectRuns[item.id] ?? []),
+                ]))}
+                query={navigatorQuery}
                 t={t}
                 teams={teams}
               />
-            </aside>
+            </nav>
             <ResizeHandle onResize={resizeSessionSidebar} />
           </>
         )}
@@ -613,6 +661,12 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               projectId={projectId}
               onConversationRemoved={handleConversationRemoved}
               onConversationUpdated={handleConversationUpdated}
+              onOpenPlan={() => {
+                setContextOpen(true)
+                setPlanRevealVersion((current) => current + 1)
+                trackEvent('kubecode_context_section_opened', { section: 'plan' })
+              }}
+              onPlanChange={setActiveSessionPlan}
               onTeamCreated={(team) => setTeams((current) => [
                 ...current.filter((item) => item.team.id !== team.team.id),
                 team,
@@ -623,6 +677,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               ])}
               t={t}
               team={activeTeam}
+              titlebarTarget={titlebarTarget}
               onSelectTeamMember={setConversationId}
               workspaceEvents={workspaceEvents}
               key={conversationId ?? projectId ?? 'no-project'}
@@ -633,6 +688,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 <ContextWorkbench
                   api={api}
                   key={projectId}
+                  planEntries={activeSessionPlan}
+                  planRevealVersion={planRevealVersion}
                   projectName={project?.name ?? undefined}
                   projectId={projectId}
                   t={t}
@@ -752,7 +809,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         t={t}
         />
       </main>
-    </SystemMessageProvider>
+      </SystemMessageProvider>
+    </IconContext.Provider>
   )
 }
 
@@ -1379,7 +1437,14 @@ function KubecodeSettingsDialog({
                   <SelectTrigger aria-label={t('kubecode.theme')} className="w-52"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {KUBECODE_THEME_OPTIONS.map((theme) => (
-                      <SelectItem key={theme} value={theme}>{t(`kubecode.theme.${theme}`)}</SelectItem>
+                      <SelectItem key={theme} value={theme}>
+                        <span
+                          aria-hidden="true"
+                          className="kubecode-theme-swatch"
+                          style={{ '--theme-preview': THEME_PREVIEWS[theme] } as CSSProperties}
+                        />
+                        {t(`kubecode.theme.${theme}`)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1527,6 +1592,21 @@ function agentName(id: AgentId): string {
   return 'Codex'
 }
 
+const THEME_PREVIEWS: Record<KubecodeTheme, string> = {
+  opencode: 'linear-gradient(135deg, #111218 0 48%, #7c72e8 48% 72%, #f3f2fa 72%)',
+  system: 'linear-gradient(135deg, #ffffff 0 48%, #8b8b8b 48% 52%, #1f1e1b 52%)',
+  tokyonight: 'linear-gradient(135deg, #1a1b26 0 58%, #7aa2f7 58%)',
+  everforest: 'linear-gradient(135deg, #2d353b 0 58%, #83c092 58%)',
+  ayu: 'linear-gradient(135deg, #0b0e14 0 58%, #ffb454 58%)',
+  catppuccin: 'linear-gradient(135deg, #1e1e2e 0 58%, #cba6f7 58%)',
+  'catppuccin-macchiato': 'linear-gradient(135deg, #24273a 0 58%, #8aadf4 58%)',
+  gruvbox: 'linear-gradient(135deg, #282828 0 58%, #d79921 58%)',
+  kanagawa: 'linear-gradient(135deg, #1f1f28 0 58%, #7e9cd8 58%)',
+  nord: 'linear-gradient(135deg, #2e3440 0 58%, #88c0d0 58%)',
+  matrix: 'linear-gradient(135deg, #050b07 0 58%, #00c853 58%)',
+  'one-dark': 'linear-gradient(135deg, #282c34 0 58%, #61afef 58%)',
+}
+
 function notificationTestMessage(
   t: Translator,
   status: BrowserNotificationDelivery['status'],
@@ -1536,10 +1616,6 @@ function notificationTestMessage(
   if (status === 'failed') return t('kubecode.error')
   const effectivePermission = status === 'unsupported' ? 'unsupported' : permission
   return t(`kubecode.notifications.permission.${effectivePermission}`)
-}
-
-function projectInitial(name: string): string {
-  return [...name.trim()][0]?.toUpperCase() ?? 'P'
 }
 
 function PanelToggleIcon({
@@ -1578,54 +1654,4 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback
-}
-
-type ProjectLayout = {
-  contextOpen: boolean
-  contextWidth: number
-  sessionSidebarOpen: boolean
-  sessionSidebarWidth: number
-  terminalHeight: number
-  terminalOpen: boolean
-}
-
-const DEFAULT_PROJECT_LAYOUT: ProjectLayout = {
-  contextOpen: true,
-  contextWidth: 440,
-  sessionSidebarOpen: true,
-  sessionSidebarWidth: 280,
-  terminalHeight: 260,
-  terminalOpen: false,
-}
-
-function readProjectLayout(projectId: string): ProjectLayout {
-  try {
-    const stored = JSON.parse(localStorage.getItem(`kubecode:layout:${projectId}`) ?? '{}') as Partial<ProjectLayout>
-    return {
-      contextOpen: booleanValue(stored.contextOpen, DEFAULT_PROJECT_LAYOUT.contextOpen),
-      contextWidth: numericValue(stored.contextWidth, DEFAULT_PROJECT_LAYOUT.contextWidth),
-      sessionSidebarOpen: booleanValue(stored.sessionSidebarOpen, DEFAULT_PROJECT_LAYOUT.sessionSidebarOpen),
-      sessionSidebarWidth: numericValue(stored.sessionSidebarWidth, DEFAULT_PROJECT_LAYOUT.sessionSidebarWidth),
-      terminalHeight: numericValue(stored.terminalHeight, DEFAULT_PROJECT_LAYOUT.terminalHeight),
-      terminalOpen: booleanValue(stored.terminalOpen, DEFAULT_PROJECT_LAYOUT.terminalOpen),
-    }
-  } catch {
-    return DEFAULT_PROJECT_LAYOUT
-  }
-}
-
-function writeProjectLayout(projectId: string, layout: ProjectLayout): void {
-  try {
-    localStorage.setItem(`kubecode:layout:${projectId}`, JSON.stringify(layout))
-  } catch {
-    // Restricted browser contexts can disable local storage.
-  }
-}
-
-function booleanValue(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback
-}
-
-function numericValue(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }

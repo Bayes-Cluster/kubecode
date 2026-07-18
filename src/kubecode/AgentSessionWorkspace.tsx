@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  CaretDown,
   CaretLeft,
   CaretRight,
-  Check,
   DotsThree,
   LockKey,
+  ListChecks,
   ShieldWarning,
 } from '@phosphor-icons/react'
 
@@ -81,7 +81,7 @@ type PendingElicitation = {
   properties: ElicitationProperty[]
   requestId: string
 }
-type SessionPlanEntry = {
+export type SessionPlanEntry = {
   content: string
   priority: string
   status: 'completed' | 'in_progress' | 'pending'
@@ -95,6 +95,8 @@ type AgentSessionWorkspaceProps = {
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
+  onOpenPlan?: () => void
+  onPlanChange?: (entries: SessionPlanEntry[]) => void
   onTeamCreated?: (team: TeamSnapshot) => void
   onTeamUpdated?: (team: TeamSnapshot) => void
   onSelectTeamMember?: (conversationId: string) => void
@@ -102,6 +104,7 @@ type AgentSessionWorkspaceProps = {
   t: Translator
   workspaceEvents: WorkspaceEvent[]
   team?: TeamSnapshot | null
+  titlebarTarget?: HTMLElement | null
 }
 
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
@@ -133,6 +136,8 @@ export function AgentSessionWorkspace({
   onConversationCreated,
   onConversationRemoved,
   onConversationUpdated,
+  onOpenPlan,
+  onPlanChange,
   onTeamCreated,
   onTeamUpdated,
   onSelectTeamMember,
@@ -140,6 +145,7 @@ export function AgentSessionWorkspace({
   t,
   workspaceEvents,
   team,
+  titlebarTarget,
 }: AgentSessionWorkspaceProps) {
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
@@ -149,7 +155,6 @@ export function AgentSessionWorkspace({
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
-  const [planOpen, setPlanOpen] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteTeamOpen, setDeleteTeamOpen] = useState(false)
   const [teamView, setTeamView] = useState<'chat' | 'team'>(
@@ -178,6 +183,10 @@ export function AgentSessionWorkspace({
   const waitingForInput = run?.status === 'waiting_permission'
     || pendingPermission !== null
     || pendingElicitation !== null
+  const planEntries = useMemo(
+    () => sessionPlanEntries(sessionState?.plan),
+    [sessionState?.plan],
+  )
   const reportError = useCallback((cause: unknown) => {
     const message = errorMessage(cause, t('kubecode.error'))
     if (systemMessages) {
@@ -202,6 +211,10 @@ export function AgentSessionWorkspace({
   useEffect(() => {
     setTeamView(conversation?.team_role === 'leader' ? 'team' : 'chat')
   }, [conversation?.team_role, conversationId])
+
+  useEffect(() => {
+    onPlanChange?.(conversationId ? planEntries : [])
+  }, [conversationId, onPlanChange, planEntries])
 
   const attachRun = useCallback((nextRun: AgentRun) => {
     knownRunIdsRef.current.add(nextRun.id)
@@ -462,7 +475,6 @@ export function AgentSessionWorkspace({
   const nativeMode = sessionMode(sessionState)
   const configSelects = distinctSessionConfigSelects(nativeMode, sessionConfigSelects(sessionState))
   const agentConfigGroups = buildAgentConfigGroups(nativeMode, configSelects, t)
-  const planEntries = sessionPlanEntries(sessionState?.plan)
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   const insertComposerText = (text: string, kind: 'command' | 'file') => {
@@ -521,19 +533,41 @@ export function AgentSessionWorkspace({
     )
   }
 
-  return (
-    <section
-      className="kubecode-agent-session"
-      data-team-view={team ? teamView : 'chat'}
-      data-testid="agent-session-workspace"
-    >
-      <header className="kubecode-session-header">
-        <div className="kubecode-session-title">
-          <AiAgentIcon agent={conversation.agent_id} size={20} />
-          <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
+  const titlebar = (
+    <div className="kubecode-session-titlebar-content">
+      <div className="kubecode-session-title">
+        <AiAgentIcon agent={conversation.agent_id} size={18} />
+        <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
+      </div>
+      {team && (
+        <div className="kubecode-team-view-switch" role="tablist">
+          <Button
+            aria-selected={teamView === 'chat'}
+            role="tab"
+            size="xs"
+            variant={teamView === 'chat' ? 'secondary' : 'ghost'}
+            onClick={() => setTeamView('chat')}
+          >
+            {t('kubecode.chat')}
+          </Button>
+          <Button
+            aria-selected={teamView === 'team'}
+            role="tab"
+            size="xs"
+            variant={teamView === 'team' ? 'secondary' : 'ghost'}
+            onClick={() => {
+              setTeamView('team')
+              trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
+            }}
+          >
+            {t('kubecode.teamSession')}
+            {team.summary?.needs_attention > 0 && <span>{team.summary.needs_attention}</span>}
+          </Button>
         </div>
-        <div className="kubecode-session-status">
-          <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
+      )}
+      <div className="kubecode-session-status">
+        <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
+        <span className="kubecode-session-status-label">
           {waitingForInput
             ? t(pendingElicitation
               ? 'kubecode.answerAgentQuestion'
@@ -541,74 +575,62 @@ export function AgentSessionWorkspace({
                 ? 'kubecode.waitingForLeaderPermission'
                 : 'kubecode.permissionRequired')
             : active ? t('kubecode.running') : t('kubecode.ready')}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
-                <DotsThree />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => {
-                setDraftTitle(conversation.manual_title ?? conversation.title)
-                setRenameOpen(true)
-              }}>
-                {t('kubecode.renameSession')}
+        </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
+              <DotsThree />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => {
+              setDraftTitle(conversation.manual_title ?? conversation.title)
+              setRenameOpen(true)
+            }}>
+              {t('kubecode.renameSession')}
+            </DropdownMenuItem>
+            {conversation.manual_title && conversation.agent_title && (
+              <DropdownMenuItem onSelect={() => void restoreAgentTitle()}>
+                {t('kubecode.useAgentTitle')}
               </DropdownMenuItem>
-              {conversation.manual_title && conversation.agent_title && (
-                <DropdownMenuItem onSelect={() => void restoreAgentTitle()}>
-                  {t('kubecode.useAgentTitle')}
-                </DropdownMenuItem>
-              )}
-              {canFork && (
-                <DropdownMenuItem onSelect={() => void forkSession()}>
-                  {t('kubecode.forkSession')}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={() => void promoteToTeam()}>
-                {t('kubecode.promoteToTeam')}
+            )}
+            {canFork && (
+              <DropdownMenuItem onSelect={() => void forkSession()}>
+                {t('kubecode.forkSession')}
               </DropdownMenuItem>
-              {conversation.team_role !== 'teammate'
-                && conversation.team_role !== 'discriminator'
-                && !team?.members.some((member) => (
-                  member.conversation_id === conversation.id && member.role !== 'leader'
-                )) && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={requestDelete}>
-                    {t('kubecode.delete')}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+            )}
+            <DropdownMenuItem onSelect={() => void promoteToTeam()}>
+              {t('kubecode.promoteToTeam')}
+            </DropdownMenuItem>
+            {conversation.team_role !== 'teammate'
+              && conversation.team_role !== 'discriminator'
+              && !team?.members.some((member) => (
+                member.conversation_id === conversation.id && member.role !== 'leader'
+              )) && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={requestDelete}>
+                  {t('kubecode.delete')}
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  )
+
+  return (
+    <section
+      className="kubecode-agent-session"
+      data-team-view={team ? teamView : 'chat'}
+      data-testid="agent-session-workspace"
+    >
+      {titlebarTarget ? createPortal(titlebar, titlebarTarget) : (
+        <header className="kubecode-session-header">{titlebar}</header>
+      )}
       {team && conversation && (
         <>
-          <div className="kubecode-team-view-switch" role="tablist">
-            <Button
-              aria-selected={teamView === 'chat'}
-              role="tab"
-              size="sm"
-              variant={teamView === 'chat' ? 'secondary' : 'ghost'}
-              onClick={() => setTeamView('chat')}
-            >
-              {t('kubecode.chat')}
-            </Button>
-            <Button
-              aria-selected={teamView === 'team'}
-              role="tab"
-              size="sm"
-              variant={teamView === 'team' ? 'secondary' : 'ghost'}
-              onClick={() => {
-                setTeamView('team')
-                trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
-              }}
-            >
-              {t('kubecode.teamSession')}
-              {team.summary?.needs_attention > 0 && <span>{team.summary.needs_attention}</span>}
-            </Button>
-          </div>
           {teamView === 'chat' && (
             <TeamSessionOverview
               activeConversationId={conversation.id}
@@ -667,6 +689,7 @@ export function AgentSessionWorkspace({
           onRegenerateMessage={viewRevisionId ? undefined : (runId) => void regenerate(runId)}
         />
       </div>
+      <div className="kubecode-session-composer-dock">
       {error && (
         <SystemMessageNotice
           dismissLabel={t('window.close')}
@@ -771,33 +794,17 @@ export function AgentSessionWorkspace({
       {planEntries.length > 0 && (
         <div className="kubecode-session-plan">
           <Button
-            aria-expanded={planOpen}
+            aria-label={t('kubecode.showAgentPlan')}
             className="kubecode-session-plan-trigger"
             size="sm"
             variant="ghost"
-            onClick={() => setPlanOpen((open) => !open)}
+            onClick={onOpenPlan}
           >
+            <ListChecks />
+            <span>{t('kubecode.agentPlan')}</span>
             <span>{completedPlanEntries} / {planEntries.length}</span>
-            <span>{planOpen ? t('kubecode.hideAgentPlan') : t('kubecode.showAgentPlan')}</span>
-            <CaretDown data-open={planOpen} />
+            <CaretRight />
           </Button>
-          {planOpen && (
-            <ol className="kubecode-session-plan-list">
-              {planEntries.map((entry, index) => (
-                <li
-                  className="kubecode-session-plan-entry"
-                  data-priority={entry.priority}
-                  data-status={entry.status}
-                  key={`${index}-${entry.content}`}
-                >
-                  <span className="kubecode-session-plan-state" aria-hidden="true">
-                    {entry.status === 'completed' && <Check weight="bold" />}
-                  </span>
-                  <span>{entry.content}</span>
-                </li>
-              ))}
-            </ol>
-          )}
         </div>
       )}
       <div className="kubecode-session-composer">
@@ -854,7 +861,8 @@ export function AgentSessionWorkspace({
               onStop={() => void stop()}
             />
           </>
-        )}
+          )}
+      </div>
       </div>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>

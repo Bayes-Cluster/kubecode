@@ -1351,5 +1351,11 @@
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
-  "kubecode.teamYoloFallback": "YOLO を適用できなかったため、この Team は Standard モードで実行されています"
+  "kubecode.teamYoloFallback": "YOLO を適用できなかったため、この Team は Standard モードで実行されています",
+  "kubecode.sessionsLabel": "セッション",
+  "kubecode.expandProject": "プロジェクトを展開",
+  "kubecode.collapseProject": "プロジェクトを折りたたむ",
+  "kubecode.projectActionsFor": "プロジェクト {name} の操作",
+  "kubecode.explorer": "エクスプローラー",
+  "kubecode.agentPlan": "エージェントプラン"
 }

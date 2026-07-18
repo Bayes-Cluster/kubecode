@@ -13,9 +13,10 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await page.getByRole('button', { name: 'Add project' }).click()
   await page.getByRole('textbox', { name: 'Full path on this server' }).fill(projectPath)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('button', { name: projectName })).toBeVisible()
+  await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
 
-  await expect(page.getByRole('tab', { name: 'Files' })).toHaveAttribute('data-state', 'active')
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+  await expect(page.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('button', { name: 'New file' }).click()
   await page.getByRole('textbox', { name: 'Relative path' }).fill('main.py')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
@@ -57,7 +58,7 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await page.keyboard.press('Enter')
   await expect(page.locator('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'false')
 
-  await page.getByRole('button', { name: 'Project actions' }).click()
+  await page.getByRole('button', { name: `Actions for project ${projectName}` }).click()
   await page.getByRole('menuitem', { name: 'Delete' }).click()
-  await expect(page.getByRole('button', { name: projectName })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: projectName, exact: true })).toHaveCount(0)
 })

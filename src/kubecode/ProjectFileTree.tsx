@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CaretDown, CaretRight, File, Folder, FolderOpen } from '@phosphor-icons/react'
+import { CaretDown, CaretRight } from '@phosphor-icons/react'
 
 import { Button } from '@/components/ui/button'
 
 import type { Entry, KubecodeApi } from './api'
+import { ProjectEntryIcon } from './fileIcons'
 
 type ProjectFileTreeProps = {
   api: KubecodeApi
@@ -90,7 +91,7 @@ function TreeDirectoryRow({
         onClick={() => onToggle(entry.path)}
       >
         {isExpanded ? <CaretDown /> : <CaretRight />}
-        {isExpanded ? <FolderOpen /> : <Folder />}
+        <ProjectEntryIcon expanded={isExpanded} kind="directory" name={entry.name} />
         <span>{entry.name}</span>
       </Button>
       {isExpanded && (
@@ -113,7 +114,7 @@ function TreeDirectoryRow({
               onClick={() => onOpenFile(child)}
             >
               <span className="kubecode-file-tree-spacer" />
-              <File />
+              <ProjectEntryIcon kind="file" name={child.name} />
               <span>{child.name}</span>
             </Button>
           ))}

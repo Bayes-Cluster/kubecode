@@ -10,6 +10,16 @@ export type Entry = { name: string; path: string; kind: 'file' | 'directory' }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'
 export type TeamRole = 'leader' | 'teammate' | 'discriminator'
+export type TeamStatus =
+  | 'draft'
+  | 'starting'
+  | 'active'
+  | 'verifying'
+  | 'needs_attention'
+  | 'completed'
+  | 'archived'
+  | 'disbanding'
+  | 'removed'
 export type ExecutionMode = 'shared' | 'worktree'
 export type WorkspaceMigrationStrategy = 'merge' | 'export_patch' | 'discard'
 export type WorkspaceMigrationItem = {
@@ -59,6 +69,8 @@ export type Conversation = {
   recreated_context: boolean
   team_id?: string | null
   team_role?: TeamRole | null
+  team_title?: string | null
+  team_status?: TeamStatus | null
 }
 export type ConversationRevision = {
   id: string
@@ -75,16 +87,7 @@ export type Team = {
   leader_member_id: string
   agent_session_id: string
   title: string
-  status:
-    | 'draft'
-    | 'starting'
-    | 'active'
-    | 'verifying'
-    | 'needs_attention'
-    | 'completed'
-    | 'archived'
-    | 'disbanding'
-    | 'removed'
+  status: TeamStatus
   workspace: TeamWorkspace
   workspace_path: string | null
   member_management_policy: 'ask' | 'auto'

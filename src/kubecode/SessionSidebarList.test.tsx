@@ -7,6 +7,16 @@ import { SessionSidebarList } from './SessionSidebarList'
 import type { Conversation, KubecodeApi, TeamSnapshot } from './api'
 
 const t = createTranslator('en')
+const navigatorProps = {
+  activeProjectId: 'project-1',
+  expandedProjectIds: ['project-1'],
+  onNewSession: vi.fn(),
+  onProjectDelete: vi.fn(),
+  onProjectSelect: vi.fn(),
+  onProjectToggle: vi.fn(),
+  onProjectWorkspacesToggle: vi.fn(),
+  projects: [{ id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false }],
+}
 
 describe('session sidebar list', () => {
   beforeEach(() => localStorage.clear())
@@ -14,12 +24,14 @@ describe('session sidebar list', () => {
   it('renders persisted Team membership from the Session summary without Team snapshots', () => {
     render(
       <SessionSidebarList
+        {...navigatorProps}
         activeConversationId="session-1"
         api={{} as KubecodeApi}
         conversations={[{
           ...session('session-1', 'Persistent leader', 'completed'),
           team_id: 'team-1',
           team_role: 'leader',
+          team_title: 'Persistent team',
         }]}
         onConversationCreated={vi.fn()}
         onConversationRemoved={vi.fn()}
@@ -31,13 +43,14 @@ describe('session sidebar list', () => {
       />,
     )
 
-    expect(screen.getByText('Team · Leader')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Persistent team' })).toBeInTheDocument()
   })
 
   it('groups status-first and filters sessions without losing the selected session', () => {
     const onSelect = vi.fn()
     render(
       <SessionSidebarList
+        {...navigatorProps}
         activeConversationId="session-1"
         api={{} as KubecodeApi}
         conversations={[
@@ -58,18 +71,34 @@ describe('session sidebar list', () => {
       />,
     )
 
-    expect(screen.getByText('Needs input')).toBeInTheDocument()
-    expect(screen.getByText('Fork of Needs permission')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Needs permission' })).toHaveAttribute(
       'data-variant',
       'ghost',
     )
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), {
-      target: { value: 'doc' },
-    })
-    expect(screen.queryByRole('button', { name: 'Needs permission' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('status', { name: 'Permission required' })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Documentation' }))
-    expect(onSelect).toHaveBeenCalledWith('session-2')
+    expect(onSelect).toHaveBeenCalledWith('project-1', 'session-2')
+  })
+
+  it('reveals matching sessions inside a collapsed project while search is active', () => {
+    render(
+      <SessionSidebarList
+        {...navigatorProps}
+        activeConversationId={null}
+        api={{} as KubecodeApi}
+        conversations={[session('session-1', 'Rare experiment', 'completed')]}
+        expandedProjectIds={[]}
+        onConversationCreated={vi.fn()}
+        onConversationRemoved={vi.fn()}
+        onConversationUpdated={vi.fn()}
+        onError={vi.fn()}
+        onSelect={vi.fn()}
+        query="rare"
+        t={t}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Rare experiment' })).toBeInTheDocument()
   })
 
   it('renders each Team as a named hierarchy with its Leader before its teammates', () => {
@@ -78,6 +107,7 @@ describe('session sidebar list', () => {
     const solo = session('session-solo', 'Independent task', 'completed')
     render(
       <SessionSidebarList
+        {...navigatorProps}
         activeConversationId="session-reviewer"
         api={{} as KubecodeApi}
         conversations={[teammate, solo, leader]}
@@ -116,6 +146,7 @@ describe('session sidebar list', () => {
     const onConversationRemoved = vi.fn()
     render(
       <SessionSidebarList
+        {...navigatorProps}
         activeConversationId="session-leader"
         api={{ deleteConversation } as unknown as KubecodeApi}
         conversations={[leader, teammate]}
@@ -161,6 +192,7 @@ describe('session sidebar list', () => {
     const deleteConversation = vi.fn().mockResolvedValue(undefined)
     render(
       <SessionSidebarList
+        {...navigatorProps}
         activeConversationId="session-reviewer"
         api={{ deleteConversation } as unknown as KubecodeApi}
         conversations={[leader, teammate]}

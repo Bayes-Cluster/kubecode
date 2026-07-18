@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
+  CaretDown,
+  CaretRight,
   DotsThree,
+  Folder,
   Funnel,
   GitFork,
-  MagnifyingGlass,
+  Plus,
   Trash,
   UsersThree,
 } from '@phosphor-icons/react'
@@ -22,11 +25,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import { createTranslator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import type { Conversation, KubecodeApi, TeamRole, TeamSnapshot } from './api'
+import type { Conversation, KubecodeApi, Project, RunStatus, TeamRole, TeamSnapshot } from './api'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
 import {
   buildSessionSections,
@@ -34,7 +36,6 @@ import {
   writeSessionListPreferences,
   type SessionAgentFilter,
   type SessionListPreferences,
-  type SessionSectionId,
   type SessionSort,
 } from './sessionList'
 
@@ -42,26 +43,46 @@ type Translator = ReturnType<typeof createTranslator>
 
 type SessionSidebarListProps = {
   activeConversationId: string | null
+  activeProjectId: string | null
   api: KubecodeApi
   conversations: Conversation[]
+  expandedProjectIds: string[]
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
   onError: (cause: unknown) => void
-  onSelect: (conversationId: string) => void
+  onNewSession: (projectId: string) => void
+  onProjectDelete: (projectId: string) => void
+  onProjectSelect: (projectId: string) => void
+  onProjectToggle: (projectId: string) => void
+  onProjectWorkspacesToggle: (projectId: string) => void
+  onSelect: (projectId: string, conversationId: string) => void
+  projects: Project[]
+  projectStatuses?: Record<string, 'running' | 'stuck' | null>
+  query?: string
   t: Translator
   teams?: TeamSnapshot[]
 }
 
 export function SessionSidebarList({
   activeConversationId,
+  activeProjectId,
   api,
   conversations,
+  expandedProjectIds,
   onConversationCreated,
   onConversationRemoved,
   onConversationUpdated,
   onError,
+  onNewSession,
+  onProjectDelete,
+  onProjectSelect,
+  onProjectToggle,
+  onProjectWorkspacesToggle,
   onSelect,
+  projects,
+  projectStatuses = {},
+  query = '',
   t,
   teams = [],
 }: SessionSidebarListProps) {
@@ -69,9 +90,13 @@ export function SessionSidebarList({
     readSessionListPreferences(localStorage)
   ))
   const [deleteTarget, setDeleteTarget] = useState<TeamDeleteTarget | null>(null)
+  const visiblePreferences = useMemo(
+    () => ({ ...preferences, query }),
+    [preferences, query],
+  )
   const visibleSections = useMemo(
-    () => buildSessionSections(conversations, preferences),
-    [conversations, preferences],
+    () => buildSessionSections(conversations, visiblePreferences),
+    [conversations, visiblePreferences],
   )
   const conversationsById = useMemo(
     () => new Map(conversations.map((conversation) => [conversation.id, conversation])),
@@ -93,15 +118,17 @@ export function SessionSidebarList({
   const sections = useMemo(
     () => buildSessionSections(
       conversations.filter((conversation) => !teamConversationIds.has(conversation.id)),
-      preferences,
+      visiblePreferences,
     ),
-    [conversations, preferences, teamConversationIds],
+    [conversations, teamConversationIds, visiblePreferences],
   )
   const teamGroups = useMemo(() => {
     const grouped = new Map<string, TeamSessionGroup>()
     for (const snapshot of teams) {
       grouped.set(snapshot.team.id, {
         id: snapshot.team.id,
+        projectId: snapshot.team.project_id ?? snapshot.leader_conversation.project_id,
+        status: snapshot.team.status,
         title: snapshot.team.title.trim(),
         members: snapshot.members.flatMap((member) => {
           const conversation = conversationsById.get(member.conversation_id)
@@ -115,7 +142,13 @@ export function SessionSidebarList({
       const membership = teamByConversation.get(conversation.id)
       const teamId = conversation.team_id ?? membership?.team.id
       if (!teamId || !visibleConversationIds.has(conversation.id)) continue
-      const group = grouped.get(teamId) ?? { id: teamId, title: '', members: [] }
+      const group = grouped.get(teamId) ?? {
+        id: teamId,
+        projectId: conversation.project_id,
+        status: conversation.team_status ?? null,
+        title: conversation.team_title?.trim() ?? '',
+        members: [],
+      }
       if (!group.members.some((member) => member.conversation.id === conversation.id)) {
         group.members.push({
           conversation,
@@ -135,6 +168,14 @@ export function SessionSidebarList({
         )),
       }))
   }, [conversations, conversationsById, t, teamByConversation, teams, visibleConversationIds])
+  const projectGroups = useMemo(() => {
+    const visibleSoloSessions = sections.flatMap((section) => section.sessions)
+    return projects.map((project) => ({
+      project,
+      sessions: visibleSoloSessions.filter((conversation) => conversation.project_id === project.id),
+      teams: teamGroups.filter((team) => team.projectId === project.id),
+    }))
+  }, [projects, sections, teamGroups])
 
   useEffect(() => writeSessionListPreferences(localStorage, preferences), [preferences])
 
@@ -205,75 +246,160 @@ export function SessionSidebarList({
 
   return (
     <div className="kubecode-session-browser">
-      <div className="kubecode-session-search">
-        <MagnifyingGlass />
-        <Input
-          aria-label={t('kubecode.searchSessions')}
-          placeholder={t('kubecode.searchSessions')}
-          role="searchbox"
-          value={preferences.query}
-          onChange={(event) => setPreferences({ ...preferences, query: event.target.value })}
-        />
+      <div className="kubecode-navigator-tools">
+        <span>{t('kubecode.sessionsLabel')}</span>
         <SessionFilters preferences={preferences} setPreferences={setPreferences} t={t} />
       </div>
-      <div className="kubecode-session-list">
-        {teamGroups.map((team) => (
-          <section
-            aria-label={team.title}
-            className="kubecode-session-team"
-            key={team.id}
-            role="group"
-          >
-            <header className="kubecode-session-team-header">
-              <UsersThree />
-              <span>{team.title}</span>
-              <small>{team.members.length}</small>
-            </header>
-            <div className="kubecode-session-team-tree">
-              {team.members.map(({ conversation, role }) => (
-                <SessionRow
-                  activeConversationId={activeConversationId}
-                  archive={archive}
-                  conversation={conversation}
-                  conversationsById={conversationsById}
-                  fork={fork}
-                  key={conversation.id}
-                  nested={role !== 'leader'}
-                  onSelect={onSelect}
-                  remove={remove}
-                  t={t}
-                  teamRole={role}
+      <div className="kubecode-session-list" role="tree">
+        {projectGroups.map(({ project, sessions, teams: projectTeams }) => {
+          const hasQueryResults = Boolean(query.trim()) && (
+            sessions.length > 0 || projectTeams.length > 0
+          )
+          const expanded = expandedProjectIds.includes(project.id) || hasQueryResults
+          const projectConversations = conversations.filter(
+            (conversation) => conversation.project_id === project.id,
+          )
+          const projectStatus = projectStatuses[project.id] ?? navigatorStatus(projectConversations)
+          return (
+            <section className="kubecode-project-tree-group" key={project.id}>
+              <div
+                className="kubecode-project-tree-row"
+                data-active={project.id === activeProjectId}
+                role="treeitem"
+                aria-expanded={expanded}
+              >
+                <Button
+                  aria-label={expanded ? t('kubecode.collapseProject') : t('kubecode.expandProject')}
+                  className="kubecode-project-tree-chevron"
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => onProjectToggle(project.id)}
+                >
+                  {expanded ? <CaretDown /> : <CaretRight />}
+                </Button>
+                <Button
+                  className="kubecode-project-tree-main"
+                  data-active={project.id === activeProjectId}
+                  data-session-status={projectStatus ?? undefined}
+                  data-workspaces-enabled={project.workspaces_enabled}
+                  title={project.path}
+                  variant="ghost"
+                  onClick={() => onProjectSelect(project.id)}
+                >
+                  <Folder />
+                  <span>{project.name}</span>
+                </Button>
+                <span
+                  aria-label={projectStatusLabel(projectStatus, t)}
+                  className="kubecode-navigator-status"
+                  data-status={projectStatus ?? undefined}
+                  role="status"
                 />
-              ))}
-            </div>
-          </section>
-        ))}
-        {sections.map((section) => (
-          <section className="kubecode-session-section" key={section.id}>
-            <header>
-              <span>{sectionLabel(t, section.id)}</span>
-              <small>{section.sessions.length}</small>
-            </header>
-            {section.sessions.map((conversation) => (
-              <SessionRow
-                activeConversationId={activeConversationId}
-                archive={archive}
-                conversation={conversation}
-                conversationsById={conversationsById}
-                fork={fork}
-                key={conversation.id}
-                onSelect={onSelect}
-                remove={remove}
-                t={t}
-                teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
-              />
-            ))}
-          </section>
-        ))}
-        {teamGroups.length === 0 && sections.length === 0 && (
-          <div className="kubecode-empty-small">
-            {conversations.length ? t('kubecode.noMatchingSessions') : t('kubecode.noSessions')}
-          </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label={t('kubecode.projectActionsFor', { name: project.name })}
+                      className="kubecode-project-tree-actions"
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <DotsThree />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
+                      <Plus /> {t('kubecode.newSession')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
+                      {project.workspaces_enabled
+                        ? t('kubecode.disableWorkspaces')
+                        : t('kubecode.enableWorkspaces')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => onProjectDelete(project.id)}
+                    >
+                      <Trash /> {t('kubecode.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              {expanded && (
+                <div className="kubecode-project-tree-children" role="group">
+                  <Button
+                    className="kubecode-project-new-session"
+                    variant="ghost"
+                    onClick={() => onNewSession(project.id)}
+                  >
+                    <Plus /> {t('kubecode.newSession')}
+                  </Button>
+                  {projectTeams.map((team) => (
+                    <div aria-label={team.title} className="kubecode-session-team" key={team.id} role="group">
+                      <div className="kubecode-session-team-header">
+                        <UsersThree />
+                        <span>{team.title}</span>
+                        <small>{team.members.length}</small>
+                      </div>
+                      <div className="kubecode-session-team-tree">
+                        {team.members.map(({ conversation, role }) => (
+                          <SessionRow
+                            activeConversationId={activeConversationId}
+                            archive={archive}
+                            conversation={conversation}
+                            fork={fork}
+                            key={conversation.id}
+                            nested={role !== 'leader'}
+                            onSelect={(conversationId) => {
+                              if (query.trim()) {
+                                trackEvent('kubecode_global_search_result_opened', {
+                                  result_type: 'session',
+                                })
+                              }
+                              onSelect(project.id, conversationId)
+                            }}
+                            remove={remove}
+                            t={t}
+                            teamRole={role}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {sessions.map((conversation) => (
+                    <SessionRow
+                      activeConversationId={activeConversationId}
+                      archive={archive}
+                      conversation={conversation}
+                      fork={fork}
+                      key={conversation.id}
+                      onSelect={(conversationId) => {
+                        if (query.trim()) {
+                          trackEvent('kubecode_global_search_result_opened', {
+                            result_type: 'session',
+                          })
+                        }
+                        onSelect(project.id, conversationId)
+                      }}
+                      remove={remove}
+                      t={t}
+                      teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
+                    />
+                  ))}
+                  {projectTeams.length === 0 && sessions.length === 0 && (
+                    <div className="kubecode-empty-small">
+                      {projectConversations.length
+                        ? t('kubecode.noMatchingSessions')
+                        : t('kubecode.noSessions')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )
+        })}
+        {projectGroups.length === 0 && (
+          <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
         )}
       </div>
       <DeleteTeamDialog
@@ -304,7 +430,6 @@ type SessionRowProps = {
   activeConversationId: string | null
   archive: (conversation: Conversation) => Promise<void>
   conversation: Conversation
-  conversationsById: Map<string, Conversation>
   fork: (conversation: Conversation) => Promise<void>
   nested?: boolean
   onSelect: (conversationId: string) => void
@@ -317,7 +442,6 @@ function SessionRow({
   activeConversationId,
   archive,
   conversation,
-  conversationsById,
   fork,
   nested = false,
   onSelect,
@@ -338,28 +462,18 @@ function SessionRow({
         variant="ghost"
         onClick={() => onSelect(conversation.id)}
       >
-        <span className="kubecode-session-agent-status" data-status={conversation.latest_run_status ?? undefined}>
-          <AiAgentIcon agent={conversation.agent_id} size={18} />
-        </span>
+        <AiAgentIcon agent={conversation.agent_id} size={18} />
         <span className="kubecode-session-row-copy">
           <span>{conversation.title || t('kubecode.untitledSession')}</span>
-          {teamRole && (
-            <small>
-              <GitFork />
-              {teamRole === 'leader'
-                ? t('kubecode.teamLeader')
-                : teamRole === 'discriminator'
-                  ? t('kubecode.teamDiscriminator')
-                  : t('kubecode.teamTeammate')}
-            </small>
-          )}
-          {conversation.relationship && (
-            <small>
-              <GitFork />
-              {relationshipLabel(conversation, conversationsById, t)}
-            </small>
-          )}
         </span>
+        <span
+          aria-label={conversation.latest_run_status
+            ? runStatusLabel(conversation.latest_run_status, t)
+            : undefined}
+          className="kubecode-navigator-status"
+          data-status={conversation.latest_run_status ?? undefined}
+          role={conversation.latest_run_status ? 'status' : undefined}
+        />
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -400,6 +514,8 @@ function SessionRow({
 
 type TeamSessionGroup = {
   id: string
+  projectId: string
+  status: Conversation['team_status']
   title: string
   members: Array<{
     conversation: Conversation
@@ -459,26 +575,26 @@ function SessionFilters({
   )
 }
 
-function sectionLabel(t: Translator, section: SessionSectionId): string {
-  return t(`kubecode.sessions.${section}`)
+function navigatorStatus(conversations: Conversation[]): RunStatus | null {
+  const statuses = conversations.map((conversation) => conversation.latest_run_status)
+  if (statuses.includes('waiting_permission')) return 'waiting_permission'
+  if (statuses.some((status) => (
+    status === 'failed' || status === 'timed_out' || status === 'interrupted'
+  ))) return 'failed'
+  return statuses.includes('running') ? 'running' : null
 }
 
-function relationshipLabel(
-  conversation: Conversation,
-  conversationsById: Map<string, Conversation>,
+function projectStatusLabel(
+  status: RunStatus | 'stuck' | null,
   t: Translator,
-): string {
-  const parent = conversation.parent_conversation_id
-    ? conversationsById.get(conversation.parent_conversation_id)
-    : null
-  const parentTitle = parent?.title || t('kubecode.untitledSession')
-  if (conversation.relationship === 'subagent') {
-    return t('kubecode.subagentOf', { title: parentTitle })
-  }
-  if (conversation.relationship === 'team_member') {
-    return t('kubecode.teamMemberOf', { title: parentTitle })
-  }
-  return conversation.relationship === 'branch'
-    ? t('kubecode.branchOf', { title: parentTitle })
-    : t('kubecode.forkOf', { title: parentTitle })
+): string | undefined {
+  if (status === 'stuck') return t('kubecode.permissionRequired')
+  return status ? runStatusLabel(status, t) : undefined
+}
+
+function runStatusLabel(status: RunStatus, t: Translator): string {
+  if (status === 'running') return t('kubecode.running')
+  if (status === 'waiting_permission') return t('kubecode.permissionRequired')
+  if (status === 'completed') return t('kubecode.ready')
+  return t('kubecode.error')
 }

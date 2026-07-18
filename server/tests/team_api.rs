@@ -329,6 +329,8 @@ async fn session_summaries_preserve_team_roles_after_a_server_restart() {
         .expect("persisted leader summary");
     assert_eq!(leader["team_id"], created["team"]["id"]);
     assert_eq!(leader["team_role"], "leader");
+    assert_eq!(leader["team_title"], created["team"]["title"]);
+    assert_eq!(leader["team_status"], "draft");
 
     let (status, all_sessions) = request(
         &restarted,
@@ -346,6 +348,8 @@ async fn session_summaries_preserve_team_roles_after_a_server_restart() {
         .expect("global persisted leader summary");
     assert_eq!(global_leader["team_id"], created["team"]["id"]);
     assert_eq!(global_leader["team_role"], "leader");
+    assert_eq!(global_leader["team_title"], created["team"]["title"]);
+    assert_eq!(global_leader["team_status"], "draft");
 }
 
 #[tokio::test]

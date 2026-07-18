@@ -140,8 +140,9 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('tab', { name: 'Changes' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.queryByText('Select a file to start editing')).not.toBeInTheDocument()
   })
 
@@ -401,7 +402,7 @@ describe('Kubecode workspace', () => {
       { name: 'Persistent leader' },
       { timeout: 5_000 },
     )).toBeInTheDocument()
-    expect(screen.getByText('Team · Leader')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Persistent leader' })).toBeInTheDocument()
   })
 
   it('closes a terminal after a clean shell exit event', async () => {
@@ -547,6 +548,22 @@ describe('Kubecode workspace', () => {
     expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
   })
 
+  it('focuses global Project and Session search with the platform shortcut', async () => {
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    expect(search).toHaveFocus()
+  })
+
   it('waits for the selected Project terminal list before auto-creating a terminal', async () => {
     for (const projectId of ['project-1', 'project-2']) {
       localStorage.setItem(`kubecode:layout:${projectId}`, JSON.stringify({ terminalOpen: true }))
@@ -673,7 +690,7 @@ describe('Kubecode workspace', () => {
     render(<KubecodeApp api={api} />)
 
     await screen.findByRole('button', { name: 'Demo' })
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Project actions' }), {
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for project Demo' }), {
       button: 0,
       ctrlKey: false,
       pointerType: 'mouse',
@@ -707,7 +724,7 @@ describe('Kubecode workspace', () => {
     render(<KubecodeApp api={api} />)
 
     await screen.findByRole('button', { name: 'Demo' })
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Project actions' }), {
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for project Demo' }), {
       button: 0,
       ctrlKey: false,
       pointerType: 'mouse',
@@ -715,7 +732,10 @@ describe('Kubecode workspace', () => {
     fireEvent.click(await screen.findByText('Enable Workspaces'))
 
     await waitFor(() => expect(setProjectWorkspacesEnabled).toHaveBeenCalledWith('project-1', true))
-    expect(screen.getByText('Workspaces enabled')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Demo' })).toHaveAttribute(
+      'data-workspaces-enabled',
+      'true',
+    )
   })
 
   it('renders and resolves an ACP elicitation form from the active Agent run', async () => {
