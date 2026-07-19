@@ -1,2 +1,7 @@
+packages:
+  - packaging/*
+
+injectWorkspacePackages: true
+
 ignoredBuiltDependencies:
   - esbuild

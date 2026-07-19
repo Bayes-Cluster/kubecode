@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  standalone:
+    name: standalone (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-musl
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packaging/NODE_VERSION
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          key: release-${{ matrix.rust_target }}
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo build --locked --release --manifest-path server/Cargo.toml --target ${{ matrix.rust_target }} --config 'target.${{ matrix.rust_target }}.linker="musl-gcc"'
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(node -p 'require("./package.json").version')"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Assemble standalone release
+        run: |
+          node_bin="$(node -p 'process.execPath')"
+          node_license="$(node -p 'require("node:path").resolve(process.execPath, "../../LICENSE")')"
+          scripts/build-standalone.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --arch "${{ matrix.arch }}" \
+            --server-bin "server/target/${{ matrix.rust_target }}/release/kubecode-server" \
+            --node-bin "$node_bin" \
+            --node-license "$node_license"
+      - name: Smoke standalone release
+        run: scripts/smoke-standalone.sh "release/kubecode-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubecode-${{ matrix.arch }}
+          path: release/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: standalone
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kubecode-*
+          path: release
+          merge-multiple: true
+      - name: Generate checksums
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cd release
+          sha256sum kubecode-"$version"-linux-*.tar.gz > "kubecode-$version-SHA256SUMS"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes

@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 overrides:
   '@hono/node-server': 1.19.13
@@ -29,12 +30,6 @@ importers:
 
   .:
     dependencies:
-      '@agentclientprotocol/claude-agent-acp':
-        specifier: 0.59.0
-        version: 0.59.0(@anthropic-ai/sdk@0.111.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))
-      '@agentclientprotocol/codex-acp':
-        specifier: 1.1.2
-        version: 1.1.2
       '@codemirror/commands':
         specifier: ^6.10.2
         version: 6.10.2
@@ -192,6 +187,15 @@ importers:
       ws:
         specifier: ^8.19.0
         version: 8.19.0
+
+  packaging/adapter-runtime:
+    dependencies:
+      '@agentclientprotocol/claude-agent-acp':
+        specifier: 0.59.0
+        version: 0.59.0(@anthropic-ai/sdk@0.111.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))
+      '@agentclientprotocol/codex-acp':
+        specifier: 1.1.2
+        version: 1.1.2
 
 packages:
 

@@ -2254,7 +2254,9 @@ fn executable_path(candidate: PathBuf) -> Option<PathBuf> {
 
 fn local_adapter(name: &str) -> Option<PathBuf> {
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
-    let candidate = project_root.join("node_modules/.bin").join(name);
+    let candidate = project_root
+        .join("packaging/adapter-runtime/node_modules/.bin")
+        .join(name);
     is_executable(&candidate).then_some(candidate)
 }
 
@@ -2499,12 +2501,9 @@ mod tests {
             panic!("stdio adapter")
         };
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
-        assert!(
-            server
-                .args
-                .iter()
-                .any(|argument| argument.ends_with("node_modules/.bin/codex-acp"))
-        );
+        assert!(server.args.iter().any(|argument| {
+            argument.ends_with("packaging/adapter-runtime/node_modules/.bin/codex-acp")
+        }));
         assert!(server.env.iter().any(|variable| {
             variable.name == "CODEX_PATH" && variable.value == "/opt/homebrew/bin/codex"
         }));
@@ -2531,12 +2530,9 @@ mod tests {
             panic!("stdio adapter")
         };
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
-        assert!(
-            server
-                .args
-                .iter()
-                .any(|argument| { argument.ends_with("node_modules/.bin/claude-agent-acp") })
-        );
+        assert!(server.args.iter().any(|argument| {
+            argument.ends_with("packaging/adapter-runtime/node_modules/.bin/claude-agent-acp")
+        }));
         assert!(server.env.iter().any(|variable| {
             variable.name == "CLAUDE_CODE_EXECUTABLE"
                 && variable.value == "/home/jovyan/.local/bin/claude"

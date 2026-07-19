@@ -7,11 +7,11 @@
 Open the Agent picker or Settings and inspect the discovery diagnostic. Confirm
 that:
 
-1. the CLI executable exists and is executable by the Notebook user;
+1. the CLI executable exists and is executable by the Kubecode server user;
 2. it is reachable through `PATH` or an explicit discovery override;
 3. the CLI can print its version without interactive setup;
-4. the Claude or Codex ACP adapter exists in `node_modules/.bin` for local
-   development.
+4. the Claude or Codex ACP adapter exists in
+   `packaging/adapter-runtime/node_modules/.bin` for source development.
 
 Restart Kubecode after changing executable paths because discovery occurs at
 server startup.
@@ -31,16 +31,17 @@ opencode acp --cwd "$PWD"
 ```
 
 The Project must still exist, the Kubecode Project record must resolve to the
-same canonical directory, and the Notebook user must have access to it. A Team
+same canonical directory, and the server user must have access to it. A Team
 member should inherit the resolved member workspace rather than a null or stale
 path.
 
-## Kubeflow page or WebSocket fails
+## Reverse-proxy page or WebSocket fails
 
-- Confirm `NB_PREFIX` exactly matches the route assigned to the Notebook.
-- Check `/healthz` and `/readyz` below that prefix.
+- Confirm `KUBECODE_BASE_PATH` exactly matches the externally exposed path.
+- Check the unprefixed `/healthz` and `/readyz` health endpoints.
 - Confirm the proxy forwards WebSocket upgrades.
-- Do not configure the browser to call the Pod's loopback address directly.
+- Confirm the proxy removes or preserves the path consistently with the server
+  base-path setting.
 - Set `KUBECODE_INTERNAL_ORIGIN` only for Agent-to-Team-MCP reachability.
 
 ## A Session or Team looks stale after restart
@@ -82,8 +83,8 @@ In-app messages continue to work when browser notifications are denied.
 Include:
 
 - Kubecode commit;
-- browser and Kubeflow version;
-- deployment mode and `NB_PREFIX`;
+- browser, Linux distribution, and architecture;
+- installation method and `KUBECODE_BASE_PATH`;
 - Agent name and version;
 - concise reproduction steps;
 - relevant logs with credentials, paths, prompts, filenames, and file contents

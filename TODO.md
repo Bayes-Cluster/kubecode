@@ -194,7 +194,7 @@ Remote kubecode-server
 - [ ] Keep all IM configuration, adapters, credentials, delivery policy, and
       delivery history in the Desktop application.
 - [ ] Do not add IM SDKs, bot tokens, webhook configuration, delivery tables, or
-      channel-specific behavior to `server/` or the Workspace container image.
+      channel-specific behavior to `server/` or the remote Workspace runtime.
 - [ ] Do not expose Notification Channel settings in the browser-only Kubecode
       workspace.
 - [ ] Store channel secrets in the operating-system Keychain, never in frontend
@@ -329,7 +329,7 @@ Remote kubecode-server
       frontend or analytics.
 - [ ] Failure and reconnect behavior has automated coverage for transport loss,
       server mismatch, allocation timeout, preemption, and stale endpoints.
-- [ ] The existing browser/Kubeflow deployment remains supported and does not
+- [ ] The existing standalone browser release remains supported and does not
       require the desktop application.
 
 ### Non-goals for the first desktop release

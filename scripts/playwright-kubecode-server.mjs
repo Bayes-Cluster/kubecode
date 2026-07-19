@@ -38,12 +38,12 @@ const serverArguments = configuredServerBinary
 const server = spawn(serverCommand, serverArguments, {
   env: {
     ...process.env,
-    HOST: '127.0.0.1',
+    KUBECODE_BASE_PATH: '/user/local/kubecode',
+    KUBECODE_HOST: '127.0.0.1',
+    KUBECODE_PORT: port,
     KUBECODE_STATE_DIR: state,
     KUBECODE_STATIC_DIR: 'dist',
-    NB_PREFIX: '/user/local/kubecode',
-    PERSISTENT_DIR: root,
-    PORT: port,
+    KUBECODE_WORKSPACE_ROOT: root,
   },
   stdio: 'inherit',
 })

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
   <title id="title">Kubecode social preview</title>
-  <desc id="description">Kubecode, a project-oriented AI coding workspace for Kubeflow.</desc>
+  <desc id="description">Kubecode, a self-hosted project-oriented AI coding workspace.</desc>
   <defs>
     <linearGradient id="background" x1="112" y1="42" x2="1164" y2="598" gradientUnits="userSpaceOnUse">
       <stop stop-color="#11131A"/>
@@ -19,7 +19,7 @@
     <rect width="8" height="8" x="27" y="28" fill="#fff" rx="2"/>
   </g>
   <text x="486" y="288" fill="#F7F8FC" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="92" font-weight="700" letter-spacing="-3">Kubecode</text>
-  <text x="492" y="356" fill="#B8BDCC" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="30">AI coding sessions for Kubeflow workspaces</text>
+  <text x="492" y="356" fill="#B8BDCC" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="30">A project-oriented AI coding workspace</text>
   <g fill="none" stroke="#767B8D" stroke-width="2">
     <rect width="168" height="52" x="492" y="406" rx="12"/>
     <rect width="126" height="52" x="676" y="406" rx="12"/>

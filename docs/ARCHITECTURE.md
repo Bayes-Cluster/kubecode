@@ -1,14 +1,13 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0193.
+active production boundary is defined by ADRs 0161–0194.
 
 ## Runtime topology
 
-The React client is served below `NB_PREFIX`, which allows the same image to run
-at a Kubeflow Notebook subpath. `KubecodeApi` derives HTTP, SSE, and WebSocket
-routes from the current browser pathname. Health probes remain unprefixed at
-`/healthz` and `/readyz`.
+The React client is served at `/` or below a generic configured base path.
+`KubecodeApi` derives HTTP, SSE, and WebSocket routes from the current browser
+pathname. Health probes remain unprefixed at `/healthz` and `/readyz`.
 
 The Axum server composes seven services:
 
@@ -278,8 +277,19 @@ that position so historical events cannot create stale system notifications.
 PTY bytes use dedicated WebSockets because terminal streams have different
 buffering and cursor semantics.
 
-## Deployment
+## Distribution
 
-`deploy/Dockerfile` builds the React client and Rust server, installs the three
-supported CLIs and ACP adapters, and uses s6 for persistent CLI configuration.
-`deploy/kubeflow-notebook.yaml` demonstrates a PVC-backed Notebook deployment.
+GitHub Actions publishes self-contained Linux amd64 and arm64 archives. Each
+archive contains the React build, a musl-linked Rust server, a pinned Node.js
+runtime, and production-only Claude/Codex ACP bridge dependencies. Provider
+Agent CLIs, credentials, Git, and the user's shell remain host-owned.
+
+`bin/kubecode` resolves the archive relative to itself, configures static and
+adapter paths, and replaces itself with the Rust server. The server defaults to
+loopback, uses `$HOME` as the directory-picker root, and stores application
+state below the XDG data directory. A generic base path supports downstream
+reverse proxies without binding the runtime to a specific platform.
+
+Kubecode does not publish an official container or cluster manifest. Downstream
+packaging is responsible for filesystem permissions, routing, authentication,
+and persistence.

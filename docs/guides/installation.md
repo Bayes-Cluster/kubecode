@@ -1,93 +1,86 @@
-# Installation and deployment
+# Installation
 
 [Documentation](../README.md) · [简体中文](../zh-CN/guides/installation.md)
 
-## Local development
+## Standalone release
 
 Requirements:
 
-- Node.js 22 or newer
-- pnpm 10
-- stable Rust
-- Git
-- optionally, an authenticated Claude Code, Codex, or OpenCode CLI
+- Linux amd64 or arm64 with glibc 2.28 or newer;
+- Git for Git status, diff, and worktree features;
+- at least one installed and authenticated Claude Code, Codex, or OpenCode CLI.
 
-Install dependencies and start the Rust API:
+Install the latest release without root access:
 
 ```bash
-pnpm install
-pnpm dev:server
+curl -fsSL https://raw.githubusercontent.com/Bayes-Cluster/kubecode/main/install.sh | sh
+~/.local/bin/kubecode
 ```
 
-In a second terminal, start Vite:
+The installer downloads the archive and checksum from GitHub Releases, verifies
+it, installs the version below `~/.local/lib`, and links
+`~/.local/bin/kubecode`. It does not install a service or modify shell startup
+files.
+
+Useful options:
 
 ```bash
-pnpm dev
+./install.sh --version 0.1.0
+./install.sh --prefix /absolute/custom/prefix
+./install.sh --version 0.1.0 --dry-run
 ```
 
-Open <http://127.0.0.1:5202>. Vite proxies API and terminal WebSocket traffic
-to port 8888. Development state is written below `.local/`.
+To uninstall the application, remove the installed version directory and
+command symlink. Application state is separate and is not deleted
+automatically.
 
-## Production-style local run
+## Manual archive installation
+
+Download `kubecode-<version>-linux-amd64.tar.gz` or
+`kubecode-<version>-linux-arm64.tar.gz` and the matching
+`kubecode-<version>-SHA256SUMS` from GitHub Releases. Verify the checksum,
+extract the archive, and run:
 
 ```bash
-pnpm build
-PERSISTENT_DIR="$PWD/.local/workspace" \
-KUBECODE_STATE_DIR="$PWD/.local/state" \
-KUBECODE_STATIC_DIR="$PWD/dist" \
-PORT=8888 \
-cargo run --manifest-path server/Cargo.toml
+./kubecode-<version>-linux-<arch>/bin/kubecode
 ```
 
-Open <http://127.0.0.1:8888>.
+The archive contains the React application, Rust server, Node.js runtime, and
+pinned Claude/Codex ACP adapters. It does not contain provider Agent CLIs,
+credentials, Git, or a shell.
 
-## Container image
+## Server options and state
 
-```bash
-docker build -f deploy/Dockerfile -t kubecode:local .
+Run `kubecode --help` for the complete command line:
+
+```text
+--host
+--port
+--base-path
+--workspace-root
+--state-dir
 ```
 
-The production image includes:
+Kubecode listens on `127.0.0.1:8888` by default. It has no built-in
+authentication, so exposing a non-loopback listener requires an authenticated
+reverse proxy or another trusted access boundary.
 
-- the built React application and `kubecode-server`;
-- Claude Code, Codex, and OpenCode;
-- the Claude and Codex ACP adapters;
-- Git, tmux, ripgrep, SSH tools, and s6 initialization.
+The default directory picker root is `$HOME`. State is stored at
+`$XDG_DATA_HOME/kubecode`, or `$HOME/.local/share/kubecode` when
+`XDG_DATA_HOME` is unset. Back up this directory to preserve Project
+registrations, Sessions, Teams, normalized Agent events, and private worktrees.
+Provider credentials remain in CLI-owned locations.
 
-The pinned Agent and adapter versions are build arguments in
-`deploy/Dockerfile`. Update them deliberately and verify the real-Agent smoke
-test before publishing an image.
-
-## Kubeflow Notebook
-
-`deploy/kubeflow-notebook.yaml` contains a reference PVC and Notebook resource.
-Before applying it:
-
-1. publish or make your image available to the cluster;
-2. replace `ghcr.io/example/kubecode:latest`;
-3. set `NB_PREFIX` to the path assigned by your Kubeflow installation;
-4. set `PERSISTENT_DIR` to the mounted user workspace;
-5. adapt the PVC, namespace, security context, and resource requests to the
-   cluster policy.
-
-The image exposes port `8888`. `/healthz` and `/readyz` are available below the
-configured base path.
-
-## Persistent data
-
-By default, the container stores workspace files under `PERSISTENT_DIR` and
-Kubecode state under `$PERSISTENT_DIR/.state/kubecode`. The initialization
-scripts also persist the supported Agent CLI configuration below
-`$PERSISTENT_DIR/.state`.
-
-Back up the mounted volume according to your cluster policy. Kubecode state
-contains Session metadata and normalized Agent events; provider credentials
-remain in the CLI-owned directories.
+The release is a user-space Linux application. Kubecode does not publish or
+maintain an official container, Kubernetes resource, or Kubeflow Notebook
+manifest. Downstream environments may package the standalone archive and are
+responsible for their own user, filesystem, routing, authentication, and
+persistence policies.
 
 ## Agent discovery
 
 Kubecode scans the inherited `PATH`, common install locations, and login-shell
-paths at server startup. Local development may override executable discovery:
+paths at server startup. Discovery can be overridden with:
 
 ```text
 KUBECODE_CLAUDE_PATH
@@ -97,8 +90,9 @@ KUBECODE_CLAUDE_ACP_PATH
 KUBECODE_CODEX_ACP_PATH
 ```
 
-Install and authenticate each CLI using its official documentation. Never put
-provider API keys in Kubecode configuration.
+The standalone launcher configures the two ACP adapter paths automatically.
+Install and authenticate Agent CLIs using their official documentation. Never
+put provider API keys in Kubecode configuration.
 
 To validate a real adapter without sending a prompt:
 
@@ -107,3 +101,31 @@ KUBECODE_REAL_AGENT=opencode pnpm test:agents:real
 ```
 
 Use `claude_code`, `codex`, or `all` to select another Agent.
+
+## Source development
+
+Source requirements are Node.js 22+, pnpm 10, stable Rust, and Git:
+
+```bash
+pnpm install
+pnpm dev:server
+```
+
+In a second terminal:
+
+```bash
+pnpm dev
+```
+
+Open <http://127.0.0.1:5202>. Vite proxies API and terminal WebSocket traffic
+to port 8888. Development state is written below `.local/`.
+
+For a production-style source run:
+
+```bash
+pnpm build
+cargo build --locked --manifest-path server/Cargo.toml
+server/target/debug/kubecode-server \
+  --workspace-root "$PWD/.local/workspace" \
+  --state-dir "$PWD/.local/state"
+```

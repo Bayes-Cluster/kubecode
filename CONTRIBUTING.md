@@ -1,11 +1,11 @@
 # Contributing to Kubecode
 
-Keep changes focused on the project-based Kubeflow web workspace. Before
-submitting a change:
+Keep changes focused on the project-based browser workspace and standalone
+Linux runtime. Before submitting a change:
 
 - add a regression test for behavior changes;
 - use the existing shadcn components and semantic theme tokens;
-- keep browser paths relative to `NB_PREFIX`;
+- keep browser paths relative to the configured generic base path;
 - keep filesystem operations behind `WorkspaceService`;
 - do not add provider credentials or model APIs to Kubecode;
 - update the architecture documentation for structural changes.

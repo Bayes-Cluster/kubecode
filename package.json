@@ -3,10 +3,11 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "version": "0.1.0",
+  "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "PERSISTENT_DIR=.local/workspace KUBECODE_STATE_DIR=.local/state PORT=8888 cargo run --manifest-path server/Cargo.toml",
+    "dev:server": "KUBECODE_WORKSPACE_ROOT=\"$PWD/.local/workspace\" KUBECODE_STATE_DIR=\"$PWD/.local/state\" cargo run --manifest-path server/Cargo.toml",
     "build": "tsc -b && vite build",
     "docs:check": "node --test scripts/docs-links.test.mjs && node scripts/validate-docs.mjs",
     "lint": "eslint . --max-warnings=0",
@@ -16,14 +17,13 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:agents:real": "cargo test --manifest-path server/Cargo.toml --test real_agents -- --ignored --nocapture",
+    "test:standalone": "node --test scripts/standalone.test.mjs",
     "test:watch": "vitest",
     "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke/kubecode-workspace.spec.ts",
     "test:coverage": "node scripts/run-vitest-coverage.mjs",
     "prepare": "husky"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.59.0",
-    "@agentclientprotocol/codex-acp": "1.1.2",
     "@codemirror/commands": "^6.10.2",
     "@codemirror/language": "^6.12.2",
     "@codemirror/state": "^6.5.4",

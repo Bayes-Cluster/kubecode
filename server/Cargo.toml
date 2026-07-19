@@ -16,6 +16,7 @@ path = "src/main.rs"
 agent-client-protocol = { version = "=1.2.0", features = ["unstable_elicitation", "unstable_session_fork"] }
 agent-client-protocol-rmcp = "=1.0.0"
 axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 portable-pty = "0.9"

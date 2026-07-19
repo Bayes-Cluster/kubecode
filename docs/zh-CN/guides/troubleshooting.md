@@ -6,10 +6,11 @@
 
 打开 Agent Picker 或 Settings 查看 Discovery Diagnostic，并确认：
 
-1. CLI Executable 存在，Notebook User 有执行权限；
+1. CLI Executable 存在，Kubecode Server User 有执行权限；
 2. 可以通过 `PATH` 或显式 Discovery Override 找到；
 3. CLI 可以在没有交互设置的情况下输出版本；
-4. 本地开发时，Claude 或 Codex ACP Adapter 位于 `node_modules/.bin`。
+4. 源码开发时，Claude 或 Codex ACP Adapter 位于
+   `packaging/adapter-runtime/node_modules/.bin`。
 
 Agent Discovery 在 Server 启动时执行。修改可执行文件路径后需要重启 Kubecode。
 
@@ -27,15 +28,15 @@ opencode acp --cwd "$PWD"
 ```
 
 Project 必须仍然存在；Kubecode Project Record 必须解析到相同 Canonical
-Directory；Notebook User 必须有访问权限。Team Member 应继承已解析的 Member
+Directory；Server User 必须有访问权限。Team Member 应继承已解析的 Member
 Workspace，不能使用 Null 或过期 Path。
 
-## Kubeflow 页面或 WebSocket 失败
+## Reverse Proxy 页面或 WebSocket 失败
 
-- 确认 `NB_PREFIX` 与 Notebook 分配的 Route 完全一致。
-- 检查该 Prefix 下的 `/healthz` 和 `/readyz`。
+- 确认 `KUBECODE_BASE_PATH` 与外部公开的 Path 完全一致。
+- 检查不带 Prefix 的 `/healthz` 和 `/readyz` Health Endpoint。
 - 确认 Proxy 转发 WebSocket Upgrade。
-- 不要让 Browser 直接调用 Pod Loopback Address。
+- 确认 Proxy 对 Path 的移除或保留行为与 Server Base Path 一致。
 - `KUBECODE_INTERNAL_ORIGIN` 只用于 Agent 访问 Team MCP。
 
 ## 重启后 Session 或 Team 状态过期
@@ -73,8 +74,8 @@ Browser Notification 被拒绝时，应用内 Message 仍然工作。
 请提供：
 
 - Kubecode Commit；
-- Browser 与 Kubeflow Version；
-- Deployment Mode 和 `NB_PREFIX`；
+- Browser、Linux Distribution 与 Architecture；
+- Installation Method 和 `KUBECODE_BASE_PATH`；
 - Agent Name 与 Version；
 - 简洁的 Reproduction Step；
 - 已移除 Credential、Path、Prompt、Filename 和 File Content 的相关日志。

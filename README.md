@@ -5,7 +5,7 @@
 <h1 align="center">Kubecode</h1>
 
 <p align="center">
-  A project-oriented AI coding workspace for Kubeflow.
+  A self-hosted, project-oriented AI coding workspace.
 </p>
 
 <p align="center">
@@ -19,12 +19,12 @@
 </p>
 
 <p align="center">
-  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode brings Claude Code, Codex, and OpenCode into Kubeflow workspaces">
+  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode brings Claude Code, Codex, and OpenCode into one project-oriented workspace">
 </p>
 
-Kubecode turns a directory in a single-user Kubeflow Notebook into a durable AI
-coding workspace. Run local coding agents, keep long-lived Sessions, coordinate
-Agent Teams, inspect Git changes, edit files, and manage reconnectable terminals
+Kubecode turns a directory on a Linux machine into a durable AI coding
+workspace. Run local coding agents, keep long-lived Sessions, coordinate Agent
+Teams, inspect Git changes, edit files, and manage reconnectable terminals
 without leaving the browser.
 
 Kubecode currently supports these local Agent CLIs:
@@ -61,11 +61,30 @@ provider-native Session history.
 
 ### Requirements
 
-- Node.js 22+
-- pnpm 10
-- stable Rust
+- Linux amd64 or arm64 with glibc 2.28 or newer
 - Git
 - at least one installed and authenticated supported Agent CLI
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bayes-Cluster/kubecode/main/install.sh | sh
+~/.local/bin/kubecode
+```
+
+Open <http://127.0.0.1:8888>. The standalone release bundles the web
+application, Rust server, Node.js runtime, and Claude/Codex ACP adapters. Agent
+CLIs and their credentials remain on the host.
+
+To install a fixed version or preview the operation:
+
+```bash
+./install.sh --version 0.1.0
+./install.sh --version 0.1.0 --dry-run
+```
+
+See [Installation](docs/guides/installation.md) for manual archive installation,
+server options, persistent state, Agent discovery, and source development.
+
+## Source development
 
 ```bash
 pnpm install
@@ -78,36 +97,8 @@ In a second terminal:
 pnpm dev
 ```
 
-Open <http://127.0.0.1:5202>. Local development state is stored under
-`.local/`.
-
-For a production-style local run:
-
-```bash
-pnpm build
-PERSISTENT_DIR="$PWD/.local/workspace" \
-KUBECODE_STATE_DIR="$PWD/.local/state" \
-KUBECODE_STATIC_DIR="$PWD/dist" \
-PORT=8888 \
-cargo run --manifest-path server/Cargo.toml
-```
-
-## Container and Kubeflow
-
-Build the production image:
-
-```bash
-docker build -f deploy/Dockerfile -t kubecode:local .
-```
-
-The image contains the React application, Rust server, supported Agent CLIs,
-Claude and Codex ACP adapters, and s6 process initialization.
-[`deploy/kubeflow-notebook.yaml`](deploy/kubeflow-notebook.yaml) is a reference
-Notebook manifest; replace its example image and configure `NB_PREFIX` for your
-Kubeflow route.
-
-See [Installation and deployment](docs/guides/installation.md) for persistent
-storage, runtime variables, health checks, and CLI setup.
+Open <http://127.0.0.1:5202>. Source development requires Node.js 22+, pnpm 10,
+and stable Rust. Local development state is stored under `.local/`.
 
 ## Architecture
 
@@ -134,7 +125,7 @@ roots.
 ### User guide
 
 - [Documentation home](docs/README.md)
-- [Installation and deployment](docs/guides/installation.md)
+- [Installation](docs/guides/installation.md)
 - [Projects, files, and Git](docs/guides/projects-and-files.md)
 - [Agent Sessions](docs/guides/agent-sessions.md)
 - [Team Sessions](docs/guides/team-sessions.md)
@@ -156,7 +147,8 @@ roots.
 src/kubecode/    Browser workspace and API client
 src/components/  Shared UI and Agent transcript primitives
 server/          Axum API, ACP runtime, terminal, Git, and workspace services
-deploy/          Container and Kubeflow deployment assets
+packaging/       Standalone launchers and isolated ACP adapter runtime
+scripts/         Build, install, validation, and smoke-test tooling
 tests/smoke/     Browser workspace smoke tests
 docs/            User, developer, and architecture documentation
 ```
@@ -168,6 +160,7 @@ pnpm lint
 npx tsc --noEmit
 pnpm test
 pnpm test:coverage
+pnpm test:standalone
 cargo test --manifest-path server/Cargo.toml
 cargo clippy --manifest-path server/Cargo.toml -- -D warnings
 cargo fmt --manifest-path server/Cargo.toml -- --check

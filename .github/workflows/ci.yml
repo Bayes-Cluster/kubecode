@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.33.2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.33.2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -51,8 +51,8 @@ jobs:
         run: pnpm install --prod --frozen-lockfile --ignore-scripts
       - name: Verify ACP adapters
         run: |
-          test -x node_modules/.bin/claude-agent-acp
-          test -x node_modules/.bin/codex-acp
+          test -x packaging/adapter-runtime/node_modules/.bin/claude-agent-acp
+          test -x packaging/adapter-runtime/node_modules/.bin/codex-acp
       - run: cargo fmt --manifest-path server/Cargo.toml -- --check
       - run: cargo clippy --locked --manifest-path server/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path server/Cargo.toml
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.33.2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -83,3 +83,39 @@ jobs:
         run: pnpm playwright:smoke
         env:
           KUBECODE_SERVER_BIN: ${{ github.workspace }}/server/target/debug/kubecode-server
+
+  standalone:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packaging/NODE_VERSION
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo build --locked --release --manifest-path server/Cargo.toml --target x86_64-unknown-linux-musl --config 'target.x86_64-unknown-linux-musl.linker="musl-gcc"'
+      - name: Assemble standalone release
+        run: |
+          node_bin="$(node -p 'process.execPath')"
+          node_license="$(node -p 'require("node:path").resolve(process.execPath, "../../LICENSE")')"
+          scripts/build-standalone.sh \
+            --version "$(node -p 'require("./package.json").version')" \
+            --arch amd64 \
+            --server-bin server/target/x86_64-unknown-linux-musl/release/kubecode-server \
+            --node-bin "$node_bin" \
+            --node-license "$node_license"
+      - name: Smoke standalone release
+        run: scripts/smoke-standalone.sh release/kubecode-*-linux-amd64.tar.gz

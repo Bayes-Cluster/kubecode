@@ -2,11 +2,12 @@
 
 ## Product boundary
 
-Kubecode is a browser-based, project-oriented AI coding workspace for
-Kubeflow. The supported runtime is the React frontend in `src/`, the Rust server
-in `server/`, and the container assets in `deploy/`. Do not reintroduce Tauri,
-desktop release workflows, hosted model providers, or agents other than Claude
-Code, Codex, and OpenCode without an ADR.
+Kubecode is a browser-based, project-oriented AI coding workspace distributed
+as a standalone Linux application. The supported runtime is the React frontend
+in `src/`, the Rust server in `server/`, and the standalone assets in
+`packaging/`. Do not reintroduce Tauri, desktop release workflows, official
+container images, hosted model providers, or agents other than Claude Code,
+Codex, and OpenCode without an ADR.
 
 A Project is an absolute server path. Removing a Project only unregisters it;
 never delete the directory. Removing a Session only removes Kubecode's record;
@@ -19,7 +20,7 @@ never delete provider-native history.
 - Prefer behavioral tests close to the changed code.
 - Use existing shadcn components and semantic CSS tokens for UI work.
 - Keep all filesystem access behind `WorkspaceService`.
-- Keep browser routes compatible with `NB_PREFIX`.
+- Keep browser routes compatible with the configured generic base path.
 - Preserve user changes in a dirty worktree.
 
 ## Required checks

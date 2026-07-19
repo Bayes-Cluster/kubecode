@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+exec "$root/lib/kubecode/node" \
+  "$root/lib/kubecode/adapter-runtime/node_modules/@agentclientprotocol/codex-acp/dist/index.js" \
+  "$@"
