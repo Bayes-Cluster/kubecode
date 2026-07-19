@@ -2,13 +2,35 @@
 
 [文档首页](../README.md) · [English](../../guides/installation.md)
 
-## Standalone Release
-
-环境要求：
+## 环境要求
 
 - glibc 2.28 或更新版本的 Linux amd64/arm64；
 - Git，用于 Git Status、Diff 和 Worktree；
 - 至少安装并登录一个 Claude Code、Codex 或 OpenCode CLI。
+
+## Debian Package
+
+从 GitHub Releases 下载 `kubecode_<version>_amd64.deb` 或
+`kubecode_<version>_arm64.deb`。先用 `dpkg --print-architecture` 确认本机
+架构，再安装对应文件：
+
+```bash
+sudo apt install ./kubecode_0.1.1_amd64.deb
+kubecode
+```
+
+Package 将命令安装到 `/usr/bin/kubecode`，私有 Runtime 位于
+`/usr/lib/kubecode`。它不会安装或启用 systemd Service、创建 User 或启动
+Network Listener。卸载命令为：
+
+```bash
+sudo apt remove kubecode
+```
+
+卸载不会删除用户状态或 Provider 原生历史。Kubecode 目前不提供 APT
+Repository，升级时需要从 GitHub Releases 下载更新的 Package。
+
+## 无 Root 的 Standalone 安装
 
 无需 Root 权限安装最新版本：
 
@@ -24,9 +46,9 @@ Shell 启动文件。
 常用选项：
 
 ```bash
-./install.sh --version 0.1.0
+./install.sh --version 0.1.1
 ./install.sh --prefix /absolute/custom/prefix
-./install.sh --version 0.1.0 --dry-run
+./install.sh --version 0.1.1 --dry-run
 ```
 
 卸载应用时删除对应版本目录和命令链接即可。应用状态位于独立目录，不会被自动

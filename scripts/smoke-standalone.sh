@@ -22,6 +22,7 @@ if [[ -z "$package_directory" ]]; then
   exit 1
 fi
 
+test "$(cat "$package_directory/VERSION")" = "$("$package_directory/bin/kubecode" --version | awk '{print $2}')"
 PATH=/usr/bin:/bin "$package_directory/bin/kubecode" --version | grep -F "kubecode "
 PATH=/usr/bin:/bin "$package_directory/libexec/kubecode/claude-agent-acp" --version | grep -Fx "0.59.0"
 PATH=/usr/bin:/bin "$package_directory/libexec/kubecode/codex-acp" --version | grep -Fx "@agentclientprotocol/codex-acp 1.1.2"

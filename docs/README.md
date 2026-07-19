@@ -33,7 +33,8 @@ Kubecode. Architecture and ADRs are intended for contributors.
 - Removing a Project never deletes its directory.
 - Removing a Session never deletes provider-native history.
 - Browser routes support an optional generic base path.
-- Official releases are standalone Linux archives, not containers.
+- Official releases are standalone Linux archives and Debian packages, not
+  containers.
 
 This directory is the canonical documentation source. Kubecode does not
 maintain a separate GitHub Wiki or documentation-site copy.

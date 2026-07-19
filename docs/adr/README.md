@@ -39,3 +39,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0192](0192-local-only-session-removal.md) | Local-only Session removal |
 | [0193](0193-opencode-team-permission-environment.md) | OpenCode Team permission environment |
 | [0194](0194-standalone-linux-distribution.md) | Standalone Linux distribution |
+| [0195](0195-debian-package-distribution.md) | Debian package distribution |

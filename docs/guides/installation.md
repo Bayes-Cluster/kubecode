@@ -2,13 +2,38 @@
 
 [Documentation](../README.md) · [简体中文](../zh-CN/guides/installation.md)
 
-## Standalone release
+## Requirements
 
 Requirements:
 
 - Linux amd64 or arm64 with glibc 2.28 or newer;
 - Git for Git status, diff, and worktree features;
 - at least one installed and authenticated Claude Code, Codex, or OpenCode CLI.
+
+## Debian package
+
+Download `kubecode_<version>_amd64.deb` or
+`kubecode_<version>_arm64.deb` from GitHub Releases. Confirm the local
+architecture with `dpkg --print-architecture`, then install the matching file:
+
+```bash
+sudo apt install ./kubecode_0.1.1_amd64.deb
+kubecode
+```
+
+The package installs the command at `/usr/bin/kubecode` and its private runtime
+below `/usr/lib/kubecode`. It does not install or enable a systemd service,
+create a user, or start a network listener. Remove it with:
+
+```bash
+sudo apt remove kubecode
+```
+
+Removal preserves user state and provider-native history. Kubecode does not
+currently publish an APT repository, so upgrades require downloading a newer
+package from GitHub Releases.
+
+## Rootless standalone install
 
 Install the latest release without root access:
 
@@ -25,9 +50,9 @@ files.
 Useful options:
 
 ```bash
-./install.sh --version 0.1.0
+./install.sh --version 0.1.1
 ./install.sh --prefix /absolute/custom/prefix
-./install.sh --version 0.1.0 --dry-run
+./install.sh --version 0.1.1 --dry-run
 ```
 
 To uninstall the application, remove the installed version directory and

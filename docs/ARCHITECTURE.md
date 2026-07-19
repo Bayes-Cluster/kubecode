@@ -279,10 +279,11 @@ buffering and cursor semantics.
 
 ## Distribution
 
-GitHub Actions publishes self-contained Linux amd64 and arm64 archives. Each
-archive contains the React build, a musl-linked Rust server, a pinned Node.js
-runtime, and production-only Claude/Codex ACP bridge dependencies. Provider
-Agent CLIs, credentials, Git, and the user's shell remain host-owned.
+GitHub Actions publishes self-contained Linux amd64 and arm64 archives and
+Debian packages. Each archive contains the React build, a musl-linked Rust
+server, a pinned Node.js runtime, and production-only Claude/Codex ACP bridge
+dependencies. Provider Agent CLIs, credentials, Git, and the user's shell
+remain host-owned.
 
 `bin/kubecode` resolves the archive relative to itself, configures static and
 adapter paths, and replaces itself with the Rust server. The server defaults to
@@ -290,6 +291,8 @@ loopback, uses `$HOME` as the directory-picker root, and stores application
 state below the XDG data directory. A generic base path supports downstream
 reverse proxies without binding the runtime to a specific platform.
 
-Kubecode does not publish an official container or cluster manifest. Downstream
-packaging is responsible for filesystem permissions, routing, authentication,
-and persistence.
+The Debian package wraps that same directory below `/usr/lib/kubecode` and
+adds `/usr/bin/kubecode`; it does not install or enable a service. Kubecode
+does not publish an official container or cluster manifest. Downstream
+deployments remain responsible for filesystem permissions, routing,
+authentication, and persistence.

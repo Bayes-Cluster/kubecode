@@ -67,10 +67,26 @@ jobs:
             --node-license "$node_license"
       - name: Smoke standalone release
         run: scripts/smoke-standalone.sh "release/kubecode-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz"
+      - name: Install pinned nFPM
+        run: |
+          scripts/bootstrap-nfpm.sh \
+            --arch "${{ matrix.arch }}" \
+            --prefix "$RUNNER_TEMP/nfpm"
+          echo "$RUNNER_TEMP/nfpm/usr/bin" >> "$GITHUB_PATH"
+      - name: Build Debian package
+        run: |
+          scripts/build-deb.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --arch "${{ matrix.arch }}" \
+            --standalone-dir "release/kubecode-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}"
+      - name: Smoke Debian package
+        run: scripts/smoke-deb.sh "release/kubecode_${{ steps.version.outputs.version }}_${{ matrix.arch }}.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: kubecode-${{ matrix.arch }}
-          path: release/*.tar.gz
+          path: |
+            release/*.tar.gz
+            release/*.deb
           if-no-files-found: error
 
   publish:
@@ -88,8 +104,25 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           cd release
-          sha256sum kubecode-"$version"-linux-*.tar.gz > "kubecode-$version-SHA256SUMS"
+          sha256sum \
+            kubecode-"$version"-linux-*.tar.gz \
+            kubecode_"$version"_*.deb \
+            > "kubecode-$version-SHA256SUMS"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes
+        run: |
+          if gh release view --repo "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload \
+              --repo "$GITHUB_REPOSITORY" \
+              "$GITHUB_REF_NAME" \
+              release/* \
+              --clobber
+          else
+            gh release create \
+              --repo "$GITHUB_REPOSITORY" \
+              "$GITHUB_REF_NAME" \
+              release/* \
+              --verify-tag \
+              --generate-notes
+          fi

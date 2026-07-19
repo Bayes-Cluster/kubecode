@@ -2,7 +2,7 @@
   "name": "kubecode",
   "private": true,
   "license": "AGPL-3.0-or-later",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:agents:real": "cargo test --manifest-path server/Cargo.toml --test real_agents -- --ignored --nocapture",
+    "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs",
     "test:standalone": "node --test scripts/standalone.test.mjs",
     "test:watch": "vitest",
     "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke/kubecode-workspace.spec.ts",

@@ -105,6 +105,7 @@ jobs:
           workspaces: server
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:packages
       - run: pnpm build
       - run: cargo build --locked --release --manifest-path server/Cargo.toml --target x86_64-unknown-linux-musl --config 'target.x86_64-unknown-linux-musl.linker="musl-gcc"'
       - name: Assemble standalone release
@@ -119,3 +120,18 @@ jobs:
             --node-license "$node_license"
       - name: Smoke standalone release
         run: scripts/smoke-standalone.sh release/kubecode-*-linux-amd64.tar.gz
+      - name: Install pinned nFPM
+        run: |
+          scripts/bootstrap-nfpm.sh \
+            --arch amd64 \
+            --prefix "$RUNNER_TEMP/nfpm"
+          echo "$RUNNER_TEMP/nfpm/usr/bin" >> "$GITHUB_PATH"
+      - name: Build Debian package
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          scripts/build-deb.sh \
+            --version "$version" \
+            --arch amd64 \
+            --standalone-dir "release/kubecode-$version-linux-amd64"
+      - name: Smoke Debian package
+        run: scripts/smoke-deb.sh release/kubecode_*_amd64.deb

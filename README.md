@@ -74,11 +74,22 @@ Open <http://127.0.0.1:8888>. The standalone release bundles the web
 application, Rust server, Node.js runtime, and Claude/Codex ACP adapters. Agent
 CLIs and their credentials remain on the host.
 
+On Debian or Ubuntu, download the package for the machine architecture from
+GitHub Releases and install it with:
+
+```bash
+sudo apt install ./kubecode_0.1.1_amd64.deb
+kubecode
+```
+
+The Debian package installs the same standalone runtime and does not enable a
+service.
+
 To install a fixed version or preview the operation:
 
 ```bash
-./install.sh --version 0.1.0
-./install.sh --version 0.1.0 --dry-run
+./install.sh --version 0.1.1
+./install.sh --version 0.1.1 --dry-run
 ```
 
 See [Installation](docs/guides/installation.md) for manual archive installation,
@@ -147,7 +158,7 @@ roots.
 src/kubecode/    Browser workspace and API client
 src/components/  Shared UI and Agent transcript primitives
 server/          Axum API, ACP runtime, terminal, Git, and workspace services
-packaging/       Standalone launchers and isolated ACP adapter runtime
+packaging/       Standalone, ACP adapter, and Debian package metadata
 scripts/         Build, install, validation, and smoke-test tooling
 tests/smoke/     Browser workspace smoke tests
 docs/            User, developer, and architecture documentation
@@ -160,7 +171,7 @@ pnpm lint
 npx tsc --noEmit
 pnpm test
 pnpm test:coverage
-pnpm test:standalone
+pnpm test:packages
 cargo test --manifest-path server/Cargo.toml
 cargo clippy --manifest-path server/Cargo.toml -- -D warnings
 cargo fmt --manifest-path server/Cargo.toml -- --check

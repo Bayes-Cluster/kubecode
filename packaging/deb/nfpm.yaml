@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+name: kubecode
+arch: "${KUBECODE_DEB_ARCH}"
+platform: linux
+version: "${KUBECODE_VERSION}"
+version_schema: semver
+section: devel
+priority: optional
+maintainer: "Kubecode Maintainers <terenceliu98@users.noreply.github.com>"
+description: |
+  Project-oriented AI coding workspace for local Agent CLIs.
+  Kubecode provides browser-based projects, persistent Agent sessions,
+  terminals, Git review, editing, and multi-Agent Teams.
+vendor: Bayes Cluster
+homepage: https://github.com/Bayes-Cluster/kubecode
+license: AGPL-3.0-or-later
+umask: 0o022
+
+depends:
+  - git
+  - libc6 (>= 2.28)
+  - libstdc++6
+
+contents:
+  - src: packaging/deb/kubecode
+    dst: /usr/bin/kubecode
+    file_info:
+      mode: 0755
+
+  - src: "${KUBECODE_STANDALONE_DIR}/"
+    dst: /usr/lib/kubecode
+    expand: true
+
+  - src: README.md
+    dst: /usr/share/doc/kubecode/README.md
+
+  - src: LICENSE
+    dst: /usr/share/doc/kubecode/copyright
+
+  - src: packaging/THIRD_PARTY_NOTICES.md
+    dst: /usr/share/doc/kubecode/THIRD_PARTY_NOTICES.md
+
+deb:
+  compression: xz

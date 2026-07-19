@@ -88,6 +88,7 @@ mkdir -p \
 cp packaging/bin/kubecode "$stage/bin/kubecode"
 cp packaging/bin/claude-agent-acp "$stage/libexec/kubecode/claude-agent-acp"
 cp packaging/bin/codex-acp "$stage/libexec/kubecode/codex-acp"
+printf '%s\n' "$version" > "$stage/VERSION"
 cp "$server_bin" "$stage/lib/kubecode/kubecode-server"
 cp "$node_bin" "$stage/lib/kubecode/node"
 cp -R dist "$stage/lib/kubecode/dist"
