@@ -19,14 +19,14 @@
 </p>
 
 <p align="center">
-  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode 在 Kubeflow 工作区中支持 Claude Code、Codex 和 OpenCode">
+  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode 将 Claude Code、Codex 和 OpenCode 带入 Kubeflow 工作区">
 </p>
 
 Kubecode 将单用户 Kubeflow Notebook 中的目录变成持久化 AI 编程工作区。
 用户可以在浏览器中运行本地编程 Agent、维护长连接 Session、组织 Agent
 Team、查看 Git 变更、编辑文件，以及管理可重连的终端。
 
-Kubecode 只支持三个本地 Agent CLI：
+Kubecode 目前支持以下本地 Agent CLI：
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - [Codex](https://developers.openai.com/codex/cli)

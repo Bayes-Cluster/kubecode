@@ -4,9 +4,9 @@
 
 ## Supported Agents
 
-Kubecode supports Claude Code, Codex, and OpenCode. Agent discovery runs when
-the server starts and reports the resolved executable, version, and diagnostics
-for unavailable Agents.
+Kubecode currently supports Claude Code, Codex, and OpenCode. Agent discovery
+runs when the server starts and reports the resolved executable, version, and
+diagnostics for unavailable Agents.
 
 Claude Code and Codex use project-installed ACP adapters. OpenCode exposes ACP
 through `opencode acp`. Authentication and provider configuration remain

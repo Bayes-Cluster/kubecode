@@ -4,7 +4,7 @@
 
 ## 支持的 Agent
 
-Kubecode 支持 Claude Code、Codex 和 OpenCode。Server 启动时进行 Agent
+Kubecode 目前支持 Claude Code、Codex 和 OpenCode。Server 启动时进行 Agent
 Discovery，并为不可用 Agent 报告可执行文件、版本和诊断信息。
 
 Claude Code 与 Codex 使用项目安装的 ACP Adapter；OpenCode 通过

@@ -28,7 +28,7 @@ Kubecode. Architecture and ADRs are intended for contributors.
 ## Product boundaries
 
 - A Project is an absolute server path.
-- Claude Code, Codex, and OpenCode are the only supported Agents.
+- Kubecode currently supports Claude Code, Codex, and OpenCode.
 - Provider credentials and model configuration remain with the Agent CLI.
 - Removing a Project never deletes its directory.
 - Removing a Session never deletes provider-native history.

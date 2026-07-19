@@ -27,7 +27,7 @@ Kubecode 是为单用户 Kubeflow Notebook 设计的浏览器 AI 编程工作区
 ## 产品边界
 
 - Project 是 Server 上的绝对路径。
-- 只支持 Claude Code、Codex 和 OpenCode。
+- Kubecode 目前支持 Claude Code、Codex 和 OpenCode。
 - Provider 凭据和模型配置仍由 Agent CLI 管理。
 - Remove Project 永远不会删除目录。
 - Delete Session 永远不会删除 Provider 原生历史。

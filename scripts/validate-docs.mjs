@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { extname, join, relative } from 'node:path'
 import process from 'node:process'
+
+import { validateLocalMarkdownTarget } from './docs-links.mjs'
 
 const root = process.cwd()
 const failures = []
@@ -23,16 +25,8 @@ for (const path of markdownFiles) {
 
   for (const match of source.matchAll(localTargetPattern)) {
     const rawTarget = match[1] ?? match[2]
-    if (!rawTarget || isRemote(rawTarget)) continue
-    const fileTarget = rawTarget.split('#', 1)[0].split('?', 1)[0]
-    if (!fileTarget) continue
-    const decoded = decodeURIComponent(fileTarget)
-    const resolved = resolve(dirname(path), decoded)
-    if (!resolved.startsWith(`${root}${sep}`) && resolved !== root) {
-      failures.push(`${display(path)} links outside the repository: ${rawTarget}`)
-    } else if (!existsSync(resolved)) {
-      failures.push(`${display(path)} has a missing local target: ${rawTarget}`)
-    }
+    const failure = validateLocalMarkdownTarget(root, path, rawTarget)
+    if (failure) failures.push(`${display(path)} ${failure}`)
   }
 }
 
@@ -67,6 +61,15 @@ for (const asset of [
   }
 }
 
+for (const asset of ['public/logo.svg', 'public/favicon.svg']) {
+  const source = readFileSync(join(root, asset), 'utf8')
+  if (!source.includes('role="img"')
+      || !source.includes('aria-labelledby="title"')
+      || !source.includes('<title id="title">')) {
+    failures.push(`${asset} must include the shared accessible image metadata`)
+  }
+}
+
 for (const asset of [
   'docs/assets/brand/kubecode-mark-512.png',
   'docs/assets/brand/kubecode-social-preview.png',
@@ -94,13 +97,6 @@ function walk(directory) {
     const path = join(directory, name)
     return statSync(path).isDirectory() ? walk(path) : [path]
   })
-}
-
-function isRemote(target) {
-  return target.startsWith('#')
-    || target.startsWith('http://')
-    || target.startsWith('https://')
-    || target.startsWith('mailto:')
 }
 
 function display(path) {

@@ -8,7 +8,7 @@
     "dev": "vite",
     "dev:server": "PERSISTENT_DIR=.local/workspace KUBECODE_STATE_DIR=.local/state PORT=8888 cargo run --manifest-path server/Cargo.toml",
     "build": "tsc -b && vite build",
-    "docs:check": "node scripts/validate-docs.mjs",
+    "docs:check": "node --test scripts/docs-links.test.mjs && node scripts/validate-docs.mjs",
     "lint": "eslint . --max-warnings=0",
     "l10n:translate": "lara-cli translate",
     "l10n:translate:force": "lara-cli translate --force",

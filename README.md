@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode supports Claude Code, Codex, and OpenCode in Kubeflow workspaces">
+  <img src="./docs/assets/brand/kubecode-social-preview.png" alt="Kubecode brings Claude Code, Codex, and OpenCode into Kubeflow workspaces">
 </p>
 
 Kubecode turns a directory in a single-user Kubeflow Notebook into a durable AI
@@ -27,7 +27,7 @@ coding workspace. Run local coding agents, keep long-lived Sessions, coordinate
 Agent Teams, inspect Git changes, edit files, and manage reconnectable terminals
 without leaving the browser.
 
-Kubecode supports exactly three local Agent CLIs:
+Kubecode currently supports these local Agent CLIs:
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - [Codex](https://developers.openai.com/codex/cli)

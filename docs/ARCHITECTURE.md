@@ -14,7 +14,8 @@ The Axum server composes seven services:
 
 - `WorkspaceService` registers Project roots and contains filesystem access.
 - `AgentStore` persists Sessions, runs, normalized events, and workspace events.
-- `AgentRuntime` owns long-lived ACP actors for Claude Code, Codex, and OpenCode.
+- `AgentRuntime` owns long-lived ACP actors for the currently supported Agents:
+  Claude Code, Codex, and OpenCode.
 - `TerminalManager` owns reconnectable PTYs independently of browser sockets.
 - `GitService` performs Project-scoped Git operations without shell interpolation.
 - `TeamStore` persists Team authority, membership, tasks, and mailboxes.
@@ -80,7 +81,7 @@ xterm output and replay newer bytes from the server cursor.
 
 ## Agent sessions
 
-The server discovers exactly three CLIs: Claude Code, Codex, and OpenCode.
+The server currently discovers Claude Code, Codex, and OpenCode.
 Claude and Codex use pinned ACP adapters; OpenCode exposes ACP natively. Each
 Session actor stays connected across prompts and persists the provider Session
 ID for resume or load after restart.
