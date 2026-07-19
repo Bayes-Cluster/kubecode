@@ -40,3 +40,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0193](0193-opencode-team-permission-environment.md) | OpenCode Team permission environment |
 | [0194](0194-standalone-linux-distribution.md) | Standalone Linux distribution |
 | [0195](0195-debian-package-distribution.md) | Debian package distribution |
+| [0196](0196-dynamic-agent-catalog-and-runtime-doctor.md) | Dynamic Agent catalog and runtime Doctor |

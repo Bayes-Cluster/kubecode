@@ -24,8 +24,7 @@ use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::agent_discovery::AgentDescriptor;
-use crate::agent_discovery::{is_executable, resolve_executable};
+use crate::agent_discovery::{AgentCatalog, AgentDescriptor, configured_adapter_path};
 use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
     PermissionMode, RunStatus, StoreError,
@@ -39,6 +38,11 @@ pub enum RuntimeError {
     AgentUnavailable(AgentId),
     #[error("ACP connection failed: {0}")]
     Acp(String),
+    #[error("ACP connection failed during {stage}: {message}")]
+    AcpStartup {
+        stage: AgentStartupStage,
+        message: String,
+    },
     #[error(
         "ACP adapter for {agent:?} is not installed: {binary}. Install it or set {variable} to its executable path"
     )]
@@ -53,9 +57,57 @@ pub enum RuntimeError {
     Workspace(#[from] WorkspaceError),
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStartupStage {
+    ProcessSpawn,
+    Initialize,
+    SessionNew,
+    SessionLoad,
+    SessionResume,
+}
+
+impl std::fmt::Display for AgentStartupStage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ProcessSpawn => "process_spawn",
+            Self::Initialize => "initialize",
+            Self::SessionNew => "session_new",
+            Self::SessionLoad => "session_load",
+            Self::SessionResume => "session_resume",
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeFailure {
+    stage: Option<AgentStartupStage>,
+    message: String,
+}
+
 impl RuntimeError {
     pub fn is_native_permission_unavailable(&self) -> bool {
         matches!(self, Self::Acp(message) if message.contains("native_permission_unavailable"))
+    }
+
+    fn failure(&self) -> RuntimeFailure {
+        RuntimeFailure {
+            stage: match self {
+                Self::AcpStartup { stage, .. } => Some(*stage),
+                _ => None,
+            },
+            message: self.to_string(),
+        }
+    }
+
+    fn from_failure(failure: RuntimeFailure) -> Self {
+        match failure.stage {
+            Some(stage) => Self::AcpStartup {
+                stage,
+                message: failure.message,
+            },
+            None => Self::Acp(failure.message),
+        }
     }
 }
 
@@ -90,7 +142,7 @@ pub struct TeamDisbandResult {
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
     store: Arc<AgentStore>,
-    agents: Arc<HashMap<AgentId, AgentDescriptor>>,
+    agents: Arc<AgentCatalog>,
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
@@ -164,10 +216,18 @@ impl AgentRuntime {
         store: Arc<AgentStore>,
         agents: Vec<AgentDescriptor>,
     ) -> Self {
+        Self::with_catalog(workspace, store, AgentCatalog::from_descriptors(agents))
+    }
+
+    pub fn with_catalog(
+        workspace: Arc<WorkspaceService>,
+        store: Arc<AgentStore>,
+        agents: Arc<AgentCatalog>,
+    ) -> Self {
         Self {
             workspace,
             store,
-            agents: Arc::new(agents.into_iter().map(|agent| (agent.id, agent)).collect()),
+            agents,
             cancellations: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
@@ -232,19 +292,11 @@ impl AgentRuntime {
     }
 
     pub fn agent_available(&self, agent_id: AgentId) -> bool {
-        self.agents
-            .get(&agent_id)
-            .is_some_and(|agent| agent.available)
+        self.agents.is_available(agent_id)
     }
 
     pub fn available_agents(&self) -> Vec<AgentDescriptor> {
-        let mut agents = self.agents.values().cloned().collect::<Vec<_>>();
-        agents.sort_by_key(|agent| match agent.id {
-            AgentId::ClaudeCode => 0,
-            AgentId::Codex => 1,
-            AgentId::OpenCode => 2,
-        });
-        agents
+        self.agents.descriptors()
     }
 
     pub fn wake_team_leader(&self, team_id: &str) -> Result<Option<AgentRun>, RuntimeError> {
@@ -563,9 +615,8 @@ impl AgentRuntime {
         }
         let descriptor = self
             .agents
-            .get(&conversation.agent_id)
+            .descriptor(conversation.agent_id)
             .filter(|agent| agent.available)
-            .cloned()
             .ok_or(RuntimeError::AgentUnavailable(conversation.agent_id))?;
         let cwd = self
             .workspace
@@ -632,7 +683,7 @@ impl AgentRuntime {
         ready
             .await
             .map_err(|_| RuntimeError::Acp("session connection closed".into()))?
-            .map_err(RuntimeError::Acp)
+            .map_err(RuntimeError::from_failure)
     }
 
     pub async fn disconnect_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
@@ -1145,6 +1196,7 @@ impl AgentRuntime {
         )
         .await;
         if let Err(error) = result {
+            let failure = error.failure();
             if let Some(run_id) = active_run_id
                 .lock()
                 .expect("active run mutex poisoned")
@@ -1159,9 +1211,11 @@ impl AgentRuntime {
                         self.remove_cancellation(&command.run.id);
                     }
                     SessionCommand::SetMode { response, .. }
-                    | SessionCommand::SetConfig { response, .. }
-                    | SessionCommand::Ready { response } => {
+                    | SessionCommand::SetConfig { response, .. } => {
                         let _ = response.send(Err(error.to_string()));
+                    }
+                    SessionCommand::Ready { response } => {
+                        let _ = response.send(Err(failure.clone()));
                     }
                     SessionCommand::Shutdown { response } => {
                         let _ = response.send(());
@@ -1253,9 +1307,8 @@ impl AgentRuntime {
 
     fn available_descriptor(&self, agent_id: AgentId) -> Result<AgentDescriptor, RuntimeError> {
         self.agents
-            .get(&agent_id)
+            .descriptor(agent_id)
             .filter(|agent| agent.available)
-            .cloned()
             .ok_or(RuntimeError::AgentUnavailable(agent_id))
     }
 
@@ -1365,6 +1418,7 @@ struct AgentSessionConfig {
 }
 
 type SessionResponseCapture = Arc<Mutex<HashMap<String, NewSessionResponse>>>;
+type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 
 struct AgentCommand {
     run: AgentRun,
@@ -1375,7 +1429,7 @@ struct AgentCommand {
 enum SessionCommand {
     Prompt(AgentCommand),
     Ready {
-        response: oneshot::Sender<Result<(), String>>,
+        response: oneshot::Sender<Result<(), RuntimeFailure>>,
     },
     SetMode {
         mode_id: String,
@@ -1509,6 +1563,8 @@ async fn run_acp_session(
     let provider_session_id = config.provider_session_id;
     let cwd = config.cwd;
     let captured_session_responses = Arc::clone(&session_responses);
+    let startup_stage = Arc::new(Mutex::new(Some(AgentStartupStage::ProcessSpawn)));
+    let connection_stage = Arc::clone(&startup_stage);
 
     let result = agent_client_protocol::Client
         .builder()
@@ -1750,6 +1806,7 @@ async fn run_acp_session(
             agent_client_protocol::on_receive_request!(),
         )
         .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+            set_startup_stage(&connection_stage, AgentStartupStage::Initialize);
             let initialization = connection
                 .send_request(
                     InitializeRequest::new(ProtocolVersion::V1).client_capabilities(
@@ -1784,6 +1841,7 @@ async fn run_acp_session(
 
             let (session_id, _team_session) = if let Some(session_id) = provider_session_id {
                 if hydrate_provider_history && initialization.agent_capabilities.load_session {
+                    set_startup_stage(&connection_stage, AgentStartupStage::SessionLoad);
                     let response = connection
                         .send_request(
                             LoadSessionRequest::new(session_id.clone(), cwd.clone())
@@ -1805,6 +1863,7 @@ async fn run_acp_session(
                     .resume
                     .is_some()
                     {
+                        set_startup_stage(&connection_stage, AgentStartupStage::SessionResume);
                         connection
                             .send_request(
                                 ResumeSessionRequest::new(session_id.clone(), cwd.clone())
@@ -1827,6 +1886,7 @@ async fn run_acp_session(
                     if resumed {
                         (session_id.into(), None)
                     } else {
+                        set_startup_stage(&connection_stage, AgentStartupStage::SessionLoad);
                         match connection
                             .send_request(LoadSessionRequest::new(
                                 session_id.clone(),
@@ -1852,6 +1912,7 @@ async fn run_acp_session(
                                     cwd,
                                     team_mcp_http.clone(),
                                     &captured_session_responses,
+                                    &connection_stage,
                                 )
                                 .await?
                             }
@@ -1866,6 +1927,7 @@ async fn run_acp_session(
                     cwd,
                     team_mcp_http,
                     &captured_session_responses,
+                    &connection_stage,
                 )
                 .await?
             };
@@ -1881,6 +1943,9 @@ async fn run_acp_session(
                 config.permission_profile,
             )
             .await?;
+            *connection_stage
+                .lock()
+                .expect("startup stage capture poisoned") = None;
             loop {
                 let command =
                     match tokio::time::timeout(SESSION_IDLE_TIMEOUT, receiver.recv()).await {
@@ -1981,7 +2046,16 @@ async fn run_acp_session(
         })
         .await;
 
-    result.map_err(|error| RuntimeError::Acp(error.to_string()))
+    result.map_err(|error| {
+        let message = error.to_string();
+        match *startup_stage
+            .lock()
+            .expect("startup stage capture poisoned")
+        {
+            Some(stage) => RuntimeError::AcpStartup { stage, message },
+            None => RuntimeError::Acp(message),
+        }
+    })
 }
 
 async fn create_provider_session(
@@ -1991,6 +2065,7 @@ async fn create_provider_session(
     cwd: PathBuf,
     team_mcp_http: Option<McpServer>,
     captured_responses: &SessionResponseCapture,
+    startup_stage: &StartupStageCapture,
 ) -> Result<
     (
         agent_client_protocol::schema::v1::SessionId,
@@ -1998,6 +2073,7 @@ async fn create_provider_session(
     ),
     agent_client_protocol::Error,
 > {
+    set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
     if let Some(mcp_server) = team_mcp_http {
         let response = connection
             .send_request(NewSessionRequest::new(cwd).mcp_servers(vec![mcp_server]))
@@ -2046,6 +2122,10 @@ async fn create_provider_session(
         response,
     );
     Ok((session_id, None))
+}
+
+fn set_startup_stage(capture: &StartupStageCapture, stage: AgentStartupStage) {
+    *capture.lock().expect("startup stage capture poisoned") = Some(stage);
 }
 
 fn capture_new_session_response(
@@ -2224,40 +2304,14 @@ fn configured_adapter(
     variable: &'static str,
     default: &str,
 ) -> Result<PathBuf, RuntimeError> {
-    if let Some(configured) = env::var_os(variable).map(PathBuf::from) {
-        return executable_path(configured).ok_or_else(|| RuntimeError::AdapterUnavailable {
-            agent,
-            binary: env::var_os(variable)
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-            variable,
-        });
-    }
-
-    local_adapter(default)
-        .or_else(|| resolve_executable(default))
-        .ok_or_else(|| RuntimeError::AdapterUnavailable {
-            agent,
-            binary: default.to_owned(),
-            variable,
-        })
-}
-
-fn executable_path(candidate: PathBuf) -> Option<PathBuf> {
-    if candidate.components().count() > 1 {
-        is_executable(&candidate).then_some(candidate)
-    } else {
-        resolve_executable(candidate.to_str()?)
-    }
-}
-
-fn local_adapter(name: &str) -> Option<PathBuf> {
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
-    let candidate = project_root
-        .join("packaging/adapter-runtime/node_modules/.bin")
-        .join(name);
-    is_executable(&candidate).then_some(candidate)
+    configured_adapter_path(variable, default).ok_or_else(|| RuntimeError::AdapterUnavailable {
+        agent,
+        binary: env::var_os(variable)
+            .unwrap_or_else(|| default.into())
+            .to_string_lossy()
+            .into_owned(),
+        variable,
+    })
 }
 
 fn persist_session_update(
@@ -2541,9 +2595,12 @@ mod tests {
 
     #[test]
     fn validates_adapter_executables() {
-        assert!(executable_path(PathBuf::from("sh")).is_some());
-        assert!(executable_path(PathBuf::from("/definitely/missing/adapter")).is_none());
-        assert!(local_adapter("codex-acp").is_some());
+        assert!(configured_adapter_path("KUBECODE_TEST_ACP_PATH", "sh").is_some());
+        assert!(
+            configured_adapter_path("KUBECODE_TEST_ACP_PATH", "/definitely/missing/adapter")
+                .is_none()
+        );
+        assert!(configured_adapter_path("KUBECODE_TEST_ACP_PATH", "codex-acp").is_some());
     }
 
     #[test]

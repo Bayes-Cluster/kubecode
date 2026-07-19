@@ -121,6 +121,33 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
 }
 
 #[tokio::test]
+async fn exposes_agent_readiness_and_refreshes_the_shared_catalog() {
+    let (_, app) = app();
+    let (status, agents) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/agents"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(agents.as_array().expect("agents").len(), 3);
+    assert!(agents[0]["readiness"].is_string());
+    assert!(agents[0]["cli"]["status"].is_string());
+    assert!(agents[0]["adapter"]["kind"].is_string());
+
+    let (status, refreshed) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/agents/refresh"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(refreshed.as_array().expect("refreshed agents").len(), 3);
+}
+
+#[tokio::test]
 async fn updates_the_project_workspaces_preference_over_http() {
     let (temp, app) = app();
     let (_, project) = json_request(
@@ -1009,6 +1036,61 @@ fn executable(directory: &TempDir, body: &str) -> String {
     permissions.set_mode(0o755);
     fs::set_permissions(&path, permissions).expect("permissions");
     path.to_string_lossy().into_owned()
+}
+
+#[tokio::test]
+async fn classifies_project_directory_failures_during_session_creation() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database = state_dir.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"error\":{\"code\":-32603,\"message\":\"OpenCode service failure\",\"data\":{\"service\":\"directory\"}}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":root.join("directory-error")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error["code"], "agent_project_directory_failed");
+    assert_eq!(error["stage"], "session_new");
 }
 
 #[tokio::test]

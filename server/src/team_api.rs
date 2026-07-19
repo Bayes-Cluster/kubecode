@@ -259,14 +259,16 @@ async fn start_team(
     Json(request): Json<StartTeamRequest>,
 ) -> Result<impl IntoResponse, TeamApiError> {
     let team = state.teams.get_team(&team_id)?;
-    if state.agents.iter().any(|agent| agent.available)
+    if state
+        .agents
+        .descriptors()
+        .iter()
+        .any(|agent| agent.available)
         && let Some(agent_id) = request.allowed_agent_ids.iter().find(|agent_id| {
-            agent_id.parse::<AgentId>().ok().is_none_or(|requested| {
-                !state
-                    .agents
-                    .iter()
-                    .any(|agent| agent.id == requested && agent.available)
-            })
+            agent_id
+                .parse::<AgentId>()
+                .ok()
+                .is_none_or(|requested| !state.agents.is_available(requested))
         })
     {
         return Err(TeamError::NativeAutonomyUnavailable(format!(
@@ -873,10 +875,7 @@ fn assign_worktree(
 }
 
 fn agent_is_available(state: &AppState, conversation: &Conversation) -> bool {
-    state
-        .agents
-        .iter()
-        .any(|agent| agent.id == conversation.agent_id && agent.available)
+    state.agents.is_available(conversation.agent_id)
 }
 
 fn snapshot(state: &AppState, team: Team) -> Result<TeamSnapshot, TeamApiError> {

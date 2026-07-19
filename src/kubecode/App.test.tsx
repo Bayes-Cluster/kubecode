@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from './App'
@@ -207,6 +207,57 @@ describe('Kubecode workspace', () => {
 
     await waitFor(() => expect(localStorage.getItem('kubecode:agent-preferences:v1'))
       .toBe('{"allowTeammateChat":true}'))
+  })
+
+  it('refreshes and explains Agent readiness from Settings', async () => {
+    const refreshAgents = vi.fn().mockResolvedValue([{
+      id: 'opencode',
+      available: true,
+      version: '2.0',
+      executable: '/usr/bin/opencode',
+      error: null,
+      checked_at: 1,
+      readiness: 'ready',
+      cli: {
+        status: 'ready',
+        executable: '/usr/bin/opencode',
+        version: '2.0',
+        source: 'path',
+        error_code: null,
+        detail: null,
+      },
+      adapter: {
+        kind: 'native',
+        status: 'ready',
+        executable: '/usr/bin/opencode',
+        version: '2.0',
+        source: null,
+        error_code: null,
+        detail: null,
+      },
+    }])
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([{
+        id: 'opencode',
+        available: false,
+        version: null,
+        executable: 'opencode',
+        error: 'missing',
+      }]),
+      refreshAgents,
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    const dialog = within(screen.getByRole('dialog'))
+    fireEvent.click(dialog.getByRole('button', { name: 'Check again' }))
+
+    await waitFor(() => expect(refreshAgents).toHaveBeenCalledOnce())
+    expect((await dialog.findAllByText('2.0')).length).toBeGreaterThan(0)
+    fireEvent.click(dialog.getByText('OpenCode'))
+    expect(dialog.getByText('Authentication is checked when a real Session starts.')).toBeInTheDocument()
   })
 
   it('surfaces running and stuck Agent sessions on their project icons', async () => {

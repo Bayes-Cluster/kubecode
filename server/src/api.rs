@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::agent_discovery::{AgentDescriptor, supported_agents_unavailable};
+use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
 use crate::agents::{
     AgentEvent, AgentId, AgentStore, Conversation, ExecutionMode, RunStatus, StoreError,
@@ -36,7 +36,7 @@ const API_PATH: &str = "/api/v1";
 pub struct AppState {
     pub workspace: Arc<WorkspaceService>,
     pub terminals: Arc<TerminalManager>,
-    pub agents: Arc<Vec<AgentDescriptor>>,
+    pub agents: Arc<AgentCatalog>,
     pub agent_runtime: Arc<AgentRuntime>,
     pub git: Arc<GitService>,
     pub teams: Arc<TeamStore>,
@@ -48,23 +48,23 @@ impl AppState {
         agent_store: Arc<AgentStore>,
         teams: Arc<TeamStore>,
     ) -> Self {
-        let terminals = Arc::new(TerminalManager::with_agents_and_events(
+        let agents = AgentCatalog::pending();
+        let terminals = Arc::new(TerminalManager::with_catalog_and_events(
             Arc::clone(&workspace),
             8,
             2 * 1024 * 1024,
-            Vec::new(),
+            Arc::clone(&agents),
             terminal_event_sink(Arc::clone(&agent_store)),
         ));
-        let agents = supported_agents_unavailable();
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
         let agent_runtime = Arc::new(
-            AgentRuntime::new(Arc::clone(&workspace), agent_store, agents.clone())
+            AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams)),
         );
         Self {
             workspace,
             terminals,
-            agents: Arc::new(agents),
+            agents,
             agent_runtime,
             git,
             teams,
@@ -72,22 +72,27 @@ impl AppState {
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {
-        self.terminals = Arc::new(TerminalManager::with_agents_and_events(
+        self = self.with_agent_catalog(AgentCatalog::from_descriptors(agents));
+        self
+    }
+
+    pub fn with_agent_catalog(mut self, agents: Arc<AgentCatalog>) -> Self {
+        self.terminals = Arc::new(TerminalManager::with_catalog_and_events(
             Arc::clone(&self.workspace),
             8,
             2 * 1024 * 1024,
-            agents.clone(),
+            Arc::clone(&agents),
             terminal_event_sink(self.agent_runtime.store()),
         ));
         self.agent_runtime = Arc::new(
-            AgentRuntime::new(
+            AgentRuntime::with_catalog(
                 Arc::clone(&self.workspace),
                 self.agent_runtime.store(),
-                agents.clone(),
+                Arc::clone(&agents),
             )
             .with_team_store(Arc::clone(&self.teams)),
         );
-        self.agents = Arc::new(agents);
+        self.agents = agents;
         self
     }
 
@@ -352,6 +357,7 @@ fn api_router(state: AppState) -> Router {
             axum::routing::any(crate::team_mcp::handle_http),
         )
         .route("/agents", get(list_agents))
+        .route("/agents/refresh", axum::routing::post(refresh_agents))
         .route("/events", get(stream_workspace_events))
         .route("/events/cursor", get(get_workspace_event_cursor))
         .route("/sessions", get(list_all_conversations))
@@ -488,7 +494,11 @@ fn api_router(state: AppState) -> Router {
 }
 
 async fn list_agents(State(state): State<AppState>) -> impl IntoResponse {
-    Json(state.agents.as_ref().clone())
+    Json(state.agents.entries())
+}
+
+async fn refresh_agents(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.agents.refresh().await)
 }
 
 #[derive(Debug, Deserialize)]
@@ -561,10 +571,7 @@ async fn create_conversation(
             Some(&workspace_path.to_string_lossy()),
         )?;
     }
-    if state
-        .agents
-        .iter()
-        .any(|agent| agent.id == conversation.agent_id && agent.available)
+    if state.agents.is_available(conversation.agent_id)
         && let Err(error) = state
             .agent_runtime
             .initialize_conversation(&conversation.id)
@@ -876,11 +883,7 @@ async fn create_team_member(
             Some(&workspace_path.to_string_lossy()),
         )?;
     }
-    if state
-        .agents
-        .iter()
-        .any(|agent| agent.id == member.agent_id && agent.available)
-    {
+    if state.agents.is_available(member.agent_id) {
         state
             .agent_runtime
             .initialize_conversation(&member.id)
@@ -1966,6 +1969,8 @@ fn default_terminal_rows() -> u16 {
 struct ErrorBody {
     code: &'static str,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage: Option<crate::agent_runtime::AgentStartupStage>,
 }
 
 enum ApiError {
@@ -2022,7 +2027,22 @@ impl From<TeamError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, code, message) = match self {
+        let self_ = match self {
+            ApiError::AgentRuntime(RuntimeError::AcpStartup { stage, message }) => {
+                let code = startup_error_code(stage, &message);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorBody {
+                        code,
+                        message,
+                        stage: Some(stage),
+                    }),
+                )
+                    .into_response();
+            }
+            other => other,
+        };
+        let (status, code, message) = match self_ {
             ApiError::Workspace(error) => {
                 let (status, code) = workspace_error_status(&error);
                 (status, code, error.to_string())
@@ -2065,6 +2085,7 @@ impl IntoResponse for ApiError {
                     "agent_error",
                     error.to_string(),
                 ),
+                RuntimeError::AcpStartup { .. } => unreachable!(),
                 RuntimeError::AdapterUnavailable { .. } => (
                     StatusCode::SERVICE_UNAVAILABLE,
                     "agent_adapter_unavailable",
@@ -2119,7 +2140,55 @@ impl IntoResponse for ApiError {
                 "Team teammates can only be deleted by their Leader".to_owned(),
             ),
         };
-        (status, Json(ErrorBody { code, message })).into_response()
+        (
+            status,
+            Json(ErrorBody {
+                code,
+                message,
+                stage: None,
+            }),
+        )
+            .into_response()
+    }
+}
+
+fn startup_error_code(
+    stage: crate::agent_runtime::AgentStartupStage,
+    message: &str,
+) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if [
+        "unauthorized",
+        "authentication",
+        "not logged in",
+        "login required",
+        "invalid api key",
+        "status 401",
+    ]
+    .iter()
+    .any(|value| lower.contains(value))
+    {
+        return "agent_authentication_failed";
+    }
+    if [
+        "\"service\":\"directory\"",
+        "service\": \"directory",
+        "service: directory",
+        "no such file or directory",
+        "working directory",
+        "invalid cwd",
+    ]
+    .iter()
+    .any(|value| lower.contains(value))
+    {
+        return "agent_project_directory_failed";
+    }
+    match stage {
+        crate::agent_runtime::AgentStartupStage::ProcessSpawn => "agent_process_spawn_failed",
+        crate::agent_runtime::AgentStartupStage::Initialize => "agent_initialize_failed",
+        crate::agent_runtime::AgentStartupStage::SessionNew => "agent_session_new_failed",
+        crate::agent_runtime::AgentStartupStage::SessionLoad => "agent_session_load_failed",
+        crate::agent_runtime::AgentStartupStage::SessionResume => "agent_session_resume_failed",
     }
 }
 

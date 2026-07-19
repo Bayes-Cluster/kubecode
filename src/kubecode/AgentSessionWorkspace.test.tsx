@@ -93,6 +93,35 @@ const run: AgentRun = {
 }
 
 describe('AgentSessionWorkspace', () => {
+  it('guides an empty project through Agent readiness without creating a diagnostic Session', () => {
+    const onNewSession = vi.fn()
+    const onRefreshAgents = vi.fn().mockResolvedValue(undefined)
+    render(<AgentSessionWorkspace
+      agents={[
+        { id: 'codex', available: true, version: '1', executable: 'codex', error: null },
+        { id: 'opencode', available: false, version: null, executable: 'opencode', error: 'missing' },
+      ]}
+      api={{} as KubecodeApi}
+      conversation={null}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      onNewSession={onNewSession}
+      onRefreshAgents={onRefreshAgents}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(screen.getByText('Codex')).toBeInTheDocument()
+    expect(screen.getByText('OpenCode')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Start an agent session' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(onNewSession).toHaveBeenCalledOnce()
+    expect(onRefreshAgents).toHaveBeenCalledOnce()
+  })
+
   it('keeps the Agent Composer out of the Team board view', async () => {
     const leader = { ...conversation, team_id: 'team-1', team_role: 'leader' as const }
     const api = {

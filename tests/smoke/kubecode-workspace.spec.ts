@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('@smoke project, editor, terminal, and project removal', async ({ page }) => {
+test('@smoke project, first Agent Session, editor, terminal, and project removal', async ({ page }) => {
   const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
   const workspaceUrl = requested.pathname === '/'
     ? `${requested.origin}/user/local/kubecode`
@@ -14,6 +14,16 @@ test('@smoke project, editor, terminal, and project removal', async ({ page }) =
   await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
   await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Start an agent session' }).click()
+  await page.getByRole('combobox', { name: 'Agent' }).click()
+  await page.getByRole('option', { name: 'OpenCode' }).click()
+  await page.getByRole('textbox', { name: 'Session title' }).fill('Smoke session')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByText('Smoke session', { exact: true }).first()).toBeVisible()
+  await page.locator('[contenteditable="true"]').fill('Confirm readiness')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText('Smoke Agent is ready', { exact: true })).toBeVisible()
 
   await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
   await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('aria-expanded', 'true')

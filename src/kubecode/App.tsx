@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowUp,
+  ArrowClockwise,
   Bell,
+  Check,
+  Copy,
   DownloadSimple,
   Eye,
   EyeSlash,
@@ -62,7 +65,7 @@ import {
   type KubecodeAppearance,
   type KubecodeTheme,
 } from './appearancePreferences'
-import { KubecodeApi } from './api'
+import { ApiError, KubecodeApi } from './api'
 import { PathPicker, type PathPickerRow } from './PathPicker'
 import {
   readEditorPreferences,
@@ -108,12 +111,14 @@ import {
 import './kubecode.css'
 
 const browserApi = new KubecodeApi()
+type SettingsSection = 'general' | 'notifications' | 'agents' | 'terminal' | 'editor'
 
 export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const locale = useMemo(() => resolveEffectiveLocale(null), [])
   const t = useMemo(() => createTranslator(locale), [locale])
   const [projects, setProjects] = useState<Project[]>([])
   const [agents, setAgents] = useState<AgentDescriptor[]>([])
+  const [agentsRefreshing, setAgentsRefreshing] = useState(false)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
   const [terminalsLoadedForProjectId, setTerminalsLoadedForProjectId] = useState<string | null>(null)
@@ -124,6 +129,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
   const [contextOpen, setContextOpen] = useState(true)
@@ -265,6 +271,20 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
   }, [api, applyProjectLayout, t])
+
+  const refreshAgents = useCallback(async () => {
+    setAgentsRefreshing(true)
+    try {
+      const nextAgents = typeof api.refreshAgents === 'function'
+        ? await api.refreshAgents()
+        : await api.listAgents()
+      setAgents(nextAgents)
+    } catch (cause) {
+      setError(errorMessage(cause, t('kubecode.agentRefreshFailed')))
+    } finally {
+      setAgentsRefreshing(false)
+    }
+  }, [api, t])
 
   useEffect(() => {
     let current = true
@@ -663,7 +683,10 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 <strong>{t('kubecode.projects')}</strong>
                 <div>
                   <Button aria-label={t('kubecode.addProject')} size="icon-xs" variant="ghost" onClick={() => setProjectDialog(true)}><Plus /></Button>
-                  <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={() => setSettingsOpen(true)}><Gear /></Button>
+                  <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={() => {
+                    setSettingsSection('general')
+                    setSettingsOpen(true)
+                  }}><Gear /></Button>
                   <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><Question /></Button>
                 </div>
               </div>
@@ -711,6 +734,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           <div className="kubecode-session-context-row">
             <AgentSessionWorkspace
               agents={agents}
+              agentsRefreshing={agentsRefreshing}
               allowTeammateChat={agentPreferences.allowTeammateChat}
               api={api}
               conversation={conversation}
@@ -719,12 +743,19 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               projectId={projectId}
               onConversationRemoved={handleConversationRemoved}
               onConversationUpdated={handleConversationUpdated}
+              onAddProject={() => setProjectDialog(true)}
+              onNewSession={() => setSessionDialog(true)}
+              onOpenAgentSettings={() => {
+                setSettingsSection('agents')
+                setSettingsOpen(true)
+              }}
               onOpenPlan={() => {
                 setContextOpen(true)
                 setPlanRevealVersion((current) => current + 1)
                 trackEvent('kubecode_context_section_opened', { section: 'plan' })
               }}
               onPlanChange={setActiveSessionPlan}
+              onRefreshAgents={refreshAgents}
               onTeamCreated={(team) => setTeams((current) => [
                 ...current.filter((item) => item.team.id !== team.team.id),
                 team,
@@ -845,6 +876,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         project={project}
         projectId={projectId}
         onOpenChange={setSessionDialog}
+        onOpenAgentSettings={() => {
+          setSettingsSection('agents')
+          setSettingsOpen(true)
+        }}
+        onRefreshAgents={refreshAgents}
         onSession={handleConversationCreated}
         onTeam={(team) => {
           setTeams((current) => [...current.filter((item) => item.team.id !== team.team.id), team])
@@ -852,21 +888,25 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         }}
         t={t}
       />
-        <KubecodeSettingsDialog
+      <KubecodeSettingsDialog
         agentPreferences={agentPreferences}
         agents={agents}
+        agentsRefreshing={agentsRefreshing}
         appearance={appearance}
         editorPreferences={editorPreferences}
         notifications={notifications}
         notificationPermission={browserPermission}
         notificationTestStatus={notificationTestStatus}
+        key={settingsSection}
         open={settingsOpen}
+        requestedSection={settingsSection}
         onAppearanceChange={setAppearance}
         onAgentPreferencesChange={setAgentPreferences}
         onEditorPreferencesChange={setEditorPreferences}
         onNotificationsChange={setNotifications}
         onOpenChange={setSettingsOpen}
         onRequestNotificationPermission={requestNotificationPermission}
+        onRefreshAgents={refreshAgents}
         onTestNotification={sendTestNotification}
         t={t}
         />
@@ -1022,6 +1062,8 @@ function NewSessionDialog({
   project,
   projectId,
   onOpenChange,
+  onOpenAgentSettings,
+  onRefreshAgents,
   onSession,
   onTeam,
   t,
@@ -1032,6 +1074,8 @@ function NewSessionDialog({
   project: Project | null
   projectId: string | null
   onOpenChange: (open: boolean) => void
+  onOpenAgentSettings: () => void
+  onRefreshAgents: () => Promise<void>
   onSession: (conversation: Conversation) => void
   onTeam: (team: TeamSnapshot) => void
   t: Translator
@@ -1048,6 +1092,7 @@ function NewSessionDialog({
   const [providerError, setProviderError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [createFailure, setCreateFailure] = useState<ApiError | null>(null)
 
   const selectedAgentId = agents.some((agent) => agent.id === agentId && agent.available)
     ? agentId
@@ -1086,6 +1131,7 @@ function NewSessionDialog({
     if (!projectId) return
     setCreating(true)
     setCreateError(null)
+    setCreateFailure(null)
     try {
       if (mode === 'new' && sessionKind === 'team') {
         const team = await api.createTeam(
@@ -1122,7 +1168,8 @@ function NewSessionDialog({
       onSession(session)
       onOpenChange(false)
     } catch (cause) {
-      setCreateError(errorMessage(cause, t('kubecode.error')))
+      setCreateFailure(cause instanceof ApiError ? cause : null)
+      setCreateError(agentStartupErrorMessage(cause, t))
     } finally {
       setCreating(false)
     }
@@ -1253,12 +1300,49 @@ function NewSessionDialog({
             </div>
           )}
           {createError && (
-            <SystemMessageNotice
-              dismissLabel={t('window.close')}
-              level="error"
-              message={createError}
-              onDismiss={() => setCreateError(null)}
-            />
+            <div className="kubecode-agent-startup-error">
+              <SystemMessageNotice
+                dismissLabel={t('window.close')}
+                level="error"
+                message={createError}
+                onDismiss={() => {
+                  setCreateError(null)
+                  setCreateFailure(null)
+                }}
+              />
+              {createFailure && (
+                <code className="kubecode-agent-startup-code">
+                  {createFailure.code}
+                  {createFailure.stage ? ` · ${createFailure.stage}` : ''}
+                </code>
+              )}
+              <div>
+                <Button
+                  disabled={creating}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void create()}
+                >
+                  {t('kubecode.retry')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onOpenAgentSettings}
+                >
+                  {t('kubecode.openAgentSettings')}
+                </Button>
+                {createFailure?.code === 'agent_unavailable' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void onRefreshAgents()}
+                  >
+                    {t('kubecode.checkAgain')}
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
         </div>
         <DialogFooter className="kubecode-new-session-footer">
@@ -1491,39 +1575,66 @@ function withTrailingSlash(path: string): string {
 function KubecodeSettingsDialog({
   agentPreferences,
   agents,
+  agentsRefreshing,
   appearance,
   editorPreferences,
   notifications,
   notificationPermission: browserPermission,
   notificationTestStatus,
   open,
+  requestedSection,
   onAppearanceChange,
   onAgentPreferencesChange,
   onEditorPreferencesChange,
   onNotificationsChange,
   onOpenChange,
   onRequestNotificationPermission,
+  onRefreshAgents,
   onTestNotification,
   t,
 }: {
   agentPreferences: KubecodeAgentPreferences
   agents: AgentDescriptor[]
+  agentsRefreshing: boolean
   appearance: KubecodeAppearance
   editorPreferences: KubecodeEditorPreferences
   notifications: KubecodeNotifications
   notificationPermission: BrowserNotificationPermission
   notificationTestStatus: BrowserNotificationDelivery['status'] | null
   open: boolean
+  requestedSection: SettingsSection
   onAppearanceChange: (appearance: KubecodeAppearance) => void
   onAgentPreferencesChange: (preferences: KubecodeAgentPreferences) => void
   onEditorPreferencesChange: (preferences: KubecodeEditorPreferences) => void
   onNotificationsChange: (notifications: KubecodeNotifications) => void
   onOpenChange: (open: boolean) => void
   onRequestNotificationPermission: () => Promise<void>
+  onRefreshAgents: () => Promise<void>
   onTestNotification: () => Promise<void>
   t: Translator
 }) {
-  const [section, setSection] = useState<'general' | 'notifications' | 'agents' | 'terminal' | 'editor'>('general')
+  const [section, setSection] = useState<SettingsSection>(requestedSection)
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
+
+  const copyDiagnostics = async () => {
+    const report = {
+      schema_version: 1,
+      agents: agents.map((agent) => ({
+        id: agent.id,
+        readiness: agent.readiness ?? (agent.available ? 'ready' : 'unavailable'),
+        cli_version: agent.cli?.version ?? agent.version,
+        cli_source: agent.cli?.source ?? null,
+        cli_error_code: agent.cli?.error_code ?? null,
+        adapter_kind: agent.adapter?.kind ?? (agent.id === 'opencode' ? 'native' : 'bundled'),
+        adapter_version: agent.adapter?.version ?? null,
+        adapter_error_code: agent.adapter?.error_code ?? null,
+        checked_at: agent.checked_at ?? null,
+      })),
+    }
+    await navigator.clipboard?.writeText(JSON.stringify(report, null, 2))
+    setDiagnosticsCopied(true)
+    window.setTimeout(() => setDiagnosticsCopied(false), 1800)
+  }
 
   const updateAppearance = <Key extends keyof KubecodeAppearance>(
     key: Key,
@@ -1779,11 +1890,67 @@ function KubecodeSettingsDialog({
                   }}
                 />
               </div>
-              {agents.map((agent) => (
-                <div className="kubecode-setting-row" key={agent.id}>
-                  <div><strong><AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}</strong><span>{agent.executable}</span></div>
-                  <span data-available={agent.available}>{agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}</span>
+              <div className="kubecode-setting-row kubecode-agent-doctor-toolbar">
+                <div>
+                  <strong>{t('kubecode.agentReadiness')}</strong>
+                  <span>{t('kubecode.agentReadinessDescription')}</span>
                 </div>
+                <div className="kubecode-agent-doctor-actions">
+                  <Button
+                    disabled={agentsRefreshing}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void onRefreshAgents()}
+                  >
+                    <ArrowClockwise className={agentsRefreshing ? 'animate-spin' : undefined} />
+                    {t('kubecode.checkAgain')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void copyDiagnostics()}>
+                    {diagnosticsCopied ? <Check /> : <Copy />}
+                    {diagnosticsCopied ? t('kubecode.copied') : t('kubecode.copyDiagnostics')}
+                  </Button>
+                </div>
+              </div>
+              {agents.map((agent) => (
+                <details className="kubecode-agent-diagnostic" key={agent.id}>
+                  <summary>
+                    <span>
+                      <AiAgentIcon agent={agent.id} size={18} />
+                      <strong>{agentName(agent.id)}</strong>
+                    </span>
+                    <span data-available={agent.available}>
+                      {agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}
+                    </span>
+                  </summary>
+                  <div className="kubecode-agent-diagnostic-body">
+                    <AgentDiagnosticRow
+                      detail={agent.cli?.detail ?? agent.error}
+                      label={t('kubecode.agentCli')}
+                      status={agent.cli?.status ?? (agent.available ? 'ready' : 'missing')}
+                      value={agent.cli?.version ?? agent.version ?? agent.executable}
+                      t={t}
+                    />
+                    <AgentDiagnosticRow
+                      detail={agent.adapter?.detail}
+                      label={agent.adapter?.kind === 'native'
+                        ? t('kubecode.nativeAcp')
+                        : t('kubecode.acpAdapter')}
+                      status={agent.adapter?.status ?? (agent.available ? 'ready' : 'missing')}
+                      value={agent.adapter?.kind === 'native'
+                        ? t('kubecode.builtIntoAgent')
+                        : agent.adapter?.version ?? undefined}
+                      t={t}
+                    />
+                    <div className="kubecode-agent-auth-note">
+                      {t('kubecode.authenticationCheckedOnSession')}
+                    </div>
+                    {agent.checked_at && (
+                      <small>{t('kubecode.lastChecked', {
+                        time: new Date(agent.checked_at).toLocaleTimeString(),
+                      })}</small>
+                    )}
+                  </div>
+                </details>
               ))}
             </div>
           )}
@@ -1815,6 +1982,56 @@ function KubecodeSettingsDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function AgentDiagnosticRow({
+  detail,
+  label,
+  status,
+  t,
+  value,
+}: {
+  detail?: string | null
+  label: string
+  status: 'ready' | 'missing' | 'error'
+  t: Translator
+  value?: string | null
+}) {
+  return (
+    <div className="kubecode-agent-diagnostic-row">
+      <span data-status={status}>{status === 'ready' ? <Check /> : <WarningCircle />}</span>
+      <div>
+        <strong>{label}</strong>
+        <small>{value || (status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable'))}</small>
+        {detail && <code>{detail}</code>}
+      </div>
+    </div>
+  )
+}
+
+function agentStartupErrorMessage(cause: unknown, t: Translator): string {
+  if (!(cause instanceof ApiError)) return errorMessage(cause, t('kubecode.error'))
+  switch (cause.code) {
+    case 'agent_adapter_unavailable':
+      return t('kubecode.agentError.adapter')
+    case 'agent_process_spawn_failed':
+      return t('kubecode.agentError.process')
+    case 'agent_initialize_failed':
+      return t('kubecode.agentError.initialize')
+    case 'agent_session_new_failed':
+      return t('kubecode.agentError.sessionNew')
+    case 'agent_session_load_failed':
+    case 'agent_session_resume_failed':
+      return t('kubecode.agentError.sessionRestore')
+    case 'agent_authentication_failed':
+      return t('kubecode.agentError.authentication')
+    case 'agent_project_directory_failed':
+      return t('kubecode.agentError.directory')
+    case 'agent_unavailable':
+      return t('kubecode.agentError.unavailable')
+    default:
+      return errorMessage(cause, t('kubecode.error'))
+  }
 }
 
 function agentName(id: AgentId): string {

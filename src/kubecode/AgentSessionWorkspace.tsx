@@ -4,8 +4,11 @@ import {
   CaretLeft,
   CaretRight,
   DotsThree,
+  Gear,
   LockKey,
   ListChecks,
+  Plus,
+  ArrowClockwise,
   ShieldWarning,
 } from '@phosphor-icons/react'
 
@@ -90,6 +93,7 @@ export type SessionPlanEntry = {
 
 type AgentSessionWorkspaceProps = {
   agents: AgentDescriptor[]
+  agentsRefreshing?: boolean
   allowTeammateChat?: boolean
   api: KubecodeApi
   conversation: Conversation | null
@@ -97,8 +101,12 @@ type AgentSessionWorkspaceProps = {
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
+  onAddProject?: () => void
+  onNewSession?: () => void
+  onOpenAgentSettings?: () => void
   onOpenPlan?: () => void
   onPlanChange?: (entries: SessionPlanEntry[]) => void
+  onRefreshAgents?: () => Promise<void>
   onTeamCreated?: (team: TeamSnapshot) => void
   onTeamUpdated?: (team: TeamSnapshot) => void
   onSelectTeamMember?: (conversationId: string) => void
@@ -154,6 +162,7 @@ function writeSessionDraft(conversationId: string, value: string) {
 
 export function AgentSessionWorkspace({
   agents,
+  agentsRefreshing = false,
   allowTeammateChat = false,
   api,
   conversation,
@@ -161,8 +170,12 @@ export function AgentSessionWorkspace({
   onConversationCreated,
   onConversationRemoved,
   onConversationUpdated,
+  onAddProject,
+  onNewSession,
+  onOpenAgentSettings,
   onOpenPlan,
   onPlanChange,
+  onRefreshAgents,
   onTeamCreated,
   onTeamUpdated,
   onSelectTeamMember,
@@ -533,12 +546,63 @@ export function AgentSessionWorkspace({
   }
 
   if (!conversation) {
+    const readyAgents = agents.filter((candidate) => candidate.available)
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
         <div className="kubecode-session-empty-mark">K</div>
-        <h1>{t('kubecode.startSession')}</h1>
-        <p>{projectId ? t('kubecode.startSessionDescription') : t('kubecode.selectProject')}</p>
-        {projectId && <span className="kubecode-session-empty-hint">{t('kubecode.newSessionDescription')}</span>}
+        <h1>{projectId ? t('kubecode.startSession') : t('kubecode.firstRunTitle')}</h1>
+        <p>{projectId ? t('kubecode.startSessionDescription') : t('kubecode.firstRunDescription')}</p>
+        <div className="kubecode-agent-readiness-grid">
+          {agents.map((candidate) => (
+            <div
+              className="kubecode-agent-readiness-card"
+              data-ready={candidate.available}
+              key={candidate.id}
+            >
+              <AiAgentIcon agent={candidate.id} size={22} />
+              <span>
+                <strong>{agentName(candidate.id)}</strong>
+                <small>
+                  {candidate.available
+                    ? candidate.version ?? t('kubecode.ready')
+                    : t('kubecode.unavailable')}
+                </small>
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="kubecode-session-empty-actions">
+          {projectId ? (
+            <Button
+              aria-label={t('kubecode.startSession')}
+              disabled={readyAgents.length === 0}
+              onClick={onNewSession}
+            >
+              <Plus />
+              {t('kubecode.newSession')}
+            </Button>
+          ) : (
+            <Button aria-label={t('kubecode.firstRunTitle')} onClick={onAddProject}>
+              <Plus />
+              {t('kubecode.addProject')}
+            </Button>
+          )}
+          <Button
+            disabled={agentsRefreshing}
+            variant="outline"
+            onClick={() => void onRefreshAgents?.()}
+          >
+            <ArrowClockwise className={agentsRefreshing ? 'animate-spin' : undefined} />
+            {t('kubecode.checkAgain')}
+          </Button>
+          <Button variant="ghost" onClick={onOpenAgentSettings}>
+            <Gear />
+            {t('kubecode.agentSettings')}
+          </Button>
+        </div>
+        {projectId && readyAgents.length === 0 && (
+          <span className="kubecode-session-empty-hint">{t('kubecode.noReadyAgents')}</span>
+        )}
       </section>
     )
   }

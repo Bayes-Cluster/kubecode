@@ -54,6 +54,21 @@ export type AgentDescriptor = {
   version: string | null
   executable: string
   error: string | null
+  checked_at?: number
+  readiness?: 'ready' | 'degraded' | 'unavailable'
+  cli?: AgentComponentDiagnostic
+  adapter?: AgentAdapterDiagnostic
+}
+export type AgentComponentDiagnostic = {
+  status: 'ready' | 'missing' | 'error'
+  executable: string | null
+  version: string | null
+  source: 'environment' | 'path' | 'login_shell' | 'known_location' | 'unresolved' | null
+  error_code: string | null
+  detail: string | null
+}
+export type AgentAdapterDiagnostic = AgentComponentDiagnostic & {
+  kind: 'bundled' | 'native'
 }
 export type Conversation = {
   id: string
@@ -386,16 +401,19 @@ export type TerminalInfo = {
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
+  readonly stage: string | null
 
   constructor(
     code: string,
     message: string,
     status: number,
+    stage: string | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
+    this.stage = stage
   }
 }
 
@@ -523,6 +541,10 @@ export class KubecodeApi {
 
   listAgents(): Promise<AgentDescriptor[]> {
     return this.request('/agents')
+  }
+
+  refreshAgents(): Promise<AgentDescriptor[]> {
+    return this.request('/agents/refresh', { method: 'POST' })
   }
 
   listConversations(projectId: string): Promise<Conversation[]> {
@@ -888,11 +910,12 @@ export class KubecodeApi {
       const error = await response.json().catch(() => ({
         code: 'request_failed',
         message: response.statusText || `Request failed (${response.status})`,
-      })) as { code?: string; message?: string }
+      })) as { code?: string; message?: string; stage?: string }
       throw new ApiError(
         error.code ?? 'request_failed',
         error.message ?? `Request failed (${response.status})`,
         response.status,
+        error.stage ?? null,
       )
     }
     if (response.status === 204 || response.headers.get('content-length') === '0') {

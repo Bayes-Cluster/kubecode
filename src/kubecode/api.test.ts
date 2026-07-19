@@ -25,15 +25,29 @@ describe('Kubecode API client', () => {
 
   it('surfaces structured server errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ code: 'active_run', message: 'already running' }),
+      JSON.stringify({ code: 'agent_session_new_failed', message: 'failed', stage: 'session_new' }),
       { status: 409, headers: { 'content-type': 'application/json' } },
     )))
     const api = new KubecodeApi('')
 
     await expect(api.listProjects()).rejects.toMatchObject({
-      code: 'active_run',
-      message: 'already running',
+      code: 'agent_session_new_failed',
+      message: 'failed',
+      stage: 'session_new',
     })
+  })
+
+  it('refreshes the shared Agent catalog explicitly', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('[]'))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.refreshAgents()
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/agents/refresh',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
   it('starts an Agent run without a Kubecode permission mode', async () => {

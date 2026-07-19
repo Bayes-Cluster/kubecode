@@ -1628,6 +1628,55 @@
 
 .kubecode-session-empty h1 { font-size: 20px; margin: 0; }
 .kubecode-session-empty p { color: var(--text-secondary); margin: 6px 0 18px; }
+.kubecode-agent-readiness-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+  max-width: 620px;
+  width: min(620px, calc(100% - 40px));
+}
+.kubecode-agent-readiness-card {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-sidebar) 72%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  text-align: left;
+}
+.kubecode-agent-readiness-card[data-ready='true'] {
+  border-color: color-mix(in srgb, var(--accent-green) 38%, var(--border-subtle));
+}
+.kubecode-agent-readiness-card > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kubecode-agent-readiness-card strong,
+.kubecode-agent-readiness-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kubecode-agent-readiness-card small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.kubecode-session-empty-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.kubecode-session-empty-hint {
+  color: var(--feedback-error-text);
+  font-size: 12px;
+  margin-top: 12px;
+}
 
 .kubecode-context-workbench {
   background: var(--surface-app);
@@ -2120,6 +2169,84 @@
   gap: 10px;
 }
 .kubecode-settings-placeholder { color: var(--text-secondary); padding: 32px 0; }
+.kubecode-agent-doctor-actions {
+  align-items: center;
+  flex-direction: row !important;
+  flex-shrink: 0;
+  gap: 6px !important;
+}
+.kubecode-agent-diagnostic {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kubecode-agent-diagnostic:last-child { border-bottom: 0; }
+.kubecode-agent-diagnostic summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 10px 16px;
+}
+.kubecode-agent-diagnostic summary::marker { color: var(--text-secondary); }
+.kubecode-agent-diagnostic summary > span {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+.kubecode-agent-diagnostic summary > span[data-available='true'] { color: var(--accent-green); }
+.kubecode-agent-diagnostic summary > span[data-available='false'] { color: var(--feedback-error-text); }
+.kubecode-agent-diagnostic-body {
+  background: color-mix(in srgb, var(--surface-app) 54%, transparent);
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px 14px 36px;
+}
+.kubecode-agent-diagnostic-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 9px;
+}
+.kubecode-agent-diagnostic-row > span {
+  display: flex;
+  margin-top: 2px;
+}
+.kubecode-agent-diagnostic-row > span[data-status='ready'] { color: var(--accent-green); }
+.kubecode-agent-diagnostic-row > span:not([data-status='ready']) { color: var(--feedback-error-text); }
+.kubecode-agent-diagnostic-row svg { height: 15px; width: 15px; }
+.kubecode-agent-diagnostic-row > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kubecode-agent-diagnostic-row small,
+.kubecode-agent-diagnostic-body > small,
+.kubecode-agent-auth-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.kubecode-agent-diagnostic-row code {
+  color: var(--feedback-error-text);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.kubecode-agent-startup-error {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.kubecode-agent-startup-error > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kubecode-agent-startup-code {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  padding: 0 4px;
+}
 
 .kubecode-empty-small {
   align-items: center;
@@ -3033,6 +3160,7 @@
 }
 
 @media (max-width: 720px) {
+  .kubecode-agent-readiness-grid { grid-template-columns: 1fr; }
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto; }
   .kubecode-search { display: none; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
