@@ -3,6 +3,7 @@ pub mod agent_runtime;
 pub mod agents;
 pub mod api;
 pub mod config;
+pub mod doctor;
 pub mod git;
 pub mod team_api;
 pub mod team_coordinator;

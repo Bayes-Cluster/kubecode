@@ -4,17 +4,31 @@
 
 ## Agent 不可用
 
-打开 Agent Picker 或 Settings 查看 Discovery Diagnostic，并确认：
+打开 **Settings → Agents**，展开 Agent Diagnostic，并确认：
 
 1. CLI Executable 存在，Kubecode Server User 有执行权限；
 2. 可以通过 `PATH` 或显式 Discovery Override 找到；
 3. CLI 可以在没有交互设置的情况下输出版本；
-4. 源码开发时，Claude 或 Codex ACP Adapter 位于
-   `packaging/adapter-runtime/node_modules/.bin`。
+4. Claude 或 Codex ACP Adapter 显示为 Ready。
 
-Agent Discovery 在 Server 启动时执行。修改可执行文件路径后需要重启 Kubecode。
+修复安装后点击 **重新检测**。刷新后的 Catalog 会由新建 Session、Team 和
+Agent TUI Terminal 共享；已经连接的 Session 不会被中断。
+
+也可以在 Shell 中运行：
+
+```bash
+kubecode doctor
+kubecode doctor --json
+```
+
+Doctor 是无副作用检查：它会验证本地 Runtime Dependency，但不会创建 Provider
+Session，也不会验证 Provider Authentication。
 
 ## ACP Connection Failed
+
+Session 创建错误会指出失败发生在 Process Spawn、ACP Initialize，还是
+Provider Session 的 New、Load 或 Resume 阶段。Authentication 和 Project
+Directory 只能在这里检查，因为 Passive Doctor 无法安全地验证它们。
 
 从相同 Project Directory 直接运行 Agent CLI，确认已经登录，然后运行可选的
 Real-Agent Smoke Test。不要把 Provider Config 或 API Key 粘贴到 Issue 中。

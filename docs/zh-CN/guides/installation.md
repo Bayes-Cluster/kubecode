@@ -80,6 +80,17 @@ Claude/Codex ACP Adapter。它不包含 Provider Agent CLI、Credential、Git
 --state-dir
 ```
 
+可以在不启动 Server、也不创建 Agent Session 的情况下检查安装：
+
+```bash
+kubecode doctor
+kubecode doctor --json
+```
+
+Doctor 会检查 Workspace、State、静态资源路径、Git、Agent CLI 和 ACP
+Adapter。它不会验证 Provider Authentication；认证只会在真实 Session 启动时
+检查。
+
 Kubecode 默认监听 `127.0.0.1:8888`。它暂不提供内置认证，因此监听
 Non-loopback Address 时必须配置带认证的 Reverse Proxy 或其他可信访问边界。
 
@@ -96,8 +107,10 @@ Authentication 和 Persistence Policy。
 
 ## Agent 发现
 
-Kubecode 启动时检查继承的 `PATH`、常见安装目录和 Login Shell Path。可以通过
-以下变量覆盖 Discovery：
+Kubecode 启动时检查继承的 `PATH`、常见安装目录和 Login Shell Path。安装或
+修复 CLI 后，在 **Settings → Agents** 中点击 **重新检测**；之后新建的
+Session、Team 和 Agent TUI 会使用刷新后的 Catalog。可以通过以下变量覆盖
+Discovery：
 
 ```text
 KUBECODE_CLAUDE_PATH

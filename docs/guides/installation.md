@@ -86,6 +86,18 @@ Run `kubecode --help` for the complete command line:
 --state-dir
 ```
 
+Validate an installation without starting the server or creating an Agent
+Session:
+
+```bash
+kubecode doctor
+kubecode doctor --json
+```
+
+Doctor checks the workspace, state and static paths, Git, Agent CLIs, and ACP
+adapters. It does not test provider authentication; that happens when a real
+Session starts.
+
 Kubecode listens on `127.0.0.1:8888` by default. It has no built-in
 authentication, so exposing a non-loopback listener requires an authenticated
 reverse proxy or another trusted access boundary.
@@ -105,7 +117,9 @@ persistence policies.
 ## Agent discovery
 
 Kubecode scans the inherited `PATH`, common install locations, and login-shell
-paths at server startup. Discovery can be overridden with:
+paths at server startup. Use **Settings → Agents → Check again** after
+installing or repairing a CLI; Session, Team, and Agent TUI creation then use
+the refreshed catalog. Discovery can be overridden with:
 
 ```text
 KUBECODE_CLAUDE_PATH

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::Args;
 use thiserror::Error;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
@@ -9,12 +9,7 @@ const DEFAULT_PORT: u16 = 8888;
 const PERSISTENT_DIR_DEPRECATION: &str =
     "PERSISTENT_DIR is deprecated; use KUBECODE_WORKSPACE_ROOT and KUBECODE_STATE_DIR";
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "kubecode",
-    version,
-    about = "Browser-based, project-oriented AI coding workspace"
-)]
+#[derive(Debug, Args)]
 pub struct ServerOptions {
     /// Address on which the HTTP server listens.
     #[arg(long)]
@@ -204,10 +199,19 @@ pub fn normalize_base_path(base_path: &str) -> String {
 mod tests {
     use std::collections::HashMap;
 
+    use clap::Parser;
+
     use super::*;
 
     fn resolve(args: &[&str], environment: &[(&str, &str)]) -> Result<ServerConfig, ConfigError> {
-        let options = ServerOptions::try_parse_from(args).expect("valid arguments");
+        #[derive(Parser)]
+        struct TestOptions {
+            #[command(flatten)]
+            server: ServerOptions,
+        }
+        let options = TestOptions::try_parse_from(args)
+            .expect("valid arguments")
+            .server;
         let environment = environment
             .iter()
             .map(|(key, value)| ((*key).to_owned(), OsString::from(value)))

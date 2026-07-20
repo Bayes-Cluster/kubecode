@@ -4,23 +4,37 @@
 
 ## An Agent is unavailable
 
-Open the Agent picker or Settings and inspect the discovery diagnostic. Confirm
-that:
+Open **Settings → Agents**, expand the Agent diagnostic, and confirm that:
 
 1. the CLI executable exists and is executable by the Kubecode server user;
 2. it is reachable through `PATH` or an explicit discovery override;
 3. the CLI can print its version without interactive setup;
-4. the Claude or Codex ACP adapter exists in
-   `packaging/adapter-runtime/node_modules/.bin` for source development.
+4. the Claude or Codex ACP adapter is marked ready.
 
-Restart Kubecode after changing executable paths because discovery occurs at
-server startup.
+Select **Check again** after repairing the installation. The refreshed catalog
+is shared by new Sessions, Teams, and Agent TUI terminals; existing connected
+Sessions are not interrupted.
+
+From a shell, run:
+
+```bash
+kubecode doctor
+kubecode doctor --json
+```
+
+Doctor is passive. It verifies local runtime dependencies but does not create a
+provider Session or verify provider authentication.
 
 ## ACP connection failed
 
-Run the Agent CLI directly from the same Project directory and verify that it is
-authenticated. Then run the opt-in real-Agent smoke test. Do not paste provider
-configuration files or API keys into an issue.
+The Session creation error identifies whether failure occurred while spawning
+the process, initializing ACP, or creating/loading/resuming the provider
+Session. Authentication and Project-directory checks occur here because they
+cannot be verified safely by passive Doctor probes.
+
+Run the Agent CLI directly from the same Project directory and verify that it
+is authenticated. Then run the opt-in real-Agent smoke test. Do not paste
+provider configuration files or API keys into an issue.
 
 For OpenCode directory failures, compare:
 

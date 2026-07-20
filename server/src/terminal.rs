@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::agent_discovery::AgentDescriptor;
+use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agents::AgentId;
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
@@ -102,7 +102,7 @@ pub struct TerminalManager {
     workspace: Arc<WorkspaceService>,
     per_project_limit: usize,
     buffer_capacity: usize,
-    agents: HashMap<AgentId, AgentDescriptor>,
+    agents: Arc<AgentCatalog>,
     sessions: Mutex<HashMap<String, Arc<TerminalSession>>>,
     event_sink: TerminalEventSink,
 }
@@ -153,11 +153,27 @@ impl TerminalManager {
         agents: Vec<AgentDescriptor>,
         event_sink: TerminalEventSink,
     ) -> Self {
+        Self::with_catalog_and_events(
+            workspace,
+            per_project_limit,
+            buffer_capacity,
+            AgentCatalog::from_descriptors(agents),
+            event_sink,
+        )
+    }
+
+    pub fn with_catalog_and_events(
+        workspace: Arc<WorkspaceService>,
+        per_project_limit: usize,
+        buffer_capacity: usize,
+        agents: Arc<AgentCatalog>,
+        event_sink: TerminalEventSink,
+    ) -> Self {
         Self {
             workspace,
             per_project_limit,
             buffer_capacity,
-            agents: agents.into_iter().map(|agent| (agent.id, agent)).collect(),
+            agents,
             sessions: Mutex::new(HashMap::new()),
             event_sink,
         }
@@ -286,9 +302,9 @@ impl TerminalManager {
             return Ok(env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned()));
         };
         self.agents
-            .get(&agent_id)
+            .descriptor(agent_id)
             .filter(|agent| agent.available)
-            .map(|agent| agent.executable.clone())
+            .map(|agent| agent.executable)
             .ok_or(TerminalError::AgentUnavailable(agent_id))
     }
 
