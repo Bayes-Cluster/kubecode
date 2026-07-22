@@ -1,4 +1,5 @@
 use std::fs;
+use std::process::Command;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -26,23 +27,31 @@ fn manager(limit: usize) -> (TempDir, String, TerminalManager) {
 fn runs_a_shell_in_the_project_and_replays_output_by_cursor() {
     let (_temp, project_id, manager) = manager(8);
     let terminal = manager
-        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
         .expect("create terminal");
     assert_eq!(terminal.kind, TerminalKind::Regular);
     manager
-        .write(&terminal.id, b"printf 'terminal-ready\\n'\n")
+        .write(&terminal.id, b"printf 'terminal-ready:%s\\n' \"$PWD\"\n")
         .expect("write terminal");
 
+    let expected_path = manager
+        .workspace()
+        .project_path(&project_id)
+        .expect("project path");
     let deadline = Instant::now() + Duration::from_secs(3);
     let snapshot = loop {
         let snapshot = manager.read_since(&terminal.id, 0).expect("snapshot");
-        if snapshot.data.contains("terminal-ready") {
+        if snapshot
+            .data
+            .contains(expected_path.to_string_lossy().as_ref())
+        {
             break snapshot;
         }
         assert!(Instant::now() < deadline, "terminal output timed out");
         thread::sleep(Duration::from_millis(20));
     };
     assert!(snapshot.cursor > 0);
+    assert!(snapshot.data.contains("terminal-ready"));
 
     let caught_up = manager
         .read_since(&terminal.id, snapshot.cursor)
@@ -59,10 +68,10 @@ fn runs_a_shell_in_the_project_and_replays_output_by_cursor() {
 fn enforces_a_per_project_terminal_limit() {
     let (_temp, project_id, manager) = manager(1);
     let first = manager
-        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
         .expect("first terminal");
     let error = manager
-        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
         .expect_err("second terminal must fail");
     assert!(matches!(error, TerminalError::LimitReached));
     manager.close(&first.id).expect("close first terminal");
@@ -73,7 +82,7 @@ fn reports_a_truncated_cursor_when_the_ring_buffer_has_rotated() {
     let (_temp, project_id, manager) = manager(8);
     let small_buffer_manager = TerminalManager::new(manager.workspace(), 8, 16);
     let terminal = small_buffer_manager
-        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
         .expect("create terminal");
     small_buffer_manager
         .write(&terminal.id, b"printf 'abcdefghijklmnopqrstuvwxyz'\n")
@@ -121,7 +130,7 @@ fn launches_available_agents_as_tui_terminals() {
     );
 
     let terminal = manager
-        .create(&project_id, TerminalKind::Codex, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Codex, 80, 24)
         .expect("create Codex TUI");
     assert_eq!(terminal.kind, TerminalKind::Codex);
     assert_eq!(terminal.title, "Codex");
@@ -142,7 +151,7 @@ fn launches_available_agents_as_tui_terminals() {
 fn rejects_unavailable_agent_tui_terminals() {
     let (_temp, project_id, manager) = manager(8);
     let error = manager
-        .create(&project_id, TerminalKind::ClaudeCode, 80, 24)
+        .create(&project_id, None, None, TerminalKind::ClaudeCode, 80, 24)
         .expect_err("unavailable agent must fail");
     assert!(matches!(
         error,
@@ -176,7 +185,7 @@ fn keeps_exited_terminals_available_until_the_user_closes_them() {
     );
 
     let terminal = manager
-        .create(&project_id, TerminalKind::Codex, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Codex, 80, 24)
         .expect("create exiting terminal");
     let deadline = Instant::now() + Duration::from_secs(3);
     let exited = loop {
@@ -204,7 +213,7 @@ fn keeps_exited_terminals_available_until_the_user_closes_them() {
 fn renames_a_terminal_with_a_sanitized_bounded_title() {
     let (_temp, project_id, manager) = manager(8);
     let terminal = manager
-        .create(&project_id, TerminalKind::Regular, 80, 24)
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
         .expect("create terminal");
 
     let renamed = manager
@@ -220,4 +229,65 @@ fn renames_a_terminal_with_a_sanitized_bounded_title() {
         Err(TerminalError::InvalidTitle)
     ));
     manager.close(&terminal.id).expect("close terminal");
+}
+
+#[test]
+fn runs_a_session_terminal_in_its_isolated_workspace() {
+    let (_temp, project_id, manager) = manager(8);
+    let workspace = manager.workspace();
+    let project_path = workspace.project_path(&project_id).expect("project path");
+    run_git(&project_path, &["init"]);
+    run_git(&project_path, &["config", "user.email", "test@example.com"]);
+    run_git(&project_path, &["config", "user.name", "Kubecode Test"]);
+    fs::write(project_path.join("README.md"), "root\n").expect("fixture");
+    run_git(&project_path, &["add", "README.md"]);
+    run_git(&project_path, &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project_id, true)
+        .expect("enable workspaces");
+    let session_path = workspace
+        .create_session_worktree(&project_id, "session-terminal")
+        .expect("session worktree");
+    let terminal = manager
+        .create(
+            &project_id,
+            Some("conversation-1"),
+            session_path.to_str(),
+            TerminalKind::Regular,
+            80,
+            24,
+        )
+        .expect("create terminal");
+    manager
+        .write(&terminal.id, b"printf 'session-cwd:%s\\n' \"$PWD\"\n")
+        .expect("write terminal");
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let snapshot = manager.read_since(&terminal.id, 0).expect("snapshot");
+        if snapshot
+            .data
+            .contains(session_path.to_string_lossy().as_ref())
+        {
+            assert!(snapshot.data.contains("session-cwd:"));
+            break;
+        }
+        assert!(Instant::now() < deadline, "terminal output timed out");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(terminal.conversation_id.as_deref(), Some("conversation-1"));
+    manager.close(&terminal.id).expect("close terminal");
+}
+
+fn run_git(cwd: &std::path::Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
 }

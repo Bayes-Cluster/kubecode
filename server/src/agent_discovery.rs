@@ -628,6 +628,12 @@ fn executable_path(candidate: PathBuf) -> Option<PathBuf> {
 
 fn local_adapter(name: &str) -> Option<PathBuf> {
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
+    if name == "claude-agent-acp" {
+        let launcher = project_root.join("packaging/bin/claude-agent-acp");
+        if is_executable(&launcher) {
+            return Some(launcher);
+        }
+    }
     let candidate = project_root
         .join("packaging/adapter-runtime/node_modules/.bin")
         .join(name);

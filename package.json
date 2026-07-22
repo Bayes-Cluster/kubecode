@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:agents:real": "cargo test --manifest-path server/Cargo.toml --test real_agents -- --ignored --nocapture",
-    "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs",
+    "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs scripts/claude-adapter.test.mjs",
     "test:standalone": "node --test scripts/standalone.test.mjs",
     "test:watch": "vitest",
     "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke/kubecode-workspace.spec.ts",
@@ -81,6 +81,9 @@
     "ws": "^8.19.0"
   },
   "pnpm": {
+    "patchedDependencies": {
+      "@agentclientprotocol/claude-agent-acp@0.59.0": "patches/@agentclientprotocol__claude-agent-acp@0.59.0.patch"
+    },
     "overrides": {
       "@hono/node-server": "1.19.13",
       "express-rate-limit": "8.2.2",

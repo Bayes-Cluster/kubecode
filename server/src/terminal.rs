@@ -74,6 +74,7 @@ impl TerminalKind {
 pub struct TerminalInfo {
     pub id: String,
     pub project_id: String,
+    pub conversation_id: Option<String>,
     pub title: String,
     pub kind: TerminalKind,
     pub cols: u16,
@@ -186,11 +187,13 @@ impl TerminalManager {
     pub fn create(
         &self,
         project_id: &str,
+        conversation_id: Option<&str>,
+        workspace_path: Option<&str>,
         kind: TerminalKind,
         cols: u16,
         rows: u16,
     ) -> Result<TerminalInfo, TerminalError> {
-        let project_path = self.workspace.project_path(project_id)?;
+        let execution_path = self.workspace.execution_path(project_id, workspace_path)?;
         let mut sessions = self
             .sessions
             .lock()
@@ -229,7 +232,8 @@ impl TerminalManager {
             .map_err(|error| TerminalError::Pty(error.to_string()))?;
         let executable = self.executable(kind)?;
         let mut command = CommandBuilder::new(executable);
-        command.cwd(project_path);
+        command.cwd(&execution_path);
+        command.env("PWD", &execution_path);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
         let mut child = pair
@@ -251,6 +255,7 @@ impl TerminalManager {
         let info = TerminalInfo {
             id: id.clone(),
             project_id: project_id.to_owned(),
+            conversation_id: conversation_id.map(str::to_owned),
             title: kind.title(existing + 1),
             kind,
             cols,

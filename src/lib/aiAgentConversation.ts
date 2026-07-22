@@ -1,6 +1,11 @@
 import type { AiAction } from '../components/AiMessage'
 import type { NoteReference } from '../utils/ai-context'
 
+export interface AiResponseBlock {
+  id: string
+  text: string
+}
+
 export interface AiAgentMessage {
   userMessage: string
   references?: NoteReference[]
@@ -9,6 +14,7 @@ export interface AiAgentMessage {
   reasoningDone?: boolean
   actions: AiAction[]
   response?: string
+  responseBlocks?: AiResponseBlock[]
   isStreaming?: boolean
   internal?: boolean
   id?: string

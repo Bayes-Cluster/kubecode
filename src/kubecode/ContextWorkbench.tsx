@@ -488,7 +488,7 @@ export function ContextWorkbench({
             </div>
             <CodeEditor
               content={activeDocument.draft}
-              documentKey={`${activeDocument.document.path}:${activeDocument.document.revision}`}
+              documentKey={documentKey(activeDocument.projectId, activeDocument.document.path)}
               onChange={(draft) => setDocuments((current) => current.map((item) => (
                 documentKey(item.projectId, item.document.path) === activeDocumentKey
                   ? { ...item, draft }
@@ -509,6 +509,7 @@ export function ContextWorkbench({
       </Tabs>
       {error && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="error"
           message={error}

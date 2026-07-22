@@ -6,6 +6,7 @@ import { AiActionCard, type AiActionStatus } from './AiActionCard'
 import { MarkdownContent } from './MarkdownContent'
 import { translate, type AppLocale } from '../lib/i18n'
 import type { NoteReference } from '../utils/ai-context'
+import type { AiResponseBlock } from '../lib/aiAgentConversation'
 import { writeClipboardText } from '../utils/clipboardText'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
 
@@ -29,6 +30,7 @@ export interface AiMessageProps {
   reasoningDone?: boolean
   actions: AiAction[]
   response?: string
+  responseBlocks?: AiResponseBlock[]
   isStreaming?: boolean
   internal?: boolean
   onFork?: (messageId: string) => void
@@ -387,15 +389,16 @@ function ResponseBlock({
   onFork,
   onNavigateWikilink,
   onRegenerate,
-  text,
+  blocks,
 }: {
   locale: AppLocale
   messageId?: string
   onFork?: (messageId: string) => void
   onNavigateWikilink?: (target: string) => void
   onRegenerate?: (messageId: string) => void
-  text: string
+  blocks: AiResponseBlock[]
 }) {
+  const text = blocks.map((block) => block.text).join('\n\n')
   const handleCopy = useCallback(() => {
     void writeClipboardText(text).catch((error) => {
       console.warn('[ai] Failed to copy assistant message:', error)
@@ -408,7 +411,13 @@ function ResponseBlock({
       style={{ marginBottom: 4 }}
       data-testid="ai-response-block"
     >
-      <MarkdownContent content={text} onWikilinkClick={onNavigateWikilink} />
+      <div className="flex flex-col gap-4">
+        {blocks.map((block) => (
+          <div data-testid="ai-response-segment" key={block.id}>
+            <MarkdownContent content={block.text} onWikilinkClick={onNavigateWikilink} />
+          </div>
+        ))}
+      </div>
       <ResponseActions
         locale={locale}
         messageId={messageId}
@@ -440,7 +449,7 @@ export function AiMessage(props: AiMessageProps) {
   return <ConversationMessage {...props} />
 }
 
-function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, isStreaming, internal = false, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
+function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, responseBlocks, isStreaming, internal = false, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
   // Manual override: null = follow auto behavior, true/false = user forced
   const [userOverride, setUserOverride] = useState(false)
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set())
@@ -450,6 +459,9 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
   // User can manually toggle to override the auto state
   const autoExpanded = !reasoningDone
   const reasoningExpanded = userOverride ? !autoExpanded : autoExpanded
+  const renderedResponseBlocks = responseBlocks?.length
+    ? responseBlocks
+    : response ? [{ id: `${messageId ?? 'response'}-legacy`, text: response }] : []
 
   const toggleAction = useCallback((toolId: string) => {
     setExpandedActions(prev => {
@@ -484,17 +496,17 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
           onToggleAction={toggleAction}
         />
       )}
-      {response && (
+      {renderedResponseBlocks.length > 0 && (
         <ResponseBlock
+          blocks={renderedResponseBlocks}
           locale={locale}
           messageId={messageId}
-          text={response}
           onFork={internal ? undefined : onFork}
           onNavigateWikilink={onNavigateWikilink}
           onRegenerate={internal ? undefined : onRegenerate}
         />
       )}
-      {isStreaming && !response && <StreamingIndicator />}
+      {isStreaming && renderedResponseBlocks.length === 0 && <StreamingIndicator />}
     </div>
   )
 }

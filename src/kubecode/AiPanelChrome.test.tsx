@@ -106,7 +106,7 @@ describe('AiPanelComposer', () => {
     expect(screen.getByRole('button', { name: 'Stop response' })).toBeEnabled()
   })
 
-  it('keeps add, input, Agent settings, and send controls in one row', () => {
+  it('keeps add, Agent controls, and send visible in one compact row', () => {
     render(
       <AiPanelComposer
         agentLabel="Codex"
@@ -128,6 +128,7 @@ describe('AiPanelComposer', () => {
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Add context' }))
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Agent settings' }))
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Send message' }))
+    expect(surface).toContainElement(screen.getByTestId('agent-input'))
   })
 
   it('keeps multiline prompts inside a fixed-height scrolling editor', () => {
@@ -155,6 +156,31 @@ describe('AiPanelComposer', () => {
       'min-h-[50px]',
       'max-h-[202px]',
     )
+  })
+
+  it('keeps Stop visible while submitting a provider-native active action', () => {
+    const onActiveSend = vi.fn()
+    const onStop = vi.fn()
+    render(
+      <AiPanelComposer
+        activeSendLabel="Ask side question"
+        agentLabel="Claude Code"
+        agentReadiness="ready"
+        entries={[]}
+        input="/btw Is this safe?"
+        inputRef={createRef<HTMLDivElement>()}
+        isActive
+        onActiveSend={onActiveSend}
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={onStop}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ask side question' }))
+    expect(onActiveSend).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop response' }))
+    expect(onStop).toHaveBeenCalledOnce()
   })
 
   it('supports an explicit interaction gate while keeping its custom explanation visible', () => {

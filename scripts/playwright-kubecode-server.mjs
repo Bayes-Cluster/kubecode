@@ -1,39 +1,17 @@
 #!/usr/bin/env node
 
 import { existsSync } from 'node:fs'
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 
 const port = process.argv[2] ?? '41741'
-const root = await mkdtemp(join(tmpdir(), `kubecode-playwright-${port}-`))
+const localState = join(process.cwd(), '.local')
+await mkdir(localState, { recursive: true })
+const root = await mkdtemp(join(localState, `kubecode-playwright-${port}-`))
 const state = join(root, '.state', 'kubecode')
-const fakeOpenCode = join(root, 'opencode')
+const fakeOpenCode = join(process.cwd(), 'scripts/fixtures/playwright-opencode')
 const configuredServerBinary = process.env.KUBECODE_SERVER_BIN
-
-await writeFile(fakeOpenCode, `#!/bin/sh
-if [ "$1" = "--version" ]; then
-  printf '%s\\n' "opencode smoke 1.0"
-  exit 0
-fi
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\\([^"]*\\)".*/"\\1"/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '%s\\n' "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":$id,\\"result\\":{\\"protocolVersion\\":1,\\"agentCapabilities\\":{},\\"authMethods\\":[]}}"
-      ;;
-    *'"method":"session/new"'*)
-      printf '%s\\n' "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":$id,\\"result\\":{\\"sessionId\\":\\"playwright-session\\"}}"
-      ;;
-    *'"method":"session/prompt"'*)
-      printf '%s\\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"playwright-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Smoke Agent is ready"}}}}'
-      printf '%s\\n' "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":$id,\\"result\\":{\\"stopReason\\":\\"end_turn\\"}}"
-      ;;
-  esac
-done
-`)
-await chmod(fakeOpenCode, 0o755)
 
 async function run(command, args, options = {}) {
   return await new Promise((resolve, reject) => {

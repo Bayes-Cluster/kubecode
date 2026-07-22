@@ -2312,7 +2312,10 @@
 }
 
 .kubecode-system-message-content {
+  align-items: center;
   color: inherit;
+  cursor: text;
+  display: flex;
   flex: 1 1 auto;
   font: inherit;
   gap: 5px;
@@ -2322,6 +2325,8 @@
   overflow: hidden;
   padding: 0 4px;
   text-align: left;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .kubecode-system-message-content strong { flex: 0 0 auto; }
@@ -2335,7 +2340,11 @@
 }
 
 .kubecode-system-message-expand {
+  color: var(--text-secondary);
   flex: 0 0 auto;
+}
+
+.kubecode-system-message-expand > svg {
   height: 13px;
   transition: transform 120ms ease;
   width: 13px;
@@ -2358,7 +2367,7 @@
   text-overflow: clip;
   white-space: pre-wrap;
 }
-.kubecode-system-message[data-expanded='true'] .kubecode-system-message-expand { transform: rotate(180deg); }
+.kubecode-system-message[data-expanded='true'] .kubecode-system-message-expand > svg { transform: rotate(180deg); }
 
 .kubecode-directory-browser {
   border: 1px solid var(--border-subtle);

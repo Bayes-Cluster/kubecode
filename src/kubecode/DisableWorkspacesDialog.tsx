@@ -109,6 +109,7 @@ export function DisableWorkspacesDialog({
           {loading && !preview && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
           {active && (
             <SystemMessageNotice
+              detailsLabel={t('kubecode.details')}
               dismissLabel={t('window.close')}
               level="warning"
               message={t('kubecode.stopSessionsBeforeMigration', {
@@ -146,6 +147,7 @@ export function DisableWorkspacesDialog({
           )}
           {error && (
             <SystemMessageNotice
+              detailsLabel={t('kubecode.details')}
               dismissLabel={t('window.close')}
               level="error"
               message={error}

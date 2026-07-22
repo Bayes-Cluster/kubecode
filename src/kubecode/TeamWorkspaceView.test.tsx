@@ -418,4 +418,39 @@ describe('TeamWorkspaceView', () => {
     expect(screen.queryByRole('combobox', { name: 'kubecode.agentMode' })).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
   })
+
+  it('keeps the OpenCode Build and Plan profile editable in YOLO', async () => {
+    render(
+      <TeamWorkspaceView
+        api={{
+          getSessionState: vi.fn().mockResolvedValue({
+            capabilities: null,
+            available_commands: null,
+            current_mode: {
+              currentModeId: 'build',
+              availableModes: [
+                { id: 'build', name: 'Build' },
+                { id: 'plan', name: 'Plan' },
+              ],
+            },
+            config_options: null,
+            plan: null,
+            usage: null,
+          }),
+          listAgents: vi.fn().mockResolvedValue([{ id: 'opencode', available: true }]),
+        } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={{
+          ...snapshot,
+          leader_conversation: { ...snapshot.leader_conversation, agent_id: 'opencode' },
+          team: { ...snapshot.team, status: 'draft', requested_mode: 'yolo', mode: 'standard' },
+        }}
+        t={t}
+      />,
+    )
+
+    expect(await screen.findByRole('combobox', { name: 'kubecode.agentMode' })).toBeInTheDocument()
+    expect(screen.queryByText('kubecode.teamYoloPermissionOpenCode')).not.toBeInTheDocument()
+  })
 })

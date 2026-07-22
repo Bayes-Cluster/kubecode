@@ -55,6 +55,7 @@ interface AiPanelMessageHistoryProps {
 }
 
 interface AiPanelComposerProps {
+  activeSendLabel?: string
   entries: VaultEntry[]
   agentLabel: string
   agentReadiness: AiAgentReadiness
@@ -67,6 +68,7 @@ interface AiPanelComposerProps {
   controls?: ReactNode
   leadingControl?: ReactNode
   onChange: (value: string) => void
+  onActiveSend?: (text: string, references: NoteReference[]) => void
   onSend: (text: string, references: NoteReference[]) => void
   onStop: () => void
   onUnsupportedAiPaste?: (message: string) => void
@@ -568,6 +570,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
 })
 
 export function AiPanelComposer({
+  activeSendLabel,
   entries,
   agentLabel,
   agentReadiness,
@@ -580,6 +583,7 @@ export function AiPanelComposer({
   controls,
   leadingControl,
   onChange,
+  onActiveSend,
   onSend,
   onStop,
   onUnsupportedAiPaste,
@@ -587,13 +591,27 @@ export function AiPanelComposer({
   const t = createTranslator(locale)
   const inputDisabled = disabled || agentReadiness !== 'ready'
   const canSend = !isActive && !inputDisabled && input.trim().length > 0
+  const canActiveSend = isActive && !inputDisabled && Boolean(onActiveSend) && input.trim().length > 0
   const placeholder = disabled && disabledPlaceholder
     ? disabledPlaceholder
     : getComposerPlaceholder(agentLabel, agentReadiness, t)
   const hasControls = (controls !== undefined && controls !== null)
     || (leadingControl !== undefined && leadingControl !== null)
   const sendButton = isActive
-    ? <ComposerStopButton label={t('ai.panel.stop')} onStop={onStop} />
+    ? (
+        <div className="flex shrink-0 items-center gap-1">
+          {onActiveSend && (
+            <ComposerSendButton
+              canSend={canActiveSend}
+              entries={entries}
+              input={input}
+              label={activeSendLabel ?? t('ai.panel.send')}
+              onSend={onActiveSend}
+            />
+          )}
+          <ComposerStopButton label={t('ai.panel.stop')} onStop={onStop} />
+        </div>
+      )
     : (
         <ComposerSendButton
           canSend={canSend}
@@ -623,7 +641,7 @@ export function AiPanelComposer({
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"
       >
-        {hasControls && leadingControl}
+        {hasControls && leadingControl && <div className="shrink-0">{leadingControl}</div>}
         <div className="min-w-0 flex-1 overflow-hidden">
           <ComposerInput
             disabled={inputDisabled}
@@ -633,13 +651,15 @@ export function AiPanelComposer({
             inputRef={inputRef}
             onChange={onChange}
             onSend={(text, references) => {
-              if (!isActive && !inputDisabled) onSend(text, references)
+              if (inputDisabled) return
+              if (isActive) onActiveSend?.(text, references)
+              else onSend(text, references)
             }}
             onUnsupportedAiPaste={onUnsupportedAiPaste}
             placeholder={placeholder}
           />
         </div>
-        {hasControls && controls}
+        {hasControls && <div className="min-w-0 shrink overflow-hidden">{controls}</div>}
         {sendButton}
       </div>
     </div>

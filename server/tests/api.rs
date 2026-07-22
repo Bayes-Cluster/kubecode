@@ -10,7 +10,7 @@ use axum::http::{Method, Request, StatusCode, header};
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::{AgentId, AgentStore};
 use kubecode_server::api::{AppState, app_router, app_router_with_static};
-use kubecode_server::teams::TeamStore;
+use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -233,6 +233,42 @@ async fn creates_a_session_in_an_isolated_workspace_when_requested() {
             .join("README.md")
             .is_file()
     );
+    let (status, terminal) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        json!({
+            "kind":"regular",
+            "conversation_id":conversation["id"],
+            "cols":100,
+            "rows":30,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(terminal["conversation_id"], conversation["id"]);
+
+    let (_, other_project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/other-terminal-project")}),
+    )
+    .await;
+    let other_project_id = other_project["id"].as_str().expect("other project id");
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{other_project_id}/terminals"),
+        json!({
+            "kind":"regular",
+            "conversation_id":conversation["id"],
+            "cols":100,
+            "rows":30,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -515,6 +551,207 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "checkpoint_unavailable");
+}
+
+#[tokio::test]
+async fn locks_native_session_mode_while_a_turn_is_active() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project = workspace
+        .create_project_at(root.join("mode-lock"))
+        .expect("project");
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Keep working",
+            kubecode_server::agents::PermissionMode::Safe,
+        )
+        .expect("active run");
+    store
+        .append_session_event(
+            &conversation.id,
+            "config_options",
+            &json!({"configOptions":[{
+                "category":"mode",
+                "id":"profile",
+                "name":"Profile",
+                "type":"select",
+                "currentValue":"build",
+                "options":[{"value":"build","name":"Build"}]
+            }]}),
+        )
+        .expect("mode config event");
+
+    let (status, session_state) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/state", conversation.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(session_state["mode_access"]["can_change"], false);
+    assert_eq!(session_state["mode_access"]["reason"], "active_run");
+
+    let (status, error) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/options", conversation.id),
+        json!({"kind":"mode", "value":"read-only"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "session_mode_locked");
+
+    let (status, error) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/options", conversation.id),
+        json!({"kind":"config", "config_id":"profile", "value":"build"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "session_mode_locked");
+}
+
+#[tokio::test]
+async fn rejects_blank_and_unsupported_side_questions() {
+    let (temp, app) = app();
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/sessions/missing/side-questions"),
+        json!({"question":"   "}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_request");
+
+    let root = temp.path().join("srv");
+    let database_path = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let store = AgentStore::open(&database_path).expect("agent store");
+    let project = workspace
+        .create_project_at(root.join("side-question"))
+        .expect("project");
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/side-questions",
+            conversation.id
+        ),
+        json!({"question":"What are you doing?"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "side_question_unavailable");
+}
+
+#[tokio::test]
+async fn exposes_leader_owned_mode_access_for_standard_team_sessions() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project = workspace
+        .create_project_at(root.join("team-mode-access"))
+        .expect("project");
+    let leader = store
+        .create_conversation(&project.id, AgentId::Codex, Some("Leader"))
+        .expect("leader conversation");
+    let teammate = store
+        .create_conversation(&project.id, AgentId::Codex, Some("Teammate"))
+        .expect("teammate conversation");
+    let team = teams
+        .create_team(NewTeam {
+            project_id: &project.id,
+            leader_conversation_id: &leader.id,
+            agent_session_id: &leader.agent_session_id,
+            leader_name: "Leader",
+            title: Some("Mode ownership"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    teams
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &team.leader_member_id,
+            conversation_id: &teammate.id,
+            name: "Teammate",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+
+    let (status, leader_state) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/state", leader.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(leader_state["mode_access"]["can_change"], true);
+    assert_eq!(leader_state["mode_access"]["reason"], Value::Null);
+
+    let (status, teammate_state) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/state", teammate.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(teammate_state["mode_access"]["can_change"], false);
+    assert_eq!(teammate_state["mode_access"]["reason"], "team_teammate");
+
+    let (status, error) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/options", teammate.id),
+        json!({"kind":"mode", "value":"plan"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "session_mode_locked");
 }
 
 #[tokio::test]

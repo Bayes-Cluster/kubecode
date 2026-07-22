@@ -30,6 +30,7 @@ describe('TerminalWorkspace', () => {
       <TerminalWorkspace
         agents={agents}
         api={api}
+        conversationId="session-current"
         initialTerminals={[]}
         projectId="project-1"
         t={(key) => key}
@@ -48,7 +49,7 @@ describe('TerminalWorkspace', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /Codex/ }))
 
     await waitFor(() => {
-      expect(api.createTerminal).toHaveBeenCalledWith('project-1', 'codex', 100, 28)
+      expect(api.createTerminal).toHaveBeenCalledWith('project-1', 'codex', 100, 28, 'session-current')
     })
     expect(screen.getByTestId('terminal-codex-1')).toBeInTheDocument()
     expect(container.querySelector('.kubecode-terminal-toolbar')).toHaveTextContent('')
@@ -57,9 +58,9 @@ describe('TerminalWorkspace', () => {
   })
 
   it('splits the active terminal right and down without fixed proportions', async () => {
-    const first = terminal('terminal-1', 'Codex', 'codex')
-    const second = terminal('terminal-2', 'Codex', 'codex')
-    const third = terminal('terminal-3', 'Codex', 'codex')
+    const first = terminal('terminal-1', 'Codex', 'codex', 'session-original')
+    const second = terminal('terminal-2', 'Codex', 'codex', 'session-original')
+    const third = terminal('terminal-3', 'Codex', 'codex', 'session-original')
     const api = {
       createTerminal: vi.fn()
         .mockResolvedValueOnce(second)
@@ -71,6 +72,7 @@ describe('TerminalWorkspace', () => {
       <TerminalWorkspace
         agents={agents}
         api={api}
+        conversationId="session-current"
         initialTerminals={[first]}
         projectId="project-1"
         t={(key) => key}
@@ -82,7 +84,13 @@ describe('TerminalWorkspace', () => {
     expect(screen.getAllByTestId(/^terminal-terminal-/)).toHaveLength(2)
     expect(within(screen.getByRole('tree', { name: 'kubecode.terminal' })).getAllByRole('treeitem'))
       .toHaveLength(2)
-    expect(api.createTerminal).toHaveBeenLastCalledWith('project-1', 'codex', 100, 28)
+    expect(api.createTerminal).toHaveBeenLastCalledWith(
+      'project-1',
+      'codex',
+      100,
+      28,
+      'session-original',
+    )
     expect(container.querySelector('[data-split-direction="horizontal"]')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.splitDown' }))
@@ -218,16 +226,51 @@ describe('TerminalWorkspace', () => {
 
     await waitFor(() => expect(onCollapse).toHaveBeenCalledOnce())
   })
+
+  it('restarts an exited terminal in its original Session workspace', async () => {
+    const exited = {
+      ...terminal('terminal-1', 'Terminal 1', 'regular', 'session-original'),
+      status: 'exited' as const,
+      exit_code: 1,
+    }
+    const restarted = terminal('terminal-2', 'Terminal 1', 'regular', 'session-original')
+    const api = {
+      closeTerminal: vi.fn().mockResolvedValue(undefined),
+      createTerminal: vi.fn().mockResolvedValue(restarted),
+    } as unknown as KubecodeApi
+    render(
+      <TerminalWorkspace
+        agents={agents}
+        api={api}
+        conversationId="session-current"
+        initialTerminals={[exited]}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.restartTerminal' }))
+
+    await waitFor(() => expect(api.createTerminal).toHaveBeenCalledWith(
+      'project-1',
+      'regular',
+      100,
+      28,
+      'session-original',
+    ))
+  })
 })
 
 function terminal(
   id: string,
   title: string,
   kind: TerminalInfo['kind'],
+  conversationId: string | null = null,
 ): TerminalInfo {
   return {
     id,
     project_id: 'project-1',
+    conversation_id: conversationId,
     title,
     kind,
     cols: 100,

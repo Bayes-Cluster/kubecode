@@ -1,0 +1,31 @@
+diff --git a/dist/acp-agent.js b/dist/acp-agent.js
+index 05639a7..62ba339 100644
+--- a/dist/acp-agent.js
++++ b/dist/acp-agent.js
+@@ -4015,21 +4015,16 @@ export class ClaudeAcpAgent {
+                 effortLevel: initialEffort.currentValue,
+             });
+         }
+-        // Seed the context window from the SDK's authoritative report. Text
+-        // inference alone misses aliases that resolve to extended-context models
+-        // with no "1m" token anywhere in their id or description (e.g. `sonnet` →
+-        // claude-sonnet-5, natively ~1M): those streamed `usage_update.size:
+-        // 200000` until the first result's modelUsage corrected it — again on
+-        // every process restart or session re-creation, since the learned window
+-        // lives only on the Session (issue #596).
++        // A fresh SDK session cannot answer getContextUsage until its first turn.
++        // Waiting for it here blocks session/new until the control request times out.
++        // Seed synchronously; the first result's modelUsage corrects this value.
+         //
+-        // The inference fallback is deliberately keyed to the allowlisted entry: a
++        // The inference is deliberately keyed to the allowlisted entry: a
+         // fallback-resolved sibling's resolvedModel/displayName/description can
+         // describe a different context lane than the verbatim live id (e.g. an
+         // "opus[1m]" row matched for a bare 200k id), so on the fallback path only
+         // the id itself is a trustworthy window signal.
+-        const contextWindowSize = (await fetchContextWindowSize(q, this.logger)) ??
+-            inferContextWindowFromModel(models.currentModelId, allowlistedModelInfo?.resolvedModel, allowlistedModelInfo?.displayName, allowlistedModelInfo?.description) ??
++        const contextWindowSize = inferContextWindowFromModel(models.currentModelId, allowlistedModelInfo?.resolvedModel, allowlistedModelInfo?.displayName, allowlistedModelInfo?.description) ??
+             DEFAULT_CONTEXT_WINDOW;
+         this.sessions[sessionId] = {
+             query: q,

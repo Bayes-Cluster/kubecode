@@ -95,4 +95,29 @@ describe('AiMessage', () => {
     fireEvent.keyDown(screen.getByTestId('action-card-header'), { key: 'Escape' })
     expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
   })
+
+  it('renders provider messages as separate response blocks and copies them with a blank line', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(
+      <AiMessage
+        actions={[]}
+        messageId="run-1"
+        responseBlocks={[
+          { id: 'message-1', text: 'First provider message.' },
+          { id: 'message-2', text: 'Second provider message.' },
+        ]}
+        userMessage="Keep working"
+      />,
+    )
+
+    expect(screen.getAllByTestId('ai-response-segment')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy response' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(
+      'First provider message.\n\nSecond provider message.',
+    ))
+  })
 })

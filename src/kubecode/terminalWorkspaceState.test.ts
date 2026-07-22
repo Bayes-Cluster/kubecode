@@ -64,6 +64,7 @@ function terminal(id: string): TerminalInfo {
   return {
     id,
     project_id: 'project-1',
+    conversation_id: null,
     title: id,
     kind: 'regular',
     cols: 100,

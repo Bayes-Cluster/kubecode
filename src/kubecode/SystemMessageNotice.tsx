@@ -26,9 +26,11 @@ type PublishedSystemMessage = SystemMessage & { id: number }
 
 export function SystemMessageProvider({
   children,
+  detailsLabel,
   dismissLabel,
 }: {
   children: ReactNode
+  detailsLabel: string
   dismissLabel: string
 }) {
   const [messages, setMessages] = useState<PublishedSystemMessage[]>([])
@@ -56,6 +58,7 @@ export function SystemMessageProvider({
         <div className="kubecode-system-message-host">
           {messages.map((message) => (
             <SystemMessageNotice
+              detailsLabel={detailsLabel}
               dismissLabel={dismissLabel}
               key={message.id}
               level={message.level}
@@ -72,6 +75,7 @@ export function SystemMessageProvider({
 
 type SystemMessageNoticeProps = SystemMessage & {
   className?: string
+  detailsLabel: string
   dismissLabel: string
   onDismiss?: () => void
 }
@@ -86,6 +90,7 @@ const LEVEL_ICONS = {
 
 export function SystemMessageNotice({
   className,
+  detailsLabel,
   dismissLabel,
   level,
   message,
@@ -105,16 +110,23 @@ export function SystemMessageNotice({
       title={message}
     >
       <Icon className="kubecode-system-message-icon" weight="fill" />
-      <Button
-        aria-expanded={expanded}
+      <div
         className="kubecode-system-message-content"
         title={message}
-        variant="ghost"
-        onClick={() => setExpanded((current) => !current)}
       >
         {source && <strong>{source}</strong>}
         <span>{message}</span>
-        <CaretDown className="kubecode-system-message-expand" />
+      </div>
+      <Button
+        aria-expanded={expanded}
+        aria-label={detailsLabel}
+        className="kubecode-system-message-expand"
+        size="icon-xs"
+        title={detailsLabel}
+        variant="ghost"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <CaretDown />
       </Button>
       {onDismiss && (
         <Button

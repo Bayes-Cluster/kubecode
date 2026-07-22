@@ -77,8 +77,10 @@ a Plan progress summary and opens the full checklist in Explorer.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,
-and lifecycle state live on the server. Browser refresh can restore serialized
-xterm output and replay newer bytes from the server cursor.
+and lifecycle state live on the server. A new PTY uses the selected Session's
+server-validated execution path, while existing, split, and restarted PTYs keep
+their original Session context. Browser refresh can restore serialized xterm
+output and replay newer bytes from the server cursor.
 
 ## Agent sessions
 
@@ -120,9 +122,23 @@ display order; older pages prepend without replacing live events. Once more
 than 100 runs are loaded, the browser virtualizes the variable-height timeline
 while preserving the visible scroll anchor.
 
-The Agent Composer keeps ACP-native mode, model, effort, and configuration
-controls behind one summary button in its compact lower action row. Its
-searchable add palette lists the current session's dynamic
+The Agent Composer presents the exact provider-native Session mode and dynamic
+configuration in one compact control. Its trigger contains the Agent icon and
+current mode; mode, model, effort, fast mode, boolean settings, and other
+advertised configuration share the menu. ACP `current_mode` is preferred; a
+select configuration categorized or identified as `mode` is the fallback, and
+only an exactly equivalent duplicate is removed. Kubecode does not map these
+values to a universal Plan/Build enum or save a default for new Sessions.
+
+The Session state API projects whether the user can change mode and a stable
+lock reason. Mode changes are rejected during an active turn and in read-only
+or Team-owned contexts, so they always apply to a subsequent turn. Standard
+Team Leaders own idle mode changes; Teammates and Discriminators do not. Team
+YOLO owns Codex and Claude Code permission modes, while OpenCode Build/Plan
+remains a Leader-editable profile because its maximum permission policy is
+process-scoped.
+
+The Composer's searchable add palette lists the current session's dynamic
 `available_commands` and uses the flat Project file picker to insert a relative
 `@path` reference; Kubecode does not invent a separate cross-Agent skill
 registry or copy file contents into the prompt. Long prompts stop growing at a
@@ -130,6 +146,14 @@ bounded editor height and scroll inside the Composer instead of resizing the
 Agent workspace. While an Agent turn is running, the editor remains writable
 and stores an isolated draft per Session; submission resumes after the current
 turn completes or is stopped.
+
+The bundled Claude ACP adapter advertises a private side-question capability.
+During an active supported Claude turn, `/btw` dispatches the Claude Agent SDK's
+native side-question request through `_claude/side_question`; its durable result
+appears in a collapsible panel above the Composer without interrupting the main
+turn. Unsupported adapters, Codex, and OpenCode do not expose the command. ACP
+text chunks retain `messageId` so separate provider messages remain separate
+response blocks during long-running output.
 
 Team Sessions are created as Drafts with one fixed Leader. Before execution the
 Team Board requires a goal, acceptance criteria, allowed installed Agents,

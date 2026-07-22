@@ -22,7 +22,7 @@ function MessagePublisher() {
 describe('SystemMessageProvider', () => {
   it('publishes expandable and dismissible application messages', () => {
     render(
-      <SystemMessageProvider dismissLabel="Close">
+      <SystemMessageProvider detailsLabel="Details" dismissLabel="Close">
         <MessagePublisher />
       </SystemMessageProvider>,
     )
@@ -31,9 +31,11 @@ describe('SystemMessageProvider', () => {
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent('Changes')
     expect(alert).toHaveTextContent('The complete diagnostic')
+    const content = alert.querySelector('.kubecode-system-message-content')
+    expect(content?.tagName).toBe('DIV')
 
-    fireEvent.click(screen.getByRole('button', { expanded: false }))
-    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Details', expanded: false }))
+    expect(screen.getByRole('button', { name: 'Details', expanded: true })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

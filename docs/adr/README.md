@@ -41,3 +41,6 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0194](0194-standalone-linux-distribution.md) | Standalone Linux distribution |
 | [0195](0195-debian-package-distribution.md) | Debian package distribution |
 | [0196](0196-dynamic-agent-catalog-and-runtime-doctor.md) | Dynamic Agent catalog and runtime Doctor |
+| [0197](0197-session-context-terminal-cwd.md) | Session-context terminal cwd |
+| [0198](0198-provider-native-session-mode-ownership.md) | Provider-native Session mode ownership |
+| [0199](0199-claude-side-questions-and-consolidated-agent-control.md) | Claude side questions and consolidated Agent control |

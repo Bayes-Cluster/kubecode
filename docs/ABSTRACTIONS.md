@@ -175,6 +175,17 @@ one active run, while different Sessions can run concurrently. Runs may be
 running, waiting for input, completed, failed, cancelled, timed out, or
 interrupted.
 
+A Native Session Mode is an opaque provider-owned ID, name, description, and
+option set retained in ordered Session events. ACP `current_mode` is canonical;
+a select configuration with category or ID `mode` is a compatibility fallback.
+Kubecode does not persist a cross-provider mode enum or a default preference.
+`mode_access` is a computed API projection, not durable Session state. It
+expresses whether the user may change mode and why the control is locked:
+active run, read-only Session, Team Teammate, Team Discriminator, or a Codex or
+Claude Code permission mode owned by Team YOLO. Mode-like Session API mutations
+enforce the same projection and apply only between turns. OpenCode Build/Plan
+remains separate from its process-scoped Team permission environment.
+
 Session history is read in bounded cursor pages ordered by run insertion. Each
 page returns its run events and the corresponding Session events, while the
 browser preserves stable identities when older history is prepended or live
@@ -196,6 +207,12 @@ prompts, polls mode and configuration changes while a prompt is active, and
 normalizes ACP updates into durable Kubecode events. It resumes an existing
 provider Session when possible and falls back to loading it.
 
+The actor also brokers capability-gated provider extensions without changing
+the shared Agent abstraction. Claude side questions are accepted only while a
+turn is active and the bundled adapter advertises support, then persist as
+ordered Session and workspace events. ACP text normalization retains native
+message IDs so the browser can preserve provider message boundaries.
+
 Agent discovery and ACP adapter discovery are separate. CLI authentication,
 models, and provider settings remain external to Kubecode.
 
@@ -210,12 +227,17 @@ boundary.
 ## Terminal
 
 `TerminalManager` owns each PTY independently of any WebSocket. A terminal is
-bound to a Project cwd and has a `regular`, `claude_code`, `codex`, or `opencode`
-profile. A bounded byte buffer with monotonic cursors lets browsers reconnect
+bound at creation to either the selected Agent Session execution path or the
+Project root and has a `regular`, `claude_code`, `codex`, or `opencode` profile.
+The API accepts an optional Session ID, verifies Project ownership, and resolves
+the stored path through `WorkspaceService`; it never accepts a browser-provided
+cwd. A bounded byte buffer with monotonic cursors lets browsers reconnect
 without restarting the process.
 
 The frontend's terminal group and recursive split tree are presentation state;
-each leaf still refers to an independent server PTY.
+each leaf still refers to an independent server PTY. Selecting another Session
+does not move existing PTYs. Splits and restarts inherit their source PTY's
+Session context.
 
 ## Workspace event
 

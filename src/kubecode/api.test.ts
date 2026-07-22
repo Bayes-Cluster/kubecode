@@ -71,6 +71,46 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('sends a Claude side question through the Session extension endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'side-1',
+      status: 'pending',
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.askSideQuestion('session/1', 'What are you doing?')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/sessions/session%2F1/side-questions',
+      expect.objectContaining({
+        body: JSON.stringify({ question: 'What are you doing?' }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('creates a terminal in an optional Session execution context', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'terminal-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.createTerminal('project/1', 'regular', 100, 28, 'session/1')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/projects/project%2F1/terminals',
+      expect.objectContaining({
+        body: JSON.stringify({
+          kind: 'regular',
+          cols: 100,
+          rows: 28,
+          conversation_id: 'session/1',
+        }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('loads project run state for project icon activity', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('[]'))
     vi.stubGlobal('fetch', fetch)

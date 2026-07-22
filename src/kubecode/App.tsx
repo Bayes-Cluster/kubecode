@@ -576,7 +576,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 
   return (
     <IconContext.Provider value={{ size: 16, weight: 'regular' }}>
-      <SystemMessageProvider dismissLabel={t('window.close')}>
+      <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
       <main className="kubecode-app">
       <header className="kubecode-topbar">
         <div className="kubecode-topbar-leading">
@@ -801,6 +801,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 agents={agents}
                 api={api}
                 autoCreateOnOpen={terminalsLoadedForProjectId === projectId && terminals.length === 0}
+                conversationId={conversation?.id ?? null}
                 initialTerminals={terminals}
                 key={projectId}
                 onCollapse={() => setTerminalOpen(false)}
@@ -1291,6 +1292,7 @@ function NewSessionDialog({
               )}
               {providerError && (
                 <SystemMessageNotice
+                  detailsLabel={t('kubecode.details')}
                   dismissLabel={t('window.close')}
                   level="error"
                   message={providerError}
@@ -1302,6 +1304,7 @@ function NewSessionDialog({
           {createError && (
             <div className="kubecode-agent-startup-error">
               <SystemMessageNotice
+                detailsLabel={t('kubecode.details')}
                 dismissLabel={t('window.close')}
                 level="error"
                 message={createError}

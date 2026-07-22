@@ -23,7 +23,7 @@ use crate::agents::{
     WorkspaceEvent,
 };
 use crate::git::{GitError, GitMutation, GitService};
-use crate::teams::{TeamError, TeamRole, TeamStatus, TeamStore};
+use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
@@ -425,6 +425,10 @@ fn api_router(state: AppState) -> Router {
             get(list_session_events),
         )
         .route("/sessions/{conversation_id}/state", get(get_session_state))
+        .route(
+            "/sessions/{conversation_id}/side-questions",
+            axum::routing::post(ask_side_question),
+        )
         .route(
             "/sessions/{conversation_id}/options",
             axum::routing::patch(update_session_option),
@@ -1122,6 +1126,54 @@ async fn list_session_events(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct SideQuestionRequest {
+    question: String,
+}
+
+async fn ask_side_question(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<SideQuestionRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let question = request.question.trim();
+    if question.is_empty() {
+        return Err(ApiError::InvalidRequest(
+            "question must not be empty".into(),
+        ));
+    }
+    let accepted = state
+        .agent_runtime
+        .ask_side_question(&conversation_id, question.to_owned())
+        .await?;
+    Ok((StatusCode::ACCEPTED, Json(accepted)))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SessionModeLockReason {
+    ActiveRun,
+    ReadOnly,
+    TeamDiscriminator,
+    TeamTeammate,
+    TeamYoloPermission,
+}
+
+#[derive(Debug, Serialize)]
+struct SessionModeAccess {
+    can_change: bool,
+    reason: Option<SessionModeLockReason>,
+}
+
+impl Default for SessionModeAccess {
+    fn default() -> Self {
+        Self {
+            can_change: true,
+            reason: None,
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize)]
 struct SessionState {
     capabilities: Option<serde_json::Value>,
@@ -1130,6 +1182,7 @@ struct SessionState {
     config_options: Option<serde_json::Value>,
     plan: Option<serde_json::Value>,
     usage: Option<serde_json::Value>,
+    mode_access: SessionModeAccess,
 }
 
 async fn get_session_state(
@@ -1140,7 +1193,10 @@ async fn get_session_state(
         .agent_runtime
         .store()
         .session_events_after(&conversation_id, 0)?;
-    let mut session = SessionState::default();
+    let mut session = SessionState {
+        mode_access: session_mode_access(&state, &conversation_id)?,
+        ..SessionState::default()
+    };
     for event in events {
         match event.kind.as_str() {
             "capabilities" => session.capabilities = Some(event.payload),
@@ -1192,6 +1248,18 @@ async fn update_session_option(
     Path(conversation_id): Path<String>,
     Json(request): Json<UpdateSessionOptionRequest>,
 ) -> Result<StatusCode, ApiError> {
+    let changes_mode = match &request {
+        UpdateSessionOptionRequest::Mode { .. } => true,
+        UpdateSessionOptionRequest::Config { config_id, .. } => {
+            is_mode_config(&state.agent_runtime.store(), &conversation_id, config_id)?
+        }
+    };
+    if changes_mode {
+        let access = session_mode_access(&state, &conversation_id)?;
+        if let Some(reason) = access.reason {
+            return Err(ApiError::SessionModeLocked(reason));
+        }
+    }
     match request {
         UpdateSessionOptionRequest::Mode { value } => {
             state
@@ -1207,6 +1275,78 @@ async fn update_session_option(
         }
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn session_mode_access(
+    state: &AppState,
+    conversation_id: &str,
+) -> Result<SessionModeAccess, ApiError> {
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(conversation_id)?;
+    let member = state.teams.member_for_conversation(conversation_id)?;
+    if let Some(member) = member.as_ref() {
+        let reason = match member.role {
+            TeamRole::Teammate => Some(SessionModeLockReason::TeamTeammate),
+            TeamRole::Discriminator => Some(SessionModeLockReason::TeamDiscriminator),
+            TeamRole::Leader => None,
+        };
+        if let Some(reason) = reason {
+            return Ok(locked_session_mode(reason));
+        }
+    }
+    if conversation.read_only {
+        return Ok(locked_session_mode(SessionModeLockReason::ReadOnly));
+    }
+    if let Some(team) = state.teams.team_for_conversation(conversation_id)?
+        && team.mode == TeamMode::Yolo
+        && conversation.agent_id != AgentId::OpenCode
+    {
+        return Ok(locked_session_mode(
+            SessionModeLockReason::TeamYoloPermission,
+        ));
+    }
+    if matches!(
+        conversation.latest_run_status,
+        Some(RunStatus::Running | RunStatus::WaitingPermission)
+    ) {
+        return Ok(locked_session_mode(SessionModeLockReason::ActiveRun));
+    }
+    Ok(SessionModeAccess::default())
+}
+
+fn locked_session_mode(reason: SessionModeLockReason) -> SessionModeAccess {
+    SessionModeAccess {
+        can_change: false,
+        reason: Some(reason),
+    }
+}
+
+fn is_mode_config(
+    store: &AgentStore,
+    conversation_id: &str,
+    config_id: &str,
+) -> Result<bool, ApiError> {
+    if config_id.eq_ignore_ascii_case("mode") {
+        return Ok(true);
+    }
+    let events = store.session_events_after(conversation_id, 0)?;
+    Ok(events.iter().rev().any(|event| {
+        let configs = event
+            .payload
+            .get("configOptions")
+            .and_then(|value| value.as_array());
+        configs.is_some_and(|configs| {
+            configs.iter().any(|config| {
+                config.get("id").and_then(|value| value.as_str()) == Some(config_id)
+                    && config
+                        .get("category")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|category| category.eq_ignore_ascii_case("mode"))
+            })
+        })
+    }))
 }
 
 struct AgentEventStreamState {
@@ -1776,6 +1916,7 @@ async fn write_file(
 
 #[derive(Debug, Deserialize)]
 struct CreateTerminalRequest {
+    conversation_id: Option<String>,
     #[serde(default)]
     kind: TerminalKind,
     #[serde(default = "default_terminal_cols")]
@@ -1801,9 +1942,31 @@ async fn create_terminal(
     Path(project_id): Path<String>,
     Json(request): Json<CreateTerminalRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let terminal = state
-        .terminals
-        .create(&project_id, request.kind, request.cols, request.rows)?;
+    let conversation = request
+        .conversation_id
+        .as_deref()
+        .map(|conversation_id| {
+            state
+                .agent_runtime
+                .store()
+                .get_conversation(conversation_id)
+        })
+        .transpose()?;
+    if let Some(conversation) = conversation.as_ref()
+        && conversation.project_id != project_id
+    {
+        return Err(StoreError::ConversationNotFound(conversation.id.clone()).into());
+    }
+    let terminal = state.terminals.create(
+        &project_id,
+        request.conversation_id.as_deref(),
+        conversation
+            .as_ref()
+            .and_then(|conversation| conversation.workspace_path.as_deref()),
+        request.kind,
+        request.cols,
+        request.rows,
+    )?;
     emit_project_event(
         &state,
         "terminal_created",
@@ -1987,6 +2150,7 @@ enum ApiError {
     WorkspaceMigration(String),
     Team(TeamError),
     TeammateDeletionRequiresLeader,
+    SessionModeLocked(SessionModeLockReason),
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -2091,6 +2255,21 @@ impl IntoResponse for ApiError {
                     "agent_adapter_unavailable",
                     error.to_string(),
                 ),
+                RuntimeError::SideQuestionUnavailable => (
+                    StatusCode::CONFLICT,
+                    "side_question_unavailable",
+                    error.to_string(),
+                ),
+                RuntimeError::SideQuestionInactive => (
+                    StatusCode::CONFLICT,
+                    "side_question_inactive",
+                    error.to_string(),
+                ),
+                RuntimeError::SideQuestionPending => (
+                    StatusCode::CONFLICT,
+                    "side_question_pending",
+                    error.to_string(),
+                ),
             },
             ApiError::InvalidRequest(message) => {
                 (StatusCode::BAD_REQUEST, "invalid_request", message)
@@ -2139,6 +2318,11 @@ impl IntoResponse for ApiError {
                 "teammate_delete_requires_leader",
                 "Team teammates can only be deleted by their Leader".to_owned(),
             ),
+            ApiError::SessionModeLocked(reason) => (
+                StatusCode::CONFLICT,
+                "session_mode_locked",
+                session_mode_lock_message(reason).to_owned(),
+            ),
         };
         (
             status,
@@ -2149,6 +2333,20 @@ impl IntoResponse for ApiError {
             }),
         )
             .into_response()
+    }
+}
+
+fn session_mode_lock_message(reason: SessionModeLockReason) -> &'static str {
+    match reason {
+        SessionModeLockReason::ActiveRun => {
+            "session mode can be changed after the current turn finishes"
+        }
+        SessionModeLockReason::ReadOnly => "session mode cannot be changed in a read-only session",
+        SessionModeLockReason::TeamDiscriminator => "discriminator mode is controlled by the Team",
+        SessionModeLockReason::TeamTeammate => "teammate mode is controlled by the Team Leader",
+        SessionModeLockReason::TeamYoloPermission => {
+            "session mode is controlled by the Team YOLO permission policy"
+        }
     }
 }
 

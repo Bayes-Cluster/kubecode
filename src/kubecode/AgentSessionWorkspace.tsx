@@ -60,8 +60,10 @@ import {
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { ComposerAddMenu } from './ComposerAddMenu'
-import { AgentConfigMenu, type AgentConfigGroup } from './AgentConfigMenu'
+import { AgentControlMenu } from './AgentControlMenu'
+import { nativeSessionOptions } from './agentSessionOptions'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
+import { SideQuestionPanel, type SideQuestionItem } from './SideQuestionPanel'
 import { useSystemMessages } from './systemMessages'
 import { TeamSessionOverview } from './TeamSessionOverview'
 import { TeamWorkspaceView } from './TeamWorkspaceView'
@@ -138,6 +140,11 @@ const SESSION_TIMELINE_EVENT_KINDS = new Set([
   'user_message',
   'user_message_delta',
 ])
+const SIDE_QUESTION_EVENT_KINDS = new Set([
+  'side_question_completed',
+  'side_question_failed',
+  'side_question_started',
+])
 const SESSION_DRAFT_PREFIX = 'kubecode:session-draft:'
 
 function readSessionDraft(conversationId: string): string {
@@ -194,6 +201,7 @@ export function AgentSessionWorkspace({
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
+  const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteTeamOpen, setDeleteTeamOpen] = useState(false)
   const [teamView, setTeamView] = useState<'chat' | 'team'>(
@@ -317,7 +325,7 @@ export function AgentSessionWorkspace({
     pendingRunEventsRef.current.clear()
     processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
     let current = true
-    void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState, historyCursor: restoredCursor }) => {
+    void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState, sideQuestions: restoredSideQuestions, historyCursor: restoredCursor }) => {
       if (!current) return
       setMessages(history)
       knownRunIdsRef.current = new Set(history.flatMap((message) => message.id ? [message.id] : []))
@@ -326,6 +334,7 @@ export function AgentSessionWorkspace({
       setPendingElicitation(restoredElicitation)
       setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
       setSessionState(restoredState)
+      setSideQuestions(restoredSideQuestions)
       setHistoryCursor(restoredCursor)
     }).catch((cause: unknown) => {
       if (current) reportError(cause)
@@ -350,6 +359,10 @@ export function AgentSessionWorkspace({
         payload: workspaceEvent.payload,
         run_id: workspaceEvent.run_id as string,
         seq: workspaceEvent.id,
+      }
+      if (SIDE_QUESTION_EVENT_KINDS.has(event.kind)) {
+        setSideQuestions((current) => applySideQuestionEvent(current, event.kind, event.payload))
+        continue
       }
       if (event.kind === 'permission_requested') {
         const permission = permissionFromEvent(event)
@@ -402,6 +415,25 @@ export function AgentSessionWorkspace({
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
       })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
+  const sendSideQuestion = async (text: string) => {
+    const question = sideQuestionText(text)
+    if (!question || !conversation || !run || !canAskSideQuestion(conversation, sessionState, active)) {
+      return
+    }
+    setError(null)
+    try {
+      const accepted = await api.askSideQuestion(conversation.id, question)
+      setSideQuestions((current) => applySideQuestionEvent(current, 'side_question_started', {
+        id: accepted.id,
+        question,
+        run_id: run.id,
+      }))
+      updatePrompt('')
     } catch (cause) {
       reportError(cause)
     }
@@ -493,6 +525,7 @@ export function AgentSessionWorkspace({
       setPendingPermission(hydrated.pendingPermission)
       setPendingElicitation(hydrated.pendingElicitation)
       setSessionState(hydrated.sessionState)
+      setSideQuestions(hydrated.sideQuestions)
       setHistoryCursor(hydrated.historyCursor)
       setViewRevisionId(null)
       setRevisions(await api.listConversationRevisions(conversation.id))
@@ -608,16 +641,26 @@ export function AgentSessionWorkspace({
   }
 
   const readiness = agent?.available ? 'ready' : 'missing'
-  const commands = availableCommands(sessionState)
+  const sideQuestionAvailable = canAskSideQuestion(conversation, sessionState, active)
+  const commands = availableCommands(
+    sessionState,
+    sideQuestionAvailable ? t('kubecode.btwDescription') : null,
+  )
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
   const visibleCommands = !directTeammateChatDisabled && prompt.startsWith('/')
     ? commands.filter((command) => command.name.toLowerCase().includes(prompt.slice(1).toLowerCase()))
     : []
-  const nativeMode = sessionMode(sessionState)
-  const configSelects = distinctSessionConfigSelects(nativeMode, sessionConfigSelects(sessionState))
-  const agentConfigGroups = buildAgentConfigGroups(nativeMode, configSelects, t)
+  const { configs: configSelects, mode: nativeMode } = nativeSessionOptions(sessionState)
+  const modeLockReason = nativeModeLockReason({
+    active,
+    agentId: conversation.agent_id,
+    conversation,
+    serverAccess: sessionState?.mode_access,
+    team,
+    viewRevisionId,
+  })
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   const insertComposerText = (text: string, kind: 'command' | 'file') => {
@@ -658,22 +701,33 @@ export function AgentSessionWorkspace({
     }
   }
 
-  const changeAgentConfig = (groupId: string, value: string) => {
+  const changeAgentConfig = (configId: string, value: string | boolean) => {
     trackEvent('kubecode_agent_setting_selected', {
       agent_id: conversation.agent_id,
-      setting: groupId === 'mode:agent' ? 'mode' : groupId.slice('config:'.length),
+      setting: configId,
     })
-    if (groupId === 'mode:agent') {
+    void commitSessionOption(
+      sessionStateWithConfig(sessionState, configId, value),
+      () => api.setSessionConfig(conversation.id, configId, value),
+    )
+  }
+
+  const changeNativeMode = (value: string) => {
+    if (!nativeMode || modeLockReason) return
+    trackEvent('kubecode_agent_setting_selected', {
+      agent_id: conversation.agent_id,
+      setting: 'mode',
+    })
+    if (nativeMode.kind === 'mode') {
       void commitSessionOption(
         sessionStateWithMode(sessionState, value),
         () => api.setSessionMode(conversation.id, value),
       )
       return
     }
-    const configId = groupId.slice('config:'.length)
     void commitSessionOption(
-      sessionStateWithConfig(sessionState, configId, value),
-      () => api.setSessionConfig(conversation.id, configId, value),
+      sessionStateWithConfig(sessionState, nativeMode.id, value),
+      () => api.setSessionConfig(conversation.id, nativeMode.id, value),
     )
   }
 
@@ -849,8 +903,10 @@ export function AgentSessionWorkspace({
         />
       </div>
         <div className="kubecode-session-composer-dock">
+      <SideQuestionPanel items={sideQuestions} t={t} />
       {error && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="error"
           message={error}
@@ -859,6 +915,7 @@ export function AgentSessionWorkspace({
       )}
       {workspaceWarning && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="warning"
           message={workspaceWarning}
@@ -1015,10 +1072,15 @@ export function AgentSessionWorkspace({
                   t={t}
                 />
               ) : undefined}
-              controls={agentConfigGroups.length > 0 ? (
-                <AgentConfigMenu
-                  groups={agentConfigGroups}
-                  onChange={changeAgentConfig}
+              controls={nativeMode || configSelects.length > 0 ? (
+                <AgentControlMenu
+                  agent={conversation.agent_id}
+                  configs={configSelects}
+                  mode={nativeMode}
+                  modeDisabled={Boolean(modeLockReason)}
+                  modeDisabledReason={modeLockReason ? nativeModeLockMessage(modeLockReason, t) : undefined}
+                  onConfigChange={changeAgentConfig}
+                  onModeChange={changeNativeMode}
                   t={t}
                 />
               ) : undefined}
@@ -1028,6 +1090,10 @@ export function AgentSessionWorkspace({
               isActive={active}
               locale={locale}
               onChange={updatePrompt}
+              activeSendLabel={t('kubecode.askSideQuestion')}
+              onActiveSend={sideQuestionAvailable && sideQuestionText(prompt)
+                ? (text) => void sendSideQuestion(text)
+                : undefined}
               onSend={(text) => void send(text)}
               onStop={() => void stop()}
             />
@@ -1119,6 +1185,7 @@ async function hydrateConversation(
   pendingPermission: PendingPermission | null
   pendingElicitation: PendingElicitation | null
   sessionState: AgentSessionState
+  sideQuestions: SideQuestionItem[]
   historyCursor: string | null
 }> {
   if (typeof api.getConversationHistory === 'function') {
@@ -1143,6 +1210,7 @@ async function hydrateConversation(
         ? pendingElicitationFromEvents(events[activeRunIndex])
         : null,
       sessionState,
+      sideQuestions: sideQuestionsFromSessionEvents(page.session_events),
       historyCursor: page.next_cursor,
     }
   }
@@ -1174,6 +1242,7 @@ async function hydrateConversation(
     pendingPermission,
     pendingElicitation,
     sessionState,
+    sideQuestions: sideQuestionsFromSessionEvents(sessionEvents),
     historyCursor: null,
   }
 }
@@ -1251,82 +1320,79 @@ function nativeMessage(event: SessionEvent, text: string): AiAgentMessage {
 
 type AgentCommand = { name: string; description: string }
 
-function availableCommands(state: AgentSessionState | null): AgentCommand[] {
+function availableCommands(
+  state: AgentSessionState | null,
+  sideQuestionDescription: string | null = null,
+): AgentCommand[] {
   const values = state?.available_commands?.availableCommands
-  if (!Array.isArray(values)) return []
-  return values.flatMap((value) => {
+  const commands = Array.isArray(values) ? values.flatMap((value) => {
     if (!value || typeof value !== 'object') return []
     const command = value as Record<string, unknown>
     const name = textValue(command.name)
     if (!name) return []
     return [{ name, description: textValue(command.description) }]
-  })
+  }) : []
+  if (sideQuestionDescription && !commands.some((command) => command.name === 'btw')) {
+    commands.push({ name: 'btw', description: sideQuestionDescription })
+  }
+  return commands
+}
+
+function canAskSideQuestion(
+  conversation: Conversation,
+  state: AgentSessionState | null,
+  active: boolean,
+): boolean {
+  if (!active || conversation.agent_id !== 'claude_code') return false
+  const meta = objectValue(state?.capabilities?._meta)
+  const claudeCode = objectValue(meta?.claudeCode)
+  return claudeCode?.sideQuestion === true
+}
+
+function sideQuestionText(value: string): string | null {
+  const match = value.trim().match(/^\/btw(?:\s+)([\s\S]+)$/)
+  return match?.[1]?.trim() || null
+}
+
+function sideQuestionsFromSessionEvents(events: SessionEvent[]): SideQuestionItem[] {
+  return events.reduce((items, event) => (
+    SIDE_QUESTION_EVENT_KINDS.has(event.kind)
+      ? applySideQuestionEvent(items, event.kind, event.payload)
+      : items
+  ), [] as SideQuestionItem[])
+}
+
+function applySideQuestionEvent(
+  items: SideQuestionItem[],
+  kind: string,
+  payload: Record<string, unknown>,
+): SideQuestionItem[] {
+  const id = textValue(payload.id)
+  if (!id) return items
+  const existing = items.find((item) => item.id === id)
+  const next: SideQuestionItem = {
+    id,
+    question: textValue(payload.question) || existing?.question || '',
+    runId: textValue(payload.run_id) || existing?.runId || '',
+    status: kind === 'side_question_completed'
+      ? 'completed'
+      : kind === 'side_question_failed' ? 'failed' : 'pending',
+    answer: kind === 'side_question_completed'
+      ? textValue(payload.answer)
+      : existing?.answer,
+    error: kind === 'side_question_failed'
+      ? textValue(payload.message)
+      : existing?.error,
+  }
+  return existing
+    ? items.map((item) => item.id === id ? next : item)
+    : [...items, next]
 }
 
 function sessionCapability(state: AgentSessionState | null, capability: string): boolean {
   const sessionCapabilities = state?.capabilities?.sessionCapabilities
   if (!sessionCapabilities || typeof sessionCapabilities !== 'object') return false
   return (sessionCapabilities as Record<string, unknown>)[capability] != null
-}
-
-type SessionSelect = {
-  id: string
-  name: string
-  currentValue: string
-  options: { id: string; name: string }[]
-}
-
-function agentConfigPriority(group: AgentConfigGroup): number {
-  const identity = `${group.id} ${group.name}`.toLocaleLowerCase()
-  if (/intelligence|reason|effort/.test(identity)) return 0
-  if (/\bmode\b/.test(identity)) return 1
-  if (/model/.test(identity)) return 2
-  if (/fast/.test(identity)) return 3
-  return 4
-}
-
-function buildAgentConfigGroups(
-  mode: SessionSelect | null,
-  configs: SessionSelect[],
-  t: Translator,
-): AgentConfigGroup[] {
-  const groups: AgentConfigGroup[] = configs.map((config) => ({
-    ...config,
-    id: `config:${config.id}`,
-  }))
-  if (mode) {
-    groups.push({
-      ...mode,
-      id: 'mode:agent',
-      name: t('kubecode.agentMode'),
-    })
-  }
-  return groups.sort((left, right) => agentConfigPriority(left) - agentConfigPriority(right))
-}
-
-function sessionMode(state: AgentSessionState | null): SessionSelect | null {
-  const mode = state?.current_mode
-  const currentValue = textValue(mode?.currentModeId)
-  const values = mode?.availableModes
-  if (!currentValue || !Array.isArray(values)) return null
-  const options = selectOptions(values)
-  return options.length > 0 ? { id: 'mode', name: 'Mode', currentValue, options } : null
-}
-
-function sessionConfigSelects(state: AgentSessionState | null): SessionSelect[] {
-  const values = state?.config_options?.configOptions
-  if (!Array.isArray(values)) return []
-  return values.flatMap((value) => {
-    if (!value || typeof value !== 'object') return []
-    const config = value as Record<string, unknown>
-    if (config.type !== 'select') return []
-    const id = textValue(config.id)
-    const name = textValue(config.name)
-    const currentValue = textValue(config.currentValue)
-    const options = Array.isArray(config.options) ? selectOptions(config.options) : []
-    if (!id || !name || !currentValue || options.length === 0) return []
-    return [{ id, name, currentValue, options }]
-  })
 }
 
 function sessionStateWithMode(
@@ -1343,7 +1409,7 @@ function sessionStateWithMode(
 function sessionStateWithConfig(
   state: AgentSessionState | null,
   configId: string,
-  currentValue: string,
+  currentValue: string | boolean,
 ): AgentSessionState | null {
   const configOptions = state?.config_options?.configOptions
   if (!state?.config_options || !Array.isArray(configOptions)) return state
@@ -1388,34 +1454,42 @@ function arrayValue(value: unknown): unknown[] | null {
   return Array.isArray(value) ? value : null
 }
 
-function distinctSessionConfigSelects(
-  nativeMode: SessionSelect | null,
-  configs: SessionSelect[],
-): SessionSelect[] {
-  const nativeSignature = nativeMode ? sessionSelectSignature(nativeMode) : null
-  const ids = new Set<string>()
-  return configs.filter((config) => {
-    if (ids.has(config.id) || sessionSelectSignature(config) === nativeSignature) return false
-    ids.add(config.id)
-    return true
-  })
+
+function nativeModeLockReason({
+  active,
+  agentId,
+  conversation,
+  serverAccess,
+  team,
+  viewRevisionId,
+}: {
+  active: boolean
+  agentId: Conversation['agent_id']
+  conversation: Conversation
+  serverAccess: AgentSessionState['mode_access']
+  team?: TeamSnapshot | null
+  viewRevisionId: string | null
+}): NonNullable<AgentSessionState['mode_access']>['reason'] {
+  if (viewRevisionId || conversation.read_only) return 'read_only'
+  if (conversation.team_role === 'discriminator') return 'team_discriminator'
+  if (conversation.team_role === 'teammate') return 'team_teammate'
+  if (team?.team.mode === 'yolo' && agentId !== 'opencode') return 'team_yolo_permission'
+  if (active) return 'active_run'
+  return serverAccess?.can_change === false ? serverAccess.reason : null
 }
 
-function sessionSelectSignature(select: SessionSelect): string {
-  return select.options
-    .map((option) => `${option.id.trim().toLowerCase()}\u0000${option.name.trim().toLowerCase()}`)
-    .sort()
-    .join('\u0001')
-}
-
-function selectOptions(values: unknown[]): { id: string; name: string }[] {
-  return values.flatMap((value) => {
-    if (!value || typeof value !== 'object') return []
-    const option = value as Record<string, unknown>
-    const id = textValue(option.id) || textValue(option.value)
-    const name = textValue(option.name)
-    return id && name ? [{ id, name }] : []
-  })
+function nativeModeLockMessage(
+  reason: NonNullable<AgentSessionState['mode_access']>['reason'],
+  t: Translator,
+): string {
+  const keys = {
+    active_run: 'kubecode.running',
+    read_only: 'kubecode.readOnlySubagent',
+    team_discriminator: 'kubecode.readOnlySubagent',
+    team_teammate: 'kubecode.teamLeader',
+    team_yolo_permission: 'kubecode.teamYoloNativePermission',
+  } as const satisfies Record<NonNullable<typeof reason>, TranslationKey>
+  return reason ? t(keys[reason]) : ''
 }
 
 function pendingPermissionFromEvents(events: AgentEvent[]): PendingPermission | null {
@@ -1548,7 +1622,7 @@ function applyAgentEvent(
   return messages.map((message) => {
     if (message.id !== runId) return message
     if (event.kind === 'text_delta') {
-      return { ...message, response: `${message.response ?? ''}${textValue(event.payload.text)}` }
+      return appendResponseBlock(message, event.payload, event.seq)
     }
     if (event.kind === 'thinking_delta') {
       return { ...message, reasoning: `${message.reasoning ?? ''}${textValue(event.payload.text)}` }
@@ -1560,18 +1634,45 @@ function applyAgentEvent(
       return { ...message, actions: upsertAction(message.actions, event, 'done') }
     }
     if (event.kind === 'error') {
-      return {
+      const failed = {
         ...message,
         isStreaming: false,
         reasoningDone: true,
-        response: `${message.response ?? ''}${textValue(event.payload.message)}`,
       }
+      return message.responseBlocks?.length
+        ? appendResponseBlock(failed, {
+            message_id: `error-${event.seq}`,
+            text: textValue(event.payload.message),
+          }, event.seq)
+        : { ...failed, response: `${message.response ?? ''}${textValue(event.payload.message)}` }
     }
     if (event.kind === 'run_completed') {
       return { ...message, isStreaming: false, reasoningDone: true }
     }
     return message
   })
+}
+
+function appendResponseBlock(
+  message: AiAgentMessage,
+  payload: Record<string, unknown>,
+  sequence: number,
+): AiAgentMessage {
+  const text = textValue(payload.text)
+  const nativeMessageId = textValue(payload.message_id)
+  if (!nativeMessageId) {
+    return { ...message, response: `${message.response ?? ''}${text}` }
+  }
+  const blocks = message.responseBlocks
+    ? [...message.responseBlocks]
+    : message.response ? [{ id: `legacy-${sequence}`, text: message.response }] : []
+  const last = blocks.at(-1)
+  if (last?.id === nativeMessageId) {
+    blocks[blocks.length - 1] = { ...last, text: `${last.text}${text}` }
+  } else {
+    blocks.push({ id: nativeMessageId, text })
+  }
+  return { ...message, response: undefined, responseBlocks: blocks }
 }
 
 function upsertAction(

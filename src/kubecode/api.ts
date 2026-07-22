@@ -359,7 +359,21 @@ export type AgentSessionState = {
   config_options: Record<string, unknown> | null
   plan: Record<string, unknown> | null
   usage: Record<string, unknown> | null
+  mode_access?: {
+    can_change: boolean
+    reason: NativeModeLockReason | null
+  }
 }
+export type SideQuestionAccepted = {
+  id: string
+  status: 'pending'
+}
+export type NativeModeLockReason =
+  | 'active_run'
+  | 'read_only'
+  | 'team_discriminator'
+  | 'team_teammate'
+  | 'team_yolo_permission'
 export type ProviderSessionInfo = {
   session_id: string
   cwd: string
@@ -389,6 +403,7 @@ export type GitMutation = 'stage' | 'unstage' | 'discard'
 export type TerminalInfo = {
   id: string
   project_id: string
+  conversation_id: string | null
   title: string
   kind: TerminalKind
   cols: number
@@ -817,6 +832,13 @@ export class KubecodeApi {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/state`)
   }
 
+  askSideQuestion(conversationId: string, question: string): Promise<SideQuestionAccepted> {
+    return this.request(`/sessions/${encodeURIComponent(conversationId)}/side-questions`, {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+    })
+  }
+
   setSessionMode(conversationId: string, value: string): Promise<void> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/options`, {
       method: 'PATCH',
@@ -873,10 +895,11 @@ export class KubecodeApi {
     kind: TerminalKind,
     cols: number,
     rows: number,
+    conversationId?: string,
   ): Promise<TerminalInfo> {
     return this.request(`${this.projectPath(projectId)}/terminals`, {
       method: 'POST',
-      body: JSON.stringify({ kind, cols, rows }),
+      body: JSON.stringify({ kind, cols, rows, conversation_id: conversationId }),
     })
   }
 

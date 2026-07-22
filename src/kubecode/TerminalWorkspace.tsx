@@ -67,6 +67,7 @@ type TerminalWorkspaceProps = {
   agents: AgentDescriptor[]
   api: KubecodeApi
   autoCreateOnOpen?: boolean
+  conversationId?: string | null
   initialTerminals: TerminalInfo[]
   onCollapse?: () => void
   open?: boolean
@@ -91,6 +92,7 @@ export function TerminalWorkspace({
   agents,
   api,
   autoCreateOnOpen = false,
+  conversationId = null,
   initialTerminals,
   onCollapse,
   open = true,
@@ -151,12 +153,19 @@ export function TerminalWorkspace({
     kind: TerminalKind,
     placement: 'group' | 'split' = 'group',
     direction: 'horizontal' | 'vertical' = 'horizontal',
+    targetConversationId: string | null = conversationId,
   ) => {
     if (creating) return
     setCreating(true)
     setError(null)
     try {
-      const created = await api.createTerminal(projectId, kind, 100, 28)
+      const created = await api.createTerminal(
+        projectId,
+        kind,
+        100,
+        28,
+        targetConversationId ?? undefined,
+      )
       setTerminals((current) => [...current, created])
       setWorkspace((current) => {
         const group = current.groups.find((item) => item.id === current.activeGroupId)
@@ -187,7 +196,7 @@ export function TerminalWorkspace({
     } finally {
       setCreating(false)
     }
-  }, [api, creating, projectId, reportError])
+  }, [api, conversationId, creating, projectId, reportError])
 
   useEffect(() => {
     if (!autoCreateOnOpen || !open || terminals.length > 0 || creating) return
@@ -211,7 +220,13 @@ export function TerminalWorkspace({
   const restart = useCallback(async (terminal: TerminalInfo) => {
     setError(null)
     try {
-      const created = await api.createTerminal(projectId, terminal.kind, terminal.cols, terminal.rows)
+      const created = await api.createTerminal(
+        projectId,
+        terminal.kind,
+        terminal.cols,
+        terminal.rows,
+        terminal.conversation_id ?? undefined,
+      )
       setTerminals((current) => [...current.filter((item) => item.id !== terminal.id), created])
       setWorkspace((current) => ({
         ...current,
@@ -295,14 +310,24 @@ export function TerminalWorkspace({
             disabled={!activeTerminal || creating}
             size="icon-xs"
             variant="ghost"
-            onClick={() => void create(activeTerminal?.kind ?? 'regular', 'split', 'horizontal')}
+            onClick={() => void create(
+              activeTerminal?.kind ?? 'regular',
+              'split',
+              'horizontal',
+              activeTerminal?.conversation_id ?? null,
+            )}
           ><SplitHorizontal /></Button>
           <Button
             aria-label={t('kubecode.splitDown')}
             disabled={!activeTerminal || creating}
             size="icon-xs"
             variant="ghost"
-            onClick={() => void create(activeTerminal?.kind ?? 'regular', 'split', 'vertical')}
+            onClick={() => void create(
+              activeTerminal?.kind ?? 'regular',
+              'split',
+              'vertical',
+              activeTerminal?.conversation_id ?? null,
+            )}
           ><SplitVertical /></Button>
           <Button
             aria-label={t('kubecode.closeTerminal')}
@@ -325,6 +350,7 @@ export function TerminalWorkspace({
       {error && (
         <SystemMessageNotice
           className="kubecode-terminal-error"
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="error"
           message={error}

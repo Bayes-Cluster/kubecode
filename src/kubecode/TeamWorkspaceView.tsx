@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import type { TranslationKey } from '@/lib/i18n'
@@ -45,6 +46,7 @@ import type {
   TeamSnapshot,
   TeamTask,
 } from './api'
+import { nativeSessionOptions } from './agentSessionOptions'
 import { SystemMessageNotice } from './SystemMessageNotice'
 
 type Translator = (key: TranslationKey) => string
@@ -216,6 +218,7 @@ export function TeamWorkspaceView({
 
       {error && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="error"
           message={error}
@@ -224,6 +227,7 @@ export function TeamWorkspaceView({
       )}
       {snapshot.team.mode_fallback && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="warning"
           message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}
@@ -770,6 +774,7 @@ function TeamSetup({
 
       {error && (
         <SystemMessageNotice
+          detailsLabel={t('kubecode.details')}
           dismissLabel={t('window.close')}
           level="error"
           message={error}
@@ -903,40 +908,63 @@ function NativeLeaderOptions({ agentId, api, conversationId, mode, sessionState,
   setSessionState: (state: AgentSessionState | null) => void
   t: Translator
 }) {
-  const options = nativeSessionSelects(sessionState)
-    .filter((option) => mode !== 'yolo' || option.id !== 'mode')
-  if (options.length === 0 && mode !== 'yolo') return null
+  const native = nativeSessionOptions(sessionState)
+  const permissionModeLocked = mode === 'yolo' && agentId !== 'opencode'
+  const options = [
+    ...(!permissionModeLocked && native.mode ? [native.mode] : []),
+    ...native.configs,
+  ]
+  if (options.length === 0 && !permissionModeLocked) return null
   return (
     <div className="kubecode-new-session-field">
       <span>{t('kubecode.teamLeaderConfiguration')}</span>
       <div className="kubecode-team-native-options">
-        {mode === 'yolo' && (
+        {permissionModeLocked && (
           <div className="kubecode-team-native-permission">
             <strong>{t('kubecode.teamYoloNativePermission')}</strong>
             <span>{nativePermissionLabel(agentId, t)}</span>
           </div>
         )}
-        {options.map((option) => (
-          <label key={`${option.kind}:${option.id}`}>
-            <span>{option.kind === 'mode' ? t('kubecode.agentMode') : option.name}</span>
-            <Select
-              value={option.currentValue}
-              onValueChange={(value) => {
-                const request = option.kind === 'mode'
-                  ? api.setSessionMode(conversationId, value)
-                  : api.setSessionConfig(conversationId, option.id, value)
-                void request.then(() => api.getSessionState(conversationId)).then(setSessionState)
-              }}
-            >
-              <SelectTrigger aria-label={option.kind === 'mode' ? t('kubecode.agentMode') : option.name}><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {option.options.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-        ))}
+        {options.map((option) => {
+          const label = option.kind === 'mode' ? t('kubecode.agentMode') : option.name
+          if (option.type === 'boolean') {
+            return (
+              <label key={`${option.kind}:${option.id}`}>
+                <span>{label}</span>
+                <Switch
+                  aria-label={label}
+                  checked={option.currentValue}
+                  onCheckedChange={(value) => {
+                    void api.setSessionConfig(conversationId, option.id, value)
+                      .then(() => api.getSessionState(conversationId))
+                      .then(setSessionState)
+                  }}
+                />
+              </label>
+            )
+          }
+          return (
+            <label key={`${option.kind}:${option.id}`}>
+              <span>{label}</span>
+              <Select
+                value={option.currentValue}
+                onValueChange={(value) => {
+                  const request = option.kind === 'mode'
+                    ? api.setSessionMode(conversationId, value)
+                    : api.setSessionConfig(conversationId, option.id, value)
+                  void request.then(() => api.getSessionState(conversationId)).then(setSessionState)
+                }}
+              >
+                <SelectTrigger aria-label={label}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {option.options.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )
+        })}
       </div>
     </div>
   )
@@ -949,55 +977,6 @@ function nativePermissionLabel(agentId: AgentId, t: Translator): string {
     opencode: 'kubecode.teamYoloPermissionOpenCode',
   } as const satisfies Record<AgentId, TranslationKey>
   return t(labels[agentId])
-}
-
-type NativeSelect = {
-  id: string
-  kind: 'mode' | 'config'
-  name: string
-  currentValue: string
-  options: Array<{ name: string; value: string }>
-}
-
-function nativeSessionSelects(state: AgentSessionState | null): NativeSelect[] {
-  const result: NativeSelect[] = []
-  const mode = state?.current_mode
-  const modeOptions = selectValues(mode?.availableModes)
-  if (typeof mode?.currentModeId === 'string' && modeOptions.length > 0) {
-    result.push({ id: 'mode', kind: 'mode', name: 'Mode', currentValue: mode.currentModeId, options: modeOptions })
-  }
-  const configs = state?.config_options?.configOptions
-  if (!Array.isArray(configs)) return result
-  for (const value of configs) {
-    if (!value || typeof value !== 'object') continue
-    const config = value as Record<string, unknown>
-    const options = selectValues(config.options)
-    if (
-      config.type === 'select'
-      && typeof config.id === 'string'
-      && typeof config.name === 'string'
-      && typeof config.currentValue === 'string'
-      && options.length > 0
-    ) {
-      result.push({ id: config.id, kind: 'config', name: config.name, currentValue: config.currentValue, options })
-    }
-  }
-  return result
-}
-
-function selectValues(value: unknown): Array<{ name: string; value: string }> {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (!item || typeof item !== 'object') return []
-    const option = item as Record<string, unknown>
-    const id = typeof option.value === 'string'
-      ? option.value
-      : typeof option.id === 'string'
-        ? option.id
-        : null
-    if (!id) return []
-    return [{ name: typeof option.name === 'string' ? option.name : id, value: id }]
-  })
 }
 
 function teamStatusLabel(status: TeamSnapshot['team']['status'], t: Translator): string {

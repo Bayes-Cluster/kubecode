@@ -2,6 +2,12 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-exec "$root/lib/kubecode/node" \
-  "$root/lib/kubecode/adapter-runtime/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js" \
-  "$@"
+installed_node="$root/lib/kubecode/node"
+installed_adapter="$root/lib/kubecode/adapter-runtime/claude-agent-acp.mjs"
+source_adapter="$root/packaging/adapter-runtime/claude-agent-acp.mjs"
+
+if [ -x "$installed_node" ] && [ -f "$installed_adapter" ]; then
+  exec "$installed_node" "$installed_adapter" "$@"
+fi
+
+exec node "$source_adapter" "$@"

@@ -26,6 +26,9 @@ vi.mock('@/components/AiPanelChrome', () => ({
         {message.userMessage}
         {message.reasoning}
         {message.response}
+        {message.responseBlocks?.map((block) => (
+          <span data-testid="response-block" key={block.id}>{block.text}</span>
+        ))}
         {message.actions.map((action) => (
           <span key={action.toolId}>{action.label}:{action.status}:{action.output}</span>
         ))}
@@ -38,13 +41,15 @@ vi.mock('@/components/AiPanelChrome', () => ({
       </article>
     ))}</div>
   ),
-  AiPanelComposer: ({ controls, disabled, disabledPlaceholder, input, isActive, leadingControl, onChange, onStop }: {
+  AiPanelComposer: ({ activeSendLabel, controls, disabled, disabledPlaceholder, input, isActive, leadingControl, onActiveSend, onChange, onStop }: {
+    activeSendLabel?: string
     controls?: ReactNode
     disabled?: boolean
     disabledPlaceholder?: string
     input: string
     isActive: boolean
     leadingControl?: ReactNode
+    onActiveSend?: (text: string, references: []) => void
     onChange: (value: string) => void
     onStop: () => void
   }) => (
@@ -56,6 +61,9 @@ vi.mock('@/components/AiPanelChrome', () => ({
       {leadingControl}{controls}
       <span data-testid="composer-draft">{input}</span>
       <button disabled={disabled} onClick={() => onChange('Prepared follow-up')}>Type follow-up</button>
+      {onActiveSend && (
+        <button aria-label={activeSendLabel} onClick={() => onActiveSend(input, [])}>Send active</button>
+      )}
       {isActive && <button onClick={onStop}>Stop Agent</button>}
     </div>
   ),
@@ -556,7 +564,8 @@ describe('AgentSessionWorkspace', () => {
 
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toBeEnabled()
-    expect(settings).toHaveTextContent('Manual')
+    fireEvent.click(settings)
+    expect(screen.getByRole('button', { name: /Manual.*Permission/i })).toBeEnabled()
   })
 
   it('shows only distinct Agent-native controls with visible labels', async () => {
@@ -566,7 +575,7 @@ describe('AgentSessionWorkspace', () => {
         currentModeId: 'acceptEdits',
         availableModes: [
           { id: 'manual', name: 'Manual' },
-          { id: 'acceptEdits', name: 'Accept Edits' },
+          { id: 'acceptEdits', name: 'Accept Edits', description: 'Automatically accept file edits' },
         ],
       },
     }
@@ -580,7 +589,7 @@ describe('AgentSessionWorkspace', () => {
           currentModeId: 'manual',
           availableModes: [
             { id: 'manual', name: 'Manual' },
-            { id: 'acceptEdits', name: 'Accept Edits' },
+            { id: 'acceptEdits', name: 'Accept Edits', description: 'Automatically accept file edits' },
           ],
         },
         config_options: {
@@ -635,13 +644,15 @@ describe('AgentSessionWorkspace', () => {
     />)
 
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
-    expect(settings).toHaveTextContent('Default')
+    expect(settings).toHaveTextContent('Manual')
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
 
     fireEvent.click(settings)
     expect(screen.queryByText('Permission')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Default.*Model/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Manual.*Agent mode/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Accept Edits' }))
+    expect(screen.getByText('Automatically accept file edits')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Accept Edits/ }))
     await waitFor(() => {
       expect(api.setSessionMode).toHaveBeenCalledWith(conversation.id, 'acceptEdits')
       expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Accept Edits')
@@ -681,14 +692,56 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    const mode = await screen.findByRole('button', { name: 'Agent settings' })
-    expect(mode).toHaveTextContent("Don't Ask")
-
-    fireEvent.click(mode)
+    const settings = await screen.findByRole('button', { name: 'Agent settings' })
+    expect(settings).toHaveTextContent("Don't Ask")
+    fireEvent.click(settings)
+    fireEvent.click(screen.getByRole('button', { name: /Don't Ask.*Agent mode/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Plan Mode' }))
 
     expect(await screen.findByText('ACP session could not reconnect')).toBeInTheDocument()
-    expect(mode).toHaveTextContent("Don't Ask")
+    expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent("Don't Ask")
+  })
+
+  it('does not allow a native mode change during an active turn', async () => {
+    const running = { ...run, status: 'running' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([running]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        current_mode: {
+          currentModeId: 'agent',
+          availableModes: [
+            { id: 'read-only', name: 'Read-only' },
+            { id: 'agent', name: 'Agent' },
+          ],
+        },
+        mode_access: { can_change: false, reason: 'active_run' },
+      }),
+      setSessionMode: vi.fn(),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const settings = await screen.findByRole('button', { name: 'Agent settings' })
+    expect(settings).toBeEnabled()
+    fireEvent.click(settings)
+    const mode = screen.getByRole('button', { name: /Agent.*Agent mode/i })
+    expect(mode).toBeDisabled()
+    fireEvent.click(mode)
+    expect(api.setSessionMode).not.toHaveBeenCalled()
   })
 
   it('renders ACP plans as a progress checklist instead of raw JSON', async () => {
@@ -980,6 +1033,102 @@ describe('AgentSessionWorkspace', () => {
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-1', 'allow')
     })
+  })
+
+  it('keeps separate ACP agent messages as distinct response blocks', async () => {
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([run]),
+      listEvents: vi.fn().mockResolvedValue([
+        {
+          run_id: run.id,
+          seq: 1,
+          kind: 'text_delta',
+          payload: { message_id: 'message-1', text: 'First answer.' },
+          created_at: 'now',
+        },
+        {
+          run_id: run.id,
+          seq: 2,
+          kind: 'text_delta',
+          payload: { message_id: 'message-2', text: 'Second answer.' },
+          created_at: 'now',
+        },
+      ]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const blocks = await screen.findAllByTestId('response-block')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toHaveTextContent('First answer.')
+    expect(blocks[1]).toHaveTextContent('Second answer.')
+  })
+
+  it('sends Claude /btw through the native side-question channel while a turn is running', async () => {
+    const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
+    const running = { ...run, status: 'running' as const }
+    const askSideQuestion = vi.fn().mockResolvedValue({ id: 'side-1', status: 'pending' })
+    const api = {
+      askSideQuestion,
+      cancelRun: vi.fn().mockResolvedValue(undefined),
+      listRuns: vi.fn().mockResolvedValue([running]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        capabilities: { _meta: { claudeCode: { sideQuestion: true } } },
+      }),
+    } as unknown as KubecodeApi
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/btw Are tests done?')
+    const props = {
+      agents: [{ id: 'claude_code' as const, available: true, version: '1', executable: 'claude', error: null }],
+      api,
+      conversation: claudeConversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ask without interrupting' }))
+    await waitFor(() => expect(askSideQuestion).toHaveBeenCalledWith(
+      conversation.id,
+      'Are tests done?',
+    ))
+    expect(screen.getByTestId('side-question-panel')).toHaveTextContent('Are tests done?')
+
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[{
+      id: 10,
+      kind: 'side_question_completed',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: run.id,
+      payload: {
+        id: 'side-1',
+        run_id: run.id,
+        question: 'Are tests done?',
+        answer: 'Yes, the focused tests passed.',
+      },
+      created_at: 'now',
+    }]} />)
+
+    expect(await screen.findByText('Yes, the focused tests passed.')).toBeInTheDocument()
   })
 
   it('reconstructs Agent reasoning, tool progress, errors, and completion from persisted events', async () => {

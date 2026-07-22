@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
+    BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities, ClientRequest,
     ClientSessionCapabilities, ContentBlock, ContentChunk, CreateElicitationRequest,
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
-    ElicitationContentValue, ElicitationFormCapabilities, EnvVariable, ForkSessionRequest,
-    InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer, McpServerHttp,
-    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    ElicitationContentValue, ElicitationFormCapabilities, EnvVariable, ExtRequest,
+    ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
+    McpServerHttp, McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
     SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
@@ -55,6 +55,12 @@ pub enum RuntimeError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error("Claude side questions are not available for this session")]
+    SideQuestionUnavailable,
+    #[error("Claude side questions require an active turn")]
+    SideQuestionInactive,
+    #[error("another Claude side question is already pending")]
+    SideQuestionPending,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -118,6 +124,12 @@ pub struct StartAgentRun {
     pub message: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct SideQuestionAccepted {
+    pub id: String,
+    pub status: &'static str,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProviderSessionInfo {
     pub session_id: String,
@@ -147,6 +159,7 @@ pub struct AgentRuntime {
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
+    pending_side_questions: Arc<Mutex<HashSet<String>>>,
     teams: Option<Arc<TeamStore>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
 }
@@ -232,6 +245,7 @@ impl AgentRuntime {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
+            pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
             teams: None,
             team_mcp_http: None,
         }
@@ -1214,6 +1228,9 @@ impl AgentRuntime {
                     | SessionCommand::SetConfig { response, .. } => {
                         let _ = response.send(Err(error.to_string()));
                     }
+                    SessionCommand::SideQuestion { response, .. } => {
+                        let _ = response.send(Err(RuntimeError::Acp(error.to_string())));
+                    }
                     SessionCommand::Ready { response } => {
                         let _ = response.send(Err(failure.clone()));
                     }
@@ -1338,6 +1355,77 @@ impl AgentRuntime {
         .await
     }
 
+    pub async fn ask_side_question(
+        &self,
+        conversation_id: &str,
+        question: String,
+    ) -> Result<SideQuestionAccepted, RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        if conversation.agent_id != AgentId::ClaudeCode
+            || !side_question_capability(&self.store, conversation_id)
+        {
+            return Err(RuntimeError::SideQuestionUnavailable);
+        }
+        let active = self
+            .store
+            .list_runs(conversation_id)?
+            .into_iter()
+            .rev()
+            .any(|run| {
+                matches!(
+                    run.status,
+                    RunStatus::Running | RunStatus::WaitingPermission
+                )
+            });
+        if !active {
+            return Err(RuntimeError::SideQuestionInactive);
+        }
+        {
+            let mut pending = self
+                .pending_side_questions
+                .lock()
+                .expect("pending side question mutex poisoned");
+            if !pending.insert(conversation_id.to_owned()) {
+                return Err(RuntimeError::SideQuestionPending);
+            }
+        }
+
+        let config = match self.session_config(conversation_id) {
+            Ok(config) => config,
+            Err(error) => {
+                self.finish_side_question(conversation_id);
+                return Err(error);
+            }
+        };
+        let (response, accepted) = oneshot::channel();
+        self.dispatch(
+            config,
+            SessionCommand::SideQuestion {
+                id: Uuid::new_v4().to_string(),
+                question,
+                response,
+            },
+        );
+        match accepted.await {
+            Ok(Ok(accepted)) => Ok(accepted),
+            Ok(Err(error)) => {
+                self.finish_side_question(conversation_id);
+                Err(error)
+            }
+            Err(_) => {
+                self.finish_side_question(conversation_id);
+                Err(RuntimeError::Acp("session connection closed".into()))
+            }
+        }
+    }
+
+    fn finish_side_question(&self, conversation_id: &str) {
+        self.pending_side_questions
+            .lock()
+            .expect("pending side question mutex poisoned")
+            .remove(conversation_id);
+    }
+
     async fn dispatch_session_control(
         &self,
         conversation_id: &str,
@@ -1440,6 +1528,11 @@ enum SessionCommand {
         value: SessionConfigInput,
         response: oneshot::Sender<Result<(), String>>,
     },
+    SideQuestion {
+        id: String,
+        question: String,
+        response: oneshot::Sender<Result<SideQuestionAccepted, RuntimeError>>,
+    },
     Shutdown {
         response: oneshot::Sender<()>,
     },
@@ -1503,6 +1596,10 @@ async fn process_session_control(
                 })
                 .map_err(|error| error.to_string());
             let _ = response.send(result);
+            None
+        }
+        SessionCommand::SideQuestion { response, .. } => {
+            let _ = response.send(Err(RuntimeError::SideQuestionInactive));
             None
         }
         SessionCommand::Shutdown { response } => {
@@ -1994,11 +2091,26 @@ async fn run_acp_session(
                         }
                         next = receiver.recv(), if controls_open => {
                             if let Some(next) = next {
-                                if let SessionCommand::Shutdown { response } = next {
-                                    connection.send_notification(CancelNotification::new(session_id.clone()))?;
-                                    shutdown_response = Some(response);
-                                    break AcpRunOutcome::Cancelled;
-                                }
+                                let next = match next {
+                                    SessionCommand::Shutdown { response } => {
+                                        connection.send_notification(CancelNotification::new(session_id.clone()))?;
+                                        shutdown_response = Some(response);
+                                        break AcpRunOutcome::Cancelled;
+                                    }
+                                    SessionCommand::SideQuestion { id, question, response } => {
+                                        start_side_question(
+                                            &runtime,
+                                            &connection,
+                                            &session_id,
+                                            &command.run,
+                                            id,
+                                            question,
+                                            response,
+                                        );
+                                        continue;
+                                    }
+                                    next => next,
+                                };
                                 if let Some(queued_prompt) = process_session_control(
                                     &connection,
                                     &session_id,
@@ -2056,6 +2168,129 @@ async fn run_acp_session(
             None => RuntimeError::Acp(message),
         }
     })
+}
+
+fn start_side_question(
+    runtime: &AgentRuntime,
+    connection: &ConnectionTo<Agent>,
+    session_id: &agent_client_protocol::schema::v1::SessionId,
+    run: &AgentRun,
+    id: String,
+    question: String,
+    response: oneshot::Sender<Result<SideQuestionAccepted, RuntimeError>>,
+) {
+    let payload = json!({"id":id, "run_id":run.id, "question":question});
+    if let Err(error) = runtime
+        .store
+        .append_session_event(&run.conversation_id, "side_question_started", &payload)
+        .and_then(|_| {
+            runtime.store.append_workspace_event(
+                "side_question_started",
+                Some(&run.project_id),
+                Some(&run.conversation_id),
+                Some(&run.id),
+                &payload,
+            )
+        })
+    {
+        runtime.finish_side_question(&run.conversation_id);
+        let _ = response.send(Err(RuntimeError::Store(error)));
+        return;
+    }
+    let _ = response.send(Ok(SideQuestionAccepted {
+        id: id.clone(),
+        status: "pending",
+    }));
+
+    let runtime = runtime.clone();
+    let connection = connection.clone();
+    let session_id = session_id.clone();
+    let run = run.clone();
+    tokio::spawn(async move {
+        let params = serde_json::value::to_raw_value(&json!({
+            "sessionId":session_id,
+            "question":question,
+        }));
+        let result = match params {
+            Ok(params) => connection
+                .send_request(ClientRequest::ExtMethodRequest(ExtRequest::new(
+                    "_claude/side_question",
+                    params.into(),
+                )))
+                .block_task()
+                .await
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        let (kind, payload) = match result {
+            Ok(value) => {
+                let answer = value
+                    .get("response")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if answer.is_empty() {
+                    (
+                        "side_question_failed",
+                        json!({
+                            "id":id,
+                            "run_id":run.id,
+                            "question":question,
+                            "message":"Claude returned an empty side-question response",
+                        }),
+                    )
+                } else {
+                    (
+                        "side_question_completed",
+                        json!({
+                            "id":id,
+                            "run_id":run.id,
+                            "question":question,
+                            "answer":answer,
+                            "synthetic":value.get("synthetic").cloned().unwrap_or(Value::Null),
+                        }),
+                    )
+                }
+            }
+            Err(message) => (
+                "side_question_failed",
+                json!({
+                    "id":id,
+                    "run_id":run.id,
+                    "question":question,
+                    "message":message,
+                }),
+            ),
+        };
+        let _ = runtime
+            .store
+            .append_session_event(&run.conversation_id, kind, &payload);
+        let _ = runtime.store.append_workspace_event(
+            kind,
+            Some(&run.project_id),
+            Some(&run.conversation_id),
+            Some(&run.id),
+            &payload,
+        );
+        runtime.finish_side_question(&run.conversation_id);
+    });
+}
+
+fn side_question_capability(store: &AgentStore, conversation_id: &str) -> bool {
+    store
+        .session_events_after(conversation_id, 0)
+        .ok()
+        .and_then(|events| {
+            events
+                .into_iter()
+                .rev()
+                .find(|event| event.kind == "capabilities")
+                .map(|event| event.payload)
+        })
+        .and_then(|payload| payload.get("_meta").cloned())
+        .and_then(|meta| meta.get("claudeCode").cloned())
+        .and_then(|claude| claude.get("sideQuestion").cloned())
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
 }
 
 async fn create_provider_session(
@@ -2415,8 +2650,21 @@ fn merge_run_id(mut payload: Value, run_id: &str) -> Value {
 }
 
 fn text_event(kind: AgentEventKind, chunk: ContentChunk) -> Option<(AgentEventKind, Value)> {
+    let message_id = chunk.message_id.map(|value| value.to_string());
+    let meta = chunk.meta;
     match chunk.content {
-        ContentBlock::Text(text) => Some((kind, json!({"text": text.text}))),
+        ContentBlock::Text(text) => {
+            let mut payload = json!({"text": text.text});
+            if let Value::Object(object) = &mut payload {
+                if let Some(message_id) = message_id {
+                    object.insert("message_id".into(), Value::String(message_id));
+                }
+                if let Some(meta) = meta {
+                    object.insert("_meta".into(), serde_json::to_value(meta).ok()?);
+                }
+            }
+            Some((kind, payload))
+        }
         _ => None,
     }
 }
@@ -2584,9 +2832,12 @@ mod tests {
             panic!("stdio adapter")
         };
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
-        assert!(server.args.iter().any(|argument| {
-            argument.ends_with("packaging/adapter-runtime/node_modules/.bin/claude-agent-acp")
-        }));
+        assert!(
+            server
+                .args
+                .iter()
+                .any(|argument| { argument.ends_with("packaging/bin/claude-agent-acp") })
+        );
         assert!(server.env.iter().any(|variable| {
             variable.name == "CLAUDE_CODE_EXECUTABLE"
                 && variable.value == "/home/jovyan/.local/bin/claude"
@@ -2605,12 +2856,11 @@ mod tests {
 
     #[test]
     fn maps_acp_content_and_tool_updates_to_shared_events() {
-        let text = text_event(
-            AgentEventKind::TextDelta,
-            ContentChunk::new(ContentBlock::Text(TextContent::new("done"))),
-        )
-        .expect("text event");
+        let mut chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("done")));
+        chunk.message_id = Some("message-1".into());
+        let text = text_event(AgentEventKind::TextDelta, chunk).expect("text event");
         assert_eq!(text.1["text"], "done");
+        assert_eq!(text.1["message_id"], "message-1");
 
         let tool = tool_updated(ToolCallUpdate::new(
             ToolCallId::new("tool-1"),

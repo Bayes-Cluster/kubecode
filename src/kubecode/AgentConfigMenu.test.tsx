@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import { AgentConfigMenu } from './AgentConfigMenu'
+import { AgentControlMenu } from './AgentControlMenu'
 
 const groups = [
   {
@@ -14,6 +14,7 @@ const groups = [
       { id: 'instant', name: 'Instant' },
       { id: 'high', name: 'High' },
     ],
+    type: 'select' as const,
   },
   {
     currentValue: 'gpt-5.6',
@@ -23,22 +24,27 @@ const groups = [
       { id: 'gpt-5.6', name: 'GPT-5.6 Sol' },
       { id: 'gpt-5.5', name: 'GPT-5.5' },
     ],
+    type: 'select' as const,
   },
 ]
 
-describe('AgentConfigMenu', () => {
-  it('keeps every Agent-native option behind one summary button', () => {
+describe('AgentControlMenu', () => {
+  it('keeps mode and every Agent-native option behind one summary button', () => {
     const onChange = vi.fn()
     render(
-      <AgentConfigMenu
-        groups={groups}
-        onChange={onChange}
+      <AgentControlMenu
+        agent="codex"
+        configs={groups.map((group) => ({ ...group, id: group.id.slice('config:'.length), kind: 'config' as const }))}
+        mode={{ currentValue: 'plan', id: 'mode', kind: 'mode', name: 'Mode', options: [{ id: 'plan', name: 'Plan' }], type: 'select' }}
+        modeDisabled={false}
+        onConfigChange={onChange}
+        onModeChange={vi.fn()}
         t={createTranslator('en')}
       />,
     )
 
     const trigger = screen.getByRole('button', { name: 'Agent settings' })
-    expect(trigger).toHaveTextContent('Instant')
+    expect(trigger).toHaveTextContent('Plan')
     fireEvent.click(trigger)
     const menu = screen.getByRole('dialog', { name: 'Agent settings' })
     expect(menu).toBeInTheDocument()
@@ -46,7 +52,7 @@ describe('AgentConfigMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: /GPT-5.6 Sol.*Model/i }))
     fireEvent.click(screen.getByRole('button', { name: 'GPT-5.5' }))
 
-    expect(onChange).toHaveBeenCalledWith('config:model', 'gpt-5.5')
+    expect(onChange).toHaveBeenCalledWith('model', 'gpt-5.5')
   })
 
   it('keeps a long OpenCode model catalog inside a scrollable viewport', () => {
@@ -55,12 +61,16 @@ describe('AgentConfigMenu', () => {
       name: `Provider model ${index}`,
     }))
     render(
-      <AgentConfigMenu
-        groups={[
-          groups[0],
-          { ...groups[1], currentValue: 'model-0', options: modelOptions },
+      <AgentControlMenu
+        agent="opencode"
+        configs={[
+          { ...groups[0], id: 'effort', kind: 'config' as const },
+          { ...groups[1], id: 'model', kind: 'config' as const, currentValue: 'model-0', options: modelOptions },
         ]}
-        onChange={vi.fn()}
+        mode={null}
+        modeDisabled={false}
+        onConfigChange={vi.fn()}
+        onModeChange={vi.fn()}
         t={createTranslator('en')}
       />,
     )
