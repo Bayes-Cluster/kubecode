@@ -1,0 +1,220 @@
+/*
+ * Kubecode Brand & Product Tokens
+ * Direction: Modular Flow / Workspace Loop
+ *
+ * Integration:
+ *   1. Import before component CSS.
+ *   2. Existing Kubecode semantic variables are mapped at the bottom.
+ *   3. User-selectable syntax themes remain independent from app chrome.
+ */
+
+:root {
+  /* --------------------------------------------------------------
+   * 1. Brand primitives
+   * -------------------------------------------------------------- */
+  --kc-ink-950: #11131A;
+  --kc-ink-850: #202430;
+
+  --kc-blue-700: #3C50E0;
+  --kc-blue-600: #4F63F5;
+  --kc-blue-300: #91A0FF;
+  --kc-blue-100: #EEF0FF;
+
+  --kc-mint-600: #11AF80;
+  --kc-mint-500: #2BD9A8;
+  --kc-mint-100: #E6FAF4;
+
+  --kc-warm-200: #ECE9E2;
+  --kc-warm-100: #F7F7F4;
+  --kc-white: #FFFFFF;
+
+  --kc-warning-500: #F4AA3C;
+  --kc-danger-500: #F05C61;
+
+  /* --------------------------------------------------------------
+   * 2. Typography
+   * -------------------------------------------------------------- */
+  --kc-font-display: "Inter Display", Inter, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --kc-font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --kc-font-code: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  --kc-text-2xs: 0.6875rem;  /* 11px */
+  --kc-text-xs: 0.75rem;     /* 12px */
+  --kc-text-sm: 0.8125rem;   /* 13px */
+  --kc-text-md: 0.875rem;    /* 14px */
+  --kc-text-lg: 1rem;        /* 16px */
+  --kc-text-xl: 1.25rem;     /* 20px */
+  --kc-text-2xl: 1.75rem;    /* 28px */
+  --kc-text-display: 3rem;   /* 48px */
+
+  --kc-leading-tight: 1.18;
+  --kc-leading-ui: 1.45;
+  --kc-leading-copy: 1.62;
+
+  /* --------------------------------------------------------------
+   * 3. Spacing, radius, border, shadow
+   * -------------------------------------------------------------- */
+  --kc-space-0: 0;
+  --kc-space-1: 0.25rem;  /* 4px */
+  --kc-space-2: 0.5rem;   /* 8px */
+  --kc-space-3: 0.75rem;  /* 12px */
+  --kc-space-4: 1rem;     /* 16px */
+  --kc-space-5: 1.5rem;   /* 24px */
+  --kc-space-6: 2rem;     /* 32px */
+  --kc-space-7: 3rem;     /* 48px */
+  --kc-space-8: 4rem;     /* 64px */
+
+  --kc-radius-xs: 0.25rem;   /* 4px */
+  --kc-radius-sm: 0.375rem;  /* 6px */
+  --kc-radius-md: 0.5rem;    /* 8px */
+  --kc-radius-lg: 0.75rem;   /* 12px */
+  --kc-radius-xl: 1rem;      /* 16px */
+  --kc-radius-2xl: 1.25rem;  /* 20px */
+  --kc-radius-round: 999px;
+
+  --kc-border-width: 1px;
+  --kc-focus-width: 2px;
+
+  --kc-shadow-sm: 0 1px 2px rgb(17 19 26 / 0.06);
+  --kc-shadow-md: 0 4px 12px rgb(17 19 26 / 0.08);
+  --kc-shadow-lg: 0 12px 32px rgb(17 19 26 / 0.12);
+  --kc-shadow-dark-md: 0 8px 24px rgb(0 0 0 / 0.28);
+
+  /* --------------------------------------------------------------
+   * 4. Light semantic theme
+   * -------------------------------------------------------------- */
+  --kc-bg-app: #FAFAF8;
+  --kc-bg-sidebar: #F2F1EC;
+  --kc-bg-panel: #FFFFFF;
+  --kc-bg-elevated: #FFFFFF;
+  --kc-bg-input: #FFFFFF;
+  --kc-bg-terminal: #11131A;
+
+  --kc-text-primary: #11131A;
+  --kc-text-secondary: #5B6270;
+  --kc-text-tertiary: #858B96;
+  --kc-text-disabled: #A9ADB5;
+  --kc-text-inverse: #FFFFFF;
+
+  --kc-border-subtle: #ECECE8;
+  --kc-border-default: #E0E1DC;
+  --kc-border-strong: #C9CBC5;
+
+  --kc-action-primary: var(--kc-blue-600);
+  --kc-action-primary-hover: var(--kc-blue-700);
+  --kc-action-primary-active: #3347CA;
+  --kc-action-primary-soft: var(--kc-blue-100);
+
+  --kc-state-running: var(--kc-mint-500);
+  --kc-state-success: var(--kc-mint-600);
+  --kc-state-warning: var(--kc-warning-500);
+  --kc-state-error: var(--kc-danger-500);
+  --kc-state-info: var(--kc-blue-600);
+
+  --kc-state-hover: #F0F0ED;
+  --kc-state-selected: #EEF0FF;
+  --kc-state-selected-strong: #DFE3FF;
+  --kc-focus-ring: 0 0 0 var(--kc-focus-width) rgb(79 99 245 / 0.28);
+
+  /* Brand gradients: reserved for identity and marketing, not body text. */
+  --kc-gradient-logo: linear-gradient(135deg, #4F63F5 0%, #5268F8 55%, #91A0FF 100%);
+  --kc-gradient-mint: linear-gradient(135deg, #36E3B2 0%, #2BD9A8 100%);
+}
+
+:root.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --kc-bg-app: #11131A;
+  --kc-bg-sidebar: #0C0E14;
+  --kc-bg-panel: #171A22;
+  --kc-bg-elevated: #1D2029;
+  --kc-bg-input: #11131A;
+  --kc-bg-terminal: #090B10;
+
+  --kc-text-primary: #F0F2F7;
+  --kc-text-secondary: #B2B7C3;
+  --kc-text-tertiary: #858C9B;
+  --kc-text-disabled: #626977;
+  --kc-text-inverse: #11131A;
+
+  --kc-border-subtle: #242832;
+  --kc-border-default: #2D323E;
+  --kc-border-strong: #3D4351;
+
+  --kc-action-primary: #7A91FF;
+  --kc-action-primary-hover: #9CAEFF;
+  --kc-action-primary-active: #687EEA;
+  --kc-action-primary-soft: #242C54;
+
+  --kc-state-running: #3EEBB6;
+  --kc-state-success: #37DCA9;
+  --kc-state-warning: #FFC45C;
+  --kc-state-error: #FF7478;
+  --kc-state-info: #7A91FF;
+
+  --kc-state-hover: #20242D;
+  --kc-state-selected: #232A50;
+  --kc-state-selected-strong: #2C376A;
+  --kc-focus-ring: 0 0 0 var(--kc-focus-width) rgb(122 145 255 / 0.34);
+}
+
+/* --------------------------------------------------------------
+ * 5. Existing Kubecode semantic-variable mapping
+ * -------------------------------------------------------------- */
+:root {
+  --surface-app: var(--kc-bg-app);
+  --surface-sidebar: var(--kc-bg-sidebar);
+  --surface-panel: var(--kc-bg-panel);
+  --surface-card: var(--kc-bg-panel);
+  --surface-popover: var(--kc-bg-elevated);
+  --surface-input: var(--kc-bg-input);
+  --surface-editor: var(--kc-bg-app);
+
+  --text-primary: var(--kc-text-primary);
+  --text-secondary: var(--kc-text-secondary);
+  --text-tertiary: var(--kc-text-tertiary);
+  --text-muted: var(--kc-text-disabled);
+  --text-inverse: var(--kc-text-inverse);
+
+  --border-default: var(--kc-border-default);
+  --border-subtle: var(--kc-border-subtle);
+  --border-strong: var(--kc-border-strong);
+  --border-focus: var(--kc-action-primary);
+
+  --state-hover: var(--kc-state-hover);
+  --state-hover-subtle: color-mix(in srgb, var(--kc-state-hover) 60%, transparent);
+  --state-selected: var(--kc-state-selected);
+  --state-selected-strong: var(--kc-state-selected-strong);
+  --state-focus-ring: var(--kc-action-primary);
+
+  --accent-blue: var(--kc-action-primary);
+  --accent-blue-hover: var(--kc-action-primary-hover);
+  --accent-blue-light: var(--kc-action-primary-soft);
+  --accent-green: var(--kc-state-success);
+  --accent-orange: var(--kc-state-warning);
+  --accent-red: var(--kc-state-error);
+
+  --radius: var(--kc-radius-md);
+}
+
+/* --------------------------------------------------------------
+ * 6. Usage contracts
+ * -------------------------------------------------------------- */
+/*
+ * Workspace Blue:
+ *   primary actions, selected states, focus, links, workflow paths.
+ *
+ * Agent Mint:
+ *   live/running/connected/success only. Do not use for primary CTA.
+ *
+ * Blue Light:
+ *   depth, secondary route, quiet selected states and brand illustration.
+ *
+ * Kube Ink:
+ *   typography, dark surfaces, structural contrast.
+ *
+ * Warm Surface:
+ *   calm app chrome and marketing background. Do not use for code surfaces.
+ */

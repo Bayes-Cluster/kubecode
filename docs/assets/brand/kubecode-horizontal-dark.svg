@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-labelledby="title">
-  <title id="title">Kubecode app icon</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="72" viewBox="0 0 310 72" role="img" aria-labelledby="title">
+  <title id="title">Kubecode horizontal logo for dark backgrounds</title>
 
   <defs>
     <linearGradient id="kc-blue-gradient" x1="24" y1="20" x2="180" y2="180" gradientUnits="userSpaceOnUse">
@@ -20,10 +20,8 @@
     </filter>
   </defs>
 
-  <rect x="5" y="5" width="190" height="190" rx="44" fill="#11131A"/>
-  <rect x="5.5" y="5.5" width="189" height="189" rx="43.5" fill="none" stroke="#2A2E39"/>
-  <g transform="translate(18 18) scale(.82)">
-
+  <g transform="translate(2 4) scale(.36)">
+    
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M102 30H58C38 30 27 41 27 61V139C27 159 38 170 58 170H70L105 116"
           stroke="#536BFF" stroke-width="28"/>
@@ -36,5 +34,7 @@
   <circle cx="110" cy="99" r="3.2" fill="#11AF80" opacity=".75"/>
 
   </g>
+  <text x="84" y="57" font-family="'Inter Display', Inter, Arial, sans-serif" font-size="46" font-weight="650"
+        letter-spacing="-1.8" fill="#FFFFFF">Kubecode</text>
 
 </svg>

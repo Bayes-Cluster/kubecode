@@ -9,6 +9,14 @@ import {
 } from './appearancePreferences'
 
 describe('Kubecode appearance preferences', () => {
+  it('uses the Kubecode system theme for a fresh profile', () => {
+    expect(DEFAULT_KUBECODE_APPEARANCE.theme).toBe('system')
+    expect(readKubecodeAppearance({
+      getItem: () => null,
+      setItem: vi.fn(),
+    }).theme).toBe('system')
+  })
+
   it('normalizes persisted values and falls back for invalid fields', () => {
     expect(normalizeKubecodeAppearance({
       colorScheme: 'dark',

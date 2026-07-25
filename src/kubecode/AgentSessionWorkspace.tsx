@@ -582,7 +582,12 @@ export function AgentSessionWorkspace({
     const readyAgents = agents.filter((candidate) => candidate.available)
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
-        <div className="kubecode-session-empty-mark">K</div>
+        <img
+          alt=""
+          aria-hidden="true"
+          className="kubecode-session-empty-mark"
+          src={`${import.meta.env.BASE_URL}logo.svg`}
+        />
         <h1>{projectId ? t('kubecode.startSession') : t('kubecode.firstRunTitle')}</h1>
         <p>{projectId ? t('kubecode.startSessionDescription') : t('kubecode.firstRunDescription')}</p>
         <div className="kubecode-agent-readiness-grid">

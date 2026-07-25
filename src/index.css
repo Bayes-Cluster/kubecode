@@ -6,6 +6,18 @@
    ============================================================ */
 
 :root {
+  /* Kubecode brand primitives — Workspace Loop / Modular Flow */
+  --kc-ink-950: #11131A;
+  --kc-blue-700: #3C50E0;
+  --kc-blue-600: #4F63F5;
+  --kc-blue-300: #91A0FF;
+  --kc-blue-100: #EEF0FF;
+  --kc-mint-600: #11AF80;
+  --kc-mint-500: #2BD9A8;
+  --kc-mint-100: #E6FAF4;
+  --kc-warm-200: #ECE9E2;
+  --kc-warm-100: #F7F7F4;
+
   /* --- Font defaults --- */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -34,51 +46,51 @@
   color-scheme: light;
 
   /* --- Semantic surfaces (light mode) --- */
-  --surface-app: #FFFFFF;
-  --surface-sidebar: #F7F6F3;
+  --surface-app: #FAFAF8;
+  --surface-sidebar: #F2F1EC;
   --surface-panel: #FFFFFF;
   --surface-card: #FFFFFF;
   --surface-popover: #FFFFFF;
   --surface-input: #FFFFFF;
-  --surface-button: #EBEBEA;
+  --surface-button: #F0F0ED;
   --surface-dialog: #FFFFFF;
-  --surface-editor: #FFFFFF;
+  --surface-editor: #FAFAF8;
   --surface-overlay: rgba(0, 0, 0, 0.3);
 
   /* --- Semantic text (light mode) --- */
-  --text-primary: #37352F;
-  --text-secondary: #787774;
-  --text-tertiary: #787774;
-  --text-muted: #B4B4B4;
-  --text-faint: #B4B4B4;
-  --text-heading: #37352F;
+  --text-primary: #11131A;
+  --text-secondary: #5B6270;
+  --text-tertiary: #858B96;
+  --text-muted: #A9ADB5;
+  --text-faint: #A9ADB5;
+  --text-heading: #11131A;
   --text-inverse: #FFFFFF;
 
   /* --- Semantic borders (light mode) --- */
-  --border-default: #E9E9E7;
-  --border-subtle: #E9E9E7;
-  --border-strong: #D9D9D6;
-  --border-input: #E9E9E7;
-  --border-dialog: #E9E9E7;
-  --border-focus: #155DFF;
+  --border-default: #E0E1DC;
+  --border-subtle: #ECECE8;
+  --border-strong: #C9CBC5;
+  --border-input: #E0E1DC;
+  --border-dialog: #E0E1DC;
+  --border-focus: var(--kc-blue-600);
 
   /* --- Interaction states (light mode) --- */
-  --state-hover: #EBEBEA;
-  --state-hover-subtle: #F0F0EF;
-  --state-selected: #E8F4FE;
-  --state-selected-strong: #D8ECFE;
-  --state-active: #E8F4FE;
-  --state-focus-ring: #155DFF;
-  --state-drag-target: #155DFF18;
+  --state-hover: #F0F0ED;
+  --state-hover-subtle: #F5F5F2;
+  --state-selected: var(--kc-blue-100);
+  --state-selected-strong: #DFE3FF;
+  --state-active: var(--kc-blue-100);
+  --state-focus-ring: var(--kc-blue-600);
+  --state-drag-target: rgb(79 99 245 / 0.1);
   --state-disabled: #F0F0EF;
 
   /* --- Accent roles (light mode) --- */
-  --accent-blue: #155DFF;
-  --accent-blue-bg: #155DFF18;
-  --accent-blue-hover: #0D4AD6;
-  --accent-blue-light: #155DFF14;
-  --accent-green: #38A169;
-  --accent-green-light: rgba(56, 161, 105, 0.1);
+  --accent-blue: var(--kc-blue-600);
+  --accent-blue-bg: rgb(79 99 245 / 0.1);
+  --accent-blue-hover: var(--kc-blue-700);
+  --accent-blue-light: var(--kc-blue-100);
+  --accent-green: var(--kc-mint-600);
+  --accent-green-light: var(--kc-mint-100);
   --accent-orange: #D9730D;
   --accent-orange-light: rgba(217, 115, 13, 0.1);
   --accent-red: #E53E3E;
@@ -187,51 +199,51 @@
   color-scheme: dark;
 
   /* --- Semantic surfaces (dark mode) --- */
-  --surface-app: #1F1E1B;
-  --surface-sidebar: #191814;
-  --surface-panel: #23221F;
-  --surface-card: #23221F;
-  --surface-popover: #292823;
-  --surface-input: #1F1E1B;
-  --surface-button: #34322D;
-  --surface-dialog: #272622;
-  --surface-editor: #1F1E1B;
-  --surface-overlay: rgba(8, 8, 7, 0.58);
+  --surface-app: #11131A;
+  --surface-sidebar: #0C0E14;
+  --surface-panel: #171A22;
+  --surface-card: #171A22;
+  --surface-popover: #1D2029;
+  --surface-input: #11131A;
+  --surface-button: #20242D;
+  --surface-dialog: #171A22;
+  --surface-editor: #11131A;
+  --surface-overlay: rgba(0, 0, 0, 0.58);
 
   /* --- Semantic text (dark mode) --- */
-  --text-primary: #E6E1D8;
-  --text-secondary: #B8B1A6;
-  --text-tertiary: #9C9488;
-  --text-muted: #7F776D;
-  --text-faint: #625B53;
-  --text-heading: #F1ECE3;
-  --text-inverse: #151411;
+  --text-primary: #F0F2F7;
+  --text-secondary: #B2B7C3;
+  --text-tertiary: #858C9B;
+  --text-muted: #626977;
+  --text-faint: #626977;
+  --text-heading: #F0F2F7;
+  --text-inverse: #11131A;
 
   /* --- Semantic borders (dark mode) --- */
-  --border-default: #34322D;
-  --border-subtle: #2A2925;
-  --border-strong: #46433B;
-  --border-input: #3A3832;
-  --border-dialog: #3A3832;
-  --border-focus: #78A4FF;
+  --border-default: #2D323E;
+  --border-subtle: #242832;
+  --border-strong: #3D4351;
+  --border-input: #2D323E;
+  --border-dialog: #2D323E;
+  --border-focus: #7A91FF;
 
   /* --- Interaction states (dark mode) --- */
-  --state-hover: #2D2B27;
-  --state-hover-subtle: #262520;
-  --state-selected: #1E344C;
-  --state-selected-strong: #25415F;
-  --state-active: #203A55;
-  --state-focus-ring: #78A4FF;
-  --state-drag-target: rgba(120, 164, 255, 0.2);
-  --state-disabled: #292824;
+  --state-hover: #20242D;
+  --state-hover-subtle: #1B1E26;
+  --state-selected: #232A50;
+  --state-selected-strong: #2C376A;
+  --state-active: #232A50;
+  --state-focus-ring: #7A91FF;
+  --state-drag-target: rgba(122, 145, 255, 0.2);
+  --state-disabled: #20242D;
 
   /* --- Accent roles (dark mode) --- */
-  --accent-blue: #78A4FF;
-  --accent-blue-bg: rgba(120, 164, 255, 0.2);
-  --accent-blue-hover: #9BBEFF;
-  --accent-blue-light: rgba(120, 164, 255, 0.16);
-  --accent-green: #79D89D;
-  --accent-green-light: rgba(121, 216, 157, 0.16);
+  --accent-blue: #7A91FF;
+  --accent-blue-bg: rgba(122, 145, 255, 0.2);
+  --accent-blue-hover: #9CAEFF;
+  --accent-blue-light: #242C54;
+  --accent-green: #37DCA9;
+  --accent-green-light: rgba(62, 235, 182, 0.16);
   --accent-orange: #F3A15B;
   --accent-orange-light: rgba(243, 161, 91, 0.17);
   --accent-red: #FF8A86;

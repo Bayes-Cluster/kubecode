@@ -1613,16 +1613,9 @@
 }
 
 .kubecode-session-empty-mark {
-  align-items: center;
-  background: var(--text-primary);
-  border-radius: 12px;
-  color: var(--surface-app);
-  display: flex;
-  font-size: 24px;
-  font-weight: 750;
   height: 52px;
-  justify-content: center;
   margin-bottom: 16px;
+  object-fit: contain;
   width: 52px;
 }
 

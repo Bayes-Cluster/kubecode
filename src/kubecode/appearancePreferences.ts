@@ -30,7 +30,7 @@ export type KubecodeAppearance = {
 
 export const DEFAULT_KUBECODE_APPEARANCE: KubecodeAppearance = {
   colorScheme: 'system',
-  theme: 'opencode',
+  theme: 'system',
   uiFont: 'System Sans',
   uiFontSize: 14,
   codeFont: 'System Mono',
