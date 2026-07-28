@@ -679,6 +679,10 @@ impl AgentRuntime {
         self.start_with_visibility(request, false)
     }
 
+    pub fn start_acp_command(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
+        self.start_with_visibility(request, true)
+    }
+
     fn start_internal(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
         self.start_with_visibility(request, true)
     }

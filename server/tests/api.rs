@@ -1887,6 +1887,224 @@ fn executable(directory: &TempDir, body: &str) -> String {
 }
 
 #[tokio::test]
+async fn projects_and_dispatches_the_latest_advertised_acp_command() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes","input":{"hint":"focus"},"_meta":{"private":"kept-server-side"}}],"_meta":{"private":"kept-server-side"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"command-session\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'"text":"/review security"'*) ;;
+        *) exit 9 ;;
+      esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Reviewed"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+            AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: binary,
+                error: None,
+            },
+        ]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":root.join("command-project")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+
+    let (_, state) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/state"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        state["available_commands"],
+        json!({"availableCommands":[{
+            "name":"review",
+            "description":"Review changes",
+            "input":{"kind":"text", "hint":"focus"}
+        }]})
+    );
+    let raw = store
+        .session_events_after(conversation_id, 0)
+        .expect("session events")
+        .into_iter()
+        .find(|event| event.kind == "available_commands")
+        .expect("raw command event");
+    assert_eq!(raw.payload["_meta"]["private"], "kept-server-side");
+    assert_eq!(
+        raw.payload["availableCommands"][0]["_meta"]["private"],
+        "kept-server-side"
+    );
+
+    let (_, foreign_project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":root.join("foreign-command-project")}),
+    )
+    .await;
+    let foreign_project_id = foreign_project["id"].as_str().expect("foreign project id");
+    let foreign_command_uri = format!(
+        "{BASE_PATH}/api/v1/projects/{foreign_project_id}/sessions/{conversation_id}/commands"
+    );
+    let run_count = store.list_runs(conversation_id).expect("runs").len();
+    let session_event_count = store
+        .session_events_after(conversation_id, 0)
+        .expect("session events")
+        .len();
+    let workspace_event_count = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .len();
+    let mut foreign_error = None;
+    for request in [
+        json!({"name":"review", "arguments":""}),
+        json!({"name":"missing", "arguments":"security"}),
+        json!({"name":"bad name", "arguments":"security"}),
+    ] {
+        let (status, error) = json_request(&app, Method::POST, &foreign_command_uri, request).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(error["code"], "not_found");
+        if let Some(expected) = &foreign_error {
+            assert_eq!(&error, expected);
+        } else {
+            foreign_error = Some(error);
+        }
+    }
+    assert_eq!(
+        store.list_runs(conversation_id).expect("runs").len(),
+        run_count
+    );
+    assert_eq!(
+        store
+            .session_events_after(conversation_id, 0)
+            .expect("session events")
+            .len(),
+        session_event_count
+    );
+    assert_eq!(
+        store
+            .workspace_events_after(0)
+            .expect("workspace events")
+            .len(),
+        workspace_event_count
+    );
+
+    let command_uri =
+        format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions/{conversation_id}/commands");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &command_uri,
+        json!({"name":"review", "arguments":""}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error["code"], "acp_command_input_required");
+    assert!(store.list_runs(conversation_id).expect("runs").is_empty());
+
+    let (status, run) = json_request(
+        &app,
+        Method::POST,
+        &command_uri,
+        json!({"name":"review", "arguments":"security"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(run["internal"], true);
+    assert_eq!(run["message"], "/review security");
+    let run_id = run["id"].as_str().expect("run id");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if store.get_run(run_id).expect("run").status
+                != kubecode_server::agents::RunStatus::Running
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("command completion");
+    let events = store
+        .session_events_after(conversation_id, 0)
+        .expect("session events");
+    assert!(events.iter().any(|event| {
+        event.kind == "user_message"
+            && event.payload["run_id"] == run_id
+            && event.payload["internal"] == true
+    }));
+    assert!(events.iter().any(|event| {
+        event.kind == "text_delta"
+            && event.payload["run_id"] == run_id
+            && event.payload["text"] == "Reviewed"
+    }));
+
+    store
+        .append_session_event(
+            conversation_id,
+            "available_commands",
+            &json!({"availableCommands":[]}),
+        )
+        .expect("replacement command snapshot");
+    let (_, state) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/state"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(state["available_commands"], json!({"availableCommands":[]}));
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &command_uri,
+        json!({"name":"review", "arguments":"security"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "acp_command_unavailable");
+    assert_eq!(store.list_runs(conversation_id).expect("runs").len(), 1);
+}
+
+#[tokio::test]
 async fn runtime_status_tracks_active_idle_evicted_and_shut_down_session_actors() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");

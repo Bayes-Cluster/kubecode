@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -287,6 +287,414 @@ describe('AgentSessionWorkspace', () => {
     />)
 
     expect(await screen.findByRole('button', { name: 'Add context' })).toBeInTheDocument()
+  })
+
+  it('dispatches a selected argument-free ACP command without a visible optimistic user turn', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const internalRun = { ...run, id: 'command-run', message: '/status', status: 'running' as const,
+      internal: true }
+    const dispatchAcpCommand = vi.fn().mockResolvedValue(internalRun)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'status', description: 'Show status', input: null }],
+        },
+      }),
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByText('/status')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
+
+    await waitFor(() => expect(dispatchAcpCommand).toHaveBeenCalledWith(
+      'project-1', 'session-1', 'status', '',
+    ))
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('')
+    expect(screen.queryByText('/status', { selector: 'article *' })).not.toBeInTheDocument()
+  })
+
+  it('does not submit an advertised command until its required input is present', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/review')
+    const startRun = vi.fn()
+    const dispatchAcpCommand = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{
+            name: 'review',
+            description: 'Review changes',
+            input: { kind: 'text', hint: 'focus' },
+          }],
+        },
+      }),
+      startRun,
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByText('focus')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
+
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
+    expect(startRun).not.toHaveBeenCalled()
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/review')
+  })
+
+  it('keeps unknown slash text on the ordinary visible prompt path', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/unknown')
+    const startRun = vi.fn().mockResolvedValue({ ...run, id: 'ordinary-run', message: '/unknown' })
+    const dispatchAcpCommand = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'status', description: 'Show status', input: null }],
+        },
+      }),
+      startRun,
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.keyDown(await screen.findByTestId('agent-input'), { key: 'Enter' })
+
+    await waitFor(() => expect(startRun).toHaveBeenCalledWith(
+      'project-1', 'session-1', '/unknown',
+    ))
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
+    expect(await screen.findByText('/unknown')).toBeInTheDocument()
+  })
+
+  it('uses arrows and Tab for completion, then Escape dismisses without clearing the draft', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: { availableCommands: [
+          { name: 'status', description: 'Status', input: null },
+          { name: 'review', description: 'Review', input: { kind: 'text', hint: 'focus' } },
+        ] },
+      }),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    const input = await screen.findByTestId('agent-input')
+    expect(screen.getAllByRole('option')).toHaveLength(2)
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/review')
+    expect(screen.getByText('focus')).toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/review')
+  })
+
+  it('ignores command shortcuts while the editor is composing', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const startRun = vi.fn()
+    const dispatchAcpCommand = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'status', description: 'Status', input: null }],
+        },
+      }),
+      startRun,
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.keyDown(await screen.findByTestId('agent-input'), {
+      isComposing: true,
+      key: 'Enter',
+      keyCode: 229,
+    })
+
+    expect(startRun).not.toHaveBeenCalled()
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/')
+  })
+
+  it('replaces ACP commands from an idle workspace invalidation without reconnecting', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'review', description: 'Review', input: null }],
+        },
+      })
+      .mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'status', description: 'Status', input: null }],
+        },
+      })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+
+    expect(await screen.findByText('/review')).toBeInTheDocument()
+    const update = {
+      id: 42,
+      kind: 'available_commands',
+      project_id: 'project-1',
+      conversation_id: 'session-1',
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    } as WorkspaceEvent
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[update]} />)
+
+    expect(await screen.findByText('/status')).toBeInTheDocument()
+    expect(screen.queryByText('/review')).not.toBeInTheDocument()
+  })
+
+  it('ignores an older command rehydration that finishes after a newer invalidation', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const reviewState = {
+      ...emptySessionState,
+      available_commands: {
+        availableCommands: [{ name: 'review', description: 'Review', input: null }],
+      },
+    }
+    const statusState = {
+      ...emptySessionState,
+      available_commands: {
+        availableCommands: [{ name: 'status', description: 'Status', input: null }],
+      },
+    }
+    let resolveOlder!: (state: typeof reviewState) => void
+    let resolveNewer!: (state: typeof statusState) => void
+    const older = new Promise<typeof reviewState>((resolve) => { resolveOlder = resolve })
+    const newer = new Promise<typeof statusState>((resolve) => { resolveNewer = resolve })
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce(reviewState)
+      .mockReturnValueOnce(older)
+      .mockReturnValueOnce(newer)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const event = (id: number) => ({
+      id,
+      kind: 'available_commands',
+      project_id: 'project-1',
+      conversation_id: 'session-1',
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    }) as WorkspaceEvent
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+    expect(await screen.findByText('/review')).toBeInTheDocument()
+
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[event(42)]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[event(42), event(43)]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(3))
+    resolveNewer(statusState)
+    expect(await screen.findByText('/status')).toBeInTheDocument()
+    resolveOlder(reviewState)
+    await Promise.resolve()
+
+    expect(screen.queryByText('/review')).not.toBeInTheDocument()
+    expect(screen.getByText('/status')).toBeInTheDocument()
+  })
+
+  it('ignores an older option refresh that finishes after a command invalidation', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/')
+    const state = (command: string | null, mode: string) => ({
+      ...emptySessionState,
+      available_commands: command ? {
+        availableCommands: [{ name: command, description: command, input: null }],
+      } : { availableCommands: [] },
+      current_mode: {
+        currentModeId: mode,
+        availableModes: [
+          { id: 'manual', name: 'Manual' },
+          { id: 'acceptEdits', name: 'Accept Edits' },
+        ],
+      },
+    })
+    const initialState = state('review', 'manual')
+    const staleOptionState = state('review', 'acceptEdits')
+    const currentState = state(null, 'acceptEdits')
+    let resolveOptionRefresh!: (value: typeof staleOptionState) => void
+    let resolveInvalidation!: (value: typeof currentState) => void
+    const optionRefresh = new Promise<typeof staleOptionState>((resolve) => {
+      resolveOptionRefresh = resolve
+    })
+    const invalidation = new Promise<typeof currentState>((resolve) => {
+      resolveInvalidation = resolve
+    })
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce(initialState)
+      .mockReturnValueOnce(optionRefresh)
+      .mockReturnValueOnce(invalidation)
+    const setSessionMode = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+      setSessionMode,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+    expect(await screen.findByText('/review')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent settings' }))
+    fireEvent.click(screen.getByRole('button', { name: /Manual.*Agent mode/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Accept Edits/ }))
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
+
+    const update = {
+      id: 44,
+      kind: 'available_commands',
+      project_id: 'project-1',
+      conversation_id: 'session-1',
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    } as WorkspaceEvent
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[update]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(3))
+    resolveInvalidation(currentState)
+    await waitFor(() => expect(screen.queryByText('/review')).not.toBeInTheDocument())
+
+    await act(async () => {
+      resolveOptionRefresh(staleOptionState)
+      await optionRefresh
+    })
+
+    expect(screen.queryByText('/review')).not.toBeInTheDocument()
+    expect(setSessionMode).toHaveBeenCalledWith(conversation.id, 'acceptEdits')
   })
 
   it('regenerates a completed turn as a hidden revision in the same Session', async () => {

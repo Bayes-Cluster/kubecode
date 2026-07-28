@@ -80,6 +80,15 @@ import { SideQuestionPanel, type SideQuestionItem } from './SideQuestionPanel'
 import { useSystemMessages } from './systemMessages'
 import { TeamSessionOverview } from './TeamSessionOverview'
 import { TeamWorkspaceView } from './TeamWorkspaceView'
+import { AcpCommandMenu } from './AcpCommandMenu'
+import {
+  acpCommandCanDispatch,
+  activeAcpCommand,
+  availableAcpCommands,
+  completeAcpCommand,
+  matchingAcpCommands,
+  type AcpCommand,
+} from './acpCommands'
 
 type Translator = (key: TranslationKey, values?: TranslationValues) => string
 type PermissionChoice = { id: string; label: string; kind: string }
@@ -231,16 +240,21 @@ export function AgentSessionWorkspace({
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
+  const [dismissedCommandPrompt, setDismissedCommandPrompt] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const inputRef = useRef<HTMLDivElement>(null)
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>())
   const knownRunIdsRef = useRef(new Set<string>())
   const loadingRunsRef = useRef(new Map<string, Promise<AgentRun>>())
   const pendingRunEventsRef = useRef(new Map<string, AgentEvent[]>())
+  const sessionStateRequestRef = useRef(0)
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const latestWorkspaceEventIdRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   latestWorkspaceEventIdRef.current = workspaceEvents.at(-1)?.id ?? 0
   const conversationId = conversation?.id ?? null
+  const activeConversationIdRef = useRef(conversationId)
+  activeConversationIdRef.current = conversationId
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
@@ -269,7 +283,26 @@ export function AgentSessionWorkspace({
     }
   }, [agentLabel, systemMessages, t])
 
+  const beginSessionStateRequest = useCallback((targetConversationId: string) => {
+    if (activeConversationIdRef.current !== targetConversationId) return () => undefined
+    const request = ++sessionStateRequestRef.current
+    return (state: AgentSessionState | null) => {
+      if (request === sessionStateRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        setSessionState(state)
+      }
+    }
+  }, [])
+
+  const requestSessionState = useCallback(async (targetConversationId: string) => {
+    if (activeConversationIdRef.current !== targetConversationId) return
+    const applyState = beginSessionStateRequest(targetConversationId)
+    applyState(await api.getSessionState(targetConversationId))
+  }, [api, beginSessionStateRequest])
+
   const updatePrompt = useCallback((next: string | ((current: string) => string)) => {
+    setSelectedCommandIndex(0)
+    setDismissedCommandPrompt(null)
     setComposerDraft((currentDraft) => {
       const current = composerDraftPlainText(currentDraft)
       const value = typeof next === 'function' ? next(current) : next
@@ -285,6 +318,8 @@ export function AgentSessionWorkspace({
   const updateComposerDraft = useCallback((
     next: ComposerDraft | ((current: ComposerDraft) => ComposerDraft),
   ) => {
+    setSelectedCommandIndex(0)
+    setDismissedCommandPrompt(null)
     setComposerDraft((current) => {
       const draft = typeof next === 'function' ? next(current) : next
       if (conversationId) {
@@ -359,6 +394,7 @@ export function AgentSessionWorkspace({
     pendingRunEventsRef.current.clear()
     processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
     let current = true
+    const applySessionState = beginSessionStateRequest(conversation.id)
     void hydrateConversation(api, historyConversationId).then(({ messages: history, activeRun, pendingPermission: restoredPermission, pendingElicitation: restoredElicitation, sessionState: restoredState, sideQuestions: restoredSideQuestions, historyCursor: restoredCursor }) => {
       if (!current) return
       setMessages(history)
@@ -367,26 +403,27 @@ export function AgentSessionWorkspace({
       setPendingPermission(restoredPermission)
       setPendingElicitation(restoredElicitation)
       setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
-      setSessionState(restoredState)
+      applySessionState(restoredState)
       setSideQuestions(restoredSideQuestions)
       setHistoryCursor(restoredCursor)
     }).catch((cause: unknown) => {
       if (current) reportError(cause)
     })
     return () => { current = false }
-  }, [api, conversation, historyConversationId, reportError])
+  }, [api, beginSessionStateRequest, conversation, historyConversationId, reportError])
 
   useEffect(() => {
     if (!conversation || viewRevisionId) return
     const nextEvents = workspaceEvents.filter((event) => (
       event.id > processedWorkspaceEventRef.current
         && event.conversation_id === conversation.id
-        && event.run_id
     ))
     processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
       ?? processedWorkspaceEventRef.current
     let refreshState = false
     for (const workspaceEvent of nextEvents) {
+      refreshState ||= SESSION_STATE_EVENT_KINDS.has(workspaceEvent.kind)
+      if (!workspaceEvent.run_id) continue
       const event: AgentEvent = {
         created_at: workspaceEvent.created_at,
         kind: workspaceEvent.kind,
@@ -423,10 +460,12 @@ export function AgentSessionWorkspace({
       if (event.kind === 'run_completed') {
         void api.getRun(event.run_id).then(attachRun)
       }
-      refreshState ||= SESSION_STATE_EVENT_KINDS.has(event.kind)
     }
-    if (refreshState) void api.getSessionState(conversation.id).then(setSessionState)
-  }, [api, attachRun, conversation, loadRun, viewRevisionId, workspaceEvents])
+    if (refreshState) {
+      const conversationId = conversation.id
+      void requestSessionState(conversationId).catch(reportError)
+    }
+  }, [api, attachRun, conversation, loadRun, reportError, requestSessionState, viewRevisionId, workspaceEvents])
 
   const send = async (text: string) => {
     const message = text.trim()
@@ -449,6 +488,24 @@ export function AgentSessionWorkspace({
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
       })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
+  const dispatchCommand = async (command: AcpCommand, commandArguments: string) => {
+    if (!conversation || !projectId || active || command.ambiguous
+      || command.input.kind === 'unsupported') return
+    setError(null)
+    try {
+      const nextRun = await api.dispatchAcpCommand(
+        projectId,
+        conversation.id,
+        command.name,
+        commandArguments,
+      )
+      attachRun(nextRun)
+      updatePrompt('')
     } catch (cause) {
       reportError(cause)
     }
@@ -550,6 +607,7 @@ export function AgentSessionWorkspace({
       if (revision.workspace_restore === 'kept') {
         setWorkspaceWarning(t('kubecode.revisionFilesKept'))
       }
+      const applySessionState = beginSessionStateRequest(conversation.id)
       const hydrated = await hydrateConversation(api, conversation.id)
       knownRunIdsRef.current = new Set(
         hydrated.messages.flatMap((message) => message.id ? [message.id] : []),
@@ -558,7 +616,7 @@ export function AgentSessionWorkspace({
       setRun(hydrated.activeRun)
       setPendingPermission(hydrated.pendingPermission)
       setPendingElicitation(hydrated.pendingElicitation)
-      setSessionState(hydrated.sessionState)
+      applySessionState(hydrated.sessionState)
       setSideQuestions(hydrated.sideQuestions)
       setHistoryCursor(hydrated.historyCursor)
       setViewRevisionId(null)
@@ -688,9 +746,15 @@ export function AgentSessionWorkspace({
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
-  const visibleCommands = !directTeammateChatDisabled && prompt.startsWith('/')
-    ? commands.filter((command) => command.name.toLowerCase().includes(prompt.slice(1).toLowerCase()))
+  const activeCommand = activeAcpCommand(prompt)
+  const visibleCommands = !directTeammateChatDisabled
+    && activeCommand
+    && dismissedCommandPrompt !== prompt
+    ? matchingAcpCommands(commands, activeCommand.name)
     : []
+  const currentCommandIndex = visibleCommands.length === 0
+    ? 0
+    : Math.min(selectedCommandIndex, visibleCommands.length - 1)
   const { configs: configSelects, mode: nativeMode } = nativeSessionOptions(sessionState)
   const modeLockReason = nativeModeLockReason({
     active,
@@ -701,6 +765,55 @@ export function AgentSessionWorkspace({
     viewRevisionId,
   })
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
+
+  const handleCommandKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (visibleCommands.length === 0 || !activeCommand
+      || event.isDefaultPrevented()
+      || event.nativeEvent.isComposing
+      || event.keyCode === 229) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      setDismissedCommandPrompt(prompt)
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopPropagation()
+      const direction = event.key === 'ArrowDown' ? 1 : -1
+      setSelectedCommandIndex((current) => (
+        (current + direction + visibleCommands.length) % visibleCommands.length
+      ))
+      return
+    }
+    const selected = visibleCommands[currentCommandIndex]
+    if (event.key === 'Tab') {
+      if (selected.ambiguous || selected.input.kind === 'unsupported') return
+      event.preventDefault()
+      event.stopPropagation()
+      updatePrompt(completeAcpCommand(selected))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      return
+    }
+    if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+      return
+    }
+    if (selected.privateSideQuestion) {
+      if (!activeCommand.arguments) return
+      event.preventDefault()
+      event.stopPropagation()
+      void sendSideQuestion(prompt)
+      return
+    }
+    if (!acpCommandCanDispatch(selected, activeCommand)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    void dispatchCommand(selected, activeCommand.arguments)
+  }
 
   const insertComposerText = (text: string, kind: 'command') => {
     if (directTeammateChatDisabled || hardReadOnly) return
@@ -725,26 +838,23 @@ export function AgentSessionWorkspace({
     })
   }
 
-  const refreshSessionState = async () => {
-    setSessionState(await api.getSessionState(conversation.id))
-  }
-
   const commitSessionOption = async (
     optimisticState: AgentSessionState | null,
     request: () => Promise<void>,
   ) => {
     const confirmedState = sessionState
+    const restoreConfirmedState = beginSessionStateRequest(conversation.id)
     setError(null)
     setSessionState(optimisticState)
     try {
       await request()
     } catch (cause) {
-      setSessionState(confirmedState)
+      restoreConfirmedState(confirmedState)
       reportError(cause)
       return
     }
     try {
-      await refreshSessionState()
+      await requestSessionState(conversation.id)
     } catch (cause) {
       reportError(cause)
     }
@@ -1098,14 +1208,17 @@ export function AgentSessionWorkspace({
               </Button>
             )}
             {visibleCommands.length > 0 && (
-              <div className="kubecode-command-suggestions">
-                {visibleCommands.map((command) => (
-                  <Button key={command.name} variant="ghost" onClick={() => updatePrompt(`/${command.name} `)}>
-                    <code>/{command.name}</code>
-                    {command.description && <span>{command.description}</span>}
-                  </Button>
-                ))}
-              </div>
+              <AcpCommandMenu
+                commands={visibleCommands}
+                label={t('command.palettePlaceholder')}
+                onHover={setSelectedCommandIndex}
+                onSelect={(command) => {
+                  updatePrompt(completeAcpCommand(command))
+                  window.requestAnimationFrame(() => inputRef.current?.focus())
+                }}
+                selectedIndex={currentCommandIndex}
+                unavailableLabel={t('kubecode.unavailable')}
+              />
             )}
             <AiPanelComposer
               agentLabel={agentLabel}
@@ -1150,6 +1263,7 @@ export function AgentSessionWorkspace({
                   draft={composerDraft}
                   inputRef={inputRef}
                   onChange={updateComposerDraft}
+                  onKeyDownCapture={handleCommandKeyDown}
                   onSubmit={(text) => {
                     if (composerDraftHasStaleContext(composerDraft)) return
                     if (active) {
@@ -1404,22 +1518,20 @@ function nativeMessage(event: SessionEvent, text: string): AiAgentMessage {
   }
 }
 
-type AgentCommand = { name: string; description: string }
-
 function availableCommands(
   state: AgentSessionState | null,
   sideQuestionDescription: string | null = null,
-): AgentCommand[] {
-  const values = state?.available_commands?.availableCommands
-  const commands = Array.isArray(values) ? values.flatMap((value) => {
-    if (!value || typeof value !== 'object') return []
-    const command = value as Record<string, unknown>
-    const name = textValue(command.name)
-    if (!name) return []
-    return [{ name, description: textValue(command.description) }]
-  }) : []
+): AcpCommand[] {
+  const commands = availableAcpCommands(state?.available_commands)
   if (sideQuestionDescription && !commands.some((command) => command.name === 'btw')) {
-    commands.push({ name: 'btw', description: sideQuestionDescription })
+    commands.push({
+      name: 'btw',
+      description: sideQuestionDescription,
+      input: { kind: 'text', hint: sideQuestionDescription },
+      providerIndex: commands.length,
+      ambiguous: false,
+      privateSideQuestion: true,
+    })
   }
   return commands
 }

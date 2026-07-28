@@ -204,6 +204,14 @@ resolving a private provider invocation. Standard ACP commands stay
 authoritative, private adapter extensions are opt-in, and plain-text prompts
 remain backward compatible. Long prompts stop growing at a bounded editor
 height and scroll inside the Composer instead of resizing the Agent workspace.
+During the phased migration, the existing `available_commands` Session-state
+field exposes only safe standard command display fields and recognized text
+input hints. `POST /projects/:project_id/sessions/:conversation_id/commands`
+accepts an exact advertised name plus bounded arguments, revalidates the latest
+full ACP snapshot server-side, and dispatches an internal run so provider
+responses are durable without fabricating a visible user turn. Unknown slash
+text remains an ordinary prompt. Opaque catalog identity and structured draft
+submission remain later ADR 0206 phases.
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.

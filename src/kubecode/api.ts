@@ -818,6 +818,21 @@ export class KubecodeApi {
     )
   }
 
+  dispatchAcpCommand(
+    projectId: string,
+    conversationId: string,
+    name: string,
+    commandArguments: string,
+  ): Promise<AgentRun> {
+    return this.request(
+      `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/commands`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name, arguments: commandArguments }),
+      },
+    )
+  }
+
   listRuns(conversationId: string): Promise<AgentRun[]> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/runs`)
   }
