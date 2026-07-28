@@ -180,12 +180,59 @@ mismatch is a conflict, not an overwrite. A legacy run without a complete
 checkpoint cannot participate in an explicit safe file restore. Chat revision
 creation remains available because it never changes Project files.
 
-## Composer reference
+## Typed Composer catalog
 
-A Composer reference is a project-relative `@path` token selected through the
-shared flat Project path picker. Agent skills and commands remain Agent-owned:
-the UI renders ACP `available_commands` and inserts the selected native slash
-command instead of maintaining a Kubecode-only command catalog.
+A typed Composer catalog is a server-owned projection of every user-facing
+Composer item for one Session execution context: its Project, worktree path, and
+runtime owner. It separates `@` context references, `/` Agent and Session
+commands, and `$` user-invocable capabilities instead of routing them through
+one slash list (ADR 0206). Each item has a `kind` (`Command`, `Skill`,
+`PluginAction`, or `ProviderApp`), a `scope`, a collision-safe source label, an
+optional input hint, an enabled state with disabled reason, and a stable opaque
+server-issued ID. Identity is `(kind, opaque ID)`, never display name; two items
+may share a name and both remain visible, resolving only by distinct IDs.
+
+The catalog is a full snapshot with a monotonically increasing revision.
+`available_commands_update` replaces the `Command` portion; a trusted adapter
+skill update replaces the relevant skill portion; each replacement advances the
+revision. Workspace and runtime events announce or carry a new full snapshot
+with its revision, and the browser replaces its local snapshot wholesale; there
+is no incremental delta-merge protocol. Refreshing the catalog never restarts or
+disconnects an active Session. A remote or runtime-owned Session performs
+discovery at its runtime owner; the browser never scans provider home
+directories or substitutes its own filesystem view.
+
+Provider invocation is server-only. The browser submits the Session ID, the
+catalog revision the draft was built against, an optional item ID, arguments,
+and ordered draft segments; it never submits a provider method, invocation
+template, absolute path, or executable payload. At submit time the server first
+validates the catalog revision (returning a stale-revision response that lets
+the browser refresh without dispatching the wrong item) and then independently
+revalidates each resolved context reference for ownership, scope, availability,
+containment, type-specific size and count bounds, and staleness. Disabled,
+ambiguous, or unavailable items are rejected rather than guessed.
+
+Standard ACP commands stay authoritative for `/`; a command is reclassified as a
+capability only when its owning adapter supplies trusted typed metadata, never
+by name or description. Kubecode application actions live in a separate small
+typed host action registry consumed by the global palette and are never sent as
+prompts. Unknown ACP or private metadata is retained but not executable without a
+registered adapter decoder. Plugin contributions enter this same catalog only
+through explicit user-facing action descriptors; the plugin runtime itself is a
+separate management surface and a separate ADR.
+
+## Composer reference and structured draft
+
+A Composer reference is a typed context or capability chip backed by an opaque
+catalog ID, not a raw `@path` string. The draft is an ordered list of typed
+segments: `Text`, `ContextRef`, and `CapabilityRef`. A reference segment carries
+its opaque ID and the catalog revision it was selected against, and persists per
+Session. Copying the Composer yields a readable plain-text fallback such as
+`@src/main.rs` or `$skill`; pasting that fallback is ordinary text until the user
+re-selects a catalog result, so a pasted name is never trusted as an ID.
+File and directory context still resolves through the shared flat Project path
+picker and `WorkspaceService` containment, and a draft with no references is
+exactly today's plain-text prompt.
 
 ## Project path picker
 

@@ -191,14 +191,22 @@ YOLO owns Codex and Claude Code permission modes, while OpenCode Build/Plan
 remains a Leader-editable profile because its maximum permission policy is
 process-scoped.
 
-The Composer's searchable add palette lists the current session's dynamic
-`available_commands` and uses the flat Project file picker to insert a relative
-`@path` reference; Kubecode does not invent a separate cross-Agent skill
-registry or copy file contents into the prompt. Long prompts stop growing at a
-bounded editor height and scroll inside the Composer instead of resizing the
-Agent workspace. While an Agent turn is running, the editor remains writable
-and stores an isolated draft per Session; submission resumes after the current
-turn completes or is stopped.
+The Composer resolves context references, Agent and Session commands, and
+user-invocable capabilities through one server-owned typed Composer catalog
+(ADR 0206), not by routing everything through `/`. `@` attaches bounded
+Project-relative context, `/` dispatches the Session's authoritative ACP
+`available_commands`, and `$` invokes provider-advertised capabilities; each
+selected item becomes a typed chip that carries an opaque server-issued ID. The
+catalog is a full snapshot with a monotonic revision scoped to the Session
+execution context; the browser submits opaque IDs, a revision, and ordered
+draft segments, and the server revalidates revision and each reference before
+resolving a private provider invocation. Standard ACP commands stay
+authoritative, private adapter extensions are opt-in, and plain-text prompts
+remain backward compatible. Long prompts stop growing at a bounded editor
+height and scroll inside the Composer instead of resizing the Agent workspace.
+While an Agent turn is running, the editor remains writable and stores an
+isolated draft per Session; submission resumes after the current turn completes
+or is stopped.
 
 The bundled Claude ACP adapter advertises a private side-question capability.
 During an active supported Claude turn, `/btw` dispatches the Claude Agent SDK's
