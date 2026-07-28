@@ -255,6 +255,18 @@ by a newer query. Generated classification covers the common build/cache
 directory names defined by the Runtime; clients consume the flag instead of
 guessing from paths.
 
+Composer context search resolves entries through a Session-scoped endpoint
+(`GET /sessions/{conversation_id}/entries`) that derives the execution root
+entirely from the conversation record: a shared Session uses its registered
+Project root and a worktree Session uses its exact validated worktree. The
+browser supplies only a validated relative directory path and receives the same
+safe relative `Entry` projection as the Project endpoint; no arbitrary or
+absolute path is accepted or exposed. Project registration is a common
+prerequisite for both modes, so a retained worktree can never be listed after
+its Project is unregistered. Execution-mode and `workspace_path` consistency is
+enforced, so a corrupted record or a path pointed at another Session's worktree
+is rejected rather than falling back.
+
 Project registration uses the same keyboard and visual interaction but a
 server-directory adapter. Its value remains an absolute server path and calls
 only the existing create/import and directory-listing APIs. Create requires a

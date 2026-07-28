@@ -2145,3 +2145,256 @@ done"#,
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "run_not_active");
 }
+
+async fn session_entries(app: &Router, conversation_id: &str, path: &str) -> (StatusCode, Value) {
+    json_request(
+        app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/entries?path={path}"),
+        Value::Null,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn lists_session_scoped_entries_for_a_shared_session() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project = workspace
+        .create_project_at(root.join("shared-entries"))
+        .expect("project");
+    fs::write(root.join("shared-entries/README.md"), "root\n").expect("fixture");
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+
+    let (status, entries) = session_entries(&app, &conversation.id, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = entries
+        .as_array()
+        .expect("entries")
+        .iter()
+        .map(|entry| entry["name"].as_str().expect("name"))
+        .collect();
+    assert!(names.contains(&"README.md"));
+}
+
+#[tokio::test]
+async fn session_entries_return_404_for_missing_conversation() {
+    let (temp, app) = app();
+    let _ = temp;
+    let (status, error) = session_entries(&app, "no-such-conversation", "").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["code"], "not_found");
+}
+
+#[tokio::test]
+async fn session_entries_reject_a_conversation_pointed_at_another_worktree() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project_root = root.join("cross-worktree");
+    let project = workspace.create_project_at(&project_root).expect("project");
+    run_command(&project_root, "git", &["init"]);
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_root, "git", &["add", "README.md"]);
+    run_command(&project_root, "git", &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+    let other_worktree = workspace
+        .create_session_worktree(&project.id, "session-aaaaaaaa")
+        .expect("other worktree");
+
+    // Conversation B claims to be a worktree session but points at A's worktree.
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    store
+        .assign_execution_workspace(
+            &conversation.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(other_worktree.to_str().expect("path")),
+        )
+        .expect("assign execution workspace");
+
+    let (status, error) = session_entries(&app, &conversation.id, "").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_path");
+}
+
+#[tokio::test]
+async fn lists_session_scoped_entries_for_a_worktree_session() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project_root = root.join("worktree-entries");
+    let project = workspace.create_project_at(&project_root).expect("project");
+    run_command(&project_root, "git", &["init"]);
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_root, "git", &["add", "README.md"]);
+    run_command(&project_root, "git", &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    // The worktree directory name must equal the conversation id so the exact
+    // equality check in validated_session_worktree holds.
+    let worktree = workspace
+        .create_session_worktree(&project.id, &conversation.id)
+        .expect("worktree");
+    fs::write(worktree.join("only-in-worktree.txt"), "wt\n").expect("worktree-only file");
+    store
+        .assign_execution_workspace(
+            &conversation.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(worktree.to_str().expect("path")),
+        )
+        .expect("assign execution workspace");
+
+    let (status, entries) = session_entries(&app, &conversation.id, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = entries
+        .as_array()
+        .expect("entries")
+        .iter()
+        .map(|entry| entry["name"].as_str().expect("name"))
+        .collect();
+    assert!(names.contains(&"only-in-worktree.txt"));
+}
+
+#[tokio::test]
+async fn session_entries_return_404_after_the_project_is_unregistered() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project_root = root.join("unregistered-worktree");
+    let project = workspace.create_project_at(&project_root).expect("project");
+    run_command(&project_root, "git", &["init"]);
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_root, "git", &["add", "README.md"]);
+    run_command(&project_root, "git", &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    let worktree = workspace
+        .create_session_worktree(&project.id, &conversation.id)
+        .expect("worktree");
+    fs::write(worktree.join("only-in-worktree.txt"), "wt\n").expect("worktree-only file");
+    store
+        .assign_execution_workspace(
+            &conversation.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(worktree.to_str().expect("path")),
+        )
+        .expect("assign execution workspace");
+
+    // The worktree Session lists its entries before the Project is removed.
+    let (status, _) = session_entries(&app, &conversation.id, "").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Unregistering the Project keeps the files and the retained worktree on
+    // disk, but the Session can no longer list entries.
+    workspace
+        .unregister_project(&project.id)
+        .expect("unregister project");
+    assert!(worktree.is_dir(), "worktree directory is preserved on disk");
+
+    let (status, error) = session_entries(&app, &conversation.id, "").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["code"], "not_found");
+}
