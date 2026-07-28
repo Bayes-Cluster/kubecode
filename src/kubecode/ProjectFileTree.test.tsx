@@ -38,7 +38,7 @@ describe('ProjectFileTree', () => {
     expect(onOpenFile).toHaveBeenCalledWith({ name: 'guide.md', path: 'docs/guide.md', kind: 'file' })
   })
 
-  it('keeps the tree compact and can reveal ignored or hidden root entries', async () => {
+  it('keeps the tree compact and can reveal hidden, ignored, or generated root entries', async () => {
     const api = {
       listEntries: vi.fn().mockImplementation((_projectId: string, path: string) => {
         if (path === 'src') {
@@ -49,7 +49,7 @@ describe('ProjectFileTree', () => {
         if (path !== '') return Promise.resolve([])
         return Promise.resolve([
           { name: 'src', path: 'src', kind: 'directory' },
-          { name: 'node_modules', path: 'node_modules', kind: 'directory', ignored: true },
+          { name: 'node_modules', path: 'node_modules', kind: 'directory', generated: true },
           { name: '.env', path: '.env', kind: 'file', hidden: true },
         ])
       }),
@@ -70,7 +70,7 @@ describe('ProjectFileTree', () => {
     expect(screen.queryByRole('treeitem', { name: /node_modules/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Search files' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show hidden and ignored files' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show hidden, ignored, and generated files' }))
     expect(await screen.findByRole('treeitem', { name: /\.env/ })).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: /node_modules/ })).toBeInTheDocument()
   })

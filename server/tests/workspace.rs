@@ -45,6 +45,29 @@ fn creates_imports_lists_and_unregisters_projects_without_deleting_files() {
 }
 
 #[test]
+fn verifies_a_user_selected_path_against_one_registered_project() {
+    let (_temp, service) = service();
+    let project_path = service.root().join("authorization-target");
+    let project = service
+        .create_project_at(&project_path)
+        .expect("create project");
+    let other_path = service.root().join("other-project");
+    fs::create_dir_all(&other_path).expect("other directory");
+
+    service
+        .authorize_project_path(&project.id, &project_path)
+        .expect("matching selected path");
+    assert!(matches!(
+        service.authorize_project_path(&project.id, &other_path),
+        Err(WorkspaceError::InvalidPath(_))
+    ));
+    assert!(matches!(
+        service.authorize_project_path("missing", &project_path),
+        Err(WorkspaceError::ProjectNotFound(_))
+    ));
+}
+
+#[test]
 fn persists_the_project_workspaces_preference() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -72,7 +95,7 @@ fn persists_the_project_workspaces_preference() {
 }
 
 #[test]
-fn annotates_hidden_and_git_ignored_project_entries() {
+fn annotates_hidden_git_ignored_and_generated_project_entries() {
     let (_temp, service) = service();
     let project = service
         .create_project_at(service.root().join("filtered-project"))
@@ -82,6 +105,7 @@ fn annotates_hidden_and_git_ignored_project_entries() {
     fs::write(root.join(".gitignore"), "build/\n").expect("gitignore");
     fs::write(root.join(".env"), "TOKEN=test\n").expect("hidden fixture");
     fs::create_dir(root.join("build")).expect("ignored directory");
+    fs::create_dir(root.join("node_modules")).expect("generated directory");
     fs::create_dir(root.join("src")).expect("visible directory");
 
     let entries = service.list_entries(&project.id, "").expect("entries");
@@ -97,13 +121,42 @@ fn annotates_hidden_and_git_ignored_project_entries() {
         .iter()
         .find(|entry| entry.name == "src")
         .expect("visible entry");
+    let generated = entries
+        .iter()
+        .find(|entry| entry.name == "node_modules")
+        .expect("generated entry");
 
     assert!(hidden.hidden);
     assert!(!hidden.ignored);
+    assert!(!hidden.generated);
     assert!(!ignored.hidden);
     assert!(ignored.ignored);
+    assert!(ignored.generated);
+    assert!(generated.generated);
+    assert!(!generated.hidden);
+    assert!(!generated.ignored);
     assert!(!visible.hidden);
     assert!(!visible.ignored);
+    assert!(!visible.generated);
+}
+
+#[cfg(unix)]
+#[test]
+fn project_entries_do_not_follow_symbolic_links() {
+    use std::os::unix::fs::symlink;
+
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("symlink-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    fs::create_dir(root.join("real-directory")).expect("real directory");
+    symlink(root.join("real-directory"), root.join("linked-directory")).expect("symlink");
+
+    let entries = service.list_entries(&project.id, "").expect("entries");
+
+    assert!(entries.iter().any(|entry| entry.name == "real-directory"));
+    assert!(!entries.iter().any(|entry| entry.name == "linked-directory"));
 }
 
 #[test]
@@ -346,6 +399,38 @@ fn writes_text_atomically_and_detects_stale_revisions() {
             .content,
         "fn main() {}\n"
     );
+}
+
+#[test]
+fn reads_bounded_binary_assets_inside_registered_projects() {
+    let (_temp, service) = service();
+    let project = service.create_project(".", "assets").expect("project");
+    fs::write(
+        service.root().join("assets/diagram.png"),
+        [0x89, 0x50, 0x4e, 0x47],
+    )
+    .expect("binary fixture");
+
+    assert_eq!(
+        service
+            .read_asset(&project.id, "diagram.png")
+            .expect("read project asset"),
+        [0x89, 0x50, 0x4e, 0x47]
+    );
+    assert!(matches!(
+        service.read_asset(&project.id, "../diagram.png"),
+        Err(WorkspaceError::InvalidPath(_))
+    ));
+
+    fs::write(
+        service.root().join("assets/oversized.png"),
+        vec![0; 8 * 1024 * 1024 + 1],
+    )
+    .expect("oversized fixture");
+    assert!(matches!(
+        service.read_asset(&project.id, "oversized.png"),
+        Err(WorkspaceError::AssetTooLarge)
+    ));
 }
 
 #[test]

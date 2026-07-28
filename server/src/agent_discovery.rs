@@ -14,6 +14,7 @@ use tokio::time::timeout;
 use crate::agents::AgentId;
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(3);
+const DISABLE_LOGIN_SHELL_DISCOVERY: &str = "KUBECODE_DISABLE_LOGIN_SHELL_DISCOVERY";
 
 #[derive(Clone, Debug)]
 pub struct AgentCandidate {
@@ -331,7 +332,23 @@ pub(crate) fn resolve_executable(name: &str) -> Option<PathBuf> {
 fn resolve_executable_with_source(name: &str) -> Option<(PathBuf, AgentDiscoverySource)> {
     find_on_inherited_path(name)
         .map(|path| (path, AgentDiscoverySource::Path))
-        .or_else(|| find_in_login_shell(name).map(|path| (path, AgentDiscoverySource::LoginShell)))
+        .or_else(|| {
+            (!login_shell_discovery_disabled(
+                env::var(DISABLE_LOGIN_SHELL_DISCOVERY).ok().as_deref(),
+            ))
+            .then(|| find_in_login_shell(name))
+            .flatten()
+            .map(|path| (path, AgentDiscoverySource::LoginShell))
+        })
+}
+
+fn login_shell_discovery_disabled(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 fn find_on_inherited_path(name: &str) -> Option<PathBuf> {
@@ -699,6 +716,16 @@ mod tests {
         let opencode = agent_binary_candidates(AgentId::OpenCode, &home);
         assert!(opencode.contains(&home.join(".opencode/bin/opencode")));
         assert!(opencode.contains(&home.join(".bun/bin/opencode")));
+    }
+
+    #[test]
+    fn native_runtime_can_disable_login_shell_discovery() {
+        for value in ["1", "true", "TRUE", " yes ", "on"] {
+            assert!(login_shell_discovery_disabled(Some(value)));
+        }
+        for value in [None, Some(""), Some("0"), Some("false"), Some("off")] {
+            assert!(!login_shell_discovery_disabled(value));
+        }
     }
 
     #[cfg(unix)]

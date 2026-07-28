@@ -1,14 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use axum::Json;
 use axum::Router;
+use axum::extract::Request;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get};
@@ -28,9 +30,10 @@ use crate::terminal::{
     TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
     TerminalSnapshot, TerminalStatus,
 };
-use crate::workspace::{DirectoryListing, EntryKind, WorkspaceError, WorkspaceService};
+use crate::workspace::{DirectoryListing, EntryKind, Project, WorkspaceError, WorkspaceService};
 
 const API_PATH: &str = "/api/v1";
+const WORKSPACE_EVENT_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -316,6 +319,79 @@ pub fn app_router(state: AppState, base_path: &str) -> Router {
     root_router(Router::new().nest(API_PATH, api_router(state)), base_path)
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct RuntimeDiscovery {
+    protocol_version: u16,
+    server_version: &'static str,
+    api_base: String,
+    authentication: &'static str,
+    capabilities: &'static [&'static str],
+}
+
+pub fn app_router_api_only(
+    state: AppState,
+    base_path: &str,
+    access_token: impl Into<String>,
+) -> Router {
+    let normalized_base_path = normalize_base_path(base_path);
+    let discovery = RuntimeDiscovery {
+        protocol_version: 1,
+        server_version: env!("CARGO_PKG_VERSION"),
+        api_base: format!("{normalized_base_path}{API_PATH}"),
+        authentication: "bearer",
+        capabilities: &[
+            "projects",
+            "sessions",
+            "teams",
+            "files",
+            "git",
+            "terminals",
+            "workspace_events",
+        ],
+    };
+    let access_token: Arc<str> = Arc::from(access_token.into());
+    let protected_api = client_api_router(state.clone()).layer(middleware::from_fn_with_state(
+        access_token,
+        require_access_token,
+    ));
+    let api = team_mcp_router(state).merge(protected_api);
+    let application = Router::new()
+        .route(
+            "/.well-known/kubecode",
+            get(move || {
+                let discovery = discovery.clone();
+                async move { Json(discovery) }
+            }),
+        )
+        .nest(API_PATH, api);
+    root_router(application, base_path)
+}
+
+async fn require_access_token(
+    State(expected): State<Arc<str>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let authorized = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|token| token == expected.as_ref());
+    if authorized {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "code": "unauthorized",
+                "message": "A valid Kubecode desktop access token is required"
+            })),
+        )
+            .into_response()
+    }
+}
+
 pub fn app_router_with_static(
     state: AppState,
     base_path: &str,
@@ -351,15 +427,25 @@ pub fn app_router_with_static(
 }
 
 fn api_router(state: AppState) -> Router {
+    team_mcp_router(state.clone()).merge(client_api_router(state))
+}
+
+fn team_mcp_router(state: AppState) -> Router {
     Router::new()
         .route(
             "/team-mcp/{token}/{conversation_id}",
             axum::routing::any(crate::team_mcp::handle_http),
         )
+        .with_state(state)
+}
+
+fn client_api_router(state: AppState) -> Router {
+    Router::new()
         .route("/agents", get(list_agents))
         .route("/agents/refresh", axum::routing::post(refresh_agents))
         .route("/events", get(stream_workspace_events))
         .route("/events/cursor", get(get_workspace_event_cursor))
+        .route("/runtime/status", get(get_runtime_status))
         .route("/sessions", get(list_all_conversations))
         .route("/filesystem/directories", get(list_directories))
         .route("/projects", get(list_projects).post(create_project))
@@ -449,6 +535,10 @@ fn api_router(state: AppState) -> Router {
         )
         .route("/projects/{project_id}", delete(unregister_project))
         .route(
+            "/projects/{project_id}/authorize",
+            axum::routing::post(authorize_project_path),
+        )
+        .route(
             "/projects/{project_id}/workspaces",
             axum::routing::patch(update_project_workspaces),
         )
@@ -493,6 +583,7 @@ fn api_router(state: AppState) -> Router {
             "/projects/{project_id}/file",
             get(read_file).put(write_file),
         )
+        .route("/projects/{project_id}/asset", get(read_asset))
         .merge(crate::team_api::routes())
         .with_state(state)
 }
@@ -677,6 +768,10 @@ async fn get_workspace_event_cursor(
     Ok(Json(json!({
         "cursor": state.agent_runtime.store().latest_workspace_event_id()?
     })))
+}
+
+async fn get_runtime_status(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.agent_runtime.status()?))
 }
 
 async fn delete_conversation(
@@ -1357,7 +1452,9 @@ struct AgentEventStreamState {
 }
 
 struct WorkspaceEventStreamState {
-    store: Arc<AgentStore>,
+    store: Weak<AgentStore>,
+    wakeups: tokio::sync::watch::Receiver<u64>,
+    recovery: tokio::time::Interval,
     cursor: u64,
     pending: VecDeque<WorkspaceEvent>,
 }
@@ -1372,9 +1469,18 @@ async fn stream_workspace_events(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(query.after);
+    let store = state.agent_runtime.store();
+    let wakeups = store.workspace_event_bus().subscribe();
+    let mut recovery = tokio::time::interval_at(
+        tokio::time::Instant::now() + WORKSPACE_EVENT_RECOVERY_INTERVAL,
+        WORKSPACE_EVENT_RECOVERY_INTERVAL,
+    );
+    recovery.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let stream = futures_util::stream::unfold(
         WorkspaceEventStreamState {
-            store: state.agent_runtime.store(),
+            store: Arc::downgrade(&store),
+            wakeups,
+            recovery,
             cursor,
             pending: VecDeque::new(),
         },
@@ -1389,13 +1495,28 @@ async fn stream_workspace_events(
                         .unwrap_or_else(|_| Event::default().event("serialization_error"));
                     return Some((Ok(event), state));
                 }
-                state.pending = state
-                    .store
+                let store = state.store.upgrade()?;
+                state.pending = store
                     .workspace_events_after(state.cursor)
                     .unwrap_or_default()
                     .into();
-                if state.pending.is_empty() {
-                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                drop(store);
+                if !state.pending.is_empty() {
+                    continue;
+                }
+
+                let latest_wakeup = *state.wakeups.borrow_and_update();
+                if latest_wakeup > state.cursor {
+                    continue;
+                }
+
+                tokio::select! {
+                    changed = state.wakeups.changed() => {
+                        if changed.is_err() {
+                            return None;
+                        }
+                    }
+                    _ = state.recovery.tick() => {}
                 }
             }
         },
@@ -1471,8 +1592,32 @@ async fn health() -> &'static str {
     "ok"
 }
 
+#[derive(Debug, Serialize)]
+struct ProjectSummary {
+    id: String,
+    name: String,
+    workspaces_enabled: bool,
+}
+
+impl From<Project> for ProjectSummary {
+    fn from(project: Project) -> Self {
+        Self {
+            id: project.id,
+            name: project.name,
+            workspaces_enabled: project.workspaces_enabled,
+        }
+    }
+}
+
 async fn list_projects(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(state.workspace.list_projects()?))
+    Ok(Json(
+        state
+            .workspace
+            .list_projects()?
+            .into_iter()
+            .map(ProjectSummary::from)
+            .collect::<Vec<_>>(),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1480,6 +1625,11 @@ async fn list_projects(State(state): State<AppState>) -> Result<impl IntoRespons
 enum CreateProjectRequest {
     Create { path: String },
     Import { path: String },
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthorizeProjectPathRequest {
+    path: String,
 }
 
 async fn create_project(
@@ -1490,7 +1640,18 @@ async fn create_project(
         CreateProjectRequest::Create { path } => state.workspace.create_project_at(path)?,
         CreateProjectRequest::Import { path } => state.workspace.import_project_at(path)?,
     };
-    Ok((StatusCode::CREATED, Json(project)))
+    Ok((StatusCode::CREATED, Json(ProjectSummary::from(project))))
+}
+
+async fn authorize_project_path(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<AuthorizeProjectPathRequest>,
+) -> Result<StatusCode, ApiError> {
+    let workspace = Arc::clone(&state.workspace);
+    run_workspace_operation(move || workspace.authorize_project_path(&project_id, request.path))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1536,11 +1697,10 @@ async fn update_project_workspaces(
             "resolve existing worktrees before disabling Workspaces".into(),
         ));
     }
-    Ok(Json(
-        state
-            .workspace
-            .set_workspaces_enabled(&project_id, request.enabled)?,
-    ))
+    let project = state
+        .workspace
+        .set_workspaces_enabled(&project_id, request.enabled)?;
+    Ok(Json(ProjectSummary::from(project)))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1584,7 +1744,7 @@ struct WorkspaceMigrationExport {
 
 #[derive(Debug, Serialize)]
 struct WorkspaceMigrationResponse {
-    project: crate::workspace::Project,
+    project: ProjectSummary,
     exports: Vec<WorkspaceMigrationExport>,
 }
 
@@ -1694,7 +1854,10 @@ async fn migrate_project_workspaces(
         store.assign_execution_workspace(&item.conversation_id, ExecutionMode::Shared, None)?;
     }
     let project = state.workspace.set_workspaces_enabled(&project_id, false)?;
-    Ok(Json(WorkspaceMigrationResponse { project, exports }))
+    Ok(Json(WorkspaceMigrationResponse {
+        project: ProjectSummary::from(project),
+        exports,
+    }))
 }
 
 async fn git_status(
@@ -1813,9 +1976,25 @@ async fn list_entries(
     Path(project_id): Path<String>,
     Query(query): Query<EntryQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(
-        state.workspace.list_entries(&project_id, &query.path)?,
-    ))
+    let workspace = Arc::clone(&state.workspace);
+    let relative = query.path;
+    let entries =
+        run_workspace_operation(move || workspace.list_entries(&project_id, &relative)).await?;
+    Ok(Json(entries))
+}
+
+async fn run_workspace_operation<T, Operation>(operation: Operation) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    Operation: FnOnce() -> Result<T, WorkspaceError> + Send + 'static,
+{
+    Ok(tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| {
+            ApiError::Workspace(WorkspaceError::Io(std::io::Error::other(format!(
+                "workspace operation task failed: {error}"
+            ))))
+        })??)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1885,6 +2064,42 @@ async fn read_file(
     Query(query): Query<EntryQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     Ok(Json(state.workspace.read_text(&project_id, &query.path)?))
+}
+
+async fn read_asset(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Query(query): Query<EntryQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let content_type = asset_content_type(&query.path);
+    let bytes = state.workspace.read_asset(&project_id, &query.path)?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        content_type.parse().expect("static MIME type"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        "private, max-age=60".parse().expect("static cache policy"),
+    );
+    Ok((headers, bytes))
+}
+
+fn asset_content_type(path: &str) -> &'static str {
+    match FileSystemPath::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("heic" | "heif") => "image/heic",
+        Some("tif" | "tiff") => "image/tiff",
+        _ => "application/octet-stream",
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2396,9 +2611,10 @@ fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
             (StatusCode::NOT_FOUND, "not_found")
         }
         StoreError::ActiveRun(_) => (StatusCode::CONFLICT, "active_run"),
-        StoreError::InvalidStoredValue(_) | StoreError::Json(_) | StoreError::Database(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
-        }
+        StoreError::InvalidStoredValue(_)
+        | StoreError::Json(_)
+        | StoreError::Database(_)
+        | StoreError::DatabaseSetup(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
     }
 }
 
@@ -2407,6 +2623,7 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         WorkspaceError::InvalidPath(_)
         | WorkspaceError::UnsupportedText
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
+        WorkspaceError::AssetTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large"),
         WorkspaceError::ProjectNotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         WorkspaceError::DuplicateProject(_) => (StatusCode::CONFLICT, "duplicate_project"),
         WorkspaceError::Git(_) => (StatusCode::CONFLICT, "git_worktree_error"),
@@ -2418,7 +2635,7 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         WorkspaceError::Io(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             (StatusCode::CONFLICT, "already_exists")
         }
-        WorkspaceError::Io(_) | WorkspaceError::Database(_) => {
+        WorkspaceError::Io(_) | WorkspaceError::Database(_) | WorkspaceError::DatabaseSetup(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
         }
     }
@@ -2430,5 +2647,30 @@ fn normalize_base_path(base_path: &str) -> String {
         String::new()
     } else {
         format!("/{trimmed}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::run_workspace_operation;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocking_workspace_operations_leave_the_async_executor_responsive() {
+        let operation = run_workspace_operation(|| {
+            std::thread::sleep(Duration::from_millis(100));
+            Ok(())
+        });
+        tokio::pin!(operation);
+        let started = Instant::now();
+
+        tokio::select! {
+            _ = &mut operation => panic!("blocking operation completed early"),
+            _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+        }
+
+        assert!(started.elapsed() < Duration::from_millis(80));
+        assert!(operation.await.is_ok());
     }
 }

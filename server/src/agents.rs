@@ -1,12 +1,15 @@
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::sync::watch;
 use uuid::Uuid;
+
+use crate::database::{Database, DatabaseError};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -20,6 +23,8 @@ pub enum StoreError {
     InvalidStoredValue(String),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    DatabaseSetup(#[from] DatabaseError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -179,22 +184,68 @@ pub struct WorkspaceEvent {
     pub created_at: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeRunEvent {
+    pub run_id: String,
+    pub kind: AgentEventKind,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeUpdate {
+    pub session_kind: String,
+    pub session_payload: Value,
+    pub run_event: Option<RuntimeRunEvent>,
+}
+
+#[derive(Debug)]
+pub struct WorkspaceEventBus {
+    latest_committed_cursor: watch::Sender<u64>,
+}
+
+impl WorkspaceEventBus {
+    fn new(latest_committed_cursor: u64) -> Self {
+        let (sender, _) = watch::channel(latest_committed_cursor);
+        Self {
+            latest_committed_cursor: sender,
+        }
+    }
+
+    pub fn latest_committed_cursor(&self) -> u64 {
+        *self.latest_committed_cursor.borrow()
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.latest_committed_cursor.subscribe()
+    }
+
+    fn publish_committed(&self, cursor: u64) {
+        self.latest_committed_cursor.send_if_modified(|current| {
+            if cursor > *current {
+                *current = cursor;
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
+
 pub struct AgentStore {
-    database: Mutex<Connection>,
+    database: Arc<Database>,
+    workspace_event_bus: WorkspaceEventBus,
 }
 
 impl AgentStore {
     pub fn open(database_path: impl AsRef<Path>) -> Result<Self, StoreError> {
-        if let Some(parent) = database_path.as_ref().parent() {
-            std::fs::create_dir_all(parent).map_err(|error| {
-                StoreError::InvalidStoredValue(format!("cannot create state directory: {error}"))
-            })?;
-        }
-        let database = Connection::open(database_path)?;
-        database.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             CREATE TABLE IF NOT EXISTS conversations (
+        let database = Arc::new(Database::open(database_path)?);
+        Self::from_database(database)
+    }
+
+    pub fn from_database(database: Arc<Database>) -> Result<Self, StoreError> {
+        let connection = database.lock().expect("agent database mutex poisoned");
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS conversations (
                id TEXT PRIMARY KEY,
                project_id TEXT NOT NULL,
                agent_id TEXT NOT NULL,
@@ -265,69 +316,81 @@ impl AgentStore {
              );",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "agent_runs",
             "message",
             "TEXT NOT NULL DEFAULT ''",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "agent_runs",
             "internal",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        ensure_column(&database, "conversations", "agent_session_id", "TEXT")?;
+        ensure_column(&connection, "conversations", "agent_session_id", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "conversations",
             "execution_mode",
             "TEXT NOT NULL DEFAULT 'shared'",
         )?;
-        ensure_column(&database, "conversations", "workspace_path", "TEXT")?;
+        ensure_column(&connection, "conversations", "workspace_path", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "conversations",
             "recreated_context",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        ensure_column(&database, "conversations", "context_prefix", "TEXT")?;
+        ensure_column(&connection, "conversations", "context_prefix", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "conversations",
             "internal_revision",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        database.execute(
+        connection.execute(
             "UPDATE conversations SET agent_session_id = id WHERE agent_session_id IS NULL",
             [],
         )?;
-        ensure_column(&database, "conversations", "manual_title", "TEXT")?;
-        ensure_column(&database, "conversations", "agent_title", "TEXT")?;
+        ensure_column(&connection, "conversations", "manual_title", "TEXT")?;
+        ensure_column(&connection, "conversations", "agent_title", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "conversations",
             "archived",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        ensure_column(&database, "conversations", "parent_conversation_id", "TEXT")?;
-        ensure_column(&database, "conversations", "relationship", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
+            "conversations",
+            "parent_conversation_id",
+            "TEXT",
+        )?;
+        ensure_column(&connection, "conversations", "relationship", "TEXT")?;
+        ensure_column(
+            &connection,
             "conversations",
             "read_only",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        database.execute(
+        connection.execute(
             "UPDATE conversations SET manual_title = title
              WHERE manual_title IS NULL AND agent_title IS NULL
                AND TRIM(title) <> '' AND title <> 'New conversation'",
             [],
         )?;
+        let latest_committed_cursor = latest_workspace_event_id(&connection)?;
+        drop(connection);
         let store = Self {
-            database: Mutex::new(database),
+            database,
+            workspace_event_bus: WorkspaceEventBus::new(latest_committed_cursor),
         };
         store.interrupt_inflight_runs()?;
         Ok(store)
+    }
+
+    pub fn workspace_event_bus(&self) -> &WorkspaceEventBus {
+        &self.workspace_event_bus
     }
 
     pub fn create_conversation(
@@ -618,7 +681,7 @@ impl AgentStore {
             context_prefix: (!context_prefix.is_empty()).then_some(context_prefix),
         };
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute(
             "INSERT INTO conversations
              (id, agent_session_id, project_id, agent_id, title, agent_title,
@@ -707,7 +770,7 @@ impl AgentStore {
             .collect::<Vec<_>>();
 
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute(
             "INSERT INTO conversations
              (id, agent_session_id, project_id, agent_id, provider_session_id, title,
@@ -1068,7 +1131,7 @@ impl AgentStore {
     ) -> Result<(), StoreError> {
         let conversation = self.get_conversation(conversation_id)?;
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let snapshot_ids = {
             let mut statement = transaction.prepare(
                 "SELECT snapshot_conversation_id FROM conversation_revisions
@@ -1200,7 +1263,7 @@ impl AgentStore {
         internal: bool,
     ) -> Result<AgentRun, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let conversation_project = transaction
             .query_row(
                 "SELECT project_id FROM conversations WHERE id = ?1",
@@ -1255,13 +1318,14 @@ impl AgentStore {
              WHERE id = ?1",
             [&run.conversation_id],
         )?;
-        append_event_transaction(
+        let (_, workspace_cursor) = append_event_transaction(
             &transaction,
             &run.id,
             AgentEventKind::RunStarted,
             &json!({"permission_mode": permission_mode}),
         )?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         drop(database);
         if !internal {
             self.set_agent_title_if_untitled(conversation_id, message)?;
@@ -1419,7 +1483,7 @@ impl AgentStore {
         error: Option<&str>,
     ) -> Result<(), StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE agent_runs
              SET status = ?2, error = ?3, completed_at = CURRENT_TIMESTAMP
@@ -1429,13 +1493,14 @@ impl AgentStore {
         if changed == 0 {
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
-        append_event_transaction(
+        let (_, workspace_cursor) = append_event_transaction(
             &transaction,
             run_id,
             AgentEventKind::RunCompleted,
             &json!({"status": status, "error": error}),
         )?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(())
     }
 
@@ -1446,10 +1511,77 @@ impl AgentStore {
         payload: &Value,
     ) -> Result<AgentEvent, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
-        let event = append_event_transaction(&transaction, run_id, kind, payload)?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (event, workspace_cursor) =
+            append_event_transaction(&transaction, run_id, kind, payload)?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(event)
+    }
+
+    pub fn append_runtime_update(
+        &self,
+        conversation_id: &str,
+        session_kind: &str,
+        session_payload: &Value,
+        run_event: Option<(&str, AgentEventKind, &Value)>,
+    ) -> Result<(), StoreError> {
+        let update = RuntimeUpdate {
+            session_kind: session_kind.to_owned(),
+            session_payload: session_payload.clone(),
+            run_event: run_event.map(|(run_id, kind, payload)| RuntimeRunEvent {
+                run_id: run_id.to_owned(),
+                kind,
+                payload: payload.clone(),
+            }),
+        };
+        self.append_runtime_updates(conversation_id, &[update])
+    }
+
+    pub fn append_runtime_updates(
+        &self,
+        conversation_id: &str,
+        updates: &[RuntimeUpdate],
+    ) -> Result<(), StoreError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let conversation_exists = transaction
+            .query_row(
+                "SELECT 1 FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !conversation_exists {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let mut latest_workspace_cursor = None;
+        for update in updates {
+            append_session_event_transaction(
+                &transaction,
+                conversation_id,
+                &update.session_kind,
+                &update.session_payload,
+            )?;
+            if let Some(run_event) = &update.run_event {
+                let (_, workspace_cursor) = append_event_transaction(
+                    &transaction,
+                    &run_event.run_id,
+                    run_event.kind,
+                    &run_event.payload,
+                )?;
+                latest_workspace_cursor = Some(workspace_cursor);
+            }
+        }
+        transaction.commit()?;
+        if let Some(cursor) = latest_workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
+        Ok(())
     }
 
     pub fn append_session_event(
@@ -1569,21 +1701,28 @@ impl AgentStore {
         run_id: Option<&str>,
         payload: &Value,
     ) -> Result<WorkspaceEvent, StoreError> {
-        let database = self.database.lock().expect("agent database mutex poisoned");
-        database.execute(
-            "INSERT INTO workspace_events
-             (kind, project_id, conversation_id, run_id, payload)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                kind,
-                project_id,
-                conversation_id,
-                run_id,
-                serde_json::to_string(payload)?
-            ],
-        )?;
-        let id = database.last_insert_rowid();
-        workspace_event_by_id(&database, id)
+        let (event, workspace_cursor) = {
+            let database = self.database.lock().expect("agent database mutex poisoned");
+            database.execute(
+                "INSERT INTO workspace_events
+                 (kind, project_id, conversation_id, run_id, payload)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    kind,
+                    project_id,
+                    conversation_id,
+                    run_id,
+                    serde_json::to_string(payload)?
+                ],
+            )?;
+            let id = database.last_insert_rowid();
+            let workspace_cursor = u64::try_from(id).map_err(|_| {
+                StoreError::InvalidStoredValue("negative workspace event id".into())
+            })?;
+            (workspace_event_by_id(&database, id), workspace_cursor)
+        };
+        self.workspace_event_bus.publish_committed(workspace_cursor);
+        event
     }
 
     pub fn workspace_events_after(&self, cursor: u64) -> Result<Vec<WorkspaceEvent>, StoreError> {
@@ -1602,17 +1741,8 @@ impl AgentStore {
     }
 
     pub fn latest_workspace_event_id(&self) -> Result<u64, StoreError> {
-        let id = self
-            .database
-            .lock()
-            .expect("agent database mutex poisoned")
-            .query_row(
-                "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
-                [],
-                |row| row.get::<_, i64>(0),
-            )?;
-        u64::try_from(id)
-            .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        latest_workspace_event_id(&database)
     }
 
     pub fn allow_always(
@@ -1661,7 +1791,7 @@ impl AgentStore {
 
     fn interrupt_inflight_runs(&self) -> Result<(), StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let run_ids = {
             let mut statement = transaction.prepare(
                 "SELECT id FROM agent_runs
@@ -1671,6 +1801,7 @@ impl AgentStore {
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
         };
+        let mut latest_workspace_cursor = None;
         for run_id in run_ids {
             transaction.execute(
                 "UPDATE agent_runs
@@ -1679,14 +1810,18 @@ impl AgentStore {
                  WHERE id = ?1",
                 [&run_id],
             )?;
-            append_event_transaction(
+            let (_, workspace_cursor) = append_event_transaction(
                 &transaction,
                 &run_id,
                 AgentEventKind::RunCompleted,
                 &json!({"status":"interrupted", "error":"server restarted"}),
             )?;
+            latest_workspace_cursor = Some(workspace_cursor);
         }
         transaction.commit()?;
+        if let Some(cursor) = latest_workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
         Ok(())
     }
 }
@@ -1696,7 +1831,7 @@ fn append_event_transaction(
     run_id: &str,
     kind: AgentEventKind,
     payload: &Value,
-) -> Result<AgentEvent, StoreError> {
+) -> Result<(AgentEvent, u64), StoreError> {
     let run_scope = transaction
         .query_row(
             "SELECT project_id, conversation_id FROM agent_runs WHERE id = ?1",
@@ -1722,20 +1857,54 @@ fn append_event_transaction(
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![kind.as_str(), run_scope.0, run_scope.1, run_id, payload],
     )?;
+    let workspace_cursor = u64::try_from(transaction.last_insert_rowid())
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
     let created_at = transaction.query_row(
         "SELECT created_at FROM agent_events WHERE run_id = ?1 AND seq = ?2",
         params![run_id, stored_seq],
         |row| row.get::<_, String>(0),
     )?;
-    Ok(AgentEvent {
-        run_id: run_id.to_owned(),
-        seq: u64::try_from(stored_seq).map_err(|_| {
-            StoreError::InvalidStoredValue("negative event sequence in database".into())
-        })?,
-        kind,
-        payload: serde_json::from_str(&payload)?,
-        created_at,
-    })
+    Ok((
+        AgentEvent {
+            run_id: run_id.to_owned(),
+            seq: u64::try_from(stored_seq).map_err(|_| {
+                StoreError::InvalidStoredValue("negative event sequence in database".into())
+            })?,
+            kind,
+            payload: serde_json::from_str(&payload)?,
+            created_at,
+        },
+        workspace_cursor,
+    ))
+}
+
+fn latest_workspace_event_id(database: &Connection) -> Result<u64, StoreError> {
+    let id = database.query_row(
+        "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    u64::try_from(id)
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+}
+
+fn append_session_event_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    kind: &str,
+    payload: &Value,
+) -> Result<(), StoreError> {
+    let next = transaction.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE conversation_id = ?1",
+        [conversation_id],
+        |row| row.get::<_, i64>(0),
+    )?;
+    transaction.execute(
+        "INSERT INTO session_events (conversation_id, seq, kind, payload)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![conversation_id, next, kind, serde_json::to_string(payload)?],
+    )?;
+    Ok(())
 }
 
 type StoredWorkspaceEvent = (

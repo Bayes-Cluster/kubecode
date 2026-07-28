@@ -1,9 +1,9 @@
 use kubecode_server::teams::{
     MemberManagementPolicy, MemberWorkspaceMode, NewDiscriminator, NewTeam,
     NewTeamPermissionRequest, NewTeamProposal, NewTeamTask, NewTeammate, StartTeam,
-    TeamLifecycleOperationKind, TeamLifecycleOperationStatus, TeamMessageDeliveryStatus, TeamMode,
-    TeamPermissionStatus, TeamProposalStatus, TeamRole, TeamStatus, TeamStore,
-    TeamTaskAttemptStatus, TeamTaskFailureKind, TeamTaskStatus, TeamWorkspace,
+    TeamLifecycleOperationKind, TeamLifecycleOperationStatus, TeamMessageDeliveryStatus,
+    TeamMessageKind, TeamMode, TeamPermissionStatus, TeamProposalStatus, TeamRole, TeamStatus,
+    TeamStore, TeamTaskAttemptStatus, TeamTaskFailureKind, TeamTaskStatus, TeamWorkspace,
 };
 use tempfile::TempDir;
 
@@ -1166,4 +1166,200 @@ fn leader_can_cancel_concrete_work_without_assigning_the_task_to_itself() {
         .expect("cancel task");
     assert_eq!(cancelled.status, TeamTaskStatus::Cancelled);
     assert!(cancelled.assignee_member_id.is_none());
+    assert!(!cancelled.completion_required);
+}
+
+#[test]
+fn leader_can_retry_cancelled_work() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Retry this direction",
+            description: "The work is required again",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("task");
+
+    store
+        .cancel_task(&task.id, &leader.id, Some("Paused for review"))
+        .expect("cancel task");
+    let retried = store
+        .retry_task(&task.id, &leader.id)
+        .expect("retry cancelled task");
+
+    assert_eq!(retried.status, TeamTaskStatus::Pending);
+    assert!(retried.completion_required);
+    assert!(retried.assignee_member_id.is_none());
+}
+
+#[test]
+fn cancelled_work_no_longer_blocks_standard_team_completion() {
+    let (_temp, store) = store();
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    store
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &leader.id,
+            goal: "Complete required work",
+            acceptance_criteria: &["The required result is accepted".to_owned()],
+            allowed_agent_ids: &["codex".to_owned()],
+            mode: TeamMode::Standard,
+            max_teammates: 2,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .expect("start");
+    store.activate_team(&team.id).expect("activate");
+    let teammate = store
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &leader.id,
+            conversation_id: "conversation-worker",
+            name: "worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .expect("teammate");
+    let accepted = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Required result",
+            description: "Produce the required result",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("accepted task");
+    let cancelled = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Discarded direction",
+            description: "No longer required",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("cancelled task");
+    store.claim_task(&accepted.id, &teammate.id).expect("claim");
+    store
+        .submit_result(&accepted.id, &teammate.id, "done", "verified")
+        .expect("submit");
+    store
+        .review_result(&accepted.id, &leader.id, true, None)
+        .expect("accept");
+    store
+        .cancel_task(&cancelled.id, &leader.id, Some("No longer required"))
+        .expect("cancel");
+
+    let completed = store
+        .complete_team(&team.id, &leader.id, "Done", "standard")
+        .expect("complete");
+    assert_eq!(completed.status, TeamStatus::Completed);
+}
+
+#[test]
+fn reopening_repairs_legacy_cancelled_required_tasks_and_deliveries() {
+    let temp = TempDir::new().expect("tempdir");
+    let path = temp.path().join("kubecode.sqlite3");
+    let store = TeamStore::open(&path).expect("team store");
+    let team = store
+        .create_team(NewTeam {
+            project_id: "project-1",
+            leader_conversation_id: "conversation-lead",
+            agent_session_id: "session-lead",
+            leader_name: "lead",
+            title: None,
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .expect("team");
+    let leader = store.list_members(&team.id).expect("members")[0].clone();
+    let task = store
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &leader.id,
+            title: "Legacy cancellation",
+            description: "Repair this record",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .expect("task");
+    let message = store
+        .send_message(
+            &team.id,
+            &leader.id,
+            &leader.id,
+            TeamMessageKind::System,
+            Some(&task.id),
+            "legacy delivery",
+        )
+        .expect("message");
+    store
+        .cancel_task(&task.id, &leader.id, None)
+        .expect("cancel");
+    drop(store);
+
+    let legacy = rusqlite::Connection::open(&path).expect("legacy database");
+    legacy
+        .execute(
+            "UPDATE team_tasks SET completion_required = 1 WHERE id = ?1",
+            [&task.id],
+        )
+        .expect("restore legacy task state");
+    legacy
+        .execute(
+            "UPDATE team_messages
+             SET delivery_status = 'pending', read_at = NULL WHERE id = ?1",
+            [&message.id],
+        )
+        .expect("restore legacy message state");
+    drop(legacy);
+
+    let reopened = TeamStore::open(&path).expect("reopened store");
+    assert!(
+        !reopened
+            .get_task(&task.id)
+            .expect("task")
+            .completion_required
+    );
+    assert!(
+        reopened
+            .unread_messages(&leader.id)
+            .expect("unread messages")
+            .is_empty()
+    );
 }

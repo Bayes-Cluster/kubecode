@@ -4,6 +4,7 @@ import {
   ArrowClockwise,
   Bell,
   Check,
+  Circle,
   Copy,
   DownloadSimple,
   Eye,
@@ -35,6 +36,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
@@ -81,6 +84,7 @@ import type {
   Project,
   ProviderSessionInfo,
   RunStatus,
+  RuntimeStatus,
   TerminalInfo,
   TeamSnapshot,
   WorkspaceEvent,
@@ -95,6 +99,13 @@ import {
   type NotificationCategory,
 } from './notificationPreferences'
 import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
+import {
+  useWorkspaceEventStream,
+  type WorkspaceEventBatch,
+  type WorkspaceEventOwnership,
+  type WorkspaceEventReconciliationRequest,
+  type WorkspaceConnectionState,
+} from './useWorkspaceEventStream'
 import {
   readProjectWorkbenchLayout,
   readWorkbenchNavigatorLayout,
@@ -138,8 +149,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [navigatorQuery, setNavigatorQuery] = useState('')
   const [layoutHydrated, setLayoutHydrated] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [connectionLost, setConnectionLost] = useState(false)
-  const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
   const [workspaceCursor, setWorkspaceCursor] = useState<number | null>(null)
   const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
   const [notifications, setNotifications] = useState<KubecodeNotifications>(() => (
@@ -169,7 +178,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const navigatorSearchRef = useRef<HTMLInputElement>(null)
-  const activeProjectIdRef = useRef(projectId)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -183,11 +191,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     () => sessionsRequiringInput(projectRuns, sessionCatalog),
     [projectRuns, sessionCatalog],
   )
-  const notificationOnboardingOpen = !notificationOnboardingSuppressed
-    && !notifications.onboardingDismissed
-    && browserPermission === 'default'
-    && workspaceEvents.some((event) => event.kind === 'run_started')
-
   useEffect(() => {
     applyKubecodeAppearance(document, appearance)
     writeKubecodeAppearance(localStorage, appearance)
@@ -220,10 +223,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => {
     writeKubecodeNotifications(localStorage, notifications)
   }, [notifications])
-
-  useEffect(() => {
-    activeProjectIdRef.current = projectId
-  }, [projectId])
 
   useEffect(() => {
     if (!narrowLayout || (!sessionSidebarOpen && !contextOpen)) return
@@ -340,16 +339,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [api, projectId, t])
 
   useEffect(() => {
-    if (!projectId || typeof api.listTeams !== 'function') return
-    const timer = window.setInterval(() => {
-      void api.listTeams(projectId).then((nextTeams) => {
-        if (activeProjectIdRef.current === projectId) setTeams(nextTeams)
-      }).catch(() => undefined)
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [api, projectId])
-
-  useEffect(() => {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
       expandedProjectIds,
@@ -368,62 +357,104 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     })
   }, [contextOpen, contextWidth, layoutHydrated, projectId, terminalHeight, terminalOpen])
 
+  const reportOwnedError = useCallback((cause: unknown, ownership: WorkspaceEventOwnership) => {
+    if (ownership.isCurrent()) setError(errorMessage(cause, t('kubecode.error')))
+  }, [t])
+
+  const handleWorkspaceEventBatch = useCallback((batch: WorkspaceEventBatch) => {
+    setProjectRuns((current) => applyWorkspaceRunEvents(current, batch.events))
+    setAllConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
+    setConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
+  }, [])
+
+  const handleWorkspaceReconcile = useCallback(async (request: WorkspaceEventReconciliationRequest) => {
+    const { ownership, plan } = request
+    const activeProjectId = ownership.projectId
+    const terminalTask = async () => {
+      const closeResults = await Promise.allSettled(plan.cleanTerminalIds.map((terminalId) => (
+        api.closeTerminal(terminalId).then(() => {
+          trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' })
+        })
+      )))
+      request.completeCleanTerminalIds(plan.cleanTerminalIds.filter(
+        (_terminalId, index) => closeResults[index]?.status === 'fulfilled',
+      ))
+      const closeFailure = closeResults.find((result) => result.status === 'rejected')
+      if (closeFailure?.status === 'rejected') throw closeFailure.reason
+      return plan.refreshTerminals && activeProjectId
+        ? api.listTerminals(activeProjectId)
+        : undefined
+    }
+    const results = await Promise.allSettled([
+      plan.refreshGlobalSessions && typeof api.listSessions === 'function'
+        ? api.listSessions() : Promise.resolve(undefined),
+      plan.refreshProjectSessions && activeProjectId
+        ? api.listConversations(activeProjectId) : Promise.resolve(undefined),
+      plan.refreshTeams && activeProjectId && typeof api.listTeams === 'function'
+        ? api.listTeams(activeProjectId) : Promise.resolve(undefined),
+      terminalTask(),
+      plan.refreshProjectRuns && activeProjectId && typeof api.listProjectRuns === 'function'
+        ? api.listProjectRuns(activeProjectId) : Promise.resolve(undefined),
+    ])
+    const failure = results.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') {
+      reportOwnedError(failure.reason, ownership)
+      throw failure.reason
+    }
+    if (!ownership.isCurrent()) return
+
+    const dirty = request.dirtyPlanSinceStart()
+    const replayEvents = request.eventsSinceStart()
+    const [sessionResult, conversationResult, teamResult, terminalResult, runResult] = results
+    if (sessionResult.status === 'fulfilled' && sessionResult.value && !dirty.refreshGlobalSessions) {
+      setAllConversations(applyWorkspaceConversationEvents(sessionResult.value, replayEvents))
+    }
+    if (conversationResult.status === 'fulfilled' && conversationResult.value
+      && !dirty.refreshProjectSessions) {
+      const nextConversations = applyWorkspaceConversationEvents(conversationResult.value, replayEvents)
+      setConversations(nextConversations)
+      setConversationId((selected) => nextConversations.some((item) => item.id === selected)
+        ? selected : nextConversations.at(-1)?.id ?? null)
+    }
+    if (teamResult.status === 'fulfilled' && teamResult.value && !dirty.refreshTeams) {
+      setTeams(teamResult.value)
+    }
+    if (terminalResult.status === 'fulfilled' && terminalResult.value && !dirty.refreshTerminals) {
+      setTerminals(terminalResult.value)
+      if (activeProjectId) setTerminalsLoadedForProjectId(activeProjectId)
+    }
+    if (runResult.status === 'fulfilled' && runResult.value && activeProjectId
+      && !dirty.refreshProjectRuns) {
+      const reconciledRuns = runResult.value
+      setProjectRuns((current) => applyWorkspaceRunEvents({
+        ...current,
+        [activeProjectId]: reconciledRuns,
+      }, replayEvents))
+    }
+  }, [api, reportOwnedError])
+
+  const {
+    connectionState,
+    diagnostic: workspaceEventDiagnostic,
+    events: workspaceEvents,
+    lastSuccessfulSyncAt,
+    retry: retryWorkspaceConnection,
+  } = useWorkspaceEventStream({
+    activeProjectId: projectId,
+    api,
+    cursor: workspaceCursor,
+    onBatch: handleWorkspaceEventBatch,
+    onReconcile: handleWorkspaceReconcile,
+  })
+
   useEffect(() => {
-    if (typeof EventSource === 'undefined' || workspaceCursor === null) return
-    const stream = new EventSource(api.workspaceEventStreamUrl(workspaceCursor))
-    const receive = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as WorkspaceEvent
-      setWorkspaceEvents((current) => [...current, event].slice(-2048))
-      setProjectRuns((current) => applyWorkspaceRunEvent(current, event))
-      setAllConversations((current) => applyWorkspaceConversationEvent(current, event))
-      setConversations((current) => applyWorkspaceConversationEvent(current, event))
-      const activeProjectId = activeProjectIdRef.current
-      if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)) {
-        if (typeof api.listSessions === 'function') void api.listSessions().then(setAllConversations)
-        if (event.project_id === activeProjectId && activeProjectId) {
-          void api.listConversations(activeProjectId).then(setConversations)
-        }
-      }
-      if (event.kind.startsWith('team_') && event.project_id === activeProjectId && activeProjectId) {
-        void api.listTeams(activeProjectId).then((nextTeams) => {
-          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
-        }).catch(() => undefined)
-      }
-      if (isCleanTerminalExit(event)) {
-        const terminalId = event.payload.terminal_id
-        if (typeof terminalId === 'string') {
-          void api.closeTerminal(terminalId)
-            .then(() => trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' }))
-            .then(() => event.project_id === activeProjectId && activeProjectId
-              ? api.listTerminals(activeProjectId).then(setTerminals)
-              : undefined)
-            .catch((cause: unknown) => {
-              setError(errorMessage(cause, t('kubecode.error')))
-              return event.project_id === activeProjectId && activeProjectId
-                ? api.listTerminals(activeProjectId).then(setTerminals)
-                : undefined
-            })
-        }
-        return
-      }
-      if (['terminal_created', 'terminal_updated', 'terminal_exited', 'terminal_closed'].includes(event.kind)
-        && event.project_id === activeProjectId && activeProjectId) {
-        void api.listTerminals(activeProjectId).then(setTerminals)
-      }
-    }
-    stream.addEventListener('workspace_event', receive as EventListener)
-    stream.onopen = () => {
-      setConnectionLost(false)
-      const activeProjectId = activeProjectIdRef.current
-      if (activeProjectId && typeof api.listTeams === 'function') {
-        void api.listTeams(activeProjectId).then((nextTeams) => {
-          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
-        }).catch(() => undefined)
-      }
-    }
-    stream.onerror = () => setConnectionLost(true)
-    return () => stream.close()
-  }, [api, t, workspaceCursor])
+    if (workspaceEventDiagnostic) setError(t('kubecode.error'))
+  }, [t, workspaceEventDiagnostic])
+
+  const notificationOnboardingOpen = !notificationOnboardingSuppressed
+    && !notifications.onboardingDismissed
+    && browserPermission === 'default'
+    && workspaceEvents.some((event) => event.kind === 'run_started')
 
   const resizeSessionSidebar = useCallback((delta: number) => {
     setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
@@ -601,12 +632,19 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           <kbd>⌘K</kbd>
         </div>
         <div className="kubecode-topbar-actions">
-          {(error || connectionLost) && (
+          <RuntimeConnectionMenu
+            connectionState={connectionState}
+            lastSuccessfulSyncAt={lastSuccessfulSyncAt}
+            locale={locale}
+            onRetry={retryWorkspaceConnection}
+            t={t}
+          />
+          {error && (
             <span
-              aria-label={error ?? t('kubecode.connectionLost')}
+              aria-label={error}
               className="kubecode-topbar-error"
               role="status"
-              title={error ?? t('kubecode.connectionLost')}
+              title={error}
             >
               <WarningCircle weight="fill" />
             </span>
@@ -890,6 +928,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         t={t}
       />
       <KubecodeSettingsDialog
+        api={api}
         agentPreferences={agentPreferences}
         agents={agents}
         agentsRefreshing={agentsRefreshing}
@@ -1008,6 +1047,13 @@ function applyWorkspaceRunEvent(
   }
 }
 
+function applyWorkspaceRunEvents(
+  current: Record<string, AgentRun[]>,
+  events: WorkspaceEvent[],
+): Record<string, AgentRun[]> {
+  return events.reduce(applyWorkspaceRunEvent, current)
+}
+
 function applyWorkspaceConversationEvent(
   current: Conversation[],
   event: WorkspaceEvent,
@@ -1021,6 +1067,13 @@ function applyWorkspaceConversationEvent(
   return current.map((conversation) => conversation.id === event.conversation_id
     ? { ...conversation, latest_run_status: status }
     : conversation)
+}
+
+function applyWorkspaceConversationEvents(
+  current: Conversation[],
+  events: WorkspaceEvent[],
+): Conversation[] {
+  return events.reduce(applyWorkspaceConversationEvent, current)
 }
 
 function eventRunStatus(event: WorkspaceEvent): RunStatus | null {
@@ -1575,7 +1628,145 @@ function withTrailingSlash(path: string): string {
   return path === '/' ? '/' : `${path.replace(/\/+$/g, '')}/`
 }
 
+function RuntimeConnectionMenu({
+  connectionState,
+  lastSuccessfulSyncAt,
+  locale,
+  onRetry,
+  t,
+}: {
+  connectionState: WorkspaceConnectionState
+  lastSuccessfulSyncAt: number | null
+  locale: string
+  onRetry: () => void
+  t: Translator
+}) {
+  const stateLabel = t(`kubecode.connectionState.${connectionState}`)
+  const lastSync = lastSuccessfulSyncAt === null
+    ? t('kubecode.never')
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' })
+      .format(lastSuccessfulSyncAt)
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={t('kubecode.runtimeConnectionState', { state: stateLabel })}
+          className="kubecode-connection-trigger"
+          data-state-value={connectionState}
+          size="icon-xs"
+          variant="ghost"
+        >
+          <Circle aria-hidden="true" weight="fill" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="kubecode-connection-menu">
+        <DropdownMenuLabel>{t('kubecode.runtimeConnection')}</DropdownMenuLabel>
+        <div className="kubecode-connection-row" role="status">
+          <span>{t('kubecode.connectionStatus')}</span>
+          <strong>{stateLabel}</strong>
+        </div>
+        <div className="kubecode-connection-row">
+          <span>{t('kubecode.lastSuccessfulSync')}</span>
+          <time dateTime={lastSuccessfulSyncAt === null
+            ? undefined : new Date(lastSuccessfulSyncAt).toISOString()}>{lastSync}</time>
+        </div>
+        {connectionState === 'reconnecting' && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onRetry}>
+              <ArrowClockwise />
+              {t('kubecode.retry')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+type RuntimeStatusViewModel = {
+  active_actor_count: number
+  idle_actor_count: number
+  warm_actor_limit: number
+  workspace_event_delivery_available: boolean
+}
+
+function projectRuntimeStatus(status: RuntimeStatus): RuntimeStatusViewModel {
+  return {
+    active_actor_count: status.active_actor_count,
+    idle_actor_count: status.idle_actor_count,
+    warm_actor_limit: status.warm_actor_limit,
+    workspace_event_delivery_available: status.workspace_event_delivery_available,
+  }
+}
+
+function RuntimeStatusPanel({ api, t }: { api: KubecodeApi; t: Translator }) {
+  const runtimeStatusAvailable = typeof api.runtimeStatus === 'function'
+  const [request, setRequest] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'ready'; status: RuntimeStatusViewModel }
+    | { kind: 'error' }
+    | { kind: 'unavailable' }
+  >(runtimeStatusAvailable ? { kind: 'loading' } : { kind: 'unavailable' })
+
+  useEffect(() => {
+    let current = true
+    if (!runtimeStatusAvailable) return () => { current = false }
+    void api.runtimeStatus().then((response) => {
+      if (!current) return
+      const status = projectRuntimeStatus(response)
+      setState(status.workspace_event_delivery_available
+        ? { kind: 'ready', status }
+        : { kind: 'unavailable' })
+    }).catch(() => {
+      if (current) setState({ kind: 'error' })
+    }).finally(() => {
+      if (current) setRefreshing(false)
+    })
+    return () => { current = false }
+  }, [api, request, runtimeStatusAvailable])
+
+  const busy = state.kind === 'loading' || refreshing
+  return (
+    <div className="kubecode-settings-group" data-testid="runtime-status-panel">
+      <div className="kubecode-setting-row kubecode-runtime-toolbar">
+        <div>
+          <strong>{t('kubecode.runtimeStatus')}</strong>
+          <span>{t('kubecode.runtimeStatusDescription')}</span>
+          {state.kind === 'loading' && <span role="status">{t('kubecode.runtimeStatusLoading')}</span>}
+          {state.kind === 'error' && <span role="alert">{t('kubecode.runtimeStatusError')}</span>}
+          {state.kind === 'unavailable' && <span role="status">{t('kubecode.runtimeStatusUnavailable')}</span>}
+        </div>
+        <Button
+          aria-label={t('kubecode.runtimeRefresh')}
+          disabled={busy || !runtimeStatusAvailable}
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setRefreshing(true)
+            setRequest((value) => value + 1)
+          }}
+        >
+          <ArrowClockwise className={busy ? 'animate-spin' : undefined} />
+          {t('kubecode.refresh')}
+        </Button>
+      </div>
+      {state.kind === 'ready' && (
+        <dl className="kubecode-runtime-counts">
+          <div><dt>{t('kubecode.runtimeActiveActors')}</dt><dd>{state.status.active_actor_count}</dd></div>
+          <div><dt>{t('kubecode.runtimeIdleActors')}</dt><dd>{state.status.idle_actor_count}</dd></div>
+          <div><dt>{t('kubecode.runtimeWarmActorLimit')}</dt><dd>{state.status.warm_actor_limit}</dd></div>
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function KubecodeSettingsDialog({
+  api,
   agentPreferences,
   agents,
   agentsRefreshing,
@@ -1596,6 +1787,7 @@ function KubecodeSettingsDialog({
   onTestNotification,
   t,
 }: {
+  api: KubecodeApi
   agentPreferences: KubecodeAgentPreferences
   agents: AgentDescriptor[]
   agentsRefreshing: boolean
@@ -1875,6 +2067,7 @@ function KubecodeSettingsDialog({
             </div>
           )}
           {section === 'agents' && (
+            <>
             <div className="kubecode-settings-group">
               <div className="kubecode-setting-row">
                 <div>
@@ -1956,6 +2149,9 @@ function KubecodeSettingsDialog({
                 </details>
               ))}
             </div>
+            <h3 className="kubecode-settings-section-heading">{t('kubecode.runtime')}</h3>
+            <RuntimeStatusPanel api={api} t={t} />
+            </>
           )}
           {section === 'editor' && (
             <div className="kubecode-settings-group">
@@ -2111,12 +2307,6 @@ function useNarrowWorkbench(): boolean {
   }, [])
 
   return narrow
-}
-
-function isCleanTerminalExit(event: WorkspaceEvent): boolean {
-  return event.kind === 'terminal_exited'
-    && event.payload.exit_code === 0
-    && event.payload.signal === null
 }
 
 function availableWidth(element: HTMLElement | null): number {

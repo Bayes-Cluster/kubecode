@@ -70,6 +70,68 @@ impl TerminalKind {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct TerminalLaunchSpec {
+    program: String,
+    arguments: Vec<String>,
+}
+
+fn terminal_launch_spec(kind: TerminalKind, executable: &str, shell: &str) -> TerminalLaunchSpec {
+    if kind == TerminalKind::Regular {
+        return TerminalLaunchSpec {
+            program: executable.to_owned(),
+            arguments: Vec::new(),
+        };
+    }
+
+    TerminalLaunchSpec {
+        program: shell.to_owned(),
+        arguments: vec![
+            "-l".to_owned(),
+            "-i".to_owned(),
+            "-c".to_owned(),
+            "exec \"$1\"".to_owned(),
+            "kubecode-agent-tui".to_owned(),
+            executable.to_owned(),
+        ],
+    }
+}
+
+#[cfg(test)]
+mod launch_spec_tests {
+    use super::{TerminalKind, terminal_launch_spec};
+
+    #[test]
+    fn regular_terminals_launch_the_shell_directly() {
+        let spec = terminal_launch_spec(TerminalKind::Regular, "/bin/zsh", "/bin/zsh");
+
+        assert_eq!(spec.program, "/bin/zsh");
+        assert!(spec.arguments.is_empty());
+    }
+
+    #[test]
+    fn agent_tuis_load_the_users_interactive_login_shell_environment() {
+        let spec = terminal_launch_spec(
+            TerminalKind::ClaudeCode,
+            "/opt/homebrew/bin/claude",
+            "/bin/zsh",
+        );
+
+        assert_eq!(spec.program, "/bin/zsh");
+        assert_eq!(
+            spec.arguments,
+            [
+                "-l",
+                "-i",
+                "-c",
+                "exec \"$1\"",
+                "kubecode-agent-tui",
+                "/opt/homebrew/bin/claude",
+            ]
+        );
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TerminalInfo {
     pub id: String,
@@ -231,7 +293,12 @@ impl TerminalManager {
             })
             .map_err(|error| TerminalError::Pty(error.to_string()))?;
         let executable = self.executable(kind)?;
-        let mut command = CommandBuilder::new(executable);
+        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+        let launch = terminal_launch_spec(kind, &executable, &shell);
+        let mut command = CommandBuilder::new(launch.program);
+        for argument in launch.arguments {
+            command.arg(argument);
+        }
         command.cwd(&execution_path);
         command.env("PWD", &execution_path);
         command.env("TERM", "xterm-256color");

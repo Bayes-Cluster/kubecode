@@ -1,10 +1,12 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
+
+use crate::database::{Database, DatabaseError};
 
 const MAX_TEAMMATES: i64 = 8;
 
@@ -72,8 +74,27 @@ pub enum TeamError {
     DiscriminatorCannotWork,
     #[error("invalid stored team value: {0}")]
     InvalidStoredValue(String),
+    #[error("database error ({diagnostic})")]
+    Database {
+        #[source]
+        source: rusqlite::Error,
+        diagnostic: String,
+    },
     #[error(transparent)]
-    Database(#[from] rusqlite::Error),
+    DatabaseSetup(#[from] DatabaseError),
+}
+
+impl From<rusqlite::Error> for TeamError {
+    fn from(source: rusqlite::Error) -> Self {
+        let diagnostic = match &source {
+            rusqlite::Error::SqliteFailure(failure, _) => format!(
+                "primary={:?}, extended_code={}",
+                failure.code, failure.extended_code
+            ),
+            _ => source.to_string(),
+        };
+        Self::Database { source, diagnostic }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -213,6 +234,7 @@ pub enum TeamMessageDeliveryStatus {
     Delivered,
     Acknowledged,
     Failed,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -518,16 +540,19 @@ pub struct NewTeamPermissionRequest<'a> {
 }
 
 pub struct TeamStore {
-    database: Mutex<Connection>,
+    database: Arc<Database>,
 }
 
 impl TeamStore {
     pub fn open(database_path: impl AsRef<Path>) -> Result<Self, TeamError> {
-        let database = Connection::open(database_path)?;
-        database.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             CREATE TABLE IF NOT EXISTS teams (
+        let database = Arc::new(Database::open(database_path)?);
+        Self::from_database(database)
+    }
+
+    pub fn from_database(database: Arc<Database>) -> Result<Self, TeamError> {
+        let connection = database.lock().expect("team database mutex poisoned");
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS teams (
                id TEXT PRIMARY KEY,
                project_id TEXT NOT NULL,
                leader_member_id TEXT NOT NULL,
@@ -706,114 +731,127 @@ impl TeamStore {
              );",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "member_management_policy",
             "TEXT NOT NULL DEFAULT 'ask'",
         )?;
-        ensure_column(&database, "team_tasks", "plan", "TEXT")?;
+        ensure_column(&connection, "team_tasks", "plan", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "max_parallel_runs",
             "INTEGER NOT NULL DEFAULT 3",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "mode",
             "TEXT NOT NULL DEFAULT 'standard'",
         )?;
-        ensure_column(&database, "teams", "goal", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_column(&connection, "teams", "goal", "TEXT NOT NULL DEFAULT ''")?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "acceptance_criteria_json",
             "TEXT NOT NULL DEFAULT '[]'",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "allowed_agent_ids_json",
             "TEXT NOT NULL DEFAULT '[\"claude_code\",\"codex\",\"opencode\"]'",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "max_teammates",
             "INTEGER NOT NULL DEFAULT 3",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "max_review_rounds",
             "INTEGER NOT NULL DEFAULT 3",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "current_review_round",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "teams",
             "requested_mode",
             "TEXT NOT NULL DEFAULT 'standard'",
         )?;
-        ensure_column(&database, "teams", "mode_fallback_agent_id", "TEXT")?;
-        ensure_column(&database, "teams", "mode_fallback_reason_code", "TEXT")?;
-        ensure_column(&database, "teams", "mode_fallback_reason", "TEXT")?;
-        ensure_column(&database, "teams", "mode_fallback_at", "TEXT")?;
+        ensure_column(&connection, "teams", "mode_fallback_agent_id", "TEXT")?;
+        ensure_column(&connection, "teams", "mode_fallback_reason_code", "TEXT")?;
+        ensure_column(&connection, "teams", "mode_fallback_reason", "TEXT")?;
+        ensure_column(&connection, "teams", "mode_fallback_at", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "team_members",
             "permission_profile_applied",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "team_members",
             "previous_permission_mode",
             "TEXT",
         )?;
-        ensure_column(&database, "teams", "workspace_fingerprint", "TEXT")?;
-        ensure_column(&database, "teams", "final_summary", "TEXT")?;
-        ensure_column(&database, "teams", "started_at", "TEXT")?;
-        ensure_column(&database, "teams", "completed_at", "TEXT")?;
+        ensure_column(&connection, "teams", "workspace_fingerprint", "TEXT")?;
+        ensure_column(&connection, "teams", "final_summary", "TEXT")?;
+        ensure_column(&connection, "teams", "started_at", "TEXT")?;
+        ensure_column(&connection, "teams", "completed_at", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "team_messages",
             "delivery_status",
             "TEXT NOT NULL DEFAULT 'pending'",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "team_messages",
             "delivery_attempts",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
-        ensure_column(&database, "team_messages", "delivered_at", "TEXT")?;
-        ensure_column(&database, "team_messages", "last_error", "TEXT")?;
+        ensure_column(&connection, "team_messages", "delivered_at", "TEXT")?;
+        ensure_column(&connection, "team_messages", "last_error", "TEXT")?;
         ensure_column(
-            &database,
+            &connection,
             "team_user_input_requests",
             "resume_status",
             "TEXT NOT NULL DEFAULT 'active'",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "team_tasks",
             "completion_required",
             "INTEGER NOT NULL DEFAULT 1",
         )?;
-        database.execute(
+        connection.execute(
+            "UPDATE team_tasks SET completion_required = 0
+             WHERE status = 'cancelled' AND completion_required = 1",
+            [],
+        )?;
+        connection.execute(
+            "UPDATE team_messages
+             SET delivery_status = 'cancelled',
+                 read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+             WHERE task_id IN (SELECT id FROM team_tasks WHERE status = 'cancelled')
+               AND delivery_status IN ('pending', 'delivered', 'failed')",
+            [],
+        )?;
+        connection.execute(
             "UPDATE team_permission_requests
              SET status = 'cancelled', resolved_at = CURRENT_TIMESTAMP
              WHERE status IN ('pending_leader', 'waiting_user')",
             [],
         )?;
-        database.execute(
+        connection.execute(
             "UPDATE teams SET mode = CASE WHEN mode IS NULL OR mode = '' THEN 'standard' ELSE mode END,
                  requested_mode = CASE
                    WHEN requested_mode IS NULL OR requested_mode = '' THEN mode
@@ -827,7 +865,7 @@ impl TeamStore {
                  )))",
             [],
         )?;
-        database.execute(
+        connection.execute(
             "UPDATE team_lifecycle_operations
              SET status = CASE
                    WHEN kind = 'provider_cleanup' THEN 'pending'
@@ -842,16 +880,15 @@ impl TeamStore {
              WHERE status = 'running'",
             [],
         )?;
-        Ok(Self {
-            database: Mutex::new(database),
-        })
+        drop(connection);
+        Ok(Self { database })
     }
 
     pub fn create_team(&self, input: NewTeam<'_>) -> Result<Team, TeamError> {
         let team_id = Uuid::new_v4().to_string();
         let leader_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute(
             "INSERT INTO teams
              (id, project_id, leader_member_id, agent_session_id, title, status, workspace, workspace_path)
@@ -954,7 +991,7 @@ impl TeamStore {
         let agents_json = serde_json::to_string(&allowed_agent_ids)
             .map_err(|error| TeamError::InvalidStoredValue(error.to_string()))?;
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, input.team_id, input.leader_member_id)?;
         let changed = transaction.execute(
             "UPDATE teams SET status = 'starting', requested_mode = ?3, mode = ?3,
@@ -1162,7 +1199,7 @@ impl TeamStore {
         workspace_fingerprint: &str,
     ) -> Result<Team, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, team_id, leader_member_id)?;
         let (mode, status, required, accepted): (String, String, i64, i64) =
             transaction.query_row(
@@ -1330,7 +1367,7 @@ impl TeamStore {
         let normalized_name = normalized_name(input.name);
         let member_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, input.team_id, input.caller_member_id)?;
         let max_teammates: i64 = transaction.query_row(
             "SELECT max_teammates FROM teams WHERE id = ?1",
@@ -1374,7 +1411,7 @@ impl TeamStore {
         let member_id = Uuid::new_v4().to_string();
         let normalized_name = normalized_name(input.name);
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, input.team_id, input.caller_member_id)?;
         let (mode, status): (String, String) = transaction.query_row(
             "SELECT mode, status FROM teams WHERE id = ?1",
@@ -1466,7 +1503,7 @@ impl TeamStore {
         teammate_id: &str,
     ) -> Result<(), TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, team_id, caller_member_id)?;
         match member_role(&transaction, team_id, teammate_id)? {
             TeamRole::Leader => return Err(TeamError::LeaderCannotBeRemoved),
@@ -1522,7 +1559,7 @@ impl TeamStore {
     pub fn create_task(&self, input: NewTeamTask<'_>) -> Result<TeamTask, TeamError> {
         let task_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, input.team_id, input.creator_member_id)?;
         validate_dependencies(&transaction, input.team_id, input.dependencies)?;
         let status = if input.dependencies.is_empty() {
@@ -1572,7 +1609,7 @@ impl TeamStore {
         let message_id = Uuid::new_v4().to_string();
         let attempt_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_leader(&transaction, &team_id, leader_member_id)?;
         require_teammate(&transaction, &team_id, assignee_member_id)?;
@@ -1703,7 +1740,7 @@ impl TeamStore {
 
     pub fn read_messages(&self, member_id: &str) -> Result<Vec<TeamMessage>, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let messages = {
             let mut statement = transaction.prepare(
                 "SELECT id, team_id, from_member_id, to_member_id, kind, task_id,
@@ -1784,7 +1821,7 @@ impl TeamStore {
                 "UPDATE team_messages
                  SET delivery_status = 'failed', delivery_attempts = delivery_attempts + 1,
                      last_error = ?2
-                 WHERE id = ?1 AND delivery_status != 'acknowledged'",
+                 WHERE id = ?1 AND delivery_status NOT IN ('acknowledged', 'cancelled')",
                 params![message_id, error],
             )?;
         Ok(())
@@ -1797,7 +1834,8 @@ impl TeamStore {
             .execute(
                 "UPDATE team_messages SET read_at = CURRENT_TIMESTAMP,
                  delivery_status = 'acknowledged'
-                 WHERE to_member_id = ?1 AND read_at IS NULL",
+                 WHERE to_member_id = ?1 AND read_at IS NULL
+                   AND delivery_status != 'cancelled'",
                 [member_id],
             )
             .map_err(TeamError::from)
@@ -2033,7 +2071,7 @@ impl TeamStore {
     ) -> Result<TeamUserInputRequest, TeamError> {
         let request_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, team_id, leader_member_id)?;
         let status: String =
             transaction.query_row("SELECT status FROM teams WHERE id = ?1", [team_id], |row| {
@@ -2108,7 +2146,7 @@ impl TeamStore {
         answer: &str,
     ) -> Result<TeamUserInputRequest, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE team_user_input_requests
              SET status = 'resolved', answer = ?3, resolved_at = CURRENT_TIMESTAMP
@@ -2382,7 +2420,7 @@ impl TeamStore {
         }
         let leader_member_id = leader_member_id.ok_or(TeamError::LeaderRequired)?;
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, &request.team_id, leader_member_id)?;
         if let Some(option_id) = option_id {
             validate_permission_option(&request, option_id)?;
@@ -2475,7 +2513,7 @@ impl TeamStore {
     pub fn claim_task(&self, task_id: &str, member_id: &str) -> Result<TeamTask, TeamError> {
         let attempt_id = Uuid::new_v4().to_string();
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_teammate(&transaction, &team_id, member_id)?;
         let changed = transaction.execute(
@@ -2505,8 +2543,21 @@ impl TeamStore {
         result: &str,
         verification: &str,
     ) -> Result<TeamTask, TeamError> {
-        let database = self.database.lock().expect("team database mutex poisoned");
-        let changed = database.execute(
+        let message_id = Uuid::new_v4().to_string();
+        let mut database = self.database.lock().expect("team database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (team_id, leader_member_id, title): (String, String, String) = transaction
+            .query_row(
+                "SELECT task.team_id, team.leader_member_id, task.title
+                 FROM team_tasks task
+                 JOIN teams team ON team.id = task.team_id
+                 WHERE task.id = ?1",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .ok_or_else(|| TeamError::TaskNotFound(task_id.to_owned()))?;
+        let changed = transaction.execute(
             "UPDATE team_tasks SET status = 'result_review', result = ?3, verification = ?4,
                     updated_at = CURRENT_TIMESTAMP
              WHERE id = ?1 AND assignee_member_id = ?2 AND status IN ('in_progress', 'changes_requested')",
@@ -2515,7 +2566,7 @@ impl TeamStore {
         if changed == 0 {
             return Err(TeamError::TaskNotAssigned);
         }
-        database.execute(
+        transaction.execute(
             "UPDATE team_task_attempts SET status = 'result_submitted',
                     updated_at = CURRENT_TIMESTAMP
              WHERE id = (
@@ -2526,6 +2577,26 @@ impl TeamStore {
              )",
             params![task_id, member_id],
         )?;
+        transaction.execute(
+            "INSERT INTO team_messages
+             (id, team_id, from_member_id, to_member_id, kind, task_id, body)
+             VALUES (?1, ?2, ?3, ?4, 'result_ready', ?5, ?6)",
+            params![
+                message_id,
+                team_id,
+                member_id,
+                leader_member_id,
+                task_id,
+                result.trim()
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO team_activity_events
+             (team_id, member_id, task_id, kind, summary)
+             VALUES (?1, ?2, ?3, 'task_result_submitted', ?4)",
+            params![team_id, member_id, task_id, title],
+        )?;
+        transaction.commit()?;
         drop(database);
         self.get_task(task_id)
     }
@@ -2559,7 +2630,7 @@ impl TeamStore {
         feedback: Option<&str>,
     ) -> Result<TeamTask, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_leader(&transaction, &team_id, leader_member_id)?;
         let next_status = if accept {
@@ -2589,10 +2660,16 @@ impl TeamStore {
         accept: bool,
         feedback: Option<&str>,
     ) -> Result<TeamTask, TeamError> {
+        let message_id = (!accept).then(|| Uuid::new_v4().to_string());
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_leader(&transaction, &team_id, leader_member_id)?;
+        let (assignee_member_id, title): (Option<String>, String) = transaction.query_row(
+            "SELECT assignee_member_id, title FROM team_tasks WHERE id = ?1",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
         let status = if accept {
             TeamTaskStatus::Accepted
         } else {
@@ -2626,6 +2703,48 @@ impl TeamStore {
              )",
             params![task_id, if accept { "completed" } else { "running" }],
         )?;
+        transaction.execute(
+            "UPDATE team_messages
+             SET delivery_status = 'acknowledged',
+                 read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+             WHERE task_id = ?1 AND to_member_id = ?2 AND kind = 'result_ready'
+               AND delivery_status IN ('pending', 'delivered', 'failed')",
+            params![task_id, leader_member_id],
+        )?;
+        if let (Some(message_id), Some(assignee_member_id)) =
+            (message_id.as_deref(), assignee_member_id.as_deref())
+        {
+            transaction.execute(
+                "INSERT INTO team_messages
+                 (id, team_id, from_member_id, to_member_id, kind, task_id, body)
+                 VALUES (?1, ?2, ?3, ?4, 'changes_requested', ?5, ?6)",
+                params![
+                    message_id,
+                    team_id,
+                    leader_member_id,
+                    assignee_member_id,
+                    task_id,
+                    feedback.unwrap_or("Changes requested").trim()
+                ],
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO team_activity_events
+             (team_id, member_id, task_id, kind, summary, metadata_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                team_id,
+                leader_member_id,
+                task_id,
+                if accept {
+                    "task_result_accepted"
+                } else {
+                    "task_changes_requested"
+                },
+                title,
+                feedback.map(str::trim)
+            ],
+        )?;
         transaction.commit()?;
         drop(database);
         self.get_task(task_id)
@@ -2639,7 +2758,7 @@ impl TeamStore {
         workspace_fingerprint: &str,
     ) -> Result<TeamDiscriminationRound, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, team_id, leader_member_id)?;
         if member_role(&transaction, team_id, discriminator_member_id)? != TeamRole::Discriminator {
             return Err(TeamError::DiscriminatorRequired);
@@ -2676,7 +2795,7 @@ impl TeamStore {
         leader_member_id: &str,
     ) -> Result<(), TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_leader(&transaction, team_id, leader_member_id)?;
         discrimination_budget(&transaction, team_id)?;
         Ok(())
@@ -2691,7 +2810,7 @@ impl TeamStore {
         evidence: &str,
     ) -> Result<TeamDiscriminationRound, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let round = discrimination_round_by_id(&transaction, round_id)?;
         if round.discriminator_member_id != discriminator_member_id
             || member_role(&transaction, &round.team_id, discriminator_member_id)?
@@ -2846,7 +2965,7 @@ impl TeamStore {
         error: &str,
     ) -> Result<Option<TeamTaskAttempt>, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let attempt_id = transaction
             .query_row(
                 "SELECT id FROM team_task_attempts
@@ -2883,18 +3002,42 @@ impl TeamStore {
 
     pub fn retry_task(&self, task_id: &str, leader_member_id: &str) -> Result<TeamTask, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_leader(&transaction, &team_id, leader_member_id)?;
-        let changed = transaction.execute(
-            "UPDATE team_tasks SET status = 'pending', assignee_member_id = NULL,
-                    result = NULL, verification = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?1 AND status = 'failed'",
+        let dependencies_accepted: bool = transaction.query_row(
+            "SELECT NOT EXISTS (
+               SELECT 1 FROM team_task_dependencies dependencies
+               JOIN team_tasks dependency ON dependency.id = dependencies.dependency_id
+               WHERE dependencies.task_id = ?1 AND dependency.status != 'accepted'
+             )",
             [task_id],
+            |row| row.get(0),
+        )?;
+        let changed = transaction.execute(
+            "UPDATE team_tasks SET status = ?2, assignee_member_id = NULL,
+                    completion_required = 1, result = NULL, verification = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status IN ('failed', 'cancelled')",
+            params![
+                task_id,
+                if dependencies_accepted {
+                    TeamTaskStatus::Pending.as_str()
+                } else {
+                    TeamTaskStatus::Blocked.as_str()
+                }
+            ],
         )?;
         if changed == 0 {
             return Err(TeamError::TaskUnavailable);
         }
+        transaction.execute(
+            "INSERT INTO team_activity_events
+             (team_id, member_id, task_id, kind, summary)
+             SELECT team_id, ?2, id, 'task_retried', title
+             FROM team_tasks WHERE id = ?1",
+            params![task_id, leader_member_id],
+        )?;
         transaction.commit()?;
         drop(database);
         self.get_task(task_id)
@@ -2907,14 +3050,15 @@ impl TeamStore {
         reason: Option<&str>,
     ) -> Result<TeamTask, TeamError> {
         let mut database = self.database.lock().expect("team database mutex poisoned");
-        let transaction = database.transaction()?;
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let team_id = task_team_id(&transaction, task_id)?;
         require_leader(&transaction, &team_id, leader_member_id)?;
         let changed = transaction.execute(
             "UPDATE team_tasks
              SET status = 'cancelled', assignee_member_id = NULL,
-                 verification = ?2, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?1 AND status NOT IN ('accepted', 'cancelled')",
+                 completion_required = 0, verification = ?2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status != 'accepted'",
             params![
                 task_id,
                 reason.map(str::trim).filter(|value| !value.is_empty())
@@ -2930,6 +3074,21 @@ impl TeamStore {
              WHERE task_id = ?1
                AND status IN ('queued', 'running', 'needs_report', 'result_submitted')",
             [task_id],
+        )?;
+        transaction.execute(
+            "UPDATE team_messages
+             SET delivery_status = 'cancelled',
+                 read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+             WHERE task_id = ?1
+               AND delivery_status IN ('pending', 'delivered', 'failed')",
+            [task_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO team_activity_events
+             (team_id, member_id, task_id, kind, summary, metadata_json)
+             SELECT team_id, ?2, id, 'task_cancelled', title, ?3
+             FROM team_tasks WHERE id = ?1",
+            params![task_id, leader_member_id, reason.map(str::trim)],
         )?;
         transaction.execute(
             "UPDATE teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
@@ -3579,6 +3738,7 @@ stored_enum!(TeamMessageDeliveryStatus {
     Delivered => "delivered",
     Acknowledged => "acknowledged",
     Failed => "failed",
+    Cancelled => "cancelled",
 });
 stored_enum!(TeamLifecycleOperationKind {
     Provisioning => "provisioning",

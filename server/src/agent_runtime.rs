@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,24 +11,27 @@ use agent_client_protocol::schema::v1::{
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationContentValue, ElicitationFormCapabilities, EnvVariable, ExtRequest,
     ForkSessionRequest, InitializeRequest, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerHttp, McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionId,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    McpServerHttp, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
     SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
-use agent_client_protocol::{AcpAgent, ActiveSession, Agent, ConnectionTo, LineDirection};
+use agent_client_protocol::{ActiveSession, Agent, ConnectTo, ConnectionTo, LineDirection, Lines};
+use futures_util::StreamExt;
+use futures_util::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use uuid::Uuid;
 
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor, configured_adapter_path};
 use crate::agents::{
     AgentEventKind, AgentId, AgentRun, AgentStore, ConversationRelation, ConversationRelationship,
-    PermissionMode, RunStatus, StoreError,
+    PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use crate::teams::{TeamMemberStatus, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
@@ -150,6 +154,21 @@ pub struct TeamDisbandResult {
     pub cleanup_operations: Vec<crate::teams::TeamLifecycleOperation>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentRuntimeSessionCounts {
+    pub active: usize,
+    pub idle: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentRuntimeStatus {
+    pub active_actor_count: usize,
+    pub idle_actor_count: usize,
+    pub warm_actor_limit: usize,
+    pub latest_workspace_event_cursor: u64,
+    pub workspace_event_delivery_available: bool,
+}
+
 #[derive(Clone)]
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
@@ -157,6 +176,8 @@ pub struct AgentRuntime {
     agents: Arc<AgentCatalog>,
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
+    session_actor_policy: SessionActorPolicy,
+    session_activity_sequence: Arc<AtomicU64>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
     pending_side_questions: Arc<Mutex<HashSet<String>>>,
@@ -174,6 +195,8 @@ struct TeamMcpHttpConfig {
 struct SessionActorHandle {
     generation: String,
     sender: mpsc::UnboundedSender<SessionCommand>,
+    active: Arc<AtomicBool>,
+    last_activity: Arc<AtomicU64>,
 }
 
 struct PendingPermission {
@@ -194,7 +217,20 @@ impl PendingPermission {
     }
 }
 
-const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+#[derive(Clone, Copy, Debug)]
+struct SessionActorPolicy {
+    idle_timeout: Duration,
+    maximum_warm_actors: usize,
+}
+
+impl Default for SessionActorPolicy {
+    fn default() -> Self {
+        Self {
+            idle_timeout: Duration::from_secs(2 * 60),
+            maximum_warm_actors: 4,
+        }
+    }
+}
 const OPENCODE_MAXIMUM_PERMISSION: &str = r#"{"*":"allow"}"#;
 
 fn classify_team_failure(run: &AgentRun) -> crate::teams::TeamTaskFailureKind {
@@ -243,6 +279,8 @@ impl AgentRuntime {
             agents,
             cancellations: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            session_actor_policy: SessionActorPolicy::default(),
+            session_activity_sequence: Arc::new(AtomicU64::new(0)),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
             pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
@@ -307,6 +345,33 @@ impl AgentRuntime {
 
     pub fn agent_available(&self, agent_id: AgentId) -> bool {
         self.agents.is_available(agent_id)
+    }
+
+    pub fn session_counts(&self) -> AgentRuntimeSessionCounts {
+        let sessions = self.sessions.lock().expect("agent session mutex poisoned");
+        let active = sessions
+            .values()
+            .filter(|handle| handle.active.load(Ordering::Acquire))
+            .count();
+        AgentRuntimeSessionCounts {
+            active,
+            idle: sessions.len().saturating_sub(active),
+        }
+    }
+
+    pub fn session_actor_warm_limit(&self) -> usize {
+        self.session_actor_policy.maximum_warm_actors
+    }
+
+    pub fn status(&self) -> Result<AgentRuntimeStatus, StoreError> {
+        let counts = self.session_counts();
+        Ok(AgentRuntimeStatus {
+            active_actor_count: counts.active,
+            idle_actor_count: counts.idle,
+            warm_actor_limit: self.session_actor_warm_limit(),
+            latest_workspace_event_cursor: self.store.latest_workspace_event_id()?,
+            workspace_event_delivery_available: true,
+        })
     }
 
     pub fn available_agents(&self) -> Vec<AgentDescriptor> {
@@ -700,6 +765,14 @@ impl AgentRuntime {
             .map_err(RuntimeError::from_failure)
     }
 
+    pub async fn initialize_conversation_ephemeral(
+        &self,
+        conversation_id: &str,
+    ) -> Result<(), RuntimeError> {
+        self.initialize_conversation(conversation_id).await?;
+        self.disconnect_conversation(conversation_id).await
+    }
+
     pub async fn disconnect_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
         let handle = self
             .sessions
@@ -724,6 +797,15 @@ impl AgentRuntime {
     pub async fn reconnect_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
         self.disconnect_conversation(conversation_id).await?;
         self.initialize_conversation(conversation_id).await
+    }
+
+    pub async fn reconnect_conversation_ephemeral(
+        &self,
+        conversation_id: &str,
+    ) -> Result<(), RuntimeError> {
+        self.disconnect_conversation(conversation_id).await?;
+        self.initialize_conversation_ephemeral(conversation_id)
+            .await
     }
 
     pub async fn restore_team_permissions(&self, team_id: &str) -> Result<bool, RuntimeError> {
@@ -840,21 +922,21 @@ impl AgentRuntime {
             AgentPermissionProfile::Default,
             &cwd,
         )?;
-        let update_store = Arc::clone(&self.store);
-        let update_conversation_id = conversation.id.clone();
+        let update_journal =
+            SessionUpdateJournal::spawn(Arc::clone(&self.store), conversation.id.clone());
+        let notification_journal = update_journal.sink();
+        let history_journal = update_journal.sink();
         let state_store = Arc::clone(&self.store);
         let state_conversation_id = conversation.id;
-        agent_client_protocol::Client
+        let result = agent_client_protocol::Client
             .builder()
             .name("Kubecode")
             .on_receive_notification(
                 async move |notification: SessionNotification, _connection| {
-                    persist_session_update(
-                        &update_store,
-                        &update_conversation_id,
-                        None,
-                        notification.update,
-                    );
+                    notification_journal
+                        .enqueue(None, notification.update)
+                        .await
+                        .map_err(journal_protocol_error)?;
                     Ok(())
                 },
                 agent_client_protocol::on_receive_notification!(),
@@ -874,6 +956,10 @@ impl AgentRuntime {
                     .send_request(LoadSessionRequest::new(provider_session_id, cwd))
                     .block_task()
                     .await?;
+                history_journal
+                    .flush()
+                    .await
+                    .map_err(journal_protocol_error)?;
                 persist_serialized_session_event(
                     &state_store,
                     &state_conversation_id,
@@ -882,8 +968,9 @@ impl AgentRuntime {
                 );
                 Ok(())
             })
-            .await
-            .map_err(|error| RuntimeError::Acp(error.to_string()))
+            .await;
+        let shutdown = update_journal.shutdown().await;
+        finish_journal(result, shutdown).map_err(RuntimeError::Acp)
     }
 
     pub async fn remove_team_member_local_first(
@@ -1149,6 +1236,8 @@ impl AgentRuntime {
     }
 
     fn dispatch(&self, config: AgentSessionConfig, command: SessionCommand) {
+        let starts_run = matches!(&command, SessionCommand::Prompt(_));
+        let activity = self.next_session_activity();
         let existing = self
             .sessions
             .lock()
@@ -1156,6 +1245,10 @@ impl AgentRuntime {
             .get(&config.conversation_id)
             .cloned();
         let command = if let Some(handle) = existing {
+            handle.last_activity.store(activity, Ordering::Release);
+            if starts_run {
+                handle.active.store(true, Ordering::Release);
+            }
             match handle.sender.send(command) {
                 Ok(()) => return,
                 Err(error) => error.0,
@@ -1169,6 +1262,8 @@ impl AgentRuntime {
             .send(command)
             .expect("new session actor receiver must be open");
         let generation = Uuid::new_v4().to_string();
+        let active = Arc::new(AtomicBool::new(starts_run));
+        let last_activity = Arc::new(AtomicU64::new(activity));
         self.sessions
             .lock()
             .expect("agent session mutex poisoned")
@@ -1177,12 +1272,17 @@ impl AgentRuntime {
                 SessionActorHandle {
                     generation: generation.clone(),
                     sender,
+                    active: Arc::clone(&active),
+                    last_activity: Arc::clone(&last_activity),
                 },
             );
+        self.enforce_warm_actor_limit(Some(&config.conversation_id));
         let runtime = self.clone();
         tokio::spawn(async move {
             let conversation_id = config.conversation_id.clone();
-            runtime.run_session_actor(config, receiver).await;
+            runtime
+                .run_session_actor(config, receiver, active, last_activity)
+                .await;
             let mut sessions = runtime
                 .sessions
                 .lock()
@@ -1196,10 +1296,58 @@ impl AgentRuntime {
         });
     }
 
+    fn next_session_activity(&self) -> u64 {
+        self.session_activity_sequence
+            .fetch_add(1, Ordering::AcqRel)
+            + 1
+    }
+
+    fn enforce_warm_actor_limit(&self, protected_conversation_id: Option<&str>) {
+        let mut shutdown = Vec::new();
+        {
+            let mut sessions = self.sessions.lock().expect("agent session mutex poisoned");
+            let mut idle = sessions
+                .iter()
+                .filter(|(conversation_id, handle)| {
+                    !handle.active.load(Ordering::Acquire)
+                        && protected_conversation_id != Some(conversation_id.as_str())
+                })
+                .map(|(conversation_id, handle)| {
+                    (
+                        conversation_id.clone(),
+                        handle.last_activity.load(Ordering::Acquire),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let protected_idle = protected_conversation_id
+                .and_then(|id| sessions.get(id))
+                .is_some_and(|handle| !handle.active.load(Ordering::Acquire));
+            let warm_count = idle.len() + usize::from(protected_idle);
+            if warm_count <= self.session_actor_policy.maximum_warm_actors {
+                return;
+            }
+            idle.sort_by_key(|(_, activity)| *activity);
+            for (conversation_id, _) in idle
+                .into_iter()
+                .take(warm_count - self.session_actor_policy.maximum_warm_actors)
+            {
+                if let Some(handle) = sessions.remove(&conversation_id) {
+                    shutdown.push(handle.sender);
+                }
+            }
+        }
+        for sender in shutdown {
+            let (response, _disconnected) = oneshot::channel();
+            let _ = sender.send(SessionCommand::Shutdown { response });
+        }
+    }
+
     async fn run_session_actor(
         &self,
         config: AgentSessionConfig,
         mut receiver: mpsc::UnboundedReceiver<SessionCommand>,
+        active: Arc<AtomicBool>,
+        last_activity: Arc<AtomicU64>,
     ) {
         let active_run_id = Arc::new(Mutex::new(None));
         let result = run_acp_session(
@@ -1207,8 +1355,11 @@ impl AgentRuntime {
             config,
             &mut receiver,
             Arc::clone(&active_run_id),
+            Arc::clone(&active),
+            Arc::clone(&last_activity),
         )
         .await;
+        active.store(false, Ordering::Release);
         if let Err(error) = result {
             let failure = error.failure();
             if let Some(run_id) = active_run_id
@@ -1544,6 +1695,7 @@ async fn process_session_control(
     command: SessionCommand,
     store: &AgentStore,
     conversation_id: &str,
+    journal: &SessionUpdateSink,
 ) -> Option<AgentCommand> {
     match command {
         SessionCommand::Prompt(command) => Some(command),
@@ -1553,19 +1705,25 @@ async fn process_session_control(
         }
         SessionCommand::SetMode { mode_id, response } => {
             let selected_mode = mode_id.clone();
-            let result = connection
+            let result = match connection
                 .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
                 .block_task()
                 .await
-                .map(|_| {
-                    persist_serialized_session_event(
-                        store,
-                        conversation_id,
-                        "current_mode",
-                        json!({"currentModeId":selected_mode}),
-                    );
-                })
-                .map_err(|error| error.to_string());
+            {
+                Ok(_) => match journal.flush().await {
+                    Ok(()) => {
+                        persist_serialized_session_event(
+                            store,
+                            conversation_id,
+                            "current_mode",
+                            json!({"currentModeId":selected_mode}),
+                        );
+                        Ok(())
+                    }
+                    Err(error) => Err(error.to_string()),
+                },
+                Err(error) => Err(error.to_string()),
+            };
             let _ = response.send(result);
             None
         }
@@ -1578,7 +1736,7 @@ async fn process_session_control(
                 SessionConfigInput::Boolean(value) => SessionConfigOptionValue::boolean(value),
                 SessionConfigInput::ValueId(value) => SessionConfigOptionValue::value_id(value),
             };
-            let result = connection
+            let result = match connection
                 .send_request(SetSessionConfigOptionRequest::new(
                     session_id.clone(),
                     config_id,
@@ -1586,15 +1744,21 @@ async fn process_session_control(
                 ))
                 .block_task()
                 .await
-                .map(|update| {
-                    persist_serialized_session_event(
-                        store,
-                        conversation_id,
-                        "config_options",
-                        update,
-                    );
-                })
-                .map_err(|error| error.to_string());
+            {
+                Ok(update) => match journal.flush().await {
+                    Ok(()) => {
+                        persist_serialized_session_event(
+                            store,
+                            conversation_id,
+                            "config_options",
+                            update,
+                        );
+                        Ok(())
+                    }
+                    Err(error) => Err(error.to_string()),
+                },
+                Err(error) => Err(error.to_string()),
+            };
             let _ = response.send(result);
             None
         }
@@ -1627,6 +1791,8 @@ async fn run_acp_session(
     config: AgentSessionConfig,
     receiver: &mut mpsc::UnboundedReceiver<SessionCommand>,
     active_run_id: Arc<Mutex<Option<String>>>,
+    actor_active: Arc<AtomicBool>,
+    last_activity: Arc<AtomicU64>,
 ) -> Result<(), RuntimeError> {
     let hydrate_provider_history = config.provider_session_id.is_some()
         && runtime
@@ -1644,9 +1810,13 @@ async fn run_acp_session(
     .with_debug(move |line, direction| {
         capture_new_session_response(&response_capture, line, direction)
     });
-    let update_store = Arc::clone(&runtime.store);
+    let update_journal =
+        SessionUpdateJournal::spawn(Arc::clone(&runtime.store), config.conversation_id.clone());
+    let notification_journal = update_journal.sink();
+    let permission_journal = update_journal.sink();
+    let elicitation_journal = update_journal.sink();
+    let connection_journal = update_journal.sink();
     let update_run_id = Arc::clone(&active_run_id);
-    let update_conversation_id = config.conversation_id.clone();
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
@@ -1672,18 +1842,20 @@ async fn run_acp_session(
                     .lock()
                     .expect("active run mutex poisoned")
                     .clone();
-                persist_session_update(
-                    &update_store,
-                    &update_conversation_id,
-                    run_id.as_deref(),
-                    notification.update,
-                );
+                notification_journal
+                    .enqueue(run_id, notification.update)
+                    .await
+                    .map_err(journal_protocol_error)?;
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
+                permission_journal
+                    .flush()
+                    .await
+                    .map_err(journal_protocol_error)?;
                 let run_id = permission_run_id
                     .lock()
                     .expect("active run mutex poisoned")
@@ -1851,6 +2023,10 @@ async fn run_acp_session(
         )
         .on_receive_request(
             async move |request: CreateElicitationRequest, responder, _connection| {
+                elicitation_journal
+                    .flush()
+                    .await
+                    .map_err(journal_protocol_error)?;
                 let run_id = elicitation_run_id
                     .lock()
                     .expect("active run mutex poisoned")
@@ -1946,6 +2122,10 @@ async fn run_acp_session(
                         )
                         .block_task()
                         .await?;
+                    connection_journal
+                        .flush()
+                        .await
+                        .map_err(journal_protocol_error)?;
                     persist_serialized_session_event(
                         &store,
                         &conversation_id,
@@ -1961,22 +2141,29 @@ async fn run_acp_session(
                     .is_some()
                     {
                         set_startup_stage(&connection_stage, AgentStartupStage::SessionResume);
-                        connection
+                        match connection
                             .send_request(
                                 ResumeSessionRequest::new(session_id.clone(), cwd.clone())
                                     .mcp_servers(team_mcp_http.clone().into_iter().collect()),
                             )
                             .block_task()
                             .await
-                            .map(|response| {
+                        {
+                            Ok(response) => {
+                                connection_journal
+                                    .flush()
+                                    .await
+                                    .map_err(journal_protocol_error)?;
                                 persist_serialized_session_event(
                                     &store,
                                     &conversation_id,
                                     "session_resumed",
                                     response,
                                 );
-                            })
-                            .is_ok()
+                                true
+                            }
+                            Err(_) => false,
+                        }
                     } else {
                         false
                     };
@@ -1993,6 +2180,10 @@ async fn run_acp_session(
                             .await
                         {
                             Ok(response) => {
+                                connection_journal
+                                    .flush()
+                                    .await
+                                    .map_err(journal_protocol_error)?;
                                 persist_serialized_session_event(
                                     &store,
                                     &conversation_id,
@@ -2004,12 +2195,15 @@ async fn run_acp_session(
                             Err(_) => {
                                 create_provider_session(
                                     &connection,
-                                    &runtime,
-                                    &conversation_id,
                                     cwd,
-                                    team_mcp_http.clone(),
-                                    &captured_session_responses,
-                                    &connection_stage,
+                                    ProviderSessionCreation {
+                                        runtime: &runtime,
+                                        conversation_id: &conversation_id,
+                                        team_mcp_http: team_mcp_http.clone(),
+                                        captured_responses: &captured_session_responses,
+                                        startup_stage: &connection_stage,
+                                        journal: &connection_journal,
+                                    },
                                 )
                                 .await?
                             }
@@ -2019,15 +2213,22 @@ async fn run_acp_session(
             } else {
                 create_provider_session(
                     &connection,
-                    &runtime,
-                    &conversation_id,
                     cwd,
-                    team_mcp_http,
-                    &captured_session_responses,
-                    &connection_stage,
+                    ProviderSessionCreation {
+                        runtime: &runtime,
+                        conversation_id: &conversation_id,
+                        team_mcp_http,
+                        captured_responses: &captured_session_responses,
+                        startup_stage: &connection_stage,
+                        journal: &connection_journal,
+                    },
                 )
                 .await?
             };
+            connection_journal
+                .flush()
+                .await
+                .map_err(journal_protocol_error)?;
             store
                 .set_provider_session(&conversation_id, &session_id.to_string())
                 .map_err(|error| {
@@ -2045,10 +2246,16 @@ async fn run_acp_session(
                 .expect("startup stage capture poisoned") = None;
             loop {
                 let command =
-                    match tokio::time::timeout(SESSION_IDLE_TIMEOUT, receiver.recv()).await {
+                    match tokio::time::timeout(
+                        runtime.session_actor_policy.idle_timeout,
+                        receiver.recv(),
+                    )
+                    .await
+                    {
                         Ok(Some(command)) => command,
                         Ok(None) | Err(_) => break,
                     };
+                last_activity.store(runtime.next_session_activity(), Ordering::Release);
                 let command = match command {
                     SessionCommand::Shutdown { response } => {
                         let _ = response.send(());
@@ -2062,11 +2269,13 @@ async fn run_acp_session(
                     command,
                     &runtime.store,
                     &conversation_id,
+                    &connection_journal,
                 )
                 .await
                 else {
                     continue;
                 };
+                actor_active.store(true, Ordering::Release);
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
                 let mut cancelled = command.cancelled;
@@ -2098,6 +2307,10 @@ async fn run_acp_session(
                                         break AcpRunOutcome::Cancelled;
                                     }
                                     SessionCommand::SideQuestion { id, question, response } => {
+                                        connection_journal
+                                            .flush()
+                                            .await
+                                            .map_err(journal_protocol_error)?;
                                         start_side_question(
                                             &runtime,
                                             &connection,
@@ -2117,6 +2330,7 @@ async fn run_acp_session(
                                     next,
                                     &runtime.store,
                                     &conversation_id,
+                                    &connection_journal,
                                 ).await {
                                     runtime.fail_run(
                                         &queued_prompt.run.id,
@@ -2130,6 +2344,10 @@ async fn run_acp_session(
                         }
                     }
                 };
+                connection_journal
+                    .flush()
+                    .await
+                    .map_err(journal_protocol_error)?;
                 runtime.remove_cancellation(&command.run.id);
                 let status = match outcome {
                     AcpRunOutcome::Completed => RunStatus::Completed,
@@ -2148,6 +2366,9 @@ async fn run_acp_session(
                     &json!({"run_id":command.run.id, "status":status}),
                 );
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
+                actor_active.store(false, Ordering::Release);
+                last_activity.store(runtime.next_session_activity(), Ordering::Release);
+                runtime.enforce_warm_actor_limit(Some(&conversation_id));
                 runtime.wake_team_member_for_conversation(&conversation_id);
                 if let Some(response) = shutdown_response {
                     let _ = response.send(());
@@ -2158,7 +2379,8 @@ async fn run_acp_session(
         })
         .await;
 
-    result.map_err(|error| {
+    let shutdown = update_journal.shutdown().await;
+    finish_journal(result, shutdown).map_err(|error| {
         let message = error.to_string();
         match *startup_stage
             .lock()
@@ -2293,14 +2515,19 @@ fn side_question_capability(store: &AgentStore, conversation_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+struct ProviderSessionCreation<'a> {
+    runtime: &'a AgentRuntime,
+    team_mcp_http: Option<McpServer>,
+    conversation_id: &'a str,
+    captured_responses: &'a SessionResponseCapture,
+    startup_stage: &'a StartupStageCapture,
+    journal: &'a SessionUpdateSink,
+}
+
 async fn create_provider_session(
     connection: &ConnectionTo<Agent>,
-    runtime: &AgentRuntime,
-    conversation_id: &str,
     cwd: PathBuf,
-    team_mcp_http: Option<McpServer>,
-    captured_responses: &SessionResponseCapture,
-    startup_stage: &StartupStageCapture,
+    context: ProviderSessionCreation<'_>,
 ) -> Result<
     (
         agent_client_protocol::schema::v1::SessionId,
@@ -2308,6 +2535,14 @@ async fn create_provider_session(
     ),
     agent_client_protocol::Error,
 > {
+    let ProviderSessionCreation {
+        runtime,
+        team_mcp_http,
+        conversation_id,
+        captured_responses,
+        startup_stage,
+        journal,
+    } = context;
     set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
     if let Some(mcp_server) = team_mcp_http {
         let response = connection
@@ -2316,6 +2551,7 @@ async fn create_provider_session(
             .await?;
         let session_id = response.session_id.clone();
         let _ = take_captured_session_response(captured_responses, &session_id);
+        journal.flush().await.map_err(journal_protocol_error)?;
         persist_serialized_session_event(
             &runtime.store,
             conversation_id,
@@ -2336,6 +2572,7 @@ async fn create_provider_session(
         let session_id = active_session.session_id().clone();
         let response = take_captured_session_response(captured_responses, &session_id)
             .unwrap_or_else(|| active_session.response());
+        journal.flush().await.map_err(journal_protocol_error)?;
         persist_serialized_session_event(
             &runtime.store,
             conversation_id,
@@ -2350,6 +2587,7 @@ async fn create_provider_session(
         .await?;
     let session_id = response.session_id.clone();
     let _ = take_captured_session_response(captured_responses, &session_id);
+    journal.flush().await.map_err(journal_protocol_error)?;
     persist_serialized_session_event(
         &runtime.store,
         conversation_id,
@@ -2469,12 +2707,134 @@ fn native_permission_error(error: agent_client_protocol::Error) -> agent_client_
     }))
 }
 
+type AcpDebugCallback = Arc<dyn Fn(&str, LineDirection) + Send + Sync + 'static>;
+
+struct TokioStdioAcpAgent {
+    command: PathBuf,
+    args: Vec<String>,
+    environment: Vec<EnvVariable>,
+    debug_callback: Option<AcpDebugCallback>,
+}
+
+impl TokioStdioAcpAgent {
+    fn with_debug(
+        mut self,
+        callback: impl Fn(&str, LineDirection) + Send + Sync + 'static,
+    ) -> Self {
+        self.debug_callback = Some(Arc::new(callback));
+        self
+    }
+}
+
+impl ConnectTo<agent_client_protocol::Client> for TokioStdioAcpAgent {
+    async fn connect_to(
+        self,
+        client: impl ConnectTo<Agent>,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let mut command = tokio::process::Command::new(&self.command);
+        command
+            .args(&self.args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        for variable in &self.environment {
+            command.env(&variable.name, &variable.value);
+        }
+        let mut child = command.spawn().map_err(|error| {
+            agent_client_protocol::Error::internal_error().data(error.to_string())
+        })?;
+        let child_stdin = child.stdin.take().ok_or_else(|| {
+            agent_client_protocol::Error::internal_error().data("Failed to open agent stdin")
+        })?;
+        let child_stdout = child.stdout.take().ok_or_else(|| {
+            agent_client_protocol::Error::internal_error().data("Failed to open agent stdout")
+        })?;
+        let child_stderr = child.stderr.take().ok_or_else(|| {
+            agent_client_protocol::Error::internal_error().data("Failed to open agent stderr")
+        })?;
+
+        let stdout_callback = self.debug_callback.clone();
+        let incoming = BufReader::new(child_stdout.compat())
+            .lines()
+            .inspect(move |line| {
+                if let (Some(callback), Ok(line)) = (&stdout_callback, line) {
+                    callback(line, LineDirection::Stdout);
+                }
+            });
+        let stdin_callback = self.debug_callback.clone();
+        let outgoing = futures_util::sink::unfold(
+            child_stdin.compat_write(),
+            move |mut stdin, line: String| {
+                let callback = stdin_callback.clone();
+                async move {
+                    if let Some(callback) = callback {
+                        callback(&line, LineDirection::Stdin);
+                    }
+                    stdin.write_all(line.as_bytes()).await?;
+                    stdin.write_all(b"\n").await?;
+                    stdin.flush().await?;
+                    Ok::<_, std::io::Error>(stdin)
+                }
+            },
+        );
+
+        let stderr_callback = self.debug_callback;
+        let stderr_task = tokio::spawn(async move {
+            let mut lines = BufReader::new(child_stderr.compat()).lines();
+            let mut collected = String::new();
+            while let Some(line) = lines.next().await {
+                let Ok(line) = line else { break };
+                if let Some(callback) = &stderr_callback {
+                    callback(&line, LineDirection::Stderr);
+                }
+                if !collected.is_empty() {
+                    collected.push('\n');
+                }
+                collected.push_str(&line);
+            }
+            collected
+        });
+
+        let protocol = ConnectTo::<agent_client_protocol::Client>::connect_to(
+            Lines::new(outgoing, incoming),
+            client,
+        );
+        tokio::pin!(protocol);
+        let result = tokio::select! {
+            result = &mut protocol => {
+                let _ = child.kill().await;
+                result
+            }
+            status = child.wait() => {
+                match status {
+                    Ok(status) if status.success() => Ok(()),
+                    Ok(status) => {
+                        let stderr = stderr_task.await.unwrap_or_default();
+                        let detail = if stderr.is_empty() {
+                            format!("Agent process exited with {status}")
+                        } else {
+                            format!("Agent process exited with {status}: {stderr}")
+                        };
+                        return Err(agent_client_protocol::Error::internal_error().data(detail));
+                    }
+                    Err(error) => return Err(
+                        agent_client_protocol::Error::internal_error().data(error.to_string())
+                    ),
+                }
+            }
+        };
+        stderr_task.abort();
+        result
+    }
+}
+
 fn acp_agent(
     agent_id: AgentId,
     descriptor: &AgentDescriptor,
     permission_profile: AgentPermissionProfile,
     cwd: &Path,
-) -> Result<AcpAgent, RuntimeError> {
+) -> Result<TokioStdioAcpAgent, RuntimeError> {
     let (name, command, args, agent_environment) = match agent_id {
         AgentId::ClaudeCode => (
             "Claude Agent",
@@ -2527,11 +2887,13 @@ fn acp_agent(
         command.to_string_lossy().into_owned(),
     ];
     launcher_args.extend(args);
-    Ok(AcpAgent::new(McpServer::Stdio(
-        McpServerStdio::new(name, PathBuf::from("/bin/sh"))
-            .args(launcher_args)
-            .env(agent_environment),
-    )))
+    let _ = name;
+    Ok(TokioStdioAcpAgent {
+        command: PathBuf::from("/bin/sh"),
+        args: launcher_args,
+        environment: agent_environment,
+        debug_callback: None,
+    })
 }
 
 fn configured_adapter(
@@ -2549,12 +2911,303 @@ fn configured_adapter(
     })
 }
 
-fn persist_session_update(
+#[derive(Debug)]
+struct PersistedSessionUpdate {
+    session_kind: &'static str,
+    run_kind: Option<AgentEventKind>,
+    payload: Value,
+}
+
+#[derive(Debug)]
+struct PendingSessionUpdate {
+    run_id: Option<String>,
+    event: PersistedSessionUpdate,
+}
+
+enum SessionJournalCommand {
+    Update(PendingSessionUpdate),
+    Flush(oneshot::Sender<Result<(), String>>),
+    Shutdown,
+}
+
+const SESSION_UPDATE_FLUSH_INTERVAL: Duration = Duration::from_millis(33);
+const SESSION_UPDATE_CHANNEL_CAPACITY: usize = 256;
+
+#[derive(Debug, Error)]
+enum SessionJournalError {
+    #[error("Session update journal is closed")]
+    Closed,
+    #[error("Session update persistence failed: {0}")]
+    Persistence(String),
+    #[error("Session update journal task failed: {0}")]
+    Worker(String),
+}
+
+struct SessionJournalSender {
+    sender: mpsc::Sender<SessionJournalCommand>,
+    accepting: tokio::sync::Mutex<bool>,
+}
+
+#[derive(Clone)]
+struct SessionUpdateSink {
+    sender: Arc<SessionJournalSender>,
+    store: Arc<AgentStore>,
+    conversation_id: Arc<str>,
+}
+
+struct SessionUpdateJournal {
+    sink: SessionUpdateSink,
+    worker: tokio::task::JoinHandle<Result<(), StoreError>>,
+}
+
+impl SessionUpdateJournal {
+    fn spawn(store: Arc<AgentStore>, conversation_id: String) -> Self {
+        let (sender, mut receiver) = mpsc::channel(SESSION_UPDATE_CHANNEL_CAPACITY);
+        let sink = SessionUpdateSink {
+            sender: Arc::new(SessionJournalSender {
+                sender,
+                accepting: tokio::sync::Mutex::new(true),
+            }),
+            store: Arc::clone(&store),
+            conversation_id: Arc::from(conversation_id),
+        };
+        let worker_conversation_id = Arc::clone(&sink.conversation_id);
+        let worker = tokio::spawn(async move {
+            let mut pending = Vec::<PendingSessionUpdate>::new();
+            let mut flush_deadline = None;
+            loop {
+                let command = if let Some(deadline) = flush_deadline {
+                    match tokio::time::timeout_at(deadline, receiver.recv()).await {
+                        Ok(command) => command,
+                        Err(_) => {
+                            persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                            flush_deadline = None;
+                            continue;
+                        }
+                    }
+                } else {
+                    receiver.recv().await
+                };
+                match command {
+                    Some(SessionJournalCommand::Update(update)) => {
+                        if update.event.is_streaming() {
+                            if pending.is_empty() {
+                                flush_deadline = Some(
+                                    tokio::time::Instant::now() + SESSION_UPDATE_FLUSH_INTERVAL,
+                                );
+                            }
+                            push_streaming_update(&mut pending, update);
+                        } else {
+                            persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                            flush_deadline = None;
+                            persist_session_event(
+                                &store,
+                                &worker_conversation_id,
+                                update.run_id.as_deref(),
+                                update.event,
+                            )?;
+                        }
+                    }
+                    Some(SessionJournalCommand::Flush(response)) => {
+                        let result =
+                            persist_pending_updates(&store, &worker_conversation_id, &mut pending);
+                        flush_deadline = None;
+                        match result {
+                            Ok(()) => {
+                                let _ = response.send(Ok(()));
+                            }
+                            Err(error) => {
+                                let _ = response.send(Err(error.to_string()));
+                                return Err(error);
+                            }
+                        }
+                    }
+                    Some(SessionJournalCommand::Shutdown) => {
+                        persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                        break;
+                    }
+                    None => {
+                        persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        });
+        Self { sink, worker }
+    }
+
+    fn sink(&self) -> SessionUpdateSink {
+        self.sink.clone()
+    }
+
+    #[cfg(test)]
+    async fn enqueue(
+        &self,
+        run_id: Option<String>,
+        update: SessionUpdate,
+    ) -> Result<(), SessionJournalError> {
+        self.sink.enqueue(run_id, update).await
+    }
+
+    #[cfg(test)]
+    async fn flush(&self) -> Result<(), SessionJournalError> {
+        self.sink.flush().await
+    }
+
+    async fn shutdown(self) -> Result<(), SessionJournalError> {
+        let send_result = {
+            let mut accepting = self.sink.sender.accepting.lock().await;
+            *accepting = false;
+            self.sink
+                .sender
+                .sender
+                .send(SessionJournalCommand::Shutdown)
+                .await
+        };
+        let worker_result = self
+            .worker
+            .await
+            .map_err(|error| SessionJournalError::Worker(error.to_string()))?;
+        match worker_result {
+            Ok(()) if send_result.is_ok() => Ok(()),
+            Ok(()) => Err(SessionJournalError::Closed),
+            Err(error) => Err(SessionJournalError::Persistence(error.to_string())),
+        }
+    }
+}
+
+impl SessionUpdateSink {
+    async fn enqueue(
+        &self,
+        run_id: Option<String>,
+        update: SessionUpdate,
+    ) -> Result<(), SessionJournalError> {
+        let accepting = self.sender.accepting.lock().await;
+        if !*accepting {
+            return Err(SessionJournalError::Closed);
+        }
+        let Some(event) = session_update_event(&self.store, &self.conversation_id, update) else {
+            return Ok(());
+        };
+        self.sender
+            .sender
+            .send(SessionJournalCommand::Update(PendingSessionUpdate {
+                run_id,
+                event,
+            }))
+            .await
+            .map_err(|_| SessionJournalError::Closed)
+    }
+
+    async fn flush(&self) -> Result<(), SessionJournalError> {
+        let (sender, receiver) = oneshot::channel();
+        {
+            let accepting = self.sender.accepting.lock().await;
+            if !*accepting {
+                return Err(SessionJournalError::Closed);
+            }
+            self.sender
+                .sender
+                .send(SessionJournalCommand::Flush(sender))
+                .await
+                .map_err(|_| SessionJournalError::Closed)?;
+        }
+        receiver
+            .await
+            .map_err(|_| SessionJournalError::Closed)?
+            .map_err(SessionJournalError::Persistence)
+    }
+}
+
+fn journal_protocol_error(error: SessionJournalError) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::internal_error().data(error.to_string())
+}
+
+fn finish_journal<T>(
+    result: Result<T, agent_client_protocol::Error>,
+    shutdown: Result<(), SessionJournalError>,
+) -> Result<T, String> {
+    match (result, shutdown) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(connection), Err(journal)) => Err(format!("{connection}; {journal}")),
+        (Err(error), Ok(())) => Err(error.to_string()),
+        (Ok(_), Err(error)) => Err(error.to_string()),
+    }
+}
+
+fn push_streaming_update(pending: &mut Vec<PendingSessionUpdate>, update: PendingSessionUpdate) {
+    if let Some(last) = pending.last_mut()
+        && last.run_id == update.run_id
+        && last.event.try_merge(&update.event)
+    {
+        return;
+    }
+    pending.push(update);
+}
+
+fn persist_pending_updates(
     store: &AgentStore,
     conversation_id: &str,
-    run_id: Option<&str>,
+    pending: &mut Vec<PendingSessionUpdate>,
+) -> Result<(), StoreError> {
+    let updates = pending.drain(..).map(runtime_update).collect::<Vec<_>>();
+    store.append_runtime_updates(conversation_id, &updates)
+}
+
+fn runtime_update(update: PendingSessionUpdate) -> RuntimeUpdate {
+    let session_payload = match &update.run_id {
+        Some(run_id) => merge_run_id(update.event.payload.clone(), run_id),
+        None => update.event.payload.clone(),
+    };
+    let run_event = update
+        .run_id
+        .zip(update.event.run_kind)
+        .map(|(run_id, kind)| RuntimeRunEvent {
+            run_id,
+            kind,
+            payload: update.event.payload,
+        });
+    RuntimeUpdate {
+        session_kind: update.event.session_kind.to_owned(),
+        session_payload,
+        run_event,
+    }
+}
+
+impl PersistedSessionUpdate {
+    fn is_streaming(&self) -> bool {
+        matches!(
+            self.session_kind,
+            "user_message_delta" | "text_delta" | "thinking_delta"
+        )
+    }
+
+    fn try_merge(&mut self, next: &Self) -> bool {
+        if !self.is_streaming()
+            || self.session_kind != next.session_kind
+            || self.run_kind != next.run_kind
+            || self.payload.get("message_id") != next.payload.get("message_id")
+            || self.payload.get("_meta") != next.payload.get("_meta")
+        {
+            return false;
+        }
+        let Some(current) = self.payload.get("text").and_then(Value::as_str) else {
+            return false;
+        };
+        let Some(delta) = next.payload.get("text").and_then(Value::as_str) else {
+            return false;
+        };
+        self.payload["text"] = Value::String(current.to_owned() + delta);
+        true
+    }
+}
+
+fn session_update_event(
+    store: &AgentStore,
+    conversation_id: &str,
     update: SessionUpdate,
-) {
+) -> Option<PersistedSessionUpdate> {
     let event = match update {
         SessionUpdate::UserMessageChunk(chunk) => {
             text_event(AgentEventKind::TextDelta, chunk).map(|(_, payload)| {
@@ -2607,16 +3260,24 @@ fn persist_session_update(
         }
         _ => None,
     };
-    if let Some((session_kind, run_kind, payload)) = event {
-        let session_payload = match run_id {
-            Some(run_id) => merge_run_id(payload.clone(), run_id),
-            None => payload.clone(),
-        };
-        let _ = store.append_session_event(conversation_id, session_kind, &session_payload);
-        if let (Some(run_id), Some(run_kind)) = (run_id, run_kind) {
-            let _ = store.append_event(run_id, run_kind, &payload);
-        }
-    }
+    event.map(|(session_kind, run_kind, payload)| PersistedSessionUpdate {
+        session_kind,
+        run_kind,
+        payload,
+    })
+}
+
+fn persist_session_event(
+    store: &AgentStore,
+    conversation_id: &str,
+    run_id: Option<&str>,
+    event: PersistedSessionUpdate,
+) -> Result<(), StoreError> {
+    let update = runtime_update(PendingSessionUpdate {
+        run_id: run_id.map(str::to_owned),
+        event,
+    });
+    store.append_runtime_updates(conversation_id, &[update])
 }
 
 fn serialized_update(
@@ -2721,11 +3382,7 @@ mod tests {
             AgentPermissionProfile::Default,
             Path::new("/workspace/project"),
         )
-        .expect("native ACP agent")
-        .into_server();
-        let McpServer::Stdio(server) = server else {
-            panic!("stdio adapter")
-        };
+        .expect("native ACP agent");
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
         assert_eq!(
             server.args,
@@ -2742,7 +3399,7 @@ mod tests {
         );
         assert!(
             !server
-                .env
+                .environment
                 .iter()
                 .any(|variable| variable.name == "OPENCODE_PERMISSION")
         );
@@ -2753,13 +3410,9 @@ mod tests {
             AgentPermissionProfile::Maximum,
             Path::new("/workspace/project"),
         )
-        .expect("maximum ACP agent")
-        .into_server();
-        let McpServer::Stdio(maximum) = maximum else {
-            panic!("stdio adapter")
-        };
+        .expect("maximum ACP agent");
         let permission = maximum
-            .env
+            .environment
             .iter()
             .find(|variable| variable.name == "OPENCODE_PERMISSION")
             .expect("OpenCode maximum permission environment");
@@ -2797,16 +3450,12 @@ mod tests {
             AgentPermissionProfile::Default,
             Path::new("/workspace/project"),
         )
-        .expect("project ACP adapter")
-        .into_server();
-        let McpServer::Stdio(server) = server else {
-            panic!("stdio adapter")
-        };
+        .expect("project ACP adapter");
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
         assert!(server.args.iter().any(|argument| {
             argument.ends_with("packaging/adapter-runtime/node_modules/.bin/codex-acp")
         }));
-        assert!(server.env.iter().any(|variable| {
+        assert!(server.environment.iter().any(|variable| {
             variable.name == "CODEX_PATH" && variable.value == "/opt/homebrew/bin/codex"
         }));
     }
@@ -2826,11 +3475,7 @@ mod tests {
             AgentPermissionProfile::Default,
             Path::new("/workspace/project"),
         )
-        .expect("project ACP adapter")
-        .into_server();
-        let McpServer::Stdio(server) = server else {
-            panic!("stdio adapter")
-        };
+        .expect("project ACP adapter");
         assert_eq!(server.command, PathBuf::from("/bin/sh"));
         assert!(
             server
@@ -2838,7 +3483,7 @@ mod tests {
                 .iter()
                 .any(|argument| { argument.ends_with("packaging/bin/claude-agent-acp") })
         );
-        assert!(server.env.iter().any(|variable| {
+        assert!(server.environment.iter().any(|variable| {
             variable.name == "CLAUDE_CODE_EXECUTABLE"
                 && variable.value == "/home/jovyan/.local/bin/claude"
         }));
@@ -2884,6 +3529,407 @@ mod tests {
             started.1["content"][0]["content"]["text"],
             "connection refused"
         );
+    }
+
+    #[test]
+    fn streaming_updates_coalesce_only_with_the_same_identity() {
+        let event = |message_id: &str, text: &str| PersistedSessionUpdate {
+            session_kind: "text_delta",
+            run_kind: Some(AgentEventKind::TextDelta),
+            payload: json!({"message_id":message_id, "text":text}),
+        };
+        let mut pending = Vec::new();
+        for _ in 0..1_000 {
+            push_streaming_update(
+                &mut pending,
+                PendingSessionUpdate {
+                    run_id: Some("run-1".into()),
+                    event: event("message-1", "x"),
+                },
+            );
+        }
+        push_streaming_update(
+            &mut pending,
+            PendingSessionUpdate {
+                run_id: Some("run-1".into()),
+                event: event("message-2", "y"),
+            },
+        );
+
+        assert_eq!(pending.len(), 2);
+        assert_eq!(
+            pending[0].event.payload["text"].as_str().map(str::len),
+            Some(1_000)
+        );
+        assert_eq!(pending[1].event.payload["text"], "y");
+    }
+
+    #[tokio::test]
+    async fn session_update_journal_flushes_text_before_semantic_events() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("stream-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Stream",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let workspace_event_bus = store.workspace_event_bus();
+        let workspace_receiver = workspace_event_bus.subscribe();
+        let workspace_cursor = *workspace_receiver.borrow();
+
+        for _ in 0..1_000 {
+            let mut chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("x")));
+            chunk.message_id = Some("message-1".into());
+            journal
+                .enqueue(
+                    Some(run.id.clone()),
+                    SessionUpdate::AgentMessageChunk(chunk),
+                )
+                .await
+                .expect("stream update");
+        }
+        journal
+            .enqueue(
+                Some(run.id.clone()),
+                SessionUpdate::ToolCall(ToolCall::new(ToolCallId::new("tool-1"), "Shell")),
+            )
+            .await
+            .expect("tool update");
+        journal.flush().await.expect("flush");
+
+        let events = store.events_after(&run.id, 1).expect("run events");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, AgentEventKind::TextDelta);
+        assert_eq!(
+            events[0].payload["text"].as_str().map(str::len),
+            Some(1_000)
+        );
+        assert_eq!(events[1].kind, AgentEventKind::ToolStarted);
+        let session_events = store
+            .session_events_after(&conversation.id, 1)
+            .expect("session events");
+        assert_eq!(session_events.len(), 2);
+        assert_eq!(session_events[0].kind, "text_delta");
+        assert_eq!(session_events[1].kind, "tool_started");
+        let workspace_events = store
+            .workspace_events_after(workspace_cursor)
+            .expect("workspace events");
+        assert_eq!(workspace_events.len(), 2);
+        assert_eq!(
+            workspace_event_bus.latest_committed_cursor(),
+            workspace_events.last().expect("latest workspace event").id
+        );
+        assert!(
+            workspace_receiver
+                .has_changed()
+                .expect("event bus remains open")
+        );
+        journal.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn session_update_journal_flush_deadline_is_not_reset_by_streaming_updates() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("deadline-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Deadline",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+
+        let enqueue_chunk = || {
+            let mut chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("x")));
+            chunk.message_id = Some("message-1".into());
+            journal.enqueue(
+                Some(run.id.clone()),
+                SessionUpdate::AgentMessageChunk(chunk),
+            )
+        };
+        enqueue_chunk().await.expect("first update");
+        tokio::task::yield_now().await;
+        for _ in 0..3 {
+            tokio::time::advance(Duration::from_millis(10)).await;
+            enqueue_chunk().await.expect("stream update");
+            tokio::task::yield_now().await;
+        }
+
+        tokio::time::advance(Duration::from_millis(4)).await;
+        tokio::task::yield_now().await;
+
+        let events = store.events_after(&run.id, 1).expect("run events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, AgentEventKind::TextDelta);
+        assert_eq!(events[0].payload["text"], "xxxx");
+        journal.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn session_update_journal_uses_distinct_fixed_windows() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("windows-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Windows",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let sink = journal.sink();
+
+        sink.enqueue(
+            Some(run.id.clone()),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new("a"),
+            ))),
+        )
+        .await
+        .expect("first update");
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(32)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            store
+                .events_after(&run.id, 1)
+                .expect("events before deadline")
+                .is_empty()
+        );
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            store.events_after(&run.id, 1).expect("first window").len(),
+            1
+        );
+        sink.enqueue(
+            Some(run.id.clone()),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new("b"),
+            ))),
+        )
+        .await
+        .expect("second update");
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(33)).await;
+        tokio::task::yield_now().await;
+
+        let events = store.events_after(&run.id, 1).expect("two windows");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].payload["text"], "a");
+        assert_eq!(events[1].payload["text"], "b");
+        journal.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn journal_flush_and_shutdown_are_concurrency_fences() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("concurrent-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Concurrent",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let sink = journal.sink();
+        let barrier = Arc::new(tokio::sync::Barrier::new(17));
+        let mut producers = Vec::new();
+        for _ in 0..16 {
+            let sink = sink.clone();
+            let barrier = Arc::clone(&barrier);
+            let run_id = run.id.clone();
+            producers.push(tokio::spawn(async move {
+                barrier.wait().await;
+                sink.enqueue(
+                    Some(run_id),
+                    SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                        TextContent::new("x"),
+                    ))),
+                )
+                .await
+            }));
+        }
+        barrier.wait().await;
+        for producer in producers {
+            producer.await.expect("producer task").expect("enqueue");
+        }
+
+        journal.flush().await.expect("flush fence");
+        let events = store.events_after(&run.id, 1).expect("flushed events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].payload["text"], "xxxxxxxxxxxxxxxx");
+
+        journal.shutdown().await.expect("shutdown fence");
+        assert!(matches!(
+            sink.enqueue(
+                Some(run.id),
+                SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                    TextContent::new("late"),
+                ))),
+            )
+            .await,
+            Err(SessionJournalError::Closed)
+        ));
+    }
+
+    #[tokio::test]
+    async fn journal_reports_persistence_failures_to_flush_and_shutdown() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("failure-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let sink = journal.sink();
+        sink.enqueue(
+            None,
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new("uncommitted"),
+            ))),
+        )
+        .await
+        .expect("accepted update");
+        store
+            .delete_conversation(&conversation.id)
+            .expect("delete conversation before flush");
+
+        assert!(matches!(
+            sink.flush().await,
+            Err(SessionJournalError::Persistence(_))
+        ));
+        assert!(matches!(
+            journal.shutdown().await,
+            Err(SessionJournalError::Persistence(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn concurrent_session_journals_keep_events_isolated() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let first_project = workspace
+            .create_project_at(temp.path().join("first-project"))
+            .expect("first project");
+        let second_project = workspace
+            .create_project_at(temp.path().join("second-project"))
+            .expect("second project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let first = store
+            .create_conversation(&first_project.id, AgentId::OpenCode, None)
+            .expect("first conversation");
+        let second = store
+            .create_conversation(&second_project.id, AgentId::OpenCode, None)
+            .expect("second conversation");
+        let first_run = store
+            .start_run(&first.id, &first_project.id, "First", PermissionMode::Safe)
+            .expect("first run");
+        let second_run = store
+            .start_run(
+                &second.id,
+                &second_project.id,
+                "Second",
+                PermissionMode::Safe,
+            )
+            .expect("second run");
+        let first_journal = SessionUpdateJournal::spawn(Arc::clone(&store), first.id.clone());
+        let second_journal = SessionUpdateJournal::spawn(Arc::clone(&store), second.id.clone());
+        let first_sink = first_journal.sink();
+        let second_sink = second_journal.sink();
+
+        let first_task = tokio::spawn(async move {
+            for _ in 0..100 {
+                first_sink
+                    .enqueue(
+                        Some(first_run.id.clone()),
+                        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                            TextContent::new("a"),
+                        ))),
+                    )
+                    .await?;
+            }
+            Ok::<_, SessionJournalError>(first_run.id)
+        });
+        let second_task = tokio::spawn(async move {
+            for _ in 0..100 {
+                second_sink
+                    .enqueue(
+                        Some(second_run.id.clone()),
+                        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                            TextContent::new("b"),
+                        ))),
+                    )
+                    .await?;
+            }
+            Ok::<_, SessionJournalError>(second_run.id)
+        });
+        let first_run_id = first_task
+            .await
+            .expect("first producer")
+            .expect("first updates");
+        let second_run_id = second_task
+            .await
+            .expect("second producer")
+            .expect("second updates");
+        first_journal.shutdown().await.expect("first shutdown");
+        second_journal.shutdown().await.expect("second shutdown");
+
+        let first_events = store.events_after(&first_run_id, 1).expect("first events");
+        let second_events = store
+            .events_after(&second_run_id, 1)
+            .expect("second events");
+        assert_eq!(first_events.len(), 1);
+        assert_eq!(second_events.len(), 1);
+        assert_eq!(first_events[0].payload["text"], "a".repeat(100));
+        assert_eq!(second_events[0].payload["text"], "b".repeat(100));
     }
 
     #[tokio::test]

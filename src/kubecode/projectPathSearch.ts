@@ -1,23 +1,10 @@
 import type { Entry, KubecodeApi } from './api'
 
-const EXCLUDED_DIRECTORY_NAMES = new Set([
-  '.git',
-  '.next',
-  '.pytest_cache',
-  '.venv',
-  '__pycache__',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'target',
-])
-
 export function isExcludedProjectEntry(entry: Entry): boolean {
   return Boolean(
     entry.hidden
     || entry.ignored
-    || (entry.kind === 'directory' && EXCLUDED_DIRECTORY_NAMES.has(entry.name)),
+    || entry.generated,
   )
 }
 

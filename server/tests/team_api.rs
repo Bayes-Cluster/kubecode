@@ -1395,4 +1395,40 @@ done"#,
         .expect("session/resume request after restart");
     assert!(resume.contains("kubecode-team"), "{resume}");
     assert!(resume.contains("/api/v1/team-mcp/"), "{resume}");
+
+    let (status, solo) = request(
+        &router,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions"),
+        json!({"agent_id": "opencode", "title": "Promoted leader"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let solo_id = solo["id"].as_str().expect("solo session id");
+    let before_promotion = fs::read_to_string(&transcript_path)
+        .expect("pre-promotion transcript")
+        .lines()
+        .count();
+    let (status, _) = request(
+        &router,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/sessions/{solo_id}/promote-to-team"),
+        json!({"leader_name": "Promoted"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let promoted_transcript = fs::read_to_string(&transcript_path).expect("promotion transcript");
+    let promoted_resume = promoted_transcript
+        .lines()
+        .skip(before_promotion)
+        .find(|line| line.contains("session/resume"))
+        .expect("session/resume request after Team promotion");
+    assert!(
+        promoted_resume.contains("kubecode-team"),
+        "{promoted_resume}"
+    );
+    assert!(
+        promoted_resume.contains("/api/v1/team-mcp/"),
+        "{promoted_resume}"
+    );
 }

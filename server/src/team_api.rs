@@ -191,7 +191,7 @@ async fn create_team(
     if agent_is_available(&state, &conversation)
         && let Err(error) = state
             .agent_runtime
-            .initialize_conversation(&conversation.id)
+            .initialize_conversation_ephemeral(&conversation.id)
             .await
     {
         let _ = state.teams.delete_team(&team.id);
@@ -241,6 +241,15 @@ async fn promote_to_team(
         workspace,
         workspace_path: conversation.workspace_path.as_deref(),
     })?;
+    if agent_is_available(&state, &conversation)
+        && let Err(error) = state
+            .agent_runtime
+            .reconnect_conversation_ephemeral(&conversation.id)
+            .await
+    {
+        let _ = state.teams.delete_team(&team.id);
+        return Err(error.into());
+    }
     Ok((StatusCode::CREATED, Json(snapshot(&state, team)?)))
 }
 
@@ -663,14 +672,6 @@ async fn retry_team_task(
         return Err(TeamError::WrongTeam.into());
     }
     state.teams.retry_task(&task.id, &team.leader_member_id)?;
-    state.teams.append_activity(
-        &team.id,
-        Some(&team.leader_member_id),
-        Some(&task.id),
-        "task_retried",
-        &format!("User made {} ready to retry", task.title),
-        None,
-    )?;
     let _ = state.agent_runtime.wake_team_leader(&team.id);
     publish_team_event(&state, &team.id, "team_task_updated");
     Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))
@@ -699,14 +700,6 @@ async fn cancel_team_task(
     state
         .teams
         .cancel_task(&task.id, &team.leader_member_id, request.reason.as_deref())?;
-    state.teams.append_activity(
-        &team.id,
-        Some(&team.leader_member_id),
-        Some(&task.id),
-        "task_cancelled",
-        &format!("User cancelled {}", task.title),
-        request.reason.as_deref(),
-    )?;
     let _ = state.agent_runtime.wake_team_leader(&team.id);
     publish_team_event(&state, &team.id, "team_task_updated");
     Ok(Json(snapshot(&state, state.teams.get_team(&team.id)?)?))

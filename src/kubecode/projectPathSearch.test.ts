@@ -9,7 +9,7 @@ describe('searchProjectEntries', () => {
       const entries = {
         '': [
           { kind: 'directory', name: 'src', path: 'src' },
-          { kind: 'directory', name: 'node_modules', path: 'node_modules' },
+          { kind: 'directory', name: 'node_modules', path: 'node_modules', generated: true },
           { kind: 'file', name: '.env', path: '.env', hidden: true },
         ],
         src: [

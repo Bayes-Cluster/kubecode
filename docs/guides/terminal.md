@@ -31,9 +31,11 @@ terminal group and allows the bottom panel to collapse.
 
 ## Process exit
 
-Entering `exit` or sending `Ctrl+D` terminates the shell. Kubecode closes the
-corresponding PTY entry after receiving the process-exit event. A terminated
-terminal is not kept as a frozen tab.
+Entering `exit` or sending `Ctrl+D` normally terminates the shell with exit code
+0. Kubecode then closes the corresponding PTY entry after receiving the
+process-exit event. A terminal that exits with a non-zero code remains visible
+with its exit status and scrollback so the failure can be inspected. It can be
+closed or restarted in its original Session workspace.
 
 Agent TUIs follow the same lifecycle. Their authentication and interactive
 commands are implemented by the Agent CLI, not Kubecode.

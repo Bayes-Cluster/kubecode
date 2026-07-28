@@ -25,9 +25,7 @@ async function run(command, args, options = {}) {
   })
 }
 
-if (!existsSync('dist/index.html')) {
-  await run('pnpm', ['build'])
-}
+await run('pnpm', ['build'])
 
 if (configuredServerBinary && !existsSync(configuredServerBinary)) {
   throw new Error(`KUBECODE_SERVER_BIN does not exist: ${configuredServerBinary}`)

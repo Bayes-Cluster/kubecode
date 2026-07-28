@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -5,11 +6,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::{Body, BodyDataStream, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
+use futures_util::StreamExt;
 use kubecode_server::agent_discovery::AgentDescriptor;
-use kubecode_server::agents::{AgentId, AgentStore};
-use kubecode_server::api::{AppState, app_router, app_router_with_static};
+use kubecode_server::agent_runtime::{AgentRuntimeSessionCounts, StartAgentRun};
+use kubecode_server::agents::{
+    AgentEventKind, AgentId, AgentStore, PermissionMode, RuntimeRunEvent, RuntimeUpdate,
+};
+use kubecode_server::api::{AppState, app_router, app_router_api_only, app_router_with_static};
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -17,6 +22,311 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 const BASE_PATH: &str = "/user/alice/kubecode";
+
+#[derive(Debug)]
+struct ReceivedWorkspaceEvent {
+    id: u64,
+    event: String,
+    payload: Value,
+}
+
+struct WorkspaceSseReader {
+    stream: BodyDataStream,
+    buffer: String,
+}
+
+impl WorkspaceSseReader {
+    fn new(body: Body) -> Self {
+        Self {
+            stream: body.into_data_stream(),
+            buffer: String::new(),
+        }
+    }
+
+    async fn next_workspace_event(&mut self) -> Option<ReceivedWorkspaceEvent> {
+        loop {
+            while let Some(boundary) = self.buffer.find("\n\n") {
+                let frame = self.buffer[..boundary].to_owned();
+                self.buffer.drain(..boundary + 2);
+                let mut id = None;
+                let mut event = None;
+                let mut data = String::new();
+                for line in frame.lines() {
+                    if let Some(value) = line.strip_prefix("id:") {
+                        id = value.trim().parse::<u64>().ok();
+                    } else if let Some(value) = line.strip_prefix("event:") {
+                        event = Some(value.trim().to_owned());
+                    } else if let Some(value) = line.strip_prefix("data:") {
+                        if !data.is_empty() {
+                            data.push('\n');
+                        }
+                        data.push_str(value.trim_start());
+                    }
+                }
+                if event.as_deref() != Some("workspace_event") {
+                    continue;
+                }
+                let id = id.expect("workspace SSE event id");
+                let payload = serde_json::from_str::<Value>(&data).expect("workspace SSE JSON");
+                assert_eq!(payload["id"], id);
+                return Some(ReceivedWorkspaceEvent {
+                    id,
+                    event: event.expect("workspace SSE event name"),
+                    payload,
+                });
+            }
+
+            let chunk = self.stream.next().await?;
+            let chunk = chunk.expect("workspace SSE body");
+            self.buffer
+                .push_str(std::str::from_utf8(&chunk).expect("workspace SSE UTF-8"));
+        }
+    }
+}
+
+fn workspace_sse_app() -> (TempDir, std::path::PathBuf, Arc<AgentStore>, Router) {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+    (temp, database_path, store, app)
+}
+
+async fn workspace_sse_reader(
+    app: &Router,
+    after: u64,
+    last_event_id: Option<u64>,
+) -> WorkspaceSseReader {
+    let mut request = Request::builder()
+        .uri(format!("{BASE_PATH}/api/v1/events?after={after}"))
+        .body(Body::empty())
+        .expect("workspace event request");
+    if let Some(last_event_id) = last_event_id {
+        request.headers_mut().insert(
+            "last-event-id",
+            last_event_id.to_string().parse().expect("last event id"),
+        );
+    }
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("workspace event response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/event-stream"
+    );
+    WorkspaceSseReader::new(response.into_body())
+}
+
+fn append_test_workspace_event(store: &AgentStore, value: usize) -> u64 {
+    store
+        .append_workspace_event(
+            "test_event",
+            Some("project"),
+            None,
+            None,
+            &json!({"value":value}),
+        )
+        .expect("workspace event")
+        .id
+}
+
+async fn collect_workspace_event_ids(mut reader: WorkspaceSseReader, count: usize) -> Vec<u64> {
+    let mut ids = Vec::with_capacity(count);
+    while ids.len() < count {
+        ids.push(
+            reader
+                .next_workspace_event()
+                .await
+                .expect("workspace event")
+                .id,
+        );
+    }
+    ids
+}
+
+#[tokio::test]
+async fn workspace_sse_wakes_after_an_empty_catch_up_without_missing_a_boundary_commit() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let cursor = store.latest_workspace_event_id().expect("workspace cursor");
+    let mut reader = workspace_sse_reader(&app, cursor, None).await;
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), reader.next_workspace_event())
+            .await
+            .is_err()
+    );
+    let committed = append_test_workspace_event(&store, 1);
+    let received = tokio::time::timeout(Duration::from_secs(1), reader.next_workspace_event())
+        .await
+        .expect("workspace event wakeup")
+        .expect("workspace event");
+
+    assert_eq!(received.id, committed);
+    assert_eq!(received.event, "workspace_event");
+    assert_eq!(received.payload["kind"], "test_event");
+}
+
+#[tokio::test]
+async fn workspace_sse_replays_coalesced_events_across_multiple_bounded_pages() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let boundary = append_test_workspace_event(&store, 0);
+    let reader = workspace_sse_reader(&app, boundary, None).await;
+    let expected = (1..=513)
+        .map(|value| append_test_workspace_event(&store, value))
+        .collect::<Vec<_>>();
+
+    let received = tokio::time::timeout(
+        Duration::from_secs(3),
+        collect_workspace_event_ids(reader, expected.len()),
+    )
+    .await
+    .expect("multi-page workspace replay");
+
+    assert_eq!(received, expected);
+    assert!(received.iter().all(|id| *id > boundary));
+}
+
+#[tokio::test]
+async fn workspace_sse_reconnects_from_after_or_last_event_id_without_duplicates() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let first = append_test_workspace_event(&store, 1);
+    let second = append_test_workspace_event(&store, 2);
+    let third = append_test_workspace_event(&store, 3);
+
+    let mut after_reader = workspace_sse_reader(&app, first, None).await;
+    assert_eq!(
+        after_reader
+            .next_workspace_event()
+            .await
+            .expect("after replay")
+            .id,
+        second
+    );
+
+    let mut header_reader = workspace_sse_reader(&app, first, Some(second)).await;
+    assert_eq!(
+        header_reader
+            .next_workspace_event()
+            .await
+            .expect("Last-Event-ID replay")
+            .id,
+        third
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn workspace_sse_slow_consumer_does_not_delay_writers_or_fast_consumers() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let slow = workspace_sse_reader(&app, 0, None).await;
+    let first_fast = workspace_sse_reader(&app, 0, None).await;
+    let second_fast = workspace_sse_reader(&app, 0, None).await;
+    let writer_store = Arc::clone(&store);
+    let writer = tokio::task::spawn_blocking(move || {
+        (0..64)
+            .map(|value| append_test_workspace_event(&writer_store, value))
+            .collect::<Vec<_>>()
+    });
+    let first_consumer = tokio::spawn(collect_workspace_event_ids(first_fast, 64));
+    let second_consumer = tokio::spawn(collect_workspace_event_ids(second_fast, 64));
+
+    let expected = tokio::time::timeout(Duration::from_secs(2), writer)
+        .await
+        .expect("workspace writer was not blocked")
+        .expect("workspace writer task");
+    let first_received = tokio::time::timeout(Duration::from_secs(2), first_consumer)
+        .await
+        .expect("first fast consumer")
+        .expect("first consumer task");
+    let second_received = tokio::time::timeout(Duration::from_secs(2), second_consumer)
+        .await
+        .expect("second fast consumer")
+        .expect("second consumer task");
+
+    assert_eq!(first_received, expected);
+    assert_eq!(second_received, expected);
+    let mut slow = slow;
+    assert_eq!(
+        slow.next_workspace_event()
+            .await
+            .expect("slow consumer replay")
+            .id,
+        expected[0]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn workspace_sse_uses_a_low_frequency_safety_check_for_lost_notifications() {
+    let (_temp, database_path, _store, app) = workspace_sse_app();
+    let reader = workspace_sse_reader(&app, 0, None).await;
+    let recovery = tokio::spawn(collect_workspace_event_ids(reader, 1));
+    tokio::task::yield_now().await;
+
+    let connection = rusqlite::Connection::open(database_path).expect("recovery connection");
+    connection
+        .execute(
+            "INSERT INTO workspace_events
+             (kind, project_id, conversation_id, run_id, payload)
+             VALUES ('recovered_event', NULL, NULL, NULL, '{}')",
+            [],
+        )
+        .expect("durable event without bus notification");
+    let committed = u64::try_from(connection.last_insert_rowid()).expect("workspace cursor");
+
+    tokio::time::advance(Duration::from_millis(150)).await;
+    tokio::task::yield_now().await;
+    assert!(!recovery.is_finished());
+    tokio::time::advance(Duration::from_secs(29)).await;
+    tokio::task::yield_now().await;
+    assert!(!recovery.is_finished());
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let received = recovery.await.expect("recovery task");
+
+    assert_eq!(received, vec![committed]);
+}
+
+#[tokio::test]
+async fn workspace_sse_drains_committed_events_then_releases_on_store_shutdown() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let first = append_test_workspace_event(&store, 1);
+    let second = append_test_workspace_event(&store, 2);
+    let mut reader = workspace_sse_reader(&app, 0, None).await;
+
+    assert_eq!(
+        reader
+            .next_workspace_event()
+            .await
+            .expect("first committed event")
+            .id,
+        first
+    );
+    assert_eq!(
+        reader
+            .next_workspace_event()
+            .await
+            .expect("second committed event")
+            .id,
+        second
+    );
+
+    drop(app);
+    drop(store);
+    let closed = tokio::time::timeout(Duration::from_secs(1), reader.next_workspace_event())
+        .await
+        .expect("waiting stream released");
+    assert!(closed.is_none());
+}
 
 fn app() -> (TempDir, Router) {
     let temp = TempDir::new().expect("tempdir");
@@ -59,6 +369,34 @@ async fn json_request(app: &Router, method: Method, uri: &str, body: Value) -> (
     (status, value)
 }
 
+async fn runtime_status(app: &Router) -> Value {
+    let (status, value) = json_request(
+        app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/runtime/status"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    value
+}
+
+async fn wait_for_runtime_counts(app: &Router, expected: AgentRuntimeSessionCounts) -> Value {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = runtime_status(app).await;
+            if status["active_actor_count"] == expected.active
+                && status["idle_actor_count"] == expected.idle
+            {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Runtime actor counts")
+}
+
 fn run_command(cwd: impl AsRef<std::path::Path>, program: &str, args: &[&str]) {
     let output = Command::new(program)
         .args(args)
@@ -96,15 +434,7 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(created["workspaces_enabled"], false);
-    assert_eq!(
-        created["path"],
-        temp.path()
-            .join("srv/demo")
-            .canonicalize()
-            .expect("canonical project")
-            .to_string_lossy()
-            .as_ref()
-    );
+    assert!(created.get("path").is_none());
 
     let (status, projects) = json_request(
         &app,
@@ -115,9 +445,217 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(projects.as_array().expect("projects").len(), 1);
+    assert!(projects[0].get("path").is_none());
 
     let (status, _) = json_request(&app, Method::GET, "/api/v1/projects", Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn exposes_only_runtime_operational_status_below_the_generic_base_path() {
+    let (_, app) = app();
+
+    let status = runtime_status(&app).await;
+
+    let keys = status
+        .as_object()
+        .expect("Runtime status object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "active_actor_count",
+            "idle_actor_count",
+            "latest_workspace_event_cursor",
+            "warm_actor_limit",
+            "workspace_event_delivery_available",
+        ])
+    );
+    assert_eq!(
+        status,
+        json!({
+            "active_actor_count": 0,
+            "idle_actor_count": 0,
+            "warm_actor_limit": 4,
+            "latest_workspace_event_cursor": 0,
+            "workspace_event_delivery_available": true,
+        })
+    );
+
+    let (unprefixed, _) =
+        json_request(&app, Method::GET, "/api/v1/runtime/status", Value::Null).await;
+    assert_eq!(unprefixed, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database_path = state_dir.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let app = app_router_api_only(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
+        "/",
+        "desktop-secret",
+    );
+
+    let discovery = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/kubecode")
+                .body(Body::empty())
+                .expect("discovery request"),
+        )
+        .await
+        .expect("discovery response");
+    assert_eq!(discovery.status(), StatusCode::OK);
+    let body = to_bytes(discovery.into_body(), usize::MAX)
+        .await
+        .expect("discovery body");
+    let discovery: Value = serde_json::from_slice(&body).expect("discovery json");
+    assert_eq!(discovery["protocol_version"], 1);
+    assert_eq!(discovery["api_base"], "/api/v1");
+    assert_eq!(discovery["authentication"], "bearer");
+    assert!(discovery.get("token").is_none());
+
+    let unauthorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .body(Body::empty())
+                .expect("unauthorized request"),
+        )
+        .await
+        .expect("unauthorized response");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let unauthorized_status = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/runtime/status")
+                .body(Body::empty())
+                .expect("unauthorized Runtime status request"),
+        )
+        .await
+        .expect("unauthorized Runtime status response");
+    assert_eq!(unauthorized_status.status(), StatusCode::UNAUTHORIZED);
+
+    let team_mcp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/team-mcp/invalid-team-token/unknown-conversation")
+                .body(Body::empty())
+                .expect("Team MCP request"),
+        )
+        .await
+        .expect("Team MCP response");
+    assert_eq!(team_mcp.status(), StatusCode::NOT_FOUND);
+
+    let authorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::AUTHORIZATION, "Bearer desktop-secret")
+                .body(Body::empty())
+                .expect("authorized request"),
+        )
+        .await
+        .expect("authorized response");
+    assert_eq!(authorized.status(), StatusCode::OK);
+
+    let authorized_status = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/runtime/status")
+                .header(header::AUTHORIZATION, "Bearer desktop-secret")
+                .body(Body::empty())
+                .expect("authorized Runtime status request"),
+        )
+        .await
+        .expect("authorized Runtime status response");
+    assert_eq!(authorized_status.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn runtime_status_cursor_advances_only_for_committed_workspace_events() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+
+    let initial_cursor = runtime_status(&app).await["latest_workspace_event_cursor"]
+        .as_u64()
+        .expect("initial cursor");
+    let committed = store
+        .append_workspace_event("test_committed", None, None, None, &json!({}))
+        .expect("committed event");
+    assert!(committed.id > initial_cursor);
+    assert_eq!(
+        runtime_status(&app).await["latest_workspace_event_cursor"],
+        committed.id
+    );
+
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Roll back",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    let cursor_before_rollback = store
+        .latest_workspace_event_id()
+        .expect("cursor before rollback");
+    store
+        .append_runtime_updates(
+            &conversation.id,
+            &[
+                RuntimeUpdate {
+                    session_kind: "text_delta".into(),
+                    session_payload: json!({"run_id":run.id, "text":"rolled back"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::TextDelta,
+                        payload: json!({"text":"rolled back"}),
+                    }),
+                },
+                RuntimeUpdate {
+                    session_kind: "thinking_delta".into(),
+                    session_payload: json!({"run_id":"missing-run", "text":"invalid"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: "missing-run".into(),
+                        kind: AgentEventKind::ThinkingDelta,
+                        payload: json!({"text":"invalid"}),
+                    }),
+                },
+            ],
+        )
+        .expect_err("invalid Runtime projection must roll back");
+
+    assert_eq!(
+        runtime_status(&app).await["latest_workspace_event_cursor"],
+        cursor_before_rollback
+    );
 }
 
 #[tokio::test]
@@ -864,6 +1402,60 @@ async fn creates_reads_and_revision_checks_files_over_http() {
 }
 
 #[tokio::test]
+async fn reads_project_scoped_binary_assets_over_http() {
+    let (temp, app) = app();
+    let project_root = temp.path().join("srv/assets");
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":project_root}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    fs::create_dir_all(project_root.join("docs")).expect("asset directory");
+    let png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    fs::write(project_root.join("docs/diagram one.png"), png).expect("asset");
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "{BASE_PATH}/api/v1/projects/{project_id}/asset?path=docs%2Fdiagram%20one.png"
+                ))
+                .body(Body::empty())
+                .expect("asset request"),
+        )
+        .await
+        .expect("asset response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, max-age=60"
+    );
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("asset body");
+    assert_eq!(bytes.as_ref(), png);
+
+    let traversal = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "{BASE_PATH}/api/v1/projects/{project_id}/asset?path=..%2Foutside.png"
+                ))
+                .body(Body::empty())
+                .expect("traversal request"),
+        )
+        .await
+        .expect("traversal response");
+    assert_eq!(traversal.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn rejects_invalid_project_paths_with_a_structured_error() {
     let (temp, app) = app();
     let (status, error) = json_request(
@@ -997,6 +1589,25 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
     assert_eq!(status, StatusCode::CREATED);
     let project_id = imported["id"].as_str().expect("project id");
     let entries_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/entries");
+    let authorize_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/authorize");
+
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &authorize_uri,
+        json!({"path":temp.path().join("srv/imported")}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &authorize_uri,
+        json!({"path":temp.path().join("srv")}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_path");
 
     for body in [
         json!({"path":"src", "kind":"directory"}),
@@ -1273,6 +1884,105 @@ fn executable(directory: &TempDir, body: &str) -> String {
     permissions.set_mode(0o755);
     fs::set_permissions(&path, permissions).expect("permissions");
     path.to_string_lossy().into_owned()
+}
+
+#[tokio::test]
+async fn runtime_status_tracks_active_idle_evicted_and_shut_down_session_actors() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "runtime-status-actors")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let release_prompt = temp.path().join("release-prompt");
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"runtime-status-session\"}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      while [ ! -f '{}' ]; do sleep 0.01; done
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;
+  esac
+done"#,
+            release_prompt.display()
+        ),
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let state = AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+        AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        },
+    ]);
+    let app = app_router(state.clone(), BASE_PATH);
+    let active = store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Active"))
+        .expect("active conversation");
+    state
+        .agent_runtime
+        .initialize_conversation(&active.id)
+        .await
+        .expect("initialize active conversation");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 1 }).await;
+
+    state
+        .agent_runtime
+        .start(StartAgentRun {
+            conversation_id: active.id.clone(),
+            project_id: project.id.clone(),
+            message: "Wait for release".into(),
+        })
+        .expect("active run");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 1, idle: 0 }).await;
+
+    let mut conversation_ids = vec![active.id];
+    for index in 0..5 {
+        let conversation = store
+            .create_conversation(
+                &project.id,
+                AgentId::OpenCode,
+                Some(&format!("Idle {index}")),
+            )
+            .expect("idle conversation");
+        state
+            .agent_runtime
+            .initialize_conversation(&conversation.id)
+            .await
+            .expect("initialize idle conversation");
+        conversation_ids.push(conversation.id);
+    }
+    let bounded =
+        wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 1, idle: 4 }).await;
+    assert_eq!(
+        bounded["warm_actor_limit"],
+        state.agent_runtime.session_actor_warm_limit()
+    );
+
+    fs::write(&release_prompt, "release").expect("release prompt");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 4 }).await;
+
+    for conversation_id in conversation_ids {
+        state
+            .agent_runtime
+            .disconnect_conversation(&conversation_id)
+            .await
+            .expect("disconnect conversation");
+    }
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 0 }).await;
 }
 
 #[tokio::test]

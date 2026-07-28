@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { KubecodeApi, apiBasePath } from './api'
+import { KubecodeApi, apiBasePath, type RuntimeStatus } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -47,6 +47,27 @@ describe('Kubecode API client', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/user/alice/kubecode/api/v1/agents/refresh',
       expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('loads typed Runtime status below the configured base path', async () => {
+    const response: RuntimeStatus = {
+      active_actor_count: 2,
+      idle_actor_count: 3,
+      warm_actor_limit: 4,
+      latest_workspace_event_cursor: 91,
+      workspace_event_delivery_available: true,
+    }
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    const status: RuntimeStatus = await api.runtimeStatus()
+
+    expect(status).toEqual(response)
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/runtime/status',
+      expect.objectContaining({ headers: expect.any(Headers) }),
     )
   })
 

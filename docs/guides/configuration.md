@@ -17,6 +17,10 @@ take precedence over deprecated compatibility variables.
 | — | `KUBECODE_STATIC_DIR` | `dist` | Built web assets; configured by the standalone launcher |
 | — | `KUBECODE_INTERNAL_ORIGIN` | Loopback server URL plus the base path | URL used by local Agents to reach Team MCP |
 
+Only one Kubecode server may own a state directory at a time. SQLite uses a
+rollback journal for broad filesystem compatibility, but the storage must still
+provide reliable file locking and `fsync` semantics.
+
 `KUBECODE_INTERNAL_ORIGIN` is needed only when an Agent process cannot reach the
 server through its default loopback origin. It must remain an internal,
 authenticated route.

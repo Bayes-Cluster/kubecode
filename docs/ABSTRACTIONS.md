@@ -1,14 +1,53 @@
 # Abstractions
 
+## Runtime client
+
+A Runtime client observes and controls the same Project, Session, Team, file,
+Git, and terminal resources as the browser. Local-managed, SSH-managed, and
+HTTPS-attached connections differ in process and transport ownership, not in
+their application model or API. API-only local runtimes use an ephemeral
+loopback port and a bearer token delivered over standard input; the client must
+never infer authority from a server filesystem path returned in JSON.
+
+The typed `GET /api/v1/runtime/status` client route reports only active and idle
+Session actor counts, the Runtime-owned warm actor limit, the latest committed
+workspace-event cursor, and whether workspace-event delivery is available. The
+route inherits the generic base path and the same bearer boundary as every
+other client route in API-only mode. Delivery availability describes the
+Runtime capability, not whether a particular client currently has an SSE
+connection. The response deliberately excludes Session identities, prompts,
+provider payloads, credentials, filenames, file contents, executables, and
+Project or arbitrary server paths.
+
+Cluster schedulers such as Slurm are not Runtime connection modes. They remain
+provider-native Agent skills that use the user's SSH configuration and native
+scheduler commands, rather than a Kubecode scheduler service or persistence
+model.
+
 ## Project
 
 A Project is an application ID mapped to an absolute canonical server path.
 `WorkspaceService` is the only layer allowed to translate the ID and a
 browser-supplied relative path into a filesystem path. It rejects traversal,
-escaping symlinks, and the private Kubecode state directory.
+escaping symlinks, and the private Kubecode state directory. Project entry
+listings do not follow symbolic-link children; this keeps lazy Explorer reads
+inside the registered root and prevents inaccessible or remote link targets
+from expanding the access boundary. Directory enumeration runs on Tokio's
+blocking pool so an unavailable mount or an operating-system authorization
+prompt cannot consume the asynchronous HTTP executor.
 
 Registering or importing a Project adds metadata to SQLite. Unregistering it
 removes that metadata only; it never removes the Project directory or files.
+Native local clients may submit a user-selected absolute path to the
+Project-scoped authorization endpoint. `WorkspaceService` canonicalizes it and
+accepts it only when it exactly matches that Project's registered root; the
+response never exposes the stored root path.
+
+Native rich-text clients may read a bounded binary preview through the Project
+asset endpoint using only a Project ID and validated relative path.
+`WorkspaceService` applies the same traversal, symlink, and private-state rules
+as file reads and caps the response at 8 MiB. The endpoint never accepts or
+returns an absolute server path and is not a general filesystem URL.
 
 The `workspaces_enabled` preference controls whether new isolated Agent
 Sessions may be created. It defaults to false and does not itself move or
@@ -60,7 +99,7 @@ Standard. A Member Permission Snapshot records whether Kubecode applied the
 profile and the prior mode needed for restoration.
 
 A Team mailbox message has a durable delivery lifecycle: pending, delivered,
-acknowledged, or failed. Delivered is a lease, not proof of receipt. Reading
+acknowledged, failed, or cancelled. Delivered is a lease, not proof of receipt. Reading
 Team context acknowledges the message; an expired unacknowledged lease is
 retried up to the finite delivery limit. Delegation atomically assigns a task
 and writes the recipient message. The scheduler wakes the recipient in its own
@@ -85,6 +124,9 @@ submitted, completed, and failed states. Failures use a provider-neutral
 classification while retaining the original diagnostic. A completed Agent turn
 without a structured result receives one durable reminder; repeating that
 condition fails the Attempt so the Leader can retry or reassign the task.
+Cancelling a task waives its completion requirement and terminates its active
+attempt and deliveries. Retrying failed or cancelled work creates a new
+required scheduling opportunity while preserving prior Attempts as history.
 
 A Team permission request is a durable projection of one Teammate ACP
 permission callback, including the exact tool input and Agent-provided options.
@@ -151,8 +193,11 @@ The Project path picker is a browser presentation abstraction shared by quick
 file open, Composer references, and relative new-file/new-folder creation. It
 uses Project IDs plus validated relative entries from the existing Workspace
 API; it never resolves or exposes an unregistered absolute server path.
-Recursive search is bounded, defaults to excluding hidden, ignored, and common
-generated directories, and discards responses superseded by a newer query.
+Recursive search is bounded, defaults to excluding entries annotated as hidden,
+ignored, or generated by `WorkspaceService`, and discards responses superseded
+by a newer query. Generated classification covers the common build/cache
+directory names defined by the Runtime; clients consume the flag instead of
+guessing from paths.
 
 Project registration uses the same keyboard and visual interaction but a
 server-directory adapter. Its value remains an absolute server path and calls
@@ -202,10 +247,21 @@ another filesystem boundary or allow absolute paths.
 
 ## ACP actor
 
-`AgentRuntime` owns one actor per connected Session. The actor serializes
-prompts, polls mode and configuration changes while a prompt is active, and
-normalizes ACP updates into durable Kubecode events. It resumes an existing
-provider Session when possible and falls back to loading it.
+`AgentRuntime` owns at most one actor per connected Session. The actor
+serializes prompts, polls mode and configuration changes while a prompt is
+active, and normalizes ACP updates into durable Kubecode events. It resumes an
+existing provider Session when possible and falls back to loading it. Inactive
+actors expire after two minutes and only four inactive actors remain warm;
+active prompts are exempt from eviction. Team draft initialization may persist
+provider identity without retaining a warm actor.
+
+The connection-scoped Session update journal coalesces adjacent text and
+thinking fragments with the same provider identity. Its fixed window starts at
+the first fragment and is never extended by later fragments. It flushes on a
+short interval and before semantic or lifecycle events. One transaction commits
+the complete window across Session, run, and workspace projections. Shutdown
+rejects new producers, drains accepted updates, and joins the journal worker,
+so batching changes neither text reconstruction nor durable ordering.
 
 The actor also brokers capability-gated provider extensions without changing
 the shared Agent abstraction. Claude side questions are accepted only while a
@@ -216,10 +272,12 @@ message IDs so the browser can preserve provider message boundaries.
 Agent discovery and ACP adapter discovery are separate. CLI authentication,
 models, and provider settings remain external to Kubecode.
 
-An ACP stdio launcher sets the process cwd to the Agent Session execution path
-before executing the adapter. Executable, cwd, and arguments are positional
-values rather than interpolated shell text. ACP request cwd is retained as
-protocol context but is not relied upon as the process directory. OpenCode
+An ACP stdio launcher uses Tokio-owned child processes and asynchronous pipes
+and sets the process cwd to the Agent Session execution path before executing
+the adapter. Executable, cwd, and arguments are positional values rather than
+interpolated shell text. Actor cancellation owns child termination. ACP request
+cwd is retained as protocol context but is not relied upon as the process
+directory. OpenCode
 also receives the execution path through its native `acp --cwd` option so
 directory-service initialization and later ACP requests share the same
 boundary.
@@ -234,6 +292,19 @@ the stored path through `WorkspaceService`; it never accepts a browser-provided
 cwd. A bounded byte buffer with monotonic cursors lets browsers reconnect
 without restarting the process.
 
+Regular profiles launch the user's shell directly. Agent TUI profiles use the
+Runtime-discovered executable as a positional argument to an interactive login
+shell and then `exec` it. This loads the same user shell configuration as a
+terminal-launched CLI while avoiding shell interpolation of the executable
+path. The Runtime, not an individual client, owns this behavior.
+
+Executable discovery is separate from Agent TUI execution. Managed native
+clients can set `KUBECODE_DISABLE_LOGIN_SHELL_DISCOVERY=1` so catalog refreshes
+never launch a user login shell merely to search PATH. Explicit overrides,
+inherited PATH, and known installation locations still participate. The flag
+does not suppress the interactive login shell used by an explicitly opened
+Agent TUI.
+
 The frontend's terminal group and recursive split tree are presentation state;
 each leaf still refers to an independent server PTY. Selecting another Session
 does not move existing PTYs. Splits and restarts inherit their source PTY's
@@ -244,6 +315,22 @@ Session context.
 A workspace event is a durable, globally ordered metadata notification. One SSE
 connection carries Project, Session, run, file, Git, and terminal changes. The
 client retains a bounded ordered window rather than only the newest event.
+
+`WorkspaceEventBus` is the process-local wakeup boundary for that durable log.
+The shared `AgentStore` initializes its latest-value watch cursor from the
+non-empty SQLite log and advances it monotonically only after the transaction
+that inserted a workspace event commits. A rollback never advances the bus.
+The watched cursor is not a payload or delivery acknowledgment: consumers
+subscribe before their final catch-up read and query ordered SQLite pages after
+their own durable cursor. Several writes may therefore coalesce into one wakeup
+without losing an event, and a late subscriber starts at the latest committed
+cursor. An SSE consumer holds at most one 512-event durable page, drains it in
+order according to client demand, and then waits on its private watch receiver.
+This bounds per-client buffering and isolates slow clients from writers and
+other consumers. A 30-second safety read repairs a missed wake publication. The
+bus has no worker or buffered event queue; SSE waits retain only a weak store
+reference, so dropping the owning store closes the channel and releases
+subscribers during Runtime shutdown.
 
 ## Explorer workbench
 

@@ -1,7 +1,8 @@
 use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
-    ExecutionMode, PermissionMode, RunStatus, StoreError,
+    ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
+use std::sync::Arc;
 use tempfile::TempDir;
 
 fn store() -> (TempDir, AgentStore) {
@@ -466,6 +467,242 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
         store.latest_workspace_event_id().expect("latest cursor"),
         workspace_events.last().expect("workspace event").id
     );
+}
+
+#[test]
+fn runtime_update_batches_roll_back_every_projection_when_one_update_fails() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Batch it",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    let session_cursor = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events")
+        .last()
+        .expect("initial user event")
+        .seq;
+    let run_cursor = store
+        .events_after(&run.id, 0)
+        .expect("run events")
+        .last()
+        .expect("initial run event")
+        .seq;
+    let workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+    let bus = store.workspace_event_bus();
+    let receiver = bus.subscribe();
+
+    let error = store
+        .append_runtime_updates(
+            &conversation.id,
+            &[
+                RuntimeUpdate {
+                    session_kind: "text_delta".into(),
+                    session_payload: serde_json::json!({"run_id":run.id, "text":"kept"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::TextDelta,
+                        payload: serde_json::json!({"text":"kept"}),
+                    }),
+                },
+                RuntimeUpdate {
+                    session_kind: "thinking_delta".into(),
+                    session_payload: serde_json::json!({"run_id":"missing-run", "text":"rolled back"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: "missing-run".into(),
+                        kind: AgentEventKind::ThinkingDelta,
+                        payload: serde_json::json!({"text":"rolled back"}),
+                    }),
+                },
+            ],
+        )
+        .expect_err("invalid run must roll back the batch");
+    assert!(matches!(error, StoreError::RunNotFound(id) if id == "missing-run"));
+    assert!(
+        store
+            .session_events_after(&conversation.id, session_cursor)
+            .expect("session replay")
+            .is_empty()
+    );
+    assert!(
+        store
+            .events_after(&run.id, run_cursor)
+            .expect("run replay")
+            .is_empty()
+    );
+    assert!(
+        store
+            .workspace_events_after(workspace_cursor)
+            .expect("workspace replay")
+            .is_empty()
+    );
+    assert_eq!(bus.latest_committed_cursor(), workspace_cursor);
+    assert!(!receiver.has_changed().expect("event bus remains open"));
+}
+
+#[test]
+fn workspace_event_bus_initializes_from_durable_state_for_late_subscribers() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let durable_cursor = {
+        let store = AgentStore::open(&database).expect("first store");
+        store
+            .append_workspace_event(
+                "test_event",
+                Some("project"),
+                None,
+                None,
+                &serde_json::json!({"value":1}),
+            )
+            .expect("workspace event")
+            .id
+    };
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let bus = reopened.workspace_event_bus();
+    let receiver = bus.subscribe();
+
+    assert_eq!(bus.latest_committed_cursor(), durable_cursor);
+    assert_eq!(*receiver.borrow(), durable_cursor);
+    assert_eq!(
+        reopened
+            .latest_workspace_event_id()
+            .expect("durable cursor"),
+        durable_cursor
+    );
+}
+
+#[test]
+fn coalesced_workspace_notifications_replay_every_durable_event() {
+    let (_temp, store) = store();
+    let bus = store.workspace_event_bus();
+    let mut receiver = bus.subscribe();
+    let previous_cursor = *receiver.borrow();
+
+    for value in 1..=3 {
+        store
+            .append_workspace_event(
+                "test_event",
+                Some("project"),
+                None,
+                None,
+                &serde_json::json!({"value":value}),
+            )
+            .expect("workspace event");
+    }
+
+    let latest = *receiver.borrow_and_update();
+    let replay = store
+        .workspace_events_after(previous_cursor)
+        .expect("workspace replay");
+    assert_eq!(replay.len(), 3);
+    assert_eq!(replay.last().expect("latest event").id, latest);
+    assert_eq!(bus.latest_committed_cursor(), latest);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_workspace_publishers_advance_the_visible_cursor_monotonically() {
+    let (_temp, store) = store();
+    let store = Arc::new(store);
+    let bus = store.workspace_event_bus();
+    let mut receiver = bus.subscribe();
+    let initial_cursor = *receiver.borrow_and_update();
+    let publishers = (0..16)
+        .map(|value| {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || {
+                store
+                    .append_workspace_event(
+                        "test_event",
+                        Some("project"),
+                        None,
+                        None,
+                        &serde_json::json!({"value":value}),
+                    )
+                    .expect("workspace event")
+                    .id
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut committed = publishers
+        .into_iter()
+        .map(|publisher| publisher.join().expect("publisher"))
+        .collect::<Vec<_>>();
+    committed.sort_unstable();
+    let expected = *committed.last().expect("committed cursor");
+
+    let mut observed = initial_cursor;
+    while observed < expected {
+        receiver.changed().await.expect("event bus remains open");
+        let next = *receiver.borrow_and_update();
+        assert!(next >= observed);
+        observed = next;
+    }
+
+    assert_eq!(observed, expected);
+    assert_eq!(bus.latest_committed_cursor(), expected);
+}
+
+#[test]
+fn runtime_update_batch_publishes_its_latest_projection_after_commit() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Batch it",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    let bus = store.workspace_event_bus();
+    let receiver = bus.subscribe();
+    let previous_cursor = *receiver.borrow();
+
+    store
+        .append_runtime_updates(
+            &conversation.id,
+            &[
+                RuntimeUpdate {
+                    session_kind: "text_delta".into(),
+                    session_payload: serde_json::json!({"run_id":run.id, "text":"one"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::TextDelta,
+                        payload: serde_json::json!({"text":"one"}),
+                    }),
+                },
+                RuntimeUpdate {
+                    session_kind: "thinking_delta".into(),
+                    session_payload: serde_json::json!({"run_id":run.id, "text":"two"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::ThinkingDelta,
+                        payload: serde_json::json!({"text":"two"}),
+                    }),
+                },
+            ],
+        )
+        .expect("runtime batch");
+
+    let replay = store
+        .workspace_events_after(previous_cursor)
+        .expect("workspace replay");
+    assert_eq!(replay.len(), 2);
+    assert_eq!(
+        bus.latest_committed_cursor(),
+        replay.last().expect("latest projection").id
+    );
+    assert!(receiver.has_changed().expect("event bus remains open"));
 }
 
 #[test]
