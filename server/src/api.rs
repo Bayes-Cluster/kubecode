@@ -444,6 +444,7 @@ fn client_api_router(state: AppState) -> Router {
         .route("/agents/refresh", axum::routing::post(refresh_agents))
         .route("/events", get(stream_workspace_events))
         .route("/events/cursor", get(get_workspace_event_cursor))
+        .route("/runtime/status", get(get_runtime_status))
         .route("/sessions", get(list_all_conversations))
         .route("/filesystem/directories", get(list_directories))
         .route("/projects", get(list_projects).post(create_project))
@@ -766,6 +767,10 @@ async fn get_workspace_event_cursor(
     Ok(Json(json!({
         "cursor": state.agent_runtime.store().latest_workspace_event_id()?
     })))
+}
+
+async fn get_runtime_status(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(state.agent_runtime.status()?))
 }
 
 async fn delete_conversation(

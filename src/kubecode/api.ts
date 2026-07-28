@@ -72,6 +72,13 @@ export type AgentComponentDiagnostic = {
 export type AgentAdapterDiagnostic = AgentComponentDiagnostic & {
   kind: 'bundled' | 'native'
 }
+export type RuntimeStatus = {
+  active_actor_count: number
+  idle_actor_count: number
+  warm_actor_limit: number
+  latest_workspace_event_cursor: number
+  workspace_event_delivery_available: boolean
+}
 export type Conversation = {
   id: string
   agent_session_id: string
@@ -562,6 +569,10 @@ export class KubecodeApi {
 
   refreshAgents(): Promise<AgentDescriptor[]> {
     return this.request('/agents/refresh', { method: 'POST' })
+  }
+
+  runtimeStatus(): Promise<RuntimeStatus> {
+    return this.request('/runtime/status')
   }
 
   listConversations(projectId: string): Promise<Conversation[]> {

@@ -9,6 +9,16 @@ their application model or API. API-only local runtimes use an ephemeral
 loopback port and a bearer token delivered over standard input; the client must
 never infer authority from a server filesystem path returned in JSON.
 
+The typed `GET /api/v1/runtime/status` client route reports only active and idle
+Session actor counts, the Runtime-owned warm actor limit, the latest committed
+workspace-event cursor, and whether workspace-event delivery is available. The
+route inherits the generic base path and the same bearer boundary as every
+other client route in API-only mode. Delivery availability describes the
+Runtime capability, not whether a particular client currently has an SSE
+connection. The response deliberately excludes Session identities, prompts,
+provider payloads, credentials, filenames, file contents, executables, and
+Project or arbitrary server paths.
+
 Cluster schedulers such as Slurm are not Runtime connection modes. They remain
 provider-native Agent skills that use the user's SSH configuration and native
 scheduler commands, rather than a Kubecode scheduler service or persistence

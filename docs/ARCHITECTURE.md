@@ -20,6 +20,14 @@ the Team MCP handler still validates its process-local token and conversation
 membership. Browser mode and its external reverse-proxy security model are
 unchanged.
 
+The client API includes `GET /api/v1/runtime/status`. Its typed five-field
+snapshot combines `AgentRuntime` actor counts and warm-pool policy with the
+latest committed SQLite workspace-event cursor and delivery availability. It
+is nested below the configured generic base path and, in API-only mode, inside
+the existing bearer middleware. The snapshot is operational metadata only: it
+contains no Session detail, user content, credentials, filenames, executable
+locations, Project paths, or arbitrary server paths.
+
 The Axum server composes eight services:
 
 - `WorkspaceService` registers Project roots and contains filesystem access.

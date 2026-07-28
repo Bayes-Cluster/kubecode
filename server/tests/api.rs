@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -8,7 +9,10 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use kubecode_server::agent_discovery::AgentDescriptor;
-use kubecode_server::agents::{AgentId, AgentStore};
+use kubecode_server::agent_runtime::{AgentRuntimeSessionCounts, StartAgentRun};
+use kubecode_server::agents::{
+    AgentEventKind, AgentId, AgentStore, PermissionMode, RuntimeRunEvent, RuntimeUpdate,
+};
 use kubecode_server::api::{AppState, app_router, app_router_api_only, app_router_with_static};
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::workspace::WorkspaceService;
@@ -57,6 +61,34 @@ async fn json_request(app: &Router, method: Method, uri: &str, body: Value) -> (
         serde_json::from_slice(&bytes).expect("json response")
     };
     (status, value)
+}
+
+async fn runtime_status(app: &Router) -> Value {
+    let (status, value) = json_request(
+        app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/runtime/status"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    value
+}
+
+async fn wait_for_runtime_counts(app: &Router, expected: AgentRuntimeSessionCounts) -> Value {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = runtime_status(app).await;
+            if status["active_actor_count"] == expected.active
+                && status["idle_actor_count"] == expected.idle
+            {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Runtime actor counts")
 }
 
 fn run_command(cwd: impl AsRef<std::path::Path>, program: &str, args: &[&str]) {
@@ -114,6 +146,44 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
 }
 
 #[tokio::test]
+async fn exposes_only_runtime_operational_status_below_the_generic_base_path() {
+    let (_, app) = app();
+
+    let status = runtime_status(&app).await;
+
+    let keys = status
+        .as_object()
+        .expect("Runtime status object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "active_actor_count",
+            "idle_actor_count",
+            "latest_workspace_event_cursor",
+            "warm_actor_limit",
+            "workspace_event_delivery_available",
+        ])
+    );
+    assert_eq!(
+        status,
+        json!({
+            "active_actor_count": 0,
+            "idle_actor_count": 0,
+            "warm_actor_limit": 4,
+            "latest_workspace_event_cursor": 0,
+            "workspace_event_delivery_available": true,
+        })
+    );
+
+    let (unprefixed, _) =
+        json_request(&app, Method::GET, "/api/v1/runtime/status", Value::Null).await;
+    assert_eq!(unprefixed, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -161,6 +231,18 @@ async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() 
         .expect("unauthorized response");
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
+    let unauthorized_status = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/runtime/status")
+                .body(Body::empty())
+                .expect("unauthorized Runtime status request"),
+        )
+        .await
+        .expect("unauthorized Runtime status response");
+    assert_eq!(unauthorized_status.status(), StatusCode::UNAUTHORIZED);
+
     let team_mcp = app
         .clone()
         .oneshot(
@@ -174,6 +256,7 @@ async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() 
     assert_eq!(team_mcp.status(), StatusCode::NOT_FOUND);
 
     let authorized = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/projects")
@@ -184,6 +267,89 @@ async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() 
         .await
         .expect("authorized response");
     assert_eq!(authorized.status(), StatusCode::OK);
+
+    let authorized_status = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/runtime/status")
+                .header(header::AUTHORIZATION, "Bearer desktop-secret")
+                .body(Body::empty())
+                .expect("authorized Runtime status request"),
+        )
+        .await
+        .expect("authorized Runtime status response");
+    assert_eq!(authorized_status.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn runtime_status_cursor_advances_only_for_committed_workspace_events() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+
+    let initial_cursor = runtime_status(&app).await["latest_workspace_event_cursor"]
+        .as_u64()
+        .expect("initial cursor");
+    let committed = store
+        .append_workspace_event("test_committed", None, None, None, &json!({}))
+        .expect("committed event");
+    assert!(committed.id > initial_cursor);
+    assert_eq!(
+        runtime_status(&app).await["latest_workspace_event_cursor"],
+        committed.id
+    );
+
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Roll back",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    let cursor_before_rollback = store
+        .latest_workspace_event_id()
+        .expect("cursor before rollback");
+    store
+        .append_runtime_updates(
+            &conversation.id,
+            &[
+                RuntimeUpdate {
+                    session_kind: "text_delta".into(),
+                    session_payload: json!({"run_id":run.id, "text":"rolled back"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::TextDelta,
+                        payload: json!({"text":"rolled back"}),
+                    }),
+                },
+                RuntimeUpdate {
+                    session_kind: "thinking_delta".into(),
+                    session_payload: json!({"run_id":"missing-run", "text":"invalid"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: "missing-run".into(),
+                        kind: AgentEventKind::ThinkingDelta,
+                        payload: json!({"text":"invalid"}),
+                    }),
+                },
+            ],
+        )
+        .expect_err("invalid Runtime projection must roll back");
+
+    assert_eq!(
+        runtime_status(&app).await["latest_workspace_event_cursor"],
+        cursor_before_rollback
+    );
 }
 
 #[tokio::test]
@@ -1412,6 +1578,105 @@ fn executable(directory: &TempDir, body: &str) -> String {
     permissions.set_mode(0o755);
     fs::set_permissions(&path, permissions).expect("permissions");
     path.to_string_lossy().into_owned()
+}
+
+#[tokio::test]
+async fn runtime_status_tracks_active_idle_evicted_and_shut_down_session_actors() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "runtime-status-actors")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let release_prompt = temp.path().join("release-prompt");
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"runtime-status-session\"}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      while [ ! -f '{}' ]; do sleep 0.01; done
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;
+  esac
+done"#,
+            release_prompt.display()
+        ),
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let state = AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+        AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        },
+    ]);
+    let app = app_router(state.clone(), BASE_PATH);
+    let active = store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Active"))
+        .expect("active conversation");
+    state
+        .agent_runtime
+        .initialize_conversation(&active.id)
+        .await
+        .expect("initialize active conversation");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 1 }).await;
+
+    state
+        .agent_runtime
+        .start(StartAgentRun {
+            conversation_id: active.id.clone(),
+            project_id: project.id.clone(),
+            message: "Wait for release".into(),
+        })
+        .expect("active run");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 1, idle: 0 }).await;
+
+    let mut conversation_ids = vec![active.id];
+    for index in 0..5 {
+        let conversation = store
+            .create_conversation(
+                &project.id,
+                AgentId::OpenCode,
+                Some(&format!("Idle {index}")),
+            )
+            .expect("idle conversation");
+        state
+            .agent_runtime
+            .initialize_conversation(&conversation.id)
+            .await
+            .expect("initialize idle conversation");
+        conversation_ids.push(conversation.id);
+    }
+    let bounded =
+        wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 1, idle: 4 }).await;
+    assert_eq!(
+        bounded["warm_actor_limit"],
+        state.agent_runtime.session_actor_warm_limit()
+    );
+
+    fs::write(&release_prompt, "release").expect("release prompt");
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 4 }).await;
+
+    for conversation_id in conversation_ids {
+        state
+            .agent_runtime
+            .disconnect_conversation(&conversation_id)
+            .await
+            .expect("disconnect conversation");
+    }
+    wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 0, idle: 0 }).await;
 }
 
 #[tokio::test]

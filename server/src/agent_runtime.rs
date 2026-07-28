@@ -160,6 +160,15 @@ pub struct AgentRuntimeSessionCounts {
     pub idle: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentRuntimeStatus {
+    pub active_actor_count: usize,
+    pub idle_actor_count: usize,
+    pub warm_actor_limit: usize,
+    pub latest_workspace_event_cursor: u64,
+    pub workspace_event_delivery_available: bool,
+}
+
 #[derive(Clone)]
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
@@ -348,6 +357,21 @@ impl AgentRuntime {
             active,
             idle: sessions.len().saturating_sub(active),
         }
+    }
+
+    pub fn session_actor_warm_limit(&self) -> usize {
+        self.session_actor_policy.maximum_warm_actors
+    }
+
+    pub fn status(&self) -> Result<AgentRuntimeStatus, StoreError> {
+        let counts = self.session_counts();
+        Ok(AgentRuntimeStatus {
+            active_actor_count: counts.active,
+            idle_actor_count: counts.idle,
+            warm_actor_limit: self.session_actor_warm_limit(),
+            latest_workspace_event_cursor: self.store.latest_workspace_event_id()?,
+            workspace_event_delivery_available: true,
+        })
     }
 
     pub fn available_agents(&self) -> Vec<AgentDescriptor> {
