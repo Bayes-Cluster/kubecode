@@ -67,6 +67,9 @@ interface AiPanelComposerProps {
   isActive: boolean
   controls?: ReactNode
   leadingControl?: ReactNode
+  inputContent?: ReactNode
+  sendDisabled?: boolean
+  statusMessage?: string
   onChange: (value: string) => void
   onActiveSend?: (text: string, references: NoteReference[]) => void
   onSend: (text: string, references: NoteReference[]) => void
@@ -582,6 +585,9 @@ export function AiPanelComposer({
   isActive,
   controls,
   leadingControl,
+  inputContent,
+  sendDisabled = false,
+  statusMessage,
   onChange,
   onActiveSend,
   onSend,
@@ -590,8 +596,12 @@ export function AiPanelComposer({
 }: AiPanelComposerProps) {
   const t = createTranslator(locale)
   const inputDisabled = disabled || agentReadiness !== 'ready'
-  const canSend = !isActive && !inputDisabled && input.trim().length > 0
-  const canActiveSend = isActive && !inputDisabled && Boolean(onActiveSend) && input.trim().length > 0
+  const canSend = !isActive && !inputDisabled && !sendDisabled && input.trim().length > 0
+  const canActiveSend = isActive
+    && !inputDisabled
+    && !sendDisabled
+    && Boolean(onActiveSend)
+    && input.trim().length > 0
   const placeholder = disabled && disabledPlaceholder
     ? disabledPlaceholder
     : getComposerPlaceholder(agentLabel, agentReadiness, t)
@@ -632,6 +642,11 @@ export function AiPanelComposer({
           {disabledPlaceholder}
         </span>
       )}
+      {statusMessage && (
+        <span className="px-2 pb-1 text-xs text-destructive" role="status">
+          {statusMessage}
+        </span>
+      )}
       <div
         className={cn(
           hasControls
@@ -643,7 +658,7 @@ export function AiPanelComposer({
       >
         {hasControls && leadingControl && <div className="shrink-0">{leadingControl}</div>}
         <div className="min-w-0 flex-1 overflow-hidden">
-          <ComposerInput
+          {inputContent ?? <ComposerInput
             disabled={inputDisabled}
             entries={entries}
             hasControls={hasControls}
@@ -657,7 +672,7 @@ export function AiPanelComposer({
             }}
             onUnsupportedAiPaste={onUnsupportedAiPaste}
             placeholder={placeholder}
-          />
+          />}
         </div>
         {hasControls && <div className="min-w-0 shrink overflow-hidden">{controls}</div>}
         {sendButton}

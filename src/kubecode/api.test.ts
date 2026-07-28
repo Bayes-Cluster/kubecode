@@ -23,6 +23,19 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('lists Composer entries through the Session-scoped route below the configured base path', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('[]'))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.listSessionEntries('session/id', 'src/a folder')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/sessions/session%2Fid/entries?path=src%2Fa+folder',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
+
   it('surfaces structured server errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ code: 'agent_session_new_failed', message: 'failed', stage: 'session_new' }),

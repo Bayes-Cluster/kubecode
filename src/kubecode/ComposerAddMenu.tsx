@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { TranslationKey } from '@/lib/i18n'
 
-import type { KubecodeApi } from './api'
+import type { Entry, KubecodeApi } from './api'
 import { ProjectFilePicker } from './ProjectFilePicker'
 
 export type ComposerAgentCommand = { name: string; description: string }
@@ -13,7 +13,9 @@ export type ComposerAgentCommand = { name: string; description: string }
 type ComposerAddMenuProps = {
   api: KubecodeApi
   commands: ComposerAgentCommand[]
-  onInsert: (text: string, kind: 'command' | 'file') => void
+  conversationId: string
+  onInsert: (text: string, kind: 'command') => void
+  onReference: (entry: Entry) => void
   projectId: string
   t: (key: TranslationKey) => string
 }
@@ -21,7 +23,9 @@ type ComposerAddMenuProps = {
 export function ComposerAddMenu({
   api,
   commands,
+  conversationId,
   onInsert,
+  onReference,
   projectId,
   t,
 }: ComposerAddMenuProps) {
@@ -55,11 +59,15 @@ export function ComposerAddMenu({
     }
   }, [open])
 
-  const closeAndInsert = (text: string, kind: 'command' | 'file') => {
-    onInsert(text, kind)
+  const close = () => {
     setOpen(false)
     setQuery('')
     setShowFiles(false)
+  }
+
+  const closeAndInsert = (text: string) => {
+    onInsert(text, 'command')
+    close()
   }
 
   return (
@@ -114,8 +122,13 @@ export function ComposerAddMenu({
               <div className="min-h-0 flex-1">
                 <ProjectFilePicker
                   api={api}
+                  conversationId={conversationId}
+                  includeDirectories
                   onEscape={() => setShowFiles(false)}
-                  onOpenFile={(entry) => closeAndInsert(`@${entry.path} `, 'file')}
+                  onOpenFile={(entry) => {
+                    onReference(entry)
+                    close()
+                  }}
                   projectId={projectId}
                   refreshVersion={0}
                   t={t}
@@ -143,7 +156,7 @@ export function ComposerAddMenu({
                   <Button
                     className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
                     key={command.name}
-                    onClick={() => closeAndInsert(`/${command.name} `, 'command')}
+                    onClick={() => closeAndInsert(`/${command.name} `)}
                     type="button"
                     variant="ghost"
                   >

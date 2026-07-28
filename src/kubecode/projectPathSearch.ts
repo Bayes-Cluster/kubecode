@@ -25,30 +25,84 @@ export async function searchProjectEntries({
   projectId: string
   query: string
 }): Promise<Entry[]> {
+  return searchEntries({
+    includeExcluded,
+    kind,
+    listEntries: (path) => api.listEntries(projectId, path),
+    maxEntries,
+    maxResults,
+    query,
+  })
+}
+
+export async function searchSessionEntries({
+  api,
+  conversationId,
+  includeExcluded = false,
+  kind,
+  maxEntries = 2_000,
+  maxResults = 100,
+  query,
+}: {
+  api: KubecodeApi
+  conversationId: string
+  includeExcluded?: boolean
+  kind?: Entry['kind']
+  maxEntries?: number
+  maxResults?: number
+  query: string
+}): Promise<Entry[]> {
+  return searchEntries({
+    includeExcluded,
+    kind,
+    listEntries: (path) => api.listSessionEntries(conversationId, path),
+    maxEntries,
+    maxResults,
+    query,
+  })
+}
+
+async function searchEntries({
+  includeExcluded,
+  kind,
+  listEntries,
+  maxEntries,
+  maxResults,
+  query,
+}: {
+  includeExcluded: boolean
+  kind?: Entry['kind']
+  listEntries: (path: string) => Promise<Entry[]>
+  maxEntries: number
+  maxResults: number
+  query: string
+}): Promise<Entry[]> {
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const pending = ['']
-  const results: Entry[] = []
+  const candidates: Array<{ entry: Entry; order: number; score: number }> = []
   const visitedDirectories = new Set<string>()
   const resultPaths = new Set<string>()
   let visitedEntries = 0
+  let order = 0
 
-  while (pending.length > 0 && visitedEntries < maxEntries && results.length < maxResults) {
+  while (pending.length > 0 && visitedEntries < maxEntries) {
     const directory = pending.shift() as string
     if (visitedDirectories.has(directory)) continue
     visitedDirectories.add(directory)
-    const entries = await api.listEntries(projectId, directory)
-    visitedEntries += entries.length
+    const entries = await listEntries(directory)
+    const boundedEntries = entries.slice(0, Math.max(0, maxEntries - visitedEntries))
+    visitedEntries += boundedEntries.length
 
-    for (const entry of entries) {
+    for (const entry of boundedEntries) {
       if (!includeExcluded && isExcludedProjectEntry(entry)) continue
+      const score = fuzzyPathScore(entry, normalizedQuery)
       if (
         (!kind || entry.kind === kind)
-        && (!normalizedQuery || entry.path.toLocaleLowerCase().includes(normalizedQuery))
+        && score !== null
         && !resultPaths.has(entry.path)
       ) {
         resultPaths.add(entry.path)
-        results.push(entry)
-        if (results.length >= maxResults) break
+        candidates.push({ entry, order: order++, score })
       }
       if (
         entry.kind === 'directory'
@@ -60,5 +114,27 @@ export async function searchProjectEntries({
     }
   }
 
-  return results
+  return candidates
+    .sort((left, right) => left.score - right.score || left.order - right.order)
+    .slice(0, maxResults)
+    .map(({ entry }) => entry)
+}
+
+function fuzzyPathScore(entry: Entry, query: string): number | null {
+  if (!query) return 0
+  const name = entry.name.toLocaleLowerCase()
+  const path = entry.path.toLocaleLowerCase()
+  if (name === query || path === query) return 0
+  if (name.startsWith(query) || path.startsWith(query)) return 1
+  if (name.includes(query) || path.includes(query)) return 2
+  return isSubsequence(query, path) ? 3 : null
+}
+
+function isSubsequence(query: string, candidate: string): boolean {
+  let queryIndex = 0
+  for (const character of candidate) {
+    if (character === query[queryIndex]) queryIndex += 1
+    if (queryIndex === query.length) return true
+  }
+  return false
 }

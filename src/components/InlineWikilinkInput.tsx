@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,6 +34,7 @@ import {
 } from './inlineWikilinkPasteRecovery'
 import {
   InlineWikilinkEditorField,
+  InlineContextSuggestionList,
   InlineWikilinkPaletteLayout,
   InlineWikilinkSuggestionList,
 } from './InlineWikilinkParts'
@@ -45,6 +47,11 @@ import {
   isPlainTextBeforeInput,
 } from './inlineWikilinkBeforeInput'
 import { restorePendingRemountState } from './inlineWikilinkRemountState'
+import type { InlineContextReference, InlineContextSuggestion } from './inlineContext'
+import {
+  findActiveComposerContextQuery,
+  replaceActiveComposerContextQuery,
+} from './inlineContextQuery'
 
 interface InlineWikilinkInputProps {
   entries: VaultEntry[]
@@ -65,6 +72,15 @@ interface InlineWikilinkInputProps {
   paletteHeader?: ReactNode
   paletteEmptyState?: ReactNode
   paletteFooter?: ReactNode
+  contextReferences?: InlineContextReference[]
+  loadContextSuggestions?: (query: string) => Promise<InlineContextSuggestion[]>
+  onContextSuggestionSelected?: (suggestion: InlineContextSuggestion) => string | null
+  onRemoveContext?: (id: string) => void
+  contextEmptyLabel?: string
+  contextErrorLabel?: string
+  contextLoadingLabel?: string
+  contextRemoveLabel?: string
+  serializeClipboardText?: (value: string) => string
 }
 
 function collapseSelectionRange(nextSelectionIndex: number) {
@@ -211,6 +227,15 @@ export function InlineWikilinkInput({
   paletteHeader,
   paletteEmptyState,
   paletteFooter,
+  contextReferences = [],
+  loadContextSuggestions,
+  onContextSuggestionSelected,
+  onRemoveContext,
+  contextEmptyLabel = 'No matching files or folders',
+  contextErrorLabel = 'Could not load project context',
+  contextLoadingLabel = 'Loading',
+  contextRemoveLabel = 'Remove context',
+  serializeClipboardText = (text) => text,
 }: InlineWikilinkInputProps) {
   const [renderVersion, forceRender] = useState(0)
   const isComposingRef = useRef(false)
@@ -252,6 +277,55 @@ export function InlineWikilinkInput({
       ? findActiveWikilinkQuery(value, selectionIndex)
       : null,
     [selectionIndex, selectionRange.end, selectionRange.start, value],
+  )
+  const activeContextQuery = useMemo(
+    () => !activeQuery && selectionRange.start === selectionRange.end
+      ? findActiveComposerContextQuery(value, selectionIndex)
+      : null,
+    [activeQuery, selectionIndex, selectionRange.end, selectionRange.start, value],
+  )
+  const contextQueryKey = activeContextQuery
+    ? `${activeContextQuery.start}:${activeContextQuery.query}`
+    : ''
+  const [contextPage, setContextPage] = useState<{
+    error: boolean
+    key: string
+    loading: boolean
+    suggestions: InlineContextSuggestion[]
+  }>({ error: false, key: '', loading: false, suggestions: [] })
+  const [contextSelection, setContextSelection] = useState({ key: '', index: 0 })
+  const [dismissedContextKey, setDismissedContextKey] = useState('')
+  const contextRequestIdRef = useRef(0)
+  useEffect(() => {
+    if (!activeContextQuery || !loadContextSuggestions || dismissedContextKey === contextQueryKey) {
+      return
+    }
+    const requestId = ++contextRequestIdRef.current
+    setContextPage({ error: false, key: contextQueryKey, loading: true, suggestions: [] })
+    const timeout = window.setTimeout(() => {
+      void loadContextSuggestions(activeContextQuery.query).then((suggestions) => {
+        if (requestId !== contextRequestIdRef.current) return
+        setContextPage({ error: false, key: contextQueryKey, loading: false, suggestions })
+      }).catch(() => {
+        if (requestId !== contextRequestIdRef.current) return
+        setContextPage({ error: true, key: contextQueryKey, loading: false, suggestions: [] })
+      })
+    }, activeContextQuery.query ? 100 : 0)
+    return () => window.clearTimeout(timeout)
+  }, [
+    activeContextQuery,
+    contextQueryKey,
+    dismissedContextKey,
+    loadContextSuggestions,
+  ])
+  const contextSuggestions = contextPage.key === contextQueryKey ? contextPage.suggestions : []
+  const selectedContextIndex = contextSelection.key === contextQueryKey
+    ? Math.min(contextSelection.index, Math.max(contextSuggestions.length - 1, 0))
+    : 0
+  const contextMenuOpen = Boolean(
+    activeContextQuery
+    && loadContextSuggestions
+    && dismissedContextKey !== contextQueryKey,
   )
   const references = useMemo(() => extractInlineWikilinkReferences(value, entries), [entries, value])
   const {
@@ -334,7 +408,10 @@ export function InlineWikilinkInput({
     if (!selectedText) return
 
     event.preventDefault()
-    event.clipboardData.setData('text/plain', normalizeInlineWikilinkValue(selectedText))
+    event.clipboardData.setData(
+      'text/plain',
+      serializeClipboardText(normalizeInlineWikilinkValue(selectedText)),
+    )
 
     const nextState = deleteInlineSelection(value, currentSelectionRange, segments, 'backward')
     if (!nextState) return
@@ -343,6 +420,17 @@ export function InlineWikilinkInput({
     setSelectionRange(nextState.selection)
     pendingFocusAfterRemountRef.current = nextState.selection
     forceRender((current) => current + 1)
+  }
+  const copySelectedContent = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const editor = editorRef.current
+    const currentSelectionRange = editor ? readSelectionRange(editor) : selectionRange
+    const selectedText = selectedInlineText(value, currentSelectionRange)
+    if (!selectedText) return
+    event.preventDefault()
+    event.clipboardData.setData(
+      'text/plain',
+      serializeClipboardText(normalizeInlineWikilinkValue(selectedText)),
+    )
   }
   const handleBeforeInput = useCallback((nativeEvent: InputEvent) => {
     if (disabled) return
@@ -529,6 +617,19 @@ export function InlineWikilinkInput({
       references: currentReferences,
     })
   }
+  const selectContextSuggestion = (index: number) => {
+    const suggestion = contextSuggestions.at(index)
+    if (!suggestion || !onContextSuggestionSelected) return
+    const token = onContextSuggestionSelected(suggestion)
+    if (!token) return
+    const replacement = replaceActiveComposerContextQuery(value, selectionIndex, token)
+    if (!replacement) return
+    onChange(replacement.value)
+    setSelectionRange(collapseSelectionRange(replacement.nextSelectionIndex))
+    setContextSelection({ key: '', index: 0 })
+    setDismissedContextKey('')
+    window.setTimeout(() => focusSelectionRange(collapseSelectionRange(replacement.nextSelectionIndex)), 0)
+  }
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!disabled && isLineBreakShortcut(event, isComposingRef.current)) {
       event.preventDefault()
@@ -544,6 +645,36 @@ export function InlineWikilinkInput({
 
     if (!disabled && deleteContentToLineStart(event)) {
       return
+    }
+
+    const compositionEvent = isComposingRef.current
+      || event.nativeEvent.isComposing
+      || event.key === 'Process'
+      || event.keyCode === 229
+    if (!disabled && contextMenuOpen && !compositionEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDismissedContextKey(contextQueryKey)
+        return
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        const count = contextSuggestions.length
+        if (count > 0) {
+          const current = contextSelection.key === contextQueryKey ? contextSelection.index : 0
+          setContextSelection({
+            key: contextQueryKey,
+            index: (current + direction + count) % count,
+          })
+        }
+        return
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab') && contextSuggestions.length > 0) {
+        event.preventDefault()
+        selectContextSuggestion(selectedContextIndex)
+        return
+      }
     }
 
     handleInlineWikilinkKeyDown({
@@ -575,10 +706,14 @@ export function InlineWikilinkInput({
       onInput={handleInput}
       onKeyDown={handleKeyDown}
       onCut={cutSelectedContent}
+      onCopy={copySelectedContent}
       onDrop={handleDrop}
       onPaste={handlePaste}
       onSelectionChange={syncSelectionRange}
       segments={segments}
+      contextReferences={contextReferences}
+      contextRemoveLabel={contextRemoveLabel}
+      onRemoveContext={onRemoveContext}
       typeEntryMap={typeEntryMap}
     />
   )
@@ -602,5 +737,19 @@ export function InlineWikilinkInput({
       />
     )
   }
-  return <div className="relative">{editor}{suggestionList}</div>
+  const contextSuggestionList = contextMenuOpen ? (
+    <InlineContextSuggestionList
+      emptyLabel={contextEmptyLabel}
+      errorLabel={contextPage.key === contextQueryKey && contextPage.error
+        ? contextErrorLabel
+        : undefined}
+      loading={contextPage.key !== contextQueryKey || contextPage.loading}
+      loadingLabel={contextLoadingLabel}
+      onHover={(index) => setContextSelection({ key: contextQueryKey, index })}
+      onSelect={selectContextSuggestion}
+      selectedIndex={selectedContextIndex}
+      suggestions={contextSuggestions}
+    />
+  ) : null
+  return <div className="relative">{editor}{contextSuggestionList ?? suggestionList}</div>
 }
