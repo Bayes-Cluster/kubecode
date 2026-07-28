@@ -306,6 +306,17 @@ A workspace event is a durable, globally ordered metadata notification. One SSE
 connection carries Project, Session, run, file, Git, and terminal changes. The
 client retains a bounded ordered window rather than only the newest event.
 
+`WorkspaceEventBus` is the process-local wakeup boundary for that durable log.
+The shared `AgentStore` initializes its latest-value watch cursor from the
+non-empty SQLite log and advances it monotonically only after the transaction
+that inserted a workspace event commits. A rollback never advances the bus.
+The watched cursor is not a payload or delivery acknowledgment: consumers
+subscribe before their final catch-up read and query ordered SQLite pages after
+their own durable cursor. Several writes may therefore coalesce into one wakeup
+without losing an event, and a late subscriber starts at the latest committed
+cursor. The bus has no worker or buffered event queue; dropping its owning store
+closes the channel and releases subscribers during Runtime shutdown.
+
 ## Explorer workbench
 
 The default Explorer has three independently collapsible sections:

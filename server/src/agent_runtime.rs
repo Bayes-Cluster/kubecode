@@ -3561,6 +3561,9 @@ mod tests {
             )
             .expect("run");
         let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let workspace_event_bus = store.workspace_event_bus();
+        let workspace_receiver = workspace_event_bus.subscribe();
+        let workspace_cursor = *workspace_receiver.borrow();
 
         for _ in 0..1_000 {
             let mut chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("x")));
@@ -3596,6 +3599,19 @@ mod tests {
         assert_eq!(session_events.len(), 2);
         assert_eq!(session_events[0].kind, "text_delta");
         assert_eq!(session_events[1].kind, "tool_started");
+        let workspace_events = store
+            .workspace_events_after(workspace_cursor)
+            .expect("workspace events");
+        assert_eq!(workspace_events.len(), 2);
+        assert_eq!(
+            workspace_event_bus.latest_committed_cursor(),
+            workspace_events.last().expect("latest workspace event").id
+        );
+        assert!(
+            workspace_receiver
+                .has_changed()
+                .expect("event bus remains open")
+        );
         journal.shutdown().await.expect("shutdown");
     }
 

@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::database::{Database, DatabaseError};
@@ -197,8 +198,42 @@ pub struct RuntimeUpdate {
     pub run_event: Option<RuntimeRunEvent>,
 }
 
+#[derive(Debug)]
+pub struct WorkspaceEventBus {
+    latest_committed_cursor: watch::Sender<u64>,
+}
+
+impl WorkspaceEventBus {
+    fn new(latest_committed_cursor: u64) -> Self {
+        let (sender, _) = watch::channel(latest_committed_cursor);
+        Self {
+            latest_committed_cursor: sender,
+        }
+    }
+
+    pub fn latest_committed_cursor(&self) -> u64 {
+        *self.latest_committed_cursor.borrow()
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.latest_committed_cursor.subscribe()
+    }
+
+    fn publish_committed(&self, cursor: u64) {
+        self.latest_committed_cursor.send_if_modified(|current| {
+            if cursor > *current {
+                *current = cursor;
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
+
 pub struct AgentStore {
     database: Arc<Database>,
+    workspace_event_bus: WorkspaceEventBus,
 }
 
 impl AgentStore {
@@ -344,10 +379,18 @@ impl AgentStore {
                AND TRIM(title) <> '' AND title <> 'New conversation'",
             [],
         )?;
+        let latest_committed_cursor = latest_workspace_event_id(&connection)?;
         drop(connection);
-        let store = Self { database };
+        let store = Self {
+            database,
+            workspace_event_bus: WorkspaceEventBus::new(latest_committed_cursor),
+        };
         store.interrupt_inflight_runs()?;
         Ok(store)
+    }
+
+    pub fn workspace_event_bus(&self) -> &WorkspaceEventBus {
+        &self.workspace_event_bus
     }
 
     pub fn create_conversation(
@@ -1275,13 +1318,14 @@ impl AgentStore {
              WHERE id = ?1",
             [&run.conversation_id],
         )?;
-        append_event_transaction(
+        let (_, workspace_cursor) = append_event_transaction(
             &transaction,
             &run.id,
             AgentEventKind::RunStarted,
             &json!({"permission_mode": permission_mode}),
         )?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         drop(database);
         if !internal {
             self.set_agent_title_if_untitled(conversation_id, message)?;
@@ -1449,13 +1493,14 @@ impl AgentStore {
         if changed == 0 {
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
-        append_event_transaction(
+        let (_, workspace_cursor) = append_event_transaction(
             &transaction,
             run_id,
             AgentEventKind::RunCompleted,
             &json!({"status": status, "error": error}),
         )?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(())
     }
 
@@ -1467,8 +1512,10 @@ impl AgentStore {
     ) -> Result<AgentEvent, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let event = append_event_transaction(&transaction, run_id, kind, payload)?;
+        let (event, workspace_cursor) =
+            append_event_transaction(&transaction, run_id, kind, payload)?;
         transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(event)
     }
 
@@ -1512,6 +1559,7 @@ impl AgentStore {
         if !conversation_exists {
             return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
         }
+        let mut latest_workspace_cursor = None;
         for update in updates {
             append_session_event_transaction(
                 &transaction,
@@ -1520,15 +1568,19 @@ impl AgentStore {
                 &update.session_payload,
             )?;
             if let Some(run_event) = &update.run_event {
-                append_event_transaction(
+                let (_, workspace_cursor) = append_event_transaction(
                     &transaction,
                     &run_event.run_id,
                     run_event.kind,
                     &run_event.payload,
                 )?;
+                latest_workspace_cursor = Some(workspace_cursor);
             }
         }
         transaction.commit()?;
+        if let Some(cursor) = latest_workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
         Ok(())
     }
 
@@ -1649,21 +1701,28 @@ impl AgentStore {
         run_id: Option<&str>,
         payload: &Value,
     ) -> Result<WorkspaceEvent, StoreError> {
-        let database = self.database.lock().expect("agent database mutex poisoned");
-        database.execute(
-            "INSERT INTO workspace_events
-             (kind, project_id, conversation_id, run_id, payload)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                kind,
-                project_id,
-                conversation_id,
-                run_id,
-                serde_json::to_string(payload)?
-            ],
-        )?;
-        let id = database.last_insert_rowid();
-        workspace_event_by_id(&database, id)
+        let (event, workspace_cursor) = {
+            let database = self.database.lock().expect("agent database mutex poisoned");
+            database.execute(
+                "INSERT INTO workspace_events
+                 (kind, project_id, conversation_id, run_id, payload)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    kind,
+                    project_id,
+                    conversation_id,
+                    run_id,
+                    serde_json::to_string(payload)?
+                ],
+            )?;
+            let id = database.last_insert_rowid();
+            let workspace_cursor = u64::try_from(id).map_err(|_| {
+                StoreError::InvalidStoredValue("negative workspace event id".into())
+            })?;
+            (workspace_event_by_id(&database, id), workspace_cursor)
+        };
+        self.workspace_event_bus.publish_committed(workspace_cursor);
+        event
     }
 
     pub fn workspace_events_after(&self, cursor: u64) -> Result<Vec<WorkspaceEvent>, StoreError> {
@@ -1682,17 +1741,8 @@ impl AgentStore {
     }
 
     pub fn latest_workspace_event_id(&self) -> Result<u64, StoreError> {
-        let id = self
-            .database
-            .lock()
-            .expect("agent database mutex poisoned")
-            .query_row(
-                "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
-                [],
-                |row| row.get::<_, i64>(0),
-            )?;
-        u64::try_from(id)
-            .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        latest_workspace_event_id(&database)
     }
 
     pub fn allow_always(
@@ -1751,6 +1801,7 @@ impl AgentStore {
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
         };
+        let mut latest_workspace_cursor = None;
         for run_id in run_ids {
             transaction.execute(
                 "UPDATE agent_runs
@@ -1759,14 +1810,18 @@ impl AgentStore {
                  WHERE id = ?1",
                 [&run_id],
             )?;
-            append_event_transaction(
+            let (_, workspace_cursor) = append_event_transaction(
                 &transaction,
                 &run_id,
                 AgentEventKind::RunCompleted,
                 &json!({"status":"interrupted", "error":"server restarted"}),
             )?;
+            latest_workspace_cursor = Some(workspace_cursor);
         }
         transaction.commit()?;
+        if let Some(cursor) = latest_workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
         Ok(())
     }
 }
@@ -1776,7 +1831,7 @@ fn append_event_transaction(
     run_id: &str,
     kind: AgentEventKind,
     payload: &Value,
-) -> Result<AgentEvent, StoreError> {
+) -> Result<(AgentEvent, u64), StoreError> {
     let run_scope = transaction
         .query_row(
             "SELECT project_id, conversation_id FROM agent_runs WHERE id = ?1",
@@ -1802,20 +1857,35 @@ fn append_event_transaction(
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![kind.as_str(), run_scope.0, run_scope.1, run_id, payload],
     )?;
+    let workspace_cursor = u64::try_from(transaction.last_insert_rowid())
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
     let created_at = transaction.query_row(
         "SELECT created_at FROM agent_events WHERE run_id = ?1 AND seq = ?2",
         params![run_id, stored_seq],
         |row| row.get::<_, String>(0),
     )?;
-    Ok(AgentEvent {
-        run_id: run_id.to_owned(),
-        seq: u64::try_from(stored_seq).map_err(|_| {
-            StoreError::InvalidStoredValue("negative event sequence in database".into())
-        })?,
-        kind,
-        payload: serde_json::from_str(&payload)?,
-        created_at,
-    })
+    Ok((
+        AgentEvent {
+            run_id: run_id.to_owned(),
+            seq: u64::try_from(stored_seq).map_err(|_| {
+                StoreError::InvalidStoredValue("negative event sequence in database".into())
+            })?,
+            kind,
+            payload: serde_json::from_str(&payload)?,
+            created_at,
+        },
+        workspace_cursor,
+    ))
+}
+
+fn latest_workspace_event_id(database: &Connection) -> Result<u64, StoreError> {
+    let id = database.query_row(
+        "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    u64::try_from(id)
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
 }
 
 fn append_session_event_transaction(

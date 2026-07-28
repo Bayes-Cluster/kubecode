@@ -24,6 +24,8 @@ The Axum server composes eight services:
 
 - `WorkspaceService` registers Project roots and contains filesystem access.
 - `AgentStore` persists Sessions, runs, normalized events, and workspace events.
+  It also owns the process-wide `WorkspaceEventBus`, whose latest-value cursor
+  wakes live consumers after durable workspace-event commits.
 - `AgentRuntime` owns bounded ACP actors for the currently supported Agents:
   Claude Code, Codex, and OpenCode. Tokio owns adapter processes and stdio;
   inactive actors expire after two minutes and the warm inactive pool is capped
@@ -354,6 +356,16 @@ One global SSE stream multiplexes Session, run, file, Git, and terminal metadata
 events. Events have monotonically increasing IDs so reconnecting clients can
 resume. The browser first reads the durable current cursor, then opens SSE from
 that position so historical events cannot create stale system notifications.
+SQLite is the only authority for workspace-event payloads and ordering. The
+shared `AgentStore` initializes its `WorkspaceEventBus` from the latest durable
+cursor. Direct inserts publish after autocommit; transactional writers,
+including a batched Agent Runtime flush, publish their newest cursor only after
+the complete transaction commits. Failed or rolled-back writes are silent.
+The latest-value wakeup may coalesce, so consumers subscribe before a final
+durable catch-up read and always replay SQLite from their own cursor. Delayed
+concurrent publications cannot lower the visible cursor. Dropping the shared
+store during Runtime shutdown closes the bus and releases waiting consumers;
+the bus owns no payload queue or shutdown task.
 ACP text and thinking fragments are combined by a connection-scoped journal
 for a fixed window of up to 33 milliseconds anchored at its first fragment.
 Semantic and lifecycle events force an immediate flush, and one SQLite
