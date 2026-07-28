@@ -260,6 +260,213 @@ describe('Kubecode workspace', () => {
     expect(dialog.getByText('Authentication is checked when a real Session starts.')).toBeInTheDocument()
   })
 
+  it('shows every Runtime connection state with keyboard access and action-scoped retry', async () => {
+    class StatusEventSource {
+      static current: StatusEventSource | null = null
+      static instances: StatusEventSource[] = []
+      onerror: (() => void) | null = null
+      onopen: (() => void) | null = null
+      readonly url: string
+      constructor(url: string | URL) {
+        this.url = String(url)
+        StatusEventSource.current = this
+        StatusEventSource.instances.push(this)
+      }
+      addEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal('EventSource', StatusEventSource)
+    let finishRecovery: (() => void) | undefined
+    const heldRecovery = new Promise<never[]>((resolve) => { finishRecovery = () => resolve([]) })
+    const listSessions = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('recovery failed'))
+      .mockImplementationOnce(() => heldRecovery)
+    const workspaceEventStreamUrl = vi.fn().mockReturnValue('/events?after=0')
+    const api = settingsApi({ listSessions, workspaceEventStreamUrl })
+
+    render(<KubecodeApp api={api} />)
+    const connecting = await screen.findByRole('button', { name: 'Runtime connection: Connecting' })
+    connecting.focus()
+    fireEvent.keyDown(connecting, { key: 'Enter' })
+    expect(await screen.findByText('Never')).toBeInTheDocument()
+    fireEvent.keyDown(document.activeElement ?? connecting, { key: 'Escape' })
+
+    act(() => StatusEventSource.current?.onopen?.())
+    expect(screen.getByRole('button', { name: 'Runtime connection: Live' })).toBeInTheDocument()
+    act(() => StatusEventSource.current?.onerror?.())
+    const reconnecting = screen.getByRole('button', { name: 'Runtime connection: Reconnecting' })
+    act(() => StatusEventSource.current?.onopen?.())
+    await screen.findByRole('button', { name: 'Runtime connection: Reconnecting' })
+    fireEvent.pointerDown(reconnecting, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    const retry = await screen.findByRole('menuitem', { name: 'Retry' })
+    await act(async () => {
+      retry.focus()
+      fireEvent.keyDown(retry, { key: 'Enter', code: 'Enter' })
+    })
+
+    expect(screen.getByRole('button', { name: 'Runtime connection: Resynchronizing' })).toBeInTheDocument()
+    expect(listSessions).toHaveBeenCalledTimes(3)
+    expect(StatusEventSource.instances).toHaveLength(1)
+    expect(StatusEventSource.instances[0]?.url).toBe('/events?after=0')
+    expect(workspaceEventStreamUrl).toHaveBeenCalledTimes(1)
+    expect(workspaceEventStreamUrl).toHaveBeenCalledWith(0)
+    await act(async () => { finishRecovery?.() })
+    expect(await screen.findByRole('button', { name: 'Runtime connection: Live' })).toBeInTheDocument()
+    expect(listSessions).toHaveBeenCalledTimes(3)
+    expect(StatusEventSource.instances).toHaveLength(1)
+    expect(screen.queryByRole('menuitem', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('loads and refreshes only the public Runtime capacity fields', async () => {
+    let finishInitial: ((value: unknown) => void) | undefined
+    let finishRefresh: ((value: unknown) => void) | undefined
+    const runtimeStatus = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishInitial = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishRefresh = resolve }))
+    render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('Loading Runtime status')
+    expect(screen.getByRole('button', { name: 'Refresh Runtime status' })).toBeDisabled()
+
+    let sensitiveFieldReads = 0
+    await act(async () => finishInitial?.({
+      active_actor_count: 2,
+      idle_actor_count: 3,
+      warm_actor_limit: 5,
+      get latest_workspace_event_cursor() {
+        sensitiveFieldReads += 1
+        return 987654
+      },
+      workspace_event_delivery_available: true,
+      get private_path() {
+        sensitiveFieldReads += 1
+        return '/srv/private-project'
+      },
+      get prompt() {
+        sensitiveFieldReads += 1
+        return 'private prompt'
+      },
+      get credential() {
+        sensitiveFieldReads += 1
+        return 'secret credential'
+      },
+    }))
+    const panel = screen.getByTestId('runtime-status-panel')
+    expect(within(panel).getByText('2')).toBeInTheDocument()
+    expect(within(panel).getByText('3')).toBeInTheDocument()
+    expect(within(panel).getByText('5')).toBeInTheDocument()
+    expect(panel).not.toHaveTextContent('987654')
+    expect(panel).not.toHaveTextContent('/srv/private-project')
+    expect(panel).not.toHaveTextContent('private prompt')
+    expect(panel).not.toHaveTextContent('secret credential')
+    expect(sensitiveFieldReads).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Runtime status' }))
+    expect(screen.getByRole('button', { name: 'Refresh Runtime status' })).toBeDisabled()
+    await act(async () => finishRefresh?.({
+      active_actor_count: 4,
+      idle_actor_count: 1,
+      warm_actor_limit: 6,
+      latest_workspace_event_cursor: 999999,
+      workspace_event_delivery_available: true,
+    }))
+    expect(within(panel).getByText('4')).toBeInTheDocument()
+    expect(runtimeStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['success', 'error'] as const)(
+    'ignores a stale Runtime status %s after Settings closes',
+    async (outcome) => {
+      let finishStale: ((value: unknown) => void) | undefined
+      let failStale: ((error: Error) => void) | undefined
+      let finishCurrent: ((value: unknown) => void) | undefined
+      const runtimeStatus = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve, reject) => {
+          finishStale = resolve
+          failStale = reject
+        }))
+        .mockImplementationOnce(() => new Promise((resolve) => { finishCurrent = resolve }))
+      render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+      expect(within(screen.getByTestId('runtime-status-panel')).getByRole('status'))
+        .toHaveTextContent('Loading Runtime status')
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+      await act(async () => {
+        if (outcome === 'success') {
+          finishStale?.({
+            active_actor_count: 91,
+            idle_actor_count: 92,
+            warm_actor_limit: 93,
+            latest_workspace_event_cursor: 94,
+            workspace_event_delivery_available: true,
+          })
+        } else {
+          failStale?.(new Error('stale failure'))
+        }
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+      expect(within(screen.getByTestId('runtime-status-panel')).getByRole('status'))
+        .toHaveTextContent('Loading Runtime status')
+      expect(screen.queryByText('91')).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+      await act(async () => finishCurrent?.({
+        active_actor_count: 1,
+        idle_actor_count: 2,
+        warm_actor_limit: 3,
+        latest_workspace_event_cursor: 4,
+        workspace_event_delivery_available: true,
+      }))
+      const panel = screen.getByTestId('runtime-status-panel')
+      expect(within(panel).getByText('1')).toBeInTheDocument()
+      expect(within(panel).getByText('2')).toBeInTheDocument()
+      expect(within(panel).getByText('3')).toBeInTheDocument()
+      expect(runtimeStatus).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('offers a refresh after a Runtime status error', async () => {
+    const runtimeStatus = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        active_actor_count: 1,
+        idle_actor_count: 0,
+        warm_actor_limit: 4,
+        latest_workspace_event_cursor: 1,
+        workspace_event_delivery_available: true,
+      })
+    render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Runtime status could not be loaded')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Runtime status' }))
+    expect(await screen.findByText('Warm limit')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['delivery unavailable', settingsApi({ runtimeStatus: vi.fn().mockResolvedValue({
+      active_actor_count: 8,
+      idle_actor_count: 9,
+      warm_actor_limit: 10,
+      latest_workspace_event_cursor: 11,
+      workspace_event_delivery_available: false,
+    }) })],
+    ['endpoint unavailable', settingsApi({ runtimeStatus: undefined })],
+  ])('shows Runtime status as unavailable when %s', async (_case, api) => {
+    render(<KubecodeApp api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    expect(await screen.findByText('Runtime status is unavailable.')).toBeInTheDocument()
+    expect(screen.getByTestId('runtime-status-panel')).not.toHaveTextContent('10')
+  })
+
   it('surfaces running and stuck Agent sessions on their project icons', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([
@@ -541,14 +748,12 @@ describe('Kubecode workspace', () => {
       await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
 
       act(() => ReconnectingEventSource.current?.onerror?.(new Event('error')))
-      expect(screen.getByRole('status', {
-        name: 'Workspace connection lost. Reconnecting…',
+      expect(screen.getByRole('button', {
+        name: 'Runtime connection: Reconnecting',
       })).toBeInTheDocument()
 
       act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
-      await waitFor(() => expect(screen.queryByRole('status', {
-        name: 'Workspace connection lost. Reconnecting…',
-      })).not.toBeInTheDocument())
+      await screen.findByRole('button', { name: 'Runtime connection: Live' })
     } finally {
       globalThis.EventSource = originalEventSource
     }
@@ -616,13 +821,11 @@ describe('Kubecode workspace', () => {
         expect(listTerminals).toHaveBeenCalledTimes(2)
         expect(listProjectRuns).toHaveBeenCalledTimes(2)
       })
-      expect(screen.getByRole('status', {
-        name: 'Workspace connection lost. Reconnecting…',
+      expect(screen.getByRole('button', {
+        name: 'Runtime connection: Resynchronizing',
       })).toBeInTheDocument()
       await act(async () => resolveTeams?.([]))
-      await waitFor(() => expect(screen.queryByRole('status', {
-        name: 'Workspace connection lost. Reconnecting…',
-      })).not.toBeInTheDocument())
+      await screen.findByRole('button', { name: 'Runtime connection: Live' })
     } finally {
       globalThis.EventSource = originalEventSource
     }
@@ -1316,4 +1519,22 @@ function terminal(id: string): TerminalInfo {
     exit_code: null,
     signal: null,
   }
+}
+
+function settingsApi(overrides: Record<string, unknown> = {}): KubecodeApi {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listAgents: vi.fn().mockResolvedValue([]),
+    listSessions: vi.fn().mockResolvedValue([]),
+    listTeams: vi.fn().mockResolvedValue([]),
+    workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+    runtimeStatus: vi.fn().mockResolvedValue({
+      active_actor_count: 0,
+      idle_actor_count: 0,
+      warm_actor_limit: 4,
+      latest_workspace_event_cursor: 0,
+      workspace_event_delivery_available: true,
+    }),
+    ...overrides,
+  } as unknown as KubecodeApi
 }

@@ -4,6 +4,7 @@ import {
   ArrowClockwise,
   Bell,
   Check,
+  Circle,
   Copy,
   DownloadSimple,
   Eye,
@@ -35,6 +36,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
@@ -81,6 +84,7 @@ import type {
   Project,
   ProviderSessionInfo,
   RunStatus,
+  RuntimeStatus,
   TerminalInfo,
   TeamSnapshot,
   WorkspaceEvent,
@@ -100,6 +104,7 @@ import {
   type WorkspaceEventBatch,
   type WorkspaceEventOwnership,
   type WorkspaceEventReconciliationRequest,
+  type WorkspaceConnectionState,
 } from './useWorkspaceEventStream'
 import {
   readProjectWorkbenchLayout,
@@ -420,17 +425,20 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     }
     if (runResult.status === 'fulfilled' && runResult.value && activeProjectId
       && !dirty.refreshProjectRuns) {
+      const reconciledRuns = runResult.value
       setProjectRuns((current) => applyWorkspaceRunEvents({
         ...current,
-        [activeProjectId]: runResult.value,
+        [activeProjectId]: reconciledRuns,
       }, replayEvents))
     }
   }, [api, reportOwnedError])
 
   const {
-    connectionLost,
+    connectionState,
     diagnostic: workspaceEventDiagnostic,
     events: workspaceEvents,
+    lastSuccessfulSyncAt,
+    retry: retryWorkspaceConnection,
   } = useWorkspaceEventStream({
     activeProjectId: projectId,
     api,
@@ -624,12 +632,19 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           <kbd>⌘K</kbd>
         </div>
         <div className="kubecode-topbar-actions">
-          {(error || connectionLost) && (
+          <RuntimeConnectionMenu
+            connectionState={connectionState}
+            lastSuccessfulSyncAt={lastSuccessfulSyncAt}
+            locale={locale}
+            onRetry={retryWorkspaceConnection}
+            t={t}
+          />
+          {error && (
             <span
-              aria-label={error ?? t('kubecode.connectionLost')}
+              aria-label={error}
               className="kubecode-topbar-error"
               role="status"
-              title={error ?? t('kubecode.connectionLost')}
+              title={error}
             >
               <WarningCircle weight="fill" />
             </span>
@@ -913,6 +928,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
         t={t}
       />
       <KubecodeSettingsDialog
+        api={api}
         agentPreferences={agentPreferences}
         agents={agents}
         agentsRefreshing={agentsRefreshing}
@@ -1612,7 +1628,145 @@ function withTrailingSlash(path: string): string {
   return path === '/' ? '/' : `${path.replace(/\/+$/g, '')}/`
 }
 
+function RuntimeConnectionMenu({
+  connectionState,
+  lastSuccessfulSyncAt,
+  locale,
+  onRetry,
+  t,
+}: {
+  connectionState: WorkspaceConnectionState
+  lastSuccessfulSyncAt: number | null
+  locale: string
+  onRetry: () => void
+  t: Translator
+}) {
+  const stateLabel = t(`kubecode.connectionState.${connectionState}`)
+  const lastSync = lastSuccessfulSyncAt === null
+    ? t('kubecode.never')
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' })
+      .format(lastSuccessfulSyncAt)
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={t('kubecode.runtimeConnectionState', { state: stateLabel })}
+          className="kubecode-connection-trigger"
+          data-state-value={connectionState}
+          size="icon-xs"
+          variant="ghost"
+        >
+          <Circle aria-hidden="true" weight="fill" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="kubecode-connection-menu">
+        <DropdownMenuLabel>{t('kubecode.runtimeConnection')}</DropdownMenuLabel>
+        <div className="kubecode-connection-row" role="status">
+          <span>{t('kubecode.connectionStatus')}</span>
+          <strong>{stateLabel}</strong>
+        </div>
+        <div className="kubecode-connection-row">
+          <span>{t('kubecode.lastSuccessfulSync')}</span>
+          <time dateTime={lastSuccessfulSyncAt === null
+            ? undefined : new Date(lastSuccessfulSyncAt).toISOString()}>{lastSync}</time>
+        </div>
+        {connectionState === 'reconnecting' && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onRetry}>
+              <ArrowClockwise />
+              {t('kubecode.retry')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+type RuntimeStatusViewModel = {
+  active_actor_count: number
+  idle_actor_count: number
+  warm_actor_limit: number
+  workspace_event_delivery_available: boolean
+}
+
+function projectRuntimeStatus(status: RuntimeStatus): RuntimeStatusViewModel {
+  return {
+    active_actor_count: status.active_actor_count,
+    idle_actor_count: status.idle_actor_count,
+    warm_actor_limit: status.warm_actor_limit,
+    workspace_event_delivery_available: status.workspace_event_delivery_available,
+  }
+}
+
+function RuntimeStatusPanel({ api, t }: { api: KubecodeApi; t: Translator }) {
+  const runtimeStatusAvailable = typeof api.runtimeStatus === 'function'
+  const [request, setRequest] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'ready'; status: RuntimeStatusViewModel }
+    | { kind: 'error' }
+    | { kind: 'unavailable' }
+  >(runtimeStatusAvailable ? { kind: 'loading' } : { kind: 'unavailable' })
+
+  useEffect(() => {
+    let current = true
+    if (!runtimeStatusAvailable) return () => { current = false }
+    void api.runtimeStatus().then((response) => {
+      if (!current) return
+      const status = projectRuntimeStatus(response)
+      setState(status.workspace_event_delivery_available
+        ? { kind: 'ready', status }
+        : { kind: 'unavailable' })
+    }).catch(() => {
+      if (current) setState({ kind: 'error' })
+    }).finally(() => {
+      if (current) setRefreshing(false)
+    })
+    return () => { current = false }
+  }, [api, request, runtimeStatusAvailable])
+
+  const busy = state.kind === 'loading' || refreshing
+  return (
+    <div className="kubecode-settings-group" data-testid="runtime-status-panel">
+      <div className="kubecode-setting-row kubecode-runtime-toolbar">
+        <div>
+          <strong>{t('kubecode.runtimeStatus')}</strong>
+          <span>{t('kubecode.runtimeStatusDescription')}</span>
+          {state.kind === 'loading' && <span role="status">{t('kubecode.runtimeStatusLoading')}</span>}
+          {state.kind === 'error' && <span role="alert">{t('kubecode.runtimeStatusError')}</span>}
+          {state.kind === 'unavailable' && <span role="status">{t('kubecode.runtimeStatusUnavailable')}</span>}
+        </div>
+        <Button
+          aria-label={t('kubecode.runtimeRefresh')}
+          disabled={busy || !runtimeStatusAvailable}
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setRefreshing(true)
+            setRequest((value) => value + 1)
+          }}
+        >
+          <ArrowClockwise className={busy ? 'animate-spin' : undefined} />
+          {t('kubecode.refresh')}
+        </Button>
+      </div>
+      {state.kind === 'ready' && (
+        <dl className="kubecode-runtime-counts">
+          <div><dt>{t('kubecode.runtimeActiveActors')}</dt><dd>{state.status.active_actor_count}</dd></div>
+          <div><dt>{t('kubecode.runtimeIdleActors')}</dt><dd>{state.status.idle_actor_count}</dd></div>
+          <div><dt>{t('kubecode.runtimeWarmActorLimit')}</dt><dd>{state.status.warm_actor_limit}</dd></div>
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function KubecodeSettingsDialog({
+  api,
   agentPreferences,
   agents,
   agentsRefreshing,
@@ -1633,6 +1787,7 @@ function KubecodeSettingsDialog({
   onTestNotification,
   t,
 }: {
+  api: KubecodeApi
   agentPreferences: KubecodeAgentPreferences
   agents: AgentDescriptor[]
   agentsRefreshing: boolean
@@ -1912,6 +2067,7 @@ function KubecodeSettingsDialog({
             </div>
           )}
           {section === 'agents' && (
+            <>
             <div className="kubecode-settings-group">
               <div className="kubecode-setting-row">
                 <div>
@@ -1993,6 +2149,9 @@ function KubecodeSettingsDialog({
                 </details>
               ))}
             </div>
+            <h3 className="kubecode-settings-section-heading">{t('kubecode.runtime')}</h3>
+            <RuntimeStatusPanel api={api} t={t} />
+            </>
           )}
           {section === 'editor' && (
             <div className="kubecode-settings-group">

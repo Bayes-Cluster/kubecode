@@ -199,6 +199,24 @@
 }
 .kubecode-topbar-error > svg { height: 18px; width: 18px; }
 
+.kubecode-connection-trigger { color: var(--text-secondary); }
+.kubecode-connection-trigger[data-state-value='live'] { color: var(--accent-green); }
+.kubecode-connection-trigger[data-state-value='reconnecting'] { color: var(--feedback-warning-text); }
+.kubecode-connection-trigger[data-state-value='connecting'] > svg,
+.kubecode-connection-trigger[data-state-value='resynchronizing'] > svg { animation: kubecode-pulse 1.2s ease-in-out infinite; }
+.kubecode-connection-menu { min-width: min(280px, calc(100vw - 16px)); }
+.kubecode-connection-row {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding: 6px 8px;
+}
+.kubecode-connection-row > span { color: var(--text-secondary); }
+.kubecode-connection-row > strong,
+.kubecode-connection-row > time { font-size: 13px; font-weight: 500; white-space: nowrap; }
+@keyframes kubecode-pulse { 50% { opacity: 0.38; } }
+
 .kubecode-attention-trigger {
   color: var(--accent-blue);
   gap: 4px;
@@ -2097,6 +2115,7 @@
 }
 
 .kubecode-settings-dialog {
+  box-sizing: border-box;
   display: grid;
   gap: 0;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -2121,6 +2140,7 @@
 
 .kubecode-settings-content { overflow-y: auto; padding: 28px 40px 40px; }
 .kubecode-settings-content h2 { font-size: 20px; margin: 0 0 24px; }
+.kubecode-settings-section-heading { font-size: 15px; margin: 28px 0 10px; }
 .kubecode-settings-group {
   background: color-mix(in srgb, var(--surface-sidebar) 72%, var(--surface-app));
   border: 1px solid var(--border-subtle);
@@ -2162,6 +2182,15 @@
   gap: 10px;
 }
 .kubecode-settings-placeholder { color: var(--text-secondary); padding: 32px 0; }
+.kubecode-runtime-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+.kubecode-runtime-counts > div { padding: 14px 16px; }
+.kubecode-runtime-counts > div + div { border-left: 1px solid var(--border-subtle); }
+.kubecode-runtime-counts dt { color: var(--text-secondary); font-size: 12px; }
+.kubecode-runtime-counts dd { font-size: 20px; font-weight: 600; margin: 4px 0 0; }
 .kubecode-agent-doctor-actions {
   align-items: center;
   flex-direction: row !important;
@@ -2462,6 +2491,8 @@
   .kubecode-settings-dialog { grid-template-columns: 164px minmax(0, 1fr); }
   .kubecode-settings-content { padding: 24px; }
   .kubecode-setting-row { align-items: stretch; flex-direction: column; gap: 12px; }
+  .kubecode-runtime-counts { grid-template-columns: 1fr; }
+  .kubecode-runtime-counts > div + div { border-left: 0; border-top: 1px solid var(--border-subtle); }
   .kubecode-font-input,
   .kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }
 }
@@ -3166,4 +3197,23 @@
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto; }
   .kubecode-search { display: none; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
+  [data-slot='dialog-content'].kubecode-settings-dialog {
+    grid-template-columns: minmax(0, 1fr);
+    height: calc(100vh - 24px);
+    left: 12px;
+    max-width: none;
+    right: 12px;
+    translate: 0 -50%;
+    width: auto;
+  }
+  .kubecode-settings-nav {
+    border-bottom: 1px solid var(--border-subtle);
+    border-right: 0;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 10px 12px;
+  }
+  .kubecode-settings-nav > strong { display: none; }
+  .kubecode-settings-nav button { flex: 0 0 auto; }
+  .kubecode-settings-content { min-width: 0; padding: 20px 16px; }
 }
