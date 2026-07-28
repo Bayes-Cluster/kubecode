@@ -1,8 +1,12 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { KubecodeApi, WorkspaceEvent } from './api'
-import { useWorkspaceEventStream, type WorkspaceEventBatch } from './useWorkspaceEventStream'
+import {
+  useWorkspaceEventStream,
+  type WorkspaceEventBatch,
+  type WorkspaceEventReconciliationRequest,
+} from './useWorkspaceEventStream'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -87,6 +91,7 @@ describe('useWorkspaceEventStream', () => {
     expect(batch.plan).toEqual({
       cleanTerminalIds: [],
       refreshGlobalSessions: true,
+      refreshProjectRuns: false,
       refreshProjectSessions: true,
       refreshTeams: true,
       refreshTerminals: true,
@@ -171,6 +176,48 @@ describe('useWorkspaceEventStream', () => {
     expect(stream?.close).not.toHaveBeenCalled()
   })
 
+  it('resets transport state and ownership when the stream identity changes', async () => {
+    const batches: WorkspaceEventBatch[] = []
+    const onReconcile = vi.fn().mockResolvedValue(undefined)
+    const apiA = {
+      workspaceEventStreamUrl: vi.fn((after: number) => `/events-a?after=${after}`),
+    } as unknown as KubecodeApi
+    const apiB = {
+      workspaceEventStreamUrl: vi.fn((after: number) => `/events-b?after=${after}`),
+    } as unknown as KubecodeApi
+    const { result, rerender } = renderHook(
+      ({ streamApi, cursor }) => useWorkspaceEventStream({
+        activeProjectId: 'project-1',
+        api: streamApi,
+        cursor,
+        onBatch: (batch) => batches.push(batch),
+        onReconcile,
+      }),
+      { initialProps: { streamApi: apiA, cursor: 3 } },
+    )
+    const first = FakeEventSource.instances[0]
+    act(() => first?.onopen?.(new Event('open')))
+    act(() => first?.emit(workspaceEvent(4, 'session_updated')))
+    flushFrame()
+    expect(result.current.connectionState).toBe('live')
+    expect(batches[0]?.ownership.isCurrent()).toBe(true)
+    onReconcile.mockClear()
+
+    rerender({ streamApi: apiB, cursor: 9 })
+
+    const second = FakeEventSource.instances[1]
+    expect(first?.close).toHaveBeenCalledOnce()
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(second?.url).toBe('/events-b?after=9')
+    await waitFor(() => expect(result.current.connectionState).toBe('connecting'))
+    expect(result.current.events).toEqual([])
+    expect(batches[0]?.ownership.isCurrent()).toBe(false)
+
+    act(() => second?.onopen?.(new Event('open')))
+    expect(result.current.connectionState).toBe('live')
+    expect(onReconcile).not.toHaveBeenCalled()
+  })
+
   it('closes EventSource and prevents a cancelled frame from committing after unmount', () => {
     const onBatch = vi.fn()
     const { unmount } = renderHook(() => useWorkspaceEventStream({
@@ -190,6 +237,181 @@ describe('useWorkspaceEventStream', () => {
     expect(cancelAnimationFrame).toHaveBeenCalledOnce()
     expect(onBatch).not.toHaveBeenCalled()
   })
+
+  it('runs exactly one full reconciliation for a reconnect epoch', async () => {
+    const recovery = deferred<void>()
+    const onReconcile = vi.fn().mockReturnValue(recovery.promise)
+    const { result } = renderHook(() => useWorkspaceEventStream({
+      activeProjectId: 'project-1',
+      api,
+      cursor: 12,
+      onBatch: vi.fn(),
+      onReconcile,
+    }))
+    const stream = FakeEventSource.instances[0]
+    expect(result.current.connectionState).toBe('connecting')
+    expect(result.current.lastSuccessfulSyncAt).toBeNull()
+
+    act(() => stream?.onopen?.(new Event('open')))
+    expect(result.current.connectionState).toBe('live')
+    expect(result.current.lastSuccessfulSyncAt).toBeNull()
+    act(() => stream?.onerror?.(new Event('error')))
+    expect(result.current.connectionState).toBe('reconnecting')
+    act(() => {
+      stream?.onopen?.(new Event('open'))
+      stream?.onopen?.(new Event('open'))
+    })
+
+    expect(result.current.connectionState).toBe('resynchronizing')
+    expect(onReconcile).toHaveBeenCalledOnce()
+    const request = onReconcile.mock.calls[0]?.[0] as WorkspaceEventReconciliationRequest
+    expect(request.ownership.projectId).toBe('project-1')
+    expect(request.plan).toEqual({
+      cleanTerminalIds: [],
+      refreshGlobalSessions: true,
+      refreshProjectRuns: true,
+      refreshProjectSessions: true,
+      refreshTeams: true,
+      refreshTerminals: true,
+    })
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(stream?.url).toBe('/events?after=12')
+
+    await act(async () => recovery.resolve())
+    expect(result.current.connectionState).toBe('live')
+    expect(result.current.lastSuccessfulSyncAt).toEqual(expect.any(Number))
+  })
+
+  it('keeps failed reconciliation recoverable and retries without reopening the stream', async () => {
+    const first = deferred<void>()
+    const second = deferred<void>()
+    const onReconcile = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const { result } = renderHook(() => useWorkspaceEventStream({
+      activeProjectId: 'project-1',
+      api,
+      cursor: 7,
+      onBatch: vi.fn(),
+      onReconcile,
+    }))
+    const stream = FakeEventSource.instances[0]
+    act(() => stream?.onopen?.(new Event('open')))
+    act(() => stream?.onerror?.(new Event('error')))
+    act(() => stream?.onopen?.(new Event('open')))
+
+    await act(async () => first.reject(new Error('offline snapshot failed')))
+    expect(result.current.connectionState).toBe('reconnecting')
+    expect(result.current.lastSuccessfulSyncAt).toBeNull()
+
+    act(() => result.current.retry())
+    expect(result.current.connectionState).toBe('resynchronizing')
+    expect(onReconcile).toHaveBeenCalledTimes(2)
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(stream?.url).toBe('/events?after=7')
+    await act(async () => second.resolve())
+    expect(result.current.connectionState).toBe('live')
+    expect(result.current.lastSuccessfulSyncAt).toEqual(expect.any(Number))
+  })
+
+  it('supersedes recovery with one new-Project full plan and preserves queued commands', async () => {
+    const first = deferred<void>()
+    const second = deferred<void>()
+    const commands = deferred<void>()
+    const requests: WorkspaceEventReconciliationRequest[] = []
+    const onReconcile = vi.fn((request: WorkspaceEventReconciliationRequest) => {
+      requests.push(request)
+      if (requests.length === 1) return first.promise
+      return requests.length === 2 ? second.promise : commands.promise
+    })
+    const { result, rerender } = renderHook(
+      ({ projectId }) => useWorkspaceEventStream({
+        activeProjectId: projectId,
+        api,
+        cursor: 0,
+        onBatch: vi.fn(),
+        onReconcile,
+      }),
+      { initialProps: { projectId: 'project-1' } },
+    )
+    const stream = FakeEventSource.instances[0]
+    act(() => stream?.onopen?.(new Event('open')))
+    act(() => stream?.onerror?.(new Event('error')))
+    act(() => stream?.onopen?.(new Event('open')))
+    act(() => stream?.emit({
+      ...workspaceEvent(1, 'terminal_exited'),
+      payload: { terminal_id: 'terminal-1', exit_code: 0, signal: null },
+    }))
+    flushFrame()
+    rerender({ projectId: 'project-2' })
+
+    await waitFor(() => expect(onReconcile).toHaveBeenCalledTimes(2))
+    expect(requests[0]?.ownership.isCurrent()).toBe(false)
+    expect(requests[1]?.ownership.projectId).toBe('project-2')
+    await act(async () => first.reject(new Error('stale Project failure')))
+    expect(result.current.connectionState).toBe('resynchronizing')
+    await act(async () => second.resolve())
+    await waitFor(() => expect(onReconcile).toHaveBeenCalledTimes(3))
+    expect(requests[2]?.ownership.projectId).toBe('project-2')
+    expect(requests[2]?.plan.cleanTerminalIds).toEqual(['terminal-1'])
+    await act(async () => commands.resolve())
+    expect(result.current.connectionState).toBe('live')
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+
+  it('folds events during full recovery and drains one coalesced dirty-domain plan', async () => {
+    const full = deferred<void>()
+    const catchUp = deferred<void>()
+    const requests: WorkspaceEventReconciliationRequest[] = []
+    const onBatch = vi.fn()
+    const onReconcile = vi.fn((request: WorkspaceEventReconciliationRequest) => {
+      requests.push(request)
+      return requests.length === 1 ? full.promise : catchUp.promise
+    })
+    const { result } = renderHook(() => useWorkspaceEventStream({
+      activeProjectId: 'project-1',
+      api,
+      cursor: 0,
+      onBatch,
+      onReconcile,
+    }))
+    const stream = FakeEventSource.instances[0]
+    act(() => stream?.onopen?.(new Event('open')))
+    act(() => stream?.onerror?.(new Event('error')))
+    act(() => stream?.onopen?.(new Event('open')))
+    act(() => {
+      stream?.emit(workspaceEvent(1, 'team_task_updated'))
+      stream?.emit(workspaceEvent(2, 'session_updated'))
+      stream?.emit(workspaceEvent(3, 'terminal_updated'))
+      stream?.emit(workspaceEvent(4, 'run_started'))
+    })
+    flushFrame()
+
+    expect(onBatch).toHaveBeenCalledOnce()
+    expect(requests[0]?.eventsSinceStart().map((event) => event.id)).toEqual([1, 2, 3, 4])
+    expect(requests[0]?.dirtyPlanSinceStart()).toEqual({
+      cleanTerminalIds: [],
+      refreshGlobalSessions: true,
+      refreshProjectRuns: true,
+      refreshProjectSessions: true,
+      refreshTeams: true,
+      refreshTerminals: true,
+    })
+    await act(async () => full.resolve())
+
+    await waitFor(() => expect(onReconcile).toHaveBeenCalledTimes(2))
+    expect(requests[1]?.plan).toEqual({
+      cleanTerminalIds: [],
+      refreshGlobalSessions: true,
+      refreshProjectRuns: true,
+      refreshProjectSessions: true,
+      refreshTeams: true,
+      refreshTerminals: true,
+    })
+    expect(result.current.connectionState).toBe('resynchronizing')
+    await act(async () => catchUp.resolve())
+    expect(result.current.connectionState).toBe('live')
+  })
 })
 
 function workspaceEvent(id: number, kind: string): WorkspaceEvent {
@@ -202,4 +424,14 @@ function workspaceEvent(id: number, kind: string): WorkspaceEvent {
     payload: {},
     created_at: 'now',
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, reject, resolve }
 }

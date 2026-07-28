@@ -99,6 +99,7 @@ import {
   useWorkspaceEventStream,
   type WorkspaceEventBatch,
   type WorkspaceEventOwnership,
+  type WorkspaceEventReconciliationRequest,
 } from './useWorkspaceEventStream'
 import {
   readProjectWorkbenchLayout,
@@ -172,7 +173,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const navigatorSearchRef = useRef<HTMLInputElement>(null)
-  const activeProjectIdRef = useRef(projectId)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -218,10 +218,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => {
     writeKubecodeNotifications(localStorage, notifications)
   }, [notifications])
-
-  useEffect(() => {
-    activeProjectIdRef.current = projectId
-  }, [projectId])
 
   useEffect(() => {
     if (!narrowLayout || (!sessionSidebarOpen && !contextOpen)) return
@@ -338,16 +334,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   }, [api, projectId, t])
 
   useEffect(() => {
-    if (!projectId || typeof api.listTeams !== 'function') return
-    const timer = window.setInterval(() => {
-      void api.listTeams(projectId).then((nextTeams) => {
-        if (activeProjectIdRef.current === projectId) setTeams(nextTeams)
-      }).catch(() => undefined)
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [api, projectId])
-
-  useEffect(() => {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
       expandedProjectIds,
@@ -374,51 +360,71 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     setProjectRuns((current) => applyWorkspaceRunEvents(current, batch.events))
     setAllConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
     setConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
+  }, [])
 
-    const { ownership, plan } = batch
+  const handleWorkspaceReconcile = useCallback(async (request: WorkspaceEventReconciliationRequest) => {
+    const { ownership, plan } = request
     const activeProjectId = ownership.projectId
-    if (plan.refreshGlobalSessions && typeof api.listSessions === 'function') {
-      void api.listSessions().then((nextConversations) => {
-        if (ownership.isCurrent()) setAllConversations(nextConversations)
-      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
-    }
-    if (plan.refreshProjectSessions && activeProjectId) {
-      void api.listConversations(activeProjectId).then((nextConversations) => {
-        if (ownership.isCurrent()) setConversations(nextConversations)
-      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
-    }
-    if (plan.refreshTeams && activeProjectId && typeof api.listTeams === 'function') {
-      void api.listTeams(activeProjectId).then((nextTeams) => {
-        if (ownership.isCurrent()) setTeams(nextTeams)
-      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
-    }
-
-    const terminalCloses = plan.cleanTerminalIds.map(async (terminalId) => {
-      try {
-        await api.closeTerminal(terminalId)
-        trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' })
-      } catch (cause) {
-        reportOwnedError(cause, ownership)
-      }
-    })
-    if (plan.refreshTerminals && activeProjectId) {
-      void Promise.all(terminalCloses)
-        .then(() => api.listTerminals(activeProjectId))
-        .then((nextTerminals) => {
-          if (ownership.isCurrent()) setTerminals(nextTerminals)
+    const terminalTask = async () => {
+      const closeResults = await Promise.allSettled(plan.cleanTerminalIds.map((terminalId) => (
+        api.closeTerminal(terminalId).then(() => {
+          trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' })
         })
-        .catch((cause: unknown) => reportOwnedError(cause, ownership))
-    } else {
-      void Promise.all(terminalCloses)
+      )))
+      request.completeCleanTerminalIds(plan.cleanTerminalIds.filter(
+        (_terminalId, index) => closeResults[index]?.status === 'fulfilled',
+      ))
+      const closeFailure = closeResults.find((result) => result.status === 'rejected')
+      if (closeFailure?.status === 'rejected') throw closeFailure.reason
+      return plan.refreshTerminals && activeProjectId
+        ? api.listTerminals(activeProjectId)
+        : undefined
     }
-  }, [api, reportOwnedError])
+    const results = await Promise.allSettled([
+      plan.refreshGlobalSessions && typeof api.listSessions === 'function'
+        ? api.listSessions() : Promise.resolve(undefined),
+      plan.refreshProjectSessions && activeProjectId
+        ? api.listConversations(activeProjectId) : Promise.resolve(undefined),
+      plan.refreshTeams && activeProjectId && typeof api.listTeams === 'function'
+        ? api.listTeams(activeProjectId) : Promise.resolve(undefined),
+      terminalTask(),
+      plan.refreshProjectRuns && activeProjectId && typeof api.listProjectRuns === 'function'
+        ? api.listProjectRuns(activeProjectId) : Promise.resolve(undefined),
+    ])
+    const failure = results.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') {
+      reportOwnedError(failure.reason, ownership)
+      throw failure.reason
+    }
+    if (!ownership.isCurrent()) return
 
-  const handleWorkspaceOpen = useCallback((ownership: WorkspaceEventOwnership) => {
-    const activeProjectId = ownership.projectId
-    if (!activeProjectId || typeof api.listTeams !== 'function') return
-    void api.listTeams(activeProjectId).then((nextTeams) => {
-      if (ownership.isCurrent()) setTeams(nextTeams)
-    }).catch((cause: unknown) => reportOwnedError(cause, ownership))
+    const dirty = request.dirtyPlanSinceStart()
+    const replayEvents = request.eventsSinceStart()
+    const [sessionResult, conversationResult, teamResult, terminalResult, runResult] = results
+    if (sessionResult.status === 'fulfilled' && sessionResult.value && !dirty.refreshGlobalSessions) {
+      setAllConversations(applyWorkspaceConversationEvents(sessionResult.value, replayEvents))
+    }
+    if (conversationResult.status === 'fulfilled' && conversationResult.value
+      && !dirty.refreshProjectSessions) {
+      const nextConversations = applyWorkspaceConversationEvents(conversationResult.value, replayEvents)
+      setConversations(nextConversations)
+      setConversationId((selected) => nextConversations.some((item) => item.id === selected)
+        ? selected : nextConversations.at(-1)?.id ?? null)
+    }
+    if (teamResult.status === 'fulfilled' && teamResult.value && !dirty.refreshTeams) {
+      setTeams(teamResult.value)
+    }
+    if (terminalResult.status === 'fulfilled' && terminalResult.value && !dirty.refreshTerminals) {
+      setTerminals(terminalResult.value)
+      if (activeProjectId) setTerminalsLoadedForProjectId(activeProjectId)
+    }
+    if (runResult.status === 'fulfilled' && runResult.value && activeProjectId
+      && !dirty.refreshProjectRuns) {
+      setProjectRuns((current) => applyWorkspaceRunEvents({
+        ...current,
+        [activeProjectId]: runResult.value,
+      }, replayEvents))
+    }
   }, [api, reportOwnedError])
 
   const {
@@ -430,7 +436,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     api,
     cursor: workspaceCursor,
     onBatch: handleWorkspaceEventBatch,
-    onOpen: handleWorkspaceOpen,
+    onReconcile: handleWorkspaceReconcile,
   })
 
   useEffect(() => {

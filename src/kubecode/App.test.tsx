@@ -546,15 +546,15 @@ describe('Kubecode workspace', () => {
       })).toBeInTheDocument()
 
       act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
-      expect(screen.queryByRole('status', {
+      await waitFor(() => expect(screen.queryByRole('status', {
         name: 'Workspace connection lost. Reconnecting…',
-      })).not.toBeInTheDocument()
+      })).not.toBeInTheDocument())
     } finally {
       globalThis.EventSource = originalEventSource
     }
   })
 
-  it('rehydrates Team snapshots when the workspace event stream reconnects', async () => {
+  it('runs one complete active-Project reconciliation for repeated reconnect opens', async () => {
     const originalEventSource = globalThis.EventSource
     class ReconnectingEventSource {
       static current: ReconnectingEventSource | null = null
@@ -566,17 +566,26 @@ describe('Kubecode workspace', () => {
       close() {}
     }
     globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
-    const listTeams = vi.fn().mockResolvedValue([])
+    let resolveTeams: ((teams: never[]) => void) | undefined
+    const reconnectTeams = new Promise<never[]>((resolve) => { resolveTeams = resolve })
+    const listSessions = vi.fn().mockResolvedValue([])
+    const listConversations = vi.fn().mockResolvedValue([])
+    const listTerminals = vi.fn().mockResolvedValue([])
+    const listProjectRuns = vi.fn().mockResolvedValue([])
+    const listTeams = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(reconnectTeams)
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
       ]),
       listAgents: vi.fn().mockResolvedValue([]),
       listEntries: vi.fn().mockResolvedValue([]),
-      listTerminals: vi.fn().mockResolvedValue([]),
-      listConversations: vi.fn().mockResolvedValue([]),
-      listSessions: vi.fn().mockResolvedValue([]),
+      listTerminals,
+      listConversations,
+      listSessions,
       listTeams,
+      listProjectRuns,
       workspaceEventCursor: vi.fn().mockResolvedValue(0),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
@@ -584,18 +593,118 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
-      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(1))
-      await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
+      await waitFor(() => {
+        expect(listSessions).toHaveBeenCalledTimes(1)
+        expect(listConversations).toHaveBeenCalledTimes(1)
+        expect(listTeams).toHaveBeenCalledTimes(1)
+        expect(listTerminals).toHaveBeenCalledTimes(1)
+        expect(listProjectRuns).toHaveBeenCalledTimes(1)
+        expect(ReconnectingEventSource.current).not.toBeNull()
+      })
 
       act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
+      act(() => ReconnectingEventSource.current?.onerror?.(new Event('error')))
+      act(() => {
+        ReconnectingEventSource.current?.onopen?.(new Event('open'))
+        ReconnectingEventSource.current?.onopen?.(new Event('open'))
+      })
 
-      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+      await waitFor(() => {
+        expect(listSessions).toHaveBeenCalledTimes(2)
+        expect(listConversations).toHaveBeenCalledTimes(2)
+        expect(listTeams).toHaveBeenCalledTimes(2)
+        expect(listTerminals).toHaveBeenCalledTimes(2)
+        expect(listProjectRuns).toHaveBeenCalledTimes(2)
+      })
+      expect(screen.getByRole('status', {
+        name: 'Workspace connection lost. Reconnecting…',
+      })).toBeInTheDocument()
+      await act(async () => resolveTeams?.([]))
+      await waitFor(() => expect(screen.queryByRole('status', {
+        name: 'Workspace connection lost. Reconnecting…',
+      })).not.toBeInTheDocument())
     } finally {
       globalThis.EventSource = originalEventSource
     }
   })
 
-  it('keeps polling Team snapshots after an empty response', async () => {
+  it('does not commit a late sibling snapshot after reconnect reconciliation fails', async () => {
+    const originalEventSource = globalThis.EventSource
+    class ReconnectingEventSource {
+      static current: ReconnectingEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      onopen: ((event: Event) => void) | null = null
+
+      constructor() { ReconnectingEventSource.current = this }
+      addEventListener() {}
+      close() {}
+    }
+    globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
+    const initialSession = {
+      id: 'session-initial',
+      project_id: 'project-1',
+      agent_id: 'codex' as const,
+      provider_session_id: null,
+      title: 'Initial session',
+      manual_title: null,
+      agent_title: 'Initial session',
+    }
+    const lateSession = {
+      ...initialSession,
+      id: 'session-late',
+      title: 'Late failed snapshot',
+      agent_title: 'Late failed snapshot',
+    }
+    let resolveLate: ((sessions: typeof initialSession[]) => void) | undefined
+    const lateConversations = new Promise<typeof initialSession[]>((resolve) => {
+      resolveLate = resolve
+    })
+    const listConversations = vi.fn()
+      .mockResolvedValueOnce([initialSession])
+      .mockReturnValueOnce(lateConversations)
+    const listTeams = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('team recovery failed'))
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations,
+      listSessions: vi.fn().mockResolvedValue([]),
+      listTeams,
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      expect(await screen.findByRole('button', { name: 'Initial session' })).toBeInTheDocument()
+      await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
+
+      act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
+      act(() => ReconnectingEventSource.current?.onerror?.(new Event('error')))
+      act(() => ReconnectingEventSource.current?.onopen?.(new Event('open')))
+
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+      expect(screen.queryByRole('button', { name: 'Late failed snapshot' })).not.toBeInTheDocument()
+      await act(async () => resolveLate?.([lateSession]))
+
+      await waitFor(() => expect(screen.getByRole('status', {
+        name: 'team recovery failed',
+      })).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: 'Initial session' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Late failed snapshot' })).not.toBeInTheDocument()
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
+  it('does not poll Team snapshots on an interval', async () => {
     const intervalSpy = vi.spyOn(window, 'setInterval')
     const listTeams = vi.fn().mockResolvedValue([])
     const api = {
@@ -614,13 +723,7 @@ describe('Kubecode workspace', () => {
     try {
       render(<KubecodeApp api={api} />)
       await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(1))
-      await waitFor(() => expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000))
-      const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 3000)?.[0]
-      expect(poll).toBeTypeOf('function')
-
-      act(() => { if (typeof poll === 'function') poll() })
-
-      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+      expect(intervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 3000)
     } finally {
       intervalSpy.mockRestore()
     }
@@ -706,6 +809,107 @@ describe('Kubecode workspace', () => {
       }))
 
       await waitFor(() => expect(closeTerminal).toHaveBeenCalledWith('terminal-1'))
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
+  it('preserves one clean terminal close across a superseded failed recovery', async () => {
+    const originalEventSource = globalThis.EventSource
+    class TerminalEventSource {
+      static current: TerminalEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      onopen: ((event: Event) => void) | null = null
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+
+      constructor() { TerminalEventSource.current = this }
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      close() {}
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent('workspace_event', { data: JSON.stringify(event) }))
+      }
+    }
+    globalThis.EventSource = TerminalEventSource as unknown as typeof EventSource
+    let rejectHeld: ((reason?: unknown) => void) | undefined
+    let resolveReplacement: ((teams: never[]) => void) | undefined
+    const heldRecovery = new Promise<never[]>((_resolve, reject) => { rejectHeld = reject })
+    const replacementRecovery = new Promise<never[]>((resolve) => { resolveReplacement = resolve })
+    const closeTerminal = vi.fn().mockResolvedValue(undefined)
+    const listTerminals = vi.fn()
+      .mockResolvedValueOnce([terminal('terminal-1')])
+      .mockResolvedValueOnce([terminal('terminal-1')])
+      .mockResolvedValueOnce([terminal('terminal-1')])
+      .mockRejectedValueOnce(new Error('terminal refresh failed'))
+      .mockResolvedValue([terminal('terminal-1')])
+    const listTeams = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(heldRecovery)
+      .mockReturnValueOnce(replacementRecovery)
+      .mockResolvedValue([])
+    const api = {
+      closeTerminal,
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals,
+      listConversations: vi.fn().mockResolvedValue([]),
+      listSessions: vi.fn().mockResolvedValue([]),
+      listTeams,
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await waitFor(() => {
+        expect(listTeams).toHaveBeenCalledTimes(1)
+        expect(TerminalEventSource.current).not.toBeNull()
+      })
+      act(() => TerminalEventSource.current?.onopen?.(new Event('open')))
+      act(() => TerminalEventSource.current?.onerror?.(new Event('error')))
+      act(() => TerminalEventSource.current?.onopen?.(new Event('open')))
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(2))
+
+      act(() => TerminalEventSource.current?.emit({
+        id: 1,
+        kind: 'terminal_exited',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { terminal_id: 'terminal-1', status: 'exited', exit_code: 0, signal: null },
+        created_at: 'now',
+      }))
+      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+      expect(closeTerminal).not.toHaveBeenCalled()
+
+      act(() => TerminalEventSource.current?.onerror?.(new Event('error')))
+      act(() => TerminalEventSource.current?.onopen?.(new Event('open')))
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(3))
+      act(() => TerminalEventSource.current?.emit({
+        id: 2,
+        kind: 'terminal_updated',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { terminal_id: 'terminal-1' },
+        created_at: 'now',
+      }))
+      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+      await act(async () => resolveReplacement?.([]))
+      await waitFor(() => expect(closeTerminal).toHaveBeenCalledTimes(1))
+      await act(async () => rejectHeld?.(new Error('superseded recovery failed')))
+
+      await waitFor(() => expect(listTerminals).toHaveBeenCalledTimes(4))
+      await act(async () => Promise.resolve())
+      act(() => TerminalEventSource.current?.onopen?.(new Event('open')))
+
+      await waitFor(() => expect(listTeams).toHaveBeenCalledTimes(4))
+      expect(closeTerminal).toHaveBeenCalledWith('terminal-1')
+      expect(closeTerminal).toHaveBeenCalledTimes(1)
     } finally {
       globalThis.EventSource = originalEventSource
     }
