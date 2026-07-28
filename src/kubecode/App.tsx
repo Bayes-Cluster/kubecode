@@ -96,6 +96,11 @@ import {
 } from './notificationPreferences'
 import { WorkspaceNotificationBridge } from './WorkspaceNotificationBridge'
 import {
+  useWorkspaceEventStream,
+  type WorkspaceEventBatch,
+  type WorkspaceEventOwnership,
+} from './useWorkspaceEventStream'
+import {
   readProjectWorkbenchLayout,
   readWorkbenchNavigatorLayout,
   writeProjectWorkbenchLayout,
@@ -138,8 +143,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [navigatorQuery, setNavigatorQuery] = useState('')
   const [layoutHydrated, setLayoutHydrated] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [connectionLost, setConnectionLost] = useState(false)
-  const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceEvent[]>([])
   const [workspaceCursor, setWorkspaceCursor] = useState<number | null>(null)
   const [projectRuns, setProjectRuns] = useState<Record<string, AgentRun[]>>({})
   const [notifications, setNotifications] = useState<KubecodeNotifications>(() => (
@@ -183,11 +186,6 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     () => sessionsRequiringInput(projectRuns, sessionCatalog),
     [projectRuns, sessionCatalog],
   )
-  const notificationOnboardingOpen = !notificationOnboardingSuppressed
-    && !notifications.onboardingDismissed
-    && browserPermission === 'default'
-    && workspaceEvents.some((event) => event.kind === 'run_started')
-
   useEffect(() => {
     applyKubecodeAppearance(document, appearance)
     writeKubecodeAppearance(localStorage, appearance)
@@ -368,62 +366,81 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     })
   }, [contextOpen, contextWidth, layoutHydrated, projectId, terminalHeight, terminalOpen])
 
+  const reportOwnedError = useCallback((cause: unknown, ownership: WorkspaceEventOwnership) => {
+    if (ownership.isCurrent()) setError(errorMessage(cause, t('kubecode.error')))
+  }, [t])
+
+  const handleWorkspaceEventBatch = useCallback((batch: WorkspaceEventBatch) => {
+    setProjectRuns((current) => applyWorkspaceRunEvents(current, batch.events))
+    setAllConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
+    setConversations((current) => applyWorkspaceConversationEvents(current, batch.events))
+
+    const { ownership, plan } = batch
+    const activeProjectId = ownership.projectId
+    if (plan.refreshGlobalSessions && typeof api.listSessions === 'function') {
+      void api.listSessions().then((nextConversations) => {
+        if (ownership.isCurrent()) setAllConversations(nextConversations)
+      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
+    }
+    if (plan.refreshProjectSessions && activeProjectId) {
+      void api.listConversations(activeProjectId).then((nextConversations) => {
+        if (ownership.isCurrent()) setConversations(nextConversations)
+      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
+    }
+    if (plan.refreshTeams && activeProjectId && typeof api.listTeams === 'function') {
+      void api.listTeams(activeProjectId).then((nextTeams) => {
+        if (ownership.isCurrent()) setTeams(nextTeams)
+      }).catch((cause: unknown) => reportOwnedError(cause, ownership))
+    }
+
+    const terminalCloses = plan.cleanTerminalIds.map(async (terminalId) => {
+      try {
+        await api.closeTerminal(terminalId)
+        trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' })
+      } catch (cause) {
+        reportOwnedError(cause, ownership)
+      }
+    })
+    if (plan.refreshTerminals && activeProjectId) {
+      void Promise.all(terminalCloses)
+        .then(() => api.listTerminals(activeProjectId))
+        .then((nextTerminals) => {
+          if (ownership.isCurrent()) setTerminals(nextTerminals)
+        })
+        .catch((cause: unknown) => reportOwnedError(cause, ownership))
+    } else {
+      void Promise.all(terminalCloses)
+    }
+  }, [api, reportOwnedError])
+
+  const handleWorkspaceOpen = useCallback((ownership: WorkspaceEventOwnership) => {
+    const activeProjectId = ownership.projectId
+    if (!activeProjectId || typeof api.listTeams !== 'function') return
+    void api.listTeams(activeProjectId).then((nextTeams) => {
+      if (ownership.isCurrent()) setTeams(nextTeams)
+    }).catch((cause: unknown) => reportOwnedError(cause, ownership))
+  }, [api, reportOwnedError])
+
+  const {
+    connectionLost,
+    diagnostic: workspaceEventDiagnostic,
+    events: workspaceEvents,
+  } = useWorkspaceEventStream({
+    activeProjectId: projectId,
+    api,
+    cursor: workspaceCursor,
+    onBatch: handleWorkspaceEventBatch,
+    onOpen: handleWorkspaceOpen,
+  })
+
   useEffect(() => {
-    if (typeof EventSource === 'undefined' || workspaceCursor === null) return
-    const stream = new EventSource(api.workspaceEventStreamUrl(workspaceCursor))
-    const receive = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as WorkspaceEvent
-      setWorkspaceEvents((current) => [...current, event].slice(-2048))
-      setProjectRuns((current) => applyWorkspaceRunEvent(current, event))
-      setAllConversations((current) => applyWorkspaceConversationEvent(current, event))
-      setConversations((current) => applyWorkspaceConversationEvent(current, event))
-      const activeProjectId = activeProjectIdRef.current
-      if (['session_created', 'session_imported', 'session_updated', 'session_removed'].includes(event.kind)) {
-        if (typeof api.listSessions === 'function') void api.listSessions().then(setAllConversations)
-        if (event.project_id === activeProjectId && activeProjectId) {
-          void api.listConversations(activeProjectId).then(setConversations)
-        }
-      }
-      if (event.kind.startsWith('team_') && event.project_id === activeProjectId && activeProjectId) {
-        void api.listTeams(activeProjectId).then((nextTeams) => {
-          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
-        }).catch(() => undefined)
-      }
-      if (isCleanTerminalExit(event)) {
-        const terminalId = event.payload.terminal_id
-        if (typeof terminalId === 'string') {
-          void api.closeTerminal(terminalId)
-            .then(() => trackEvent('kubecode_terminal_auto_closed', { reason: 'clean_exit' }))
-            .then(() => event.project_id === activeProjectId && activeProjectId
-              ? api.listTerminals(activeProjectId).then(setTerminals)
-              : undefined)
-            .catch((cause: unknown) => {
-              setError(errorMessage(cause, t('kubecode.error')))
-              return event.project_id === activeProjectId && activeProjectId
-                ? api.listTerminals(activeProjectId).then(setTerminals)
-                : undefined
-            })
-        }
-        return
-      }
-      if (['terminal_created', 'terminal_updated', 'terminal_exited', 'terminal_closed'].includes(event.kind)
-        && event.project_id === activeProjectId && activeProjectId) {
-        void api.listTerminals(activeProjectId).then(setTerminals)
-      }
-    }
-    stream.addEventListener('workspace_event', receive as EventListener)
-    stream.onopen = () => {
-      setConnectionLost(false)
-      const activeProjectId = activeProjectIdRef.current
-      if (activeProjectId && typeof api.listTeams === 'function') {
-        void api.listTeams(activeProjectId).then((nextTeams) => {
-          if (activeProjectIdRef.current === activeProjectId) setTeams(nextTeams)
-        }).catch(() => undefined)
-      }
-    }
-    stream.onerror = () => setConnectionLost(true)
-    return () => stream.close()
-  }, [api, t, workspaceCursor])
+    if (workspaceEventDiagnostic) setError(t('kubecode.error'))
+  }, [t, workspaceEventDiagnostic])
+
+  const notificationOnboardingOpen = !notificationOnboardingSuppressed
+    && !notifications.onboardingDismissed
+    && browserPermission === 'default'
+    && workspaceEvents.some((event) => event.kind === 'run_started')
 
   const resizeSessionSidebar = useCallback((delta: number) => {
     setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
@@ -1008,6 +1025,13 @@ function applyWorkspaceRunEvent(
   }
 }
 
+function applyWorkspaceRunEvents(
+  current: Record<string, AgentRun[]>,
+  events: WorkspaceEvent[],
+): Record<string, AgentRun[]> {
+  return events.reduce(applyWorkspaceRunEvent, current)
+}
+
 function applyWorkspaceConversationEvent(
   current: Conversation[],
   event: WorkspaceEvent,
@@ -1021,6 +1045,13 @@ function applyWorkspaceConversationEvent(
   return current.map((conversation) => conversation.id === event.conversation_id
     ? { ...conversation, latest_run_status: status }
     : conversation)
+}
+
+function applyWorkspaceConversationEvents(
+  current: Conversation[],
+  events: WorkspaceEvent[],
+): Conversation[] {
+  return events.reduce(applyWorkspaceConversationEvent, current)
 }
 
 function eventRunStatus(event: WorkspaceEvent): RunStatus | null {
@@ -2111,12 +2142,6 @@ function useNarrowWorkbench(): boolean {
   }, [])
 
   return narrow
-}
-
-function isCleanTerminalExit(event: WorkspaceEvent): boolean {
-  return event.kind === 'terminal_exited'
-    && event.payload.exit_code === 0
-    && event.payload.signal === null
 }
 
 function availableWidth(element: HTMLElement | null): number {

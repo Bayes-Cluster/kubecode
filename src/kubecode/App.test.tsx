@@ -332,7 +332,7 @@ describe('Kubecode workspace', () => {
         payload: {},
         created_at: 'now',
       }))
-      expect(button).toHaveAttribute('data-session-status', 'running')
+      await waitFor(() => expect(button).toHaveAttribute('data-session-status', 'running'))
 
       act(() => ActivityEventSource.current?.emit({
         id: 2,
@@ -343,7 +343,176 @@ describe('Kubecode workspace', () => {
         payload: {},
         created_at: 'now',
       }))
-      expect(button).toHaveAttribute('data-session-status', 'stuck')
+      await waitFor(() => expect(button).toHaveAttribute('data-session-status', 'stuck'))
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
+  it('reconciles a 100-event workspace burst once per affected resource type', async () => {
+    const originalEventSource = globalThis.EventSource
+    class BurstEventSource {
+      static current: BurstEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+
+      constructor() { BurstEventSource.current = this }
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      close() {}
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent('workspace_event', { data: JSON.stringify(event) }))
+      }
+    }
+    globalThis.EventSource = BurstEventSource as unknown as typeof EventSource
+    const listSessions = vi.fn().mockResolvedValue([])
+    const listConversations = vi.fn().mockResolvedValue([])
+    const listTeams = vi.fn().mockResolvedValue([])
+    const listTerminals = vi.fn().mockResolvedValue([])
+    const closeTerminal = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listSessions,
+      listConversations,
+      listTeams,
+      listTerminals,
+      closeTerminal,
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      await waitFor(() => {
+        expect(listSessions).toHaveBeenCalledTimes(1)
+        expect(listConversations).toHaveBeenCalledTimes(1)
+        expect(listTeams).toHaveBeenCalledTimes(1)
+        expect(listTerminals).toHaveBeenCalledTimes(1)
+        expect(BurstEventSource.current).not.toBeNull()
+      })
+
+      act(() => {
+        for (let id = 100; id >= 1; id -= 1) {
+          const kinds = ['session_updated', 'team_task_updated', 'terminal_exited', 'run_started']
+          const kind = kinds[id % kinds.length]
+          BurstEventSource.current?.emit({
+            id,
+            kind,
+            project_id: 'project-1',
+            conversation_id: 'session-1',
+            run_id: 'run-1',
+            payload: kind === 'terminal_exited'
+              ? { terminal_id: 'terminal-1', exit_code: 0, signal: null }
+              : {},
+            created_at: 'now',
+          })
+        }
+      })
+
+      await waitFor(() => {
+        expect(listSessions).toHaveBeenCalledTimes(2)
+        expect(listConversations).toHaveBeenCalledTimes(2)
+        expect(listTeams).toHaveBeenCalledTimes(2)
+        expect(listTerminals).toHaveBeenCalledTimes(2)
+        expect(closeTerminal).toHaveBeenCalledTimes(1)
+      })
+      await new Promise((resolve) => window.setTimeout(resolve, 20))
+      expect(listSessions).toHaveBeenCalledTimes(2)
+      expect(listConversations).toHaveBeenCalledTimes(2)
+      expect(listTeams).toHaveBeenCalledTimes(2)
+      expect(listTerminals).toHaveBeenCalledTimes(2)
+      expect(closeTerminal).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
+  it('does not commit an event reconciliation response after the active Project changes', async () => {
+    const originalEventSource = globalThis.EventSource
+    class ProjectEventSource {
+      static current: ProjectEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+
+      constructor() { ProjectEventSource.current = this }
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      close() {}
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent('workspace_event', { data: JSON.stringify(event) }))
+      }
+    }
+    globalThis.EventSource = ProjectEventSource as unknown as typeof EventSource
+    const firstSession = {
+      id: 'session-first',
+      project_id: 'project-1',
+      agent_id: 'codex' as const,
+      provider_session_id: null,
+      title: 'First Project session',
+      manual_title: null,
+      agent_title: null,
+    }
+    const staleSession = { ...firstSession, id: 'session-stale', title: 'Stale Project session' }
+    const secondSession = {
+      ...firstSession,
+      id: 'session-second',
+      project_id: 'project-2',
+      title: 'Second Project session',
+    }
+    let resolveStale: ((sessions: typeof firstSession[]) => void) | undefined
+    const staleResponse = new Promise<typeof firstSession[]>((resolve) => { resolveStale = resolve })
+    let firstProjectCalls = 0
+    const listConversations = vi.fn().mockImplementation((nextProjectId: string) => {
+      if (nextProjectId === 'project-2') return Promise.resolve([secondSession])
+      firstProjectCalls += 1
+      return firstProjectCalls === 1 ? Promise.resolve([firstSession]) : staleResponse
+    })
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'First', path: '/first' },
+        { id: 'project-2', name: 'Second', path: '/second' },
+      ]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listConversations,
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listTeams: vi.fn().mockResolvedValue([]),
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+
+    try {
+      render(<KubecodeApp api={api} />)
+      expect(await screen.findByRole('button', { name: 'First Project session' })).toBeInTheDocument()
+      await waitFor(() => expect(ProjectEventSource.current).not.toBeNull())
+
+      act(() => ProjectEventSource.current?.emit({
+        id: 1,
+        kind: 'session_updated',
+        project_id: 'project-1',
+        conversation_id: 'session-first',
+        run_id: null,
+        payload: {},
+        created_at: 'now',
+      }))
+      await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Second' }))
+      expect(await screen.findByRole('button', { name: 'Second Project session' })).toBeInTheDocument()
+      await act(async () => resolveStale?.([staleSession]))
+
+      expect(screen.getByRole('button', { name: 'Second Project session' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Stale Project session' })).not.toBeInTheDocument()
     } finally {
       globalThis.EventSource = originalEventSource
     }
