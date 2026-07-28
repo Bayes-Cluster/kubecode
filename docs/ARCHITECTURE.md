@@ -371,9 +371,14 @@ including a batched Agent Runtime flush, publish their newest cursor only after
 the complete transaction commits. Failed or rolled-back writes are silent.
 The latest-value wakeup may coalesce, so consumers subscribe before a final
 durable catch-up read and always replay SQLite from their own cursor. Delayed
-concurrent publications cannot lower the visible cursor. Dropping the shared
-store during Runtime shutdown closes the bus and releases waiting consumers;
-the bus owns no payload queue or shutdown task.
+concurrent publications cannot lower the visible cursor. Each SSE response
+buffers at most one ordered 512-row SQLite page, drains it according to body
+demand, and waits on its own watch receiver when caught up, so a stalled browser
+cannot block writers or other consumers. A 30-second defensive read recovers a
+durable row if its wake publication is missed. The response holds only a weak
+store reference while idle; dropping the shared store during Runtime shutdown
+closes the bus and releases waiting consumers. The bus owns no payload queue or
+shutdown task.
 ACP text and thinking fragments are combined by a connection-scoped journal
 for a fixed window of up to 33 milliseconds anchored at its first fragment.
 Semantic and lifecycle events force an immediate flush, and one SQLite

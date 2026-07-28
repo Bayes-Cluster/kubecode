@@ -324,8 +324,13 @@ The watched cursor is not a payload or delivery acknowledgment: consumers
 subscribe before their final catch-up read and query ordered SQLite pages after
 their own durable cursor. Several writes may therefore coalesce into one wakeup
 without losing an event, and a late subscriber starts at the latest committed
-cursor. The bus has no worker or buffered event queue; dropping its owning store
-closes the channel and releases subscribers during Runtime shutdown.
+cursor. An SSE consumer holds at most one 512-event durable page, drains it in
+order according to client demand, and then waits on its private watch receiver.
+This bounds per-client buffering and isolates slow clients from writers and
+other consumers. A 30-second safety read repairs a missed wake publication. The
+bus has no worker or buffered event queue; SSE waits retain only a weak store
+reference, so dropping the owning store closes the channel and releases
+subscribers during Runtime shutdown.
 
 ## Explorer workbench
 

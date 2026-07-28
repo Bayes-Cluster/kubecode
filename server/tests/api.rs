@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::{Body, BodyDataStream, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
+use futures_util::StreamExt;
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_runtime::{AgentRuntimeSessionCounts, StartAgentRun};
 use kubecode_server::agents::{
@@ -21,6 +22,311 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 const BASE_PATH: &str = "/user/alice/kubecode";
+
+#[derive(Debug)]
+struct ReceivedWorkspaceEvent {
+    id: u64,
+    event: String,
+    payload: Value,
+}
+
+struct WorkspaceSseReader {
+    stream: BodyDataStream,
+    buffer: String,
+}
+
+impl WorkspaceSseReader {
+    fn new(body: Body) -> Self {
+        Self {
+            stream: body.into_data_stream(),
+            buffer: String::new(),
+        }
+    }
+
+    async fn next_workspace_event(&mut self) -> Option<ReceivedWorkspaceEvent> {
+        loop {
+            while let Some(boundary) = self.buffer.find("\n\n") {
+                let frame = self.buffer[..boundary].to_owned();
+                self.buffer.drain(..boundary + 2);
+                let mut id = None;
+                let mut event = None;
+                let mut data = String::new();
+                for line in frame.lines() {
+                    if let Some(value) = line.strip_prefix("id:") {
+                        id = value.trim().parse::<u64>().ok();
+                    } else if let Some(value) = line.strip_prefix("event:") {
+                        event = Some(value.trim().to_owned());
+                    } else if let Some(value) = line.strip_prefix("data:") {
+                        if !data.is_empty() {
+                            data.push('\n');
+                        }
+                        data.push_str(value.trim_start());
+                    }
+                }
+                if event.as_deref() != Some("workspace_event") {
+                    continue;
+                }
+                let id = id.expect("workspace SSE event id");
+                let payload = serde_json::from_str::<Value>(&data).expect("workspace SSE JSON");
+                assert_eq!(payload["id"], id);
+                return Some(ReceivedWorkspaceEvent {
+                    id,
+                    event: event.expect("workspace SSE event name"),
+                    payload,
+                });
+            }
+
+            let chunk = self.stream.next().await?;
+            let chunk = chunk.expect("workspace SSE body");
+            self.buffer
+                .push_str(std::str::from_utf8(&chunk).expect("workspace SSE UTF-8"));
+        }
+    }
+}
+
+fn workspace_sse_app() -> (TempDir, std::path::PathBuf, Arc<AgentStore>, Router) {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+    (temp, database_path, store, app)
+}
+
+async fn workspace_sse_reader(
+    app: &Router,
+    after: u64,
+    last_event_id: Option<u64>,
+) -> WorkspaceSseReader {
+    let mut request = Request::builder()
+        .uri(format!("{BASE_PATH}/api/v1/events?after={after}"))
+        .body(Body::empty())
+        .expect("workspace event request");
+    if let Some(last_event_id) = last_event_id {
+        request.headers_mut().insert(
+            "last-event-id",
+            last_event_id.to_string().parse().expect("last event id"),
+        );
+    }
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("workspace event response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/event-stream"
+    );
+    WorkspaceSseReader::new(response.into_body())
+}
+
+fn append_test_workspace_event(store: &AgentStore, value: usize) -> u64 {
+    store
+        .append_workspace_event(
+            "test_event",
+            Some("project"),
+            None,
+            None,
+            &json!({"value":value}),
+        )
+        .expect("workspace event")
+        .id
+}
+
+async fn collect_workspace_event_ids(mut reader: WorkspaceSseReader, count: usize) -> Vec<u64> {
+    let mut ids = Vec::with_capacity(count);
+    while ids.len() < count {
+        ids.push(
+            reader
+                .next_workspace_event()
+                .await
+                .expect("workspace event")
+                .id,
+        );
+    }
+    ids
+}
+
+#[tokio::test]
+async fn workspace_sse_wakes_after_an_empty_catch_up_without_missing_a_boundary_commit() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let cursor = store.latest_workspace_event_id().expect("workspace cursor");
+    let mut reader = workspace_sse_reader(&app, cursor, None).await;
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), reader.next_workspace_event())
+            .await
+            .is_err()
+    );
+    let committed = append_test_workspace_event(&store, 1);
+    let received = tokio::time::timeout(Duration::from_secs(1), reader.next_workspace_event())
+        .await
+        .expect("workspace event wakeup")
+        .expect("workspace event");
+
+    assert_eq!(received.id, committed);
+    assert_eq!(received.event, "workspace_event");
+    assert_eq!(received.payload["kind"], "test_event");
+}
+
+#[tokio::test]
+async fn workspace_sse_replays_coalesced_events_across_multiple_bounded_pages() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let boundary = append_test_workspace_event(&store, 0);
+    let reader = workspace_sse_reader(&app, boundary, None).await;
+    let expected = (1..=513)
+        .map(|value| append_test_workspace_event(&store, value))
+        .collect::<Vec<_>>();
+
+    let received = tokio::time::timeout(
+        Duration::from_secs(3),
+        collect_workspace_event_ids(reader, expected.len()),
+    )
+    .await
+    .expect("multi-page workspace replay");
+
+    assert_eq!(received, expected);
+    assert!(received.iter().all(|id| *id > boundary));
+}
+
+#[tokio::test]
+async fn workspace_sse_reconnects_from_after_or_last_event_id_without_duplicates() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let first = append_test_workspace_event(&store, 1);
+    let second = append_test_workspace_event(&store, 2);
+    let third = append_test_workspace_event(&store, 3);
+
+    let mut after_reader = workspace_sse_reader(&app, first, None).await;
+    assert_eq!(
+        after_reader
+            .next_workspace_event()
+            .await
+            .expect("after replay")
+            .id,
+        second
+    );
+
+    let mut header_reader = workspace_sse_reader(&app, first, Some(second)).await;
+    assert_eq!(
+        header_reader
+            .next_workspace_event()
+            .await
+            .expect("Last-Event-ID replay")
+            .id,
+        third
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn workspace_sse_slow_consumer_does_not_delay_writers_or_fast_consumers() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let slow = workspace_sse_reader(&app, 0, None).await;
+    let first_fast = workspace_sse_reader(&app, 0, None).await;
+    let second_fast = workspace_sse_reader(&app, 0, None).await;
+    let writer_store = Arc::clone(&store);
+    let writer = tokio::task::spawn_blocking(move || {
+        (0..64)
+            .map(|value| append_test_workspace_event(&writer_store, value))
+            .collect::<Vec<_>>()
+    });
+    let first_consumer = tokio::spawn(collect_workspace_event_ids(first_fast, 64));
+    let second_consumer = tokio::spawn(collect_workspace_event_ids(second_fast, 64));
+
+    let expected = tokio::time::timeout(Duration::from_secs(2), writer)
+        .await
+        .expect("workspace writer was not blocked")
+        .expect("workspace writer task");
+    let first_received = tokio::time::timeout(Duration::from_secs(2), first_consumer)
+        .await
+        .expect("first fast consumer")
+        .expect("first consumer task");
+    let second_received = tokio::time::timeout(Duration::from_secs(2), second_consumer)
+        .await
+        .expect("second fast consumer")
+        .expect("second consumer task");
+
+    assert_eq!(first_received, expected);
+    assert_eq!(second_received, expected);
+    let mut slow = slow;
+    assert_eq!(
+        slow.next_workspace_event()
+            .await
+            .expect("slow consumer replay")
+            .id,
+        expected[0]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn workspace_sse_uses_a_low_frequency_safety_check_for_lost_notifications() {
+    let (_temp, database_path, _store, app) = workspace_sse_app();
+    let reader = workspace_sse_reader(&app, 0, None).await;
+    let recovery = tokio::spawn(collect_workspace_event_ids(reader, 1));
+    tokio::task::yield_now().await;
+
+    let connection = rusqlite::Connection::open(database_path).expect("recovery connection");
+    connection
+        .execute(
+            "INSERT INTO workspace_events
+             (kind, project_id, conversation_id, run_id, payload)
+             VALUES ('recovered_event', NULL, NULL, NULL, '{}')",
+            [],
+        )
+        .expect("durable event without bus notification");
+    let committed = u64::try_from(connection.last_insert_rowid()).expect("workspace cursor");
+
+    tokio::time::advance(Duration::from_millis(150)).await;
+    tokio::task::yield_now().await;
+    assert!(!recovery.is_finished());
+    tokio::time::advance(Duration::from_secs(29)).await;
+    tokio::task::yield_now().await;
+    assert!(!recovery.is_finished());
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let received = recovery.await.expect("recovery task");
+
+    assert_eq!(received, vec![committed]);
+}
+
+#[tokio::test]
+async fn workspace_sse_drains_committed_events_then_releases_on_store_shutdown() {
+    let (_temp, _database, store, app) = workspace_sse_app();
+    let first = append_test_workspace_event(&store, 1);
+    let second = append_test_workspace_event(&store, 2);
+    let mut reader = workspace_sse_reader(&app, 0, None).await;
+
+    assert_eq!(
+        reader
+            .next_workspace_event()
+            .await
+            .expect("first committed event")
+            .id,
+        first
+    );
+    assert_eq!(
+        reader
+            .next_workspace_event()
+            .await
+            .expect("second committed event")
+            .id,
+        second
+    );
+
+    drop(app);
+    drop(store);
+    let closed = tokio::time::timeout(Duration::from_secs(1), reader.next_workspace_event())
+        .await
+        .expect("waiting stream released");
+    assert!(closed.is_none());
+}
 
 fn app() -> (TempDir, Router) {
     let temp = TempDir::new().expect("tempdir");

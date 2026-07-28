@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::convert::Infallible;
 use std::path::Path as FileSystemPath;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use axum::Json;
@@ -33,6 +33,7 @@ use crate::terminal::{
 use crate::workspace::{DirectoryListing, EntryKind, Project, WorkspaceError, WorkspaceService};
 
 const API_PATH: &str = "/api/v1";
+const WORKSPACE_EVENT_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -1451,7 +1452,9 @@ struct AgentEventStreamState {
 }
 
 struct WorkspaceEventStreamState {
-    store: Arc<AgentStore>,
+    store: Weak<AgentStore>,
+    wakeups: tokio::sync::watch::Receiver<u64>,
+    recovery: tokio::time::Interval,
     cursor: u64,
     pending: VecDeque<WorkspaceEvent>,
 }
@@ -1466,9 +1469,18 @@ async fn stream_workspace_events(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(query.after);
+    let store = state.agent_runtime.store();
+    let wakeups = store.workspace_event_bus().subscribe();
+    let mut recovery = tokio::time::interval_at(
+        tokio::time::Instant::now() + WORKSPACE_EVENT_RECOVERY_INTERVAL,
+        WORKSPACE_EVENT_RECOVERY_INTERVAL,
+    );
+    recovery.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let stream = futures_util::stream::unfold(
         WorkspaceEventStreamState {
-            store: state.agent_runtime.store(),
+            store: Arc::downgrade(&store),
+            wakeups,
+            recovery,
             cursor,
             pending: VecDeque::new(),
         },
@@ -1483,13 +1495,28 @@ async fn stream_workspace_events(
                         .unwrap_or_else(|_| Event::default().event("serialization_error"));
                     return Some((Ok(event), state));
                 }
-                state.pending = state
-                    .store
+                let store = state.store.upgrade()?;
+                state.pending = store
                     .workspace_events_after(state.cursor)
                     .unwrap_or_default()
                     .into();
-                if state.pending.is_empty() {
-                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                drop(store);
+                if !state.pending.is_empty() {
+                    continue;
+                }
+
+                let latest_wakeup = *state.wakeups.borrow_and_update();
+                if latest_wakeup > state.cursor {
+                    continue;
+                }
+
+                tokio::select! {
+                    changed = state.wakeups.changed() => {
+                        if changed.is_err() {
+                            return None;
+                        }
+                    }
+                    _ = state.recovery.tick() => {}
                 }
             }
         },
