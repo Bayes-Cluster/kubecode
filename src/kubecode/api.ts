@@ -1,7 +1,8 @@
 export type Project = {
   id: string
   name: string
-  path: string
+  /** Legacy test/adapter input. The Runtime no longer returns server paths. */
+  path?: string
   workspaces_enabled: boolean
 }
 export type DirectoryEntry = { name: string; path: string; hidden: boolean }
@@ -12,6 +13,7 @@ export type Entry = {
   kind: 'file' | 'directory'
   hidden?: boolean
   ignored?: boolean
+  generated?: boolean
 }
 export type TextDocument = { path: string; content: string; revision: string }
 export type AgentId = 'claude_code' | 'codex' | 'opencode'

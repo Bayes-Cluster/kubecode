@@ -7,28 +7,23 @@ import {
   askClaudeSideQuestion,
 } from '../packaging/adapter-runtime/claude-agent-acp.mjs'
 
-test('backports non-blocking Claude session creation to the pinned adapter', async () => {
+test('pins the current Claude adapter with upstream non-blocking session creation', async () => {
   const adapterPackage = JSON.parse(await readFile(
     new URL('../packaging/adapter-runtime/package.json', import.meta.url),
     'utf8',
   ))
-  const rootPackage = JSON.parse(await readFile(
-    new URL('../package.json', import.meta.url),
-    'utf8',
-  ))
-  const patch = await readFile(
-    new URL('../patches/@agentclientprotocol__claude-agent-acp@0.59.0.patch', import.meta.url),
-    'utf8',
-  )
+  const adapterVersion = adapterPackage.dependencies['@agentclientprotocol/claude-agent-acp']
+  assert.equal(adapterVersion, '0.61.0')
+  assert.equal(adapterPackage.dependencies['@anthropic-ai/claude-agent-sdk'], '0.3.217')
 
-  assert.equal(adapterPackage.dependencies['@agentclientprotocol/claude-agent-acp'], '0.59.0')
-  assert.equal(adapterPackage.dependencies['@anthropic-ai/claude-agent-sdk'], '0.3.207')
-  assert.equal(
-    rootPackage.pnpm.patchedDependencies['@agentclientprotocol/claude-agent-acp@0.59.0'],
-    'patches/@agentclientprotocol__claude-agent-acp@0.59.0.patch',
+  const standaloneSmoke = await readFile(
+    new URL('./smoke-standalone.sh', import.meta.url),
+    'utf8',
   )
-  assert.match(patch, /const contextWindowSize = inferContextWindowFromModel/)
-  assert.doesNotMatch(patch, /^\+.*fetchContextWindowSize\(q/m)
+  const smokeVersion = standaloneSmoke.match(
+    /claude-agent-acp" --version \| grep -Fx "([^"]+)"/,
+  )?.[1]
+  assert.equal(smokeVersion, adapterVersion)
 })
 
 test('advertises and dispatches the native Claude side-question extension', async () => {

@@ -44,3 +44,8 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0197](0197-session-context-terminal-cwd.md) | Session-context terminal cwd |
 | [0198](0198-provider-native-session-mode-ownership.md) | Provider-native Session mode ownership |
 | [0199](0199-claude-side-questions-and-consolidated-agent-control.md) | Claude side questions and consolidated Agent control |
+| [0200](0200-single-owner-sqlite-and-recoverable-task-cancellation.md) | Single-owner SQLite and recoverable task cancellation |
+| [0201](0201-authenticated-headless-runtime-clients.md) | Authenticated headless Runtime clients |
+| [0202](0202-managed-runtime-agent-discovery-without-login-shells.md) | Managed Runtime Agent discovery without login shells |
+| [0203](0203-batched-agent-runtime-events.md) | Batched Agent Runtime events |
+| [0204](0204-bounded-tokio-acp-session-actors.md) | Bounded Tokio ACP Session actors |

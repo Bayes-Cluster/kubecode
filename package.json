@@ -81,9 +81,6 @@
     "ws": "^8.19.0"
   },
   "pnpm": {
-    "patchedDependencies": {
-      "@agentclientprotocol/claude-agent-acp@0.59.0": "patches/@agentclientprotocol__claude-agent-acp@0.59.0.patch"
-    },
     "overrides": {
       "@hono/node-server": "1.19.13",
       "express-rate-limit": "8.2.2",

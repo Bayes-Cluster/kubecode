@@ -29,8 +29,10 @@ Session 不应该新建 Terminal。
 
 ## Process Exit
 
-输入 `exit` 或按 `Ctrl+D` 会结束 Shell。Kubecode 收到 Process Exit Event 后会
-关闭对应 PTY Entry，而不是保留一个冻结的 Terminal Tab。
+输入 `exit` 或按 `Ctrl+D` 通常会以退出码 0 结束 Shell。Kubecode 收到
+Process Exit Event 后会关闭对应 PTY Entry。如果 Terminal 以非零退出码
+结束，它会保留退出状态和 Scrollback，便于检查失败原因；用户可以关闭它，
+或在原 Session Workspace 中重新启动。
 
 Agent TUI 遵循相同生命周期。认证与交互命令由 Agent CLI 实现，不由 Kubecode
 实现。

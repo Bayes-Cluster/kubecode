@@ -591,7 +591,7 @@ function TaskInspector({
                   )}
                 </>
               )}
-              {task.status === 'failed' && (
+              {['failed', 'cancelled'].includes(task.status) && (
                 <Button
                   disabled={busyAction !== null}
                   variant="outline"

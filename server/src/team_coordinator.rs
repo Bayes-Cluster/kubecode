@@ -4,8 +4,8 @@ use thiserror::Error;
 
 use crate::agents::{AgentId, AgentStore, Conversation, ExecutionMode, StoreError};
 use crate::teams::{
-    MemberWorkspaceMode, NewDiscriminator, NewTeammate, Team, TeamError, TeamMember,
-    TeamMessageKind, TeamRole, TeamStatus, TeamStore,
+    MemberWorkspaceMode, NewDiscriminator, NewTeammate, Team, TeamError, TeamMember, TeamRole,
+    TeamStatus, TeamStore,
 };
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
@@ -186,21 +186,8 @@ impl TeamCoordinator {
         result: &str,
         verification: Option<&str>,
     ) -> Result<(), CoordinatorError> {
-        let task = self.teams.submit_result(
-            task_id,
-            member_id,
-            result,
-            verification.unwrap_or_default(),
-        )?;
-        let team = self.teams.get_team(&task.team_id)?;
-        self.teams.send_message(
-            &team.id,
-            member_id,
-            &team.leader_member_id,
-            TeamMessageKind::ResultReady,
-            Some(task_id),
-            result,
-        )?;
+        self.teams
+            .submit_result(task_id, member_id, result, verification.unwrap_or_default())?;
         Ok(())
     }
 
@@ -221,16 +208,6 @@ impl TeamCoordinator {
         let reviewed = self
             .teams
             .review_result(task_id, leader_member_id, accept, feedback)?;
-        if !accept && let Some(assignee) = reviewed.assignee_member_id.as_deref() {
-            self.teams.send_message(
-                &team.id,
-                leader_member_id,
-                assignee,
-                TeamMessageKind::ChangesRequested,
-                Some(task_id),
-                feedback.unwrap_or("Changes requested"),
-            )?;
-        }
         Ok(reviewed)
     }
 

@@ -722,7 +722,7 @@ impl TeamMcpServer {
     }
 
     #[tool(
-        description = "Leader only: reopen a failed task after inspecting its structured attempt failure, so it can be assigned again or claimed by another teammate."
+        description = "Leader only: reopen a failed or cancelled task so it becomes required work and can be assigned again or claimed by another teammate."
     )]
     async fn team_retry_task(
         &self,
@@ -739,7 +739,7 @@ impl TeamMcpServer {
     }
 
     #[tool(
-        description = "Leader only: cancel concrete work that is no longer required. This closes any active attempt and never assigns implementation work to the Leader."
+        description = "Leader only: cancel concrete work that is no longer required. This closes active attempts and deliveries, and the task no longer blocks Team completion."
     )]
     async fn team_cancel_task(
         &self,
@@ -753,17 +753,6 @@ impl TeamMcpServer {
                 &input.task_id,
                 &self.context.member.id,
                 input.reason.as_deref(),
-            )
-            .map_err(mcp_error)?;
-        self.context
-            .teams
-            .append_activity(
-                &task.team_id,
-                Some(&self.context.member.id),
-                Some(&task.id),
-                "task_cancelled",
-                &task.title,
-                None,
             )
             .map_err(mcp_error)?;
         publish_team_event(&self.context, "team_task_updated", None);

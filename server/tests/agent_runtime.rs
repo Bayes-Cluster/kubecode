@@ -82,6 +82,191 @@ done"#,
 }
 
 #[tokio::test]
+async fn bounds_the_idle_warm_session_pool() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "bounded-warm-sessions")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"warm-session\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+
+    for index in 0..6 {
+        let conversation = store
+            .create_conversation(
+                &project.id,
+                AgentId::OpenCode,
+                Some(&format!("Session {index}")),
+            )
+            .expect("conversation");
+        runtime
+            .initialize_conversation(&conversation.id)
+            .await
+            .expect("initialize warm session");
+    }
+
+    assert_eq!(runtime.session_counts().active, 0);
+    assert_eq!(runtime.session_counts().idle, 4);
+}
+
+#[tokio::test]
+async fn warm_session_eviction_never_removes_an_active_run() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "active-session-protection")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"active-session\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let active = store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Active"))
+        .expect("active conversation");
+    runtime
+        .initialize_conversation(&active.id)
+        .await
+        .expect("initialize active conversation");
+    runtime
+        .start(StartAgentRun {
+            conversation_id: active.id.clone(),
+            project_id: project.id.clone(),
+            message: "Keep running".into(),
+        })
+        .expect("start active run");
+
+    for index in 0..5 {
+        let idle = store
+            .create_conversation(
+                &project.id,
+                AgentId::OpenCode,
+                Some(&format!("Idle {index}")),
+            )
+            .expect("idle conversation");
+        runtime
+            .initialize_conversation(&idle.id)
+            .await
+            .expect("initialize idle conversation");
+    }
+
+    assert_eq!(runtime.session_counts().active, 1);
+    assert_eq!(runtime.session_counts().idle, 4);
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runtime.disconnect_conversation(&active.id),
+    )
+    .await
+    .expect("active disconnect timeout")
+    .expect("disconnect active conversation");
+}
+
+#[tokio::test]
+async fn ephemeral_initialization_persists_provider_state_without_a_warm_actor() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "ephemeral-session")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"ephemeral-provider-session\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+
+    runtime
+        .initialize_conversation_ephemeral(&conversation.id)
+        .await
+        .expect("ephemeral initialization");
+
+    assert_eq!(runtime.session_counts().active, 0);
+    assert_eq!(runtime.session_counts().idle, 0);
+    assert_eq!(
+        store
+            .get_conversation(&conversation.id)
+            .expect("conversation")
+            .provider_session_id
+            .as_deref(),
+        Some("ephemeral-provider-session")
+    );
+}
+
+#[tokio::test]
 async fn initializes_an_opencode_yolo_teammate_with_an_object_permission_override() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -371,6 +556,18 @@ done"#,
     assert!(events.iter().any(|event| {
         event.kind == "text_delta" && event.payload["text"] == "Earlier response"
     }));
+    let history_end = events
+        .iter()
+        .rposition(|event| matches!(event.kind.as_str(), "user_message_delta" | "text_delta"))
+        .expect("history events");
+    let loaded = events
+        .iter()
+        .position(|event| event.kind == "session_loaded")
+        .expect("load checkpoint");
+    assert!(
+        history_end < loaded,
+        "history must precede the load checkpoint"
+    );
     assert_eq!(
         store
             .get_conversation(&conversation.id)
@@ -406,6 +603,10 @@ async fn changes_native_config_and_disconnects_while_a_prompt_is_running() {
       ;;
     *'"method":"session/set_mode"'*)
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-config","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Pending "},"messageId":"disconnect-tail"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-config","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"output"},"messageId":"disconnect-tail"}}}'
       ;;
   esac
 done"#,
@@ -469,7 +670,14 @@ done"#,
     let stopped = tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let current = store.get_run(&run.id).expect("run");
-            if current.status != RunStatus::Running {
+            if matches!(
+                current.status,
+                RunStatus::Completed
+                    | RunStatus::Failed
+                    | RunStatus::Cancelled
+                    | RunStatus::TimedOut
+                    | RunStatus::Interrupted
+            ) {
                 break current;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -478,6 +686,20 @@ done"#,
     .await
     .expect("run stops after disconnect");
     assert_eq!(stopped.status, RunStatus::Cancelled);
+    let events = store
+        .events_after(&run.id, 0)
+        .expect("cancelled run events");
+    let tail = events
+        .iter()
+        .position(|event| {
+            event.kind == AgentEventKind::TextDelta && event.payload["text"] == "Pending output"
+        })
+        .expect("flushed output tail");
+    let completed = events
+        .iter()
+        .position(|event| event.kind == AgentEventKind::RunCompleted)
+        .expect("cancelled completion");
+    assert!(tail < completed, "tail output must precede cancellation");
 }
 
 #[tokio::test]
@@ -504,7 +726,9 @@ async fn keeps_running_after_start_returns_and_persists_normalized_events() {
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"tool_call","toolCallId":"tool-1","title":"Shell","rawInput":{"command":"pwd"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"tool-1","status":"completed","rawOutput":"ok"}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Finished"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Fin"},"messageId":"answer-1"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ish"},"messageId":"answer-1"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ed"},"messageId":"answer-1"}}}'
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
       ;;
   esac
@@ -533,10 +757,17 @@ done"#,
         })
         .expect("start run");
 
-    let completed = tokio::time::timeout(Duration::from_secs(3), async {
+    let completed = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let current = store.get_run(&run.id).expect("run");
-            if current.status != RunStatus::Running {
+            if matches!(
+                current.status,
+                RunStatus::Completed
+                    | RunStatus::Failed
+                    | RunStatus::Cancelled
+                    | RunStatus::TimedOut
+                    | RunStatus::Interrupted
+            ) {
                 break current;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -547,9 +778,12 @@ done"#,
     assert_eq!(completed.status, RunStatus::Completed);
 
     let events = store.events_after(&run.id, 0).expect("events");
-    assert!(events.iter().any(|event| {
-        event.kind == AgentEventKind::TextDelta && event.payload["text"] == "Finished"
-    }));
+    let text = events
+        .iter()
+        .filter(|event| event.kind == AgentEventKind::TextDelta)
+        .collect::<Vec<_>>();
+    assert_eq!(text.len(), 1);
+    assert_eq!(text[0].payload["text"], "Finished");
     assert!(
         events
             .iter()
@@ -567,7 +801,7 @@ done"#,
             message: "Continue in the same ACP session".into(),
         })
         .expect("start second run");
-    let second_completed = tokio::time::timeout(Duration::from_secs(3), async {
+    let second_completed = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let current = store.get_run(&second.id).expect("second run");
             if current.status != RunStatus::Running {
@@ -579,4 +813,226 @@ done"#,
     .await
     .expect("second run completion");
     assert_eq!(second_completed.status, RunStatus::Completed);
+}
+
+#[tokio::test]
+async fn flushes_streaming_events_across_permission_and_elicitation_lifecycle_boundaries() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "interactive-agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-interactive\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-interactive","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Need "},"messageId":"interactive-tail"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-interactive","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"approval"},"messageId":"interactive-tail"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":"provider-permission","method":"session/request_permission","params":{"sessionId":"session-interactive","toolCall":{"toolCallId":"tool-approval","title":"Shell","rawInput":{"command":"pwd"}},"options":[{"optionId":"allow_once","name":"Allow once","kind":"allow_once"}]}}'
+      IFS= read -r permission_response
+      printf '%s\n' '{"jsonrpc":"2.0","id":"provider-elicitation","method":"elicitation/create","params":{"mode":"form","sessionId":"session-interactive","message":"Choose a value","requestedSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}}'
+      IFS= read -r elicitation_response
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Request interactive input".into(),
+        })
+        .expect("start run");
+
+    let permission_request_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(request_id) = store
+                .events_after(&run.id, 0)
+                .expect("permission events")
+                .into_iter()
+                .find(|event| event.kind == AgentEventKind::PermissionRequested)
+                .and_then(|event| event.payload["request_id"].as_str().map(str::to_owned))
+            {
+                break request_id;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("permission request");
+    assert!(runtime.resolve_permission(&permission_request_id, "allow_once"));
+
+    let elicitation_request_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(request_id) = store
+                .events_after(&run.id, 0)
+                .expect("elicitation events")
+                .into_iter()
+                .find(|event| event.kind == AgentEventKind::ElicitationRequested)
+                .and_then(|event| event.payload["request_id"].as_str().map(str::to_owned))
+            {
+                break request_id;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("elicitation request");
+    assert!(runtime.resolve_elicitation(&elicitation_request_id, None));
+
+    let completed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if matches!(
+                current.status,
+                RunStatus::Completed
+                    | RunStatus::Failed
+                    | RunStatus::Cancelled
+                    | RunStatus::TimedOut
+                    | RunStatus::Interrupted
+            ) {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("interactive run completion");
+    assert_eq!(completed.status, RunStatus::Completed);
+
+    let events = store.events_after(&run.id, 0).expect("interactive events");
+    let position = |kind| {
+        events
+            .iter()
+            .position(|event| event.kind == kind)
+            .unwrap_or_else(|| panic!("missing {kind:?}"))
+    };
+    let text = events
+        .iter()
+        .position(|event| {
+            event.kind == AgentEventKind::TextDelta && event.payload["text"] == "Need approval"
+        })
+        .expect("coalesced text");
+    assert!(text < position(AgentEventKind::PermissionRequested));
+    assert!(
+        position(AgentEventKind::PermissionRequested)
+            < position(AgentEventKind::PermissionResolved)
+    );
+    assert!(
+        position(AgentEventKind::PermissionResolved)
+            < position(AgentEventKind::ElicitationRequested)
+    );
+    assert!(
+        position(AgentEventKind::ElicitationRequested)
+            < position(AgentEventKind::ElicitationResolved)
+    );
+    assert!(position(AgentEventKind::ElicitationResolved) < position(AgentEventKind::RunCompleted));
+}
+
+#[tokio::test]
+async fn flushes_the_final_window_before_failing_a_run_after_provider_error() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "failing-agent-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-failure\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-failure","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Last "},"messageId":"failure-tail"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-failure","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"words"},"messageId":"failure-tail"}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"error\":{\"code\":-32000,\"message\":\"provider failed\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Fail after output".into(),
+        })
+        .expect("start run");
+
+    let failed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("failed run completion");
+    assert_eq!(failed.status, RunStatus::Failed);
+
+    let events = store.events_after(&run.id, 0).expect("failed run events");
+    let tail = events
+        .iter()
+        .position(|event| {
+            event.kind == AgentEventKind::TextDelta && event.payload["text"] == "Last words"
+        })
+        .expect("failure tail");
+    let error = events
+        .iter()
+        .position(|event| event.kind == AgentEventKind::Error)
+        .expect("error event");
+    let completed = events
+        .iter()
+        .position(|event| event.kind == AgentEventKind::RunCompleted)
+        .expect("failed completion");
+    assert!(tail < error && error < completed);
 }

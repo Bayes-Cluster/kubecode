@@ -215,6 +215,31 @@ describe('TeamWorkspaceView', () => {
     ))
   })
 
+  it('allows a cancelled task to be retried', async () => {
+    const retryTeamTask = vi.fn().mockResolvedValue(snapshot)
+    render(
+      <TeamWorkspaceView
+        api={{ retryTeamTask } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={vi.fn()}
+        snapshot={{
+          ...snapshot,
+          tasks: snapshot.tasks.map((task) => ({
+            ...task,
+            status: 'cancelled' as const,
+            completion_required: false,
+          })),
+        }}
+        t={t}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamTaskRetry' }))
+
+    await waitFor(() => expect(retryTeamTask).toHaveBeenCalledWith('team-1', 'task-1'))
+  })
+
   it('keeps an automatic YOLO fallback visible after hydration', () => {
     render(
       <TeamWorkspaceView

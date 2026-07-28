@@ -9,7 +9,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agents::{AgentId, AgentStore};
-use kubecode_server::api::{AppState, app_router, app_router_with_static};
+use kubecode_server::api::{AppState, app_router, app_router_api_only, app_router_with_static};
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -96,15 +96,7 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(created["workspaces_enabled"], false);
-    assert_eq!(
-        created["path"],
-        temp.path()
-            .join("srv/demo")
-            .canonicalize()
-            .expect("canonical project")
-            .to_string_lossy()
-            .as_ref()
-    );
+    assert!(created.get("path").is_none());
 
     let (status, projects) = json_request(
         &app,
@@ -115,9 +107,83 @@ async fn serves_health_without_a_prefix_and_projects_below_the_prefix() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(projects.as_array().expect("projects").len(), 1);
+    assert!(projects[0].get("path").is_none());
 
     let (status, _) = json_request(&app, Method::GET, "/api/v1/projects", Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn desktop_api_only_router_discovers_the_runtime_and_requires_its_token() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database_path = state_dir.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = AgentStore::open(&database_path).expect("agent store");
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let app = app_router_api_only(
+        AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams)),
+        "/",
+        "desktop-secret",
+    );
+
+    let discovery = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/kubecode")
+                .body(Body::empty())
+                .expect("discovery request"),
+        )
+        .await
+        .expect("discovery response");
+    assert_eq!(discovery.status(), StatusCode::OK);
+    let body = to_bytes(discovery.into_body(), usize::MAX)
+        .await
+        .expect("discovery body");
+    let discovery: Value = serde_json::from_slice(&body).expect("discovery json");
+    assert_eq!(discovery["protocol_version"], 1);
+    assert_eq!(discovery["api_base"], "/api/v1");
+    assert_eq!(discovery["authentication"], "bearer");
+    assert!(discovery.get("token").is_none());
+
+    let unauthorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .body(Body::empty())
+                .expect("unauthorized request"),
+        )
+        .await
+        .expect("unauthorized response");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let team_mcp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/team-mcp/invalid-team-token/unknown-conversation")
+                .body(Body::empty())
+                .expect("Team MCP request"),
+        )
+        .await
+        .expect("Team MCP response");
+    assert_eq!(team_mcp.status(), StatusCode::NOT_FOUND);
+
+    let authorized = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::AUTHORIZATION, "Bearer desktop-secret")
+                .body(Body::empty())
+                .expect("authorized request"),
+        )
+        .await
+        .expect("authorized response");
+    assert_eq!(authorized.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -864,6 +930,60 @@ async fn creates_reads_and_revision_checks_files_over_http() {
 }
 
 #[tokio::test]
+async fn reads_project_scoped_binary_assets_over_http() {
+    let (temp, app) = app();
+    let project_root = temp.path().join("srv/assets");
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":project_root}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    fs::create_dir_all(project_root.join("docs")).expect("asset directory");
+    let png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    fs::write(project_root.join("docs/diagram one.png"), png).expect("asset");
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "{BASE_PATH}/api/v1/projects/{project_id}/asset?path=docs%2Fdiagram%20one.png"
+                ))
+                .body(Body::empty())
+                .expect("asset request"),
+        )
+        .await
+        .expect("asset response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, max-age=60"
+    );
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("asset body");
+    assert_eq!(bytes.as_ref(), png);
+
+    let traversal = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "{BASE_PATH}/api/v1/projects/{project_id}/asset?path=..%2Foutside.png"
+                ))
+                .body(Body::empty())
+                .expect("traversal request"),
+        )
+        .await
+        .expect("traversal response");
+    assert_eq!(traversal.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn rejects_invalid_project_paths_with_a_structured_error() {
     let (temp, app) = app();
     let (status, error) = json_request(
@@ -997,6 +1117,25 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
     assert_eq!(status, StatusCode::CREATED);
     let project_id = imported["id"].as_str().expect("project id");
     let entries_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/entries");
+    let authorize_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/authorize");
+
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &authorize_uri,
+        json!({"path":temp.path().join("srv/imported")}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &authorize_uri,
+        json!({"path":temp.path().join("srv")}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_path");
 
     for body in [
         json!({"path":"src", "kind":"directory"}),

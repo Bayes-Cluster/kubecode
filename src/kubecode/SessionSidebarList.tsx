@@ -282,7 +282,7 @@ export function SessionSidebarList({
                   data-active={project.id === activeProjectId}
                   data-session-status={projectStatus ?? undefined}
                   data-workspaces-enabled={project.workspaces_enabled}
-                  title={project.path}
+                  title={project.name}
                   variant="ghost"
                   onClick={() => onProjectSelect(project.id)}
                 >

@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0194.
+active production boundary is defined by ADRs 0161–0203.
 
 ## Runtime topology
 
@@ -9,12 +9,25 @@ The React client is served at `/` or below a generic configured base path.
 `KubecodeApi` derives HTTP, SSE, and WebSocket routes from the current browser
 pathname. Health probes remain unprefixed at `/healthz` and `/readyz`.
 
-The Axum server composes seven services:
+The same executable can run as an API-only Runtime for native clients. In that
+mode it serves discovery plus the versioned API without React assets, requires
+one bearer token across client-owned REST, SSE, and WebSocket routes, and
+reports its ephemeral loopback port through a machine-readable readiness
+document. Provider-owned Team MCP requests use a separate unguessable token in
+their internal endpoint because ACP providers do not receive the native
+client's bearer. That route bypasses only the outer client bearer middleware;
+the Team MCP handler still validates its process-local token and conversation
+membership. Browser mode and its external reverse-proxy security model are
+unchanged.
+
+The Axum server composes eight services:
 
 - `WorkspaceService` registers Project roots and contains filesystem access.
 - `AgentStore` persists Sessions, runs, normalized events, and workspace events.
-- `AgentRuntime` owns long-lived ACP actors for the currently supported Agents:
-  Claude Code, Codex, and OpenCode.
+- `AgentRuntime` owns bounded ACP actors for the currently supported Agents:
+  Claude Code, Codex, and OpenCode. Tokio owns adapter processes and stdio;
+  inactive actors expire after two minutes and the warm inactive pool is capped
+  at four, while active prompts are never evicted.
 - `AgentCatalog` owns the process-wide, dynamically refreshable CLI and ACP
   adapter readiness snapshot shared by Agent Sessions, Teams, and TUI terminals.
 - `TerminalManager` owns reconnectable PTYs independently of browser sockets.
@@ -22,7 +35,10 @@ The Axum server composes seven services:
 - `TeamStore` persists Team authority, membership, tasks, and mailboxes.
 - `TeamCoordinator` creates teammate Agent Sessions and applies Team scheduling rules.
 
-SQLite is application metadata, not project content. Project files remain on
+SQLite is application metadata, not project content. One server-owned
+connection is shared by the Workspace, Agent, and Team stores and uses rollback
+journaling with immediate write transactions. A process owner lock rejects a
+second Kubecode server for the same state database. Project files remain on
 disk at their original absolute paths.
 
 A Project may opt into Workspaces. New Agent Sessions can then execute either
@@ -34,6 +50,8 @@ shared unless the user explicitly creates an isolated Session.
 Every ACP stdio adapter process also starts with that execution path as its
 operating-system cwd. New, load, resume, list, fork, hydrate, reconnect, and
 delete therefore use the same directory at both the process and protocol layers.
+Provider Session identity remains durable when an actor expires. Team drafts
+initialize that identity ephemerally and release their actor until Team start.
 
 Disabling Workspaces is a protected migration rather than a preference flip.
 The server blocks on active runs, requires Merge, Export patch, or Discard for
@@ -65,6 +83,19 @@ saved content and draft state. Dirty tabs require confirmation before close,
 and optional browser-local Auto Save writes after one second without input.
 The lazy Project tree persists expansion per Project and hides hidden,
 Git-ignored, and common generated directories unless the user reveals them.
+`WorkspaceService` is the single owner of these classifications: every
+Project-relative directory entry carries `hidden`, `ignored`, and `generated`
+flags so browser and native clients do not maintain divergent path rules.
+Filesystem enumeration is isolated from the asynchronous request executor;
+slow mounts and host permission mediation may delay the Files projection but
+must not block health checks, Sessions, Teams, or terminals.
+For local native clients, the Project authorization route verifies a
+user-selected canonical path against one registered Project and returns no
+filesystem path. This allows platform-native access grants without widening
+the Project-ID API boundary.
+Project-relative rich-text images use the authenticated binary asset route.
+The route resolves paths only through `WorkspaceService`, rejects traversal and
+escaping symlinks, returns at most 8 MiB, and exposes no absolute server path.
 File search is a separate flat quick-open surface available from Explorer and
 Command/Ctrl-P. It traverses only the current registered Project, is bounded to
 2,000 visited entries and 100 displayed results, and ignores stale asynchronous
@@ -79,21 +110,33 @@ The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,
 and lifecycle state live on the server. A new PTY uses the selected Session's
 server-validated execution path, while existing, split, and restarted PTYs keep
-their original Session context. Browser refresh can restore serialized xterm
-output and replay newer bytes from the server cursor.
+their original Session context. Regular terminals execute the user's shell
+directly. Agent TUI profiles execute the discovered CLI through that shell in
+interactive login mode so the same user-owned environment configuration is
+available without putting provider-specific launch behavior in a client.
+Browser refresh can restore serialized xterm output and replay newer bytes from
+the server cursor.
 
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.
-Claude and Codex use pinned ACP adapters; OpenCode exposes ACP natively. Each
+Claude and Codex use pinned ACP adapters; OpenCode exposes ACP natively. The
+standalone payload currently pins Claude ACP 0.61.0 with Claude Agent SDK
+0.3.217 so provider-native tools and client-provided Team MCP servers share the
+upstream session lifecycle. Each
 Session actor stays connected across prompts and persists the provider Session
 ID for resume or load after restart.
 
 Discovery records CLI and adapter health separately and can be refreshed
 without restarting the server. Existing actors keep their connection; new and
 reconnecting actors read the new catalog. Passive readiness never creates a
-provider Session or claims authentication. Real Session startup reports a
-structured process, initialize, new, load, or resume stage when it fails.
+provider Session or claims authentication. A managed native client may set
+`KUBECODE_DISABLE_LOGIN_SHELL_DISCOVERY=1` to skip executable lookup through
+user login shells; explicit overrides, inherited PATH, and known install
+locations remain available. This does not change the interactive login shell
+used after an Agent TUI executable has already been selected.
+Real Session startup reports a structured process, initialize, new, load, or
+resume stage when it fails.
 
 The current compatibility model maps one conversation to one Agent Session and
 records an Agent Session ID, execution mode, and optional worktree path. This
@@ -227,6 +270,9 @@ preventing a scheduling deadlock. Leader permissions remain user-owned.
 
 `team_complete` is the only normal Team completion transition. At least one
 required task must be accepted and no permission or failed delivery may remain.
+Cancelling a task atomically makes it non-required and closes its active attempt
+and unresolved deliveries. Failed or cancelled work can be explicitly retried,
+which restores the completion requirement and recalculates dependency blocking.
 YOLO Teams additionally create a fresh Discriminator Session after required work
 is accepted. Runtime chooses an allowed backend in deterministic rotation,
 applies its exact read-only control (Codex `read-only`, Claude Code `plan`, or
@@ -249,13 +295,15 @@ separate Agent Session and worktree while recording the base tree for Leader
 review. Accepting an isolated file-changing result performs a private-index
 three-way Git tree merge into the Leader workspace; conflicts leave the Leader
 tree untouched. Existing Solo Sessions can be promoted without replacing their Chat
-history or provider identity.
+history or provider identity. Promotion reconnects an available provider actor
+and resumes that identity with the new Team MCP endpoint; a reconnect failure
+removes the new coordination record while preserving the Solo Session.
 
 Team identity is read from durable Team and member records on every Project
 load. A stale record whose conversation was removed is isolated rather than
 failing the complete Team collection, and removing a Leader also removes its
-coordination record. Recreated ACP actors attach the current process's Team MCP
-URL to provider load/resume requests. The ordinary Session deletion path rejects
+coordination record. Created, promoted, and recreated ACP actors attach the
+current process's Team MCP URL to provider load/resume requests. The ordinary Session deletion path rejects
 direct teammate deletion before disconnecting its ACP actor. Teammates can only
 be deleted by their Leader through Team MCP, so a browser action cannot bypass
 Team ownership or leave a stale member. Project and global Session list responses project `team_id` and
@@ -306,6 +354,13 @@ One global SSE stream multiplexes Session, run, file, Git, and terminal metadata
 events. Events have monotonically increasing IDs so reconnecting clients can
 resume. The browser first reads the durable current cursor, then opens SSE from
 that position so historical events cannot create stale system notifications.
+ACP text and thinking fragments are combined by a connection-scoped journal
+for a fixed window of up to 33 milliseconds anchored at its first fragment.
+Semantic and lifecycle events force an immediate flush, and one SQLite
+transaction writes the complete window's Session, run, and workspace rows.
+Flush and shutdown are persistence fences; shutdown also joins the worker before
+the ACP actor exits. SSE schemas and reconnect cursors therefore remain stable
+without exposing provider token boundaries as application events.
 PTY bytes use dedicated WebSockets because terminal streams have different
 buffering and cursor semantics.
 

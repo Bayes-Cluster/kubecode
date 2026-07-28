@@ -1,6 +1,6 @@
 use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
-    ExecutionMode, PermissionMode, RunStatus, StoreError,
+    ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use tempfile::TempDir;
 
@@ -465,6 +465,80 @@ fn persists_monotonic_events_and_replays_after_a_cursor() {
     assert_eq!(
         store.latest_workspace_event_id().expect("latest cursor"),
         workspace_events.last().expect("workspace event").id
+    );
+}
+
+#[test]
+fn runtime_update_batches_roll_back_every_projection_when_one_update_fails() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Batch it",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    let session_cursor = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events")
+        .last()
+        .expect("initial user event")
+        .seq;
+    let run_cursor = store
+        .events_after(&run.id, 0)
+        .expect("run events")
+        .last()
+        .expect("initial run event")
+        .seq;
+    let workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+
+    let error = store
+        .append_runtime_updates(
+            &conversation.id,
+            &[
+                RuntimeUpdate {
+                    session_kind: "text_delta".into(),
+                    session_payload: serde_json::json!({"run_id":run.id, "text":"kept"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: run.id.clone(),
+                        kind: AgentEventKind::TextDelta,
+                        payload: serde_json::json!({"text":"kept"}),
+                    }),
+                },
+                RuntimeUpdate {
+                    session_kind: "thinking_delta".into(),
+                    session_payload: serde_json::json!({"run_id":"missing-run", "text":"rolled back"}),
+                    run_event: Some(RuntimeRunEvent {
+                        run_id: "missing-run".into(),
+                        kind: AgentEventKind::ThinkingDelta,
+                        payload: serde_json::json!({"text":"rolled back"}),
+                    }),
+                },
+            ],
+        )
+        .expect_err("invalid run must roll back the batch");
+    assert!(matches!(error, StoreError::RunNotFound(id) if id == "missing-run"));
+    assert!(
+        store
+            .session_events_after(&conversation.id, session_cursor)
+            .expect("session replay")
+            .is_empty()
+    );
+    assert!(
+        store
+            .events_after(&run.id, run_cursor)
+            .expect("run replay")
+            .is_empty()
+    );
+    assert!(
+        store
+            .workspace_events_after(workspace_cursor)
+            .expect("workspace replay")
+            .is_empty()
     );
 }
 

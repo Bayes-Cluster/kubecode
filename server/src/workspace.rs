@@ -1,16 +1,19 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::database::{Database, DatabaseError};
+
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 const STATE_DIRECTORY: &str = ".state";
 
 #[derive(Debug, Error)]
@@ -27,6 +30,8 @@ pub enum WorkspaceError {
     UnsupportedText,
     #[error("file is larger than the 5 MiB editor limit")]
     FileTooLarge,
+    #[error("asset is larger than the 8 MiB preview limit")]
+    AssetTooLarge,
     #[error("git worktree operation failed: {0}")]
     Git(String),
     #[error("workspace changed after this turn (expected {expected}, current {current})")]
@@ -35,6 +40,8 @@ pub enum WorkspaceError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    DatabaseSetup(#[from] DatabaseError),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,6 +75,7 @@ pub struct FileEntry {
     pub size: u64,
     pub hidden: bool,
     pub ignored: bool,
+    pub generated: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -87,7 +95,7 @@ pub struct DirectoryListing {
 pub struct WorkspaceService {
     root: PathBuf,
     state_root: PathBuf,
-    database: Mutex<Connection>,
+    database: Arc<Database>,
 }
 
 impl WorkspaceService {
@@ -95,22 +103,25 @@ impl WorkspaceService {
         root: impl AsRef<Path>,
         database_path: impl AsRef<Path>,
     ) -> Result<Self, WorkspaceError> {
+        let database = Arc::new(Database::open(database_path)?);
+        Self::from_database(root, database)
+    }
+
+    pub fn from_database(
+        root: impl AsRef<Path>,
+        database: Arc<Database>,
+    ) -> Result<Self, WorkspaceError> {
         fs::create_dir_all(root.as_ref())?;
         let root = root.as_ref().canonicalize()?;
-        if let Some(parent) = database_path.as_ref().parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let state_root = database_path
-            .as_ref()
+        let state_root = database
+            .path()
             .parent()
-            .ok_or_else(|| WorkspaceError::InvalidPath(path_string(database_path.as_ref())))?
+            .ok_or_else(|| WorkspaceError::InvalidPath(path_string(database.path())))?
             .canonicalize()?;
 
-        let database = Connection::open(database_path)?;
-        database.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             CREATE TABLE IF NOT EXISTS projects (
+        let mut connection = database.lock().expect("workspace database mutex poisoned");
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS projects (
                id TEXT PRIMARY KEY,
                name TEXT NOT NULL,
                path TEXT NOT NULL UNIQUE,
@@ -118,18 +129,19 @@ impl WorkspaceService {
              );",
         )?;
         ensure_column(
-            &database,
+            &connection,
             "projects",
             "workspaces_enabled",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
 
-        migrate_project_paths(&database, &root)?;
+        migrate_project_paths(&mut connection, &root)?;
+        drop(connection);
 
         Ok(Self {
             root,
             state_root,
-            database: Mutex::new(database),
+            database,
         })
     }
 
@@ -416,6 +428,24 @@ impl WorkspaceService {
         self.register_project(canonical)
     }
 
+    pub fn authorize_project_path(
+        &self,
+        project_id: &str,
+        path: impl AsRef<Path>,
+    ) -> Result<(), WorkspaceError> {
+        let requested = require_absolute(path.as_ref())?;
+        let canonical = requested.canonicalize()?;
+        reject_state_directory(&self.root, &canonical)?;
+        if !canonical.is_dir() {
+            return Err(WorkspaceError::InvalidPath(path_string(requested)));
+        }
+        let registered = self.project_root(project_id)?;
+        if canonical != registered {
+            return Err(WorkspaceError::InvalidPath(path_string(requested)));
+        }
+        Ok(())
+    }
+
     pub fn list_directories(
         &self,
         requested: Option<&Path>,
@@ -658,21 +688,23 @@ impl WorkspaceService {
             if entry.file_name() == STATE_DIRECTORY {
                 continue;
             }
-            let canonical = match entry.path().canonicalize() {
-                Ok(path) if path.starts_with(&project_root) => path,
-                _ => continue,
-            };
-            let metadata = canonical.metadata()?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let metadata = entry.metadata()?;
             let name = entry.file_name().to_string_lossy().into_owned();
+            let kind = if metadata.is_dir() {
+                EntryKind::Directory
+            } else {
+                EntryKind::File
+            };
             entries.push(FileEntry {
                 path: path_string(&relative.join(&name)),
                 hidden: name.starts_with('.'),
+                generated: kind == EntryKind::Directory && is_generated_directory_name(&name),
                 name,
-                kind: if metadata.is_dir() {
-                    EntryKind::Directory
-                } else {
-                    EntryKind::File
-                },
+                kind,
                 size: metadata.len(),
                 ignored: false,
             });
@@ -710,6 +742,20 @@ impl WorkspaceService {
             size: bytes.len(),
             content,
         })
+    }
+
+    pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
+        let (_, target) = self.existing_entry(project_id, relative)?;
+        let file = fs::File::open(&target)?;
+        if file.metadata()?.len() > MAX_ASSET_BYTES {
+            return Err(WorkspaceError::AssetTooLarge);
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_ASSET_BYTES + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_ASSET_BYTES {
+            return Err(WorkspaceError::AssetTooLarge);
+        }
+        Ok(bytes)
     }
 
     pub fn write_text(
@@ -1015,7 +1061,10 @@ fn worktree_branch(session_id: &str) -> String {
     format!("kubecode/{session_id}")
 }
 
-fn migrate_project_paths(database: &Connection, legacy_root: &Path) -> Result<(), WorkspaceError> {
+fn migrate_project_paths(
+    database: &mut Connection,
+    legacy_root: &Path,
+) -> Result<(), WorkspaceError> {
     let mut statement = database.prepare("SELECT id, path FROM projects")?;
     let rows = statement
         .query_map([], |row| {
@@ -1023,7 +1072,7 @@ fn migrate_project_paths(database: &Connection, legacy_root: &Path) -> Result<()
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
-    let transaction = database.unchecked_transaction()?;
+    let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
     for (id, stored) in rows {
         let path = Path::new(&stored);
         if path.is_absolute() {
@@ -1116,4 +1165,20 @@ fn entry_kind_rank(kind: &EntryKind) -> u8 {
         EntryKind::Directory => 0,
         EntryKind::File => 1,
     }
+}
+
+fn is_generated_directory_name(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | ".next"
+            | ".pytest_cache"
+            | ".venv"
+            | "__pycache__"
+            | "build"
+            | "coverage"
+            | "dist"
+            | "node_modules"
+            | "target"
+    )
 }
