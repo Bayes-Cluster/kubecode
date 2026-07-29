@@ -1584,6 +1584,45 @@ impl AgentStore {
         Ok(())
     }
 
+    pub fn append_session_state_checkpoint(
+        &self,
+        conversation_id: &str,
+        kind: &str,
+        payload: &Value,
+    ) -> Result<(), StoreError> {
+        let workspace_cursor = {
+            let mut database = self.database.lock().expect("agent database mutex poisoned");
+            let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let project_id = transaction
+                .query_row(
+                    "SELECT project_id FROM conversations WHERE id = ?1",
+                    [conversation_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+            append_session_event_transaction(&transaction, conversation_id, kind, payload)?;
+            transaction.execute(
+                "INSERT INTO workspace_events
+                 (kind, project_id, conversation_id, run_id, payload)
+                 VALUES ('session_state', ?1, ?2, NULL, ?3)",
+                params![
+                    project_id,
+                    conversation_id,
+                    serde_json::to_string(&json!({}))?
+                ],
+            )?;
+            let workspace_cursor =
+                u64::try_from(transaction.last_insert_rowid()).map_err(|_| {
+                    StoreError::InvalidStoredValue("negative workspace event id".into())
+                })?;
+            transaction.commit()?;
+            workspace_cursor
+        };
+        self.workspace_event_bus.publish_committed(workspace_cursor);
+        Ok(())
+    }
+
     pub fn append_session_event(
         &self,
         conversation_id: &str,

@@ -1903,7 +1903,8 @@ async fn projects_and_dispatches_the_latest_advertised_acp_command() {
       ;;
     *'"method":"session/new"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes","input":{"hint":"focus"},"_meta":{"private":"kept-server-side"}}],"_meta":{"private":"kept-server-side"}}}}'
-      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"command-session\"}}"
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"current_mode_update","currentModeId":"build"}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"command-session\",\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\"}]},\"_meta\":{\"private\":\"journal-only\"}}}"
       ;;
     *'"method":"session/prompt"'*)
       case "$line" in
@@ -1961,6 +1962,20 @@ done"#,
             "input":{"kind":"text", "hint":"focus"}
         }]})
     );
+    assert_eq!(state["current_mode"]["currentModeId"], "build");
+    assert_eq!(state["current_mode"]["availableModes"][0]["name"], "Build");
+    let state_event = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .find(|event| event.kind == "session_state")
+        .expect("session state invalidation");
+    assert_eq!(state_event.project_id.as_deref(), Some(project_id));
+    assert_eq!(
+        state_event.conversation_id.as_deref(),
+        Some(conversation_id)
+    );
+    assert_eq!(state_event.payload, json!({}));
     let raw = store
         .session_events_after(conversation_id, 0)
         .expect("session events")

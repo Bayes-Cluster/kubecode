@@ -148,6 +148,7 @@ const SESSION_STATE_EVENT_KINDS = new Set([
   'current_mode',
   'plan',
   'run_completed',
+  'session_state',
   'session_info',
   'usage',
 ])

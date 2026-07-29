@@ -301,6 +301,17 @@ Claude Code permission mode owned by Team YOLO. Mode-like Session API mutations
 enforce the same projection and apply only between turns. OpenCode Build/Plan
 remains separate from its process-scoped Team permission environment.
 
+A Session-state checkpoint is the full ACP NewSession or LoadSession response,
+including provider-authored mode and configuration labels. `AgentStore`
+persists that raw response only in the Session journal and, in the same
+transaction, appends a browser-safe `session_state` workspace invalidation with
+an empty object payload. The event derives its Project and Session scope from
+the stored Conversation, carries no provider metadata, and is published only
+after commit. Checkpoint persistence is part of Session readiness: failure
+prevents the actor from reporting ready. The browser responds by rehydrating
+the existing Session-state API projection through generation and active-Session
+guards, so stale or cross-Session responses cannot replace newer state.
+
 Session history is read in bounded cursor pages ordered by run insertion. Each
 page returns its run events and the corresponding Session events, while the
 browser preserves stable identities when older history is prepended or live

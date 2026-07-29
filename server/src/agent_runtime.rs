@@ -964,12 +964,12 @@ impl AgentRuntime {
                     .flush()
                     .await
                     .map_err(journal_protocol_error)?;
-                persist_serialized_session_event(
+                persist_serialized_session_state_checkpoint(
                     &state_store,
                     &state_conversation_id,
                     "session_loaded",
                     response,
-                );
+                )?;
                 Ok(())
             })
             .await;
@@ -2130,12 +2130,12 @@ async fn run_acp_session(
                         .flush()
                         .await
                         .map_err(journal_protocol_error)?;
-                    persist_serialized_session_event(
+                    persist_serialized_session_state_checkpoint(
                         &store,
                         &conversation_id,
                         "session_loaded",
                         response,
-                    );
+                    )?;
                     (session_id.into(), None)
                 } else {
                     let resumed = if initialization
@@ -2188,12 +2188,12 @@ async fn run_acp_session(
                                     .flush()
                                     .await
                                     .map_err(journal_protocol_error)?;
-                                persist_serialized_session_event(
+                                persist_serialized_session_state_checkpoint(
                                     &store,
                                     &conversation_id,
                                     "session_loaded",
                                     response,
-                                );
+                                )?;
                                 (session_id.into(), None)
                             }
                             Err(_) => {
@@ -2556,12 +2556,12 @@ async fn create_provider_session(
         let session_id = response.session_id.clone();
         let _ = take_captured_session_response(captured_responses, &session_id);
         journal.flush().await.map_err(journal_protocol_error)?;
-        persist_serialized_session_event(
+        persist_serialized_session_state_checkpoint(
             &runtime.store,
             conversation_id,
             "session_created_state",
             response,
-        );
+        )?;
         return Ok((session_id, None));
     }
     if let Some(mcp_server) = crate::team_mcp::build_team_mcp(runtime.clone(), conversation_id)
@@ -2577,12 +2577,12 @@ async fn create_provider_session(
         let response = take_captured_session_response(captured_responses, &session_id)
             .unwrap_or_else(|| active_session.response());
         journal.flush().await.map_err(journal_protocol_error)?;
-        persist_serialized_session_event(
+        persist_serialized_session_state_checkpoint(
             &runtime.store,
             conversation_id,
             "session_created_state",
             response,
-        );
+        )?;
         return Ok((session_id, Some(active_session)));
     }
     let response = connection
@@ -2592,12 +2592,12 @@ async fn create_provider_session(
     let session_id = response.session_id.clone();
     let _ = take_captured_session_response(captured_responses, &session_id);
     journal.flush().await.map_err(journal_protocol_error)?;
-    persist_serialized_session_event(
+    persist_serialized_session_state_checkpoint(
         &runtime.store,
         conversation_id,
         "session_created_state",
         response,
-    );
+    )?;
     Ok((session_id, None))
 }
 
@@ -3303,6 +3303,19 @@ fn persist_serialized_session_event(
     if let Ok(payload) = serde_json::to_value(value) {
         let _ = store.append_session_event(conversation_id, kind, &payload);
     }
+}
+
+fn persist_serialized_session_state_checkpoint(
+    store: &AgentStore,
+    conversation_id: &str,
+    kind: &str,
+    value: impl serde::Serialize,
+) -> Result<(), agent_client_protocol::Error> {
+    let payload = serde_json::to_value(value)
+        .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?;
+    store
+        .append_session_state_checkpoint(conversation_id, kind, &payload)
+        .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))
 }
 
 fn merge_run_id(mut payload: Value, run_id: &str) -> Value {

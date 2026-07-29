@@ -706,6 +706,64 @@ fn runtime_update_batch_publishes_its_latest_projection_after_commit() {
 }
 
 #[test]
+fn session_state_checkpoint_is_atomic_private_and_browser_safe() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::OpenCode, None)
+        .expect("conversation");
+    let previous_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+    let bus = store.workspace_event_bus();
+    let receiver = bus.subscribe();
+    let checkpoint = serde_json::json!({
+        "sessionId":"provider-session",
+        "modes":{
+            "currentModeId":"build",
+            "availableModes":[{"id":"build", "name":"Build"}]
+        },
+        "_meta":{"private":"journal-only"}
+    });
+
+    store
+        .append_session_state_checkpoint(&conversation.id, "session_created_state", &checkpoint)
+        .expect("session state checkpoint");
+
+    let session_event = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session replay")
+        .into_iter()
+        .find(|event| event.kind == "session_created_state")
+        .expect("private checkpoint");
+    assert_eq!(session_event.payload, checkpoint);
+    let workspace_events = store
+        .workspace_events_after(previous_cursor)
+        .expect("workspace replay");
+    assert_eq!(workspace_events.len(), 1);
+    assert_eq!(workspace_events[0].kind, "session_state");
+    assert_eq!(workspace_events[0].project_id.as_deref(), Some("project"));
+    assert_eq!(
+        workspace_events[0].conversation_id.as_deref(),
+        Some(conversation.id.as_str())
+    );
+    assert_eq!(workspace_events[0].run_id, None);
+    assert_eq!(workspace_events[0].payload, serde_json::json!({}));
+    assert_eq!(bus.latest_committed_cursor(), workspace_events[0].id);
+    assert!(receiver.has_changed().expect("event bus remains open"));
+
+    let committed_cursor = workspace_events[0].id;
+    let error = store
+        .append_session_state_checkpoint("missing", "session_loaded", &checkpoint)
+        .expect_err("missing conversation must roll back");
+    assert!(matches!(error, StoreError::ConversationNotFound(id) if id == "missing"));
+    assert!(
+        store
+            .workspace_events_after(committed_cursor)
+            .expect("workspace replay")
+            .is_empty()
+    );
+    assert_eq!(bus.latest_committed_cursor(), committed_cursor);
+}
+
+#[test]
 fn lists_session_summaries_and_persists_archive_and_parent_relationships() {
     let (_temp, store) = store();
     let parent = store

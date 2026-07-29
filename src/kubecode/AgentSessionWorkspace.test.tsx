@@ -616,6 +616,188 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.getByText('/status')).toBeInTheDocument()
   })
 
+  it('rehydrates the provider-authored mode label after the full Session checkpoint', async () => {
+    const partialState = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'build',
+        availableModes: [{ id: 'build', name: 'build' }],
+      },
+    }
+    const fullState = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'build',
+        availableModes: [{ id: 'build', name: 'Build' }],
+      },
+    }
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce(partialState)
+      .mockResolvedValueOnce(fullState)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const update = {
+      id: 44,
+      kind: 'session_state',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    } as WorkspaceEvent
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('build'))
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[update]} />)
+
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Build')
+  })
+
+  it('does not let an older Session checkpoint rehydration replace a newer provider label', async () => {
+    const state = (name: string) => ({
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'build',
+        availableModes: [{ id: 'build', name }],
+      },
+    })
+    let resolveOlder!: (value: ReturnType<typeof state>) => void
+    let resolveNewer!: (value: ReturnType<typeof state>) => void
+    const older = new Promise<ReturnType<typeof state>>((resolve) => { resolveOlder = resolve })
+    const newer = new Promise<ReturnType<typeof state>>((resolve) => { resolveNewer = resolve })
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce(state('build'))
+      .mockReturnValueOnce(older)
+      .mockReturnValueOnce(newer)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const event = (id: number) => ({
+      id,
+      kind: 'session_state',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    }) as WorkspaceEvent
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('build'))
+
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[event(44)]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[event(44), event(45)]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(3))
+    resolveNewer(state('Build'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Build'))
+
+    await act(async () => {
+      resolveOlder(state('Stale Build'))
+      await older
+    })
+    expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Build')
+    expect(screen.getByRole('button', { name: 'Agent settings' })).not.toHaveTextContent('Stale Build')
+  })
+
+  it('does not apply a Session checkpoint response after switching Sessions', async () => {
+    const buildState = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'build',
+        availableModes: [{ id: 'build', name: 'Build' }],
+      },
+    }
+    const planState = {
+      ...emptySessionState,
+      current_mode: {
+        currentModeId: 'plan',
+        availableModes: [{ id: 'plan', name: 'Plan' }],
+      },
+    }
+    let resolveOldSession!: (value: typeof buildState) => void
+    const oldSessionRefresh = new Promise<typeof buildState>((resolve) => {
+      resolveOldSession = resolve
+    })
+    const getSessionState = vi.fn()
+      .mockResolvedValueOnce(buildState)
+      .mockReturnValueOnce(oldSessionRefresh)
+      .mockResolvedValueOnce(planState)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState,
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      conversation,
+      locale: 'en' as const,
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      projectId: 'project-1',
+      t: createTranslator('en'),
+    }
+    const update = {
+      id: 44,
+      kind: 'session_state',
+      project_id: 'project-1',
+      conversation_id: conversation.id,
+      run_id: null,
+      payload: {},
+      created_at: '2026-07-28 12:00:00',
+    } as WorkspaceEvent
+    const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Build'))
+
+    rerender(<AgentSessionWorkspace {...props} workspaceEvents={[update]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
+    const secondConversation = { ...conversation, id: 'session-2', title: 'Second session' }
+    rerender(<AgentSessionWorkspace {...props} conversation={secondConversation} workspaceEvents={[update]} />)
+    await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Plan'))
+
+    await act(async () => {
+      resolveOldSession(buildState)
+      await oldSessionRefresh
+    })
+    expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Plan')
+  })
+
   it('ignores an older option refresh that finishes after a command invalidation', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/')
     const state = (command: string | null, mode: string) => ({

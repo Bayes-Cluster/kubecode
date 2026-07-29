@@ -191,6 +191,16 @@ YOLO owns Codex and Claude Code permission modes, while OpenCode Build/Plan
 remains a Leader-editable profile because its maximum permission policy is
 process-scoped.
 
+Full ACP NewSession and LoadSession responses are durable Session-state
+checkpoints. The server atomically appends the raw response to the private
+Session journal and a conversation-scoped `session_state` workspace
+invalidation whose browser payload is exactly `{}`; only after that transaction
+commits does it publish the workspace cursor. Browsers then refetch the Session
+state projection through the same request-generation and active-Session guards
+used by other state invalidations. This lets provider-authored labels replace
+an earlier partial mode ID without exposing `_meta` or allowing an older fetch
+or a previous Session to overwrite current state.
+
 The Composer resolves context references, Agent and Session commands, and
 user-invocable capabilities through one server-owned typed Composer catalog
 (ADR 0206), not by routing everything through `/`. `@` attaches bounded
