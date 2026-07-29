@@ -1901,6 +1901,7 @@ async fn projects_and_dispatches_the_latest_advertised_acp_command() {
   id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
   case "$line" in
     *'"method":"initialize"'*)
+      printf '%s\n' initialize >> "$(dirname "$0")/initialize-count"
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
       ;;
     *'"method":"session/new"'*)
@@ -1909,6 +1910,7 @@ async fn projects_and_dispatches_the_latest_advertised_acp_command() {
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"command-session\",\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\"}]},\"_meta\":{\"private\":\"journal-only\"}}}"
       ;;
     *'"method":"session/prompt"'*)
+      printf '%s\n' prompt >> "$(dirname "$0")/prompt-count"
       case "$line" in
         *'"text":"/review security"'*) ;;
         *) exit 9 ;;
@@ -1921,7 +1923,7 @@ async fn projects_and_dispatches_the_latest_advertised_acp_command() {
 done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
-    let app = app_router(
+    let app_state =
         AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
             AgentDescriptor {
                 id: AgentId::OpenCode,
@@ -1930,9 +1932,9 @@ done"#,
                 executable: binary,
                 error: None,
             },
-        ]),
-        BASE_PATH,
-    );
+        ]);
+    let runtime = Arc::clone(&app_state.agent_runtime);
+    let app = app_router(app_state, BASE_PATH);
     let (_, project) = json_request(
         &app,
         Method::POST,
@@ -1981,6 +1983,44 @@ done"#,
         Some(conversation_id)
     );
     assert_eq!(state_event.payload, json!({}));
+    assert_eq!(state["composer"]["catalog"]["revision"], 1);
+    assert_eq!(
+        state["composer"]["catalog"]["conversation_id"],
+        conversation_id
+    );
+    assert_eq!(state["composer"]["catalog"]["contexts"], json!([]));
+    assert_eq!(state["composer"]["catalog"]["items"][0]["kind"], "command");
+    assert_eq!(state["composer"]["catalog"]["items"][0]["scope"], "session");
+    assert_eq!(state["composer"]["catalog"]["items"][0]["enabled"], true);
+    assert_eq!(
+        state["composer"]["catalog"]["items"][0]["input_hint"],
+        "focus"
+    );
+    let item_id = state["composer"]["catalog"]["items"][0]["id"]
+        .as_str()
+        .expect("composer item id")
+        .to_owned();
+    assert!(item_id.starts_with("cmd:"));
+    let catalog_event = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .find(|event| {
+            event.kind == "composer_catalog_snapshot"
+                && event.conversation_id.as_deref() == Some(conversation_id)
+        })
+        .expect("catalog workspace event");
+    assert_eq!(catalog_event.payload["revision"], 1);
+    assert_eq!(
+        catalog_event.payload["snapshot"],
+        state["composer"]["catalog"]
+    );
+    assert!(
+        !catalog_event
+            .payload
+            .to_string()
+            .contains("kept-server-side")
+    );
     let raw = store
         .session_events_after(conversation_id, 0)
         .expect("session events")
@@ -1992,6 +2032,33 @@ done"#,
         raw.payload["availableCommands"][0]["_meta"]["private"],
         "kept-server-side"
     );
+    let (_, public_session_events) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/events?after=0"),
+        Value::Null,
+    )
+    .await;
+    assert!(
+        !public_session_events
+            .to_string()
+            .contains("kept-server-side")
+    );
+    let empty_conversation = store
+        .create_conversation(project_id, AgentId::OpenCode, None)
+        .expect("empty conversation");
+    let (_, empty_state) = json_request(
+        &app,
+        Method::GET,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/state",
+            empty_conversation.id
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(empty_state["composer"]["catalog"]["revision"], 0);
+    assert_eq!(empty_state["composer"]["catalog"]["items"], json!([]));
 
     let (_, foreign_project) = json_request(
         &app,
@@ -2018,6 +2085,8 @@ done"#,
         json!({"name":"review", "arguments":""}),
         json!({"name":"missing", "arguments":"security"}),
         json!({"name":"bad name", "arguments":"security"}),
+        json!({"item_id":item_id, "catalog_revision":1, "arguments":"security"}),
+        json!({"name":"review", "item_id":"mixed", "catalog_revision":1}),
     ] {
         let (status, error) = json_request(&app, Method::POST, &foreign_command_uri, request).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -2049,11 +2118,21 @@ done"#,
 
     let command_uri =
         format!("{BASE_PATH}/api/v1/projects/{project_id}/sessions/{conversation_id}/commands");
+    for request in [
+        json!({"name":"review", "item_id":item_id, "catalog_revision":1}),
+        json!({"item_id":item_id}),
+        json!({"item_id":item_id, "catalog_revision":1, "method":"private"}),
+        json!({"name":"review", "arguments":"", "template":"secret"}),
+    ] {
+        let (status, error) = json_request(&app, Method::POST, &command_uri, request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(error["code"], "invalid_request");
+    }
     let (status, error) = json_request(
         &app,
         Method::POST,
         &command_uri,
-        json!({"name":"review", "arguments":""}),
+        json!({"item_id":item_id, "catalog_revision":1, "arguments":""}),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -2065,7 +2144,7 @@ done"#,
         &app,
         Method::POST,
         &command_uri,
-        json!({"name":"review", "arguments":"security"}),
+        json!({"item_id":item_id, "catalog_revision":1, "arguments":"security"}),
     )
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);
@@ -2092,6 +2171,35 @@ done"#,
             && event.payload["run_id"] == run_id
             && event.payload["internal"] == true
     }));
+    runtime
+        .initialize_conversation(conversation_id)
+        .await
+        .expect("live actor remains ready");
+    let initialize_count = fs::read_to_string(temp.path().join("initialize-count"))
+        .expect("initialize counter")
+        .lines()
+        .count();
+    assert_eq!(
+        initialize_count, 1,
+        "catalog updates must not restart the actor"
+    );
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(conversation_id)
+            .expect("live catalog")
+            .revision,
+        2,
+        "a safe live projection change must advance the catalog revision"
+    );
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(conversation_id)
+            .expect("live catalog")
+            .items[0]
+            .description
+            .as_deref(),
+        Some("Updated review")
+    );
     assert!(events.iter().any(|event| {
         event.kind == "text_delta"
             && event.payload["run_id"] == run_id
@@ -2118,11 +2226,42 @@ done"#,
             .contains("must-not-cross-workspace")
     }));
 
+    let unchanged_catalog_events = store
+        .session_events_after(conversation_id, 0)
+        .expect("session events")
+        .into_iter()
+        .filter(|event| event.kind == "composer_catalog")
+        .count();
     store
-        .append_session_event(
+        .append_runtime_update(
+            conversation_id,
+            "available_commands",
+            &json!({
+                "availableCommands":[{
+                    "name":"review",
+                    "description":"Updated review",
+                    "input":{"hint":"focus"},
+                    "_meta":{"changed":"still-private"}
+                }]
+            }),
+            None,
+        )
+        .expect("equivalent command snapshot");
+    assert_eq!(
+        store
+            .session_events_after(conversation_id, 0)
+            .expect("session events")
+            .into_iter()
+            .filter(|event| event.kind == "composer_catalog")
+            .count(),
+        unchanged_catalog_events
+    );
+    store
+        .append_runtime_update(
             conversation_id,
             "available_commands",
             &json!({"availableCommands":[]}),
+            None,
         )
         .expect("replacement command snapshot");
     let (_, state) = json_request(
@@ -2133,6 +2272,27 @@ done"#,
     )
     .await;
     assert_eq!(state["available_commands"], json!({"availableCommands":[]}));
+    assert_eq!(state["composer"]["catalog"]["revision"], 3);
+    assert_eq!(state["composer"]["catalog"]["items"], json!([]));
+    let run_count = store.list_runs(conversation_id).expect("runs").len();
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &command_uri,
+        json!({"item_id":item_id, "catalog_revision":1, "arguments":"security"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_stale_revision");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &command_uri,
+        json!({"item_id":"cmd:invented", "catalog_revision":3, "arguments":""}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error["code"], "composer_item_missing");
     let (status, error) = json_request(
         &app,
         Method::POST,
@@ -2142,7 +2302,15 @@ done"#,
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "acp_command_unavailable");
-    assert_eq!(store.list_runs(conversation_id).expect("runs").len(), 1);
+    assert_eq!(
+        store.list_runs(conversation_id).expect("runs").len(),
+        run_count
+    );
+    let prompt_count = fs::read_to_string(temp.path().join("prompt-count"))
+        .expect("prompt counter")
+        .lines()
+        .count();
+    assert_eq!(prompt_count, 1, "rejected commands must not reach ACP");
 }
 
 #[tokio::test]

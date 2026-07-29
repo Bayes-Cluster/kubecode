@@ -2,6 +2,7 @@ use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
+use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -9,6 +10,209 @@ fn store() -> (TempDir, AgentStore) {
     let temp = TempDir::new().expect("tempdir");
     let store = AgentStore::open(temp.path().join("kubecode.sqlite3")).expect("agent store");
     (temp, store)
+}
+
+#[test]
+fn composer_catalog_reopens_with_exact_snapshot_and_rejects_foreign_ids() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let first = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("first conversation");
+    let second = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("second conversation");
+    let raw = json!({"availableCommands":[
+        {"name":"status", "description":"Show status"},
+        {"name":"future", "description":"Future", "input":{"type":"choices"}}
+    ], "_meta":{"private":"server-only"}});
+    for conversation in [&first, &second] {
+        store
+            .append_runtime_update(&conversation.id, "available_commands", &raw, None)
+            .expect("catalog update");
+    }
+    let before = store
+        .composer_catalog_snapshot(&first.id)
+        .expect("first snapshot");
+    let second_snapshot = store
+        .composer_catalog_snapshot(&second.id)
+        .expect("second snapshot");
+    assert_eq!(before.revision, 1);
+    assert_ne!(before.items[0].id, second_snapshot.items[0].id);
+    assert!(!before.items[1].enabled);
+    assert_eq!(
+        before.items[1].disabled_reason.as_deref(),
+        Some("unsupported_input")
+    );
+    let disabled = store
+        .start_typed_composer_command(
+            &first.id,
+            "project",
+            &before.items[1].id,
+            before.revision,
+            "",
+            PermissionMode::Safe,
+        )
+        .expect_err("disabled item");
+    assert!(matches!(
+        disabled,
+        StoreError::Composer(kubecode_server::composer_catalog::ComposerCatalogError::ItemDisabled)
+    ));
+    assert!(store.list_runs(&first.id).expect("runs").is_empty());
+    let foreign = store
+        .start_typed_composer_command(
+            &second.id,
+            "project",
+            &before.items[0].id,
+            second_snapshot.revision,
+            "",
+            PermissionMode::Safe,
+        )
+        .expect_err("foreign item id");
+    assert!(matches!(
+        foreign,
+        StoreError::Composer(kubecode_server::composer_catalog::ComposerCatalogError::ItemMissing)
+    ));
+    assert!(store.list_runs(&second.id).expect("runs").is_empty());
+    let run = store
+        .start_typed_composer_command(
+            &first.id,
+            "project",
+            &before.items[0].id,
+            before.revision,
+            "",
+            PermissionMode::Safe,
+        )
+        .expect("typed run");
+    store
+        .finish_run(&run.id, RunStatus::Completed, None)
+        .expect("finish typed run");
+    let branch = store
+        .branch_conversation_at_run(&first.id, &run.id)
+        .expect("branch conversation");
+    let branch_catalog = store
+        .composer_catalog_snapshot(&branch.id)
+        .expect("branch catalog");
+    assert_eq!(branch_catalog.conversation_id, branch.id);
+    assert_eq!(branch_catalog.revision, 0);
+    assert!(branch_catalog.items.is_empty());
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    assert_eq!(
+        reopened
+            .composer_catalog_snapshot(&first.id)
+            .expect("reopened snapshot"),
+        before
+    );
+}
+
+#[test]
+fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let first_raw = json!({"availableCommands":[{
+        "name":"first", "description":"First"
+    }]});
+    store
+        .append_runtime_update(&conversation.id, "available_commands", &first_raw, None)
+        .expect("first catalog");
+    let first_run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "First question",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    store
+        .finish_run(&first_run.id, RunStatus::Completed, None)
+        .expect("finish first run");
+    let second_raw = json!({"availableCommands":[{
+        "name":"second", "description":"Second"
+    }]});
+    store
+        .append_runtime_update(&conversation.id, "available_commands", &second_raw, None)
+        .expect("second catalog");
+    let second = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("second snapshot");
+    assert_eq!(second.revision, 2);
+    let old_item_id = second.items[0].id.clone();
+
+    store
+        .revise_conversation_at_run(&conversation.id, &first_run.id)
+        .expect("rewind conversation");
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(&conversation.id)
+            .expect("rewound snapshot")
+            .revision,
+        1
+    );
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let third_raw = json!({"availableCommands":[{
+        "name":"third", "description":"Third"
+    }]});
+    reopened
+        .append_runtime_update(&conversation.id, "available_commands", &third_raw, None)
+        .expect("third catalog");
+    let third = reopened
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("third snapshot");
+    assert_eq!(third.revision, 3, "revision 2 must never be reused");
+
+    let run_count = reopened
+        .list_runs(&conversation.id)
+        .expect("runs before stale request")
+        .len();
+    let session_event_count = reopened
+        .session_events_after(&conversation.id, 0)
+        .expect("session events before stale request")
+        .len();
+    let workspace_cursor = reopened
+        .latest_workspace_event_id()
+        .expect("workspace cursor before stale request");
+    let error = reopened
+        .start_typed_composer_command(
+            &conversation.id,
+            "project",
+            &old_item_id,
+            second.revision,
+            "",
+            PermissionMode::Safe,
+        )
+        .expect_err("old revision must remain stale");
+    assert!(matches!(
+        error,
+        StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::StaleRevision
+        )
+    ));
+    assert_eq!(
+        reopened.list_runs(&conversation.id).expect("runs").len(),
+        run_count
+    );
+    assert_eq!(
+        reopened
+            .session_events_after(&conversation.id, 0)
+            .expect("session events")
+            .len(),
+        session_event_count
+    );
+    assert_eq!(
+        reopened
+            .latest_workspace_event_id()
+            .expect("workspace cursor"),
+        workspace_cursor
+    );
 }
 
 #[test]

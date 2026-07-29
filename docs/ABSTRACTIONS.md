@@ -202,13 +202,29 @@ disconnects an active Session. A remote or runtime-owned Session performs
 discovery at its runtime owner; the browser never scans provider home
 directories or substitutes its own filesystem view.
 
-Provider invocation is server-only. A structured run submits an optional item
-ID, the catalog revision, and ordered draft segments; item arguments remain
-ordered `Text` segments. The direct command-control route instead submits an
-item ID, revision, and one bounded arguments string. Both routes derive and
-authorize the Session/Project pairing from their URL; neither submits a provider
-method, invocation template, absolute path, or executable payload. At submit
-time the server first
+The current server persists the raw standard ACP snapshot and its safe catalog
+projection atomically in the Session journal. A changed projection advances the
+revision and appends one `composer_catalog_snapshot` row to the existing durable
+workspace-event log; an equivalent projection does neither. Hydration reads the
+latest safe journal snapshot, so process reopen preserves the exact revision and
+opaque IDs. A durable revision high-water mark belongs to the Session row rather
+than its rewindable transcript: revision can restore an older snapshot, but the
+next changed snapshot consumes a number greater than every revision previously
+issued for that Session. Typed command resolution checks Project/Session
+ownership, revision, ID, availability, and the authoritative raw snapshot in the
+same transaction that creates the internal run, preventing a replacement from
+interleaving between validation and dispatch eligibility.
+
+The safe full snapshot is bounded to 256 items, including at most 64 trusted
+adapter contributions. Invalid or over-limit trusted source identities and item
+names are omitted without truncating identity. Duplicate trusted identities and
+trusted `Command` shapes without an implemented server resolver remain disabled,
+so they cannot fall through to exact-name ACP command dispatch.
+
+Provider invocation is server-only. The browser submits the Session ID, the
+catalog revision the draft was built against, an optional item ID, arguments,
+and ordered draft segments; it never submits a provider method, invocation
+template, absolute path, or executable payload. At submit time the server first
 validates the catalog revision (returning a stale-revision response that lets
 the browser refresh without dispatching the wrong item) and then independently
 revalidates each resolved context reference for ownership, scope, availability,

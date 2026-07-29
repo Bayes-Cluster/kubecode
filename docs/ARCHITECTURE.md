@@ -221,13 +221,21 @@ remain backward compatible. Long prompts stop growing at a bounded editor
 height and scroll inside the Composer instead of resizing the Agent workspace.
 During the phased migration, the existing `available_commands` Session-state
 field exposes only safe standard command display fields and recognized text
-input shapes with optional provider-authored hints.
-`POST /projects/:project_id/sessions/:conversation_id/commands`
-accepts an exact advertised name plus bounded arguments, revalidates the latest
-full ACP snapshot server-side, and dispatches an internal run so provider
-responses are durable without fabricating a visible user turn. Unknown slash
-text remains an ordinary prompt. Opaque catalog identity and structured draft
-submission remain later ADR 0206 phases.
+input shapes with optional provider-authored hints. Session state also hydrates
+the durable safe catalog snapshot.
+ACP updates atomically commit their private raw authority, the revised safe
+catalog, and a conversation-scoped full-snapshot workspace event. `POST
+/projects/:project_id/sessions/:conversation_id/commands` accepts either the
+transitional exact-name selector or an opaque item ID with its catalog revision;
+the typed path validates and creates its internal run in one store transaction,
+then dispatches only the server-resolved prompt. Unknown slash text remains an
+ordinary prompt. Ordered structured draft submission remains a later ADR 0206
+phase. Catalog revision issuance uses a durable Session-row high-water mark that
+is not rewound with chat history, so a restored older snapshot cannot cause a
+previous revision number to be reused. Safe snapshots are bounded across standard
+ACP and trusted-adapter sources; invalid identities are omitted, and unsupported
+trusted command shapes stay disabled rather than falling through to ACP name
+resolution.
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.
