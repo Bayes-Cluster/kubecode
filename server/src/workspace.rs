@@ -10,16 +10,20 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::agents::ExecutionMode;
 use crate::database::{Database, DatabaseError};
 
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_SESSION_DIRECTORY_ENTRIES: usize = 512;
 const STATE_DIRECTORY: &str = ".state";
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
     #[error("invalid workspace path: {0}")]
     InvalidPath(String),
+    #[error("session workspace is unavailable")]
+    SessionWorkspaceUnavailable,
     #[error("project not found: {0}")]
     ProjectNotFound(String),
     #[error("project is already registered: {0}")]
@@ -671,57 +675,63 @@ impl WorkspaceService {
         relative: &str,
     ) -> Result<Vec<FileEntry>, WorkspaceError> {
         let project_root = self.project_root(project_id)?;
-        let relative = normalize_relative(relative, true)?;
-        let directory = project_root.join(&relative).canonicalize()?;
-        ensure_contained_or_same(
-            &project_root,
-            &directory,
-            relative.to_string_lossy().into_owned(),
-        )?;
-        if !directory.is_dir() {
-            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
-        }
+        list_entries_in(&project_root, relative, None)
+    }
 
-        let mut entries = Vec::new();
-        for result in fs::read_dir(directory)? {
-            let entry = result?;
-            if entry.file_name() == STATE_DIRECTORY {
-                continue;
-            }
-            let file_type = entry.file_type()?;
-            if file_type.is_symlink() {
-                continue;
-            }
-            let metadata = entry.metadata()?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let kind = if metadata.is_dir() {
-                EntryKind::Directory
-            } else {
-                EntryKind::File
-            };
-            entries.push(FileEntry {
-                path: path_string(&relative.join(&name)),
-                hidden: name.starts_with('.'),
-                generated: kind == EntryKind::Directory && is_generated_directory_name(&name),
-                name,
-                kind,
-                size: metadata.len(),
-                ignored: false,
-            });
+    /// Lists entries for a Session/conversation-scoped Composer context search.
+    ///
+    /// The execution root is derived entirely from the conversation record: a
+    /// shared Session resolves to its registered Project root, while a worktree
+    /// Session resolves to its exact validated worktree. The caller supplies
+    /// only a validated relative directory path; no arbitrary or absolute path
+    /// is accepted or exposed.
+    pub fn list_session_entries(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<Vec<FileEntry>, WorkspaceError> {
+        let root = self.session_execution_root(
+            project_id,
+            agent_session_id,
+            execution_mode,
+            workspace_path,
+        )?;
+        list_entries_in(&root, relative, Some(MAX_SESSION_DIRECTORY_ENTRIES))
+    }
+
+    /// Resolves the execution root for a Session, enforcing execution-mode and
+    /// `workspace_path` consistency so a corrupted record fails rather than
+    /// falling back. Project registration is a common prerequisite for both
+    /// modes, so a retained worktree can never be listed after its Project is
+    /// unregistered. A worktree Session must additionally point at exactly its
+    /// own `state_root/worktrees/<project_id>/<agent_session_id>` worktree,
+    /// never another Agent Session's.
+    fn session_execution_root(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+    ) -> Result<PathBuf, WorkspaceError> {
+        // Common prerequisite: the Project must still be registered. This also
+        // gates the Worktree branch, so an orphaned retained worktree cannot be
+        // reached once its Project is unregistered.
+        let project_root = self.project_root(project_id)?;
+        match execution_mode {
+            ExecutionMode::Shared => match workspace_path {
+                None => Ok(project_root),
+                Some(_) => Err(WorkspaceError::SessionWorkspaceUnavailable),
+            },
+            ExecutionMode::Worktree => match workspace_path {
+                Some(workspace_path) => self
+                    .validated_session_worktree(project_id, agent_session_id, workspace_path)
+                    .map_err(|_| WorkspaceError::SessionWorkspaceUnavailable),
+                None => Err(WorkspaceError::SessionWorkspaceUnavailable),
+            },
         }
-        let ignored = git_ignored_paths(
-            &project_root,
-            entries.iter().map(|entry| entry.path.as_str()),
-        );
-        for entry in &mut entries {
-            entry.ignored = ignored.contains(&entry.path);
-        }
-        entries.sort_by(|left, right| {
-            entry_kind_rank(&left.kind)
-                .cmp(&entry_kind_rank(&right.kind))
-                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-        });
-        Ok(entries)
     }
 
     pub fn read_text(
@@ -1046,6 +1056,57 @@ fn git_ignored_paths<'a>(
         .filter(|path| !path.is_empty())
         .map(|path| String::from_utf8_lossy(path).into_owned())
         .collect()
+}
+
+fn list_entries_in(
+    root: &Path,
+    relative: &str,
+    max_entries: Option<usize>,
+) -> Result<Vec<FileEntry>, WorkspaceError> {
+    let relative = normalize_relative(relative, true)?;
+    let directory = root.join(&relative).canonicalize()?;
+    ensure_contained_or_same(root, &directory, relative.to_string_lossy().into_owned())?;
+    if !directory.is_dir() {
+        return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+    }
+
+    let mut entries = Vec::new();
+    for result in fs::read_dir(&directory)?.take(max_entries.unwrap_or(usize::MAX)) {
+        let entry = result?;
+        if entry.file_name() == STATE_DIRECTORY {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let metadata = entry.metadata()?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let kind = if metadata.is_dir() {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
+        entries.push(FileEntry {
+            path: path_string(&relative.join(&name)),
+            hidden: name.starts_with('.'),
+            generated: kind == EntryKind::Directory && is_generated_directory_name(&name),
+            name,
+            kind,
+            size: metadata.len(),
+            ignored: false,
+        });
+    }
+    let ignored = git_ignored_paths(root, entries.iter().map(|entry| entry.path.as_str()));
+    for entry in &mut entries {
+        entry.ignored = ignored.contains(&entry.path);
+    }
+    entries.sort_by(|left, right| {
+        entry_kind_rank(&left.kind)
+            .cmp(&entry_kind_rank(&right.kind))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    Ok(entries)
 }
 
 fn git_failure(output: &std::process::Output) -> WorkspaceError {

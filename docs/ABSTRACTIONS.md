@@ -255,6 +255,20 @@ by a newer query. Generated classification covers the common build/cache
 directory names defined by the Runtime; clients consume the flag instead of
 guessing from paths.
 
+Composer context search resolves entries through a Session-scoped endpoint
+(`GET /sessions/{conversation_id}/entries`) that derives the execution root
+entirely from the conversation record: a shared Session uses its registered
+Project root and a worktree Session uses the exact worktree owned by its
+`agent_session_id`. Related Agent Chats may share that execution boundary while
+retaining distinct conversation IDs. The browser supplies only a validated
+relative directory path and receives at most 512 safe relative `Entry` rows per
+directory; no arbitrary or absolute path is accepted or exposed. Project
+registration is a common prerequisite for both modes, so a retained worktree
+can never be listed after its Project is unregistered. Execution-mode and
+`workspace_path` consistency is enforced, so a corrupted record or a path
+pointed at another Agent Session's worktree is rejected with a path-free public
+error rather than falling back or exposing private server state.
+
 Project registration uses the same keyboard and visual interaction but a
 server-directory adapter. Its value remains an absolute server path and calls
 only the existing create/import and directory-listing APIs. Create requires a

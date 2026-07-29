@@ -512,6 +512,10 @@ fn client_api_router(state: AppState) -> Router {
         )
         .route("/sessions/{conversation_id}/state", get(get_session_state))
         .route(
+            "/sessions/{conversation_id}/entries",
+            get(list_session_entries),
+        )
+        .route(
             "/sessions/{conversation_id}/side-questions",
             axum::routing::post(ask_side_question),
         )
@@ -1983,6 +1987,38 @@ async fn list_entries(
     Ok(Json(entries))
 }
 
+async fn list_session_entries(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Query(query): Query<EntryQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    // The conversation record is the server-authoritative source of which
+    // Project this Session belongs to and where it executes. The browser
+    // supplies only a validated relative directory path.
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)?;
+    let project_id = conversation.project_id.clone();
+    let agent_session_id = conversation.agent_session_id.clone();
+    let execution_mode = conversation.execution_mode;
+    let workspace_path = conversation.workspace_path.clone();
+    let relative = query.path;
+
+    let workspace = Arc::clone(&state.workspace);
+    let entries = run_workspace_operation(move || {
+        workspace.list_session_entries(
+            &project_id,
+            &agent_session_id,
+            execution_mode,
+            workspace_path.as_deref(),
+            &relative,
+        )
+    })
+    .await?;
+    Ok(Json(entries))
+}
+
 async fn run_workspace_operation<T, Operation>(operation: Operation) -> Result<T, ApiError>
 where
     T: Send + 'static,
@@ -2621,6 +2657,7 @@ fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
 fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) {
     match error {
         WorkspaceError::InvalidPath(_)
+        | WorkspaceError::SessionWorkspaceUnavailable
         | WorkspaceError::UnsupportedText
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
         WorkspaceError::AssetTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large"),

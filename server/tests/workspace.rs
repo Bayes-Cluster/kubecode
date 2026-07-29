@@ -2,7 +2,10 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use kubecode_server::workspace::{EntryKind, WorkspaceError, WorkspaceService};
+use kubecode_server::agents::ExecutionMode;
+use kubecode_server::workspace::{
+    EntryKind, MAX_SESSION_DIRECTORY_ENTRIES, WorkspaceError, WorkspaceService,
+};
 use tempfile::TempDir;
 
 fn service() -> (TempDir, WorkspaceService) {
@@ -451,4 +454,240 @@ fn renames_and_deletes_entries_inside_the_project_only() {
     assert!(!service.root().join("crud/nested/new.txt").exists());
 
     assert!(service.delete_entry(&project.id, "../outside").is_err());
+}
+
+fn worktree_project(service: &WorkspaceService, name: &str) -> kubecode_server::workspace::Project {
+    let project = service
+        .create_project_at(service.root().join(name))
+        .expect("project");
+    run_git(&project.path, &["init"]);
+    run_git(&project.path, &["config", "user.email", "test@example.com"]);
+    run_git(&project.path, &["config", "user.name", "Kubecode Test"]);
+    fs::write(Path::new(&project.path).join("README.md"), "root\n").expect("fixture");
+    run_git(&project.path, &["add", "README.md"]);
+    run_git(&project.path, &["commit", "-m", "initial"]);
+    service
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+    project
+}
+
+#[test]
+fn list_session_entries_shared_matches_project_entries() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "shared-project");
+    fs::create_dir(Path::new(&project.path).join("src")).expect("src");
+
+    let project_entries = service
+        .list_entries(&project.id, "")
+        .expect("project entries");
+    let session_entries = service
+        .list_session_entries(
+            &project.id,
+            "session-shared",
+            ExecutionMode::Shared,
+            None,
+            "",
+        )
+        .expect("shared session entries");
+
+    assert_eq!(project_entries, session_entries);
+}
+
+#[test]
+fn list_session_entries_worktree_lists_worktree_not_shared_root() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "session-worktree-project");
+    let worktree = service
+        .create_session_worktree(&project.id, "session-12345678")
+        .expect("session worktree");
+
+    // A file that exists only in the worktree.
+    fs::write(worktree.join("only-in-worktree.txt"), "wt\n").expect("worktree-only file");
+
+    let entries = service
+        .list_session_entries(
+            &project.id,
+            "session-12345678",
+            ExecutionMode::Worktree,
+            worktree.to_str(),
+            "",
+        )
+        .expect("worktree entries");
+    let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+    assert!(names.contains(&"only-in-worktree.txt"));
+
+    // Sanity: the shared project root does not contain that file.
+    let shared = service
+        .list_entries(&project.id, "")
+        .expect("shared entries");
+    let shared_names: Vec<&str> = shared.iter().map(|entry| entry.name.as_str()).collect();
+    assert!(!shared_names.contains(&"only-in-worktree.txt"));
+}
+
+#[test]
+fn list_session_entries_bounds_each_directory_listing() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "bounded-session-entries");
+    let project_root = Path::new(&project.path);
+    for index in 0..(MAX_SESSION_DIRECTORY_ENTRIES + 20) {
+        fs::write(
+            project_root.join(format!("entry-{index:04}.txt")),
+            "fixture\n",
+        )
+        .expect("fixture");
+    }
+
+    let entries = service
+        .list_session_entries(
+            &project.id,
+            "agent-session-bounded",
+            ExecutionMode::Shared,
+            None,
+            "",
+        )
+        .expect("bounded entries");
+
+    assert_eq!(entries.len(), MAX_SESSION_DIRECTORY_ENTRIES);
+}
+
+#[test]
+fn list_session_entries_rejects_escaped_relative_path() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "escape-project");
+
+    let result = service.list_session_entries(
+        &project.id,
+        "session-shared",
+        ExecutionMode::Shared,
+        None,
+        "../outside",
+    );
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath(_))));
+}
+
+#[test]
+fn list_session_entries_rejects_another_conversations_worktree() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "cross-conversation-project");
+    let other_worktree = service
+        .create_session_worktree(&project.id, "session-aaaaaaaa")
+        .expect("other session worktree");
+
+    // Pointing conversation B at conversation A's worktree must fail.
+    let result = service.list_session_entries(
+        &project.id,
+        "session-bbbbbbbb",
+        ExecutionMode::Worktree,
+        other_worktree.to_str(),
+        "",
+    );
+    assert!(matches!(
+        result,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
+}
+
+#[test]
+fn list_session_entries_rejects_inconsistent_mode_and_path() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "consistency-project");
+    let worktree = service
+        .create_session_worktree(&project.id, "session-12345678")
+        .expect("session worktree");
+
+    // Shared must carry no workspace_path.
+    let shared_with_path = service.list_session_entries(
+        &project.id,
+        "session-12345678",
+        ExecutionMode::Shared,
+        worktree.to_str(),
+        "",
+    );
+    assert!(matches!(
+        shared_with_path,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
+
+    // Worktree must carry a workspace_path.
+    let worktree_without_path = service.list_session_entries(
+        &project.id,
+        "session-12345678",
+        ExecutionMode::Worktree,
+        None,
+        "",
+    );
+    assert!(matches!(
+        worktree_without_path,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
+}
+
+#[test]
+fn list_session_entries_rejects_stale_worktree_root() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "stale-worktree-project");
+    let worktree = service
+        .create_session_worktree(&project.id, "session-12345678")
+        .expect("session worktree");
+    let stale_path = worktree.to_path_buf();
+    service
+        .discard_session_worktree(
+            &project.id,
+            "session-12345678",
+            stale_path.to_str().expect("stale path"),
+        )
+        .expect("discard worktree");
+
+    let result = service.list_session_entries(
+        &project.id,
+        "session-12345678",
+        ExecutionMode::Worktree,
+        stale_path.to_str(),
+        "",
+    );
+    assert!(matches!(
+        result,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
+}
+
+#[test]
+fn list_session_entries_rejects_a_worktree_whose_project_was_unregistered() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "unregistered-worktree-project");
+    let worktree = service
+        .create_session_worktree(&project.id, "session-12345678")
+        .expect("session worktree");
+    fs::write(worktree.join("only-in-worktree.txt"), "wt\n").expect("worktree-only file");
+
+    // Unregistering the Project removes only the registration; files and the
+    // retained worktree directory remain on disk.
+    service
+        .unregister_project(&project.id)
+        .expect("unregister project");
+    assert!(worktree.is_dir(), "worktree directory is preserved on disk");
+
+    // A retained worktree cannot be listed once its Project is unregistered.
+    let result = service.list_session_entries(
+        &project.id,
+        "session-12345678",
+        ExecutionMode::Worktree,
+        worktree.to_str(),
+        "",
+    );
+    assert!(matches!(result, Err(WorkspaceError::ProjectNotFound(_))));
+
+    // The shared mode is already gated by project_root and stays rejected too.
+    let shared_result = service.list_session_entries(
+        &project.id,
+        "session-12345678",
+        ExecutionMode::Shared,
+        None,
+        "",
+    );
+    assert!(matches!(
+        shared_result,
+        Err(WorkspaceError::ProjectNotFound(_))
+    ));
 }
