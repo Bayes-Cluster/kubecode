@@ -15,12 +15,15 @@ use crate::database::{Database, DatabaseError};
 
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_SESSION_DIRECTORY_ENTRIES: usize = 512;
 const STATE_DIRECTORY: &str = ".state";
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
     #[error("invalid workspace path: {0}")]
     InvalidPath(String),
+    #[error("session workspace is unavailable")]
+    SessionWorkspaceUnavailable,
     #[error("project not found: {0}")]
     ProjectNotFound(String),
     #[error("project is already registered: {0}")]
@@ -672,7 +675,7 @@ impl WorkspaceService {
         relative: &str,
     ) -> Result<Vec<FileEntry>, WorkspaceError> {
         let project_root = self.project_root(project_id)?;
-        list_entries_in(&project_root, relative)
+        list_entries_in(&project_root, relative, None)
     }
 
     /// Lists entries for a Session/conversation-scoped Composer context search.
@@ -685,18 +688,18 @@ impl WorkspaceService {
     pub fn list_session_entries(
         &self,
         project_id: &str,
-        conversation_id: &str,
+        agent_session_id: &str,
         execution_mode: ExecutionMode,
         workspace_path: Option<&str>,
         relative: &str,
     ) -> Result<Vec<FileEntry>, WorkspaceError> {
         let root = self.session_execution_root(
             project_id,
-            conversation_id,
+            agent_session_id,
             execution_mode,
             workspace_path,
         )?;
-        list_entries_in(&root, relative)
+        list_entries_in(&root, relative, Some(MAX_SESSION_DIRECTORY_ENTRIES))
     }
 
     /// Resolves the execution root for a Session, enforcing execution-mode and
@@ -704,12 +707,12 @@ impl WorkspaceService {
     /// falling back. Project registration is a common prerequisite for both
     /// modes, so a retained worktree can never be listed after its Project is
     /// unregistered. A worktree Session must additionally point at exactly its
-    /// own `state_root/worktrees/<project_id>/<conversation_id>` worktree, never
-    /// another conversation's.
+    /// own `state_root/worktrees/<project_id>/<agent_session_id>` worktree,
+    /// never another Agent Session's.
     fn session_execution_root(
         &self,
         project_id: &str,
-        conversation_id: &str,
+        agent_session_id: &str,
         execution_mode: ExecutionMode,
         workspace_path: Option<&str>,
     ) -> Result<PathBuf, WorkspaceError> {
@@ -720,18 +723,13 @@ impl WorkspaceService {
         match execution_mode {
             ExecutionMode::Shared => match workspace_path {
                 None => Ok(project_root),
-                Some(workspace_path) => Err(WorkspaceError::InvalidPath(workspace_path.to_owned())),
+                Some(_) => Err(WorkspaceError::SessionWorkspaceUnavailable),
             },
             ExecutionMode::Worktree => match workspace_path {
                 Some(workspace_path) => self
-                    .validated_session_worktree(project_id, conversation_id, workspace_path)
-                    .map_err(|error| match error {
-                        WorkspaceError::Io(_) => {
-                            WorkspaceError::InvalidPath(workspace_path.to_owned())
-                        }
-                        other => other,
-                    }),
-                None => Err(WorkspaceError::InvalidPath(conversation_id.to_owned())),
+                    .validated_session_worktree(project_id, agent_session_id, workspace_path)
+                    .map_err(|_| WorkspaceError::SessionWorkspaceUnavailable),
+                None => Err(WorkspaceError::SessionWorkspaceUnavailable),
             },
         }
     }
@@ -1060,7 +1058,11 @@ fn git_ignored_paths<'a>(
         .collect()
 }
 
-fn list_entries_in(root: &Path, relative: &str) -> Result<Vec<FileEntry>, WorkspaceError> {
+fn list_entries_in(
+    root: &Path,
+    relative: &str,
+    max_entries: Option<usize>,
+) -> Result<Vec<FileEntry>, WorkspaceError> {
     let relative = normalize_relative(relative, true)?;
     let directory = root.join(&relative).canonicalize()?;
     ensure_contained_or_same(root, &directory, relative.to_string_lossy().into_owned())?;
@@ -1069,7 +1071,7 @@ fn list_entries_in(root: &Path, relative: &str) -> Result<Vec<FileEntry>, Worksp
     }
 
     let mut entries = Vec::new();
-    for result in fs::read_dir(&directory)? {
+    for result in fs::read_dir(&directory)?.take(max_entries.unwrap_or(usize::MAX)) {
         let entry = result?;
         if entry.file_name() == STATE_DIRECTORY {
             continue;

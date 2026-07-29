@@ -3,7 +3,9 @@ use std::path::Path;
 use std::process::Command;
 
 use kubecode_server::agents::ExecutionMode;
-use kubecode_server::workspace::{EntryKind, WorkspaceError, WorkspaceService};
+use kubecode_server::workspace::{
+    EntryKind, MAX_SESSION_DIRECTORY_ENTRIES, WorkspaceError, WorkspaceService,
+};
 use tempfile::TempDir;
 
 fn service() -> (TempDir, WorkspaceService) {
@@ -524,6 +526,32 @@ fn list_session_entries_worktree_lists_worktree_not_shared_root() {
 }
 
 #[test]
+fn list_session_entries_bounds_each_directory_listing() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "bounded-session-entries");
+    let project_root = Path::new(&project.path);
+    for index in 0..(MAX_SESSION_DIRECTORY_ENTRIES + 20) {
+        fs::write(
+            project_root.join(format!("entry-{index:04}.txt")),
+            "fixture\n",
+        )
+        .expect("fixture");
+    }
+
+    let entries = service
+        .list_session_entries(
+            &project.id,
+            "agent-session-bounded",
+            ExecutionMode::Shared,
+            None,
+            "",
+        )
+        .expect("bounded entries");
+
+    assert_eq!(entries.len(), MAX_SESSION_DIRECTORY_ENTRIES);
+}
+
+#[test]
 fn list_session_entries_rejects_escaped_relative_path() {
     let (_temp, service) = service();
     let project = worktree_project(&service, "escape-project");
@@ -554,7 +582,10 @@ fn list_session_entries_rejects_another_conversations_worktree() {
         other_worktree.to_str(),
         "",
     );
-    assert!(matches!(result, Err(WorkspaceError::InvalidPath(_))));
+    assert!(matches!(
+        result,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
 }
 
 #[test]
@@ -575,7 +606,7 @@ fn list_session_entries_rejects_inconsistent_mode_and_path() {
     );
     assert!(matches!(
         shared_with_path,
-        Err(WorkspaceError::InvalidPath(_))
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
     ));
 
     // Worktree must carry a workspace_path.
@@ -588,7 +619,7 @@ fn list_session_entries_rejects_inconsistent_mode_and_path() {
     );
     assert!(matches!(
         worktree_without_path,
-        Err(WorkspaceError::InvalidPath(_))
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
     ));
 }
 
@@ -615,7 +646,10 @@ fn list_session_entries_rejects_stale_worktree_root() {
         stale_path.to_str(),
         "",
     );
-    assert!(matches!(result, Err(WorkspaceError::InvalidPath(_))));
+    assert!(matches!(
+        result,
+        Err(WorkspaceError::SessionWorkspaceUnavailable)
+    ));
 }
 
 #[test]

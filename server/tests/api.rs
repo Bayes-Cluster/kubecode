@@ -2260,6 +2260,11 @@ async fn session_entries_reject_a_conversation_pointed_at_another_worktree() {
     let (status, error) = session_entries(&app, &conversation.id, "").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error["code"], "invalid_path");
+    assert_eq!(error["message"], "session workspace is unavailable");
+    let encoded = error.to_string();
+    assert!(!encoded.contains(other_worktree.to_string_lossy().as_ref()));
+    assert!(!encoded.contains(project_root.to_string_lossy().as_ref()));
+    assert!(!encoded.contains(state.to_string_lossy().as_ref()));
 }
 
 #[tokio::test]
@@ -2304,10 +2309,8 @@ async fn lists_session_scoped_entries_for_a_worktree_session() {
     let conversation = store
         .create_conversation(&project.id, AgentId::Codex, None)
         .expect("conversation");
-    // The worktree directory name must equal the conversation id so the exact
-    // equality check in validated_session_worktree holds.
     let worktree = workspace
-        .create_session_worktree(&project.id, &conversation.id)
+        .create_session_worktree(&project.id, &conversation.agent_session_id)
         .expect("worktree");
     fs::write(worktree.join("only-in-worktree.txt"), "wt\n").expect("worktree-only file");
     store
@@ -2327,6 +2330,76 @@ async fn lists_session_scoped_entries_for_a_worktree_session() {
         .map(|entry| entry["name"].as_str().expect("name"))
         .collect();
     assert!(names.contains(&"only-in-worktree.txt"));
+}
+
+#[tokio::test]
+async fn lists_worktree_entries_for_a_chat_sharing_its_agent_session() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            Arc::clone(&teams),
+        ),
+        BASE_PATH,
+    );
+    let project_root = root.join("shared-agent-session-entries");
+    let project = workspace.create_project_at(&project_root).expect("project");
+    run_command(&project_root, "git", &["init"]);
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_root, "git", &["add", "README.md"]);
+    run_command(&project_root, "git", &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+
+    let parent = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("parent conversation");
+    let worktree = workspace
+        .create_session_worktree(&project.id, &parent.agent_session_id)
+        .expect("worktree");
+    fs::write(worktree.join("shared-agent-session.txt"), "wt\n").expect("fixture");
+    store
+        .assign_execution_workspace(
+            &parent.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(worktree.to_str().expect("path")),
+        )
+        .expect("parent workspace");
+    let child = store
+        .create_team_member(&parent.id, AgentId::ClaudeCode, false)
+        .expect("shared team chat");
+    assert_ne!(child.id, child.agent_session_id);
+    assert_eq!(child.agent_session_id, parent.agent_session_id);
+
+    let (status, entries) = session_entries(&app, &child.id, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        entries
+            .as_array()
+            .expect("entries")
+            .iter()
+            .any(|entry| { entry["name"] == "shared-agent-session.txt" })
+    );
 }
 
 #[tokio::test]

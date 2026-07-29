@@ -2000,6 +2000,7 @@ async fn list_session_entries(
         .store()
         .get_conversation(&conversation_id)?;
     let project_id = conversation.project_id.clone();
+    let agent_session_id = conversation.agent_session_id.clone();
     let execution_mode = conversation.execution_mode;
     let workspace_path = conversation.workspace_path.clone();
     let relative = query.path;
@@ -2008,7 +2009,7 @@ async fn list_session_entries(
     let entries = run_workspace_operation(move || {
         workspace.list_session_entries(
             &project_id,
-            &conversation_id,
+            &agent_session_id,
             execution_mode,
             workspace_path.as_deref(),
             &relative,
@@ -2656,6 +2657,7 @@ fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
 fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) {
     match error {
         WorkspaceError::InvalidPath(_)
+        | WorkspaceError::SessionWorkspaceUnavailable
         | WorkspaceError::UnsupportedText
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
         WorkspaceError::AssetTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large"),
