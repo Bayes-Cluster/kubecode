@@ -50,6 +50,7 @@ import {
   type AgentEvent,
   type AgentRun,
   type AgentSessionState,
+  type ComposerCatalogSnapshot,
   type Conversation,
   type ConversationHistoryPage,
   type ConversationRevision,
@@ -65,8 +66,11 @@ import { ComposerContextInput } from './ComposerContextInput'
 import {
   appendComposerContext,
   appendComposerText,
+  applyComposerCatalogSnapshot,
   composerDraftHasStaleContext,
+  composerDraftHasTypedReferences,
   composerDraftPlainText,
+  composerDraftToStructuredSegments,
   createComposerContextReference,
   parseStoredComposerDraft,
   serializeComposerDraft,
@@ -144,6 +148,7 @@ type AgentSessionWorkspaceProps = {
 const ACTIVE_RUN_STATUSES = new Set<AgentRun['status']>(['running', 'waiting_permission'])
 const SESSION_STATE_EVENT_KINDS = new Set([
   'available_commands',
+  'composer_catalog_snapshot',
   'config_options',
   'current_mode',
   'plan',
@@ -221,6 +226,9 @@ export function AgentSessionWorkspace({
   titlebarTarget,
 }: AgentSessionWorkspaceProps) {
   const [composerDraft, setComposerDraft] = useState<ComposerDraft>(() => textComposerDraft())
+  const [inlineContextPending, setInlineContextPending] = useState(false)
+  const [menuContextPending, setMenuContextPending] = useState(false)
+  const composerContextPending = inlineContextPending || menuContextPending
   const prompt = composerDraftPlainText(composerDraft)
   const [messages, setMessages] = useState<AiAgentMessage[]>([])
   const [run, setRun] = useState<AgentRun | null>(null)
@@ -254,6 +262,12 @@ export function AgentSessionWorkspace({
   const latestWorkspaceEventIdRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
   latestWorkspaceEventIdRef.current = workspaceEvents.at(-1)?.id ?? 0
   const conversationId = conversation?.id ?? null
+  const composerHasTypedReferences = composerDraftHasTypedReferences(composerDraft)
+  const composerCatalogReady = !composerHasTypedReferences
+    || sessionState?.composer?.catalog.conversation_id === conversationId
+  const composerSubmitDisabled = composerContextPending
+    || composerDraftHasStaleContext(composerDraft)
+    || !composerCatalogReady
   const activeConversationIdRef = useRef(conversationId)
   activeConversationIdRef.current = conversationId
   const agent = agents.find((item) => item.id === conversation?.agent_id)
@@ -331,6 +345,11 @@ export function AgentSessionWorkspace({
     })
   }, [conversationId])
 
+  const applyComposerCatalog = useCallback((catalog: ComposerCatalogSnapshot) => {
+    if (catalog.conversation_id !== conversationId) return
+    setSessionState((current) => current ? { ...current, composer: { catalog } } : current)
+  }, [conversationId])
+
   useEffect(() => {
     if (!conversationId) {
       setComposerDraft(textComposerDraft())
@@ -340,6 +359,12 @@ export function AgentSessionWorkspace({
     conversationDraftsRef.current.set(conversationId, persisted)
     setComposerDraft(persisted)
   }, [conversationId])
+
+  useEffect(() => {
+    const catalog = sessionState?.composer?.catalog
+    if (!catalog || catalog.conversation_id !== conversationId) return
+    updateComposerDraft((current) => applyComposerCatalogSnapshot(current, catalog))
+  }, [conversationId, sessionState?.composer?.catalog, updateComposerDraft])
 
   useEffect(() => {
     setTeamView(conversation?.team_role === 'leader' ? 'team' : 'chat')
@@ -470,20 +495,34 @@ export function AgentSessionWorkspace({
 
   const send = async (text: string) => {
     const message = text.trim()
+    const typed = composerHasTypedReferences
     if (!message
       || !conversation
       || !projectId
       || !agent?.available
       || active
+      || composerSubmitDisabled
       || directTeammateChatDisabled
       || hardReadOnly) return
     setError(null)
     try {
-      const nextRun = await api.startRun(
-        projectId,
-        conversation.id,
-        message,
-      )
+      let nextRun: AgentRun
+      if (typed) {
+        const catalog = sessionState?.composer?.catalog
+        if (!catalog || catalog.conversation_id !== conversation.id) return
+        const command = activeAcpCommand(composerDraftPlainText(composerDraft))
+        const commandItems = command ? catalog.items.filter((item) => (
+          item.kind === 'command' && item.enabled && item.name === command.name
+        )) : []
+        if (command && commandItems.length !== 1) return
+        nextRun = await api.startStructuredRun(projectId, conversation.id, {
+          ...(command ? { item_id: commandItems[0].id } : {}),
+          catalog_revision: catalog.revision,
+          segments: composerDraftToStructuredSegments(composerDraft, command?.name),
+        })
+      } else {
+        nextRun = await api.startRun(projectId, conversation.id, message)
+      }
       attachRun(nextRun)
       updatePrompt('')
       trackEvent('kubecode_agent_run_started', {
@@ -813,7 +852,8 @@ export function AgentSessionWorkspace({
     }
     event.preventDefault()
     event.stopPropagation()
-    void dispatchCommand(selected, activeCommand.arguments)
+    if (composerDraftHasTypedReferences(composerDraft)) void send(prompt)
+    else void dispatchCommand(selected, activeCommand.arguments)
   }
 
   const insertComposerText = (text: string, kind: 'command') => {
@@ -828,14 +868,36 @@ export function AgentSessionWorkspace({
 
   const insertComposerContext = (entry: Entry) => {
     if (directTeammateChatDisabled || hardReadOnly) return
-    updateComposerDraft(appendComposerContext(
-      composerDraft,
-      createComposerContextReference(entry),
-    ))
-    window.requestAnimationFrame(() => inputRef.current?.focus())
-    trackEvent('kubecode_agent_context_inserted', {
-      agent_id: conversation.agent_id,
+    const targetConversationId = conversation.id
+    setMenuContextPending(true)
+    void api.registerComposerContext(targetConversationId, {
       kind: entry.kind,
+      path: entry.path,
+    }).then((registration) => {
+      if (activeConversationIdRef.current !== targetConversationId
+        || registration.context.kind !== entry.kind
+        || registration.context.display !== entry.path
+        || !registration.context.enabled) return
+      applyComposerCatalog(registration.catalog)
+      updateComposerDraft((current) => appendComposerContext(
+        current,
+        createComposerContextReference({
+          catalogRevision: registration.catalog.revision,
+          id: registration.context.id,
+          kind: registration.context.kind,
+          name: entry.name,
+          path: registration.context.display,
+        }),
+      ))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_agent_context_inserted', {
+        agent_id: conversation.agent_id,
+        kind: entry.kind,
+      })
+    }).catch(reportError).finally(() => {
+      if (activeConversationIdRef.current === targetConversationId) {
+        setMenuContextPending(false)
+      }
     })
   }
 
@@ -1264,11 +1326,15 @@ export function AgentSessionWorkspace({
                   draft={composerDraft}
                   inputRef={inputRef}
                   onChange={updateComposerDraft}
+                  onCatalogChange={applyComposerCatalog}
                   onKeyDownCapture={handleCommandKeyDown}
+                  onPendingChange={setInlineContextPending}
+                  onRegistrationError={reportError}
                   onSubmit={(text) => {
-                    if (composerDraftHasStaleContext(composerDraft)) return
+                    if (composerSubmitDisabled) return
                     if (active) {
-                      if (sideQuestionAvailable && sideQuestionText(text)) {
+                      if (!composerDraftHasTypedReferences(composerDraft)
+                        && sideQuestionAvailable && sideQuestionText(text)) {
                         void sendSideQuestion(text)
                       }
                     } else {
@@ -1280,7 +1346,7 @@ export function AgentSessionWorkspace({
                     : readiness === 'missing'
                       ? t('ai.panel.placeholder.missing', { agent: agentLabel })
                       : t('ai.panel.placeholder.ready', { agent: agentLabel })}
-                  submitDisabled={composerDraftHasStaleContext(composerDraft)}
+                  submitDisabled={composerSubmitDisabled}
                 />
               )}
               inputRef={inputRef}
@@ -1293,7 +1359,7 @@ export function AgentSessionWorkspace({
                 : undefined}
               onSend={(text) => void send(text)}
               onStop={() => void stop()}
-              sendDisabled={composerDraftHasStaleContext(composerDraft)}
+              sendDisabled={composerSubmitDisabled}
               statusMessage={composerDraftHasStaleContext(composerDraft)
                 ? t('kubecode.staleContext')
                 : undefined}

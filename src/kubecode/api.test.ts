@@ -109,6 +109,52 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('uses Session-scoped context routes and opaque structured segments below the base path', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+    const reference = {
+      id: 'ctx:opaque',
+      catalog_revision: 7,
+      context_kind: 'file' as const,
+    }
+
+    await api.registerComposerContext('session/id', { kind: 'file', path: 'src/main.ts' })
+    await api.validateComposerContexts('session/id', [reference])
+    await api.startStructuredRun('project/id', 'session/id', {
+      catalog_revision: 8,
+      segments: [{ kind: 'context_ref', ...reference }],
+    })
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/user/alice/kubecode/api/v1/sessions/session%2Fid/composer/contexts',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'file', path: 'src/main.ts' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/user/alice/kubecode/api/v1/sessions/session%2Fid/composer/contexts/validate',
+      expect.objectContaining({
+        body: JSON.stringify({ references: [reference] }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/user/alice/kubecode/api/v1/projects/project%2Fid/sessions/session%2Fid/runs',
+      expect.objectContaining({
+        body: JSON.stringify({
+          catalog_revision: 8,
+          segments: [{ kind: 'context_ref', ...reference }],
+        }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('dispatches an advertised ACP command through the dedicated endpoint', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'run-1' })))
     vi.stubGlobal('fetch', fetch)

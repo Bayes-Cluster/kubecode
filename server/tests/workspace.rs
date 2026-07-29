@@ -691,3 +691,68 @@ fn list_session_entries_rejects_a_worktree_whose_project_was_unregistered() {
         Err(WorkspaceError::ProjectNotFound(_))
     ));
 }
+
+#[test]
+fn resolves_only_eligible_exact_session_context_entries() {
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "context-resolution-project");
+    let root = Path::new(&project.path);
+    fs::create_dir(root.join("src")).expect("src");
+    fs::write(root.join("src/main.rs"), "fn main() {}\n").expect("file");
+
+    let resolved = service
+        .resolve_session_context_entry(
+            &project.id,
+            "session-shared",
+            ExecutionMode::Shared,
+            None,
+            "src/main.rs",
+            kubecode_server::workspace::EntryKind::File,
+        )
+        .expect("eligible file");
+
+    assert_eq!(resolved.path, "src/main.rs");
+    assert_eq!(resolved.kind, kubecode_server::workspace::EntryKind::File);
+    assert!(
+        service
+            .resolve_session_context_entry(
+                &project.id,
+                "session-shared",
+                ExecutionMode::Shared,
+                None,
+                "src/main.rs",
+                kubecode_server::workspace::EntryKind::Directory,
+            )
+            .is_err()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn session_context_resolution_rejects_ancestor_and_final_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let (_temp, service) = service();
+    let project = worktree_project(&service, "context-symlink-project");
+    let root = Path::new(&project.path);
+    fs::create_dir(root.join("real")).expect("real");
+    fs::write(root.join("real/file.txt"), "safe\n").expect("file");
+    symlink(root.join("real"), root.join("linked-dir")).expect("ancestor symlink");
+    symlink(root.join("real/file.txt"), root.join("linked-file.txt")).expect("final symlink");
+
+    for path in ["linked-dir/file.txt", "linked-file.txt"] {
+        assert!(
+            service
+                .resolve_session_context_entry(
+                    &project.id,
+                    "session-shared",
+                    ExecutionMode::Shared,
+                    None,
+                    path,
+                    kubecode_server::workspace::EntryKind::File,
+                )
+                .is_err(),
+            "{path} must be rejected"
+        );
+    }
+}

@@ -24,6 +24,8 @@ pub enum WorkspaceError {
     InvalidPath(String),
     #[error("session workspace is unavailable")]
     SessionWorkspaceUnavailable,
+    #[error("composer context is outside the Session execution root or is ineligible: {0}")]
+    IneligibleContext(String),
     #[error("project not found: {0}")]
     ProjectNotFound(String),
     #[error("project is already registered: {0}")]
@@ -693,13 +695,86 @@ impl WorkspaceService {
         workspace_path: Option<&str>,
         relative: &str,
     ) -> Result<Vec<FileEntry>, WorkspaceError> {
-        let root = self.session_execution_root(
+        let root = self.session_execution_path(
             project_id,
             agent_session_id,
             execution_mode,
             workspace_path,
         )?;
         list_entries_in(&root, relative, Some(MAX_SESSION_DIRECTORY_ENTRIES))
+    }
+
+    /// Resolves one Composer context entry inside the exact Session execution
+    /// root without following symlinks. The returned path is always normalized
+    /// and relative; absolute execution roots remain server-only.
+    pub fn resolve_session_context_entry(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+        relative: &str,
+        expected_kind: EntryKind,
+    ) -> Result<FileEntry, WorkspaceError> {
+        if relative.len() > 4_096 || relative.contains(['\0', '\r', '\n', '\\']) {
+            return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+        }
+        let relative_path = normalize_relative(relative, false)
+            .map_err(|_| WorkspaceError::IneligibleContext(relative.to_owned()))?;
+        let root = self.session_execution_path(
+            project_id,
+            agent_session_id,
+            execution_mode,
+            workspace_path,
+        )?;
+        let mut candidate = root.clone();
+        let components = relative_path.components().collect::<Vec<_>>();
+        for (index, component) in components.iter().enumerate() {
+            candidate.push(component.as_os_str());
+            let metadata = fs::symlink_metadata(&candidate)?;
+            if metadata.file_type().is_symlink() {
+                return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+            }
+            let name = component.as_os_str().to_string_lossy();
+            let is_final = index + 1 == components.len();
+            if name.starts_with('.') || (!is_final && is_generated_directory_name(&name)) {
+                return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+            }
+            if !is_final && !metadata.is_dir() {
+                return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+            }
+        }
+        let metadata = fs::symlink_metadata(&candidate)?;
+        let actual_kind = if metadata.is_dir() {
+            EntryKind::Directory
+        } else if metadata.is_file() {
+            EntryKind::File
+        } else {
+            return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+        };
+        if actual_kind != expected_kind {
+            return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+        }
+        let normalized = path_string(&relative_path);
+        let name = relative_path
+            .file_name()
+            .ok_or_else(|| WorkspaceError::IneligibleContext(relative.to_owned()))?
+            .to_string_lossy()
+            .into_owned();
+        if (actual_kind == EntryKind::Directory && is_generated_directory_name(&name))
+            || git_ignored_paths(&root, std::iter::once(normalized.as_str())).contains(&normalized)
+        {
+            return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
+        }
+        Ok(FileEntry {
+            name,
+            path: normalized,
+            kind: actual_kind,
+            size: metadata.len(),
+            hidden: false,
+            ignored: false,
+            generated: false,
+        })
     }
 
     /// Resolves the execution root for a Session, enforcing execution-mode and
@@ -709,7 +784,7 @@ impl WorkspaceService {
     /// unregistered. A worktree Session must additionally point at exactly its
     /// own `state_root/worktrees/<project_id>/<agent_session_id>` worktree,
     /// never another Agent Session's.
-    fn session_execution_root(
+    pub fn session_execution_path(
         &self,
         project_id: &str,
         agent_session_id: &str,

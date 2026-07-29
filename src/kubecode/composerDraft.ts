@@ -1,28 +1,47 @@
+import type {
+  ComposerCatalogSnapshot,
+  ComposerContextValidationResponse,
+  ComposerItemKind,
+  StructuredComposerSegment,
+} from './api'
+
 export type ComposerContextKind = 'file' | 'directory'
-export type ComposerContextAvailability = 'available' | 'stale'
+export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
 
 export type ComposerContextReference = {
-  localKey: string
+  id: string
+  catalogRevision: number
   kind: ComposerContextKind
   name: string
   path: string
-  availability: ComposerContextAvailability
+  availability: 'available' | 'stale'
+}
+
+export type ComposerCapabilityReference = {
+  id: string
+  catalogRevision: number
+  itemKind: ComposerItemKind
+  name: string
+  availability: ComposerReferenceAvailability
 }
 
 export type ComposerDraftSegment =
   | { kind: 'text'; text: string }
   | { kind: 'context'; reference: ComposerContextReference }
+  | { kind: 'capability'; reference: ComposerCapabilityReference }
 
 export type ComposerDraft = {
-  version: 1
+  version: 2
   segments: ComposerDraftSegment[]
 }
 
-const CONTEXT_TOKEN_PATTERN = /\[\[([^[\]\r\n]+)\]\]/g
+export type ComposerReference = ComposerContextReference | ComposerCapabilityReference
+
+const CONTEXT_TOKEN_PATTERN = /\[\[([A-Za-z0-9._:-]+)\]\]/g
 export const MAX_COMPOSER_CONTEXT_REFERENCES = 32
 
 export function textComposerDraft(text = ''): ComposerDraft {
-  return { version: 1, segments: [{ kind: 'text', text }] }
+  return { version: 2, segments: [{ kind: 'text', text }] }
 }
 
 export function isProjectRelativePath(path: string): boolean {
@@ -35,29 +54,51 @@ export function isProjectRelativePath(path: string): boolean {
 
 export function createComposerContextReference({
   availability = 'available',
-  localKey = globalThis.crypto?.randomUUID?.() ?? `context-${Date.now()}-${Math.random()}`,
+  catalogRevision,
+  id,
   kind,
   name,
   path,
-}: Omit<ComposerContextReference, 'availability' | 'localKey'> & {
-  availability?: ComposerContextAvailability
-  localKey?: string
+}: Omit<ComposerContextReference, 'availability'> & {
+  availability?: ComposerContextReference['availability']
 }): ComposerContextReference {
   if (!isProjectRelativePath(path)) throw new Error('Composer context paths must be Project-relative')
-  return { availability, localKey, kind, name, path }
+  if (!Number.isSafeInteger(catalogRevision) || catalogRevision <= 0) {
+    throw new Error('Composer contexts require a positive catalog revision')
+  }
+  return { availability, catalogRevision, id, kind, name, path }
+}
+
+function isOpaqueId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._:-]+$/.test(value)
+}
+
+function isCatalogRevision(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
 function isContextReference(value: unknown): value is ComposerContextReference {
   if (!value || typeof value !== 'object') return false
   const reference = value as Partial<ComposerContextReference>
-  return typeof reference.localKey === 'string'
-    && /^[A-Za-z0-9._:-]+$/.test(reference.localKey)
+  return isOpaqueId(reference.id)
+    && isCatalogRevision(reference.catalogRevision)
     && (reference.kind === 'file' || reference.kind === 'directory')
     && typeof reference.name === 'string'
     && reference.name.length > 0
     && typeof reference.path === 'string'
     && isProjectRelativePath(reference.path)
     && (reference.availability === 'available' || reference.availability === 'stale')
+}
+
+function isCapabilityReference(value: unknown): value is ComposerCapabilityReference {
+  if (!value || typeof value !== 'object') return false
+  const reference = value as Partial<ComposerCapabilityReference>
+  return isOpaqueId(reference.id)
+    && isCatalogRevision(reference.catalogRevision)
+    && ['command', 'skill', 'plugin_action', 'provider_app'].includes(reference.itemKind ?? '')
+    && typeof reference.name === 'string'
+    && reference.name.length > 0
+    && ['available', 'stale', 'unsupported'].includes(reference.availability ?? '')
 }
 
 function appendText(segments: ComposerDraftSegment[], text: string) {
@@ -76,6 +117,19 @@ function normalizeSegments(segments: ComposerDraftSegment[]): ComposerDraftSegme
   return normalized.length > 0 ? normalized : [{ kind: 'text', text: '' }]
 }
 
+function migrateV1Segments(rawSegments: unknown[]): ComposerDraft {
+  const segments: ComposerDraftSegment[] = []
+  for (const raw of rawSegments) {
+    if (!raw || typeof raw !== 'object') continue
+    const segment = raw as { kind?: unknown; text?: unknown; reference?: { path?: unknown } }
+    if (segment.kind === 'text' && typeof segment.text === 'string') appendText(segments, segment.text)
+    if (segment.kind === 'context' && typeof segment.reference?.path === 'string') {
+      appendText(segments, `@${segment.reference.path}`)
+    }
+  }
+  return { version: 2, segments: normalizeSegments(segments) }
+}
+
 export function parseStoredComposerDraft(stored: string | null | undefined): ComposerDraft {
   if (!stored) return textComposerDraft()
   let parsed: unknown
@@ -86,56 +140,78 @@ export function parseStoredComposerDraft(stored: string | null | undefined): Com
   }
   if (!parsed || typeof parsed !== 'object') return textComposerDraft(stored)
   const candidate = parsed as { version?: unknown; segments?: unknown }
-  if (candidate.version !== 1 || !Array.isArray(candidate.segments)) return textComposerDraft(stored)
+  if (!Array.isArray(candidate.segments)) return textComposerDraft(stored)
+  if (candidate.version === 1) return migrateV1Segments(candidate.segments)
+  if (candidate.version !== 2) return textComposerDraft(stored)
 
   const segments: ComposerDraftSegment[] = []
-  let contextCount = 0
+  let referenceCount = 0
   for (const raw of candidate.segments) {
     if (!raw || typeof raw !== 'object') continue
     const segment = raw as { kind?: unknown; text?: unknown; reference?: unknown }
     if (segment.kind === 'text' && typeof segment.text === 'string') {
       appendText(segments, segment.text)
-    } else if (segment.kind === 'context') {
-      if (isContextReference(segment.reference)) {
-        if (contextCount < MAX_COMPOSER_CONTEXT_REFERENCES) {
-          segments.push({
-            kind: 'context',
-            reference: { ...segment.reference, availability: 'stale' },
-          })
-          contextCount += 1
-        } else {
-          appendText(segments, `@${segment.reference.path}`)
-        }
+    } else if (segment.kind === 'context' && isContextReference(segment.reference)) {
+      if (referenceCount < MAX_COMPOSER_CONTEXT_REFERENCES) {
+        segments.push({
+          kind: 'context',
+          reference: { ...segment.reference, availability: 'stale' },
+        })
+        referenceCount += 1
       } else {
-        const path = (segment.reference as { path?: unknown } | undefined)?.path
-        if (typeof path === 'string') appendText(segments, `@${path}`)
+        appendText(segments, `@${segment.reference.path}`)
       }
+    } else if (segment.kind === 'capability' && isCapabilityReference(segment.reference)) {
+      if (referenceCount < MAX_COMPOSER_CONTEXT_REFERENCES) {
+        segments.push({
+          kind: 'capability',
+          reference: { ...segment.reference, availability: 'unsupported' },
+        })
+        referenceCount += 1
+      } else {
+        appendText(segments, `$${segment.reference.name}`)
+      }
+    } else if (segment.kind === 'context') {
+      const path = (segment.reference as { path?: unknown } | undefined)?.path
+      if (typeof path === 'string') appendText(segments, `@${path}`)
+    } else if (segment.kind === 'capability') {
+      const name = (segment.reference as { name?: unknown } | undefined)?.name
+      if (typeof name === 'string') appendText(segments, `$${name}`)
     }
   }
-  return { version: 1, segments: normalizeSegments(segments) }
+  return { version: 2, segments: normalizeSegments(segments) }
 }
 
 export function serializeComposerDraft(draft: ComposerDraft): string {
-  return JSON.stringify({ version: 1, segments: normalizeSegments(draft.segments) })
+  return JSON.stringify({ version: 2, segments: normalizeSegments(draft.segments) })
 }
 
 export function composerDraftPlainText(draft: ComposerDraft): string {
-  return draft.segments.map((segment) => (
-    segment.kind === 'text' ? segment.text : `@${segment.reference.path}`
-  )).join('')
+  return draft.segments.map((segment) => {
+    if (segment.kind === 'text') return segment.text
+    return segment.kind === 'context' ? `@${segment.reference.path}` : `$${segment.reference.name}`
+  }).join('')
 }
 
 export function composerDraftToEditorValue(draft: ComposerDraft): string {
   return draft.segments.map((segment) => (
-    segment.kind === 'text' ? segment.text : `[[${segment.reference.localKey}]]`
+    segment.kind === 'text' ? segment.text : `[[${segment.reference.id}]]`
   )).join('')
+}
+
+function allReferences(draft: ComposerDraft): ComposerReference[] {
+  return draft.segments.flatMap((segment) => segment.kind === 'text' ? [] : [segment.reference])
+}
+
+export function composerDraftAllReferences(draft: ComposerDraft): ComposerReference[] {
+  return allReferences(draft)
 }
 
 export function composerDraftFromEditorValue(
   value: string,
-  references: ComposerContextReference[],
+  references: ComposerReference[],
 ): ComposerDraft {
-  const referencesById = new Map(references.map((reference) => [reference.localKey, reference]))
+  const referencesById = new Map(references.map((reference) => [reference.id, reference]))
   const segments: ComposerDraftSegment[] = []
   let cursor = 0
   CONTEXT_TOKEN_PATTERN.lastIndex = 0
@@ -144,30 +220,40 @@ export function composerDraftFromEditorValue(
     const reference = referencesById.get(match[1])
     if (!reference) continue
     appendText(segments, value.slice(cursor, start))
-    segments.push({ kind: 'context', reference })
+    segments.push('path' in reference
+      ? { kind: 'context', reference }
+      : { kind: 'capability', reference })
     cursor = start + match[0].length
   }
   appendText(segments, value.slice(cursor))
-  return { version: 1, segments: normalizeSegments(segments) }
+  return { version: 2, segments: normalizeSegments(segments) }
 }
 
 export function composerDraftReferences(draft: ComposerDraft): ComposerContextReference[] {
   return draft.segments.flatMap((segment) => segment.kind === 'context' ? [segment.reference] : [])
 }
 
+export function composerDraftCapabilityReferences(draft: ComposerDraft): ComposerCapabilityReference[] {
+  return draft.segments.flatMap((segment) => segment.kind === 'capability' ? [segment.reference] : [])
+}
+
 export function composerDraftHasStaleContext(draft: ComposerDraft): boolean {
-  return composerDraftReferences(draft).some((reference) => reference.availability === 'stale')
+  return allReferences(draft).some((reference) => reference.availability !== 'available')
+}
+
+export function composerDraftHasTypedReferences(draft: ComposerDraft): boolean {
+  return allReferences(draft).length > 0
 }
 
 export function appendComposerContext(
   draft: ComposerDraft,
   reference: ComposerContextReference,
 ): ComposerDraft {
-  if (composerDraftReferences(draft).length >= MAX_COMPOSER_CONTEXT_REFERENCES) return draft
+  if (allReferences(draft).length >= MAX_COMPOSER_CONTEXT_REFERENCES) return draft
   const separator = composerDraftPlainText(draft).length > 0
     && !/\s$/.test(composerDraftPlainText(draft)) ? ' ' : ''
   return {
-    version: 1,
+    version: 2,
     segments: normalizeSegments([
       ...draft.segments,
       { kind: 'text', text: separator },
@@ -181,7 +267,7 @@ export function appendComposerText(draft: ComposerDraft, text: string): Composer
   const plainText = composerDraftPlainText(draft)
   const separator = plainText.length > 0 && !/\s$/.test(plainText) ? ' ' : ''
   return {
-    version: 1,
+    version: 2,
     segments: normalizeSegments([
       ...draft.segments,
       { kind: 'text', text: `${separator}${text}` },
@@ -189,39 +275,80 @@ export function appendComposerText(draft: ComposerDraft, text: string): Composer
   }
 }
 
-type ComposerContextIdentity = Pick<ComposerContextReference, 'localKey' | 'kind' | 'path'>
-type AvailableComposerContext = Pick<ComposerContextReference, 'kind' | 'path'>
-
-function composerContextKey(context: AvailableComposerContext): string {
-  return `${context.kind}\0${context.path}`
-}
-
 export function applyComposerContextValidation(
   draft: ComposerDraft,
-  requestedReferences: ComposerContextIdentity[],
-  availableContexts: AvailableComposerContext[],
+  response: ComposerContextValidationResponse,
 ): ComposerDraft {
-  const requestedById = new Map(requestedReferences.map((reference) => [reference.localKey, reference]))
-  const availableKeys = new Set(availableContexts.map(composerContextKey))
+  const results = new Map(response.references.map((reference) => [
+    `${reference.id}\0${reference.catalog_revision}\0${reference.context_kind}`,
+    reference.available,
+  ]))
   let changed = false
   const segments = draft.segments.map((segment) => {
-    if (segment.kind === 'text') return segment
-    const requested = requestedById.get(segment.reference.localKey)
-    if (!requested
-      || requested.kind !== segment.reference.kind
-      || requested.path !== segment.reference.path) return segment
-    const availability = availableKeys.has(composerContextKey(segment.reference))
-      ? 'available'
-      : 'stale'
+    if (segment.kind !== 'context') return segment
+    const key = `${segment.reference.id}\0${segment.reference.catalogRevision}\0${segment.reference.kind}`
+    const result = results.get(key)
+    if (result === undefined) return segment
+    const availability = result ? 'available' : 'stale'
     if (availability === segment.reference.availability) return segment
     changed = true
     return {
       kind: 'context',
-      reference: {
-        ...segment.reference,
-        availability,
-      },
+      reference: { ...segment.reference, availability },
     } satisfies ComposerDraftSegment
   })
-  return changed ? { version: 1, segments } : draft
+  return changed ? { version: 2, segments } : draft
+}
+
+export function applyComposerCatalogSnapshot(
+  draft: ComposerDraft,
+  catalog: ComposerCatalogSnapshot,
+): ComposerDraft {
+  const contexts = new Set(catalog.contexts
+    .filter((context) => context.enabled)
+    .map((context) => `${context.id}\0${context.kind}`))
+  let changed = false
+  const segments = draft.segments.map((segment) => {
+    if (segment.kind === 'text') return segment
+    const availability = segment.kind === 'context'
+      && contexts.has(`${segment.reference.id}\0${segment.reference.kind}`)
+      ? segment.reference.availability
+      : segment.kind === 'capability' ? 'unsupported' : 'stale'
+    if (availability === segment.reference.availability) return segment
+    changed = true
+    return { ...segment, reference: { ...segment.reference, availability } }
+  }) as ComposerDraftSegment[]
+  return changed ? { version: 2, segments } : draft
+}
+
+export function composerDraftToStructuredSegments(
+  draft: ComposerDraft,
+  commandName?: string,
+): StructuredComposerSegment[] {
+  const segments = draft.segments.map((segment) => (
+    segment.kind === 'text' ? { ...segment } : segment
+  ))
+  if (commandName && segments[0]?.kind === 'text') {
+    const prefix = `/${commandName}`
+    const text = segments[0].text
+    if (text === prefix) segments[0].text = ''
+    else if (text.startsWith(`${prefix} `)) segments[0].text = text.slice(prefix.length + 1)
+  }
+  return segments.map((segment) => {
+    if (segment.kind === 'text') return segment
+    if (segment.kind === 'context') {
+      return {
+        kind: 'context_ref',
+        id: segment.reference.id,
+        catalog_revision: segment.reference.catalogRevision,
+        context_kind: segment.reference.kind,
+      }
+    }
+    return {
+      kind: 'capability_ref',
+      id: segment.reference.id,
+      catalog_revision: segment.reference.catalogRevision,
+      item_kind: segment.reference.itemKind,
+    }
+  })
 }

@@ -421,6 +421,117 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.getByTestId('composer-draft')).toHaveTextContent('/review')
   })
 
+  it('submits command plus context as ordered opaque structured segments', async () => {
+    const catalog = {
+      conversation_id: 'session-1',
+      revision: 8,
+      items: [{
+        id: 'cmd:review',
+        kind: 'command' as const,
+        name: 'review',
+        description: 'Review changes',
+        source_label: 'Codex',
+        scope: 'session' as const,
+        input_hint: 'focus',
+        enabled: true,
+        disabled_reason: null,
+      }],
+      contexts: [{
+        id: 'ctx:main',
+        kind: 'file' as const,
+        display: 'src/main.ts',
+        enabled: true,
+        disabled_reason: null,
+      }],
+    }
+    sessionStorage.setItem('kubecode:session-draft:session-1', JSON.stringify({
+      version: 2,
+      segments: [
+        { kind: 'text', text: '/review focus ' },
+        { kind: 'context', reference: {
+          availability: 'available',
+          catalogRevision: 7,
+          id: 'ctx:main',
+          kind: 'file',
+          name: 'main.ts',
+          path: 'src/main.ts',
+        } },
+      ],
+    }))
+    const startStructuredRun = vi.fn().mockResolvedValue({
+      ...run,
+      id: 'structured-run',
+      internal: true,
+      message: '/review focus @src/main.ts',
+      status: 'running',
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{
+            name: 'review',
+            description: 'Review changes',
+            input: { kind: 'text', hint: 'focus' },
+          }],
+        },
+        composer: { catalog },
+      }),
+      validateComposerContexts: vi.fn().mockResolvedValue({
+        references: [{
+          id: 'ctx:main',
+          catalog_revision: 7,
+          context_kind: 'file',
+          available: true,
+        }],
+        catalog,
+      }),
+      startStructuredRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await waitFor(() => expect(screen.getByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-availability',
+      'available',
+    ))
+    fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
+
+    await waitFor(() => expect(startStructuredRun).toHaveBeenCalledWith(
+      'project-1',
+      'session-1',
+      {
+        item_id: 'cmd:review',
+        catalog_revision: 8,
+        segments: [
+          { kind: 'text', text: 'focus ' },
+          {
+            kind: 'context_ref',
+            id: 'ctx:main',
+            catalog_revision: 7,
+            context_kind: 'file',
+          },
+        ],
+      },
+    ))
+    expect(JSON.stringify(startStructuredRun.mock.calls[0]?.[2])).not.toContain('src/main.ts')
+  })
+
   it('keeps unknown slash text on the ordinary visible prompt path', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/unknown')
     const startRun = vi.fn().mockResolvedValue({ ...run, id: 'ordinary-run', message: '/unknown' })
@@ -2071,12 +2182,13 @@ describe('AgentSessionWorkspace', () => {
 
   it('locks the workspace send button and Enter for an unvalidated restored context', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', JSON.stringify({
-      version: 1,
+      version: 2,
       segments: [{
         kind: 'context',
         reference: {
           availability: 'available',
-          localKey: 'persisted-file',
+          catalogRevision: 7,
+          id: 'persisted-file',
           kind: 'file',
           name: 'main.ts',
           path: 'src/main.ts',
@@ -2084,13 +2196,13 @@ describe('AgentSessionWorkspace', () => {
       }],
     }))
     const startRun = vi.fn()
-    const listSessionEntries = vi.fn().mockRejectedValue(new Error('Session unavailable'))
+    const validateComposerContexts = vi.fn().mockRejectedValue(new Error('Session unavailable'))
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
       listEvents: vi.fn().mockResolvedValue([]),
       listSessionEvents: vi.fn().mockResolvedValue([]),
       getSessionState: vi.fn().mockResolvedValue(emptySessionState),
-      listSessionEntries,
+      validateComposerContexts,
       startRun,
     } as unknown as KubecodeApi
 
@@ -2114,11 +2226,9 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.getByRole('button', { name: 'Send composer' })).toBeDisabled()
     fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
     expect(startRun).not.toHaveBeenCalled()
-    await waitFor(() => expect(listSessionEntries).toHaveBeenCalledWith(
-      'session-1',
-      'src',
-      expect.any(AbortSignal),
-    ))
+    await waitFor(() => expect(validateComposerContexts).toHaveBeenCalledWith('session-1', [{
+      id: 'persisted-file', catalog_revision: 7, context_kind: 'file',
+    }]))
   })
 
   it('loads bounded older history without replacing the newest turns', async () => {

@@ -10,8 +10,12 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::composer_catalog::{
-    ComposerCatalogError, ComposerCatalogSnapshot, project_acp_catalog, project_available_commands,
-    resolve_acp_catalog_item,
+    ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextRecord,
+    ComposerContextRegistration, ComposerContextSelector, ComposerContextValidationResponse,
+    ComposerContextValidationResult, ComposerDraftSegment, ComposerPreflightContext,
+    MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES, context_kind_key, opaque_context_id,
+    parse_context_kind, project_acp_catalog_with_contexts, project_available_commands,
+    resolve_acp_catalog_item, validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
 
@@ -320,6 +324,25 @@ impl AgentStore {
                snapshot_conversation_id TEXT NOT NULL UNIQUE,
                forked_at_run_id TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS composer_contexts (
+               conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+               opaque_id TEXT NOT NULL,
+               project_id TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               relative_path TEXT NOT NULL,
+               available INTEGER NOT NULL DEFAULT 1,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (conversation_id, opaque_id),
+               UNIQUE (conversation_id, kind, relative_path)
+             );
+             CREATE TABLE IF NOT EXISTS composer_catalog_snapshots (
+               conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+               revision INTEGER NOT NULL,
+               payload TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (conversation_id, revision)
              );",
         )?;
         ensure_column(
@@ -362,6 +385,7 @@ impl AgentStore {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         backfill_catalog_revision_high_water(&connection)?;
+        backfill_catalog_snapshots(&connection)?;
         connection.execute(
             "UPDATE conversations SET agent_session_id = id WHERE agent_session_id IS NULL",
             [],
@@ -951,6 +975,34 @@ impl AgentStore {
                 ],
             )?;
         }
+        transaction.execute(
+            "DELETE FROM composer_catalog_snapshots WHERE conversation_id = ?1",
+            [conversation_id],
+        )?;
+        for event in retained_events
+            .iter()
+            .filter(|event| event.kind == "composer_catalog")
+        {
+            let snapshot =
+                serde_json::from_value::<ComposerCatalogSnapshot>(event.payload.clone())?;
+            if snapshot.conversation_id != conversation_id {
+                return Err(StoreError::InvalidStoredValue(
+                    "composer catalog conversation mismatch".into(),
+                ));
+            }
+            transaction.execute(
+                "INSERT INTO composer_catalog_snapshots
+                 (conversation_id, revision, payload, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    conversation_id,
+                    i64::try_from(snapshot.revision)
+                        .map_err(|error| StoreError::InvalidStoredValue(error.to_string()))?,
+                    serde_json::to_string(&snapshot)?,
+                    event.created_at,
+                ],
+            )?;
+        }
         for removed_run_id in &removed_run_ids {
             transaction.execute("DELETE FROM agent_runs WHERE id = ?1", [removed_run_id])?;
         }
@@ -964,8 +1016,37 @@ impl AgentStore {
                 (!context_prefix.is_empty()).then_some(context_prefix),
             ],
         )?;
+        let restored = latest_catalog_transaction(&transaction, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+        let expected = authoritative_catalog_transaction(
+            &transaction,
+            &source.project_id,
+            conversation_id,
+            source.agent_id,
+            restored.revision,
+        )?;
+        let mut catalog_workspace_cursor = None;
+        if !restored.same_contents(&expected) {
+            let revision = next_catalog_revision_transaction(&transaction, conversation_id)?;
+            let reconciled = authoritative_catalog_transaction(
+                &transaction,
+                &source.project_id,
+                conversation_id,
+                source.agent_id,
+                revision,
+            )?;
+            catalog_workspace_cursor = Some(issue_catalog_snapshot_transaction(
+                &transaction,
+                &source.project_id,
+                conversation_id,
+                &reconciled,
+            )?);
+        }
         transaction.commit()?;
         drop(database);
+        if let Some(cursor) = catalog_workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
         self.append_workspace_event(
             "session_revision_created",
             Some(&source.project_id),
@@ -1298,13 +1379,13 @@ impl AgentStore {
             "available_commands",
         )?
         .ok_or(ComposerCatalogError::ItemMissing)?;
-        let expected = project_acp_catalog(
+        let expected = authoritative_catalog_transaction(
+            &transaction,
             project_id,
             conversation_id,
             agent_id,
             snapshot.revision,
-            &raw,
-        );
+        )?;
         if !snapshot.same_contents(&expected) {
             return Err(StoreError::InvalidStoredValue(
                 "composer catalog does not match its authoritative ACP snapshot".into(),
@@ -1661,41 +1742,28 @@ impl AgentStore {
             if update.session_kind == "available_commands" {
                 let previous = latest_catalog_transaction(&transaction, conversation_id)?
                     .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
-                let candidate = project_acp_catalog(
+                let candidate = authoritative_catalog_transaction(
+                    &transaction,
                     &project_id,
                     conversation_id,
                     agent_id,
                     previous.revision,
-                    &update.session_payload,
-                );
+                )?;
                 if !previous.same_contents(&candidate) {
                     let next_revision =
                         next_catalog_revision_transaction(&transaction, conversation_id)?;
-                    let candidate = project_acp_catalog(
+                    let candidate = authoritative_catalog_transaction(
+                        &transaction,
                         &project_id,
                         conversation_id,
                         agent_id,
                         next_revision,
-                        &update.session_payload,
-                    );
-                    append_session_event_transaction(
-                        &transaction,
-                        conversation_id,
-                        "composer_catalog",
-                        &serde_json::to_value(&candidate)?,
                     )?;
-                    let payload = json!({
-                        "conversation_id": conversation_id,
-                        "revision": candidate.revision,
-                        "snapshot": candidate,
-                    });
-                    latest_workspace_cursor = Some(append_workspace_event_transaction(
+                    latest_workspace_cursor = Some(issue_catalog_snapshot_transaction(
                         &transaction,
-                        "composer_catalog_snapshot",
-                        Some(&project_id),
-                        Some(conversation_id),
-                        None,
-                        &payload,
+                        &project_id,
+                        conversation_id,
+                        &candidate,
                     )?);
                 }
             }
@@ -1768,6 +1836,384 @@ impl AgentStore {
         let database = self.database.lock().expect("agent database mutex poisoned");
         Ok(latest_catalog_connection(&database, conversation_id)?
             .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id)))
+    }
+
+    pub fn register_composer_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        kind: ComposerContextKind,
+        normalized_relative_path: &str,
+    ) -> Result<ComposerContextRegistration, StoreError> {
+        if !matches!(
+            kind,
+            ComposerContextKind::File | ComposerContextKind::Directory
+        ) || normalized_relative_path.is_empty()
+        {
+            return Err(ComposerCatalogError::InvalidDraft.into());
+        }
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let id = opaque_context_id(project_id, conversation_id, kind, normalized_relative_path);
+        let existing = context_record_transaction(&transaction, conversation_id, &id)?;
+        if let Some(existing) = &existing {
+            if existing.project_id != project_id
+                || existing.conversation_id != conversation_id
+                || existing.kind != kind
+                || existing.path != normalized_relative_path
+            {
+                return Err(StoreError::InvalidStoredValue(
+                    "composer context identity tuple mismatch".into(),
+                ));
+            }
+            transaction.execute(
+                "UPDATE composer_contexts
+                 SET available = 1, updated_at = CURRENT_TIMESTAMP
+                 WHERE conversation_id = ?1 AND opaque_id = ?2",
+                params![conversation_id, id],
+            )?;
+        } else {
+            let count = transaction.query_row(
+                "SELECT COUNT(*) FROM composer_contexts WHERE conversation_id = ?1",
+                [conversation_id],
+                |row| row.get::<_, i64>(0),
+            )?;
+            if usize::try_from(count).unwrap_or(usize::MAX) >= MAX_COMPOSER_CONTEXTS {
+                return Err(ComposerCatalogError::ContextOverLimit.into());
+            }
+            transaction.execute(
+                "INSERT INTO composer_contexts
+                 (conversation_id, opaque_id, project_id, kind, relative_path, available)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+                params![
+                    conversation_id,
+                    id,
+                    project_id,
+                    context_kind_key(kind),
+                    normalized_relative_path,
+                ],
+            )?;
+        }
+        let previous = latest_catalog_transaction(&transaction, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+        let mut catalog = authoritative_catalog_transaction(
+            &transaction,
+            project_id,
+            conversation_id,
+            agent_id,
+            previous.revision,
+        )?;
+        let mut workspace_cursor = None;
+        if !previous.same_contents(&catalog) {
+            let revision = next_catalog_revision_transaction(&transaction, conversation_id)?;
+            catalog = authoritative_catalog_transaction(
+                &transaction,
+                project_id,
+                conversation_id,
+                agent_id,
+                revision,
+            )?;
+            workspace_cursor = Some(issue_catalog_snapshot_transaction(
+                &transaction,
+                project_id,
+                conversation_id,
+                &catalog,
+            )?);
+        }
+        let context = catalog
+            .contexts
+            .iter()
+            .find(|context| context.id == id)
+            .cloned()
+            .ok_or_else(|| StoreError::InvalidStoredValue("registered context missing".into()))?;
+        transaction.commit()?;
+        if let Some(cursor) = workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
+        Ok(ComposerContextRegistration { context, catalog })
+    }
+
+    pub fn composer_context_records_for_preflight(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        selectors: &[ComposerContextSelector],
+    ) -> Result<Vec<Option<ComposerContextRecord>>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let conversation_project = database
+            .query_row(
+                "SELECT project_id FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        selectors
+            .iter()
+            .map(|selector| context_record_connection(&database, conversation_id, &selector.id))
+            .collect()
+    }
+
+    pub fn validate_composer_contexts(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        selectors: &[ComposerContextSelector],
+        preflight: &[Option<ComposerPreflightContext>],
+    ) -> Result<ComposerContextValidationResponse, StoreError> {
+        if selectors.len() > crate::composer_catalog::MAX_COMPOSER_VALIDATION_ROWS
+            || selectors.len() != preflight.len()
+        {
+            return Err(ComposerCatalogError::ContextOverLimit.into());
+        }
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let mut results = Vec::with_capacity(selectors.len());
+        for (selector, preflight) in selectors.iter().zip(preflight) {
+            let record = context_record_transaction(&transaction, conversation_id, &selector.id)?;
+            let historical = catalog_snapshot_at_transaction(
+                &transaction,
+                conversation_id,
+                selector.catalog_revision,
+            )?;
+            let historically_valid = historical.as_ref().is_some_and(|snapshot| {
+                snapshot.contexts.iter().any(|context| {
+                    context.id == selector.id
+                        && context.kind == selector.context_kind
+                        && context.enabled
+                })
+            });
+            let available = match (&record, preflight) {
+                (Some(record), Some(preflight)) => {
+                    record.project_id == project_id
+                        && record.conversation_id == conversation_id
+                        && record.kind == selector.context_kind
+                        && preflight.id == record.id
+                        && preflight.kind == record.kind
+                        && preflight.path == record.path
+                        && historically_valid
+                }
+                _ => false,
+            };
+            if let Some(record) = &record {
+                transaction.execute(
+                    "UPDATE composer_contexts
+                     SET available = ?3, updated_at = CURRENT_TIMESTAMP
+                     WHERE conversation_id = ?1 AND opaque_id = ?2",
+                    params![conversation_id, record.id, available],
+                )?;
+            }
+            results.push(ComposerContextValidationResult {
+                id: selector.id.clone(),
+                catalog_revision: selector.catalog_revision,
+                context_kind: selector.context_kind,
+                available,
+            });
+        }
+        let previous = latest_catalog_transaction(&transaction, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+        let mut catalog = authoritative_catalog_transaction(
+            &transaction,
+            project_id,
+            conversation_id,
+            agent_id,
+            previous.revision,
+        )?;
+        let mut workspace_cursor = None;
+        if !previous.same_contents(&catalog) {
+            let revision = next_catalog_revision_transaction(&transaction, conversation_id)?;
+            catalog = authoritative_catalog_transaction(
+                &transaction,
+                project_id,
+                conversation_id,
+                agent_id,
+                revision,
+            )?;
+            workspace_cursor = Some(issue_catalog_snapshot_transaction(
+                &transaction,
+                project_id,
+                conversation_id,
+                &catalog,
+            )?);
+        }
+        transaction.commit()?;
+        if let Some(cursor) = workspace_cursor {
+            self.workspace_event_bus.publish_committed(cursor);
+        }
+        Ok(ComposerContextValidationResponse {
+            references: results,
+            catalog,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_structured_composer_run(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        item_id: Option<&str>,
+        catalog_revision: u64,
+        segments: &[ComposerDraftSegment],
+        preflight: &[ComposerPreflightContext],
+        permission_mode: PermissionMode,
+    ) -> Result<AgentRun, StoreError> {
+        validate_structured_composer_segments(segments)?;
+        let preflight = preflight
+            .iter()
+            .map(|context| (context.id.as_str(), context))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let current = latest_catalog_transaction(&transaction, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+        if current.revision != catalog_revision {
+            return Err(ComposerCatalogError::StaleRevision.into());
+        }
+        let expected = authoritative_catalog_transaction(
+            &transaction,
+            project_id,
+            conversation_id,
+            agent_id,
+            current.revision,
+        )?;
+        if !current.same_contents(&expected) {
+            return Err(StoreError::InvalidStoredValue(
+                "composer catalog does not match its authoritative sources".into(),
+            ));
+        }
+        let mut resolved = String::new();
+        for segment in segments {
+            match segment {
+                ComposerDraftSegment::Text { text } => resolved.push_str(text),
+                ComposerDraftSegment::ContextRef {
+                    id,
+                    catalog_revision,
+                    context_kind,
+                } => {
+                    let historical = catalog_snapshot_at_transaction(
+                        &transaction,
+                        conversation_id,
+                        *catalog_revision,
+                    )?
+                    .ok_or(ComposerCatalogError::ContextStale)?;
+                    if !historical.contexts.iter().any(|context| {
+                        context.id == *id && context.kind == *context_kind && context.enabled
+                    }) || !current.contexts.iter().any(|context| {
+                        context.id == *id && context.kind == *context_kind && context.enabled
+                    }) {
+                        return Err(ComposerCatalogError::ContextStale.into());
+                    }
+                    let record = context_record_transaction(&transaction, conversation_id, id)?
+                        .ok_or(ComposerCatalogError::ContextStale)?;
+                    let preflight = preflight
+                        .get(id.as_str())
+                        .ok_or(ComposerCatalogError::ContextStale)?;
+                    if !record.available
+                        || record.project_id != project_id
+                        || record.kind != *context_kind
+                        || preflight.kind != record.kind
+                        || preflight.path != record.path
+                    {
+                        return Err(ComposerCatalogError::ContextStale.into());
+                    }
+                    resolved.push('@');
+                    resolved.push_str(&record.path);
+                }
+                ComposerDraftSegment::CapabilityRef {
+                    id,
+                    catalog_revision,
+                    item_kind,
+                } => {
+                    let historical = catalog_snapshot_at_transaction(
+                        &transaction,
+                        conversation_id,
+                        *catalog_revision,
+                    )?
+                    .ok_or(ComposerCatalogError::ItemMissing)?;
+                    if !historical
+                        .items
+                        .iter()
+                        .any(|item| item.id == *id && item.kind == *item_kind && item.enabled)
+                        || !current
+                            .items
+                            .iter()
+                            .any(|item| item.id == *id && item.kind == *item_kind && item.enabled)
+                    {
+                        return Err(ComposerCatalogError::ItemMissing.into());
+                    }
+                    return Err(ComposerCatalogError::ItemUnsupported.into());
+                }
+            }
+        }
+        if resolved.len() > MAX_COMPOSER_TEXT_BYTES {
+            return Err(ComposerCatalogError::TextTooLong.into());
+        }
+        let (message, internal) = if let Some(item_id) = item_id {
+            let raw = latest_session_payload_transaction(
+                &transaction,
+                conversation_id,
+                "available_commands",
+            )?
+            .ok_or(ComposerCatalogError::ItemMissing)?;
+            (
+                resolve_acp_catalog_item(&current, &raw, catalog_revision, item_id, &resolved)?,
+                true,
+            )
+        } else {
+            if resolved.trim().is_empty() {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
+            (resolved, false)
+        };
+        let active = transaction
+            .query_row(
+                "SELECT id FROM agent_runs
+                 WHERE conversation_id = ?1 AND status IN ('running', 'waiting_permission')
+                 LIMIT 1",
+                [conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if active.is_some() {
+            return Err(StoreError::ActiveRun(project_id.to_owned()));
+        }
+        let run = insert_run_transaction(
+            &transaction,
+            conversation_id,
+            project_id,
+            &message,
+            permission_mode,
+            internal,
+        )?;
+        append_session_event_transaction(
+            &transaction,
+            conversation_id,
+            "user_message",
+            &json!({"run_id":run.id, "text":message, "internal":internal}),
+        )?;
+        let workspace_cursor = latest_workspace_event_id(&transaction)?;
+        transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
+        drop(database);
+        if !internal {
+            self.set_agent_title_if_untitled(conversation_id, &message)?;
+        }
+        Ok(run)
     }
 
     pub fn append_session_event(
@@ -2177,6 +2623,165 @@ fn latest_catalog_transaction(
         .filter(|snapshot: &ComposerCatalogSnapshot| snapshot.conversation_id == conversation_id))
 }
 
+fn catalog_snapshot_at_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    revision: u64,
+) -> Result<Option<ComposerCatalogSnapshot>, StoreError> {
+    let revision = i64::try_from(revision)
+        .map_err(|error| StoreError::InvalidStoredValue(error.to_string()))?;
+    let payload = transaction
+        .query_row(
+            "SELECT payload FROM composer_catalog_snapshots
+             WHERE conversation_id = ?1 AND revision = ?2",
+            params![conversation_id, revision],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let snapshot = payload
+        .map(|payload| serde_json::from_str::<ComposerCatalogSnapshot>(&payload))
+        .transpose()?;
+    Ok(snapshot.filter(|snapshot| {
+        snapshot.conversation_id == conversation_id && snapshot.revision == revision as u64
+    }))
+}
+
+fn context_record_connection(
+    database: &Connection,
+    conversation_id: &str,
+    opaque_id: &str,
+) -> Result<Option<ComposerContextRecord>, StoreError> {
+    let stored = database
+        .query_row(
+            "SELECT project_id, kind, relative_path, available
+             FROM composer_contexts
+             WHERE conversation_id = ?1 AND opaque_id = ?2",
+            params![conversation_id, opaque_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+    stored
+        .map(|(project_id, kind, path, available)| {
+            let kind = parse_context_kind(&kind).ok_or_else(|| {
+                StoreError::InvalidStoredValue("unknown composer context kind".into())
+            })?;
+            Ok(ComposerContextRecord {
+                id: opaque_id.to_owned(),
+                project_id,
+                conversation_id: conversation_id.to_owned(),
+                kind,
+                path,
+                available,
+            })
+        })
+        .transpose()
+}
+
+fn context_record_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    opaque_id: &str,
+) -> Result<Option<ComposerContextRecord>, StoreError> {
+    context_record_connection(transaction, conversation_id, opaque_id)
+}
+
+fn composer_contexts_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<Vec<crate::composer_catalog::ComposerContextMeta>, StoreError> {
+    let mut statement = transaction.prepare(
+        "SELECT opaque_id, project_id, kind, relative_path, available
+         FROM composer_contexts WHERE conversation_id = ?1
+         ORDER BY relative_path, kind, opaque_id",
+    )?;
+    let rows = statement
+        .query_map([conversation_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, bool>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.into_iter()
+        .map(|(id, project_id, kind, path, available)| {
+            let kind = parse_context_kind(&kind).ok_or_else(|| {
+                StoreError::InvalidStoredValue("unknown composer context kind".into())
+            })?;
+            Ok(ComposerContextRecord {
+                id,
+                project_id,
+                conversation_id: conversation_id.to_owned(),
+                kind,
+                path,
+                available,
+            }
+            .safe_meta())
+        })
+        .collect()
+}
+
+fn authoritative_catalog_transaction(
+    transaction: &Transaction<'_>,
+    project_id: &str,
+    conversation_id: &str,
+    agent_id: AgentId,
+    revision: u64,
+) -> Result<ComposerCatalogSnapshot, StoreError> {
+    let raw =
+        latest_session_payload_transaction(transaction, conversation_id, "available_commands")?
+            .unwrap_or_else(|| json!({"availableCommands":[]}));
+    Ok(project_acp_catalog_with_contexts(
+        project_id,
+        conversation_id,
+        agent_id,
+        revision,
+        &raw,
+        composer_contexts_transaction(transaction, conversation_id)?,
+    ))
+}
+
+fn issue_catalog_snapshot_transaction(
+    transaction: &Transaction<'_>,
+    project_id: &str,
+    conversation_id: &str,
+    snapshot: &ComposerCatalogSnapshot,
+) -> Result<u64, StoreError> {
+    let payload = serde_json::to_value(snapshot)?;
+    append_session_event_transaction(transaction, conversation_id, "composer_catalog", &payload)?;
+    transaction.execute(
+        "INSERT INTO composer_catalog_snapshots (conversation_id, revision, payload)
+         VALUES (?1, ?2, ?3)",
+        params![
+            conversation_id,
+            i64::try_from(snapshot.revision)
+                .map_err(|error| StoreError::InvalidStoredValue(error.to_string()))?,
+            serde_json::to_string(snapshot)?,
+        ],
+    )?;
+    append_workspace_event_transaction(
+        transaction,
+        "composer_catalog_snapshot",
+        Some(project_id),
+        Some(conversation_id),
+        None,
+        &json!({
+            "conversation_id": conversation_id,
+            "revision": snapshot.revision,
+            "snapshot": snapshot,
+        }),
+    )
+}
+
 fn latest_catalog_connection(
     database: &Connection,
     conversation_id: &str,
@@ -2556,6 +3161,59 @@ fn backfill_catalog_revision_high_water(database: &Connection) -> Result<(), Sto
     Ok(())
 }
 
+fn backfill_catalog_snapshots(database: &Connection) -> Result<(), StoreError> {
+    let stored = {
+        let mut statement = database.prepare(
+            "SELECT conversation_id, payload, created_at
+             FROM session_events WHERE kind = 'composer_catalog'
+             ORDER BY conversation_id, seq",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for (conversation_id, payload, created_at) in stored {
+        let Ok(snapshot) = serde_json::from_str::<ComposerCatalogSnapshot>(&payload) else {
+            continue;
+        };
+        if snapshot.conversation_id != conversation_id || snapshot.revision == 0 {
+            continue;
+        }
+        let revision = i64::try_from(snapshot.revision).map_err(|_| {
+            StoreError::InvalidStoredValue("composer catalog revision exceeds SQLite range".into())
+        })?;
+        let existing = database
+            .query_row(
+                "SELECT payload FROM composer_catalog_snapshots
+                 WHERE conversation_id = ?1 AND revision = ?2",
+                params![conversation_id, revision],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            if serde_json::from_str::<ComposerCatalogSnapshot>(&existing)? != snapshot {
+                return Err(StoreError::InvalidStoredValue(
+                    "composer catalog revision maps to multiple snapshots".into(),
+                ));
+            }
+            continue;
+        }
+        database.execute(
+            "INSERT INTO composer_catalog_snapshots
+             (conversation_id, revision, payload, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![conversation_id, revision, payload, created_at],
+        )?;
+    }
+    Ok(())
+}
+
 fn to_sql_conversion_error(error: StoreError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
 }
@@ -2682,7 +3340,7 @@ mod tests {
         .expect("raw replacement");
         let revision = next_catalog_revision_transaction(&transaction, &conversation.id)
             .expect("replacement revision");
-        let candidate = project_acp_catalog(
+        let candidate = crate::composer_catalog::project_acp_catalog(
             "project",
             &conversation.id,
             AgentId::Codex,

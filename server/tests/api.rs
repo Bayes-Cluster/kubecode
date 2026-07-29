@@ -15,6 +15,10 @@ use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, PermissionMode, RuntimeRunEvent, RuntimeUpdate,
 };
 use kubecode_server::api::{AppState, app_router, app_router_api_only, app_router_with_static};
+use kubecode_server::composer_catalog::{
+    ComposerContextKind, MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES,
+    MAX_COMPOSER_VALIDATION_ROWS,
+};
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
@@ -2584,6 +2588,324 @@ async fn session_entries(app: &Router, conversation_id: &str, path: &str) -> (St
 }
 
 #[tokio::test]
+async fn structured_composer_resolves_session_contexts_without_an_existence_oracle() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database = state.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project_at(root.join("composer-project"))
+        .expect("project");
+    let project_root = std::path::Path::new(&project.path);
+    fs::create_dir(project_root.join("src")).expect("src");
+    fs::write(project_root.join("src/main.rs"), "fn main() {}\n").expect("context file");
+    let store = Arc::new(AgentStore::open(&database).expect("store"));
+    let first = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("first session");
+    let second = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("second session");
+    store
+        .append_runtime_update(
+            &first.id,
+            "available_commands",
+            &json!({"availableCommands":[{
+                "name":"review", "description":"Review", "input":{"hint":"focus"}
+            }]}),
+            None,
+        )
+        .expect("command catalog");
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"structured-session\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "$line" >> "$(dirname "$0")/structured-prompts"
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+            AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: binary,
+                error: None,
+            },
+        ]),
+        BASE_PATH,
+    );
+    let registration_uri = format!("{BASE_PATH}/api/v1/sessions/{}/composer/contexts", first.id);
+    let (status, registration) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"file", "path":"src/main.rs"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let context_id = registration["context"]["id"]
+        .as_str()
+        .expect("context id")
+        .to_owned();
+    let selection_revision = registration["catalog"]["revision"]
+        .as_u64()
+        .expect("selection revision");
+    let item_id = registration["catalog"]["items"][0]["id"]
+        .as_str()
+        .expect("item id")
+        .to_owned();
+    let (_, foreign_registration) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+            second.id
+        ),
+        json!({"kind":"file", "path":"src/main.rs"}),
+    )
+    .await;
+    let foreign_id = foreign_registration["context"]["id"]
+        .as_str()
+        .expect("foreign id");
+    let runs_before = store.list_runs(&first.id).expect("runs").len();
+    let events_before = store
+        .session_events_after(&first.id, 0)
+        .expect("session events")
+        .len();
+    let workspace_before = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .len();
+    let runs_uri = format!(
+        "{BASE_PATH}/api/v1/projects/{}/sessions/{}/runs",
+        project.id, first.id
+    );
+    let mut missing_error = None;
+    for id in [foreign_id, "ctx:invented"] {
+        let (status, error) = json_request(
+            &app,
+            Method::POST,
+            &runs_uri,
+            json!({
+                "catalog_revision":selection_revision,
+                "segments":[{
+                    "kind":"context_ref", "id":id,
+                    "catalog_revision":selection_revision, "context_kind":"file"
+                }]
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(error["code"], "composer_context_stale");
+        if let Some(expected) = &missing_error {
+            assert_eq!(&error, expected);
+        } else {
+            missing_error = Some(error);
+        }
+    }
+    assert_eq!(store.list_runs(&first.id).expect("runs").len(), runs_before);
+    assert_eq!(
+        store
+            .session_events_after(&first.id, 0)
+            .expect("session events")
+            .len(),
+        events_before
+    );
+    assert_eq!(
+        store
+            .workspace_events_after(0)
+            .expect("workspace events")
+            .len(),
+        workspace_before
+    );
+    assert!(!temp.path().join("structured-prompts").exists());
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({
+            "catalog_revision":selection_revision,
+            "segments":[{
+                "kind":"capability_ref", "id":item_id,
+                "catalog_revision":selection_revision, "item_kind":"command"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error["code"], "composer_item_unsupported");
+    assert!(!temp.path().join("structured-prompts").exists());
+
+    fs::remove_file(project_root.join("src/main.rs")).expect("remove context");
+    let catalog_before_preflight = store
+        .composer_catalog_snapshot(&first.id)
+        .expect("catalog before filesystem preflight");
+    let events_before_preflight = store
+        .session_events_after(&first.id, 0)
+        .expect("session events before filesystem preflight")
+        .len();
+    let workspace_before_preflight = store
+        .latest_workspace_event_id()
+        .expect("workspace cursor before filesystem preflight");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({
+            "catalog_revision":selection_revision,
+            "segments":[{
+                "kind":"context_ref", "id":context_id,
+                "catalog_revision":selection_revision, "context_kind":"file"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(&first.id)
+            .expect("catalog after filesystem preflight"),
+        catalog_before_preflight
+    );
+    assert_eq!(
+        store
+            .session_events_after(&first.id, 0)
+            .expect("session events after filesystem preflight")
+            .len(),
+        events_before_preflight
+    );
+    assert_eq!(
+        store
+            .latest_workspace_event_id()
+            .expect("workspace cursor after filesystem preflight"),
+        workspace_before_preflight
+    );
+    assert_eq!(store.list_runs(&first.id).expect("runs").len(), runs_before);
+    let validation_uri = format!("{registration_uri}/validate");
+    let validation_body = json!({"references":[{
+        "id":context_id,
+        "catalog_revision":selection_revision,
+        "context_kind":"file"
+    }]});
+    let (status, stale) =
+        json_request(&app, Method::POST, &validation_uri, validation_body.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stale["references"][0]["available"], false);
+    let stale_revision = stale["catalog"]["revision"]
+        .as_u64()
+        .expect("stale revision");
+    assert!(stale_revision > selection_revision);
+    fs::write(project_root.join("src/main.rs"), "fn main() {}\n").expect("restore context");
+    let (status, restored) =
+        json_request(&app, Method::POST, &validation_uri, validation_body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(restored["references"][0]["available"], true);
+    let current_revision = restored["catalog"]["revision"]
+        .as_u64()
+        .expect("current revision");
+
+    let (status, run) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({
+            "item_id":item_id,
+            "catalog_revision":current_revision,
+            "segments":[
+                {"kind":"text", "text":"focus "},
+                {
+                    "kind":"context_ref", "id":context_id,
+                    "catalog_revision":selection_revision, "context_kind":"file"
+                }
+            ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(run["internal"], true);
+    assert_eq!(run["message"], "/review focus @src/main.rs");
+    let run_id = run["id"].as_str().expect("run id");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if store.get_run(run_id).expect("run").status
+                != kubecode_server::agents::RunStatus::Running
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("structured run completion");
+    let prompt =
+        fs::read_to_string(temp.path().join("structured-prompts")).expect("structured prompt");
+    assert!(prompt.contains("/review focus @src/main.rs"));
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"file", "path":"../outside"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(error["code"], "composer_context_outside_project");
+
+    let catalog_before_unregistered_project = store
+        .composer_catalog_snapshot(&first.id)
+        .expect("catalog before Project removal");
+    let events_before_unregistered_project = store
+        .session_events_after(&first.id, 0)
+        .expect("events before Project removal")
+        .len();
+    workspace
+        .unregister_project(&project.id)
+        .expect("unregister Project");
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &validation_uri,
+        json!({"references":[{
+            "id":context_id,
+            "catalog_revision":selection_revision,
+            "context_kind":"file"
+        }]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(&first.id)
+            .expect("catalog after Project removal"),
+        catalog_before_unregistered_project
+    );
+    assert_eq!(
+        store
+            .session_events_after(&first.id, 0)
+            .expect("events after Project removal")
+            .len(),
+        events_before_unregistered_project
+    );
+}
+
+#[tokio::test]
 async fn lists_session_scoped_entries_for_a_shared_session() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -2692,6 +3014,262 @@ async fn session_entries_reject_a_conversation_pointed_at_another_worktree() {
     assert!(!encoded.contains(other_worktree.to_string_lossy().as_ref()));
     assert!(!encoded.contains(project_root.to_string_lossy().as_ref()));
     assert!(!encoded.contains(state.to_string_lossy().as_ref()));
+}
+
+#[tokio::test]
+async fn structured_composer_checks_bounds_before_exact_session_worktree_and_provider_dispatch() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace =
+        Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace service"));
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let project_root = root.join("structured-worktree-boundary");
+    let project = workspace.create_project_at(&project_root).expect("project");
+    run_command(&project_root, "git", &["init"]);
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(
+        &project_root,
+        "git",
+        &["config", "user.name", "Kubecode Test"],
+    );
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+    run_command(&project_root, "git", &["add", "README.md"]);
+    run_command(&project_root, "git", &["commit", "-m", "initial"]);
+    workspace
+        .set_workspaces_enabled(&project.id, true)
+        .expect("enable workspaces");
+    let valid = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("valid conversation");
+    let valid_worktree = workspace
+        .create_session_worktree(&project.id, &valid.id)
+        .expect("valid worktree");
+    store
+        .assign_execution_workspace(
+            &valid.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(valid_worktree.to_str().expect("valid path")),
+        )
+        .expect("assign valid worktree");
+    let other_worktree = workspace
+        .create_session_worktree(&project.id, "session-aaaaaaaa")
+        .expect("other worktree");
+    let corrupted = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("corrupted conversation");
+    store
+        .assign_execution_workspace(
+            &corrupted.id,
+            kubecode_server::agents::ExecutionMode::Worktree,
+            Some(other_worktree.to_str().expect("other path")),
+        )
+        .expect("assign cross-conversation worktree");
+
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"structured-worktree\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "$line" >> "$(dirname "$0")/worktree-prompts"
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let prompts = temp.path().join("worktree-prompts");
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+            AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: binary,
+                error: None,
+            },
+        ]),
+        BASE_PATH,
+    );
+    let corrupted_runs = format!(
+        "{BASE_PATH}/api/v1/projects/{}/sessions/{}/runs",
+        project.id, corrupted.id
+    );
+    let runs_before = store.list_runs(&corrupted.id).expect("runs before").len();
+    let events_before = store
+        .session_events_after(&corrupted.id, 0)
+        .expect("events before")
+        .len();
+    let workspace_before = store.latest_workspace_event_id().expect("workspace before");
+    let over_segments = (0..=MAX_COMPOSER_SEGMENTS)
+        .map(|_| json!({"kind":"text", "text":"x"}))
+        .collect::<Vec<_>>();
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &corrupted_runs,
+        json!({"catalog_revision":0, "segments":over_segments}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(error["code"], "composer_context_over_limit");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &corrupted_runs,
+        json!({"catalog_revision":0, "segments":[{"kind":"text", "text":"hello"}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_path");
+    assert_eq!(
+        store.list_runs(&corrupted.id).expect("runs after").len(),
+        runs_before
+    );
+    assert_eq!(
+        store
+            .session_events_after(&corrupted.id, 0)
+            .expect("events after")
+            .len(),
+        events_before
+    );
+    assert_eq!(
+        store.latest_workspace_event_id().expect("workspace after"),
+        workspace_before
+    );
+    assert!(!prompts.exists());
+
+    let exact_segments = (0..MAX_COMPOSER_SEGMENTS)
+        .map(|_| json!({"kind":"text", "text":"x".repeat(MAX_COMPOSER_TEXT_BYTES / MAX_COMPOSER_SEGMENTS)}))
+        .collect::<Vec<_>>();
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &format!(
+            "{BASE_PATH}/api/v1/projects/{}/sessions/{}/runs",
+            project.id, valid.id
+        ),
+        json!({"catalog_revision":0, "segments":exact_segments}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if prompts.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("exact-limit provider prompt");
+    assert_eq!(
+        fs::read_to_string(prompts)
+            .expect("provider prompts")
+            .lines()
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn composer_context_validation_enforces_32_unique_rows_at_the_http_boundary() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database_path = state.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace"));
+    let project = workspace
+        .create_project_at(root.join("validation-boundary"))
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    let mut references = Vec::with_capacity(MAX_COMPOSER_VALIDATION_ROWS + 1);
+    for index in 0..=MAX_COMPOSER_VALIDATION_ROWS {
+        let registration = store
+            .register_composer_context(
+                &conversation.id,
+                &project.id,
+                ComposerContextKind::File,
+                &format!("src/missing-{index}.rs"),
+            )
+            .expect("register context");
+        references.push(json!({
+            "id": registration.context.id,
+            "catalog_revision": registration.catalog.revision,
+            "context_kind": "file",
+        }));
+    }
+    let teams = Arc::new(TeamStore::open(&database_path).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+    let uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts/validate",
+        conversation.id
+    );
+    let (status, response) = json_request(
+        &app,
+        Method::POST,
+        &uri,
+        json!({"references": &references[..MAX_COMPOSER_VALIDATION_ROWS]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response["references"]
+            .as_array()
+            .expect("validation rows")
+            .len(),
+        MAX_COMPOSER_VALIDATION_ROWS
+    );
+    let catalog_before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("catalog before over-limit request");
+    let events_before = store
+        .session_events_after(&conversation.id, 0)
+        .expect("events before over-limit request")
+        .len();
+    let workspace_before = store.latest_workspace_event_id().expect("workspace before");
+    let (status, error) =
+        json_request(&app, Method::POST, &uri, json!({"references": references})).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(error["code"], "composer_context_over_limit");
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(&conversation.id)
+            .expect("catalog after over-limit request"),
+        catalog_before
+    );
+    assert_eq!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("events after over-limit request")
+            .len(),
+        events_before
+    );
+    assert_eq!(
+        store.latest_workspace_event_id().expect("workspace after"),
+        workspace_before
+    );
 }
 
 #[tokio::test]
