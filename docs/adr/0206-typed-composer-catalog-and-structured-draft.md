@@ -49,8 +49,11 @@ capability availability.
 ### Item identity and opaque IDs
 
 Identity is `(kind, opaque server-issued item ID)`, never display name. The
-server mints opaque, stable, unguessable IDs scoped to the Session execution
-context, for example `cmd:…`, `ctx:…`, and `cap:…`. The browser receives only
+server mints opaque, stable IDs scoped to the Session execution context, for
+example `cmd:…`, `ctx:…`, and `cap:…`. An opaque ID is a selector, not an
+authorization secret: it may be a deterministic digest of the complete stable
+source identity and Session namespace. Every use is still authorized and
+revalidated against the current Session and Project. The browser receives only
 opaque IDs and safe display metadata; it never receives provider method names,
 invocation templates, private payloads, absolute paths, or executable content.
 
@@ -129,26 +132,79 @@ context meta in that snapshot shares it.
 
 ### Structured submit envelope and state hydration
 
-`StartRunRequest` is extended from `{ message: String }` to carry the typed
-draft. Plain text remains valid: a request with no segments and no item is
-exactly today's prompt.
+`POST /projects/:project_id/sessions/:conversation_id/runs` accepts two
+deny-unknown request shapes. The legacy shape remains exactly today's
+plain-text prompt. The structured shape carries only an optional catalog item,
+one catalog revision, and ordered segments; `message` and `segments` never
+coexist, so there is no precedence rule to guess.
 
 ```rust
-struct StartRunRequest {
-    message: Option<String>,
+enum StartRunRequest {
+    Legacy { message: String },
+    Structured(StructuredStartRunRequest),
+}
+
+struct StructuredStartRunRequest {
     item_id: Option<String>,
-    catalog_revision: Option<u64>,
-    segments: Option<Vec<ComposerSegment>>,
+    catalog_revision: u64,
+    segments: Vec<ComposerSegment>,
 }
 ```
 
-`message` alone, or `segments` of only `Text`, is a plain-text prompt. A request
-that carries `item_id` or any non-text segment must also carry
-`catalog_revision` and is resolved and revalidated before dispatch.
+`Legacy { message }` is the backward-compatible plain-text path. A structured
+request is resolved and revalidated before dispatch, even when its segments are
+only `Text`. When `item_id` selects an Agent command or capability, its ordered
+`Text` segments are that invocation's user-supplied arguments and surrounding
+prompt text; reference segments retain their position among that text.
+
+Argument-free and argument-taking ACP commands also have a direct typed control
+path for Enter-versus-Tab behavior:
+
+```rust
+struct ComposerCommandRequest {
+    item_id: String,
+    catalog_revision: u64,
+    arguments: String,
+}
+```
+
+`POST /projects/:project_id/sessions/:conversation_id/commands` dispatches this
+selector after the same Session, catalog revision, item availability, command
+input-shape, and bounded-argument checks. It creates no fabricated optimistic
+chat turn; durable ACP and Session events remain the transcript authority.
+During rolling upgrades the server may also accept the legacy
+`{ name, arguments }` selector and revalidate it against the latest ACP
+snapshot. That shape is compatibility-only: once a browser has hydrated a typed
+catalog it must send the opaque `item_id` and revision, so dispatch
+classification never depends on parsing a display name.
+
+### Session-scoped context discovery and registration
+
+Composer context discovery is separate from the Project-root path picker used
+by quick open and file creation. `GET /sessions/:conversation_id/entries`
+derives the registered Project and exact execution root from the Session record
+and accepts only a validated relative directory query. A shared Session lists
+under its registered Project root; an isolated Session lists under its exact
+validated worktree. The browser never supplies either absolute root.
+
+Selecting a result does not make its path authoritative. The browser submits
+`{ kind, path }` to `POST /sessions/:conversation_id/composer/contexts`; the
+server resolves the relative path again through `WorkspaceService` against that
+Session execution root, verifies the expected file or directory kind, stores
+the Session/Project-bound context record, and returns its opaque `ctx:` ID plus
+the resulting safe catalog snapshot. Restored drafts use
+`POST /sessions/:conversation_id/composer/contexts/validate` with bounded,
+unique opaque selectors. Validation returns availability and the current safe
+snapshot without accepting a browser-invented path as identity.
 
 State hydration adds one field to the `GET /sessions/:id/state` projection:
 
 ```rust
+struct AgentSessionState {
+    // Existing fields remain unchanged.
+    composer: SessionComposerState,
+}
+
 struct SessionComposerState {
     catalog: ComposerCatalogSnapshot,
 }
@@ -186,7 +242,7 @@ server-only; the codes describe only the resolution outcome.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `composer_stale_revision` | 409 | Submitted `catalog_revision` is behind the Session's current revision; refresh the snapshot and retry without dispatching. |
+| `composer_stale_revision` | 409 | Submitted `catalog_revision` does not equal the Session's current revision, including an impossible future revision; refresh the snapshot and retry without dispatching. |
 | `composer_item_missing` | 404 | The submitted `item_id` is not present in the current catalog. |
 | `composer_item_disabled` | 409 | The item exists but is disabled or unavailable in this execution context (`disabled_reason` is returned). |
 | `composer_item_unsupported` | 422 | The Agent/adapter does not advertise a reliable invocation for this item kind; no guess is made. |
@@ -230,7 +286,7 @@ the visible catalog and never mutates another Session's catalog.
 | State | Owner | Durability |
 | --- | --- | --- |
 | Catalog snapshot and its revision (per Session) | Server, Session execution context | Durable: derived from the Session event journal the same way `available_commands` is today, so it is reconstructed identically after reconnect or server restart. |
-| Opaque-ID → invocation mapping | Server only | Durable server-side state; never sent to the browser. An opaque ID resolves to the same `ComposerInvocation` regardless of which client submits it. |
+| Opaque-ID → invocation mapping | Server catalog/store boundary | Reconstructed deterministically from durable authoritative Session events and registered trusted adapter decoders, or persisted in a private server-only registry for sources that cannot be reconstructed. The safe browser snapshot is never the source. An opaque ID resolves to the same `ComposerInvocation` regardless of actor eviction, restart, or which client submits it. |
 | Context reference records (file/dir, later kinds) | Server, resolved at submit | Durable where the underlying source is durable (Project files, stored turns); transient where the source is (a live terminal selection). The record's existence and bounds are always rechecked at submit time. |
 | Per-Session browser draft (ordered segments) | Browser, keyed by Session ID | Transient browser state (ADR 0191); never authoritative. The server revalidates every segment it receives. |
 
@@ -239,13 +295,14 @@ the visible catalog and never mutates another Session's catalog.
 Opaque IDs and revisions are constructed so that a restored draft can never
 resolve to a different item than the one the user selected:
 
-- **Opaque IDs are namespaced by kind and bound to a stable provider/source
-  identity, not to a row position or display name.** An ID encodes its kind
-  (`cmd:`, `ctx:`, `cap:`) and a stable digest of the provider/source identity
-  (for example the ACP command name plus owning Agent, or a Project-relative
-  path). Two distinct capabilities never share an ID, and the same capability
-  keeps the same ID across reconnect and server restart as long as its
-  provider/source identity is unchanged.
+- **Opaque IDs are namespaced by kind, Session, and stable provider/source
+  identity, not by row position or display name.** An ID encodes its kind
+  (`cmd:`, `ctx:`, `cap:`) and may use a stable digest over the complete source
+  identity plus Project, Session, Agent, and kind namespace (for example an ACP
+  command identity or a normalized Project-relative path). The digest is not a
+  credential. Two distinct capabilities never share an ID, and the same
+  capability keeps the same ID across reconnect and server restart as long as
+  its complete source identity is unchanged.
 - **Revisions are monotonic per Session and advance only on a committed
   snapshot change.** A revision is never reused within a Session. Because the
   snapshot is derived from the durable Session event journal, the revision the
@@ -313,24 +370,39 @@ by Session ID as required by ADR 0191:
 ```rust
 enum ComposerSegment {
     Text { text: String },
-    ContextRef { id: String, revision: u64 },
-    CapabilityRef { id: String, revision: u64 },
+    ContextRef {
+        id: String,
+        catalog_revision: u64,
+        context_kind: ComposerContextKind,
+    },
+    CapabilityRef {
+        id: String,
+        catalog_revision: u64,
+        item_kind: ComposerItemKind,
+    },
 }
 ```
 
-A `ContextRef` or `CapabilityRef` carries the opaque catalog ID and the
-**revision it was selected against**. Copying the Composer produces a readable
-plain-text fallback such as `@src/main.rs` or `$skill`. Pasting that fallback is
-ordinary text until the user re-selects a catalog result; Kubecode never treats
-a pasted name as a server-issued ID. Plain-text-only prompts remain fully
-backward compatible: a draft with no references is exactly today's string.
+The JSON representation is internally tagged with a snake-case `kind`
+discriminator (`text`, `context_ref`, or `capability_ref`) and denies unknown
+fields. A
+`ContextRef` or `CapabilityRef` carries the opaque catalog ID, its expected
+kind, and the **catalog revision it was selected against**. Copying the Composer
+produces a readable plain-text fallback such as `@src/main.rs` or `$skill`.
+Pasting that fallback is ordinary text until the user re-selects a catalog
+result; Kubecode never treats a pasted name as a server-issued ID.
+Plain-text-only prompts remain fully backward compatible: a draft with no
+references is exactly today's string.
 
 ### Submission and server-owned invocation
 
-A submit or invoke request carries the Session ID, the catalog revision the
-draft was built against, an optional item ID, user arguments, and the ordered
-segments. It never carries a provider method, invocation template, absolute
-path, shell text, or executable payload.
+A structured run request carries the catalog revision, an optional item ID, and
+the ordered segments. User arguments for a selected item are represented by the
+ordered `Text` segments after removing only the selected trigger token. The
+direct command-control request instead carries one bounded `arguments` string.
+Both routes derive the Session from the URL and authorize its Project pairing.
+Neither route carries a provider method, invocation template, absolute path,
+shell text, or executable payload.
 
 The server resolves the item to a private invocation, which it never sends to the
 browser:
@@ -347,10 +419,10 @@ enum ComposerInvocation {
 Resolution and revalidation happen server-side at submit time. Validation has two
 distinct layers, which the implementation keeps separate:
 
-1. **Catalog-revision validation.** The submitted revision is checked against the
-   Session's current catalog revision. A mismatch returns a stale-revision
-   response that lets the browser refresh its snapshot **without dispatching the
-   wrong item**. This layer governs which item the user meant.
+1. **Catalog-revision validation.** The submitted revision must equal the
+   Session's current catalog revision. Any mismatch, older or newer, returns a
+   stale-revision response that lets the browser refresh its snapshot **without
+   dispatching the wrong item**. This layer governs which item the user meant.
 2. **Per-reference checks.** Each resolved context reference is independently
    revalidated for Session and Project ownership, scope and availability,
    `WorkspaceService` containment, type-specific size and count bounds, and its
@@ -429,9 +501,13 @@ This ADR introduces no plugin runtime.
 
 | Boundary | Change |
 | --- | --- |
-| `POST /sessions/:id/runs` (`StartRunRequest`) | Extended to `{ message, item_id, catalog_revision, segments }`; plain text remains valid. The server resolves opaque IDs and returns the stable `composer_*` error codes on failure. |
-| `GET /sessions/:id/state` | Adds a `SessionComposerState { catalog }` hydration field projecting the `ComposerCatalogSnapshot` (items, context metadata, one revision) alongside the existing `available_commands` projection. |
-| Session actor / `SessionCommand` | Owns the durable catalog snapshot and revision for its execution context; refresh publishes a new full snapshot and never restarts or disconnects the actor (ADR 0204). Holds the server-only opaque-ID → `ComposerInvocation` mapping. |
+| `POST /projects/:project_id/sessions/:id/runs` (`StartRunRequest`) | Accepts either legacy `{ message }` or structured `{ item_id?, catalog_revision, segments }`, never a mixed envelope. The server resolves opaque IDs and returns stable `composer_*` errors on failure. |
+| `POST /projects/:project_id/sessions/:id/commands` | Accepts typed `{ item_id, catalog_revision, arguments }`, revalidates the current command and its input contract, and dispatches without fabricating an optimistic transcript turn. Legacy `{ name, arguments }` is rolling-upgrade compatibility only and must not be used by a browser after typed catalog hydration. |
+| `GET /sessions/:id/entries` | Lists bounded relative entries from the server-owned Session execution root, including its exact worktree when applicable; the browser supplies no Project or absolute root. |
+| `POST /sessions/:id/composer/contexts` and `/validate` | Mint and revalidate Session/Project-bound opaque context selectors after exact `WorkspaceService` containment and kind checks; browser paths are selection inputs, never authoritative identities. |
+| `GET /sessions/:id/state` | Adds `composer: SessionComposerState { catalog }`, projecting the `ComposerCatalogSnapshot` (items, context metadata, one revision) alongside the existing `available_commands` projection. |
+| Session store and catalog projection | Own the durable catalog snapshot/revision and the authoritative trusted metadata from which private invocation is deterministically reconstructed, or a private persisted mapping when reconstruction is impossible. Safe snapshots never contain invocation payloads. |
+| Session actor / `SessionCommand` | Applies live provider updates and dispatches an invocation already revalidated by the catalog/store boundary. Actor eviction or reconstruction cannot change opaque-ID meaning; refresh publishes a full snapshot without restarting or disconnecting an active actor (ADR 0204). |
 | Workspace-event stream | Carries a conversation-scoped `ComposerCatalogSnapshotEvent` with the safe full snapshot payload and monotonic revision; no delta merge. Cursor-driven SSE and durable SQLite log semantics are unchanged. |
 | `WorkspaceService` | Remains the sole context-resolution boundary: containment, worktree validation, and bounded per-kind size/count checks, returning `composer_context_outside_project` / `composer_context_over_limit` (ADR 0191, ADR 0197). |
 | Browser draft | Transient, keyed by Session ID (ADR 0191); interpreted as `(opaque ID, revision)` and fully revalidated at submit. |
