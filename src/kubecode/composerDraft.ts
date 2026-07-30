@@ -7,6 +7,7 @@ import type {
 
 export type ComposerContextKind = 'file' | 'directory'
 export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
+export type ComposerCapabilityItemKind = Exclude<ComposerItemKind, 'command'>
 
 export type ComposerContextReference = {
   id: string
@@ -20,8 +21,10 @@ export type ComposerContextReference = {
 export type ComposerCapabilityReference = {
   id: string
   catalogRevision: number
-  itemKind: ComposerItemKind
+  itemKind: ComposerCapabilityItemKind
   name: string
+  scope?: ComposerCatalogSnapshot['items'][number]['scope']
+  sourceLabel?: string
   availability: ComposerReferenceAvailability
 }
 
@@ -95,10 +98,38 @@ function isCapabilityReference(value: unknown): value is ComposerCapabilityRefer
   const reference = value as Partial<ComposerCapabilityReference>
   return isOpaqueId(reference.id)
     && isCatalogRevision(reference.catalogRevision)
-    && ['command', 'skill', 'plugin_action', 'provider_app'].includes(reference.itemKind ?? '')
+    && ['skill', 'plugin_action', 'provider_app'].includes(reference.itemKind ?? '')
     && typeof reference.name === 'string'
     && reference.name.length > 0
+    && (reference.scope === undefined
+      || ['session', 'project', 'user', 'bundled', 'plugin'].includes(reference.scope))
+    && (reference.sourceLabel === undefined
+      || (typeof reference.sourceLabel === 'string' && reference.sourceLabel.length > 0))
     && ['available', 'stale', 'unsupported'].includes(reference.availability ?? '')
+}
+
+export function createComposerCapabilityReference({
+  availability = 'available',
+  catalogRevision,
+  id,
+  itemKind,
+  name,
+  scope,
+  sourceLabel,
+}: Omit<ComposerCapabilityReference, 'availability' | 'scope' | 'sourceLabel'>
+  & Required<Pick<ComposerCapabilityReference, 'scope' | 'sourceLabel'>> & {
+  availability?: ComposerCapabilityReference['availability']
+}): ComposerCapabilityReference {
+  if (!isOpaqueId(id) || !isCatalogRevision(catalogRevision)) {
+    throw new Error('Composer capabilities require an opaque ID and positive catalog revision')
+  }
+  if (!['skill', 'plugin_action', 'provider_app'].includes(itemKind)) {
+    throw new Error('Composer capability chips require a user-invocable capability kind')
+  }
+  if (!name || !sourceLabel || !['session', 'project', 'user', 'bundled', 'plugin'].includes(scope)) {
+    throw new Error('Composer capability chips require safe display provenance')
+  }
+  return { availability, catalogRevision, id, itemKind, name, scope, sourceLabel }
 }
 
 function appendText(segments: ComposerDraftSegment[], text: string) {
@@ -263,6 +294,24 @@ export function appendComposerContext(
   }
 }
 
+export function appendComposerCapability(
+  draft: ComposerDraft,
+  reference: ComposerCapabilityReference,
+): ComposerDraft {
+  if (allReferences(draft).length >= MAX_COMPOSER_CONTEXT_REFERENCES) return draft
+  const separator = composerDraftPlainText(draft).length > 0
+    && !/\s$/.test(composerDraftPlainText(draft)) ? ' ' : ''
+  return {
+    version: 2,
+    segments: normalizeSegments([
+      ...draft.segments,
+      { kind: 'text', text: separator },
+      { kind: 'capability', reference },
+      { kind: 'text', text: ' ' },
+    ]),
+  }
+}
+
 export function appendComposerText(draft: ComposerDraft, text: string): ComposerDraft {
   const plainText = composerDraftPlainText(draft)
   const separator = plainText.length > 0 && !/\s$/.test(plainText) ? ' ' : ''
@@ -307,13 +356,38 @@ export function applyComposerCatalogSnapshot(
   const contexts = new Set(catalog.contexts
     .filter((context) => context.enabled)
     .map((context) => `${context.id}\0${context.kind}`))
+  const capabilities = new Map(catalog.items.map((item) => [
+    `${item.id}\0${item.kind}`,
+    item,
+  ]))
   let changed = false
   const segments = draft.segments.map((segment) => {
     if (segment.kind === 'text') return segment
-    const availability = segment.kind === 'context'
-      && contexts.has(`${segment.reference.id}\0${segment.reference.kind}`)
-      ? segment.reference.availability
-      : segment.kind === 'capability' ? 'unsupported' : 'stale'
+    let availability: ComposerReferenceAvailability
+    if (segment.kind === 'context') {
+      availability = contexts.has(`${segment.reference.id}\0${segment.reference.kind}`)
+        ? segment.reference.availability
+        : 'stale'
+    } else {
+      const item = capabilities.get(`${segment.reference.id}\0${segment.reference.itemKind}`)
+      availability = segment.reference.catalogRevision === catalog.revision && item?.enabled
+        ? 'available'
+        : item ? 'stale' : 'unsupported'
+    }
+    if (segment.kind === 'capability') {
+      const item = capabilities.get(`${segment.reference.id}\0${segment.reference.itemKind}`)
+      const reference = item ? {
+        ...segment.reference,
+        availability,
+        scope: item.scope,
+        sourceLabel: item.source_label,
+      } : { ...segment.reference, availability }
+      if (availability === segment.reference.availability
+        && reference.scope === segment.reference.scope
+        && reference.sourceLabel === segment.reference.sourceLabel) return segment
+      changed = true
+      return { ...segment, reference }
+    }
     if (availability === segment.reference.availability) return segment
     changed = true
     return { ...segment, reference: { ...segment.reference, availability } }

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { createTranslator } from '@/lib/i18n'
+import { trackEvent } from '@/lib/telemetry'
 
 import { AgentSessionWorkspace } from './AgentSessionWorkspace'
 import {
@@ -77,7 +78,12 @@ vi.mock('@/components/AiPanelChrome', () => ({
   ),
 }))
 
-afterEach(() => globalThis.sessionStorage?.clear())
+vi.mock('@/lib/telemetry', () => ({ trackEvent: vi.fn() }))
+
+afterEach(() => {
+  globalThis.sessionStorage?.clear()
+  vi.mocked(trackEvent).mockClear()
+})
 
 const conversation = {
   id: 'session-1',
@@ -287,6 +293,64 @@ describe('AgentSessionWorkspace', () => {
     />)
 
     expect(await screen.findByRole('button', { name: 'Add context' })).toBeInTheDocument()
+  })
+
+  it('submits a capability chip as an opaque structured reference without analytics names', async () => {
+    const catalog = {
+      conversation_id: 'session-1', revision: 6, contexts: [],
+      items: [{
+        id: 'cap:project:review', kind: 'skill' as const, name: 'review',
+        description: 'Review changes', source_label: 'Project skill', scope: 'project' as const,
+        input_hint: null, enabled: true, disabled_reason: null,
+      }],
+    }
+    const startStructuredRun = vi.fn().mockResolvedValue({
+      ...run, id: 'capability-run', message: '$review', status: 'running',
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({ ...emptySessionState, composer: { catalog } }),
+      startStructuredRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('option', { name: /\$review/i }))
+    expect(await screen.findByTestId('composer-context-chip')).toHaveTextContent('Project skill')
+    fireEvent.click(screen.getByRole('button', { name: 'Send composer' }))
+
+    await waitFor(() => expect(startStructuredRun).toHaveBeenCalledWith(
+      'project-1',
+      'session-1',
+      {
+        catalog_revision: 6,
+        segments: [
+          { kind: 'capability_ref', id: 'cap:project:review', catalog_revision: 6, item_kind: 'skill' },
+          { kind: 'text', text: ' ' },
+        ],
+      },
+    ))
+    const insertionEvent = vi.mocked(trackEvent).mock.calls.find(([name]) => (
+      name === 'kubecode_agent_context_inserted'
+    ))
+    expect(insertionEvent).toEqual([
+      'kubecode_agent_context_inserted',
+      { agent_id: 'codex', kind: 'skill' },
+    ])
+    expect(JSON.stringify(insertionEvent)).not.toContain('review')
+    expect(JSON.stringify(insertionEvent)).not.toContain('cap:')
   })
 
   it('shows OpenCode capability absence only after its catalog is hydrated', async () => {

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ComposerCatalogSnapshot, KubecodeApi } from './api'
 import { ComposerContextInput } from './ComposerContextInput'
 import {
+  composerDraftToStructuredSegments,
   createComposerContextReference,
   composerDraftHasStaleContext,
   parseStoredComposerDraft,
@@ -15,18 +16,24 @@ import {
 
 function Harness({
   api,
+  capabilityCatalog,
+  capabilityStatus = 'ready',
   conversationId = 'session-1',
   initial = '@ma',
   onCatalogChange,
   onSubmit = vi.fn(),
+  onDraftChange,
   blockStaleSubmit = false,
 }: {
   api: KubecodeApi
+  capabilityCatalog?: ComposerCatalogSnapshot
+  capabilityStatus?: 'error' | 'loading' | 'ready'
   blockStaleSubmit?: boolean
   conversationId?: string
   initial?: string | ComposerDraft
   onCatalogChange?: (catalog: ComposerCatalogSnapshot) => void
   onSubmit?: (text: string) => void
+  onDraftChange?: (draft: ComposerDraft) => void
 }) {
   const [draft, setDraft] = useState<ComposerDraft>(
     typeof initial === 'string' ? textComposerDraft(initial) : initial,
@@ -35,6 +42,21 @@ function Harness({
   return (
     <ComposerContextInput
       api={api}
+      capabilityCatalog={capabilityCatalog}
+      capabilityLabels={{
+        disabledReason: (reason) => reason === 'ambiguous_source_identity'
+          ? 'Same-name capabilities are ambiguous'
+          : 'Capability unavailable',
+        empty: 'No capabilities',
+        error: 'Capabilities failed',
+        kind: { skill: 'Skill', plugin_action: 'Plugin action', provider_app: 'Provider app' },
+        loading: 'Loading capabilities',
+        picker: 'Capabilities',
+        scope: {
+          session: 'Session', project: 'Project', user: 'User', bundled: 'Bundled', plugin: 'Plugin',
+        },
+      }}
+      capabilityStatus={capabilityStatus}
       contextEmptyLabel="No context"
       contextErrorLabel="Context failed"
       contextLoadingLabel="Loading context"
@@ -44,13 +66,45 @@ function Harness({
       disabled={false}
       draft={draft}
       inputRef={ref}
-      onChange={setDraft}
+      onChange={(next) => setDraft((current) => {
+        const resolved = typeof next === 'function' ? next(current) : next
+        onDraftChange?.(resolved)
+        return resolved
+      })}
       onCatalogChange={onCatalogChange}
       onSubmit={onSubmit}
       placeholder="Ask Codex"
       submitDisabled={blockStaleSubmit && composerDraftHasStaleContext(draft)}
     />
   )
+}
+
+const capabilityCatalog: ComposerCatalogSnapshot = {
+  conversation_id: 'session-1',
+  revision: 11,
+  contexts: [],
+  items: [
+    {
+      id: 'cap:project:review', kind: 'skill', name: 'review', description: 'Review changes',
+      source_label: 'Project skill', scope: 'project', input_hint: null,
+      enabled: true, disabled_reason: null,
+    },
+    {
+      id: 'cap:user:review', kind: 'skill', name: 'review', description: 'Personal review',
+      source_label: 'User skill', scope: 'user', input_hint: null,
+      enabled: false, disabled_reason: 'ambiguous_source_identity',
+    },
+    {
+      id: 'cap:session:reviewer', kind: 'skill', name: 'reviewer', description: 'Review a patch',
+      source_label: 'Codex skill', scope: 'session', input_hint: null,
+      enabled: true, disabled_reason: null,
+    },
+    {
+      id: 'tool:raw', kind: 'command', name: 'review', description: 'Raw command',
+      source_label: 'Codex command', scope: 'session', input_hint: null,
+      enabled: true, disabled_reason: null,
+    },
+  ],
 }
 
 function placeCaretAtEnd(editor: HTMLElement) {
@@ -112,6 +166,130 @@ function composerApi(overrides: Partial<KubecodeApi> = {}): KubecodeApi {
 }
 
 describe('ComposerContextInput', () => {
+  it('selects a ranked capability with opaque identity and collision provenance', async () => {
+    let latestDraft = textComposerDraft('$rev')
+    render(
+      <Harness
+        api={composerApi()}
+        capabilityCatalog={capabilityCatalog}
+        initial="$rev"
+        onDraftChange={(draft) => { latestDraft = draft }}
+      />,
+    )
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+
+    const options = screen.getAllByRole('option')
+    expect(options).toHaveLength(3)
+    expect(options[1]).toHaveAccessibleName(/\$review.*Skill.*Project skill.*Project/i)
+    expect(options[2]).toBeDisabled()
+    expect(options[2]).toHaveTextContent('Same-name capabilities are ambiguous')
+    expect(screen.queryByText('Raw command')).not.toBeInTheDocument()
+
+    fireEvent.click(options[1])
+    const chip = await screen.findByTestId('composer-context-chip')
+    expect(chip).toHaveAttribute('data-context-kind', 'capability')
+    expect(chip).toHaveAttribute('data-capability-kind', 'skill')
+    expect(chip).toHaveAttribute('data-capability-scope', 'project')
+    expect(chip).toHaveTextContent('Project skill')
+    expect(composerDraftToStructuredSegments(latestDraft)).toEqual([
+      { kind: 'capability_ref', id: 'cap:project:review', catalog_revision: 11, item_kind: 'skill' },
+      { kind: 'text', text: ' ' },
+    ])
+  })
+
+  it('skips disabled collisions with keyboard navigation and supports touch selection', async () => {
+    const keyboard = render(
+      <Harness api={composerApi()} capabilityCatalog={capabilityCatalog} initial="$rev" />,
+    )
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+    const options = screen.getAllByRole('option')
+
+    fireEvent.keyDown(editor, { key: 'ArrowDown' })
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(editor, { key: 'ArrowDown' })
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    expect(await screen.findByTestId('composer-context-chip')).toHaveTextContent('reviewer')
+    keyboard.unmount()
+
+    const mounted = render(
+      <Harness api={composerApi()} capabilityCatalog={capabilityCatalog} initial="$review" />,
+    )
+    const touchEditor = mounted.getByTestId('agent-input')
+    placeCaretAtEnd(touchEditor)
+    const touchOption = mounted.getAllByRole('option').find((option) => !option.hasAttribute('disabled'))
+    expect(touchOption).toBeDefined()
+    fireEvent.pointerDown(touchOption!, { pointerType: 'touch' })
+    fireEvent.click(touchOption!)
+    expect(await mounted.findAllByTestId('composer-context-chip')).toHaveLength(1)
+  })
+
+  it('does not select a capability during IME composition', () => {
+    render(<Harness api={composerApi()} capabilityCatalog={capabilityCatalog} initial="$rev" />)
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+    expect(screen.getByTestId('composer-capability-menu')).toBeInTheDocument()
+
+    fireEvent.compositionStart(editor)
+    for (const key of ['Enter', 'Tab', 'ArrowDown', 'Escape']) {
+      fireEvent.keyDown(editor, { key, keyCode: 229, isComposing: true })
+    }
+    expect(screen.queryByTestId('composer-context-chip')).not.toBeInTheDocument()
+    expect(screen.getByTestId('composer-capability-menu')).toBeInTheDocument()
+  })
+
+  it('copies capability chips as readable text and keeps pasted names untrusted', async () => {
+    let latestDraft = textComposerDraft('$review')
+    render(
+      <Harness
+        api={composerApi()}
+        capabilityCatalog={capabilityCatalog}
+        initial="$review"
+        onDraftChange={(draft) => { latestDraft = draft }}
+      />,
+    )
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+    fireEvent.click(screen.getAllByRole('option').find((option) => !option.hasAttribute('disabled'))!)
+    await screen.findByTestId('composer-context-chip')
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    const setData = vi.fn()
+    fireEvent.copy(editor, { clipboardData: { setData } })
+    expect(setData).toHaveBeenCalledWith('text/plain', '$review ')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove context' }))
+    const editorAfterRemoval = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editorAfterRemoval)
+    fireEvent.paste(editorAfterRemoval, {
+      clipboardData: {
+        files: [], getData: () => '$review', items: [], types: ['text/plain'],
+      },
+    })
+    expect(screen.queryByTestId('composer-context-chip')).not.toBeInTheDocument()
+    expect(latestDraft.segments.every((segment) => segment.kind === 'text')).toBe(true)
+  })
+
+  it.each([
+    ['loading', 'Loading capabilities'],
+    ['error', 'Capabilities failed'],
+  ] as const)('renders the %s capability state in a narrow picker', (status, label) => {
+    render(
+      <div style={{ width: 240 }}>
+        <Harness api={composerApi()} capabilityStatus={status} initial="$" />
+      </div>,
+    )
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+    expect(screen.getByTestId('composer-capability-menu')).toHaveTextContent(label)
+    expect(screen.getByTestId('composer-capability-menu')).toHaveClass('min-w-0')
+  })
+
   it('selects an inline file suggestion as a typed chip and removes it explicitly', async () => {
     const listSessionEntries = vi.fn().mockResolvedValue([
       { kind: 'file', name: 'main.ts', path: 'src/main.ts' },

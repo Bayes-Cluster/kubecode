@@ -48,12 +48,18 @@ export function InlineWikilinkChipView({
     const ContextIcon = contextReference.kind === 'directory'
       ? Folder
       : contextReference.kind === 'capability' ? Lightning : File
+    const capabilityTitle = contextReference.kind === 'capability'
+      ? [contextReference.name, contextReference.sourceLabel, contextReference.scopeLabel]
+        .filter(Boolean).join(' · ')
+      : contextReference.path
     return (
       <span
         contentEditable={false}
         data-chip-target={chip.target}
         data-context-availability={contextReference.availability}
         data-context-kind={contextReference.kind}
+        data-capability-kind={contextReference.kind === 'capability' ? contextReference.itemKind : undefined}
+        data-capability-scope={contextReference.kind === 'capability' ? contextReference.scope : undefined}
         data-testid="composer-context-chip"
         className={cn(
           'mx-[1px] inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 align-baseline text-xs font-medium',
@@ -62,10 +68,20 @@ export function InlineWikilinkChipView({
             : 'border-border bg-secondary text-secondary-foreground',
         )}
         style={{ lineHeight: 1.6 }}
-        title={contextReference.path}
+        title={capabilityTitle}
       >
         {stale ? <WarningCircle aria-hidden size={12} /> : <ContextIcon aria-hidden size={12} />}
         <span className="max-w-48 truncate">{contextReference.name}</span>
+        {contextReference.kind === 'capability' && contextReference.sourceLabel && (
+          <span className="max-w-28 truncate border-l border-border pl-1 text-[10px] text-muted-foreground">
+            {contextReference.sourceLabel}
+          </span>
+        )}
+        {contextReference.kind === 'capability' && contextReference.scopeLabel && (
+          <span className="shrink-0 border-l border-border pl-1 text-[10px] text-muted-foreground">
+            {contextReference.scopeLabel}
+          </span>
+        )}
         {onRemoveContext && (
           <button
             aria-label={contextRemoveLabel}
