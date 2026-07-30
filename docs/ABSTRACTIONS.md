@@ -286,8 +286,9 @@ is dispatched by opaque coordinates. Catalog replacement swaps the palette
 projection wholesale, so a stale row cannot silently target another Session.
 Unknown ACP or private metadata is retained but not executable without a
 registered adapter decoder. Plugin contributions enter this same catalog only
-through explicit user-facing action descriptors; the plugin runtime itself is a
-separate management surface and a separate ADR.
+through explicit user-facing action descriptors. A future plugin runtime is a
+separate Runtime-owned management surface governed by ADR 0207 and remains
+unimplemented.
 
 The bundled Claude adapter obtains its user-invocable skill inventory from the
 Claude Agent SDK query attached to the exact provider Session. It calls
