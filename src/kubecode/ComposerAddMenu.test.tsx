@@ -18,7 +18,9 @@ describe('ComposerAddMenu', () => {
         <ComposerAddMenu
           api={{} as KubecodeApi}
           commands={[]}
+          conversationId="session-1"
           onInsert={vi.fn()}
+          onReference={vi.fn()}
           projectId="project-1"
           t={createTranslator('en')}
         />
@@ -51,7 +53,9 @@ describe('ComposerAddMenu', () => {
       <ComposerAddMenu
         api={{} as KubecodeApi}
         commands={commands}
+        conversationId="session-1"
         onInsert={onInsert}
+        onReference={vi.fn()}
         projectId="project-1"
         t={createTranslator('en')}
       />,
@@ -67,11 +71,12 @@ describe('ComposerAddMenu', () => {
     expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
   })
 
-  it('inserts a project file reference selected from the flat file picker', async () => {
-    const onInsert = vi.fn()
+  it('inserts a typed Session file reference selected from the flat picker', async () => {
+    const onReference = vi.fn()
     const api = {
-      listEntries: vi.fn().mockResolvedValue([
+      listSessionEntries: vi.fn().mockResolvedValue([
         { kind: 'file', name: 'README.md', path: 'README.md' },
+        { kind: 'directory', name: 'src', path: 'src' },
       ]),
     } as unknown as KubecodeApi
 
@@ -79,7 +84,9 @@ describe('ComposerAddMenu', () => {
       <ComposerAddMenu
         api={api}
         commands={[]}
-        onInsert={onInsert}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={onReference}
         projectId="project-1"
         t={createTranslator('en')}
       />,
@@ -89,7 +96,10 @@ describe('ComposerAddMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reference file/i }))
     fireEvent.click(await screen.findByRole('option', { name: /README\.md/i }))
 
-    await waitFor(() => expect(onInsert).toHaveBeenCalledWith('@README.md ', 'file'))
+    await waitFor(() => expect(onReference).toHaveBeenCalledWith({
+      kind: 'file', name: 'README.md', path: 'README.md',
+    }))
+    expect(api.listSessionEntries).toHaveBeenCalledWith('session-1', '')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

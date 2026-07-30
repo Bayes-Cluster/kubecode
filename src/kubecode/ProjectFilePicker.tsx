@@ -6,10 +6,16 @@ import type { TranslationKey } from '@/lib/i18n'
 
 import type { Entry, KubecodeApi } from './api'
 import { PathPicker, type PathPickerRow } from './PathPicker'
-import { isExcludedProjectEntry, searchProjectEntries } from './projectPathSearch'
+import {
+  isExcludedProjectEntry,
+  searchProjectEntries,
+  searchSessionEntries,
+} from './projectPathSearch'
 
 type ProjectFilePickerProps = {
   api: KubecodeApi
+  conversationId?: string
+  includeDirectories?: boolean
   onEscape?: () => void
   onOpenFile: (entry: Entry) => void
   projectId: string
@@ -22,6 +28,8 @@ const EMPTY_PATHS: string[] = []
 
 export function ProjectFilePicker({
   api,
+  conversationId,
+  includeDirectories = false,
   onEscape,
   onOpenFile,
   projectId,
@@ -49,17 +57,27 @@ export function ProjectFilePicker({
     const load = async () => {
       let nextResults: Entry[]
       if (normalizedQuery) {
-        nextResults = await searchProjectEntries({
+        nextResults = await (conversationId ? searchSessionEntries({
+          api,
+          conversationId,
+          includeExcluded,
+          kind: includeDirectories ? undefined : 'file',
+          maxEntries: 2_000,
+          maxResults: 100,
+          query: normalizedQuery,
+        }) : searchProjectEntries({
           api,
           includeExcluded,
-          kind: 'file',
+          kind: includeDirectories ? undefined : 'file',
           maxEntries: 2_000,
           maxResults: 100,
           projectId,
           query: normalizedQuery,
-        })
+        }))
       } else {
-        const rootEntries = await api.listEntries(projectId, '')
+        const rootEntries = conversationId
+          ? await api.listSessionEntries(conversationId, '')
+          : await api.listEntries(projectId, '')
         const recentEntries = recentPaths.map((path) => ({
           kind: 'file' as const,
           name: path.split('/').at(-1) ?? path,
@@ -67,7 +85,7 @@ export function ProjectFilePicker({
         }))
         nextResults = deduplicateEntries([
           ...recentEntries,
-          ...rootEntries.filter((entry) => entry.kind === 'file'),
+          ...rootEntries.filter((entry) => includeDirectories || entry.kind === 'file'),
         ]).filter((entry) => includeExcluded || !isExcludedProjectEntry(entry)).slice(0, 100)
       }
       if (requestId === requestIdRef.current) {
@@ -82,7 +100,9 @@ export function ProjectFilePicker({
     return () => window.clearTimeout(timeout)
   }, [
     api,
+    conversationId,
     includeExcluded,
+    includeDirectories,
     normalizedQuery,
     projectId,
     recentPaths,
@@ -92,7 +112,7 @@ export function ProjectFilePicker({
 
   const rows = useMemo<PathPickerRow[]>(() => results.map((entry) => ({
     id: entry.path,
-    kind: 'file',
+    kind: entry.kind,
     label: entry.name,
     path: entry.path,
     description: entry.path === entry.name ? undefined : entry.path,

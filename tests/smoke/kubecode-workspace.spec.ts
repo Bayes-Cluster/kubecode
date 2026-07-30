@@ -156,6 +156,26 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await expect(editorContent).toContainText('# cursor-stays-put')
   expect(await editorScroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
 
+  const composerInput = page.getByTestId('agent-input')
+  await composerInput.fill('@main')
+  await expect(page.getByRole('option', { name: /main\.py/i })).toBeVisible()
+  await composerInput.press('Tab')
+  const contextChip = page.getByTestId('composer-context-chip')
+  await expect(contextChip).toHaveAttribute('data-context-kind', 'file')
+  await expect(contextChip).toHaveAttribute('title', 'main.py')
+  await page.setViewportSize({ width: 680, height: 720 })
+  const [narrowComposerBox, chipBox] = await Promise.all([
+    composer.boundingBox(),
+    contextChip.boundingBox(),
+  ])
+  if (!narrowComposerBox || !chipBox) throw new Error('Composer context chip is not visible')
+  expect(chipBox.x).toBeGreaterThanOrEqual(narrowComposerBox.x)
+  expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(narrowComposerBox.x + narrowComposerBox.width)
+  await page.screenshot({ path: testInfo.outputPath('composer-context-narrow.png') })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.getByRole('button', { name: 'Remove context' }).click()
+  await expect(contextChip).toHaveCount(0)
+
   await page.getByRole('button', { name: 'Toggle terminal' }).click()
   await expect(page.locator('.kubecode-terminal-toolbar')).toHaveText('')
   await expect(page.locator('.xterm')).toBeVisible()

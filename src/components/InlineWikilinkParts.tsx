@@ -1,4 +1,11 @@
-import { Fragment, createElement, useEffect, useImperativeHandle, useRef } from 'react'
+import {
+  Fragment,
+  createElement,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from 'react'
+import { File, Folder, WarningCircle, X } from '@phosphor-icons/react'
 import type { CSSProperties } from 'react'
 import type { VaultEntry } from '../types'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
@@ -10,6 +17,7 @@ import type {
 } from './inlineWikilinkText'
 import type { InlineWikilinkSuggestion } from './inlineWikilinkSuggestions'
 import { cn } from '@/lib/utils'
+import type { InlineContextReference, InlineContextSuggestion } from './inlineContext'
 
 function withNativeEvent<T extends Event>(event: T): T & { nativeEvent: T } {
   const eventWithNativeEvent = event as T & { nativeEvent?: T }
@@ -24,11 +32,52 @@ function withNativeEvent<T extends Event>(event: T): T & { nativeEvent: T } {
 
 export function InlineWikilinkChipView({
   chip,
+  contextReference,
+  contextRemoveLabel,
+  onRemoveContext,
   typeEntryMap,
 }: {
   chip: InlineWikilinkChip
+  contextReference?: InlineContextReference
+  contextRemoveLabel?: string
+  onRemoveContext?: (id: string) => void
   typeEntryMap: Record<string, VaultEntry>
 }) {
+  if (contextReference) {
+    const stale = contextReference.availability === 'stale'
+    const ContextIcon = contextReference.kind === 'directory' ? Folder : File
+    return (
+      <span
+        contentEditable={false}
+        data-chip-target={chip.target}
+        data-context-availability={contextReference.availability}
+        data-context-kind={contextReference.kind}
+        data-testid="composer-context-chip"
+        className={cn(
+          'mx-[1px] inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 align-baseline text-xs font-medium',
+          stale
+            ? 'border-destructive/50 bg-destructive/10 text-destructive'
+            : 'border-border bg-secondary text-secondary-foreground',
+        )}
+        style={{ lineHeight: 1.6 }}
+        title={contextReference.path}
+      >
+        {stale ? <WarningCircle aria-hidden size={12} /> : <ContextIcon aria-hidden size={12} />}
+        <span className="max-w-48 truncate">{contextReference.name}</span>
+        {onRemoveContext && (
+          <button
+            aria-label={contextRemoveLabel}
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+            data-testid="remove-composer-context"
+            onClick={() => onRemoveContext(contextReference.id)}
+            type="button"
+          >
+            <X aria-hidden size={10} />
+          </button>
+        )}
+      </span>
+    )
+  }
   const typeEntry = chip.entry.isA ? typeEntryMap[chip.entry.isA] : undefined
   const color = getTypeColor(chip.entry.isA, typeEntry?.color)
   const backgroundColor = getTypeLightColor(chip.entry.isA, typeEntry?.color)
@@ -61,6 +110,77 @@ export function InlineWikilinkChipView({
       )}
       <span className="truncate">{chip.entry.title}</span>
     </span>
+  )
+}
+
+export function InlineContextSuggestionList({
+  id,
+  label,
+  emptyLabel,
+  errorLabel,
+  loading,
+  loadingLabel,
+  onHover,
+  onSelect,
+  selectedIndex,
+  suggestions,
+}: {
+  id: string
+  label: string
+  emptyLabel: string
+  errorLabel?: string
+  loading: boolean
+  loadingLabel: string
+  onHover: (index: number) => void
+  onSelect: (index: number) => void
+  selectedIndex: number
+  suggestions: InlineContextSuggestion[]
+}) {
+  return (
+    <div
+      aria-label={label}
+      aria-busy={loading}
+      aria-live="polite"
+      className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+      data-testid="composer-context-menu"
+      id={id}
+      role="listbox"
+    >
+      {loading ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground">{loadingLabel}</p>
+      ) : errorLabel ? (
+        <p className="px-3 py-3 text-sm text-destructive">{errorLabel}</p>
+      ) : suggestions.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : suggestions.map((suggestion, index) => {
+        const Icon = suggestion.kind === 'directory' ? Folder : File
+        return (
+          <button
+            id={`${id}-option-${index}`}
+            aria-selected={index === selectedIndex}
+            className={cn(
+              'flex min-h-11 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
+              index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60',
+            )}
+            key={`${suggestion.kind}:${suggestion.path}`}
+            onClick={() => onSelect(index)}
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseEnter={() => onHover(index)}
+            onPointerDown={(event) => event.pointerType === 'touch' && event.preventDefault()}
+            role="option"
+            type="button"
+          >
+            <Icon aria-hidden className="shrink-0" size={16} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{suggestion.name}</span>
+              {suggestion.path !== suggestion.name && (
+                <span className="block truncate text-xs text-muted-foreground">{suggestion.path}</span>
+              )}
+            </span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -179,10 +299,16 @@ export function InlineWikilinkEditorField({
   onInput,
   onKeyDown,
   onCut,
+  onCopy,
   onDrop,
   onPaste,
   onSelectionChange,
   segments,
+  contextActiveDescendantId,
+  contextListboxId,
+  contextReferences,
+  contextRemoveLabel,
+  onRemoveContext,
   typeEntryMap,
 }: {
   value: string
@@ -199,10 +325,16 @@ export function InlineWikilinkEditorField({
   onInput: () => void
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
   onCut: (event: React.ClipboardEvent<HTMLDivElement>) => void
+  onCopy: (event: React.ClipboardEvent<HTMLDivElement>) => void
   onDrop: (event: React.DragEvent<HTMLDivElement>) => void
   onPaste: (event: React.ClipboardEvent<HTMLDivElement>) => void
   onSelectionChange: () => void
   segments: InlineWikilinkSegment[]
+  contextActiveDescendantId?: string
+  contextListboxId?: string
+  contextReferences?: InlineContextReference[]
+  contextRemoveLabel?: string
+  onRemoveContext?: (id: string) => void
   typeEntryMap: Record<string, VaultEntry>
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null)
@@ -214,6 +346,7 @@ export function InlineWikilinkEditorField({
     onCompositionStart,
     onCompositionUpdate,
     onCut,
+    onCopy,
     onDrop,
     onInput,
     onKeyDown,
@@ -236,10 +369,16 @@ export function InlineWikilinkEditorField({
       )}
       <div
         ref={editorRef}
+        aria-activedescendant={contextActiveDescendantId}
+        aria-autocomplete={contextListboxId ? 'list' : undefined}
+        aria-controls={contextListboxId}
+        aria-label={contextListboxId ? placeholder : undefined}
         contentEditable={!disabled}
         suppressContentEditableWarning={true}
         aria-disabled={disabled ? 'true' : undefined}
+        aria-expanded={contextListboxId ? true : undefined}
         data-testid={dataTestId}
+        role={contextListboxId ? 'combobox' : undefined}
         className={cn(
           'min-h-[34px] w-full rounded-lg border border-border bg-transparent px-[10px] py-[8px] text-[13px] text-foreground outline-none',
           disabled && 'cursor-not-allowed opacity-60',
@@ -247,7 +386,13 @@ export function InlineWikilinkEditorField({
         )}
         style={{ ...editorStyle, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
       >
-        {segments.map((segment) => renderInlineWikilinkSegment(segment, typeEntryMap))}
+        {segments.map((segment) => renderInlineWikilinkSegment(
+          segment,
+          typeEntryMap,
+          contextReferences,
+          contextRemoveLabel,
+          onRemoveContext,
+        ))}
         {needsTrailingCaretAnchor ? '\u200B' : null}
       </div>
     </div>
@@ -260,6 +405,7 @@ type InlineWikilinkEditorHandlers = Pick<
   | 'onCompositionStart'
   | 'onCompositionUpdate'
   | 'onCut'
+  | 'onCopy'
   | 'onDrop'
   | 'onInput'
   | 'onKeyDown'
@@ -268,7 +414,7 @@ type InlineWikilinkEditorHandlers = Pick<
 >
 
 function useInlineWikilinkPlaceholder(editorRef: React.RefObject<HTMLDivElement | null>, placeholder?: string) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = editorRef.current
     if (!editor) return
     syncPlaceholderAttribute(editor, placeholder)
@@ -287,7 +433,7 @@ function useInlineWikilinkEditorEvents(
   editorRef: React.RefObject<HTMLDivElement | null>,
   handlers: InlineWikilinkEditorHandlers,
 ) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = editorRef.current
     if (!editor) return
 
@@ -304,6 +450,7 @@ function inlineWikilinkEditorListenerMap({
   onCompositionStart,
   onCompositionUpdate,
   onCut,
+  onCopy,
   onDrop,
   onInput,
   onKeyDown,
@@ -318,6 +465,7 @@ function inlineWikilinkEditorListenerMap({
     ['input', () => onInput()],
     ['keydown', (event) => onKeyDown(withNativeEvent(event) as unknown as React.KeyboardEvent<HTMLDivElement>)],
     ['cut', (event) => onCut(withNativeEvent(event) as unknown as React.ClipboardEvent<HTMLDivElement>)],
+    ['copy', (event) => onCopy(withNativeEvent(event) as unknown as React.ClipboardEvent<HTMLDivElement>)],
     ['drop', (event) => onDrop(withNativeEvent(event) as unknown as React.DragEvent<HTMLDivElement>)],
     ['paste', (event) => onPaste(withNativeEvent(event) as unknown as React.ClipboardEvent<HTMLDivElement>)],
     ['click', handleSelectionChange],
@@ -326,12 +474,21 @@ function inlineWikilinkEditorListenerMap({
   ]
 }
 
-function renderInlineWikilinkSegment(segment: InlineWikilinkSegment, typeEntryMap: Record<string, VaultEntry>) {
+function renderInlineWikilinkSegment(
+  segment: InlineWikilinkSegment,
+  typeEntryMap: Record<string, VaultEntry>,
+  contextReferences?: InlineContextReference[],
+  contextRemoveLabel?: string,
+  onRemoveContext?: (id: string) => void,
+) {
   if (segment.kind === 'text') return <Fragment key={`text-${segment.text}`}>{segment.text}</Fragment>
   return (
     <InlineWikilinkChipView
       key={`chip-${segment.chip.entry.path}-${segment.chip.target}`}
       chip={segment.chip}
+      contextReference={contextReferences?.find((reference) => reference.id === segment.chip.target)}
+      contextRemoveLabel={contextRemoveLabel}
+      onRemoveContext={onRemoveContext}
       typeEntryMap={typeEntryMap}
     />
   )

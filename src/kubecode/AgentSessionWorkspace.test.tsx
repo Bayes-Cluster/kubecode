@@ -41,26 +41,34 @@ vi.mock('@/components/AiPanelChrome', () => ({
       </article>
     ))}</div>
   ),
-  AiPanelComposer: ({ activeSendLabel, controls, disabled, disabledPlaceholder, input, isActive, leadingControl, onActiveSend, onChange, onStop }: {
+  AiPanelComposer: ({ activeSendLabel, controls, disabled, disabledPlaceholder, input, inputContent, isActive, leadingControl, onActiveSend, onChange, onSend, onStop, sendDisabled }: {
     activeSendLabel?: string
     controls?: ReactNode
     disabled?: boolean
     disabledPlaceholder?: string
     input: string
+    inputContent?: ReactNode
     isActive: boolean
     leadingControl?: ReactNode
     onActiveSend?: (text: string, references: []) => void
     onChange: (value: string) => void
+    onSend: (text: string, references: []) => void
     onStop: () => void
+    sendDisabled?: boolean
   }) => (
     <div
       data-disabled={disabled}
       data-disabled-placeholder={disabledPlaceholder}
       data-testid="composer"
     >
-      {leadingControl}{controls}
+      {leadingControl}{controls}{inputContent}
       <span data-testid="composer-draft">{input}</span>
       <button disabled={disabled} onClick={() => onChange('Prepared follow-up')}>Type follow-up</button>
+      {!isActive && (
+        <button aria-label="Send composer" disabled={disabled || sendDisabled} onClick={() => onSend(input, [])}>
+          Send
+        </button>
+      )}
       {onActiveSend && (
         <button aria-label={activeSendLabel} onClick={() => onActiveSend(input, [])}>Send active</button>
       )}
@@ -1367,6 +1375,58 @@ describe('AgentSessionWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByTestId('composer-draft')).toHaveTextContent('Prepared follow-up')
     })
+  })
+
+  it('locks the workspace send button and Enter for an unvalidated restored context', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', JSON.stringify({
+      version: 1,
+      segments: [{
+        kind: 'context',
+        reference: {
+          availability: 'available',
+          localKey: 'persisted-file',
+          kind: 'file',
+          name: 'main.ts',
+          path: 'src/main.ts',
+        },
+      }],
+    }))
+    const startRun = vi.fn()
+    const listSessionEntries = vi.fn().mockRejectedValue(new Error('Session unavailable'))
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      listSessionEntries,
+      startRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-availability',
+      'stale',
+    )
+    expect(screen.getByRole('button', { name: 'Send composer' })).toBeDisabled()
+    fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
+    expect(startRun).not.toHaveBeenCalled()
+    await waitFor(() => expect(listSessionEntries).toHaveBeenCalledWith(
+      'session-1',
+      'src',
+      expect.any(AbortSignal),
+    ))
   })
 
   it('loads bounded older history without replacing the newest turns', async () => {
