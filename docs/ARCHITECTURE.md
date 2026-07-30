@@ -253,8 +253,8 @@ catalog, and a conversation-scoped full-snapshot workspace event. `POST
 transitional exact-name selector or an opaque item ID with its catalog revision;
 the typed path validates and creates its internal run in one store transaction,
 then dispatches only the server-resolved prompt. Unknown slash text remains an
-ordinary prompt. File, directory, Git diff, and terminal-output chips are registered and
-batch-validated through Session-scoped Composer context endpoints. Git diff
+ordinary prompt. File, directory, Git diff, terminal-output, and Session-turn chips are
+registered and batch-validated through Session-scoped Composer context endpoints. Git diff
 discovery uses `GET /sessions/{conversation_id}/composer/git-diffs`; registration
 submits a selector and patch revision, never patch content. Structured run requests carry
 only ordered text plus opaque context/capability coordinates; filesystem
@@ -291,6 +291,19 @@ SQLite stores only its digest, private terminal selector, and safe pane/count
 summary. Browser socket reconnect does not invalidate it, but PTY exit/close,
 ring-buffer eviction, ownership changes, or server restart do. Provider dispatch
 rechecks all of those conditions and never substitutes newer scrollback.
+
+Session-turn references are available only for one completed, visible user turn
+or Agent response in the current writable Session branch. The browser submits a
+role plus the visible run or native-event anchor, while SQLite resolves that
+anchor directly and reads at most 512 events from that turn. Content is capped
+at 200 lines and 16 KiB and is injected only into the private provider prompt.
+The durable registry and browser catalog retain an opaque ID, content digest,
+role, and numeric counts, never the turn selector or content. Active, revised,
+hidden-revision, cross-Session, empty, and changed turns fail closed. Explicit
+branches can reference only the events copied into that branch. Diagnostics are
+a separate disabled Composer type until Kubecode has an authoritative structured
+Project diagnostics source; rendered editor markers and browser text are never
+accepted as diagnostics authority.
 
 Claude skill discovery is owned by the bundled adapter. Each standard Claude
 `available_commands_update` is forwarded immediately, then the adapter refreshes

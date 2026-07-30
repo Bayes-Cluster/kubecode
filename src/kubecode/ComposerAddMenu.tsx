@@ -1,4 +1,6 @@
-import { CaretLeft, File, GitDiff, Plus, Sparkle, TerminalWindow } from '@phosphor-icons/react'
+import {
+  CaretLeft, ChatCircleDots, File, GitDiff, Plus, Sparkle, TerminalWindow, WarningCircle,
+} from '@phosphor-icons/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -19,6 +21,15 @@ export type TerminalContextRequest = {
   capture: 'selection' | 'recent'
   selectedText?: string
 }
+export type SessionTurnContextSource = {
+  turnId: string
+  userPreview: string | null
+  agentPreview: string | null
+}
+export type SessionTurnContextRequest = {
+  turnId: string
+  role: 'user' | 'agent'
+}
 
 type ComposerAddMenuProps = {
   api: KubecodeApi
@@ -37,9 +48,11 @@ type ComposerAddMenuProps = {
   onCapability?: (capability: RankedComposerCapability) => void
   onGitDiff?: (candidate: GitDiffContextCandidate) => void
   onReference: (entry: Entry) => void
+  onSessionTurnContext?: (request: SessionTurnContextRequest) => void
   onTerminalContext?: (request: TerminalContextRequest) => void
   projectId: string
   t: (key: TranslationKey, values?: TranslationValues) => string
+  sessionTurnSources?: SessionTurnContextSource[]
   terminalSources?: TerminalContextSource[]
 }
 
@@ -56,14 +69,17 @@ export function ComposerAddMenu({
   onCapability,
   onGitDiff,
   onReference,
+  onSessionTurnContext,
   onTerminalContext,
   projectId,
   t,
+  sessionTurnSources = [],
   terminalSources = [],
 }: ComposerAddMenuProps) {
   const [open, setOpen] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [showGitDiffs, setShowGitDiffs] = useState(false)
+  const [showSessionTurns, setShowSessionTurns] = useState(false)
   const [showTerminals, setShowTerminals] = useState(false)
   const [gitDiffState, setGitDiffState] = useState<{
     candidates: GitDiffContextCandidate[]
@@ -121,6 +137,7 @@ export function ComposerAddMenu({
     setQuery('')
     setShowFiles(false)
     setShowGitDiffs(false)
+    setShowSessionTurns(false)
     setShowTerminals(false)
     setSelectedCapabilityIndex(0)
   }
@@ -155,6 +172,7 @@ export function ComposerAddMenu({
           setOpen((current) => !current)
           setShowFiles(false)
           setShowGitDiffs(false)
+          setShowSessionTurns(false)
           setShowTerminals(false)
         }}
       >
@@ -244,6 +262,77 @@ export function ComposerAddMenu({
                     </span>
                   </Button>
                 ))}
+              </div>
+            </>
+          ) : showSessionTurns && onSessionTurnContext ? (
+            <>
+              <div className="flex items-center border-b border-border px-2 py-1.5">
+                <Button
+                  className="min-w-0 justify-start gap-2"
+                  onClick={() => setShowSessionTurns(false)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <CaretLeft />
+                  <span className="truncate">{t('kubecode.referenceSessionTurns')}</span>
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                <section aria-label={t('kubecode.userTurns')} role="group">
+                  <h3 className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                    {t('kubecode.userTurns')}
+                  </h3>
+                  {[...sessionTurnSources].reverse().map((source) => source.userPreview && (
+                    <Button
+                      aria-label={t('kubecode.attachPriorUserTurn', { preview: source.userPreview })}
+                      className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
+                      key={`user:${source.turnId}`}
+                      onClick={() => {
+                        onSessionTurnContext({ role: 'user', turnId: source.turnId })
+                        close()
+                      }}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChatCircleDots className="shrink-0" size={18} />
+                      <span className="min-w-0">
+                        <strong className="block font-medium">{t('kubecode.priorUserTurn')}</strong>
+                        <small className="block truncate text-sm font-normal text-muted-foreground">
+                          {source.userPreview}
+                        </small>
+                      </span>
+                    </Button>
+                  ))}
+                </section>
+                <section aria-label={t('kubecode.agentResponses')} role="group">
+                  <h3 className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">
+                    {t('kubecode.agentResponses')}
+                  </h3>
+                  {[...sessionTurnSources].reverse().map((source) => source.agentPreview && (
+                    <Button
+                      aria-label={t('kubecode.attachPriorAgentResponse', {
+                        preview: source.agentPreview,
+                      })}
+                      className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
+                      key={`agent:${source.turnId}`}
+                      onClick={() => {
+                        onSessionTurnContext({ role: 'agent', turnId: source.turnId })
+                        close()
+                      }}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChatCircleDots className="shrink-0" size={18} />
+                      <span className="min-w-0">
+                        <strong className="block font-medium">{t('kubecode.priorAgentResponse')}</strong>
+                        <small className="block truncate text-sm font-normal text-muted-foreground">
+                          {source.agentPreview}
+                        </small>
+                      </span>
+                    </Button>
+                  ))}
+                </section>
               </div>
             </>
           ) : showTerminals && onTerminalContext ? (
@@ -369,6 +458,38 @@ export function ComposerAddMenu({
                     </small>
                   </span>
                 </Button>}
+                {sessionTurnSources.length > 0 && onSessionTurnContext && <Button
+                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  onClick={() => setShowSessionTurns(true)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <ChatCircleDots className="shrink-0" size={20} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">
+                      {t('kubecode.referenceSessionTurns')}
+                    </strong>
+                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      {t('kubecode.chooseSessionTurnReference')}
+                    </small>
+                  </span>
+                </Button>}
+                <Button
+                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  disabled
+                  type="button"
+                  variant="ghost"
+                >
+                  <WarningCircle className="shrink-0" size={20} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">
+                      {t('kubecode.diagnosticsUnavailable')}
+                    </strong>
+                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      {t('kubecode.diagnosticsUnavailableDescription')}
+                    </small>
+                  </span>
+                </Button>
                 {visibleCommands.map((command) => (
                   <Button
                     className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"

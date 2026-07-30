@@ -3,10 +3,11 @@ use kubecode_server::agents::{
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use kubecode_server::composer_catalog::{
-    ComposerContextKind, ComposerContextSelector, ComposerContextSummary, ComposerDraftSegment,
-    ComposerInvocation, ComposerItemKind, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS,
-    MAX_COMPOSER_REFERENCES, MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES,
-    MAX_COMPOSER_VALIDATION_ROWS,
+    ComposerCatalogError, ComposerContextKind, ComposerContextSelector, ComposerContextSummary,
+    ComposerDraftSegment, ComposerInvocation, ComposerItemKind, ComposerPreflightContext,
+    ComposerSessionTurnRole, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_REFERENCES, MAX_COMPOSER_SEGMENTS,
+    MAX_COMPOSER_TEXT_BYTES, MAX_COMPOSER_VALIDATION_ROWS, MAX_SESSION_TURN_CONTEXT_BYTES,
+    session_turn_selector,
 };
 use kubecode_server::terminal::TerminalContextCaptureKind;
 use serde_json::json;
@@ -722,6 +723,300 @@ fn structured_terminal_context_dispatches_only_the_explicit_sanitized_capture() 
     assert!(run.message.contains("explicit-output\n    second-line"));
     assert!(!run.message.contains(selector));
     assert!(!run.message.contains("unselected-output"));
+}
+
+#[test]
+fn session_turn_context_is_bounded_branch_local_and_revision_aware() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let foreign = store
+        .create_conversation("other-project", AgentId::Codex, None)
+        .expect("foreign conversation");
+    let first = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "First visible question",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "text_delta",
+            &json!({"run_id":first.id, "text":"First visible answer"}),
+            Some((
+                &first.id,
+                AgentEventKind::TextDelta,
+                &json!({"text":"First visible answer"}),
+            )),
+        )
+        .expect("first answer");
+    assert!(matches!(
+        store.resolve_composer_session_turn(
+            &conversation.id,
+            &first.id,
+            ComposerSessionTurnRole::Agent,
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::ContextStale))
+    ));
+    store
+        .finish_run(&first.id, RunStatus::Completed, None)
+        .expect("finish first");
+
+    let user = store
+        .resolve_composer_session_turn(&conversation.id, &first.id, ComposerSessionTurnRole::User)
+        .expect("user turn");
+    assert_eq!(user.content, "First visible question");
+    let agent = store
+        .resolve_composer_session_turn(&conversation.id, &first.id, ComposerSessionTurnRole::Agent)
+        .expect("agent turn");
+    assert_eq!(agent.content, "First visible answer");
+    assert!(matches!(
+        store
+            .resolve_composer_session_turn(&foreign.id, &first.id, ComposerSessionTurnRole::Agent,),
+        Err(StoreError::Composer(ComposerCatalogError::ContextStale))
+    ));
+
+    let second = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Second visible question",
+            PermissionMode::Safe,
+        )
+        .expect("second run");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "text_delta",
+            &json!({"run_id":second.id, "text":"Second visible answer"}),
+            Some((
+                &second.id,
+                AgentEventKind::TextDelta,
+                &json!({"text":"Second visible answer"}),
+            )),
+        )
+        .expect("second answer");
+    store
+        .finish_run(&second.id, RunStatus::Completed, None)
+        .expect("finish second");
+    let branch = store
+        .branch_conversation_at_run(&conversation.id, &second.id)
+        .expect("explicit branch");
+    assert_eq!(
+        store
+            .resolve_composer_session_turn(&branch.id, &first.id, ComposerSessionTurnRole::Agent,)
+            .expect("branch-retained turn")
+            .content,
+        "First visible answer"
+    );
+
+    let revision = store
+        .revise_conversation_at_run(&conversation.id, &second.id)
+        .expect("hidden revision");
+    assert!(matches!(
+        store.resolve_composer_session_turn(
+            &revision.snapshot_conversation_id,
+            &first.id,
+            ComposerSessionTurnRole::Agent,
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::ContextStale))
+    ));
+    assert!(matches!(
+        store.resolve_composer_session_turn(
+            &conversation.id,
+            &second.id,
+            ComposerSessionTurnRole::Agent,
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::ContextStale))
+    ));
+
+    let oversized = store
+        .start_run(
+            &conversation.id,
+            "project",
+            &"x".repeat(MAX_SESSION_TURN_CONTEXT_BYTES + 1),
+            PermissionMode::Safe,
+        )
+        .expect("oversized run");
+    store
+        .finish_run(&oversized.id, RunStatus::Completed, None)
+        .expect("finish oversized");
+    assert!(matches!(
+        store.resolve_composer_session_turn(
+            &conversation.id,
+            &oversized.id,
+            ComposerSessionTurnRole::User,
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::ContextOverLimit))
+    ));
+}
+
+#[test]
+fn structured_session_turn_dispatches_only_the_resolved_role_content() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let source = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Private user question",
+            PermissionMode::Safe,
+        )
+        .expect("source run");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "text_delta",
+            &json!({"run_id":source.id, "text":"Private Agent answer"}),
+            Some((
+                &source.id,
+                AgentEventKind::TextDelta,
+                &json!({"text":"Private Agent answer"}),
+            )),
+        )
+        .expect("source answer");
+    store
+        .finish_run(&source.id, RunStatus::Completed, None)
+        .expect("finish source");
+    let snapshot = store
+        .resolve_composer_session_turn(&conversation.id, &source.id, ComposerSessionTurnRole::Agent)
+        .expect("resolved source");
+    let selector = session_turn_selector(ComposerSessionTurnRole::Agent, &source.id);
+    assert!(matches!(
+        store.register_composer_session_turn_context(
+            &conversation.id,
+            "project",
+            &selector,
+            &snapshot.source_revision,
+            ComposerContextSummary::SessionTurn {
+                role: ComposerSessionTurnRole::User,
+                line_count: snapshot.line_count,
+                byte_count: snapshot.byte_count,
+            },
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::InvalidDraft))
+    ));
+    let registration = store
+        .register_composer_session_turn_context(
+            &conversation.id,
+            "project",
+            &selector,
+            &snapshot.source_revision,
+            ComposerContextSummary::SessionTurn {
+                role: ComposerSessionTurnRole::Agent,
+                line_count: snapshot.line_count,
+                byte_count: snapshot.byte_count,
+            },
+        )
+        .expect("session turn context");
+    assert!(
+        !serde_json::to_string(&registration.context)
+            .expect("safe context")
+            .contains(&source.id)
+    );
+
+    let run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &[ComposerDraftSegment::ContextRef {
+                id: registration.context.id.clone(),
+                catalog_revision: registration.catalog.revision,
+                context_kind: ComposerContextKind::SessionTurn,
+            }],
+            &[ComposerPreflightContext {
+                id: registration.context.id,
+                kind: ComposerContextKind::SessionTurn,
+                path: selector.clone(),
+                content: Some(snapshot.content),
+            }],
+            PermissionMode::Safe,
+        )
+        .expect("session turn dispatch");
+
+    assert!(
+        run.message
+            .contains("Prior Agent response explicitly referenced")
+    );
+    assert!(run.message.contains("Private Agent answer"));
+    assert!(!run.message.contains("Private user question"));
+    assert!(!run.message.contains(&selector));
+}
+
+#[test]
+fn native_session_turn_context_uses_the_visible_delta_anchor() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::OpenCode, None)
+        .expect("conversation");
+    let anchor = store
+        .append_session_event(
+            &conversation.id,
+            "user_message_delta",
+            &json!({"text":"Native private "}),
+        )
+        .expect("first user chunk");
+    store
+        .append_session_event(
+            &conversation.id,
+            "user_message_delta",
+            &json!({"text":"question"}),
+        )
+        .expect("second user chunk");
+    store
+        .append_session_event(
+            &conversation.id,
+            "text_delta",
+            &json!({"text":"Native private answer"}),
+        )
+        .expect("answer");
+    store
+        .append_session_event(
+            &conversation.id,
+            "user_message",
+            &json!({"text":"Next question"}),
+        )
+        .expect("next turn");
+    let selector = format!("native-{}", anchor.seq);
+
+    assert_eq!(
+        store
+            .resolve_composer_session_turn(
+                &conversation.id,
+                &selector,
+                ComposerSessionTurnRole::User,
+            )
+            .expect("native user turn")
+            .content,
+        "Native private question"
+    );
+    assert_eq!(
+        store
+            .resolve_composer_session_turn(
+                &conversation.id,
+                &selector,
+                ComposerSessionTurnRole::Agent,
+            )
+            .expect("native Agent turn")
+            .content,
+        "Native private answer"
+    );
+    assert!(matches!(
+        store.resolve_composer_session_turn(
+            &conversation.id,
+            &format!("native-{}", anchor.seq + 1),
+            ComposerSessionTurnRole::User,
+        ),
+        Err(StoreError::Composer(ComposerCatalogError::ContextStale))
+    ));
 }
 
 #[test]

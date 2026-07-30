@@ -13,10 +13,14 @@ use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextRecord,
     ComposerContextRegistration, ComposerContextSelector, ComposerContextSummary,
     ComposerContextValidationResponse, ComposerContextValidationResult, ComposerDraftSegment,
-    ComposerInvocation, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES,
-    context_kind_key, opaque_context_id, opaque_git_diff_context_id, opaque_terminal_context_id,
-    parse_context_kind, project_acp_catalog_with_contexts, project_available_commands,
-    resolve_composer_catalog_dispatch, validate_structured_composer_segments,
+    ComposerInvocation, ComposerPreflightContext, ComposerSessionTurnRole,
+    ComposerSessionTurnSnapshot, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES,
+    MAX_SESSION_TURN_CONTEXT_BYTES, MAX_SESSION_TURN_CONTEXT_LINES, context_kind_key,
+    opaque_context_id, opaque_git_diff_context_id, opaque_session_turn_context_id,
+    opaque_terminal_context_id, parse_context_kind, parse_session_turn_selector,
+    project_acp_catalog_with_contexts, project_available_commands,
+    resolve_composer_catalog_dispatch, session_turn_source_revision,
+    validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
 
@@ -189,6 +193,44 @@ pub struct SessionEvent {
     pub kind: String,
     pub payload: Value,
     pub created_at: String,
+}
+
+type StoredSessionEvent = (String, i64, String, String, String);
+
+fn stored_session_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredSessionEvent> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
+}
+
+fn deserialize_stored_session_event(
+    (conversation_id, seq, kind, payload, created_at): StoredSessionEvent,
+) -> Result<SessionEvent, StoreError> {
+    Ok(SessionEvent {
+        conversation_id,
+        seq: u64::try_from(seq).map_err(|_| {
+            StoreError::InvalidStoredValue("negative session event sequence".into())
+        })?,
+        kind,
+        payload: serde_json::from_str(&payload)?,
+        created_at,
+    })
+}
+
+fn append_session_turn_content(content: &mut String, text: &str) -> Result<(), StoreError> {
+    if content
+        .len()
+        .checked_add(text.len())
+        .is_none_or(|length| length > MAX_SESSION_TURN_CONTEXT_BYTES)
+    {
+        return Err(ComposerCatalogError::ContextOverLimit.into());
+    }
+    content.push_str(text);
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1955,6 +1997,44 @@ impl AgentStore {
         )
     }
 
+    pub fn register_composer_session_turn_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        selector: &str,
+        source_revision: &str,
+        summary: ComposerContextSummary,
+    ) -> Result<ComposerContextRegistration, StoreError> {
+        let role = parse_session_turn_selector(selector).map(|(role, _)| role);
+        let summary_is_valid = matches!(
+            &summary,
+            ComposerContextSummary::SessionTurn {
+                role: summary_role,
+                line_count,
+                byte_count,
+            } if Some(*summary_role) == role
+                && *line_count > 0
+                && *line_count <= MAX_SESSION_TURN_CONTEXT_LINES
+                && *byte_count > 0
+                && *byte_count <= MAX_SESSION_TURN_CONTEXT_BYTES
+        );
+        if role.is_none() || source_revision.len() != 64 || !summary_is_valid {
+            return Err(ComposerCatalogError::InvalidDraft.into());
+        }
+        let id =
+            opaque_session_turn_context_id(project_id, conversation_id, selector, source_revision);
+        self.register_composer_context_record(
+            conversation_id,
+            project_id,
+            ComposerContextKind::SessionTurn,
+            selector,
+            id,
+            Some(source_revision),
+            Some(summary),
+            true,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn register_composer_context_record(
         &self,
@@ -2311,6 +2391,23 @@ impl AgentStore {
                                 resolved.push('\n');
                             }
                         }
+                        (ComposerContextKind::SessionTurn, Some(content)) => {
+                            let (role, _) = parse_session_turn_selector(&record.path)
+                                .ok_or(ComposerCatalogError::ContextStale)?;
+                            resolved.push_str(match role {
+                                ComposerSessionTurnRole::User => {
+                                    "\n[Prior user turn explicitly referenced in Kubecode]\n"
+                                }
+                                ComposerSessionTurnRole::Agent => {
+                                    "\n[Prior Agent response explicitly referenced in Kubecode]\n"
+                                }
+                            });
+                            for line in content.lines() {
+                                resolved.push_str("    ");
+                                resolved.push_str(line);
+                                resolved.push('\n');
+                            }
+                        }
                         (ComposerContextKind::File | ComposerContextKind::Directory, None) => {
                             resolved.push('@');
                             resolved.push_str(&record.path);
@@ -2491,6 +2588,184 @@ impl AgentStore {
             })
         })
         .collect()
+    }
+
+    pub fn resolve_composer_session_turn(
+        &self,
+        conversation_id: &str,
+        selector: &str,
+        role: ComposerSessionTurnRole,
+    ) -> Result<ComposerSessionTurnSnapshot, StoreError> {
+        const MAX_SELECTOR_BYTES: usize = 256;
+        const MAX_TURN_EVENTS: usize = 512;
+        if selector.is_empty() || selector.len() > MAX_SELECTOR_BYTES {
+            return Err(ComposerCatalogError::ContextStale.into());
+        }
+        let conversation = self.get_conversation(conversation_id)?;
+        if conversation.read_only {
+            return Err(ComposerCatalogError::ContextStale.into());
+        }
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let native_sequence = selector
+            .strip_prefix("native-")
+            .map(|sequence| {
+                sequence
+                    .parse::<i64>()
+                    .map_err(|_| ComposerCatalogError::ContextStale)
+            })
+            .transpose()?;
+        let stored_anchor = if let Some(sequence) = native_sequence {
+            database
+                .query_row(
+                    "SELECT conversation_id, seq, kind, payload, created_at
+                     FROM session_events WHERE conversation_id = ?1 AND seq = ?2",
+                    params![conversation_id, sequence],
+                    stored_session_event_row,
+                )
+                .optional()?
+        } else {
+            database
+                .query_row(
+                    "SELECT conversation_id, seq, kind, payload, created_at
+                     FROM session_events
+                     WHERE conversation_id = ?1 AND kind = 'user_message'
+                       AND json_extract(payload, '$.run_id') = ?2
+                     LIMIT 1",
+                    params![conversation_id, selector],
+                    stored_session_event_row,
+                )
+                .optional()?
+        }
+        .ok_or(ComposerCatalogError::ContextStale)?;
+        let anchor = deserialize_stored_session_event(stored_anchor)?;
+        let previous_kind = if anchor.kind == "user_message_delta" {
+            database
+                .query_row(
+                    "SELECT kind FROM session_events
+                     WHERE conversation_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT 1",
+                    params![
+                        conversation_id,
+                        i64::try_from(anchor.seq).map_err(|_| {
+                            StoreError::InvalidStoredValue(
+                                "session event sequence exceeds SQLite range".into(),
+                            )
+                        })?
+                    ],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+        } else {
+            None
+        };
+        let is_native_delta_anchor = native_sequence.is_some()
+            && anchor.kind == "user_message_delta"
+            && previous_kind.as_deref() != Some("user_message_delta");
+        if (anchor.kind != "user_message" && !is_native_delta_anchor)
+            || anchor.payload.get("internal").and_then(Value::as_bool) == Some(true)
+        {
+            return Err(ComposerCatalogError::ContextStale.into());
+        }
+        if let Some(run_id) = anchor.payload.get("run_id").and_then(Value::as_str) {
+            let active = database
+                .query_row(
+                    "SELECT 1 FROM agent_runs
+                     WHERE id = ?1 AND conversation_id = ?2
+                       AND status IN ('running', 'waiting_permission')",
+                    params![run_id, conversation_id],
+                    |_| Ok(()),
+                )
+                .optional()?;
+            if active.is_some() {
+                return Err(ComposerCatalogError::ContextStale.into());
+            }
+        }
+        let event_limit =
+            i64::try_from(MAX_TURN_EVENTS + 1).expect("session turn event limit fits SQLite range");
+        let mut statement = database.prepare(
+            "SELECT conversation_id, seq, kind, payload, created_at
+             FROM session_events
+             WHERE conversation_id = ?1 AND seq >= ?2 ORDER BY seq LIMIT ?3",
+        )?;
+        let anchor_sequence = i64::try_from(anchor.seq).map_err(|_| {
+            StoreError::InvalidStoredValue("session event sequence exceeds SQLite range".into())
+        })?;
+        let stored_events = statement
+            .query_map(
+                params![conversation_id, anchor_sequence, event_limit],
+                stored_session_event_row,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        let events = stored_events
+            .into_iter()
+            .map(deserialize_stored_session_event)
+            .collect::<Result<Vec<_>, _>>()?;
+        let end = events
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(index, event)| {
+                event.kind == "user_message"
+                    || (event.kind == "user_message_delta"
+                        && events
+                            .get(index.saturating_sub(1))
+                            .is_none_or(|previous| previous.kind != "user_message_delta"))
+            })
+            .map(|(index, _)| index)
+            .unwrap_or(events.len());
+        if end > MAX_TURN_EVENTS || (end == events.len() && events.len() > MAX_TURN_EVENTS) {
+            return Err(ComposerCatalogError::ContextOverLimit.into());
+        }
+        let turn = &events[..end];
+        let mut content = String::new();
+        match role {
+            ComposerSessionTurnRole::User if anchor.kind == "user_message" => {
+                append_session_turn_content(
+                    &mut content,
+                    anchor
+                        .payload
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )?;
+            }
+            ComposerSessionTurnRole::User => {
+                for event in turn
+                    .iter()
+                    .take_while(|event| event.kind == "user_message_delta")
+                {
+                    if let Some(text) = event.payload.get("text").and_then(Value::as_str) {
+                        append_session_turn_content(&mut content, text)?;
+                    }
+                }
+            }
+            ComposerSessionTurnRole::Agent => {
+                for event in turn.iter().filter(|event| event.kind == "text_delta") {
+                    if let Some(text) = event.payload.get("text").and_then(Value::as_str) {
+                        append_session_turn_content(&mut content, text)?;
+                    }
+                }
+            }
+        }
+        if content.is_empty() {
+            return Err(ComposerCatalogError::ContextStale.into());
+        }
+        let line_count = content.split('\n').count();
+        if line_count > MAX_SESSION_TURN_CONTEXT_LINES {
+            return Err(ComposerCatalogError::ContextOverLimit.into());
+        }
+        Ok(ComposerSessionTurnSnapshot {
+            selector: selector.to_owned(),
+            role,
+            source_revision: session_turn_source_revision(
+                conversation_id,
+                selector,
+                role,
+                &content,
+            ),
+            line_count,
+            byte_count: content.len(),
+            content,
+        })
     }
 
     pub fn events_after(&self, run_id: &str, seq: u64) -> Result<Vec<AgentEvent>, StoreError> {

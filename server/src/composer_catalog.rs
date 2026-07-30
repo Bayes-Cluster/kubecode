@@ -18,6 +18,8 @@ pub const MAX_COMPOSER_SEGMENTS: usize = 128;
 pub const MAX_COMPOSER_REFERENCES: usize = 32;
 pub const MAX_COMPOSER_VALIDATION_ROWS: usize = 32;
 pub const MAX_COMPOSER_TEXT_BYTES: usize = 128 * 1024;
+pub const MAX_SESSION_TURN_CONTEXT_BYTES: usize = 16 * 1024;
+pub const MAX_SESSION_TURN_CONTEXT_LINES: usize = 200;
 const MAX_TRUSTED_COMPOSER_ITEMS: usize = 64;
 const MAX_TRUSTED_SOURCE_IDENTITY_BYTES: usize = 512;
 const MAX_TRUSTED_ITEM_NAME_BYTES: usize = 256;
@@ -61,6 +63,23 @@ pub enum ComposerGitDiffScope {
     File,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComposerSessionTurnRole {
+    User,
+    Agent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComposerSessionTurnSnapshot {
+    pub selector: String,
+    pub role: ComposerSessionTurnRole,
+    pub content: String,
+    pub source_revision: String,
+    pub line_count: usize,
+    pub byte_count: usize,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ComposerContextSummary {
@@ -76,6 +95,11 @@ pub enum ComposerContextSummary {
         line_count: usize,
         byte_count: usize,
         truncated: bool,
+    },
+    SessionTurn {
+        role: ComposerSessionTurnRole,
+        line_count: usize,
+        byte_count: usize,
     },
 }
 
@@ -120,10 +144,10 @@ impl ComposerContextRecord {
         ComposerContextMeta {
             id: self.id.clone(),
             kind: self.kind,
-            display: if self.kind == ComposerContextKind::Terminal {
-                "terminal".to_owned()
-            } else {
-                self.path.clone()
+            display: match self.kind {
+                ComposerContextKind::Terminal => "terminal".to_owned(),
+                ComposerContextKind::SessionTurn => "session turn".to_owned(),
+                _ => self.path.clone(),
             },
             enabled: self.available,
             disabled_reason: (!self.available).then(|| "context_stale".to_owned()),
@@ -998,6 +1022,63 @@ pub fn opaque_terminal_context_id(
         ComposerContextKind::Terminal,
         &format!("{selector}\0{source_revision}"),
     )
+}
+
+pub fn session_turn_selector(role: ComposerSessionTurnRole, turn_id: &str) -> String {
+    format!(
+        "{}:{turn_id}",
+        match role {
+            ComposerSessionTurnRole::User => "user",
+            ComposerSessionTurnRole::Agent => "agent",
+        }
+    )
+}
+
+pub fn parse_session_turn_selector(selector: &str) -> Option<(ComposerSessionTurnRole, &str)> {
+    let (role, turn_id) = selector.split_once(':')?;
+    let role = match role {
+        "user" => ComposerSessionTurnRole::User,
+        "agent" => ComposerSessionTurnRole::Agent,
+        _ => return None,
+    };
+    (!turn_id.is_empty()).then_some((role, turn_id))
+}
+
+pub fn opaque_session_turn_context_id(
+    project_id: &str,
+    conversation_id: &str,
+    selector: &str,
+    source_revision: &str,
+) -> String {
+    opaque_context_id(
+        project_id,
+        conversation_id,
+        ComposerContextKind::SessionTurn,
+        &format!("{selector}\0{source_revision}"),
+    )
+}
+
+pub fn session_turn_source_revision(
+    conversation_id: &str,
+    selector: &str,
+    role: ComposerSessionTurnRole,
+    content: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"kubecode-session-turn-context-v1\0");
+    for part in [
+        conversation_id,
+        selector,
+        match role {
+            ComposerSessionTurnRole::User => "user",
+            ComposerSessionTurnRole::Agent => "agent",
+        },
+        content,
+    ] {
+        digest.update(part.len().to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    hex::encode(digest.finalize())
 }
 
 pub fn context_kind_key(kind: ComposerContextKind) -> &'static str {

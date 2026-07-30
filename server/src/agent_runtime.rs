@@ -36,6 +36,7 @@ use crate::agents::{
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerContextRecord, ComposerContextSelector, ComposerDraftSegment,
     ComposerInvocation, ComposerPreflightContext, opaque_git_diff_context_id,
+    opaque_session_turn_context_id, parse_session_turn_selector,
     validate_structured_composer_segments,
 };
 use crate::git::GitService;
@@ -466,6 +467,44 @@ impl AgentRuntime {
             kind: record.kind,
             path: record.path.clone(),
             content: Some(capture.content),
+        }))
+    }
+
+    pub fn resolve_session_turn_composer_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        record: &ComposerContextRecord,
+    ) -> Result<Option<ComposerPreflightContext>, RuntimeError> {
+        let (role, turn_id) = match parse_session_turn_selector(&record.path) {
+            Some(selector) => selector,
+            None => return Ok(None),
+        };
+        let snapshot =
+            match self
+                .store
+                .resolve_composer_session_turn(conversation_id, turn_id, role)
+            {
+                Ok(snapshot) => snapshot,
+                Err(StoreError::Composer(_)) => return Ok(None),
+                Err(error) => return Err(error.into()),
+            };
+        let expected_id = opaque_session_turn_context_id(
+            project_id,
+            conversation_id,
+            &record.path,
+            &snapshot.source_revision,
+        );
+        if record.id != expected_id
+            || record.source_revision.as_deref() != Some(snapshot.source_revision.as_str())
+        {
+            return Ok(None);
+        }
+        Ok(Some(ComposerPreflightContext {
+            id: record.id.clone(),
+            kind: record.kind,
+            path: record.path.clone(),
+            content: Some(snapshot.content),
         }))
     }
 
@@ -976,7 +1015,8 @@ impl AgentRuntime {
                     Some(crate::workspace::EntryKind::Directory)
                 }
                 crate::composer_catalog::ComposerContextKind::GitDiff
-                | crate::composer_catalog::ComposerContextKind::Terminal => None,
+                | crate::composer_catalog::ComposerContextKind::Terminal
+                | crate::composer_catalog::ComposerContextKind::SessionTurn => None,
                 _ => return Err(StoreError::Composer(ComposerCatalogError::ItemUnsupported).into()),
             };
             if let Some(expected_kind) = expected_kind {
@@ -1029,9 +1069,18 @@ impl AgentRuntime {
                     path: record.path,
                     content: Some(snapshot.content),
                 });
-            } else {
+            } else if record.kind == crate::composer_catalog::ComposerContextKind::Terminal {
                 let resolved = self
                     .resolve_terminal_composer_context(&conversation.id, &record)?
+                    .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                preflight.push(resolved);
+            } else {
+                let resolved = self
+                    .resolve_session_turn_composer_context(
+                        &conversation.id,
+                        &conversation.project_id,
+                        &record,
+                    )?
                     .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
                 preflight.push(resolved);
             }

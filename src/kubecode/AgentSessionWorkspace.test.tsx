@@ -522,6 +522,93 @@ describe('AgentSessionWorkspace', () => {
     expect(JSON.stringify(insertionEvent)).not.toContain('terminal-private-id')
   })
 
+  it('submits a visible prior Agent response without sending its text or turn ID to analytics', async () => {
+    const privateQuestion = 'Question about /private/project/secret.ts'
+    const privateResponse = 'Response with private implementation details'
+    const completed = { ...run, id: 'private-run-id', message: privateQuestion }
+    const catalog = {
+      conversation_id: 'session-1', revision: 9, items: [],
+      contexts: [{
+        id: 'ctx:session-turn:opaque', kind: 'session_turn' as const, display: 'session turn',
+        enabled: true, disabled_reason: null,
+        summary: {
+          kind: 'session_turn' as const, role: 'agent' as const,
+          line_count: 1, byte_count: 44,
+        },
+      }],
+    }
+    const startStructuredRun = vi.fn().mockResolvedValue({
+      ...run, id: 'session-turn-run', message: '@session-turn', status: 'running',
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([completed]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([
+        {
+          conversation_id: 'session-1', seq: 1, kind: 'user_message',
+          payload: { run_id: completed.id, text: privateQuestion }, created_at: 'now',
+        },
+        {
+          conversation_id: 'session-1', seq: 2, kind: 'text_delta',
+          payload: { run_id: completed.id, text: privateResponse }, created_at: 'now',
+        },
+      ]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        composer: { catalog: { conversation_id: 'session-1', revision: 0, items: [], contexts: [] } },
+      }),
+      registerComposerContext: vi.fn().mockResolvedValue({
+        context: catalog.contexts[0], catalog,
+      }),
+      startStructuredRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference Session turns/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Attach prior Agent response/i }))
+    await waitFor(() => expect(api.registerComposerContext).toHaveBeenCalledWith('session-1', {
+      kind: 'session_turn',
+      path: 'agent',
+      turn_id: 'private-run-id',
+    }))
+    expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-kind',
+      'session_turn',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send composer' }))
+    await waitFor(() => expect(startStructuredRun).toHaveBeenCalledWith(
+      'project-1',
+      'session-1',
+      expect.objectContaining({
+        catalog_revision: 9,
+        segments: expect.arrayContaining([expect.objectContaining({
+          kind: 'context_ref', id: 'ctx:session-turn:opaque', context_kind: 'session_turn',
+        })]),
+      }),
+    ))
+    const insertionEvent = vi.mocked(trackEvent).mock.calls.find(([name, properties]) => (
+      name === 'kubecode_agent_context_inserted' && properties?.kind === 'session_turn'
+    ))
+    expect(insertionEvent).toEqual([
+      'kubecode_agent_context_inserted',
+      { agent_id: 'codex', kind: 'session_turn' },
+    ])
+    expect(JSON.stringify(insertionEvent)).not.toContain(privateQuestion)
+    expect(JSON.stringify(insertionEvent)).not.toContain(privateResponse)
+    expect(JSON.stringify(insertionEvent)).not.toContain('private-run-id')
+  })
+
   it('publishes only the active writable Session to the global palette and revalidates selections', async () => {
     const catalog = {
       conversation_id: 'session-1', revision: 11, contexts: [],

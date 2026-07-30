@@ -42,6 +42,40 @@ const commands = [
 ]
 
 describe('ComposerAddMenu', () => {
+  it('groups visible Session turns and submits only the stable turn selector and role', () => {
+    const onSessionTurnContext = vi.fn()
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        onSessionTurnContext={onSessionTurnContext}
+        projectId="project-1"
+        sessionTurnSources={[{
+          turnId: 'private-run-id',
+          userPreview: 'Private user question',
+          agentPreview: 'Private Agent response',
+        }]}
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    expect(screen.getByRole('button', { name: /Diagnostics unavailable/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Reference Session turns/i }))
+    expect(screen.getByRole('group', { name: 'User turns' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Agent responses' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Attach prior Agent response/i }))
+
+    expect(onSessionTurnContext).toHaveBeenCalledWith({
+      role: 'agent',
+      turnId: 'private-run-id',
+    })
+    expect(JSON.stringify(onSessionTurnContext.mock.calls)).not.toContain('Private Agent response')
+  })
+
   it('attaches only an explicit terminal selection or explicit bounded recent output', () => {
     const onTerminalContext = vi.fn()
     render(

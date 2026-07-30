@@ -137,7 +137,7 @@ export function ComposerContextInput({
     const referenceRecords = JSON.parse(staleReferenceKey) as Array<{
       id: string
       catalog_revision: number
-      context_kind: 'file' | 'directory' | 'git_diff' | 'terminal'
+      context_kind: 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
     }>
     if (referenceRecords.length === 0) return
     let current = true
