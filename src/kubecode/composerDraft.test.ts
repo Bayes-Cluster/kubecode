@@ -66,6 +66,40 @@ describe('typed Composer drafts', () => {
     })
   })
 
+  it('restores a terminal capture as stale until the live server validates reconnect state', () => {
+    const reference = createComposerContextReference({
+      catalogRevision: 18,
+      id: 'ctx:terminal:capture',
+      kind: 'terminal',
+      name: 'Terminal pane 2 · selection · 3 lines · 48 bytes',
+      path: 'terminal',
+      summary: {
+        kind: 'terminal', capture: 'selection', pane_index: 2,
+        line_count: 3, byte_count: 48, truncated: false,
+      },
+    })
+    const restored = parseStoredComposerDraft(serializeComposerDraft(
+      appendComposerContext(textComposerDraft(), reference),
+    ))
+    expect(composerDraftReferences(restored)[0]).toMatchObject({
+      availability: 'stale',
+      kind: 'terminal',
+      summary: { capture: 'selection', pane_index: 2, line_count: 3, byte_count: 48 },
+    })
+
+    const validated = applyComposerContextValidation(restored, {
+      catalog: { ...catalog, revision: 18 },
+      references: [{
+        id: reference.id,
+        catalog_revision: reference.catalogRevision,
+        context_kind: 'terminal',
+        available: true,
+      }],
+    })
+    expect(composerDraftReferences(validated)[0]?.availability).toBe('available')
+    expect(JSON.stringify(composerDraftToStructuredSegments(validated))).not.toContain('Terminal pane')
+  })
+
   it('migrates legacy string drafts without trusting @ text as context', () => {
     expect(parseStoredComposerDraft('@src/main.ts please review')).toEqual(
       textComposerDraft('@src/main.ts please review'),

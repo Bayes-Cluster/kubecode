@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::agents::AgentId;
+use crate::terminal::TerminalContextCaptureKind;
 
 pub const MAX_ACP_COMMAND_NAME_BYTES: usize = 256;
 pub const MAX_ACP_COMMAND_ARGUMENT_BYTES: usize = 8 * 1024;
@@ -69,6 +70,13 @@ pub enum ComposerContextSummary {
         hunk_count: usize,
         byte_count: usize,
     },
+    Terminal {
+        capture: TerminalContextCaptureKind,
+        pane_index: usize,
+        line_count: usize,
+        byte_count: usize,
+        truncated: bool,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -112,7 +120,11 @@ impl ComposerContextRecord {
         ComposerContextMeta {
             id: self.id.clone(),
             kind: self.kind,
-            display: self.path.clone(),
+            display: if self.kind == ComposerContextKind::Terminal {
+                "terminal".to_owned()
+            } else {
+                self.path.clone()
+            },
             enabled: self.available,
             disabled_reason: (!self.available).then(|| "context_stale".to_owned()),
             summary: self.summary.clone(),
@@ -970,6 +982,20 @@ pub fn opaque_git_diff_context_id(
         project_id,
         conversation_id,
         ComposerContextKind::GitDiff,
+        &format!("{selector}\0{source_revision}"),
+    )
+}
+
+pub fn opaque_terminal_context_id(
+    project_id: &str,
+    conversation_id: &str,
+    selector: &str,
+    source_revision: &str,
+) -> String {
+    opaque_context_id(
+        project_id,
+        conversation_id,
+        ComposerContextKind::Terminal,
         &format!("{selector}\0{source_revision}"),
     )
 }

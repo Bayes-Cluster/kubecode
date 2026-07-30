@@ -42,6 +42,51 @@ const commands = [
 ]
 
 describe('ComposerAddMenu', () => {
+  it('attaches only an explicit terminal selection or explicit bounded recent output', () => {
+    const onTerminalContext = vi.fn()
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        onTerminalContext={onTerminalContext}
+        projectId="project-1"
+        t={createTranslator('en')}
+        terminalSources={[
+          { terminalId: 'terminal-1', paneIndex: 1, selectedText: null },
+          { terminalId: 'terminal-2', paneIndex: 2, selectedText: 'selected output' },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference terminal output/i }))
+
+    expect(screen.getByRole('button', {
+      name: /Attach selected output from Terminal pane 1/i,
+    })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', {
+      name: /Attach selected output from Terminal pane 2/i,
+    }))
+    expect(onTerminalContext).toHaveBeenLastCalledWith({
+      capture: 'selection',
+      selectedText: 'selected output',
+      terminalId: 'terminal-2',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference terminal output/i }))
+    fireEvent.click(screen.getByRole('button', {
+      name: /Attach recent output from Terminal pane 1/i,
+    }))
+    expect(onTerminalContext).toHaveBeenLastCalledWith({
+      capture: 'recent',
+      terminalId: 'terminal-1',
+    })
+  })
+
   it('discovers bounded Git diff contexts from the add menu without enabling rejected rows', async () => {
     const onGitDiff = vi.fn()
     const candidate = {

@@ -377,7 +377,7 @@ export type AgentSessionState = {
   }
 }
 export type ComposerItemKind = 'command' | 'skill' | 'plugin_action' | 'provider_app'
-export type ComposerContextKind = 'file' | 'directory' | 'git_diff'
+export type ComposerContextKind = 'file' | 'directory' | 'git_diff' | 'terminal'
 export type ComposerGitDiffSummary = {
   kind: 'git_diff'
   scope: 'all' | 'file'
@@ -385,6 +385,15 @@ export type ComposerGitDiffSummary = {
   hunk_count: number
   byte_count: number
 }
+export type ComposerTerminalSummary = {
+  kind: 'terminal'
+  capture: 'selection' | 'recent'
+  pane_index: number
+  line_count: number
+  byte_count: number
+  truncated: boolean
+}
+export type ComposerContextSummary = ComposerGitDiffSummary | ComposerTerminalSummary
 export type ComposerCatalogItem = {
   id: string
   kind: ComposerItemKind
@@ -402,7 +411,7 @@ export type ComposerCatalogContext = {
   display: string
   enabled: boolean
   disabled_reason: string | null
-  summary?: ComposerGitDiffSummary
+  summary?: ComposerContextSummary
 }
 export type GitDiffContextCandidate = {
   path: string | null
@@ -911,7 +920,13 @@ export class KubecodeApi {
 
   registerComposerContext(
     conversationId: string,
-    context: { kind: ComposerContextKind; path: string; source_revision?: string },
+    context: {
+      kind: ComposerContextKind
+      path: string
+      source_revision?: string
+      terminal_id?: string
+      selected_text?: string
+    },
   ): Promise<ComposerContextRegistration> {
     return this.request(
       `/sessions/${encodeURIComponent(conversationId)}/composer/contexts`,

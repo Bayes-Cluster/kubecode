@@ -34,11 +34,13 @@ use crate::agents::{
     PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use crate::composer_catalog::{
-    ComposerCatalogError, ComposerContextSelector, ComposerDraftSegment, ComposerInvocation,
-    ComposerPreflightContext, opaque_git_diff_context_id, validate_structured_composer_segments,
+    ComposerCatalogError, ComposerContextRecord, ComposerContextSelector, ComposerDraftSegment,
+    ComposerInvocation, ComposerPreflightContext, opaque_git_diff_context_id,
+    validate_structured_composer_segments,
 };
 use crate::git::GitService;
 use crate::teams::{TeamMemberStatus, TeamMode, TeamRole, TeamStatus, TeamStore};
+use crate::terminal::{TerminalInfo, TerminalManager, TerminalStatus};
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 #[derive(Debug, Error)]
@@ -206,6 +208,7 @@ pub struct AgentRuntime {
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
     pending_side_questions: Arc<Mutex<HashSet<String>>>,
+    terminals: Option<Arc<TerminalManager>>,
     teams: Option<Arc<TeamStore>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
 }
@@ -343,6 +346,7 @@ impl AgentRuntime {
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
             pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
+            terminals: None,
             teams: None,
             team_mcp_http: None,
         }
@@ -350,6 +354,11 @@ impl AgentRuntime {
 
     pub fn with_team_store(mut self, teams: Arc<TeamStore>) -> Self {
         self.teams = Some(teams);
+        self
+    }
+
+    pub fn with_terminal_manager(mut self, terminals: Arc<TerminalManager>) -> Self {
+        self.terminals = Some(terminals);
         self
     }
 
@@ -400,6 +409,100 @@ impl AgentRuntime {
 
     pub fn workspace_service(&self) -> Arc<WorkspaceService> {
         Arc::clone(&self.workspace)
+    }
+
+    pub fn authorize_terminal_context(
+        &self,
+        conversation_id: &str,
+        terminal_id: &str,
+    ) -> Result<(TerminalInfo, usize), RuntimeError> {
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let terminals = self
+            .terminals
+            .as_ref()
+            .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+        let terminal = terminals
+            .get(terminal_id)
+            .map_err(|_| StoreError::Composer(ComposerCatalogError::ContextStale))?;
+        if terminal.status != TerminalStatus::Running
+            || !self.terminal_execution_context_matches(&conversation, &terminal)?
+        {
+            return Err(StoreError::Composer(ComposerCatalogError::ContextStale).into());
+        }
+        let pane_index = terminals
+            .list(&conversation.project_id)
+            .iter()
+            .position(|candidate| candidate.id == terminal.id)
+            .map(|index| index + 1)
+            .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+        Ok((terminal, pane_index))
+    }
+
+    pub fn resolve_terminal_composer_context(
+        &self,
+        conversation_id: &str,
+        record: &ComposerContextRecord,
+    ) -> Result<Option<ComposerPreflightContext>, RuntimeError> {
+        let terminals = match self.terminals.as_ref() {
+            Some(terminals) => terminals,
+            None => return Ok(None),
+        };
+        let capture = match terminals.resolve_context_capture(&record.id, conversation_id) {
+            Ok(capture) => capture,
+            Err(_) => return Ok(None),
+        };
+        let conversation = self.store.get_conversation(conversation_id)?;
+        let terminal = match terminals.get(&capture.terminal_id) {
+            Ok(terminal) => terminal,
+            Err(_) => return Ok(None),
+        };
+        if record.source_revision.as_deref() != Some(capture.source_revision.as_str())
+            || !self.terminal_execution_context_matches(&conversation, &terminal)?
+        {
+            return Ok(None);
+        }
+        Ok(Some(ComposerPreflightContext {
+            id: record.id.clone(),
+            kind: record.kind,
+            path: record.path.clone(),
+            content: Some(capture.content),
+        }))
+    }
+
+    fn terminal_execution_context_matches(
+        &self,
+        conversation: &crate::agents::Conversation,
+        terminal: &TerminalInfo,
+    ) -> Result<bool, RuntimeError> {
+        if terminal.project_id != conversation.project_id {
+            return Ok(false);
+        }
+        let target = self.workspace.session_execution_path(
+            &conversation.project_id,
+            &conversation.agent_session_id,
+            conversation.execution_mode,
+            conversation.workspace_path.as_deref(),
+        )?;
+        let terminal_path = if let Some(owner_id) = terminal.conversation_id.as_deref() {
+            let owner = match self.store.get_conversation(owner_id) {
+                Ok(owner) => owner,
+                Err(StoreError::ConversationNotFound(_)) => return Ok(false),
+                Err(error) => return Err(error.into()),
+            };
+            if owner.project_id != conversation.project_id {
+                return Ok(false);
+            }
+            self.workspace.session_execution_path(
+                &owner.project_id,
+                &owner.agent_session_id,
+                owner.execution_mode,
+                owner.workspace_path.as_deref(),
+            )?
+        } else {
+            self.workspace
+                .execution_path(&conversation.project_id, None)?
+        };
+        Ok(target == terminal_path)
     }
 
     pub fn agent_available(&self, agent_id: AgentId) -> bool {
@@ -872,7 +975,8 @@ impl AgentRuntime {
                 crate::composer_catalog::ComposerContextKind::Directory => {
                     Some(crate::workspace::EntryKind::Directory)
                 }
-                crate::composer_catalog::ComposerContextKind::GitDiff => None,
+                crate::composer_catalog::ComposerContextKind::GitDiff
+                | crate::composer_catalog::ComposerContextKind::Terminal => None,
                 _ => return Err(StoreError::Composer(ComposerCatalogError::ItemUnsupported).into()),
             };
             if let Some(expected_kind) = expected_kind {
@@ -896,7 +1000,7 @@ impl AgentRuntime {
                     path: resolved.path,
                     content: None,
                 });
-            } else {
+            } else if record.kind == crate::composer_catalog::ComposerContextKind::GitDiff {
                 let path = (record.path != ".").then_some(record.path.as_str());
                 let snapshot = self
                     .git
@@ -925,6 +1029,11 @@ impl AgentRuntime {
                     path: record.path,
                     content: Some(snapshot.content),
                 });
+            } else {
+                let resolved = self
+                    .resolve_terminal_composer_context(&conversation.id, &record)?
+                    .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                preflight.push(resolved);
             }
         }
         let dispatch = self.store.start_structured_composer_run_dispatch(

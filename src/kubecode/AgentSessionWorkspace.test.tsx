@@ -436,6 +436,92 @@ describe('AgentSessionWorkspace', () => {
     expect(JSON.stringify(insertionEvent)).not.toContain(sourceRevision)
   })
 
+  it('submits an explicit terminal selection without leaking content or terminal identity to analytics', async () => {
+    const privateSelection = 'npm test /private/project/secret.ts'
+    const catalog = {
+      conversation_id: 'session-1', revision: 8, items: [],
+      contexts: [{
+        id: 'ctx:terminal:opaque', kind: 'terminal' as const, display: 'terminal',
+        enabled: true, disabled_reason: null,
+        summary: {
+          kind: 'terminal' as const, capture: 'selection' as const, pane_index: 1,
+          line_count: 1, byte_count: 35, truncated: false,
+        },
+      }],
+    }
+    const startStructuredRun = vi.fn().mockResolvedValue({
+      ...run, id: 'terminal-run', message: '@terminal', status: 'running',
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        composer: { catalog: { conversation_id: 'session-1', revision: 0, items: [], contexts: [] } },
+      }),
+      registerComposerContext: vi.fn().mockResolvedValue({
+        context: catalog.contexts[0], catalog,
+      }),
+      startStructuredRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      projectId="project-1"
+      t={createTranslator('en')}
+      terminalContextSources={[{
+        terminalId: 'terminal-private-id', paneIndex: 1, selectedText: privateSelection,
+      }]}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference terminal output/i }))
+    fireEvent.click(screen.getByRole('button', {
+      name: /Attach selected output from Terminal pane 1/i,
+    }))
+    await waitFor(() => expect(api.registerComposerContext).toHaveBeenCalledWith('session-1', {
+      kind: 'terminal',
+      path: 'selection',
+      selected_text: privateSelection,
+      terminal_id: 'terminal-private-id',
+    }))
+    expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-kind',
+      'terminal',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send composer' }))
+
+    await waitFor(() => expect(startStructuredRun).toHaveBeenCalledWith(
+      'project-1',
+      'session-1',
+      {
+        catalog_revision: 8,
+        segments: [
+          {
+            kind: 'context_ref', id: 'ctx:terminal:opaque', catalog_revision: 8,
+            context_kind: 'terminal',
+          },
+          { kind: 'text', text: ' ' },
+        ],
+      },
+    ))
+    const insertionEvent = vi.mocked(trackEvent).mock.calls.find(([name, properties]) => (
+      name === 'kubecode_agent_context_inserted' && properties?.kind === 'terminal'
+    ))
+    expect(insertionEvent).toEqual([
+      'kubecode_agent_context_inserted',
+      { agent_id: 'codex', kind: 'terminal' },
+    ])
+    expect(JSON.stringify(insertionEvent)).not.toContain(privateSelection)
+    expect(JSON.stringify(insertionEvent)).not.toContain('terminal-private-id')
+  })
+
   it('publishes only the active writable Session to the global palette and revalidates selections', async () => {
     const catalog = {
       conversation_id: 'session-1', revision: 11, contexts: [],

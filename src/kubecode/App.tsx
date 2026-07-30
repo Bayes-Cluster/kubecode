@@ -96,7 +96,7 @@ import type {
   TeamSnapshot,
   WorkspaceEvent,
 } from './api'
-import { TerminalWorkspace } from './TerminalWorkspace'
+import { TerminalWorkspace, type TerminalContextSource } from './TerminalWorkspace'
 import { SessionSidebarList } from './SessionSidebarList'
 import { SystemMessageNotice, SystemMessageProvider } from './SystemMessageNotice'
 import {
@@ -139,6 +139,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [agentsRefreshing, setAgentsRefreshing] = useState(false)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
+  const [terminalContextSources, setTerminalContextSources] = useState<TerminalContextSource[]>([])
   const [terminalsLoadedForProjectId, setTerminalsLoadedForProjectId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [teams, setTeams] = useState<TeamSnapshot[]>([])
@@ -889,6 +890,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               ])}
               t={t}
               team={activeTeam}
+              terminalContextSources={terminalContextSources}
               titlebarTarget={titlebarTarget}
               onSelectTeamMember={setConversationId}
               workspaceEvents={workspaceEvents}
@@ -928,6 +930,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
                 initialTerminals={terminals}
                 key={projectId}
                 onCollapse={() => setTerminalOpen(false)}
+                onContextSourcesChange={setTerminalContextSources}
                 open={terminalOpen}
                 projectId={projectId}
                 t={t}

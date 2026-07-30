@@ -14,8 +14,8 @@ use crate::composer_catalog::{
     ComposerContextRegistration, ComposerContextSelector, ComposerContextSummary,
     ComposerContextValidationResponse, ComposerContextValidationResult, ComposerDraftSegment,
     ComposerInvocation, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES,
-    context_kind_key, opaque_context_id, opaque_git_diff_context_id, parse_context_kind,
-    project_acp_catalog_with_contexts, project_available_commands,
+    context_kind_key, opaque_context_id, opaque_git_diff_context_id, opaque_terminal_context_id,
+    parse_context_kind, project_acp_catalog_with_contexts, project_available_commands,
     resolve_composer_catalog_dispatch, validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
@@ -1931,6 +1931,30 @@ impl AgentStore {
         )
     }
 
+    pub fn register_composer_terminal_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        selector: &str,
+        source_revision: &str,
+        summary: ComposerContextSummary,
+    ) -> Result<ComposerContextRegistration, StoreError> {
+        if selector.is_empty() || source_revision.len() != 64 {
+            return Err(ComposerCatalogError::InvalidDraft.into());
+        }
+        let id = opaque_terminal_context_id(project_id, conversation_id, selector, source_revision);
+        self.register_composer_context_record(
+            conversation_id,
+            project_id,
+            ComposerContextKind::Terminal,
+            selector,
+            id,
+            Some(source_revision),
+            Some(summary),
+            true,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn register_composer_context_record(
         &self,
@@ -2276,6 +2300,16 @@ impl AgentStore {
                                 resolved.push('\n');
                             }
                             resolved.push_str("```\n");
+                        }
+                        (ComposerContextKind::Terminal, Some(content)) => {
+                            resolved.push_str(
+                                "\n[Terminal output explicitly attached in Kubecode; ANSI and control sequences were removed]\n",
+                            );
+                            for line in content.lines() {
+                                resolved.push_str("    ");
+                                resolved.push_str(line);
+                                resolved.push('\n');
+                            }
                         }
                         (ComposerContextKind::File | ComposerContextKind::Directory, None) => {
                             resolved.push('@');
