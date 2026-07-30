@@ -55,6 +55,7 @@ import {
   type ConversationHistoryPage,
   type ConversationRevision,
   type Entry,
+  type GitDiffContextCandidate,
   type KubecodeApi,
   type SessionEvent,
   type TeamSnapshot,
@@ -316,6 +317,19 @@ export function AgentSessionWorkspace({
       bundled: t('kubecode.capabilityScopeBundled'),
       plugin: t('kubecode.capabilityScopePlugin'),
     },
+  }), [t])
+  const gitDiffLabels = useMemo(() => ({
+    all: t('kubecode.gitDiffAllContext'),
+    disabled: (reason: string | null) => gitDiffDisabledReason(reason, t),
+    summary: (candidate: {
+      file_count: number
+      hunk_count: number
+      byte_count: number
+    }) => t('kubecode.gitDiffSummary', {
+      files: candidate.file_count,
+      hunks: candidate.hunk_count,
+      bytes: candidate.byte_count,
+    }),
   }), [t])
   const reportError = useCallback((cause: unknown) => {
     const message = errorMessage(cause, t('kubecode.error'))
@@ -1078,6 +1092,51 @@ export function AgentSessionWorkspace({
     })
   }
 
+  const insertComposerGitDiff = (candidate: GitDiffContextCandidate) => {
+    if (directTeammateChatDisabled || hardReadOnly || !candidate.enabled) return
+    const targetConversationId = conversation.id
+    const request = ++menuContextRequestRef.current
+    setMenuContextPending(true)
+    void api.registerComposerContext(targetConversationId, {
+      kind: 'git_diff',
+      path: candidate.path ?? '.',
+      source_revision: candidate.source_revision,
+    }).then((registration) => {
+      if (request !== menuContextRequestRef.current
+        || activeConversationIdRef.current !== targetConversationId
+        || registration.context.kind !== 'git_diff'
+        || !registration.context.enabled
+        || registration.context.summary?.kind !== 'git_diff') return
+      applyComposerCatalog(registration.catalog)
+      updateComposerDraft((current) => appendComposerContext(
+        current,
+        createComposerContextReference({
+          catalogRevision: registration.catalog.revision,
+          id: registration.context.id,
+          kind: 'git_diff',
+          name: candidate.path?.split('/').at(-1) ?? gitDiffLabels.all,
+          path: candidate.path ?? 'git-diff',
+          summary: registration.context.summary,
+        }),
+      ))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_agent_context_inserted', {
+        agent_id: conversation.agent_id,
+        kind: 'git_diff',
+      })
+    }).catch((cause) => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        reportError(cause)
+      }
+    }).finally(() => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        setMenuContextPending(false)
+      }
+    })
+  }
+
   const insertComposerCapability = (capability: RankedComposerCapability) => {
     if (directTeammateChatDisabled || hardReadOnly || !capability.enabled) return
     const catalog = sessionState?.composer?.catalog
@@ -1502,7 +1561,9 @@ export function AgentSessionWorkspace({
                   capabilityStatus={capabilityStatus}
                   commands={commands}
                   conversationId={conversation.id}
+                  gitDiffLabels={gitDiffLabels}
                   onCapability={insertComposerCapability}
+                  onGitDiff={insertComposerGitDiff}
                   onInsert={insertComposerText}
                   onReference={insertComposerContext}
                   projectId={projectId}
@@ -1534,6 +1595,7 @@ export function AgentSessionWorkspace({
                   contextLoadingLabel={t('kubecode.loadingContext')}
                   contextPickerLabel={t('kubecode.addContext')}
                   contextRemoveLabel={t('kubecode.removeContext')}
+                  gitDiffLabels={gitDiffLabels}
                   conversationId={conversation.id}
                   disabled={directTeammateChatDisabled || readiness !== 'ready'}
                   draft={composerDraft}
@@ -1822,6 +1884,19 @@ function capabilityDisabledReason(reason: string | null, t: Translator): string 
     return t('kubecode.capabilityDisabledUnsupported')
   }
   return t('kubecode.capabilityDisabledUnavailable')
+}
+
+function gitDiffDisabledReason(reason: string | null, t: Translator): string {
+  if (reason === 'git_diff_empty') return t('kubecode.gitDiffEmpty')
+  if (reason === 'git_diff_binary') return t('kubecode.gitDiffBinary')
+  if (reason === 'git_diff_generated') return t('kubecode.gitDiffGenerated')
+  if (reason === 'git_diff_too_large') return t('kubecode.gitDiffTooLarge')
+  if (reason === 'git_diff_too_many_hunks') return t('kubecode.gitDiffTooManyHunks')
+  if (reason === 'git_diff_too_many_files') return t('kubecode.gitDiffTooManyFiles')
+  if (reason === 'git_diff_contains_unsupported') {
+    return t('kubecode.gitDiffContainsUnsupported')
+  }
+  return t('kubecode.gitDiffUnavailable')
 }
 
 function canAskSideQuestion(

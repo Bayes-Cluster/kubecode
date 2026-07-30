@@ -42,6 +42,47 @@ const commands = [
 ]
 
 describe('ComposerAddMenu', () => {
+  it('discovers bounded Git diff contexts from the add menu without enabling rejected rows', async () => {
+    const onGitDiff = vi.fn()
+    const candidate = {
+      path: 'src/main.ts', source_revision: 'a'.repeat(64), file_count: 1,
+      hunk_count: 2, byte_count: 512, enabled: true, disabled_reason: null,
+    }
+    const rejected = {
+      path: null, source_revision: 'b'.repeat(64), file_count: 0,
+      hunk_count: 0, byte_count: 0, enabled: false,
+      disabled_reason: 'git_diff_contains_unsupported',
+    }
+    render(
+      <ComposerAddMenu
+        api={{
+          listComposerGitDiffs: vi.fn().mockResolvedValue({
+            is_repository: true, candidates: [rejected, candidate],
+          }),
+        } as unknown as KubecodeApi}
+        commands={[]}
+        conversationId="session-1"
+        gitDiffLabels={{
+          all: 'Current Git changes',
+          disabled: () => 'Select an eligible file',
+          summary: (item) => `${item.file_count} files · ${item.hunk_count} hunks`,
+        }}
+        onGitDiff={onGitDiff}
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference Git changes/i }))
+
+    expect(await screen.findByRole('button', { name: /Current Git changes/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /main\.ts/i }))
+    expect(onGitDiff).toHaveBeenCalledWith(candidate)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('aligns the add palette to the full Composer surface', () => {
     render(
       <div data-testid="agent-composer-surface">
@@ -58,20 +99,16 @@ describe('ComposerAddMenu', () => {
     )
 
     const surface = screen.getByTestId('agent-composer-surface')
-    const root = screen.getByRole('button', { name: 'Add context' }).parentElement
     vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
       bottom: 60, height: 50, left: 10, right: 510, top: 10, width: 500, x: 10, y: 10,
-      toJSON: () => ({}),
-    })
-    vi.spyOn(root as HTMLElement, 'getBoundingClientRect').mockReturnValue({
-      bottom: 55, height: 32, left: 30, right: 62, top: 23, width: 32, x: 30, y: 23,
       toJSON: () => ({}),
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
 
     expect(screen.getByRole('dialog', { name: 'Add context' })).toHaveStyle({
-      left: '-20px',
+      bottom: `${window.innerHeight - 10 + 12}px`,
+      left: '10px',
       width: '500px',
     })
   })

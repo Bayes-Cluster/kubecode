@@ -398,9 +398,13 @@ export function InlineWikilinkInput({
     setDismissedCapabilityKey('')
   }, [capabilityScopeKey])
   const contextSuggestions = contextPage.key === contextQueryKey ? contextPage.suggestions : []
+  const enabledContextIndexes = contextSuggestions.flatMap((item, index) => (
+    item.enabled !== false ? [index] : []
+  ))
   const selectedContextIndex = contextSelection.key === contextQueryKey
-    ? Math.min(contextSelection.index, Math.max(contextSuggestions.length - 1, 0))
-    : 0
+    && contextSuggestions[contextSelection.index]?.enabled !== false
+    ? contextSelection.index
+    : enabledContextIndexes[0] ?? 0
   const contextMenuOpen = Boolean(
     activeContextQuery
     && loadContextSuggestions
@@ -713,7 +717,7 @@ export function InlineWikilinkInput({
   }
   const selectContextSuggestion = async (index: number) => {
     const suggestion = contextSuggestions.at(index)
-    if (!suggestion || !onContextSuggestionSelected) return
+    if (!suggestion || suggestion.enabled === false || !onContextSuggestionSelected) return
     const selectedValue = value
     const selectedIndex = selectionIndex
     const request = ++contextSelectionRequestRef.current
@@ -786,17 +790,21 @@ export function InlineWikilinkInput({
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
         const direction = event.key === 'ArrowDown' ? 1 : -1
-        const count = contextSuggestions.length
+        const count = enabledContextIndexes.length
         if (count > 0) {
-          const current = contextSelection.key === contextQueryKey ? contextSelection.index : 0
+          const selected = contextSelection.key === contextQueryKey
+            ? contextSelection.index
+            : enabledContextIndexes[0]
+          const current = Math.max(0, enabledContextIndexes.indexOf(selected))
           setContextSelection({
             key: contextQueryKey,
-            index: (current + direction + count) % count,
+            index: enabledContextIndexes[(current + direction + count) % count],
           })
         }
         return
       }
-      if ((event.key === 'Enter' || event.key === 'Tab') && contextSuggestions.length > 0) {
+      if ((event.key === 'Enter' || event.key === 'Tab')
+        && contextSuggestions[selectedContextIndex]?.enabled !== false) {
         event.preventDefault()
         void selectContextSuggestion(selectedContextIndex)
         return
@@ -868,7 +876,8 @@ export function InlineWikilinkInput({
       onPaste={handlePaste}
       onSelectionChange={syncSelectionRange}
       segments={segments}
-      contextActiveDescendantId={contextMenuOpen && contextSuggestions.length > 0
+      contextActiveDescendantId={contextMenuOpen
+        && contextSuggestions[selectedContextIndex]?.enabled !== false
         ? `${contextListboxId}-option-${selectedContextIndex}`
         : capabilityMenuOpen && capabilitySuggestions[selectedCapabilityIndex]?.enabled
           ? `${capabilityListboxId}-option-${selectedCapabilityIndex}`

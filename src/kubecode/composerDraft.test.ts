@@ -38,6 +38,34 @@ function context(overrides: Partial<Parameters<typeof createComposerContextRefer
 }
 
 describe('typed Composer drafts', () => {
+  it('preserves a bounded Git diff reference as a typed stale-on-restore segment', () => {
+    const reference = createComposerContextReference({
+      catalogRevision: 12,
+      id: 'ctx:git:revision',
+      kind: 'git_diff',
+      name: 'Current changes',
+      path: 'git-diff',
+      summary: {
+        kind: 'git_diff', scope: 'all', file_count: 3, hunk_count: 5, byte_count: 2048,
+      },
+    })
+    const draft = appendComposerContext(textComposerDraft(), reference)
+
+    expect(composerDraftToStructuredSegments(draft)).toContainEqual({
+      kind: 'context_ref',
+      id: 'ctx:git:revision',
+      catalog_revision: 12,
+      context_kind: 'git_diff',
+    })
+    expect(composerDraftPlainText(draft)).toBe('@git-diff ')
+    const restored = parseStoredComposerDraft(serializeComposerDraft(draft))
+    expect(composerDraftReferences(restored)[0]).toMatchObject({
+      kind: 'git_diff',
+      availability: 'stale',
+      summary: { file_count: 3, hunk_count: 5, byte_count: 2048 },
+    })
+  })
+
   it('migrates legacy string drafts without trusting @ text as context', () => {
     expect(parseStoredComposerDraft('@src/main.ts please review')).toEqual(
       textComposerDraft('@src/main.ts please review'),

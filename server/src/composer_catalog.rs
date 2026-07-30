@@ -53,6 +53,24 @@ pub enum ComposerContextKind {
     Diagnostics,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComposerGitDiffScope {
+    All,
+    File,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ComposerContextSummary {
+    GitDiff {
+        scope: ComposerGitDiffScope,
+        file_count: usize,
+        hunk_count: usize,
+        byte_count: usize,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ComposerItem {
     pub id: String,
@@ -73,6 +91,8 @@ pub struct ComposerContextMeta {
     pub display: String,
     pub enabled: bool,
     pub disabled_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ComposerContextSummary>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -83,6 +103,8 @@ pub struct ComposerContextRecord {
     pub kind: ComposerContextKind,
     pub path: String,
     pub available: bool,
+    pub source_revision: Option<String>,
+    pub summary: Option<ComposerContextSummary>,
 }
 
 impl ComposerContextRecord {
@@ -93,6 +115,7 @@ impl ComposerContextRecord {
             display: self.path.clone(),
             enabled: self.available,
             disabled_reason: (!self.available).then(|| "context_stale".to_owned()),
+            summary: self.summary.clone(),
         }
     }
 }
@@ -130,6 +153,7 @@ pub struct ComposerPreflightContext {
     pub id: String,
     pub kind: ComposerContextKind,
     pub path: String,
+    pub content: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -936,6 +960,20 @@ pub fn opaque_context_id(
     format!("ctx:{}", hex::encode(digest.finalize()))
 }
 
+pub fn opaque_git_diff_context_id(
+    project_id: &str,
+    conversation_id: &str,
+    selector: &str,
+    source_revision: &str,
+) -> String {
+    opaque_context_id(
+        project_id,
+        conversation_id,
+        ComposerContextKind::GitDiff,
+        &format!("{selector}\0{source_revision}"),
+    )
+}
+
 pub fn context_kind_key(kind: ComposerContextKind) -> &'static str {
     match kind {
         ComposerContextKind::File => "file",
@@ -1563,6 +1601,7 @@ mod tests {
                 display: format!("src/context-{index}.rs"),
                 enabled: true,
                 disabled_reason: None,
+                summary: None,
             })
             .collect::<Vec<_>>();
 

@@ -1,12 +1,25 @@
 use std::collections::HashSet;
+use std::io::Read;
 use std::path::{Component, Path};
+use std::process::{Command as BlockingCommand, Stdio};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::process::Command;
+use tokio::process::Command as TokioCommand;
 
-use crate::workspace::{WorkspaceError, WorkspaceService};
+use crate::agents::ExecutionMode;
+use crate::workspace::{WorkspaceError, WorkspaceService, is_generated_relative_path};
+
+pub const MAX_GIT_DIFF_CONTEXT_FILES: usize = 32;
+pub const MAX_GIT_DIFF_CONTEXT_HUNKS: usize = 128;
+pub const MAX_GIT_DIFF_CONTEXT_BYTES: usize = 64 * 1024;
+pub const MAX_GIT_DIFF_FILE_CONTEXT_HUNKS: usize = 64;
+pub const MAX_GIT_DIFF_FILE_CONTEXT_BYTES: usize = 32 * 1024;
+const MAX_GIT_DIFF_CANDIDATES: usize = 128;
+const MAX_GIT_STATUS_BYTES: usize = 1024 * 1024;
+const MAX_GIT_ERROR_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Error)]
 pub enum GitError {
@@ -36,6 +49,33 @@ pub struct GitStatus {
     pub files: Vec<GitFileChange>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct GitDiffContextCandidate {
+    pub path: Option<String>,
+    pub source_revision: String,
+    pub file_count: usize,
+    pub hunk_count: usize,
+    pub byte_count: usize,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct GitDiffContextList {
+    pub is_repository: bool,
+    pub candidates: Vec<GitDiffContextCandidate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GitDiffContextSnapshot {
+    pub path: Option<String>,
+    pub source_revision: String,
+    pub file_count: usize,
+    pub hunk_count: usize,
+    pub byte_count: usize,
+    pub content: String,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitMutation {
@@ -56,7 +96,7 @@ impl GitService {
 
     pub async fn status(&self, project_id: &str) -> Result<GitStatus, GitError> {
         let cwd = self.workspace.project_path(project_id)?;
-        let repository = Command::new("git")
+        let repository = TokioCommand::new("git")
             .args(["rev-parse", "--is-inside-work-tree"])
             .current_dir(&cwd)
             .output()
@@ -133,6 +173,112 @@ impl GitService {
         self.status(project_id).await
     }
 
+    pub async fn composer_diff_candidates(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+    ) -> Result<GitDiffContextList, GitError> {
+        let service = self.clone();
+        let project_id = project_id.to_owned();
+        let agent_session_id = agent_session_id.to_owned();
+        let workspace_path = workspace_path.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            service.composer_diff_candidates_blocking(
+                &project_id,
+                &agent_session_id,
+                execution_mode,
+                workspace_path.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| GitError::Command(format!("Git diff context task failed: {error}")))?
+    }
+
+    pub async fn resolve_composer_diff(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<GitDiffContextSnapshot, GitError> {
+        let service = self.clone();
+        let project_id = project_id.to_owned();
+        let agent_session_id = agent_session_id.to_owned();
+        let workspace_path = workspace_path.map(str::to_owned);
+        let path = path.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            service.resolve_composer_diff_blocking(
+                &project_id,
+                &agent_session_id,
+                execution_mode,
+                workspace_path.as_deref(),
+                path.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| GitError::Command(format!("Git diff context task failed: {error}")))?
+    }
+
+    pub(crate) fn resolve_composer_diff_blocking(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<GitDiffContextSnapshot, GitError> {
+        let cwd = self.workspace.session_execution_path(
+            project_id,
+            agent_session_id,
+            execution_mode,
+            workspace_path,
+        )?;
+        let status = status_blocking(&cwd)?;
+        if !status.is_repository {
+            return Err(GitError::Command("not a Git repository".into()));
+        }
+        let (candidate, content) = resolve_diff_content(&cwd, &status, path)?;
+        let content =
+            String::from_utf8(content).map_err(|_| GitError::Command("git_diff_binary".into()))?;
+        Ok(GitDiffContextSnapshot {
+            path: candidate.path,
+            source_revision: candidate.source_revision,
+            file_count: candidate.file_count,
+            hunk_count: candidate.hunk_count,
+            byte_count: candidate.byte_count,
+            content,
+        })
+    }
+
+    fn composer_diff_candidates_blocking(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+    ) -> Result<GitDiffContextList, GitError> {
+        let cwd = self.workspace.session_execution_path(
+            project_id,
+            agent_session_id,
+            execution_mode,
+            workspace_path,
+        )?;
+        let status = status_blocking(&cwd)?;
+        if !status.is_repository {
+            return Ok(GitDiffContextList {
+                is_repository: false,
+                candidates: Vec::new(),
+            });
+        }
+        Ok(GitDiffContextList {
+            is_repository: true,
+            candidates: build_diff_candidates(&cwd, &status)?,
+        })
+    }
+
     async fn discard_paths(
         &self,
         project_id: &str,
@@ -172,7 +318,7 @@ where
 }
 
 async fn git_succeeds(cwd: &Path, arguments: &[&str]) -> Result<bool, GitError> {
-    let output = Command::new("git")
+    let output = TokioCommand::new("git")
         .args(arguments)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -182,7 +328,7 @@ async fn git_succeeds(cwd: &Path, arguments: &[&str]) -> Result<bool, GitError> 
 }
 
 async fn git_output(cwd: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitError> {
-    let output = Command::new("git")
+    let output = TokioCommand::new("git")
         .args(arguments)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -197,6 +343,423 @@ async fn git_output(cwd: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitError>
     } else {
         message
     }))
+}
+
+fn status_blocking(cwd: &Path) -> Result<GitStatus, GitError> {
+    let repository = BlockingCommand::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()?;
+    if !repository.status.success() {
+        return Ok(GitStatus {
+            is_repository: false,
+            branch: None,
+            files: Vec::new(),
+        });
+    }
+    match blocking_git_output(
+        cwd,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+        ],
+        MAX_GIT_STATUS_BYTES,
+        false,
+    )? {
+        BoundedGitOutput::Complete(output) => parse_status(&output),
+        BoundedGitOutput::OverLimit(_) => {
+            Err(GitError::Command("git status exceeds its bound".into()))
+        }
+    }
+}
+
+fn build_diff_candidates(
+    cwd: &Path,
+    status: &GitStatus,
+) -> Result<Vec<GitDiffContextCandidate>, GitError> {
+    if status.files.is_empty() {
+        return Ok(vec![disabled_candidate(None, "git_diff_empty", b"")]);
+    }
+    let mut file_candidates = Vec::new();
+    for change in status.files.iter().take(MAX_GIT_DIFF_CANDIDATES) {
+        file_candidates.push(file_candidate(cwd, change)?);
+    }
+    let full = if status.files.len() > MAX_GIT_DIFF_CONTEXT_FILES {
+        disabled_candidate(
+            None,
+            "git_diff_too_many_files",
+            status_identity(&status.files).as_bytes(),
+        )
+    } else {
+        match render_full_diff(cwd, &status.files)? {
+            Ok(content) => candidate_from_content(
+                None,
+                status.files.len(),
+                content,
+                MAX_GIT_DIFF_CONTEXT_HUNKS,
+            ),
+            Err(reason) => {
+                disabled_candidate(None, &reason, status_identity(&status.files).as_bytes())
+            }
+        }
+    };
+    let mut candidates = Vec::with_capacity(file_candidates.len() + 1);
+    candidates.push(full);
+    candidates.extend(file_candidates);
+    Ok(candidates)
+}
+
+fn file_candidate(cwd: &Path, change: &GitFileChange) -> Result<GitDiffContextCandidate, GitError> {
+    if is_generated_relative_path(&change.path) {
+        return Ok(disabled_candidate(
+            Some(change.path.clone()),
+            "git_diff_generated",
+            change.path.as_bytes(),
+        ));
+    }
+    match render_file_diff(cwd, change, MAX_GIT_DIFF_FILE_CONTEXT_BYTES)? {
+        Ok(content)
+            if contains_binary_marker(&content) || std::str::from_utf8(&content).is_err() =>
+        {
+            Ok(disabled_candidate(
+                Some(change.path.clone()),
+                "git_diff_binary",
+                &content,
+            ))
+        }
+        Ok(content) => Ok(candidate_from_content(
+            Some(change.path.clone()),
+            1,
+            content,
+            MAX_GIT_DIFF_FILE_CONTEXT_HUNKS,
+        )),
+        Err(reason) => Ok(disabled_candidate(
+            Some(change.path.clone()),
+            &reason,
+            change.path.as_bytes(),
+        )),
+    }
+}
+
+fn resolve_diff_content(
+    cwd: &Path,
+    status: &GitStatus,
+    path: Option<&str>,
+) -> Result<(GitDiffContextCandidate, Vec<u8>), GitError> {
+    if status.files.is_empty() {
+        return Err(GitError::Command("git_diff_empty".into()));
+    }
+    let (candidate, content) = if let Some(path) = path {
+        let change = status
+            .files
+            .iter()
+            .find(|change| change.path == path)
+            .ok_or_else(|| GitError::InvalidPath(path.to_owned()))?;
+        if is_generated_relative_path(&change.path) {
+            return Err(GitError::Command("git_diff_generated".into()));
+        }
+        let content = render_file_diff(cwd, change, MAX_GIT_DIFF_FILE_CONTEXT_BYTES)?
+            .map_err(GitError::Command)?;
+        if contains_binary_marker(&content) || std::str::from_utf8(&content).is_err() {
+            return Err(GitError::Command("git_diff_binary".into()));
+        }
+        let candidate = candidate_from_content(
+            Some(change.path.clone()),
+            1,
+            content.clone(),
+            MAX_GIT_DIFF_FILE_CONTEXT_HUNKS,
+        );
+        (candidate, content)
+    } else {
+        if status.files.len() > MAX_GIT_DIFF_CONTEXT_FILES {
+            return Err(GitError::Command("git_diff_too_many_files".into()));
+        }
+        let content = render_full_diff(cwd, &status.files)?.map_err(GitError::Command)?;
+        let candidate = candidate_from_content(
+            None,
+            status.files.len(),
+            content.clone(),
+            MAX_GIT_DIFF_CONTEXT_HUNKS,
+        );
+        (candidate, content)
+    };
+    if let Some(reason) = candidate.disabled_reason.clone() {
+        return Err(GitError::Command(reason));
+    }
+    Ok((candidate, content))
+}
+
+fn render_full_diff(
+    cwd: &Path,
+    changes: &[GitFileChange],
+) -> Result<Result<Vec<u8>, String>, GitError> {
+    let mut content = Vec::new();
+    for change in changes {
+        if is_generated_relative_path(&change.path) {
+            return Ok(Err("git_diff_contains_unsupported".into()));
+        }
+        let remaining = MAX_GIT_DIFF_CONTEXT_BYTES.saturating_sub(content.len());
+        if remaining == 0 {
+            return Ok(Err("git_diff_too_large".into()));
+        }
+        match render_file_diff(cwd, change, remaining)? {
+            Ok(patch) => {
+                if contains_binary_marker(&patch) || std::str::from_utf8(&patch).is_err() {
+                    return Ok(Err("git_diff_contains_unsupported".into()));
+                }
+                content.extend_from_slice(&patch);
+                if content.len() > MAX_GIT_DIFF_CONTEXT_BYTES {
+                    return Ok(Err("git_diff_too_large".into()));
+                }
+            }
+            Err(reason) => return Ok(Err(reason)),
+        }
+    }
+    if hunk_count(&content) > MAX_GIT_DIFF_CONTEXT_HUNKS {
+        return Ok(Err("git_diff_too_many_hunks".into()));
+    }
+    Ok(Ok(content))
+}
+
+fn render_file_diff(
+    cwd: &Path,
+    change: &GitFileChange,
+    limit: usize,
+) -> Result<Result<Vec<u8>, String>, GitError> {
+    validate_path(&change.path)?;
+    let mut content = Vec::new();
+    if change.index_status == Some('?') && change.worktree_status == Some('?') {
+        return match append_bounded_diff(
+            cwd,
+            &[
+                "diff",
+                "--no-index",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+                "--",
+                "/dev/null",
+                &change.path,
+            ],
+            limit,
+            true,
+            &mut content,
+        )? {
+            Ok(()) => Ok(Ok(content)),
+            Err(reason) => Ok(Err(reason)),
+        };
+    }
+    if change.index_status.is_some()
+        && let Err(reason) = append_bounded_diff(
+            cwd,
+            &[
+                "diff",
+                "--cached",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+                "--",
+                &change.path,
+            ],
+            limit,
+            false,
+            &mut content,
+        )?
+    {
+        return Ok(Err(reason));
+    }
+    if change.worktree_status.is_some() {
+        let remaining = limit.saturating_sub(content.len());
+        if remaining == 0 {
+            return Ok(Err("git_diff_too_large".into()));
+        }
+        if let Err(reason) = append_bounded_diff(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+                "--",
+                &change.path,
+            ],
+            remaining,
+            false,
+            &mut content,
+        )? {
+            return Ok(Err(reason));
+        }
+    }
+    Ok(Ok(content))
+}
+
+fn append_bounded_diff(
+    cwd: &Path,
+    arguments: &[&str],
+    limit: usize,
+    accept_difference_exit: bool,
+    content: &mut Vec<u8>,
+) -> Result<Result<(), String>, GitError> {
+    match blocking_git_output(cwd, arguments, limit, accept_difference_exit)? {
+        BoundedGitOutput::Complete(patch) => {
+            content.extend_from_slice(&patch);
+            Ok(Ok(()))
+        }
+        BoundedGitOutput::OverLimit(prefix) => {
+            content.extend_from_slice(&prefix);
+            Ok(Err("git_diff_too_large".into()))
+        }
+    }
+}
+
+fn candidate_from_content(
+    path: Option<String>,
+    file_count: usize,
+    content: Vec<u8>,
+    max_hunks: usize,
+) -> GitDiffContextCandidate {
+    if content.is_empty() {
+        return disabled_candidate(path, "git_diff_empty", &content);
+    }
+    let hunks = hunk_count(&content);
+    if hunks > max_hunks {
+        return disabled_candidate(path, "git_diff_too_many_hunks", &content);
+    }
+    GitDiffContextCandidate {
+        source_revision: diff_revision(path.as_deref(), &content),
+        path,
+        file_count,
+        hunk_count: hunks,
+        byte_count: content.len(),
+        enabled: true,
+        disabled_reason: None,
+    }
+}
+
+fn disabled_candidate(
+    path: Option<String>,
+    reason: &str,
+    identity: &[u8],
+) -> GitDiffContextCandidate {
+    let mut revision_input = reason.as_bytes().to_vec();
+    revision_input.extend_from_slice(identity);
+    GitDiffContextCandidate {
+        source_revision: diff_revision(path.as_deref(), &revision_input),
+        path,
+        file_count: 0,
+        hunk_count: 0,
+        byte_count: 0,
+        enabled: false,
+        disabled_reason: Some(reason.to_owned()),
+    }
+}
+
+fn diff_revision(path: Option<&str>, content: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"kubecode-git-diff-context-v1\0");
+    digest.update(path.unwrap_or("."));
+    digest.update([0]);
+    digest.update(content);
+    hex::encode(digest.finalize())
+}
+
+fn status_identity(changes: &[GitFileChange]) -> String {
+    changes
+        .iter()
+        .map(|change| {
+            format!(
+                "{}:{}:{}",
+                change.index_status.unwrap_or(' '),
+                change.worktree_status.unwrap_or(' '),
+                change.path,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn hunk_count(content: &[u8]) -> usize {
+    content
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.starts_with(b"@@ "))
+        .count()
+}
+
+fn contains_binary_marker(content: &[u8]) -> bool {
+    content
+        .windows(b"Binary files ".len())
+        .any(|window| window == b"Binary files ")
+        || content
+            .windows(b"GIT binary patch".len())
+            .any(|window| window == b"GIT binary patch")
+}
+
+enum BoundedGitOutput {
+    Complete(Vec<u8>),
+    OverLimit(Vec<u8>),
+}
+
+fn blocking_git_output(
+    cwd: &Path,
+    arguments: &[&str],
+    limit: usize,
+    accept_difference_exit: bool,
+) -> Result<BoundedGitOutput, GitError> {
+    let mut child = BlockingCommand::new("git")
+        .args(arguments)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr_pipe = child.stderr.take().expect("piped stderr");
+    let stderr_reader = std::thread::spawn(move || {
+        let mut stderr = Vec::with_capacity(MAX_GIT_ERROR_BYTES);
+        {
+            let mut bounded = (&mut stderr_pipe).take((MAX_GIT_ERROR_BYTES + 1) as u64);
+            let _ = bounded.read_to_end(&mut stderr);
+        }
+        let _ = std::io::copy(&mut stderr_pipe, &mut std::io::sink());
+        stderr.truncate(MAX_GIT_ERROR_BYTES);
+        stderr
+    });
+    let mut bytes = Vec::with_capacity(limit.min(64 * 1024) + 1);
+    let mut chunk = [0_u8; 8192];
+    let mut over_limit = false;
+    loop {
+        let read = stdout.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_add(1).saturating_sub(bytes.len());
+        bytes.extend_from_slice(&chunk[..read.min(remaining)]);
+        if bytes.len() > limit {
+            over_limit = true;
+            let _ = child.kill();
+            break;
+        }
+    }
+    let status = child.wait()?;
+    let stderr = stderr_reader.join().unwrap_or_default();
+    if over_limit {
+        bytes.truncate(limit);
+        return Ok(BoundedGitOutput::OverLimit(bytes));
+    }
+    let difference = accept_difference_exit && status.code() == Some(1);
+    if !status.success() && !difference {
+        let message = String::from_utf8_lossy(&stderr).trim().to_owned();
+        return Err(GitError::Command(if message.is_empty() {
+            format!("git {} exited with {status}", arguments.join(" "))
+        } else {
+            message
+        }));
+    }
+    Ok(BoundedGitOutput::Complete(bytes))
 }
 
 fn parse_status(output: &[u8]) -> Result<GitStatus, GitError> {

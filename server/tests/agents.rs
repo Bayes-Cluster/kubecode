@@ -496,6 +496,7 @@ fn rewind_reconciles_lifetime_contexts_with_a_new_non_reused_catalog() {
                 id: first.context.id.clone(),
                 kind: ComposerContextKind::File,
                 path: "src/main.rs".into(),
+                content: None,
             }],
             PermissionMode::Safe,
         )
@@ -528,6 +529,7 @@ fn rewind_reconciles_lifetime_contexts_with_a_new_non_reused_catalog() {
                 id: reselected.context.id,
                 kind: ComposerContextKind::File,
                 path: "src/main.rs".into(),
+                content: None,
             }],
             PermissionMode::Safe,
         )
@@ -639,11 +641,13 @@ fn structured_composer_run_uses_exact_historical_contexts_in_order() {
             id: first.context.id,
             kind: ComposerContextKind::File,
             path: "src/first.rs".into(),
+            content: None,
         },
         ComposerPreflightContext {
             id: second.context.id,
             kind: ComposerContextKind::Directory,
             path: "src/components".into(),
+            content: None,
         },
     ];
 
@@ -813,6 +817,7 @@ fn structured_run_rechecks_catalog_after_preflight_and_rejects_a_committed_race(
         id: record.id.clone(),
         kind: record.kind,
         path: record.path.clone(),
+        content: None,
     }];
     store
         .append_runtime_update(
@@ -882,6 +887,7 @@ fn structured_run_enforces_segment_reference_and_text_bounds() {
         id: registration.context.id.clone(),
         kind: ComposerContextKind::File,
         path: "src/main.rs".into(),
+        content: None,
     }];
     let too_many_segments = (0..=MAX_COMPOSER_SEGMENTS)
         .map(|_| ComposerDraftSegment::Text { text: "x".into() })

@@ -5,7 +5,7 @@ import type { InlineContextReference, InlineContextSuggestion } from '@/componen
 import type { InlineCapabilitySuggestion } from '@/components/inlineContext'
 import type { VaultEntry } from '@/types'
 
-import type { ComposerCatalogSnapshot, KubecodeApi } from './api'
+import type { ComposerCatalogSnapshot, GitDiffContextCandidate, KubecodeApi } from './api'
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities } from './composerCapabilities'
 import {
@@ -32,6 +32,11 @@ type ComposerContextInputProps = {
   contextLoadingLabel: string
   contextPickerLabel: string
   contextRemoveLabel: string
+  gitDiffLabels: {
+    all: string
+    disabled: (reason: string | null) => string
+    summary: (candidate: GitDiffContextCandidate) => string
+  }
   conversationId: string
   disabled: boolean
   draft: ComposerDraft
@@ -69,6 +74,7 @@ export function ComposerContextInput({
   contextLoadingLabel,
   contextPickerLabel,
   contextRemoveLabel,
+  gitDiffLabels,
   conversationId,
   disabled,
   draft,
@@ -131,7 +137,7 @@ export function ComposerContextInput({
     const referenceRecords = JSON.parse(staleReferenceKey) as Array<{
       id: string
       catalog_revision: number
-      context_kind: 'file' | 'directory'
+      context_kind: 'file' | 'directory' | 'git_diff'
     }>
     if (referenceRecords.length === 0) return
     let current = true
@@ -152,16 +158,49 @@ export function ComposerContextInput({
   const loadContextSuggestions = useCallback(async (
     query: string,
     signal: AbortSignal,
-  ): Promise<InlineContextSuggestion[]> => (
-    searchSessionEntries({
-      api,
-      conversationId,
-      maxEntries: 2_000,
-      maxResults: 100,
-      query,
-      signal,
-    })
-  ), [api, conversationId])
+  ): Promise<InlineContextSuggestion[]> => {
+    const [entries, gitDiffs] = await Promise.all([
+      searchSessionEntries({
+        api,
+        conversationId,
+        maxEntries: 2_000,
+        maxResults: 100,
+        query,
+        signal,
+      }),
+      typeof api.listComposerGitDiffs === 'function'
+        ? api.listComposerGitDiffs(conversationId, signal).catch(() => ({
+            is_repository: false,
+            candidates: [],
+          }))
+        : Promise.resolve({ is_repository: false, candidates: [] }),
+    ])
+    const search = query.trim().toLocaleLowerCase()
+    const diffSuggestions = gitDiffs.candidates
+      .map((candidate): InlineContextSuggestion => {
+        const path = candidate.path ?? 'git-diff'
+        return {
+          kind: 'git_diff',
+          name: candidate.path?.split('/').at(-1) ?? gitDiffLabels.all,
+          path,
+          selector: candidate.path ?? '.',
+          sourceRevision: candidate.source_revision,
+          summary: {
+            kind: 'git_diff',
+            scope: candidate.path ? 'file' : 'all',
+            file_count: candidate.file_count,
+            hunk_count: candidate.hunk_count,
+            byte_count: candidate.byte_count,
+          },
+          enabled: candidate.enabled,
+          disabledReason: candidate.enabled ? null : gitDiffLabels.disabled(candidate.disabled_reason),
+          description: gitDiffLabels.summary(candidate),
+        }
+      })
+      .filter((suggestion) => !search || [suggestion.name, suggestion.path, suggestion.description]
+        .some((value) => value?.toLocaleLowerCase().includes(search)))
+    return [...entries, ...diffSuggestions]
+  }, [api, conversationId, gitDiffLabels])
 
   const selectContextSuggestion = useCallback(async (suggestion: InlineContextSuggestion) => {
     if (referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return null
@@ -171,18 +210,23 @@ export function ComposerContextInput({
     try {
       const registration = await api.registerComposerContext(conversationId, {
         kind: suggestion.kind,
-        path: suggestion.path,
+        path: suggestion.selector ?? suggestion.path,
+        source_revision: suggestion.sourceRevision,
       })
       if (generation !== generationRef.current
         || registration.context.kind !== suggestion.kind
-        || registration.context.display !== suggestion.path
         || !registration.context.enabled) return null
+      const displayPath = suggestion.kind === 'git_diff'
+        ? suggestion.path
+        : registration.context.display
+      if (suggestion.kind !== 'git_diff' && displayPath !== suggestion.path) return null
       const reference = createComposerContextReference({
         catalogRevision: registration.catalog.revision,
         id: registration.context.id,
         kind: registration.context.kind,
         name: suggestion.name,
-        path: registration.context.display,
+        path: displayPath,
+        summary: registration.context.summary,
       })
       return {
         token: reference.id,

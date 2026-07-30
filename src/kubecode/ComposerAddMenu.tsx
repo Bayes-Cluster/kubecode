@@ -1,11 +1,13 @@
-import { CaretLeft, File, Plus, Sparkle } from '@phosphor-icons/react'
+import { CaretLeft, File, GitDiff, Plus, Sparkle } from '@phosphor-icons/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { TranslationKey } from '@/lib/i18n'
 
-import type { ComposerCatalogSnapshot, Entry, KubecodeApi } from './api'
+import type {
+  ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi,
+} from './api'
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
 import { ProjectFilePicker } from './ProjectFilePicker'
@@ -20,8 +22,14 @@ type ComposerAddMenuProps = {
   capabilityStatus?: 'error' | 'loading' | 'ready'
   commands: ComposerAgentCommand[]
   conversationId: string
+  gitDiffLabels?: {
+    all: string
+    disabled: (reason: string | null) => string
+    summary: (candidate: GitDiffContextCandidate) => string
+  }
   onInsert: (text: string, kind: 'command') => void
   onCapability?: (capability: RankedComposerCapability) => void
+  onGitDiff?: (candidate: GitDiffContextCandidate) => void
   onReference: (entry: Entry) => void
   projectId: string
   t: (key: TranslationKey) => string
@@ -35,16 +43,23 @@ export function ComposerAddMenu({
   capabilityStatus = 'loading',
   commands,
   conversationId,
+  gitDiffLabels,
   onInsert,
   onCapability,
+  onGitDiff,
   onReference,
   projectId,
   t,
 }: ComposerAddMenuProps) {
   const [open, setOpen] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  const [showGitDiffs, setShowGitDiffs] = useState(false)
+  const [gitDiffState, setGitDiffState] = useState<{
+    candidates: GitDiffContextCandidate[]
+    status: 'error' | 'loading' | 'ready'
+  }>({ candidates: [], status: 'loading' })
   const [query, setQuery] = useState('')
-  const [paletteLayout, setPaletteLayout] = useState({ left: 0, width: 680 })
+  const [paletteLayout, setPaletteLayout] = useState({ bottom: 0, left: 0, width: 680 })
   const [selectedCapabilityIndex, setSelectedCapabilityIndex] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const capabilityListboxId = useId()
@@ -94,6 +109,7 @@ export function ComposerAddMenu({
     setOpen(false)
     setQuery('')
     setShowFiles(false)
+    setShowGitDiffs(false)
     setSelectedCapabilityIndex(0)
   }
 
@@ -116,16 +132,17 @@ export function ComposerAddMenu({
           if (!open) {
             const composer = rootRef.current?.closest('[data-testid="agent-composer-surface"]')
             const composerRect = composer?.getBoundingClientRect()
-            const rootRect = rootRef.current?.getBoundingClientRect()
-            if (composerRect && rootRect) {
+            if (composerRect) {
               setPaletteLayout({
-                left: composerRect.left - rootRect.left,
+                bottom: window.innerHeight - composerRect.top + 12,
+                left: composerRect.left,
                 width: composerRect.width,
               })
             }
           }
           setOpen((current) => !current)
           setShowFiles(false)
+          setShowGitDiffs(false)
         }}
       >
         <Plus size={19} />
@@ -133,7 +150,7 @@ export function ComposerAddMenu({
       {open && (
         <section
           aria-label={t('kubecode.addContext')}
-          className="absolute bottom-[calc(100%+12px)] left-0 z-50 flex max-h-[min(520px,58vh)] flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl"
+          className="fixed z-[100] flex max-h-[min(520px,58vh)] flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl"
           role="dialog"
           style={paletteLayout}
         >
@@ -167,6 +184,55 @@ export function ComposerAddMenu({
                 />
               </div>
             </>
+          ) : showGitDiffs && gitDiffLabels && onGitDiff ? (
+            <>
+              <div className="flex items-center border-b border-border px-2 py-1.5">
+                <Button
+                  className="min-w-0 justify-start gap-2"
+                  onClick={() => setShowGitDiffs(false)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <CaretLeft />
+                  <span className="truncate">{t('kubecode.referenceGitDiff')}</span>
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                {gitDiffState.status === 'loading' ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">{t('kubecode.loadingContext')}</p>
+                ) : gitDiffState.status === 'error' ? (
+                  <p className="px-3 py-3 text-sm text-destructive">{t('kubecode.contextLoadFailed')}</p>
+                ) : gitDiffState.candidates.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">{t('kubecode.gitDiffEmpty')}</p>
+                ) : gitDiffState.candidates.map((candidate) => (
+                  <Button
+                    className="h-auto min-h-11 w-full justify-start gap-3 px-3 py-2 text-left"
+                    disabled={!candidate.enabled}
+                    key={candidate.path ?? 'all'}
+                    onClick={() => {
+                      if (!candidate.enabled) return
+                      onGitDiff(candidate)
+                      close()
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <GitDiff className="shrink-0" size={20} />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate font-medium">
+                        {candidate.path?.split('/').at(-1) ?? gitDiffLabels.all}
+                      </strong>
+                      <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                        {candidate.enabled
+                          ? gitDiffLabels.summary(candidate)
+                          : gitDiffLabels.disabled(candidate.disabled_reason)}
+                      </small>
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -184,6 +250,26 @@ export function ComposerAddMenu({
                     </small>
                   </span>
                 </Button>
+                {gitDiffLabels && onGitDiff && <Button
+                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  onClick={() => {
+                    setShowGitDiffs(true)
+                    setGitDiffState({ candidates: [], status: 'loading' })
+                    void api.listComposerGitDiffs(conversationId).then((result) => {
+                      setGitDiffState({ candidates: result.candidates, status: 'ready' })
+                    }).catch(() => setGitDiffState({ candidates: [], status: 'error' }))
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  <GitDiff className="shrink-0" size={20} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">{t('kubecode.referenceGitDiff')}</strong>
+                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      {t('kubecode.chooseGitDiffReference')}
+                    </small>
+                  </span>
+                </Button>}
                 {visibleCommands.map((command) => (
                   <Button
                     className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"

@@ -2906,6 +2906,164 @@ done"#,
 }
 
 #[tokio::test]
+async fn git_diff_context_rechecks_mutation_before_provider_dispatch() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode");
+    fs::create_dir_all(&state).expect("state directory");
+    let database = state.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project_at(root.join("git-context-project"))
+        .expect("project");
+    let repository = std::path::Path::new(&project.path);
+    run_command(repository, "git", &["init"]);
+    run_command(
+        repository,
+        "git",
+        &["config", "user.email", "test@example.com"],
+    );
+    run_command(repository, "git", &["config", "user.name", "Kubecode Test"]);
+    fs::write(repository.join("README.md"), "base\n").expect("fixture");
+    run_command(repository, "git", &["add", "README.md"]);
+    run_command(repository, "git", &["commit", "-m", "initial"]);
+    fs::write(repository.join("README.md"), "base\nfirst\n").expect("first change");
+
+    let store = Arc::new(AgentStore::open(&database).expect("store"));
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"git-context-session\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "$line" >> "$(dirname "$0")/git-context-prompts"
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+            AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: binary,
+                error: None,
+            },
+        ]),
+        BASE_PATH,
+    );
+    let discovery_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/git-diffs",
+        conversation.id
+    );
+    let (status, candidates) = json_request(&app, Method::GET, &discovery_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(candidates["is_repository"], true);
+    assert_eq!(candidates["candidates"][0]["file_count"], 1);
+    let revision = candidates["candidates"][0]["source_revision"]
+        .as_str()
+        .expect("revision");
+    let registration_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        conversation.id
+    );
+    let (status, registration) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"git_diff", "path":".", "source_revision":revision}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(registration["context"]["kind"], "git_diff");
+    assert_eq!(registration["context"]["summary"]["scope"], "all");
+    assert!(!registration.to_string().contains("+first"));
+    let context_id = registration["context"]["id"].as_str().expect("id");
+    let catalog_revision = registration["catalog"]["revision"]
+        .as_u64()
+        .expect("catalog revision");
+
+    fs::write(repository.join("README.md"), "base\nsecond\n").expect("mutate before submit");
+    let runs_uri = format!(
+        "{BASE_PATH}/api/v1/projects/{}/sessions/{}/runs",
+        project.id, conversation.id
+    );
+    let stale_request = json!({
+        "catalog_revision":catalog_revision,
+        "segments":[{
+            "kind":"context_ref", "id":context_id,
+            "catalog_revision":catalog_revision, "context_kind":"git_diff"
+        }]
+    });
+    let (status, error) = json_request(&app, Method::POST, &runs_uri, stale_request).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+    assert!(store.list_runs(&conversation.id).expect("runs").is_empty());
+    assert!(!temp.path().join("git-context-prompts").exists());
+
+    let (_, changed_candidates) =
+        json_request(&app, Method::GET, &discovery_uri, Value::Null).await;
+    let changed_revision = changed_candidates["candidates"][0]["source_revision"]
+        .as_str()
+        .expect("changed revision");
+    assert_ne!(revision, changed_revision);
+    let (_, changed_registration) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"git_diff", "path":".", "source_revision":changed_revision}),
+    )
+    .await;
+    let changed_id = changed_registration["context"]["id"]
+        .as_str()
+        .expect("changed id");
+    let changed_catalog_revision = changed_registration["catalog"]["revision"]
+        .as_u64()
+        .expect("changed catalog revision");
+    assert_ne!(context_id, changed_id);
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({
+            "catalog_revision":changed_catalog_revision,
+            "segments":[{
+                "kind":"context_ref", "id":changed_id,
+                "catalog_revision":changed_catalog_revision, "context_kind":"git_diff"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if temp.path().join("git-context-prompts").exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("provider prompt");
+    let prompt = fs::read_to_string(temp.path().join("git-context-prompts")).expect("prompt");
+    assert!(prompt.contains("Git diff context from Kubecode"));
+    assert!(prompt.contains("+second"));
+    assert!(!prompt.contains("+first"));
+}
+
+#[tokio::test]
 async fn lists_session_scoped_entries_for_a_shared_session() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -3010,6 +3168,18 @@ async fn session_entries_reject_a_conversation_pointed_at_another_worktree() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error["code"], "invalid_path");
     assert_eq!(error["message"], "session workspace is unavailable");
+    let encoded = error.to_string();
+    assert!(!encoded.contains(other_worktree.to_string_lossy().as_ref()));
+    assert!(!encoded.contains(project_root.to_string_lossy().as_ref()));
+    assert!(!encoded.contains(state.to_string_lossy().as_ref()));
+
+    let git_diff_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/git-diffs",
+        conversation.id
+    );
+    let (status, error) = json_request(&app, Method::GET, &git_diff_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
     let encoded = error.to_string();
     assert!(!encoded.contains(other_worktree.to_string_lossy().as_ref()));
     assert!(!encoded.contains(project_root.to_string_lossy().as_ref()));

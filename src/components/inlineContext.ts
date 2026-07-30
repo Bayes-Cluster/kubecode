@@ -1,10 +1,22 @@
-export type InlineContextKind = 'file' | 'directory'
+export type InlineContextKind = 'file' | 'directory' | 'git_diff'
 export type InlineReferenceKind = InlineContextKind | 'capability'
 
 export type InlineContextSuggestion = {
   kind: InlineContextKind
   name: string
   path: string
+  enabled?: boolean
+  disabledReason?: string | null
+  description?: string
+  selector?: string
+  sourceRevision?: string
+  summary?: {
+    kind: 'git_diff'
+    scope: 'all' | 'file'
+    file_count: number
+    hunk_count: number
+    byte_count: number
+  }
 }
 
 export type InlineCapabilitySuggestion = {
@@ -23,6 +35,11 @@ export type InlineFileContextReference = Omit<InlineContextSuggestion, 'kind'> &
   availability: 'available' | 'stale' | 'unsupported'
   id: string
   kind: InlineContextKind
+  enabled?: never
+  disabledReason?: never
+  description?: never
+  selector?: never
+  sourceRevision?: never
 }
 
 export type InlineCapabilityReference = {
