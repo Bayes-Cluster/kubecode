@@ -289,6 +289,59 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByRole('button', { name: 'Add context' })).toBeInTheDocument()
   })
 
+  it('shows OpenCode capability absence only after its catalog is hydrated', async () => {
+    const opencodeConversation = { ...conversation, agent_id: 'opencode' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: {
+          availableCommands: [{ name: 'review', description: 'Review changes' }],
+        },
+        composer: {
+          catalog: {
+            conversation_id: conversation.id,
+            revision: 1,
+            items: [{
+              id: 'cmd:review',
+              kind: 'command',
+              name: 'review',
+              description: 'Review changes',
+              source_label: 'OpenCode command',
+              scope: 'session',
+              input_hint: null,
+              enabled: true,
+              disabled_reason: null,
+            }],
+            contexts: [],
+          },
+        },
+      }),
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'opencode', available: true, version: '1.17.20', executable: 'opencode', error: null }]}
+      api={api}
+      conversation={opencodeConversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No separately invocable OpenCode capabilities are available for this Session.',
+    )
+    expect(screen.getByRole('button', { name: /review/i })).toBeInTheDocument()
+  })
+
   it('dispatches a selected argument-free ACP command without a visible optimistic user turn', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/')
     const internalRun = { ...run, id: 'command-run', message: '/status', status: 'running' as const,

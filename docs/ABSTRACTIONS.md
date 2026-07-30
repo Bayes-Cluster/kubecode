@@ -312,6 +312,25 @@ process reopen reconstruct the same mapping from the private Session journal,
 while unsupported discovery publishes an empty replacement and
 `skills/changed` refreshes the current Session catalog.
 
+OpenCode has no separate trusted capability contribution today. Its native ACP
+implementation combines commands and skills into standard
+`available_commands_update` rows, then omits the internal skill discriminator,
+source path, scope, and private invocation snapshot from the protocol update.
+The Composer catalog treats those rows only as `Command` items even when a name
+or description resembles a skill; unknown OpenCode metadata and provider
+version strings never opt a row into capability execution. Slash dispatch stays
+provider-native and uses OpenCode's Session snapshot for the exact runtime-owned
+cwd, while ordinary prompt dispatch is unchanged.
+
+The absence is an explicit supported state rather than a synthesized empty
+skill registry. Initial creation, load, and resume may replace the OpenCode
+command snapshot; journal reopen preserves it exactly, and a later empty update
+removes prior rows with a new revision. Once the safe catalog is hydrated, the
+Composer `+` surface exposes a localized capability-empty status while leaving
+native commands visible. OpenCode can gain `$` rows only when a future native
+contract advertises a stable typed identity and reliable manual invocation and
+the server has a registered decoder for that exact contract.
+
 ## Composer reference and structured draft
 
 A Composer reference is a typed context or capability chip backed by an opaque

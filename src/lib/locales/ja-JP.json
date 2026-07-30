@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "スキルとコマンド",
   "kubecode.agentSettings": "エージェント設定",
   "kubecode.noAgentSkillsCommands": "このエージェントはまだスキルやコマンドを公開していません。",
+  "kubecode.noOpenCodeCapabilities": "このセッションでは、個別に呼び出せる OpenCode 機能は利用できません。",
   "kubecode.referenceFile": "ファイルを参照",
   "kubecode.chooseFileReference": "メッセージで参照するプロジェクトファイルを選択します。",
   "kubecode.searchContext": "スキル、コマンド、ファイルを検索",

@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Competências e comandos",
   "kubecode.agentSettings": "Definições do agente",
   "kubecode.noAgentSkillsCommands": "Este agente ainda não disponibilizou competências ou comandos.",
+  "kubecode.noOpenCodeCapabilities": "Não estão disponíveis capacidades do OpenCode invocáveis separadamente para esta sessão.",
   "kubecode.referenceFile": "Referenciar ficheiro",
   "kubecode.chooseFileReference": "Escolha um ficheiro do projeto para referenciar na mensagem.",
   "kubecode.searchContext": "Pesquisar competências, comandos e ficheiros",

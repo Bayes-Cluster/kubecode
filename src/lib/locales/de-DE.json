@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Skills und Befehle",
   "kubecode.agentSettings": "Agent-Einstellungen",
   "kubecode.noAgentSkillsCommands": "Dieser Agent hat noch keine Skills oder Befehle bereitgestellt.",
+  "kubecode.noOpenCodeCapabilities": "Für diese Session sind keine separat aufrufbaren OpenCode-Funktionen verfügbar.",
   "kubecode.referenceFile": "Datei referenzieren",
   "kubecode.chooseFileReference": "Wählen Sie eine Projektdatei aus, auf die Sie in Ihrer Nachricht verweisen möchten.",
   "kubecode.searchContext": "Skills, Befehle und Dateien durchsuchen",

@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Navyki i kamandy",
   "kubecode.agentSettings": "Nałady agienta",
   "kubecode.noAgentSkillsCommands": "Hety Agent jašče nie pradstaviŭ nivodnaha navyku ci kamandy.",
+  "kubecode.noOpenCodeCapabilities": "Dla hetaha seansa niama asobna vyklikanych mahčymasciaŭ OpenCode.",
   "kubecode.referenceFile": "Spasłaćsia na fajł",
   "kubecode.chooseFileReference": "Abiarycie fajł prajekta dla spasylki ŭ paviedamleńni.",
   "kubecode.searchContext": "Pošuk navykaŭ, kamandaŭ i fajłaŭ",

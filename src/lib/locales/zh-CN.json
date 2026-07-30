@@ -1096,6 +1096,7 @@
   "kubecode.agentSkillsCommands": "技能和命令",
   "kubecode.agentSettings": "Agent 设置",
   "kubecode.noAgentSkillsCommands": "此 Agent 尚未提供任何技能或命令。",
+  "kubecode.noOpenCodeCapabilities": "此会话没有可单独调用的 OpenCode 能力。",
   "kubecode.referenceFile": "引用文件",
   "kubecode.chooseFileReference": "选择要在消息中引用的项目文件。",
   "kubecode.searchContext": "搜索技能、命令和文件",

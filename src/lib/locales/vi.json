@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Kỹ năng và lệnh",
   "kubecode.agentSettings": "Cài đặt Agent",
   "kubecode.noAgentSkillsCommands": "Agent này chưa cung cấp kỹ năng hoặc lệnh nào.",
+  "kubecode.noOpenCodeCapabilities": "Không có khả năng OpenCode nào có thể gọi riêng cho phiên này.",
   "kubecode.referenceFile": "Tham chiếu tệp",
   "kubecode.chooseFileReference": "Chọn một tệp dự án để tham chiếu trong tin nhắn.",
   "kubecode.searchContext": "Tìm kỹ năng, lệnh và tệp",

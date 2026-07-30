@@ -275,6 +275,26 @@ dispatch. The patched adapter prepends that structured App Server input exactly
 once and redacts paths when replaying provider history. Missing support,
 malformed paths, duplicate identities, and disabled rows fail closed.
 
+OpenCode continues to run its native `opencode acp` process without a Kubecode
+adapter. Its supported native ACP implementation (verified with 1.17.20) merges
+OpenCode commands and skills into `available_commands_update`, but deliberately
+projects only the standard `name` and `description` fields; the internal
+`source: "skill"`, source location, scope, and invocation snapshot do not cross
+the ACP boundary. Kubecode therefore retains every advertised row as a `/`
+`Command` and never infers a `$` capability from its name, description, provider
+version, config paths, or unknown metadata. OpenCode still resolves slash
+invocations natively against the exact Session cwd, so standard commands and
+ordinary prompts remain available.
+
+New, load, and resume each replace the OpenCode command snapshot for the
+server-owned Session execution path. Reconnect reconstructs the same safe
+catalog from the durable journal; an empty replacement removes old rows and
+advances the catalog revision. A future OpenCode release may contribute `$`
+items only after it advertises a stable typed identity plus a manual invocation
+contract and Kubecode registers an explicit decoder. Until then the hydrated
+Composer `+` menu shows a localized capability-empty status without hiding
+native commands or blocking prompt submission.
+
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.

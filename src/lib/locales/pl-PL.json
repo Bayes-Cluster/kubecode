@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Umiejętności i polecenia",
   "kubecode.agentSettings": "Ustawienia agenta",
   "kubecode.noAgentSkillsCommands": "Ten agent nie udostępnił jeszcze żadnych umiejętności ani poleceń.",
+  "kubecode.noOpenCodeCapabilities": "W tej sesji nie są dostępne żadne oddzielnie wywoływane funkcje OpenCode.",
   "kubecode.referenceFile": "Odwołaj się do pliku",
   "kubecode.chooseFileReference": "Wybierz plik projektu, do którego chcesz się odwołać w wiadomości.",
   "kubecode.searchContext": "Szukaj umiejętności, poleceń i plików",
