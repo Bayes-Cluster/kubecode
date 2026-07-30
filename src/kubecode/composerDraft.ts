@@ -6,7 +6,8 @@ import type {
   StructuredComposerSegment,
 } from './api'
 
-export type ComposerContextKind = 'file' | 'directory' | 'git_diff' | 'terminal'
+export type ComposerContextKind =
+  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
 export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
 export type ComposerCapabilityItemKind = Exclude<ComposerItemKind, 'command'>
 
@@ -91,7 +92,8 @@ function isContextReference(value: unknown): value is ComposerContextReference {
   const reference = value as Partial<ComposerContextReference>
   return isOpaqueId(reference.id)
     && isCatalogRevision(reference.catalogRevision)
-    && ['file', 'directory', 'git_diff', 'terminal'].includes(reference.kind ?? '')
+    && ['file', 'directory', 'git_diff', 'terminal', 'session_turn', 'diagnostics']
+      .includes(reference.kind ?? '')
     && typeof reference.name === 'string'
     && reference.name.length > 0
     && typeof reference.path === 'string'
@@ -104,7 +106,9 @@ function isComposerContextSummary(
   kind: ComposerContextKind | undefined,
   summary: unknown,
 ): summary is ComposerContextSummary | undefined {
-  if (kind !== 'git_diff' && kind !== 'terminal') return summary === undefined
+  if (kind !== 'git_diff' && kind !== 'terminal' && kind !== 'session_turn') {
+    return summary === undefined
+  }
   if (!summary || typeof summary !== 'object') return false
   const candidate = summary as Partial<ComposerContextSummary>
   if (kind === 'git_diff') {
@@ -113,12 +117,18 @@ function isComposerContextSummary(
       && [candidate.file_count, candidate.hunk_count, candidate.byte_count]
         .every((value) => Number.isSafeInteger(value) && (value ?? -1) >= 0)
   }
-  return candidate.kind === 'terminal'
-    && (candidate.capture === 'selection' || candidate.capture === 'recent')
-    && Number.isSafeInteger(candidate.pane_index) && (candidate.pane_index ?? 0) > 0
+  if (kind === 'terminal') {
+    return candidate.kind === 'terminal'
+      && (candidate.capture === 'selection' || candidate.capture === 'recent')
+      && Number.isSafeInteger(candidate.pane_index) && (candidate.pane_index ?? 0) > 0
+      && Number.isSafeInteger(candidate.line_count) && (candidate.line_count ?? -1) >= 0
+      && Number.isSafeInteger(candidate.byte_count) && (candidate.byte_count ?? -1) >= 0
+      && typeof candidate.truncated === 'boolean'
+  }
+  return candidate.kind === 'session_turn'
+    && (candidate.role === 'user' || candidate.role === 'agent')
     && Number.isSafeInteger(candidate.line_count) && (candidate.line_count ?? -1) >= 0
     && Number.isSafeInteger(candidate.byte_count) && (candidate.byte_count ?? -1) >= 0
-    && typeof candidate.truncated === 'boolean'
 }
 
 function isCapabilityReference(value: unknown): value is ComposerCapabilityReference {

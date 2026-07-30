@@ -407,6 +407,26 @@ stale rather than reconstructing it from browser scrollback. WebSocket reconnect
 does not change PTY or capture ownership. Closing or exiting the PTY, losing its
 captured ring-buffer window, or changing execution compatibility blocks dispatch.
 
+Session-turn context is a durable, content-addressed Composer identity over one
+visible completed turn in the current writable conversation branch. Registration
+accepts only a role (`user` or `agent`) and a run/native-event anchor; it does not
+accept browser-supplied turn content. `AgentStore` resolves the anchor directly
+from the Session journal, stops at the next user anchor, and caps the read at 512
+events, 200 lines, and 16 KiB. Only the opaque context ID, private selector,
+digest, role, and numeric counts are retained. Preflight resolves the same branch
+again and requires the digest and opaque identity to match before privately
+injecting the selected role's text. A running turn, rewind, hidden read-only
+revision, missing anchor, cross-Session selector, changed content, or exceeded
+bound makes the reference stale or over-limit; reconnect and cursor pagination
+do not change its identity. Explicit branch creation copies journal events, so a
+retained copied turn is eligible only through the new branch's own event rows.
+
+Diagnostics context remains a distinct unsupported Composer kind. Kubecode has
+no single authoritative structured Project diagnostics source today, so the UI
+shows it as unavailable and the server rejects registration. Editor rendering,
+terminal text, and browser-derived markers are presentation data and cannot be
+promoted into diagnostics context.
+
 ## Project path picker
 
 The Project path picker is a browser presentation abstraction shared by quick

@@ -377,7 +377,8 @@ export type AgentSessionState = {
   }
 }
 export type ComposerItemKind = 'command' | 'skill' | 'plugin_action' | 'provider_app'
-export type ComposerContextKind = 'file' | 'directory' | 'git_diff' | 'terminal'
+export type ComposerContextKind =
+  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
 export type ComposerGitDiffSummary = {
   kind: 'git_diff'
   scope: 'all' | 'file'
@@ -393,7 +394,14 @@ export type ComposerTerminalSummary = {
   byte_count: number
   truncated: boolean
 }
-export type ComposerContextSummary = ComposerGitDiffSummary | ComposerTerminalSummary
+export type ComposerSessionTurnSummary = {
+  kind: 'session_turn'
+  role: 'user' | 'agent'
+  line_count: number
+  byte_count: number
+}
+export type ComposerContextSummary =
+  ComposerGitDiffSummary | ComposerTerminalSummary | ComposerSessionTurnSummary
 export type ComposerCatalogItem = {
   id: string
   kind: ComposerItemKind
@@ -926,6 +934,7 @@ export class KubecodeApi {
       source_revision?: string
       terminal_id?: string
       selected_text?: string
+      turn_id?: string
     },
   ): Promise<ComposerContextRegistration> {
     return this.request(

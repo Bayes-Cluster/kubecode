@@ -17,7 +17,7 @@ use kubecode_server::agents::{
 use kubecode_server::api::{AppState, app_router, app_router_api_only, app_router_with_static};
 use kubecode_server::composer_catalog::{
     ComposerContextKind, MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES,
-    MAX_COMPOSER_VALIDATION_ROWS,
+    MAX_COMPOSER_VALIDATION_ROWS, MAX_SESSION_TURN_CONTEXT_BYTES,
 };
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
 use kubecode_server::terminal::TerminalKind;
@@ -3257,6 +3257,201 @@ async fn terminal_context_is_session_authorized_sanitized_bounded_and_transient(
     let (status, stale) = json_request(&app, Method::POST, &validation_uri, validation).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(stale["references"][0]["available"], false);
+}
+
+#[tokio::test]
+async fn session_turn_context_is_private_bounded_and_current_branch_only() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_root = root.join(".state/kubecode");
+    fs::create_dir_all(&state_root).expect("state directory");
+    let database = state_root.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project_at(root.join("session-turn-project"))
+        .expect("project");
+    let foreign_project = workspace
+        .create_project_at(root.join("session-turn-foreign"))
+        .expect("foreign project");
+    let store = Arc::new(AgentStore::open(&database).expect("store"));
+    let conversation = store
+        .create_conversation(&project.id, AgentId::Codex, None)
+        .expect("conversation");
+    let foreign = store
+        .create_conversation(&foreign_project.id, AgentId::Codex, None)
+        .expect("foreign conversation");
+    let first = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Visible private question",
+            PermissionMode::Safe,
+        )
+        .expect("first run");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "text_delta",
+            &json!({"run_id":first.id, "text":"Visible private answer"}),
+            Some((
+                &first.id,
+                AgentEventKind::TextDelta,
+                &json!({"text":"Visible private answer"}),
+            )),
+        )
+        .expect("first answer");
+    store
+        .finish_run(
+            &first.id,
+            kubecode_server::agents::RunStatus::Completed,
+            None,
+        )
+        .expect("finish first");
+    let second = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            "Turn removed by revision",
+            PermissionMode::Safe,
+        )
+        .expect("second run");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "text_delta",
+            &json!({"run_id":second.id, "text":"Removed answer"}),
+            Some((
+                &second.id,
+                AgentEventKind::TextDelta,
+                &json!({"text":"Removed answer"}),
+            )),
+        )
+        .expect("second answer");
+    store
+        .finish_run(
+            &second.id,
+            kubecode_server::agents::RunStatus::Completed,
+            None,
+        )
+        .expect("finish second");
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let app = app_router(
+        AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams),
+        BASE_PATH,
+    );
+    let registration_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        conversation.id
+    );
+    let (status, registration) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"session_turn", "path":"agent", "turn_id":first.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(registration["context"]["kind"], "session_turn");
+    assert_eq!(registration["context"]["display"], "session turn");
+    assert_eq!(registration["context"]["summary"]["role"], "agent");
+    assert_eq!(registration["context"]["summary"]["line_count"], 1);
+    let serialized = registration.to_string();
+    assert!(!serialized.contains("Visible private answer"));
+    assert!(!serialized.contains(&first.id));
+    let (status, repeated) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"session_turn", "path":"agent", "turn_id":first.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(repeated["context"]["id"], registration["context"]["id"]);
+    assert_eq!(
+        repeated["catalog"]["revision"],
+        registration["catalog"]["revision"]
+    );
+
+    let foreign_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        foreign.id
+    );
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &foreign_uri,
+        json!({"kind":"session_turn", "path":"agent", "turn_id":first.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"diagnostics", "path":"current"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error["code"], "composer_item_unsupported");
+
+    let revision = store
+        .revise_conversation_at_run(&conversation.id, &second.id)
+        .expect("revision");
+    let hidden_run = store
+        .list_runs(&revision.snapshot_conversation_id)
+        .expect("hidden runs")
+        .into_iter()
+        .next()
+        .expect("hidden run");
+    let hidden_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        revision.snapshot_conversation_id
+    );
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &hidden_uri,
+        json!({"kind":"session_turn", "path":"agent", "turn_id":hidden_run.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"session_turn", "path":"agent", "turn_id":second.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+
+    let oversized = store
+        .start_run(
+            &conversation.id,
+            &project.id,
+            &"x".repeat(MAX_SESSION_TURN_CONTEXT_BYTES + 1),
+            PermissionMode::Safe,
+        )
+        .expect("oversized run");
+    store
+        .finish_run(
+            &oversized.id,
+            kubecode_server::agents::RunStatus::Completed,
+            None,
+        )
+        .expect("finish oversized");
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({"kind":"session_turn", "path":"user", "turn_id":oversized.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(error["code"], "composer_context_over_limit");
 }
 
 #[tokio::test]

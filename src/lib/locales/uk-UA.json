@@ -1501,5 +1501,16 @@
   "kubecode.terminalCaptureSelection": "selection",
   "kubecode.terminalCaptureRecent": "recent output",
   "kubecode.terminalContextSummary": "{pane} · {capture} · {lines} lines · {bytes} bytes",
-  "kubecode.terminalContextSummaryTruncated": "{pane} · bounded {capture} · {lines} lines · {bytes} bytes"
+  "kubecode.terminalContextSummaryTruncated": "{pane} · bounded {capture} · {lines} lines · {bytes} bytes",
+  "kubecode.referenceSessionTurns": "Reference Session turns",
+  "kubecode.chooseSessionTurnReference": "Choose one visible prior user turn or Agent response.",
+  "kubecode.userTurns": "User turns",
+  "kubecode.agentResponses": "Agent responses",
+  "kubecode.priorUserTurn": "Prior user turn",
+  "kubecode.priorAgentResponse": "Prior Agent response",
+  "kubecode.attachPriorUserTurn": "Attach prior user turn: {preview}",
+  "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
+  "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
+  "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
 }

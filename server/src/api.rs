@@ -29,7 +29,8 @@ use crate::agents::{
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextSelector,
     ComposerContextSummary, ComposerDraftSegment, ComposerGitDiffScope, ComposerPreflightContext,
-    MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id, opaque_terminal_context_id,
+    ComposerSessionTurnRole, MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id,
+    opaque_terminal_context_id, session_turn_selector,
 };
 use crate::git::{GitError, GitMutation, GitService};
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
@@ -2331,6 +2332,8 @@ struct RegisterComposerContextRequest {
     terminal_id: Option<String>,
     #[serde(default)]
     selected_text: Option<String>,
+    #[serde(default)]
+    turn_id: Option<String>,
 }
 
 async fn register_composer_context(
@@ -2345,6 +2348,7 @@ async fn register_composer_context(
             if request.source_revision.is_some()
                 || request.terminal_id.is_some()
                 || request.selected_text.is_some()
+                || request.turn_id.is_some()
             {
                 return Err(ComposerCatalogError::InvalidDraft.into());
             }
@@ -2374,7 +2378,10 @@ async fn register_composer_context(
             )?
         }
         ComposerContextKind::GitDiff => {
-            if request.terminal_id.is_some() || request.selected_text.is_some() {
+            if request.terminal_id.is_some()
+                || request.selected_text.is_some()
+                || request.turn_id.is_some()
+            {
                 return Err(ComposerCatalogError::InvalidDraft.into());
             }
             let source_revision = request
@@ -2415,7 +2422,7 @@ async fn register_composer_context(
             )?
         }
         ComposerContextKind::Terminal => {
-            if request.source_revision.is_some() {
+            if request.source_revision.is_some() || request.turn_id.is_some() {
                 return Err(ComposerCatalogError::InvalidDraft.into());
             }
             let capture_kind = match request.path.as_str() {
@@ -2474,6 +2481,34 @@ async fn register_composer_context(
                     return Err(error.into());
                 }
             }
+        }
+        ComposerContextKind::SessionTurn => {
+            if request.source_revision.is_some()
+                || request.terminal_id.is_some()
+                || request.selected_text.is_some()
+            {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
+            let role = match request.path.as_str() {
+                "user" => ComposerSessionTurnRole::User,
+                "agent" => ComposerSessionTurnRole::Agent,
+                _ => return Err(ComposerCatalogError::InvalidDraft.into()),
+            };
+            let turn_id = request.turn_id.ok_or(ComposerCatalogError::InvalidDraft)?;
+            let snapshot = store.resolve_composer_session_turn(&conversation.id, &turn_id, role)?;
+            let selector = session_turn_selector(role, &turn_id);
+            let summary = ComposerContextSummary::SessionTurn {
+                role,
+                line_count: snapshot.line_count,
+                byte_count: snapshot.byte_count,
+            };
+            store.register_composer_session_turn_context(
+                &conversation.id,
+                &conversation.project_id,
+                &selector,
+                &snapshot.source_revision,
+                summary,
+            )?
         }
         _ => return Err(ComposerCatalogError::ItemUnsupported.into()),
     };
@@ -2615,6 +2650,13 @@ async fn validate_composer_contexts(
                         .agent_runtime
                         .resolve_terminal_composer_context(&conversation.id, &record)?,
                 );
+            }
+            ComposerContextKind::SessionTurn => {
+                preflight.push(state.agent_runtime.resolve_session_turn_composer_context(
+                    &conversation.id,
+                    &conversation.project_id,
+                    &record,
+                )?);
             }
             _ => preflight.push(None),
         }

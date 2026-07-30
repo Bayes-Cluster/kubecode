@@ -62,7 +62,12 @@ import {
   type WorkspaceEvent,
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
-import { ComposerAddMenu, type TerminalContextRequest } from './ComposerAddMenu'
+import {
+  ComposerAddMenu,
+  type SessionTurnContextRequest,
+  type SessionTurnContextSource,
+  type TerminalContextRequest,
+} from './ComposerAddMenu'
 import type { ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import type { CommandPaletteSessionSnapshot, RankedCommandPaletteItem } from './commandPalette'
 import { ComposerContextInput } from './ComposerContextInput'
@@ -183,6 +188,8 @@ const SIDE_QUESTION_EVENT_KINDS = new Set([
   'side_question_started',
 ])
 const SESSION_DRAFT_PREFIX = 'kubecode:session-draft:'
+const MAX_SESSION_TURN_PICKER_SOURCES = 20
+const MAX_SESSION_TURN_PREVIEW_CHARACTERS = 120
 
 function readSessionDraft(conversationId: string): ComposerDraft {
   try {
@@ -291,6 +298,18 @@ export function AgentSessionWorkspace({
   const hardReadOnly = Boolean(
     conversation?.read_only || conversation?.team_role === 'discriminator',
   )
+  const sessionTurnSources = useMemo<SessionTurnContextSource[]>(() => {
+    if (hardReadOnly || viewRevisionId) return []
+    return messages
+      .filter((message) => !message.internal && !message.isStreaming && message.id)
+      .slice(-MAX_SESSION_TURN_PICKER_SOURCES)
+      .map((message) => ({
+        turnId: message.id as string,
+        userPreview: sessionTurnPreview(message.userMessage),
+        agentPreview: sessionTurnPreview(agentResponseText(message)),
+      }))
+      .filter((source) => source.userPreview || source.agentPreview)
+  }, [hardReadOnly, messages, viewRevisionId])
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
   const leaderReviewPending = conversation?.team_role === 'teammate'
     && run?.status === 'waiting_permission'
@@ -1199,6 +1218,60 @@ export function AgentSessionWorkspace({
     })
   }
 
+  const insertComposerSessionTurnContext = (turnRequest: SessionTurnContextRequest) => {
+    if (directTeammateChatDisabled || hardReadOnly || viewRevisionId) return
+    const targetConversationId = conversation.id
+    const request = ++menuContextRequestRef.current
+    setMenuContextPending(true)
+    void api.registerComposerContext(targetConversationId, {
+      kind: 'session_turn',
+      path: turnRequest.role,
+      turn_id: turnRequest.turnId,
+    }).then((registration) => {
+      if (request !== menuContextRequestRef.current
+        || activeConversationIdRef.current !== targetConversationId
+        || registration.context.kind !== 'session_turn'
+        || !registration.context.enabled
+        || registration.context.summary?.kind !== 'session_turn') return
+      const summary = registration.context.summary
+      const role = t(summary.role === 'user'
+        ? 'kubecode.priorUserTurn'
+        : 'kubecode.priorAgentResponse')
+      const name = t('kubecode.sessionTurnContextSummary', {
+        role,
+        lines: summary.line_count,
+        bytes: summary.byte_count,
+      })
+      applyComposerCatalog(registration.catalog)
+      updateComposerDraft((current) => appendComposerContext(
+        current,
+        createComposerContextReference({
+          catalogRevision: registration.catalog.revision,
+          id: registration.context.id,
+          kind: 'session_turn',
+          name,
+          path: 'session-turn',
+          summary,
+        }),
+      ))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_agent_context_inserted', {
+        agent_id: conversation.agent_id,
+        kind: 'session_turn',
+      })
+    }).catch((cause) => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        reportError(cause)
+      }
+    }).finally(() => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        setMenuContextPending(false)
+      }
+    })
+  }
+
   const insertComposerCapability = (capability: RankedComposerCapability) => {
     if (directTeammateChatDisabled || hardReadOnly || !capability.enabled) return
     const catalog = sessionState?.composer?.catalog
@@ -1628,8 +1701,10 @@ export function AgentSessionWorkspace({
                   onGitDiff={insertComposerGitDiff}
                   onInsert={insertComposerText}
                   onReference={insertComposerContext}
+                  onSessionTurnContext={insertComposerSessionTurnContext}
                   onTerminalContext={insertComposerTerminalContext}
                   projectId={projectId}
+                  sessionTurnSources={sessionTurnSources}
                   t={t}
                   terminalSources={terminalContextSources}
                 />
@@ -2237,6 +2312,18 @@ function messageFromRun(run: AgentRun): AiAgentMessage {
     userMessage: run.message,
     internal: Boolean(run.internal),
   }
+}
+
+function agentResponseText(message: AiAgentMessage): string {
+  return message.responseBlocks?.map((block) => block.text).join('') ?? message.response ?? ''
+}
+
+function sessionTurnPreview(value: string): string | null {
+  const preview = value.replace(/\s+/g, ' ').trim()
+  if (!preview) return null
+  return preview.length > MAX_SESSION_TURN_PREVIEW_CHARACTERS
+    ? `${preview.slice(0, MAX_SESSION_TURN_PREVIEW_CHARACTERS - 3)}...`
+    : preview
 }
 
 function applyAgentEvent(

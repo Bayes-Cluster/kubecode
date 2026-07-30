@@ -100,6 +100,35 @@ describe('typed Composer drafts', () => {
     expect(JSON.stringify(composerDraftToStructuredSegments(validated))).not.toContain('Terminal pane')
   })
 
+  it('restores a Session-turn reference without persisting its private text or selector', () => {
+    const reference = createComposerContextReference({
+      catalogRevision: 19,
+      id: 'ctx:session-turn:opaque',
+      kind: 'session_turn',
+      name: 'Prior Agent response · 2 lines · 36 bytes',
+      path: 'session-turn',
+      summary: {
+        kind: 'session_turn', role: 'agent', line_count: 2, byte_count: 36,
+      },
+    })
+    const serialized = serializeComposerDraft(appendComposerContext(textComposerDraft(), reference))
+    expect(serialized).not.toContain('Private Agent response')
+    expect(serialized).not.toContain('private-run-id')
+
+    const restored = parseStoredComposerDraft(serialized)
+    expect(composerDraftReferences(restored)[0]).toMatchObject({
+      availability: 'stale',
+      kind: 'session_turn',
+      summary: { role: 'agent', line_count: 2, byte_count: 36 },
+    })
+    expect(composerDraftToStructuredSegments(restored)).toContainEqual({
+      kind: 'context_ref',
+      id: 'ctx:session-turn:opaque',
+      catalog_revision: 19,
+      context_kind: 'session_turn',
+    })
+  })
+
   it('migrates legacy string drafts without trusting @ text as context', () => {
     expect(parseStoredComposerDraft('@src/main.ts please review')).toEqual(
       textComposerDraft('@src/main.ts please review'),
