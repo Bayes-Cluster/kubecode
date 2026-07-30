@@ -15,7 +15,7 @@ use crate::composer_catalog::{
     ComposerContextValidationResult, ComposerDraftSegment, ComposerPreflightContext,
     MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES, context_kind_key, opaque_context_id,
     parse_context_kind, project_acp_catalog_with_contexts, project_available_commands,
-    resolve_acp_catalog_item, validate_structured_composer_segments,
+    resolve_composer_catalog_item, validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
 
@@ -1388,11 +1388,19 @@ impl AgentStore {
         )?;
         if !snapshot.same_contents(&expected) {
             return Err(StoreError::InvalidStoredValue(
-                "composer catalog does not match its authoritative ACP snapshot".into(),
+                "composer catalog does not match its authoritative sources".into(),
             ));
         }
-        let message =
-            resolve_acp_catalog_item(&snapshot, &raw, catalog_revision, item_id, arguments)?;
+        let message = resolve_composer_catalog_item(
+            project_id,
+            conversation_id,
+            agent_id,
+            &snapshot,
+            &raw,
+            catalog_revision,
+            item_id,
+            arguments,
+        )?;
         let active = transaction
             .query_row(
                 "SELECT id FROM agent_runs
@@ -2171,7 +2179,16 @@ impl AgentStore {
             )?
             .ok_or(ComposerCatalogError::ItemMissing)?;
             (
-                resolve_acp_catalog_item(&current, &raw, catalog_revision, item_id, &resolved)?,
+                resolve_composer_catalog_item(
+                    project_id,
+                    conversation_id,
+                    agent_id,
+                    &current,
+                    &raw,
+                    catalog_revision,
+                    item_id,
+                    &resolved,
+                )?,
                 true,
             )
         } else {

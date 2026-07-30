@@ -114,6 +114,66 @@ fn composer_catalog_reopens_with_exact_snapshot_and_rejects_foreign_ids() {
 }
 
 #[test]
+fn claude_skill_catalog_reopens_and_dispatches_the_exact_advertised_identity() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::ClaudeCode, None)
+        .expect("Claude conversation");
+    let raw = json!({
+        "availableCommands": [
+            {"name":"review", "description":"Review code", "input":{"hint":"<path>"}},
+            {"name":"status", "description":"Show status"}
+        ],
+        "_meta": {"kubecode":{"claudeSkills":{
+            "version":1,
+            "supported":true,
+            "skills":[{
+                "identity":"review",
+                "name":"review",
+                "description":"Review code",
+                "inputHint":"<path>",
+                "scope":"project",
+                "sourceLabel":"Project skill",
+                "enabled":true
+            }]
+        }}}
+    });
+    store
+        .append_runtime_update(&conversation.id, "available_commands", &raw, None)
+        .expect("Claude skill update");
+    let before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("Claude skill catalog");
+    let skill = before
+        .items
+        .iter()
+        .find(|item| item.kind == ComposerItemKind::Skill)
+        .expect("skill")
+        .clone();
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let after = reopened
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("reopened Claude skill catalog");
+    assert_eq!(after, before);
+    let run = reopened
+        .start_typed_composer_command(
+            &conversation.id,
+            "project",
+            &skill.id,
+            after.revision,
+            "src/lib.rs",
+            PermissionMode::Safe,
+        )
+        .expect("Claude skill run");
+    assert_eq!(run.message, "/review src/lib.rs");
+    assert!(run.internal);
+}
+
+#[test]
 fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
     let temp = TempDir::new().expect("tempdir");
     let database = temp.path().join("kubecode.sqlite3");

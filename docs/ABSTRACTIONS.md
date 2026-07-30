@@ -268,6 +268,31 @@ registered adapter decoder. Plugin contributions enter this same catalog only
 through explicit user-facing action descriptors; the plugin runtime itself is a
 separate management surface and a separate ADR.
 
+The bundled Claude adapter obtains its user-invocable skill inventory from the
+Claude Agent SDK query attached to the exact provider Session. It calls
+`reloadSkills()` after an ACP command update has returned, so discovery uses the
+Session's own cwd (including its worktree) without blocking the SDK message loop
+or scanning Claude's global directories. The adapter then publishes a bounded
+full replacement in `available_commands_update._meta.kubecode.claudeSkills`.
+Only canonical identity, safe display fields, scope/source label, input hint,
+and availability cross that private boundary; provider paths are never copied.
+When the SDK does not expose a more specific source, the adapter uses Session
+scope rather than guessing Project or User ownership. Plugin-qualified canonical
+names retain Plugin scope. Missing `reloadSkills()` support or a failed refresh
+publishes an unsupported empty skill replacement and leaves standard ACP
+commands unchanged.
+
+The server decodes this metadata only for Claude Code Sessions and requires the
+advertised canonical identity to match exactly one current ACP command before it
+can be enabled. A matched row replaces that command in the safe projection with
+a `Skill` item; duplicate identities, missing commands, unsupported inputs, and
+provider-disabled rows remain disabled. The raw metadata stays in the private
+Session journal, so the same opaque ID and invocation mapping are reconstructed
+after reconnect or process restart. Submission resolves the `cap:` ID against
+that raw authoritative snapshot in the same transaction that starts the run,
+then emits Claude's canonical slash invocation server-side; the browser never
+synthesizes or receives the provider invocation template.
+
 ## Composer reference and structured draft
 
 A Composer reference is a typed context or capability chip backed by an opaque
