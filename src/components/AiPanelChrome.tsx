@@ -650,14 +650,14 @@ export function AiPanelComposer({
       <div
         className={cn(
           hasControls
-            ? 'flex min-h-[50px] max-h-[202px] items-end gap-1 overflow-hidden rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
+            ? 'flex min-h-[50px] max-h-[202px] items-end gap-1 overflow-visible rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
             : 'flex items-end gap-2',
         )}
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"
       >
         {hasControls && leadingControl && <div className="shrink-0">{leadingControl}</div>}
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-visible">
           {inputContent ?? <ComposerInput
             disabled={inputDisabled}
             entries={entries}

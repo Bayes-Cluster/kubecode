@@ -177,6 +177,10 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   expect(await editorScroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page.getByRole('tab', { name: 'Explorer' }).click()
+  await page.getByRole('button', { name: 'New folder' }).click()
+  await page.getByRole('combobox', { name: 'Relative path' }).fill('src')
+  await page.getByRole('option', { name: 'Create src' }).click()
+  await expect(page.getByRole('treeitem', { name: 'src' })).toBeVisible()
   await page.getByRole('button', { name: 'Create a Git repository', exact: true }).click()
   await expect(page.getByText('No changes to review')).toHaveCount(0)
 
@@ -199,6 +203,43 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.getByRole('button', { name: 'Remove context' }).click()
   await expect(contextChip).toHaveCount(0)
+
+  await composerInput.fill('Review @src after')
+  await composerInput.evaluate((editor) => {
+    const text = editor.firstChild
+    if (!text || text.nodeType !== Node.TEXT_NODE) throw new Error('Composer text node is unavailable')
+    const caret = text.textContent?.indexOf(' after') ?? -1
+    if (caret < 0) throw new Error('Composer caret target is unavailable')
+    const range = document.createRange()
+    range.setStart(text, caret)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  })
+  const directoryOption = page.getByRole('option', { name: 'src', exact: true })
+  await expect(directoryOption).toBeVisible()
+  await directoryOption.tap()
+  const directoryChip = page.getByTestId('composer-context-chip')
+  await expect(directoryChip).toHaveAttribute('data-context-kind', 'directory')
+  await expect(directoryChip).toHaveAttribute('title', 'src')
+  await expect(composerInput).toBeFocused()
+  expect(await composerInput.evaluate((editor) => {
+    const chip = editor.querySelector('[data-testid="composer-context-chip"]')
+    const suffix = chip?.nextSibling
+    const selection = window.getSelection()
+    return {
+      collapsed: selection?.isCollapsed,
+      offset: selection?.anchorOffset,
+      suffix: suffix?.textContent,
+      withinSuffix: selection?.anchorNode === suffix,
+    }
+  })).toEqual({ collapsed: true, offset: 1, suffix: '  after', withinSuffix: true })
+  await page.keyboard.type('then')
+  await expect(composerInput).toContainText('Review src then after')
+  await page.getByRole('button', { name: 'Remove context' }).click()
+  await expect(directoryChip).toHaveCount(0)
 
   await addContext.click()
   const addContextDialog = page.getByRole('dialog', { name: 'Add context' })

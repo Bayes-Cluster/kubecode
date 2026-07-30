@@ -131,7 +131,7 @@ describe('AiPanelComposer', () => {
     expect(surface).toContainElement(screen.getByTestId('agent-input'))
   })
 
-  it('keeps multiline prompts inside a fixed-height scrolling editor', () => {
+  it('keeps multiline prompts scrolling while allowing Composer pickers to overflow', () => {
     render(
       <AiPanelComposer
         agentLabel="Codex"
@@ -152,10 +152,13 @@ describe('AiPanelComposer', () => {
       minHeight: '32px',
       overflowY: 'auto',
     })
-    expect(screen.getByTestId('agent-composer-surface')).toHaveClass(
+    const surface = screen.getByTestId('agent-composer-surface')
+    expect(surface).toHaveClass(
       'min-h-[50px]',
       'max-h-[202px]',
+      'overflow-visible',
     )
+    expect(surface.firstElementChild).toHaveClass('overflow-visible')
   })
 
   it('keeps Stop visible while submitting a provider-native active action', () => {
