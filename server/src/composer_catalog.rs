@@ -1232,6 +1232,51 @@ mod tests {
     }
 
     #[test]
+    fn opencode_never_infers_capabilities_from_undifferentiated_acp_rows() {
+        let raw = json!({
+            "availableCommands": [{
+                "name":"review",
+                "description":"Load the review skill",
+                "_meta":{"source":"skill", "location":"/private/review/SKILL.md"}
+            }],
+            "_meta":{"openCodeCapabilities":{
+                "version":99,
+                "skills":[{"name":"review", "manual":true}]
+            }}
+        });
+
+        let snapshot = project_acp_catalog("project", "session", AgentId::OpenCode, 4, &raw);
+
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].kind, ComposerItemKind::Command);
+        assert_eq!(snapshot.items[0].source_label, "OpenCode command");
+        assert!(
+            snapshot
+                .items
+                .iter()
+                .all(|item| !item.id.starts_with("cap:"))
+        );
+        assert!(
+            !serde_json::to_string(&snapshot)
+                .expect("safe OpenCode catalog")
+                .contains("/private/review")
+        );
+        assert_eq!(
+            resolve_composer_catalog_item(
+                "project",
+                "session",
+                AgentId::OpenCode,
+                &snapshot,
+                &raw,
+                4,
+                &snapshot.items[0].id,
+                "",
+            ),
+            Ok("/review".to_owned())
+        );
+    }
+
+    #[test]
     fn claude_skill_metadata_disables_duplicate_and_unavailable_identities() {
         let raw = json!({
             "availableCommands": [{"name":"review", "description":"Review code"}],

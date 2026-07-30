@@ -12,6 +12,7 @@ export type ComposerAgentCommand = { name: string; description: string }
 
 type ComposerAddMenuProps = {
   api: KubecodeApi
+  capabilityEmptyLabel?: string
   commands: ComposerAgentCommand[]
   conversationId: string
   onInsert: (text: string, kind: 'command') => void
@@ -22,6 +23,7 @@ type ComposerAddMenuProps = {
 
 export function ComposerAddMenu({
   api,
+  capabilityEmptyLabel,
   commands,
   conversationId,
   onInsert,
@@ -174,6 +176,14 @@ export function ComposerAddMenu({
                 {commands.length === 0 && (
                   <p className="px-3 py-2 text-sm text-muted-foreground">
                     {t('kubecode.noAgentSkillsCommands')}
+                  </p>
+                )}
+                {capabilityEmptyLabel && (
+                  <p
+                    className="border-t border-border px-3 py-2 text-sm text-muted-foreground"
+                    role="status"
+                  >
+                    {capabilityEmptyLabel}
                   </p>
                 )}
               </div>

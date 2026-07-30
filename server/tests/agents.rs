@@ -251,6 +251,64 @@ fn codex_skill_catalog_reopens_with_private_structured_dispatch() {
 }
 
 #[test]
+fn opencode_catalog_reopens_and_removes_undifferentiated_commands_without_capabilities() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::OpenCode, None)
+        .expect("OpenCode conversation");
+    let advertised = json!({
+        "availableCommands":[{
+            "name":"review",
+            "description":"Load the review skill",
+            "_meta":{"source":"skill"}
+        }],
+        "_meta":{"openCodeCapabilities":{"version":1, "supported":true}}
+    });
+    store
+        .append_runtime_update(&conversation.id, "available_commands", &advertised, None)
+        .expect("OpenCode command update");
+    let before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("OpenCode catalog");
+    assert_eq!(before.revision, 1);
+    assert_eq!(before.items.len(), 1);
+    assert_eq!(before.items[0].kind, ComposerItemKind::Command);
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    assert_eq!(
+        reopened
+            .composer_catalog_snapshot(&conversation.id)
+            .expect("reopened OpenCode catalog"),
+        before
+    );
+    reopened
+        .append_runtime_update(
+            &conversation.id,
+            "available_commands",
+            &json!({
+                "availableCommands":[],
+                "_meta":{"openCodeCapabilities":{"version":2, "supported":false}}
+            }),
+            None,
+        )
+        .expect("OpenCode capability removal");
+    let removed = reopened
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("replacement catalog");
+    assert_eq!(removed.revision, 2);
+    assert!(removed.items.is_empty());
+    assert!(
+        reopened
+            .list_runs(&conversation.id)
+            .expect("runs")
+            .is_empty()
+    );
+}
+
+#[test]
 fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
     let temp = TempDir::new().expect("tempdir");
     let database = temp.path().join("kubecode.sqlite3");

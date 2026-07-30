@@ -82,6 +82,131 @@ done"#,
 }
 
 #[tokio::test]
+async fn opencode_capability_absence_survives_cwd_owned_reconnect_and_plain_prompting() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "opencode-capability-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let observed_cwds = temp.path().join("observed-opencode-cwds");
+    let advertised_update = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"opencode-capability-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Load the review skill","_meta":{"source":"skill"}}],"_meta":{"openCodeCapabilities":{"version":1,"supported":true}}}}}"#;
+    let removed_update = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"opencode-capability-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[],"_meta":{"openCodeCapabilities":{"version":999,"supported":false}}}}}"#;
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"pwd >> '{}'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' '{}'
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"opencode-capability-session\"}}}}"
+      ;;
+    *'"method":"session/load"'*)
+      printf '%s\n' '{}'
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;
+  esac
+done"#,
+            observed_cwds.display(),
+            advertised_update,
+            removed_update,
+        ),
+    );
+    let descriptor = |version: &str| AgentDescriptor {
+        id: AgentId::OpenCode,
+        available: true,
+        version: Some(version.to_owned()),
+        executable: binary.clone(),
+        error: None,
+    };
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![descriptor("1.17.20")],
+    );
+    runtime
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("initialize OpenCode session");
+    let initial = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("initial OpenCode catalog");
+    assert_eq!(initial.items.len(), 1);
+    assert_eq!(
+        initial.items[0].kind,
+        kubecode_server::composer_catalog::ComposerItemKind::Command
+    );
+
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "Ordinary prompt still works".into(),
+        })
+        .expect("start ordinary prompt");
+    let completed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("ordinary prompt completion");
+    assert_eq!(completed.status, RunStatus::Completed);
+    runtime
+        .disconnect_conversation(&conversation.id)
+        .await
+        .expect("disconnect OpenCode session");
+    drop(runtime);
+
+    let reconnected = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![descriptor("999.0.0")],
+    );
+    reconnected
+        .initialize_conversation(&conversation.id)
+        .await
+        .expect("reconnect OpenCode session");
+    let removed = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("replacement OpenCode catalog");
+    assert!(removed.revision > initial.revision);
+    assert!(removed.items.is_empty());
+
+    let expected_cwd = workspace
+        .project_path(&project.id)
+        .expect("project path")
+        .to_string_lossy()
+        .into_owned();
+    let observed = fs::read_to_string(observed_cwds).expect("observed OpenCode cwd");
+    assert_eq!(
+        observed.lines().collect::<Vec<_>>(),
+        vec![expected_cwd.as_str(); 2]
+    );
+    reconnected
+        .disconnect_conversation(&conversation.id)
+        .await
+        .expect("disconnect reconnected OpenCode session");
+}
+
+#[tokio::test]
 async fn bounds_the_idle_warm_session_pool() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");

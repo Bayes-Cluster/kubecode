@@ -71,6 +71,28 @@ describe('ComposerAddMenu', () => {
     expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
   })
 
+  it('shows a graceful capability absence without hiding native commands', () => {
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        capabilityEmptyLabel="No separately invocable OpenCode capabilities are available for this Session."
+        commands={commands}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No separately invocable OpenCode capabilities are available for this Session.',
+    )
+    expect(screen.getByRole('button', { name: /review/i })).toBeInTheDocument()
+  })
+
   it('inserts a typed Session file reference selected from the flat picker', async () => {
     const onReference = vi.fn()
     const api = {

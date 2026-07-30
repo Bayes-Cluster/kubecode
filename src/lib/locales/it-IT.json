@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Skill e comandi",
   "kubecode.agentSettings": "Impostazioni agente",
   "kubecode.noAgentSkillsCommands": "Questo agente non ha ancora esposto skill o comandi.",
+  "kubecode.noOpenCodeCapabilities": "Per questa sessione non sono disponibili funzionalità OpenCode richiamabili separatamente.",
   "kubecode.referenceFile": "Fai riferimento a un file",
   "kubecode.chooseFileReference": "Scegli un file del progetto da citare nel messaggio.",
   "kubecode.searchContext": "Cerca skill, comandi e file",

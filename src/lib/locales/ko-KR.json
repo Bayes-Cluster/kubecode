@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "스킬 및 명령",
   "kubecode.agentSettings": "에이전트 설정",
   "kubecode.noAgentSkillsCommands": "이 에이전트는 아직 스킬이나 명령을 제공하지 않았습니다.",
+  "kubecode.noOpenCodeCapabilities": "이 세션에서는 별도로 호출할 수 있는 OpenCode 기능을 사용할 수 없습니다.",
   "kubecode.referenceFile": "파일 참조",
   "kubecode.chooseFileReference": "메시지에서 참조할 프로젝트 파일을 선택하세요.",
   "kubecode.searchContext": "스킬, 명령 및 파일 검색",

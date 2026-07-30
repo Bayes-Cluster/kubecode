@@ -789,6 +789,11 @@ export function AgentSessionWorkspace({
     sessionState,
     sideQuestionAvailable ? t('kubecode.btwDescription') : null,
   )
+  const openCodeCapabilityEmptyLabel = conversation.agent_id === 'opencode'
+    && sessionState?.composer?.catalog
+    && !sessionState.composer.catalog.items.some((item) => item.kind !== 'command')
+    ? t('kubecode.noOpenCodeCapabilities')
+    : undefined
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
@@ -1305,6 +1310,7 @@ export function AgentSessionWorkspace({
               leadingControl={projectId && !directTeammateChatDisabled ? (
                 <ComposerAddMenu
                   api={api}
+                  capabilityEmptyLabel={openCodeCapabilityEmptyLabel}
                   commands={commands}
                   conversationId={conversation.id}
                   onInsert={insertComposerText}

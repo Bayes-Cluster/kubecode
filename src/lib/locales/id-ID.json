@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Skill dan perintah",
   "kubecode.agentSettings": "Pengaturan Agent",
   "kubecode.noAgentSkillsCommands": "Agent ini belum menyediakan skill atau perintah apa pun.",
+  "kubecode.noOpenCodeCapabilities": "Tidak ada kemampuan OpenCode yang dapat dipanggil secara terpisah untuk sesi ini.",
   "kubecode.referenceFile": "Referensikan file",
   "kubecode.chooseFileReference": "Pilih file proyek untuk direferensikan dalam pesan Anda.",
   "kubecode.searchContext": "Cari skill, perintah, dan file",

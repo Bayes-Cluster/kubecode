@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Färdigheter och kommandon",
   "kubecode.agentSettings": "Agentinställningar",
   "kubecode.noAgentSkillsCommands": "Den här agenten har inte exponerat några färdigheter eller kommandon ännu.",
+  "kubecode.noOpenCodeCapabilities": "Inga OpenCode-funktioner som kan anropas separat är tillgängliga för den här sessionen.",
   "kubecode.referenceFile": "Referera till fil",
   "kubecode.chooseFileReference": "Välj en projektfil att referera till i meddelandet.",
   "kubecode.searchContext": "Sök färdigheter, kommandon och filer",

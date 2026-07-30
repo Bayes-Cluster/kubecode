@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Навыки и команды",
   "kubecode.agentSettings": "Настройки агента",
   "kubecode.noAgentSkillsCommands": "Этот агент пока не предоставил навыки или команды.",
+  "kubecode.noOpenCodeCapabilities": "Для этой сессии нет отдельно вызываемых возможностей OpenCode.",
   "kubecode.referenceFile": "Сослаться на файл",
   "kubecode.chooseFileReference": "Выберите файл проекта, на который нужно сослаться в сообщении.",
   "kubecode.searchContext": "Поиск навыков, команд и файлов",

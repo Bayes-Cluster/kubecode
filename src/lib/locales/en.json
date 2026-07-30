@@ -1105,6 +1105,7 @@
   "kubecode.agentSkillsCommands": "Skills and commands",
   "kubecode.agentSettings": "Agent settings",
   "kubecode.noAgentSkillsCommands": "This Agent has not exposed any skills or commands yet.",
+  "kubecode.noOpenCodeCapabilities": "No separately invocable OpenCode capabilities are available for this Session.",
   "kubecode.referenceFile": "Reference file",
   "kubecode.chooseFileReference": "Choose a project file to reference in your message.",
   "kubecode.searchContext": "Search skills, commands, and files",

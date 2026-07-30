@@ -1147,6 +1147,7 @@
   "kubecode.agentSkillsCommands": "Zručnosti a príkazy",
   "kubecode.agentSettings": "Nastavenia agenta",
   "kubecode.noAgentSkillsCommands": "Tento agent zatiaľ neposkytol žiadne zručnosti ani príkazy.",
+  "kubecode.noOpenCodeCapabilities": "Pre túto reláciu nie sú k dispozícii žiadne samostatne vyvolateľné funkcie OpenCode.",
   "kubecode.referenceFile": "Odkázať na súbor",
   "kubecode.chooseFileReference": "Vyberte súbor projektu, na ktorý chcete odkázať v správe.",
   "kubecode.searchContext": "Hľadať zručnosti, príkazy a súbory",
