@@ -11,12 +11,12 @@ use uuid::Uuid;
 
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextRecord,
-    ComposerContextRegistration, ComposerContextSelector, ComposerContextValidationResponse,
-    ComposerContextValidationResult, ComposerDraftSegment, ComposerInvocation,
-    ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES, context_kind_key,
-    opaque_context_id, parse_context_kind, project_acp_catalog_with_contexts,
-    project_available_commands, resolve_composer_catalog_dispatch,
-    validate_structured_composer_segments,
+    ComposerContextRegistration, ComposerContextSelector, ComposerContextSummary,
+    ComposerContextValidationResponse, ComposerContextValidationResult, ComposerDraftSegment,
+    ComposerInvocation, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES,
+    context_kind_key, opaque_context_id, opaque_git_diff_context_id, parse_context_kind,
+    project_acp_catalog_with_contexts, project_available_commands,
+    resolve_composer_catalog_dispatch, validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
 
@@ -392,6 +392,8 @@ impl AgentStore {
             "composer_catalog_revision",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        ensure_column(&connection, "composer_contexts", "source_revision", "TEXT")?;
+        ensure_column(&connection, "composer_contexts", "metadata", "TEXT")?;
         backfill_catalog_revision_high_water(&connection)?;
         backfill_catalog_snapshots(&connection)?;
         connection.execute(
@@ -1892,19 +1894,82 @@ impl AgentStore {
         {
             return Err(ComposerCatalogError::InvalidDraft.into());
         }
+        let id = opaque_context_id(project_id, conversation_id, kind, normalized_relative_path);
+        self.register_composer_context_record(
+            conversation_id,
+            project_id,
+            kind,
+            normalized_relative_path,
+            id,
+            None,
+            None,
+            false,
+        )
+    }
+
+    pub fn register_composer_git_diff_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        selector: &str,
+        source_revision: &str,
+        summary: ComposerContextSummary,
+    ) -> Result<ComposerContextRegistration, StoreError> {
+        if selector.is_empty() || source_revision.len() != 64 {
+            return Err(ComposerCatalogError::InvalidDraft.into());
+        }
+        let id = opaque_git_diff_context_id(project_id, conversation_id, selector, source_revision);
+        self.register_composer_context_record(
+            conversation_id,
+            project_id,
+            ComposerContextKind::GitDiff,
+            selector,
+            id,
+            Some(source_revision),
+            Some(summary),
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn register_composer_context_record(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        kind: ComposerContextKind,
+        normalized_relative_path: &str,
+        id: String,
+        source_revision: Option<&str>,
+        summary: Option<ComposerContextSummary>,
+        replace_selector: bool,
+    ) -> Result<ComposerContextRegistration, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
         if conversation_project != project_id {
             return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
         }
-        let id = opaque_context_id(project_id, conversation_id, kind, normalized_relative_path);
+        if replace_selector {
+            transaction.execute(
+                "DELETE FROM composer_contexts
+                 WHERE conversation_id = ?1 AND kind = ?2 AND relative_path = ?3
+                   AND opaque_id <> ?4",
+                params![
+                    conversation_id,
+                    context_kind_key(kind),
+                    normalized_relative_path,
+                    id
+                ],
+            )?;
+        }
         let existing = context_record_transaction(&transaction, conversation_id, &id)?;
         if let Some(existing) = &existing {
             if existing.project_id != project_id
                 || existing.conversation_id != conversation_id
                 || existing.kind != kind
                 || existing.path != normalized_relative_path
+                || existing.source_revision.as_deref() != source_revision
+                || existing.summary != summary
             {
                 return Err(StoreError::InvalidStoredValue(
                     "composer context identity tuple mismatch".into(),
@@ -1912,9 +1977,15 @@ impl AgentStore {
             }
             transaction.execute(
                 "UPDATE composer_contexts
-                 SET available = 1, updated_at = CURRENT_TIMESTAMP
+                 SET available = 1, source_revision = ?3, metadata = ?4,
+                     updated_at = CURRENT_TIMESTAMP
                  WHERE conversation_id = ?1 AND opaque_id = ?2",
-                params![conversation_id, id],
+                params![
+                    conversation_id,
+                    id,
+                    source_revision,
+                    summary.as_ref().map(serde_json::to_string).transpose()?,
+                ],
             )?;
         } else {
             let count = transaction.query_row(
@@ -1927,14 +1998,17 @@ impl AgentStore {
             }
             transaction.execute(
                 "INSERT INTO composer_contexts
-                 (conversation_id, opaque_id, project_id, kind, relative_path, available)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+                 (conversation_id, opaque_id, project_id, kind, relative_path, available,
+                  source_revision, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
                 params![
                     conversation_id,
                     id,
                     project_id,
                     context_kind_key(kind),
                     normalized_relative_path,
+                    source_revision,
+                    summary.as_ref().map(serde_json::to_string).transpose()?,
                 ],
             )?;
         }
@@ -2194,8 +2268,21 @@ impl AgentStore {
                     {
                         return Err(ComposerCatalogError::ContextStale.into());
                     }
-                    resolved.push('@');
-                    resolved.push_str(&record.path);
+                    match (&record.kind, &preflight.content) {
+                        (ComposerContextKind::GitDiff, Some(content)) => {
+                            resolved.push_str("\n[Git diff context from Kubecode]\n```diff\n");
+                            resolved.push_str(content);
+                            if !content.ends_with('\n') {
+                                resolved.push('\n');
+                            }
+                            resolved.push_str("```\n");
+                        }
+                        (ComposerContextKind::File | ComposerContextKind::Directory, None) => {
+                            resolved.push('@');
+                            resolved.push_str(&record.path);
+                        }
+                        _ => return Err(ComposerCatalogError::ContextStale.into()),
+                    }
                 }
                 ComposerDraftSegment::CapabilityRef {
                     id,
@@ -2736,7 +2823,7 @@ fn context_record_connection(
 ) -> Result<Option<ComposerContextRecord>, StoreError> {
     let stored = database
         .query_row(
-            "SELECT project_id, kind, relative_path, available
+            "SELECT project_id, kind, relative_path, available, source_revision, metadata
              FROM composer_contexts
              WHERE conversation_id = ?1 AND opaque_id = ?2",
             params![conversation_id, opaque_id],
@@ -2746,24 +2833,33 @@ fn context_record_connection(
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, bool>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             },
         )
         .optional()?;
     stored
-        .map(|(project_id, kind, path, available)| {
-            let kind = parse_context_kind(&kind).ok_or_else(|| {
-                StoreError::InvalidStoredValue("unknown composer context kind".into())
-            })?;
-            Ok(ComposerContextRecord {
-                id: opaque_id.to_owned(),
-                project_id,
-                conversation_id: conversation_id.to_owned(),
-                kind,
-                path,
-                available,
-            })
-        })
+        .map(
+            |(project_id, kind, path, available, source_revision, metadata)| {
+                let kind = parse_context_kind(&kind).ok_or_else(|| {
+                    StoreError::InvalidStoredValue("unknown composer context kind".into())
+                })?;
+                let summary = metadata
+                    .map(|metadata| serde_json::from_str::<ComposerContextSummary>(&metadata))
+                    .transpose()?;
+                Ok(ComposerContextRecord {
+                    id: opaque_id.to_owned(),
+                    project_id,
+                    conversation_id: conversation_id.to_owned(),
+                    kind,
+                    path,
+                    available,
+                    source_revision,
+                    summary,
+                })
+            },
+        )
         .transpose()
 }
 
@@ -2780,7 +2876,7 @@ fn composer_contexts_transaction(
     conversation_id: &str,
 ) -> Result<Vec<crate::composer_catalog::ComposerContextMeta>, StoreError> {
     let mut statement = transaction.prepare(
-        "SELECT opaque_id, project_id, kind, relative_path, available
+        "SELECT opaque_id, project_id, kind, relative_path, available, source_revision, metadata
          FROM composer_contexts WHERE conversation_id = ?1
          ORDER BY relative_path, kind, opaque_id",
     )?;
@@ -2792,24 +2888,33 @@ fn composer_contexts_transaction(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, bool>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter()
-        .map(|(id, project_id, kind, path, available)| {
-            let kind = parse_context_kind(&kind).ok_or_else(|| {
-                StoreError::InvalidStoredValue("unknown composer context kind".into())
-            })?;
-            Ok(ComposerContextRecord {
-                id,
-                project_id,
-                conversation_id: conversation_id.to_owned(),
-                kind,
-                path,
-                available,
-            }
-            .safe_meta())
-        })
+        .map(
+            |(id, project_id, kind, path, available, source_revision, metadata)| {
+                let kind = parse_context_kind(&kind).ok_or_else(|| {
+                    StoreError::InvalidStoredValue("unknown composer context kind".into())
+                })?;
+                let summary = metadata
+                    .map(|metadata| serde_json::from_str::<ComposerContextSummary>(&metadata))
+                    .transpose()?;
+                Ok(ComposerContextRecord {
+                    id,
+                    project_id,
+                    conversation_id: conversation_id.to_owned(),
+                    kind,
+                    path,
+                    available,
+                    source_revision,
+                    summary,
+                }
+                .safe_meta())
+            },
+        )
         .collect()
 }
 

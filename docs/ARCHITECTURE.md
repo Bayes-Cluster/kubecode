@@ -41,7 +41,8 @@ The Axum server composes eight services:
 - `AgentCatalog` owns the process-wide, dynamically refreshable CLI and ACP
   adapter readiness snapshot shared by Agent Sessions, Teams, and TUI terminals.
 - `TerminalManager` owns reconnectable PTYs independently of browser sockets.
-- `GitService` performs Project-scoped Git operations without shell interpolation.
+- `GitService` performs Project- and Session-scoped Git operations without shell
+  interpolation, including bounded Composer diff discovery and resolution.
 - `TeamStore` persists Team authority, membership, tasks, and mailboxes.
 - `TeamCoordinator` creates teammate Agent Sessions and applies Team scheduling rules.
 
@@ -251,8 +252,10 @@ catalog, and a conversation-scoped full-snapshot workspace event. `POST
 transitional exact-name selector or an opaque item ID with its catalog revision;
 the typed path validates and creates its internal run in one store transaction,
 then dispatches only the server-resolved prompt. Unknown slash text remains an
-ordinary prompt. File and directory chips are registered and batch-validated
-through Session-scoped Composer context endpoints. Structured run requests carry
+ordinary prompt. File, directory, and Git diff chips are registered and
+batch-validated through Session-scoped Composer context endpoints. Git diff
+discovery uses `GET /sessions/{conversation_id}/composer/git-diffs`; registration
+submits a selector and patch revision, never patch content. Structured run requests carry
 only ordered text plus opaque context/capability coordinates; filesystem
 eligibility is preflighted through `WorkspaceService`, then database-owned
 authorization, historical selection proof, current-catalog proof, availability,
@@ -265,7 +268,14 @@ reconciliation compares the retained snapshot with durable Session context
 identities inside the same transaction and, when they differ, emits one new full
 snapshot above that high-water mark. Structured request bounds are checked before
 `WorkspaceService` resolves the exact Shared or Session-owned worktree execution
-root, including for drafts with no context references. Safe snapshots are bounded across standard
+root, including for drafts with no context references. Git references are
+regenerated at that root immediately before the transaction and must retain the
+exact patch digest selected by the browser. Only then is the bounded patch added
+to the private provider prompt; catalog snapshots and workspace events expose
+numeric summaries but no patch content. Complete diffs are capped at 32 files,
+128 hunks, and 64 KiB, while selected files are capped at 64 hunks and 32 KiB;
+binary, generated, unsupported, and over-limit choices fail closed with stable
+Composer errors rather than truncation. Safe snapshots are bounded across standard
 ACP and trusted-adapter sources; invalid identities are omitted, and unsupported
 trusted command shapes stay disabled rather than falling through to ACP name
 resolution.

@@ -2827,7 +2827,9 @@
   margin: 0 auto;
   max-width: var(--chat-content-max);
   padding: 0 10px 10px;
+  position: relative;
   width: 100%;
+  z-index: 10;
 }
 .kubecode-session-composer {
   max-width: none;

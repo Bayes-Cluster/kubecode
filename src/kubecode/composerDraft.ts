@@ -1,11 +1,12 @@
 import type {
   ComposerCatalogSnapshot,
+  ComposerGitDiffSummary,
   ComposerContextValidationResponse,
   ComposerItemKind,
   StructuredComposerSegment,
 } from './api'
 
-export type ComposerContextKind = 'file' | 'directory'
+export type ComposerContextKind = 'file' | 'directory' | 'git_diff'
 export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
 export type ComposerCapabilityItemKind = Exclude<ComposerItemKind, 'command'>
 
@@ -16,6 +17,7 @@ export type ComposerContextReference = {
   name: string
   path: string
   availability: 'available' | 'stale'
+  summary?: ComposerGitDiffSummary
 }
 
 export type ComposerCapabilityReference = {
@@ -62,6 +64,7 @@ export function createComposerContextReference({
   kind,
   name,
   path,
+  summary,
 }: Omit<ComposerContextReference, 'availability'> & {
   availability?: ComposerContextReference['availability']
 }): ComposerContextReference {
@@ -69,7 +72,10 @@ export function createComposerContextReference({
   if (!Number.isSafeInteger(catalogRevision) || catalogRevision <= 0) {
     throw new Error('Composer contexts require a positive catalog revision')
   }
-  return { availability, catalogRevision, id, kind, name, path }
+  if (!isComposerContextSummary(kind, summary)) {
+    throw new Error('Composer context summary does not match its kind')
+  }
+  return { availability, catalogRevision, id, kind, name, path, summary }
 }
 
 function isOpaqueId(value: unknown): value is string {
@@ -85,12 +91,26 @@ function isContextReference(value: unknown): value is ComposerContextReference {
   const reference = value as Partial<ComposerContextReference>
   return isOpaqueId(reference.id)
     && isCatalogRevision(reference.catalogRevision)
-    && (reference.kind === 'file' || reference.kind === 'directory')
+    && (reference.kind === 'file' || reference.kind === 'directory' || reference.kind === 'git_diff')
     && typeof reference.name === 'string'
     && reference.name.length > 0
     && typeof reference.path === 'string'
     && isProjectRelativePath(reference.path)
+    && isComposerContextSummary(reference.kind, reference.summary)
     && (reference.availability === 'available' || reference.availability === 'stale')
+}
+
+function isComposerContextSummary(
+  kind: ComposerContextKind | undefined,
+  summary: unknown,
+): summary is ComposerGitDiffSummary | undefined {
+  if (kind !== 'git_diff') return summary === undefined
+  if (!summary || typeof summary !== 'object') return false
+  const candidate = summary as Partial<ComposerGitDiffSummary>
+  return candidate.kind === 'git_diff'
+    && (candidate.scope === 'all' || candidate.scope === 'file')
+    && [candidate.file_count, candidate.hunk_count, candidate.byte_count]
+      .every((value) => Number.isSafeInteger(value) && (value ?? -1) >= 0)
 }
 
 function isCapabilityReference(value: unknown): value is ComposerCapabilityReference {

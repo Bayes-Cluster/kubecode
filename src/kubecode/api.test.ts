@@ -155,6 +155,33 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('discovers and registers versioned Git diff context without sending diff content', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/workspace')
+    const revision = 'a'.repeat(64)
+
+    await api.listComposerGitDiffs('session/id')
+    await api.registerComposerContext('session/id', {
+      kind: 'git_diff', path: '.', source_revision: revision,
+    })
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/workspace/api/v1/sessions/session%2Fid/composer/git-diffs',
+      expect.not.objectContaining({ body: expect.anything() }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/workspace/api/v1/sessions/session%2Fid/composer/contexts',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'git_diff', path: '.', source_revision: revision }),
+        method: 'POST',
+      }),
+    )
+    expect(JSON.stringify(fetch.mock.calls)).not.toContain('diff --git')
+  })
+
   it('dispatches an advertised ACP command through the dedicated endpoint', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'run-1' })))
     vi.stubGlobal('fetch', fetch)

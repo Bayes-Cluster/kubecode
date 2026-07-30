@@ -353,6 +353,89 @@ describe('AgentSessionWorkspace', () => {
     expect(JSON.stringify(insertionEvent)).not.toContain('cap:')
   })
 
+  it('submits a Git diff chip without putting filenames or revisions in analytics', async () => {
+    const sourceRevision = 'a'.repeat(64)
+    const catalog = {
+      conversation_id: 'session-1', revision: 7, items: [],
+      contexts: [{
+        id: 'ctx:git:revision', kind: 'git_diff' as const, display: 'src/private.ts',
+        enabled: true, disabled_reason: null,
+        summary: {
+          kind: 'git_diff' as const, scope: 'file' as const,
+          file_count: 1, hunk_count: 2, byte_count: 512,
+        },
+      }],
+    }
+    const startStructuredRun = vi.fn().mockResolvedValue({
+      ...run, id: 'git-run', message: '@src/private.ts', status: 'running',
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        composer: { catalog: { conversation_id: 'session-1', revision: 0, items: [], contexts: [] } },
+      }),
+      listComposerGitDiffs: vi.fn().mockResolvedValue({
+        is_repository: true,
+        candidates: [{
+          path: 'src/private.ts', source_revision: sourceRevision, file_count: 1,
+          hunk_count: 2, byte_count: 512, enabled: true, disabled_reason: null,
+        }],
+      }),
+      registerComposerContext: vi.fn().mockResolvedValue({
+        context: catalog.contexts[0], catalog,
+      }),
+      startStructuredRun,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference Git changes/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /private\.ts/i }))
+    expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-kind',
+      'git_diff',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send composer' }))
+
+    await waitFor(() => expect(startStructuredRun).toHaveBeenCalledWith(
+      'project-1',
+      'session-1',
+      {
+        catalog_revision: 7,
+        segments: [
+          {
+            kind: 'context_ref', id: 'ctx:git:revision', catalog_revision: 7,
+            context_kind: 'git_diff',
+          },
+          { kind: 'text', text: ' ' },
+        ],
+      },
+    ))
+    const insertionEvent = vi.mocked(trackEvent).mock.calls.find(([name, properties]) => (
+      name === 'kubecode_agent_context_inserted'
+        && properties?.kind === 'git_diff'
+    ))
+    expect(insertionEvent).toEqual([
+      'kubecode_agent_context_inserted',
+      { agent_id: 'codex', kind: 'git_diff' },
+    ])
+    expect(JSON.stringify(insertionEvent)).not.toContain('private.ts')
+    expect(JSON.stringify(insertionEvent)).not.toContain(sourceRevision)
+  })
+
   it('publishes only the active writable Session to the global palette and revalidates selections', async () => {
     const catalog = {
       conversation_id: 'session-1', revision: 11, contexts: [],

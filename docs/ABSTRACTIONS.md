@@ -372,8 +372,23 @@ File and directory context search uses a Session-scoped adapter over
 from the Session, accepts only relative directory queries, and mints an opaque
 context ID only after resolving the selected relative path again. The general
 Project-root picker remains shared by quick open and file creation but is not
-the Composer authority. A draft with no references is exactly today's
-plain-text prompt.
+the Composer authority. Git diff context uses the same Session execution root
+through `GitService`. Discovery offers either the complete current worktree diff
+or one changed file; the complete option is disabled, with an explicit reason,
+when it crosses 32 files, 128 hunks, or 64 KiB, or contains a binary, generated,
+or otherwise unsupported file. A selected file is independently capped at 64
+hunks and 32 KiB. The server never silently truncates an eligible reference and
+keeps disabled per-file choices visible so the user can select a bounded file
+when the complete diff is ineligible.
+
+Git context identity includes a digest of the exact patch. The durable catalog
+stores only that digest, the safe selector, and numeric file/hunk/byte summary;
+patch content is neither persisted nor returned to the browser. Immediately
+before run creation, the Runtime regenerates the patch through `GitService`,
+requires the identity to match, and injects the bounded content privately into
+the provider prompt. Any intervening edit, missing repository, ownership
+change, or no-longer-eligible patch makes the chip stale and blocks dispatch.
+A draft with no references is exactly today's plain-text prompt.
 
 ## Project path picker
 

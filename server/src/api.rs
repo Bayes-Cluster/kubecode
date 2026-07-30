@@ -28,7 +28,8 @@ use crate::agents::{
 };
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextSelector,
-    ComposerDraftSegment, ComposerPreflightContext, MAX_COMPOSER_VALIDATION_ROWS,
+    ComposerContextSummary, ComposerDraftSegment, ComposerGitDiffScope, ComposerPreflightContext,
+    MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id,
 };
 use crate::git::{GitError, GitMutation, GitService};
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
@@ -530,6 +531,10 @@ fn client_api_router(state: AppState) -> Router {
         .route(
             "/sessions/{conversation_id}/composer/contexts",
             axum::routing::post(register_composer_context),
+        )
+        .route(
+            "/sessions/{conversation_id}/composer/git-diffs",
+            get(list_composer_git_diffs),
         )
         .route(
             "/sessions/{conversation_id}/composer/contexts/validate",
@@ -2318,6 +2323,8 @@ async fn list_session_entries(
 struct RegisterComposerContextRequest {
     kind: ComposerContextKind,
     path: String,
+    #[serde(default)]
+    source_revision: Option<String>,
 }
 
 async fn register_composer_context(
@@ -2327,44 +2334,99 @@ async fn register_composer_context(
 ) -> Result<impl IntoResponse, ApiError> {
     let store = state.agent_runtime.store();
     let conversation = store.get_conversation(&conversation_id)?;
-    let expected_kind = workspace_kind(request.kind)?;
-    let workspace = Arc::clone(&state.workspace);
-    let project_id = conversation.project_id.clone();
-    let agent_session_id = conversation.agent_session_id.clone();
-    let workspace_path = conversation.workspace_path.clone();
-    let path = request.path;
-    let resolved = run_workspace_operation(move || {
-        workspace.resolve_session_context_entry(
-            &project_id,
-            &agent_session_id,
-            conversation.execution_mode,
-            workspace_path.as_deref(),
-            &path,
-            expected_kind,
-        )
-    })
-    .await
-    .map_err(|error| match error {
-        ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id)) => {
-            ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id))
+    let registration = match request.kind {
+        ComposerContextKind::File | ComposerContextKind::Directory => {
+            if request.source_revision.is_some() {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
+            let expected_kind = workspace_kind(request.kind)?;
+            let workspace = Arc::clone(&state.workspace);
+            let project_id = conversation.project_id.clone();
+            let agent_session_id = conversation.agent_session_id.clone();
+            let workspace_path = conversation.workspace_path.clone();
+            let path = request.path;
+            let resolved = run_workspace_operation(move || {
+                workspace.resolve_session_context_entry(
+                    &project_id,
+                    &agent_session_id,
+                    conversation.execution_mode,
+                    workspace_path.as_deref(),
+                    &path,
+                    expected_kind,
+                )
+            })
+            .await
+            .map_err(map_composer_workspace_error)?;
+            store.register_composer_context(
+                &conversation.id,
+                &conversation.project_id,
+                request.kind,
+                &resolved.path,
+            )?
         }
-        ApiError::Workspace(error @ WorkspaceError::IneligibleContext(_)) => {
-            ApiError::ComposerContextOutsideProject(error.to_string())
+        ComposerContextKind::GitDiff => {
+            let source_revision = request
+                .source_revision
+                .ok_or(ComposerCatalogError::InvalidDraft)?;
+            let path = (request.path != ".").then_some(request.path.as_str());
+            let snapshot = state
+                .git
+                .resolve_composer_diff(
+                    &conversation.project_id,
+                    &conversation.agent_session_id,
+                    conversation.execution_mode,
+                    conversation.workspace_path.as_deref(),
+                    path,
+                )
+                .await
+                .map_err(map_composer_git_error)?;
+            if snapshot.source_revision != source_revision {
+                return Err(ComposerCatalogError::ContextStale.into());
+            }
+            let selector = snapshot.path.as_deref().unwrap_or(".");
+            let summary = ComposerContextSummary::GitDiff {
+                scope: if snapshot.path.is_some() {
+                    ComposerGitDiffScope::File
+                } else {
+                    ComposerGitDiffScope::All
+                },
+                file_count: snapshot.file_count,
+                hunk_count: snapshot.hunk_count,
+                byte_count: snapshot.byte_count,
+            };
+            store.register_composer_git_diff_context(
+                &conversation.id,
+                &conversation.project_id,
+                selector,
+                &snapshot.source_revision,
+                summary,
+            )?
         }
-        ApiError::Workspace(WorkspaceError::Io(error))
-            if error.kind() == std::io::ErrorKind::NotFound =>
-        {
-            ApiError::ComposerContextOutsideProject(error.to_string())
-        }
-        other => other,
-    })?;
-    let registration = store.register_composer_context(
-        &conversation.id,
-        &conversation.project_id,
-        request.kind,
-        &resolved.path,
-    )?;
+        _ => return Err(ComposerCatalogError::ItemUnsupported.into()),
+    };
     Ok((StatusCode::CREATED, Json(registration)))
+}
+
+async fn list_composer_git_diffs(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)?;
+    Ok(Json(
+        state
+            .git
+            .composer_diff_candidates(
+                &conversation.project_id,
+                &conversation.agent_session_id,
+                conversation.execution_mode,
+                conversation.workspace_path.as_deref(),
+            )
+            .await
+            .map_err(map_composer_git_error)?,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -2398,53 +2460,85 @@ async fn validate_composer_contexts(
         &conversation.project_id,
         &request.references,
     )?;
-    let workspace = Arc::clone(&state.workspace);
-    let project_id = conversation.project_id.clone();
-    let agent_session_id = conversation.agent_session_id.clone();
-    let execution_mode = conversation.execution_mode;
-    let workspace_path = conversation.workspace_path.clone();
-    let selectors = request.references.clone();
-    let preflight = run_workspace_operation(move || {
-        selectors
-            .iter()
-            .zip(records)
-            .map(|(selector, record)| {
-                let Some(record) = record else {
-                    return Ok(None);
-                };
-                if record.kind != selector.context_kind {
-                    return Ok(None);
-                }
-                let expected_kind = match record.kind {
-                    ComposerContextKind::File => EntryKind::File,
-                    ComposerContextKind::Directory => EntryKind::Directory,
-                    _ => return Ok(None),
-                };
-                match workspace.resolve_session_context_entry(
-                    &project_id,
-                    &agent_session_id,
-                    execution_mode,
-                    workspace_path.as_deref(),
-                    &record.path,
-                    expected_kind,
-                ) {
-                    Ok(resolved) => Ok(Some(ComposerPreflightContext {
+    let mut preflight = Vec::with_capacity(records.len());
+    for (selector, record) in request.references.iter().zip(records) {
+        let Some(record) = record else {
+            preflight.push(None);
+            continue;
+        };
+        if record.kind != selector.context_kind {
+            preflight.push(None);
+            continue;
+        }
+        match record.kind {
+            ComposerContextKind::File | ComposerContextKind::Directory => {
+                let workspace = Arc::clone(&state.workspace);
+                let project_id = conversation.project_id.clone();
+                let agent_session_id = conversation.agent_session_id.clone();
+                let workspace_path = conversation.workspace_path.clone();
+                let path = record.path.clone();
+                let expected_kind = workspace_kind(record.kind)?;
+                let resolved = run_workspace_operation(move || {
+                    workspace.resolve_session_context_entry(
+                        &project_id,
+                        &agent_session_id,
+                        conversation.execution_mode,
+                        workspace_path.as_deref(),
+                        &path,
+                        expected_kind,
+                    )
+                })
+                .await;
+                match resolved {
+                    Ok(resolved) => preflight.push(Some(ComposerPreflightContext {
                         id: record.id,
                         kind: record.kind,
                         path: resolved.path,
+                        content: None,
                     })),
-                    Err(WorkspaceError::IneligibleContext(_)) => Ok(None),
-                    Err(WorkspaceError::Io(error))
+                    Err(ApiError::Workspace(WorkspaceError::IneligibleContext(_))) => {
+                        preflight.push(None)
+                    }
+                    Err(ApiError::Workspace(WorkspaceError::Io(error)))
                         if error.kind() == std::io::ErrorKind::NotFound =>
                     {
-                        Ok(None)
+                        preflight.push(None)
                     }
-                    Err(error) => Err(error),
+                    Err(error) => return Err(error),
                 }
-            })
-            .collect::<Result<Vec<_>, WorkspaceError>>()
-    })
-    .await?;
+            }
+            ComposerContextKind::GitDiff => {
+                let path = (record.path != ".").then_some(record.path.as_str());
+                let snapshot = state
+                    .git
+                    .resolve_composer_diff(
+                        &conversation.project_id,
+                        &conversation.agent_session_id,
+                        conversation.execution_mode,
+                        conversation.workspace_path.as_deref(),
+                        path,
+                    )
+                    .await;
+                let available = snapshot.ok().filter(|snapshot| {
+                    record.source_revision.as_deref() == Some(snapshot.source_revision.as_str())
+                        && record.id
+                            == opaque_git_diff_context_id(
+                                &conversation.project_id,
+                                &conversation.id,
+                                &record.path,
+                                &snapshot.source_revision,
+                            )
+                });
+                preflight.push(available.map(|snapshot| ComposerPreflightContext {
+                    id: record.id,
+                    kind: record.kind,
+                    path: record.path,
+                    content: Some(snapshot.content),
+                }));
+            }
+            _ => preflight.push(None),
+        }
+    }
     Ok(Json(store.validate_composer_contexts(
         &conversation.id,
         &conversation.project_id,
@@ -2458,6 +2552,50 @@ fn workspace_kind(kind: ComposerContextKind) -> Result<EntryKind, ApiError> {
         ComposerContextKind::File => Ok(EntryKind::File),
         ComposerContextKind::Directory => Ok(EntryKind::Directory),
         _ => Err(ComposerCatalogError::ItemUnsupported.into()),
+    }
+}
+
+fn map_composer_workspace_error(error: ApiError) -> ApiError {
+    match error {
+        ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id)) => {
+            ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id))
+        }
+        ApiError::Workspace(error @ WorkspaceError::IneligibleContext(_)) => {
+            ApiError::ComposerContextOutsideProject(error.to_string())
+        }
+        ApiError::Workspace(WorkspaceError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            ApiError::ComposerContextOutsideProject(error.to_string())
+        }
+        other => other,
+    }
+}
+
+fn map_composer_git_error(error: GitError) -> ApiError {
+    match &error {
+        GitError::Command(reason)
+            if matches!(
+                reason.as_str(),
+                "git_diff_too_large" | "git_diff_too_many_hunks" | "git_diff_too_many_files"
+            ) =>
+        {
+            ComposerCatalogError::ContextOverLimit.into()
+        }
+        GitError::Command(reason)
+            if matches!(
+                reason.as_str(),
+                "git_diff_binary" | "git_diff_generated" | "git_diff_contains_unsupported"
+            ) =>
+        {
+            ComposerCatalogError::ItemUnsupported.into()
+        }
+        GitError::InvalidPath(_) | GitError::Command(_) => {
+            ComposerCatalogError::ContextStale.into()
+        }
+        GitError::Workspace(_) | GitError::Io(_) | GitError::EmptyMessage => {
+            ComposerCatalogError::ContextStale.into()
+        }
     }
 }
 

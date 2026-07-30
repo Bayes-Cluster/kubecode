@@ -62,6 +62,11 @@ function Harness({
       contextLoadingLabel="Loading context"
       contextPickerLabel="Add context"
       contextRemoveLabel="Remove context"
+      gitDiffLabels={{
+        all: 'Current Git changes',
+        disabled: (reason) => reason ?? 'Unavailable',
+        summary: (candidate) => `${candidate.file_count} files · ${candidate.hunk_count} hunks · ${candidate.byte_count} bytes`,
+      }}
       conversationId={conversationId}
       disabled={false}
       draft={draft}
@@ -137,6 +142,7 @@ function restoredDraft(kind: 'file' | 'directory' = 'file'): ComposerDraft {
 function composerApi(overrides: Partial<KubecodeApi> = {}): KubecodeApi {
   return {
     listSessionEntries: vi.fn().mockResolvedValue([]),
+    listComposerGitDiffs: vi.fn().mockResolvedValue({ is_repository: false, candidates: [] }),
     registerComposerContext: vi.fn().mockImplementation((_conversationId, request) => Promise.resolve({
       context: {
         id: `ctx:${request.kind}:${request.path.replaceAll('/', ':')}`,
@@ -166,6 +172,62 @@ function composerApi(overrides: Partial<KubecodeApi> = {}): KubecodeApi {
 }
 
 describe('ComposerContextInput', () => {
+  it('selects a bounded Git diff by opaque revision and skips disabled diff rows', async () => {
+    let latestDraft = textComposerDraft('@')
+    const listComposerGitDiffs = vi.fn().mockResolvedValue({
+      is_repository: true,
+      candidates: [
+        {
+          path: null, source_revision: 'a'.repeat(64), file_count: 3, hunk_count: 8,
+          byte_count: 4096, enabled: false, disabled_reason: 'git_diff_contains_unsupported',
+        },
+        {
+          path: 'src/main.ts', source_revision: 'b'.repeat(64), file_count: 1, hunk_count: 2,
+          byte_count: 512, enabled: true, disabled_reason: null,
+        },
+      ],
+    })
+    const registerComposerContext = vi.fn().mockResolvedValue({
+      context: {
+        id: 'ctx:git:revision', kind: 'git_diff', display: 'src/main.ts', enabled: true,
+        disabled_reason: null,
+        summary: {
+          kind: 'git_diff', scope: 'file', file_count: 1, hunk_count: 2, byte_count: 512,
+        },
+      },
+      catalog: { conversation_id: 'session-1', revision: 12, items: [], contexts: [] },
+    })
+    render(
+      <Harness
+        api={composerApi({ listComposerGitDiffs, registerComposerContext })}
+        initial="@"
+        onDraftChange={(draft) => { latestDraft = draft }}
+      />,
+    )
+    const editor = screen.getByTestId('agent-input')
+    placeCaretAtEnd(editor)
+    const allChanges = await screen.findByRole('option', { name: /Current Git changes/i })
+    expect(allChanges).toBeDisabled()
+    const file = screen.getByRole('option', { name: /main\.ts/i })
+    expect(editor).toHaveAttribute('aria-activedescendant', file.id)
+    fireEvent.keyDown(editor, { key: 'Enter' })
+
+    expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute(
+      'data-context-kind',
+      'git_diff',
+    )
+    expect(registerComposerContext).toHaveBeenCalledWith('session-1', {
+      kind: 'git_diff',
+      path: 'src/main.ts',
+      source_revision: 'b'.repeat(64),
+    })
+    expect(composerDraftToStructuredSegments(latestDraft)).toContainEqual({
+      kind: 'context_ref', id: 'ctx:git:revision', catalog_revision: 12,
+      context_kind: 'git_diff',
+    })
+    expect(JSON.stringify(latestDraft)).not.toContain('diff --git')
+  })
+
   it('selects a ranked capability with opaque identity and collision provenance', async () => {
     let latestDraft = textComposerDraft('$rev')
     render(
@@ -295,12 +357,23 @@ describe('ComposerContextInput', () => {
       { kind: 'file', name: 'main.ts', path: 'src/main.ts' },
       { kind: 'directory', name: 'maps', path: 'src/maps' },
     ])
-    render(<Harness api={composerApi({ listSessionEntries })} />)
+    const listComposerGitDiffs = vi.fn().mockResolvedValue({
+      is_repository: true,
+      candidates: [{
+        path: 'src/main.ts', source_revision: 'b'.repeat(64), file_count: 1,
+        hunk_count: 2, byte_count: 512, enabled: true, disabled_reason: null,
+      }],
+    })
+    render(<Harness api={composerApi({ listSessionEntries, listComposerGitDiffs })} />)
     const editor = screen.getByTestId('agent-input')
     placeCaretAtEnd(editor)
 
-    expect(await screen.findByRole('option', { name: /main\.ts/i })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('option', { name: /main\.ts/i }))
+    await waitFor(() => expect(screen.getAllByRole('option', { name: /main\.ts/i })).toHaveLength(2))
+    const [file, gitDiff] = screen.getAllByRole('option', { name: /main\.ts/i })
+    expect(editor).toHaveAttribute('aria-activedescendant', file.id)
+    expect(file).toHaveAttribute('aria-selected', 'true')
+    expect(gitDiff).toHaveAttribute('aria-selected', 'false')
+    fireEvent.keyDown(editor, { key: 'Tab' })
 
     expect(await screen.findByTestId('composer-context-chip')).toHaveAttribute('data-context-kind', 'file')
     expect(screen.getByTestId('composer-context-chip')).toHaveAttribute('title', 'src/main.ts')

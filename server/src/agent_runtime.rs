@@ -35,8 +35,9 @@ use crate::agents::{
 };
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerContextSelector, ComposerDraftSegment, ComposerInvocation,
-    ComposerPreflightContext, validate_structured_composer_segments,
+    ComposerPreflightContext, opaque_git_diff_context_id, validate_structured_composer_segments,
 };
+use crate::git::GitService;
 use crate::teams::{TeamMemberStatus, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
@@ -194,6 +195,7 @@ pub struct AgentRuntimeStatus {
 #[derive(Clone)]
 pub struct AgentRuntime {
     workspace: Arc<WorkspaceService>,
+    git: GitService,
     store: Arc<AgentStore>,
     agents: Arc<AgentCatalog>,
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
@@ -327,8 +329,10 @@ impl AgentRuntime {
         store: Arc<AgentStore>,
         agents: Arc<AgentCatalog>,
     ) -> Self {
+        let git = GitService::new(Arc::clone(&workspace));
         Self {
             workspace,
+            git,
             store,
             agents,
             cancellations: Arc::new(Mutex::new(HashMap::new())),
@@ -849,6 +853,7 @@ impl AgentRuntime {
                 }
             })
             .collect::<Vec<_>>();
+        before_store();
         let records = self.store.composer_context_records_for_preflight(
             &conversation.id,
             &conversation.project_id,
@@ -862,34 +867,66 @@ impl AgentRuntime {
             }
             let expected_kind = match record.kind {
                 crate::composer_catalog::ComposerContextKind::File => {
-                    crate::workspace::EntryKind::File
+                    Some(crate::workspace::EntryKind::File)
                 }
                 crate::composer_catalog::ComposerContextKind::Directory => {
-                    crate::workspace::EntryKind::Directory
+                    Some(crate::workspace::EntryKind::Directory)
                 }
+                crate::composer_catalog::ComposerContextKind::GitDiff => None,
                 _ => return Err(StoreError::Composer(ComposerCatalogError::ItemUnsupported).into()),
             };
-            let resolved = match self.workspace.resolve_session_context_entry(
-                &conversation.project_id,
-                &conversation.agent_session_id,
-                conversation.execution_mode,
-                conversation.workspace_path.as_deref(),
-                &record.path,
-                expected_kind,
-            ) {
-                Ok(resolved) => resolved,
-                Err(error @ WorkspaceError::ProjectNotFound(_)) => return Err(error.into()),
-                Err(_) => {
+            if let Some(expected_kind) = expected_kind {
+                let resolved = match self.workspace.resolve_session_context_entry(
+                    &conversation.project_id,
+                    &conversation.agent_session_id,
+                    conversation.execution_mode,
+                    conversation.workspace_path.as_deref(),
+                    &record.path,
+                    expected_kind,
+                ) {
+                    Ok(resolved) => resolved,
+                    Err(error @ WorkspaceError::ProjectNotFound(_)) => return Err(error.into()),
+                    Err(_) => {
+                        return Err(StoreError::Composer(ComposerCatalogError::ContextStale).into());
+                    }
+                };
+                preflight.push(ComposerPreflightContext {
+                    id: record.id,
+                    kind: record.kind,
+                    path: resolved.path,
+                    content: None,
+                });
+            } else {
+                let path = (record.path != ".").then_some(record.path.as_str());
+                let snapshot = self
+                    .git
+                    .resolve_composer_diff_blocking(
+                        &conversation.project_id,
+                        &conversation.agent_session_id,
+                        conversation.execution_mode,
+                        conversation.workspace_path.as_deref(),
+                        path,
+                    )
+                    .map_err(|_| StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                let expected_id = opaque_git_diff_context_id(
+                    &conversation.project_id,
+                    &conversation.id,
+                    &record.path,
+                    &snapshot.source_revision,
+                );
+                if expected_id != record.id
+                    || record.source_revision.as_deref() != Some(snapshot.source_revision.as_str())
+                {
                     return Err(StoreError::Composer(ComposerCatalogError::ContextStale).into());
                 }
-            };
-            preflight.push(ComposerPreflightContext {
-                id: record.id,
-                kind: record.kind,
-                path: resolved.path,
-            });
+                preflight.push(ComposerPreflightContext {
+                    id: record.id,
+                    kind: record.kind,
+                    path: record.path,
+                    content: Some(snapshot.content),
+                });
+            }
         }
-        before_store();
         let dispatch = self.store.start_structured_composer_run_dispatch(
             &conversation.id,
             &conversation.project_id,

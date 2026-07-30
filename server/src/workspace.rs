@@ -1303,6 +1303,15 @@ fn entry_kind_rank(kind: &EntryKind) -> u8 {
     }
 }
 
+pub(crate) fn is_generated_relative_path(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .any(|component| match component {
+            Component::Normal(name) => is_generated_directory_name(&name.to_string_lossy()),
+            _ => false,
+        })
+}
+
 fn is_generated_directory_name(name: &str) -> bool {
     matches!(
         name,

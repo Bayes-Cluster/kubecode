@@ -5,7 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
-import { File, Folder, Lightning, WarningCircle, X } from '@phosphor-icons/react'
+import { File, Folder, GitDiff, Lightning, WarningCircle, X } from '@phosphor-icons/react'
 import type { CSSProperties } from 'react'
 import type { VaultEntry } from '../types'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
@@ -47,7 +47,9 @@ export function InlineWikilinkChipView({
     const stale = contextReference.availability !== 'available'
     const ContextIcon = contextReference.kind === 'directory'
       ? Folder
-      : contextReference.kind === 'capability' ? Lightning : File
+      : contextReference.kind === 'capability'
+        ? Lightning
+        : contextReference.kind === 'git_diff' ? GitDiff : File
     const capabilityTitle = contextReference.kind === 'capability'
       ? [contextReference.name, contextReference.sourceLabel, contextReference.scopeLabel]
         .filter(Boolean).join(' · ')
@@ -171,7 +173,10 @@ export function InlineContextSuggestionList({
       ) : suggestions.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground">{emptyLabel}</p>
       ) : suggestions.map((suggestion, index) => {
-        const Icon = suggestion.kind === 'directory' ? Folder : File
+        const Icon = suggestion.kind === 'directory'
+          ? Folder
+          : suggestion.kind === 'git_diff' ? GitDiff : File
+        const enabled = suggestion.enabled !== false
         return (
           <button
             id={`${id}-option-${index}`}
@@ -181,7 +186,8 @@ export function InlineContextSuggestionList({
               index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60',
             )}
             key={`${suggestion.kind}:${suggestion.path}`}
-            onClick={() => onSelect(index)}
+            disabled={!enabled}
+            onClick={() => enabled && onSelect(index)}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => onHover(index)}
             onPointerDown={(event) => event.pointerType === 'touch' && event.preventDefault()}
@@ -193,6 +199,12 @@ export function InlineContextSuggestionList({
               <span className="block truncate text-sm">{suggestion.name}</span>
               {suggestion.path !== suggestion.name && (
                 <span className="block truncate text-xs text-muted-foreground">{suggestion.path}</span>
+              )}
+              {enabled && suggestion.description && (
+                <span className="block truncate text-xs text-muted-foreground">{suggestion.description}</span>
+              )}
+              {!enabled && suggestion.disabledReason && (
+                <span className="block text-xs text-muted-foreground">{suggestion.disabledReason}</span>
               )}
             </span>
           </button>
