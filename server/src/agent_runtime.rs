@@ -4202,16 +4202,26 @@ mod tests {
         let session_events = store
             .session_events_after(&conversation.id, 0)
             .expect("session replay");
-        assert_eq!(session_events.len(), 1);
+        assert_eq!(session_events.len(), 2);
+        let command_event = session_events
+            .iter()
+            .find(|event| event.kind == "available_commands")
+            .expect("raw command snapshot");
         assert_eq!(
-            session_events[0].payload["availableCommands"][0]["name"],
+            command_event.payload["availableCommands"][0]["name"],
             "fresh"
         );
+        let catalog_event = session_events
+            .iter()
+            .find(|event| event.kind == "composer_catalog")
+            .expect("safe catalog snapshot");
+        assert_eq!(catalog_event.payload["items"][0]["name"], "fresh");
         let workspace_events = store
             .workspace_events_after(workspace_cursor)
             .expect("workspace replay");
-        assert_eq!(workspace_events.len(), 1);
-        assert_eq!(workspace_events[0].kind, "session_state");
+        assert_eq!(workspace_events.len(), 2);
+        assert_eq!(workspace_events[0].kind, "composer_catalog_snapshot");
+        assert_eq!(workspace_events[1].kind, "session_state");
     }
 
     #[test]
@@ -4292,11 +4302,17 @@ mod tests {
         let session_events = store
             .session_events_after(&conversation.id, 0)
             .expect("session replay");
-        assert_eq!(session_events.len(), 1);
-        assert_eq!(
-            session_events[0].payload["availableCommands"][0]["name"],
-            "old"
-        );
+        assert_eq!(session_events.len(), 2);
+        let command_event = session_events
+            .iter()
+            .find(|event| event.kind == "available_commands")
+            .expect("raw command snapshot");
+        assert_eq!(command_event.payload["availableCommands"][0]["name"], "old");
+        let catalog_event = session_events
+            .iter()
+            .find(|event| event.kind == "composer_catalog")
+            .expect("safe catalog snapshot");
+        assert_eq!(catalog_event.payload["items"][0]["name"], "old");
     }
 
     #[tokio::test]

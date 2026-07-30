@@ -948,20 +948,24 @@ fn idle_session_state_updates_publish_one_atomic_conversation_invalidation() {
     let session_events = store
         .session_events_after(&conversation.id, 0)
         .expect("session replay");
-    assert_eq!(session_events.len(), 2);
+    assert_eq!(session_events.len(), 3);
+    assert_eq!(session_events[0].kind, "available_commands");
+    assert_eq!(session_events[1].kind, "composer_catalog");
+    assert_eq!(session_events[2].kind, "current_mode");
     let workspace_events = store
         .workspace_events_after(previous_cursor)
         .expect("workspace replay");
-    assert_eq!(workspace_events.len(), 1);
-    assert_eq!(workspace_events[0].kind, "session_state");
-    assert_eq!(workspace_events[0].project_id.as_deref(), Some("project"));
+    assert_eq!(workspace_events.len(), 2);
+    assert_eq!(workspace_events[0].kind, "composer_catalog_snapshot");
+    assert_eq!(workspace_events[1].kind, "session_state");
+    assert_eq!(workspace_events[1].project_id.as_deref(), Some("project"));
     assert_eq!(
-        workspace_events[0].conversation_id.as_deref(),
+        workspace_events[1].conversation_id.as_deref(),
         Some(conversation.id.as_str())
     );
-    assert_eq!(workspace_events[0].run_id, None);
-    assert_eq!(workspace_events[0].payload, serde_json::json!({}));
-    assert_eq!(bus.latest_committed_cursor(), workspace_events[0].id);
+    assert_eq!(workspace_events[1].run_id, None);
+    assert_eq!(workspace_events[1].payload, serde_json::json!({}));
+    assert_eq!(bus.latest_committed_cursor(), workspace_events[1].id);
     assert!(receiver.has_changed().expect("event bus remains open"));
 }
 
