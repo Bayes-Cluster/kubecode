@@ -215,6 +215,7 @@ pub struct TrustedComposerContribution {
     pub source_label: String,
     pub scope: ComposerItemScope,
     pub input_hint: Option<String>,
+    pub disabled_reason: Option<String>,
     pub invocation: Option<ComposerInvocation>,
 }
 
@@ -383,13 +384,14 @@ pub fn project_acp_catalog_with_contexts(
     payload: &Value,
     contexts: Vec<ComposerContextMeta>,
 ) -> ComposerCatalogSnapshot {
+    let trusted = trusted_contributions_from_payload(agent_id, payload);
     let mut snapshot = project_catalog_with_trusted(
         project_id,
         conversation_id,
         agent_id,
         revision,
         payload,
-        &[],
+        &trusted,
     );
     snapshot.contexts = contexts.into_iter().take(MAX_COMPOSER_CONTEXTS).collect();
     snapshot
@@ -403,7 +405,26 @@ pub fn project_catalog_with_trusted(
     payload: &Value,
     trusted: &[TrustedComposerContribution],
 ) -> ComposerCatalogSnapshot {
-    let commands = parse_available_commands(payload);
+    let reclassified_commands = trusted
+        .iter()
+        .filter(|contribution| {
+            valid_trusted_source_identity(&contribution.source_identity)
+                && valid_trusted_item_name(&contribution.name)
+        })
+        .filter_map(
+            |contribution| match (&contribution.kind, &contribution.invocation) {
+                (
+                    ComposerItemKind::Skill,
+                    Some(ComposerInvocation::AcpPromptTemplate { command_name }),
+                ) => Some(command_name.as_str()),
+                _ => None,
+            },
+        )
+        .collect::<BTreeSet<_>>();
+    let commands = parse_available_commands(payload)
+        .into_iter()
+        .filter(|command| !reclassified_commands.contains(command.name.as_str()))
+        .collect::<Vec<_>>();
     let mut counts = BTreeMap::new();
     for command in &commands {
         *counts.entry(command.name.clone()).or_insert(0_usize) += 1;
@@ -475,11 +496,16 @@ pub fn project_catalog_with_trusted(
         }
         let duplicate = trusted_counts.get(&identity).copied().unwrap_or(0) > 1;
         let unsupported_command = contribution.kind == ComposerItemKind::Command;
-        let enabled = !duplicate && !unsupported_command && contribution.invocation.is_some();
+        let enabled = !duplicate
+            && !unsupported_command
+            && contribution.disabled_reason.is_none()
+            && contribution.invocation.is_some();
         let disabled_reason = if duplicate {
             Some("ambiguous_source_identity".to_owned())
         } else if unsupported_command {
             Some("unsupported_invocation".to_owned())
+        } else if let Some(reason) = &contribution.disabled_reason {
+            Some(truncate_display(reason, MAX_INPUT_HINT_CHARS))
         } else if contribution.invocation.is_none() {
             Some("invocation_unavailable".to_owned())
         } else {
@@ -519,6 +545,91 @@ pub fn project_catalog_with_trusted(
     }
 }
 
+fn trusted_contributions_from_payload(
+    agent_id: AgentId,
+    payload: &Value,
+) -> Vec<TrustedComposerContribution> {
+    if agent_id != AgentId::ClaudeCode {
+        return Vec::new();
+    }
+    let Some(metadata) = payload
+        .get("_meta")
+        .and_then(|value| value.get("kubecode"))
+        .and_then(|value| value.get("claudeSkills"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    if metadata.get("version").and_then(Value::as_u64) != Some(1)
+        || metadata.get("supported").and_then(Value::as_bool) != Some(true)
+    {
+        return Vec::new();
+    }
+    let commands = parse_available_commands(payload);
+    metadata
+        .get("skills")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(MAX_TRUSTED_COMPOSER_ITEMS)
+        .filter_map(|value| {
+            let skill = value.as_object()?;
+            let source_identity = skill.get("identity")?.as_str()?.to_owned();
+            let name = skill.get("name")?.as_str()?.to_owned();
+            let scope = match skill.get("scope")?.as_str()? {
+                "session" => ComposerItemScope::Session,
+                "project" => ComposerItemScope::Project,
+                "user" => ComposerItemScope::User,
+                "bundled" => ComposerItemScope::Bundled,
+                "plugin" => ComposerItemScope::Plugin,
+                _ => return None,
+            };
+            let source_label = skill.get("sourceLabel")?.as_str()?.to_owned();
+            let enabled = skill.get("enabled").and_then(Value::as_bool) == Some(true);
+            let matching = commands
+                .iter()
+                .filter(|command| command.name == source_identity)
+                .collect::<Vec<_>>();
+            let command_reason = match matching.as_slice() {
+                [] => Some("command_unavailable".to_owned()),
+                [command] if matches!(command.input, AcpCommandInput::Unsupported) => {
+                    Some("unsupported_input".to_owned())
+                }
+                [_] => None,
+                _ => Some("ambiguous_source_identity".to_owned()),
+            };
+            let disabled_reason = if enabled {
+                command_reason
+            } else {
+                skill
+                    .get("disabledReason")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| Some("provider_disabled".to_owned()))
+            };
+            Some(TrustedComposerContribution {
+                kind: ComposerItemKind::Skill,
+                source_identity: source_identity.clone(),
+                name,
+                description: skill
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                source_label,
+                scope,
+                input_hint: skill
+                    .get("inputHint")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                disabled_reason,
+                invocation: Some(ComposerInvocation::AcpPromptTemplate {
+                    command_name: source_identity,
+                }),
+            })
+        })
+        .collect()
+}
+
 fn valid_trusted_source_identity(identity: &str) -> bool {
     !identity.trim().is_empty()
         && identity.len() <= MAX_TRUSTED_SOURCE_IDENTITY_BYTES
@@ -556,6 +667,75 @@ pub fn resolve_acp_catalog_item(
         return Err(ComposerCatalogError::ItemUnsupported);
     }
     resolve_acp_command_message(raw_commands, &item.name, arguments.trim())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_composer_catalog_item(
+    project_id: &str,
+    conversation_id: &str,
+    agent_id: AgentId,
+    snapshot: &ComposerCatalogSnapshot,
+    raw_commands: &Value,
+    expected_revision: u64,
+    item_id: &str,
+    arguments: &str,
+) -> Result<String, ComposerCatalogError> {
+    if arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
+        return Err(ComposerCatalogError::ArgumentsTooLong);
+    }
+    if snapshot.revision != expected_revision {
+        return Err(ComposerCatalogError::StaleRevision);
+    }
+    let item = snapshot
+        .items
+        .iter()
+        .find(|item| item.id == item_id)
+        .ok_or(ComposerCatalogError::ItemMissing)?;
+    if !item.enabled {
+        return Err(ComposerCatalogError::ItemDisabled);
+    }
+    if item.kind == ComposerItemKind::Command {
+        return resolve_acp_catalog_item(
+            snapshot,
+            raw_commands,
+            expected_revision,
+            item_id,
+            arguments,
+        );
+    }
+    if item.kind != ComposerItemKind::Skill || agent_id != AgentId::ClaudeCode {
+        return Err(ComposerCatalogError::ItemUnsupported);
+    }
+    let contributions = trusted_contributions_from_payload(agent_id, raw_commands);
+    let mut matches = contributions.iter().filter(|contribution| {
+        opaque_item_id(
+            item_id_prefix(contribution.kind),
+            project_id,
+            conversation_id,
+            agent_id,
+            contribution.kind,
+            "trusted-adapter",
+            &contribution.source_identity,
+        ) == item_id
+    });
+    let contribution = matches.next().ok_or(ComposerCatalogError::ItemMissing)?;
+    if matches.next().is_some() {
+        return Err(ComposerCatalogError::ItemDisabled);
+    }
+    if contribution.disabled_reason.is_some() {
+        return Err(ComposerCatalogError::ItemDisabled);
+    }
+    match &contribution.invocation {
+        Some(ComposerInvocation::AcpPromptTemplate { command_name }) => {
+            resolve_acp_command_message(raw_commands, command_name, arguments.trim())
+        }
+        Some(
+            ComposerInvocation::AcpPrivateMethod { .. }
+            | ComposerInvocation::ProviderStructuredInput { .. }
+            | ComposerInvocation::HostAction { .. },
+        )
+        | None => Err(ComposerCatalogError::ItemUnsupported),
+    }
 }
 
 pub fn resolve_acp_command_message(
@@ -826,6 +1006,7 @@ mod tests {
                 source_label: "Claude skill".to_owned(),
                 scope: ComposerItemScope::Session,
                 input_hint: None,
+                disabled_reason: None,
                 invocation: None,
             }],
         );
@@ -840,6 +1021,121 @@ mod tests {
     }
 
     #[test]
+    fn claude_skill_metadata_reclassifies_and_resolves_the_exact_command() {
+        let raw = json!({
+            "availableCommands": [
+                {"name":"review", "description":"Review code", "input":{"hint":"<path>"}},
+                {"name":"status", "description":"Show status"}
+            ],
+            "_meta": {"kubecode":{"claudeSkills":{
+                "version": 1,
+                "supported": true,
+                "skills": [{
+                    "identity":"review",
+                    "name":"review",
+                    "description":"Review code",
+                    "inputHint":"<path>",
+                    "scope":"project",
+                    "sourceLabel":"Project skill",
+                    "enabled":true
+                }]
+            }}}
+        });
+        let snapshot = project_acp_catalog("project", "session", AgentId::ClaudeCode, 7, &raw);
+
+        assert_eq!(snapshot.items.len(), 2);
+        let skill = snapshot
+            .items
+            .iter()
+            .find(|item| item.kind == ComposerItemKind::Skill)
+            .expect("Claude skill");
+        assert_eq!(skill.name, "review");
+        assert_eq!(skill.scope, ComposerItemScope::Project);
+        assert_eq!(skill.source_label, "Project skill");
+        assert_eq!(skill.input_hint.as_deref(), Some("<path>"));
+        assert!(skill.enabled);
+        assert!(skill.id.starts_with("cap:"));
+        assert!(
+            snapshot
+                .items
+                .iter()
+                .any(|item| { item.kind == ComposerItemKind::Command && item.name == "status" })
+        );
+        assert!(
+            !snapshot
+                .items
+                .iter()
+                .any(|item| { item.kind == ComposerItemKind::Command && item.name == "review" })
+        );
+        assert_eq!(
+            resolve_composer_catalog_item(
+                "project",
+                "session",
+                AgentId::ClaudeCode,
+                &snapshot,
+                &raw,
+                7,
+                &skill.id,
+                "src/lib.rs"
+            ),
+            Ok("/review src/lib.rs".to_owned())
+        );
+    }
+
+    #[test]
+    fn claude_skill_metadata_is_ignored_for_other_agents() {
+        let raw = json!({
+            "availableCommands": [{"name":"review", "description":"Review code"}],
+            "_meta": {"kubecode":{"claudeSkills":{
+                "version": 1,
+                "supported": true,
+                "skills": [{
+                    "identity":"review", "name":"review", "scope":"user",
+                    "sourceLabel":"User skill", "enabled":true
+                }]
+            }}}
+        });
+
+        let snapshot = project_acp_catalog("project", "session", AgentId::Codex, 1, &raw);
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].kind, ComposerItemKind::Command);
+    }
+
+    #[test]
+    fn claude_skill_metadata_disables_duplicate_and_unavailable_identities() {
+        let raw = json!({
+            "availableCommands": [{"name":"review", "description":"Review code"}],
+            "_meta": {"kubecode":{"claudeSkills":{
+                "version": 1,
+                "supported": true,
+                "skills": [
+                    {"identity":"review", "name":"Project review", "scope":"project",
+                     "sourceLabel":"Project skill", "enabled":true},
+                    {"identity":"review", "name":"User review", "scope":"user",
+                     "sourceLabel":"User skill", "enabled":true},
+                    {"identity":"missing", "name":"Missing", "scope":"session",
+                     "sourceLabel":"Claude skill", "enabled":true}
+                ]
+            }}}
+        });
+        let snapshot = project_acp_catalog("project", "session", AgentId::ClaudeCode, 1, &raw);
+
+        assert_eq!(snapshot.items.len(), 2);
+        assert!(snapshot.items.iter().all(|item| !item.enabled));
+        assert!(
+            snapshot.items.iter().any(|item| {
+                item.disabled_reason.as_deref() == Some("ambiguous_source_identity")
+            })
+        );
+        assert!(
+            snapshot
+                .items
+                .iter()
+                .any(|item| { item.disabled_reason.as_deref() == Some("command_unavailable") })
+        );
+    }
+
+    #[test]
     fn trusted_contributions_are_bounded_validated_and_never_masquerade_as_acp_commands() {
         let mut trusted = (0..80)
             .map(|index| TrustedComposerContribution {
@@ -850,6 +1146,7 @@ mod tests {
                 source_label: "Trusted skills".to_owned(),
                 scope: ComposerItemScope::Session,
                 input_hint: None,
+                disabled_reason: None,
                 invocation: Some(ComposerInvocation::HostAction {
                     action: format!("skill-{index}"),
                 }),
@@ -919,7 +1216,10 @@ mod tests {
                     source_label: "Trusted skills".to_owned(),
                     scope: ComposerItemScope::Session,
                     input_hint: None,
-                    invocation: None,
+                    disabled_reason: None,
+                    invocation: Some(ComposerInvocation::AcpPromptTemplate {
+                        command_name: "status".to_owned(),
+                    }),
                 },
                 TrustedComposerContribution {
                     kind: ComposerItemKind::Skill,
@@ -929,6 +1229,7 @@ mod tests {
                     source_label: "Trusted skills".to_owned(),
                     scope: ComposerItemScope::Session,
                     input_hint: None,
+                    disabled_reason: None,
                     invocation: None,
                 },
                 TrustedComposerContribution {
@@ -939,6 +1240,7 @@ mod tests {
                     source_label: "Private command".to_owned(),
                     scope: ComposerItemScope::Session,
                     input_hint: None,
+                    disabled_reason: None,
                     invocation: Some(ComposerInvocation::AcpPromptTemplate {
                         command_name: "status".to_owned(),
                     }),

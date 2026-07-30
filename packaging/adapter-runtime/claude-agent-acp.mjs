@@ -14,10 +14,160 @@ import { resolveSettings } from '@anthropic-ai/claude-agent-sdk'
 const require = createRequire(import.meta.url)
 const packageJson = require('@agentclientprotocol/claude-agent-acp/package.json')
 const SIDE_QUESTION_METHOD = '_claude/side_question'
+const CLAUDE_SKILLS_METADATA_VERSION = 1
+const MAX_CLAUDE_SKILLS = 64
 
-function acpClient(context) {
+function boundedString(value, maximum) {
+  if (typeof value !== 'string' || !value || /[\u0000-\u001f\u007f]/.test(value)) return null
+  return [...value].slice(0, maximum).join('')
+}
+
+function validatedIdentity(value, maximumBytes) {
+  if (typeof value !== 'string' || !value || /[\u0000-\u001f\u007f]/.test(value)) return null
+  return Buffer.byteLength(value) <= maximumBytes ? value : null
+}
+
+function claudeSkillScope(skill) {
+  const source = typeof skill.source === 'string' ? skill.source.toLowerCase() : ''
+  if (['project', 'projectsettings', 'local', 'localsettings'].includes(source)) return 'project'
+  if (['user', 'usersettings'].includes(source)) return 'user'
+  if (source === 'plugin' || skill.name?.includes(':')) return 'plugin'
+  if (['bundled', 'built-in', 'builtin'].includes(source)) return 'bundled'
+  return 'session'
+}
+
+function claudeSkillSourceLabel(scope) {
   return {
-    sessionUpdate: (params) => context.notify(methods.client.session.update, params),
+    project: 'Project skill',
+    user: 'User skill',
+    plugin: 'Claude plugin skill',
+    bundled: 'Bundled Claude skill',
+    session: 'Claude skill',
+  }[scope]
+}
+
+function safeClaudeSkill(skill) {
+  if (!skill || typeof skill !== 'object' || Array.isArray(skill)) return null
+  const identity = validatedIdentity(skill.name, 512)
+  const name = validatedIdentity(skill.name, 256)
+  if (!identity || !name) return null
+  const description = boundedString(skill.description, 512)
+  const inputHint = boundedString(
+    Array.isArray(skill.argumentHint) ? skill.argumentHint.join(' ') : skill.argumentHint,
+    160,
+  )
+  const scope = claudeSkillScope(skill)
+  const enabled = skill.enabled !== false
+  return {
+    identity,
+    name,
+    ...(description ? { description } : {}),
+    ...(inputHint ? { inputHint } : {}),
+    scope,
+    sourceLabel: claudeSkillSourceLabel(scope),
+    enabled,
+    ...(!enabled ? { disabledReason: 'provider_disabled' } : {}),
+  }
+}
+
+export function advertiseClaudeSkills(update, skills, supported = true) {
+  const meta = update._meta && typeof update._meta === 'object' ? update._meta : {}
+  const kubecode = meta.kubecode && typeof meta.kubecode === 'object'
+    ? meta.kubecode
+    : {}
+  const safeSkills = supported && Array.isArray(skills)
+    ? skills.slice(0, MAX_CLAUDE_SKILLS).map(safeClaudeSkill).filter(Boolean)
+    : []
+  return {
+    ...update,
+    _meta: {
+      ...meta,
+      kubecode: {
+        ...kubecode,
+        claudeSkills: {
+          version: CLAUDE_SKILLS_METADATA_VERSION,
+          supported,
+          skills: safeSkills,
+        },
+      },
+    },
+  }
+}
+
+export async function refreshClaudeSkills(agent, sessionId, availableCommands) {
+  const query = agent?.sessions?.[sessionId]?.query
+  if (typeof query?.reloadSkills !== 'function') {
+    return advertiseClaudeSkills({
+      sessionUpdate: 'available_commands_update',
+      availableCommands,
+    }, [], false)
+  }
+  try {
+    const result = await query.reloadSkills()
+    if (!Array.isArray(result?.skills)) {
+      return advertiseClaudeSkills({
+        sessionUpdate: 'available_commands_update',
+        availableCommands,
+      }, [], false)
+    }
+    return advertiseClaudeSkills({
+      sessionUpdate: 'available_commands_update',
+      availableCommands,
+    }, result.skills)
+  } catch {
+    return advertiseClaudeSkills({
+      sessionUpdate: 'available_commands_update',
+      availableCommands,
+    }, [], false)
+  }
+}
+
+export function createClaudeSkillSessionUpdateForwarder(
+  notify,
+  getAgent,
+  schedule = (callback) => setTimeout(callback, 0),
+) {
+  const pendingSkillRefreshes = new Map()
+  const runningSkillRefreshes = new Set()
+  const refreshPendingSkills = async (sessionId) => {
+    if (runningSkillRefreshes.has(sessionId)) return
+    runningSkillRefreshes.add(sessionId)
+    try {
+      while (pendingSkillRefreshes.has(sessionId)) {
+        const availableCommands = pendingSkillRefreshes.get(sessionId)
+        pendingSkillRefreshes.delete(sessionId)
+        const update = await refreshClaudeSkills(getAgent(), sessionId, availableCommands)
+        await notify({ sessionId, update })
+      }
+    } catch (error) {
+      getAgent()?.logger?.error(`Failed to refresh Claude skills: ${error}`)
+    } finally {
+      runningSkillRefreshes.delete(sessionId)
+      if (pendingSkillRefreshes.has(sessionId)) {
+        schedule(() => void refreshPendingSkills(sessionId))
+      }
+    }
+  }
+  const scheduleSkillRefresh = (sessionId, availableCommands) => {
+    pendingSkillRefreshes.set(sessionId, availableCommands)
+    schedule(() => void refreshPendingSkills(sessionId))
+  }
+  return async (params) => {
+    await notify(params)
+    if (params.update?.sessionUpdate === 'available_commands_update'
+        && !params.update?._meta?.kubecode?.claudeSkills) {
+      scheduleSkillRefresh(params.sessionId, params.update.availableCommands)
+    }
+  }
+}
+
+function acpClient(context, getAgent) {
+  const forwardSessionUpdate = createClaudeSkillSessionUpdateForwarder(
+    (params) => context.notify(methods.client.session.update, params),
+    getAgent,
+  )
+  return {
+    sessionUpdate: forwardSessionUpdate,
     requestPermission: (params, signal) => context.request(
       methods.client.session.requestPermission,
       params,
@@ -121,7 +271,7 @@ export function runKubecodeClaudeAcp() {
     })
     .onNotification(methods.agent.session.cancel, (context) => agent.cancel(context.params))
     .connect(stream)
-  agent = new ClaudeAcpAgent(acpClient(connection.client))
+  agent = new ClaudeAcpAgent(acpClient(connection.client, () => agent))
   return { connection, agent }
 }
 

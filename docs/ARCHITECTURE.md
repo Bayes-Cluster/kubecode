@@ -247,6 +247,20 @@ root, including for drafts with no context references. Safe snapshots are bounde
 ACP and trusted-adapter sources; invalid identities are omitted, and unsupported
 trusted command shapes stay disabled rather than falling through to ACP name
 resolution.
+
+Claude skill discovery is owned by the bundled adapter. Each standard Claude
+`available_commands_update` is forwarded immediately, then the adapter refreshes
+the exact Session query through the Claude Agent SDK's `reloadSkills()` control
+request and publishes a bounded full skill inventory in private ACP `_meta`.
+Refreshes are serialized per provider Session and coalesce to the latest command
+snapshot, so reconnect and mid-Session skill changes replace the catalog without
+restarting the actor. The adapter allowlists safe fields and never forwards a
+skill path. The server's registered Claude decoder reclassifies only identities
+that also match a current ACP command, persists the raw trusted snapshot with the
+safe catalog revision, and reconstructs the private canonical slash invocation
+after restart. Unsupported SDKs publish no skills; duplicate, disabled,
+unmatched, and unsupported-input rows fail closed.
+
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.
