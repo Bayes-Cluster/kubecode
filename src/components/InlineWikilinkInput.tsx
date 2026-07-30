@@ -76,7 +76,9 @@ interface InlineWikilinkInputProps {
   contextReferences?: InlineContextReference[]
   contextScopeKey?: string
   loadContextSuggestions?: (query: string, signal: AbortSignal) => Promise<InlineContextSuggestion[]>
-  onContextSuggestionSelected?: (suggestion: InlineContextSuggestion) => string | null
+  onContextSuggestionSelected?: (
+    suggestion: InlineContextSuggestion,
+  ) => InlineContextSelection | string | null | Promise<InlineContextSelection | string | null>
   onRemoveContext?: (id: string) => void
   contextEmptyLabel?: string
   contextErrorLabel?: string
@@ -85,6 +87,11 @@ interface InlineWikilinkInputProps {
   contextRemoveLabel?: string
   serializeClipboardText?: (value: string) => string
   sanitizePastedText?: (value: string) => string
+}
+
+export interface InlineContextSelection {
+  token: string
+  commit: () => boolean
 }
 
 function collapseSelectionRange(nextSelectionIndex: number) {
@@ -244,6 +251,9 @@ export function InlineWikilinkInput({
   serializeClipboardText = (text) => text,
   sanitizePastedText = (text) => text,
 }: InlineWikilinkInputProps) {
+  const latestValueRef = useRef(value)
+  latestValueRef.current = value
+  const contextSelectionRequestRef = useRef(0)
   const [renderVersion, forceRender] = useState(0)
   const isComposingRef = useRef(false)
   const segments = useMemo(
@@ -644,13 +654,20 @@ export function InlineWikilinkInput({
       references: currentReferences,
     })
   }
-  const selectContextSuggestion = (index: number) => {
+  const selectContextSuggestion = async (index: number) => {
     const suggestion = contextSuggestions.at(index)
     if (!suggestion || !onContextSuggestionSelected) return
-    const token = onContextSuggestionSelected(suggestion)
-    if (!token) return
-    const replacement = replaceActiveComposerContextQuery(value, selectionIndex, token)
+    const selectedValue = value
+    const selectedIndex = selectionIndex
+    const request = ++contextSelectionRequestRef.current
+    const selection = await onContextSuggestionSelected(suggestion)
+    if (request !== contextSelectionRequestRef.current
+      || latestValueRef.current !== selectedValue) return
+    if (!selection) return
+    const token = typeof selection === 'string' ? selection : selection.token
+    const replacement = replaceActiveComposerContextQuery(selectedValue, selectedIndex, token)
     if (!replacement) return
+    if (typeof selection !== 'string' && !selection.commit()) return
     onChange(replacement.value)
     setSelectionRange(collapseSelectionRange(replacement.nextSelectionIndex))
     setContextSelection({ key: '', index: 0 })
@@ -703,7 +720,7 @@ export function InlineWikilinkInput({
       }
       if ((event.key === 'Enter' || event.key === 'Tab') && contextSuggestions.length > 0) {
         event.preventDefault()
-        selectContextSuggestion(selectedContextIndex)
+        void selectContextSuggestion(selectedContextIndex)
         return
       }
     }
@@ -783,7 +800,7 @@ export function InlineWikilinkInput({
       loading={contextPage.key !== contextQueryKey || contextPage.loading}
       loadingLabel={contextLoadingLabel}
       onHover={(index) => setContextSelection({ key: contextQueryKey, index })}
-      onSelect={selectContextSuggestion}
+      onSelect={(index) => void selectContextSuggestion(index)}
       selectedIndex={selectedContextIndex}
       suggestions={contextSuggestions}
     />

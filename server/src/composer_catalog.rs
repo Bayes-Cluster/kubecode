@@ -10,7 +10,12 @@ use crate::agents::AgentId;
 pub const MAX_ACP_COMMAND_NAME_BYTES: usize = 256;
 pub const MAX_ACP_COMMAND_ARGUMENT_BYTES: usize = 8 * 1024;
 const MAX_ACP_COMMAND_ITEMS: usize = 256;
-const MAX_COMPOSER_ITEMS: usize = 256;
+pub const MAX_COMPOSER_ITEMS: usize = 256;
+pub const MAX_COMPOSER_CONTEXTS: usize = 256;
+pub const MAX_COMPOSER_SEGMENTS: usize = 128;
+pub const MAX_COMPOSER_REFERENCES: usize = 32;
+pub const MAX_COMPOSER_VALIDATION_ROWS: usize = 32;
+pub const MAX_COMPOSER_TEXT_BYTES: usize = 128 * 1024;
 const MAX_TRUSTED_COMPOSER_ITEMS: usize = 64;
 const MAX_TRUSTED_SOURCE_IDENTITY_BYTES: usize = 512;
 const MAX_TRUSTED_ITEM_NAME_BYTES: usize = 256;
@@ -67,6 +72,81 @@ pub struct ComposerContextMeta {
     pub display: String,
     pub enabled: bool,
     pub disabled_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComposerContextRecord {
+    pub id: String,
+    pub project_id: String,
+    pub conversation_id: String,
+    pub kind: ComposerContextKind,
+    pub path: String,
+    pub available: bool,
+}
+
+impl ComposerContextRecord {
+    pub fn safe_meta(&self) -> ComposerContextMeta {
+        ComposerContextMeta {
+            id: self.id.clone(),
+            kind: self.kind,
+            display: self.path.clone(),
+            enabled: self.available,
+            disabled_reason: (!self.available).then(|| "context_stale".to_owned()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ComposerContextRegistration {
+    pub context: ComposerContextMeta,
+    pub catalog: ComposerCatalogSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ComposerContextValidationResult {
+    pub id: String,
+    pub catalog_revision: u64,
+    pub context_kind: ComposerContextKind,
+    pub available: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComposerContextSelector {
+    pub id: String,
+    pub catalog_revision: u64,
+    pub context_kind: ComposerContextKind,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ComposerContextValidationResponse {
+    pub references: Vec<ComposerContextValidationResult>,
+    pub catalog: ComposerCatalogSnapshot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComposerPreflightContext {
+    pub id: String,
+    pub kind: ComposerContextKind,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ComposerDraftSegment {
+    Text {
+        text: String,
+    },
+    ContextRef {
+        id: String,
+        catalog_revision: u64,
+        context_kind: ComposerContextKind,
+    },
+    CapabilityRef {
+        id: String,
+        catalog_revision: u64,
+        item_kind: ComposerItemKind,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -169,6 +249,45 @@ pub enum ComposerCatalogError {
     UnexpectedInput,
     #[error("command input is too long")]
     ArgumentsTooLong,
+    #[error("composer context is stale or missing")]
+    ContextStale,
+    #[error("composer context limit exceeded")]
+    ContextOverLimit,
+    #[error("composer draft segment limit exceeded")]
+    SegmentsOverLimit,
+    #[error("composer draft text is too long")]
+    TextTooLong,
+    #[error("composer draft is invalid")]
+    InvalidDraft,
+}
+
+pub fn validate_structured_composer_segments(
+    segments: &[ComposerDraftSegment],
+) -> Result<(), ComposerCatalogError> {
+    if segments.len() > MAX_COMPOSER_SEGMENTS {
+        return Err(ComposerCatalogError::SegmentsOverLimit);
+    }
+    let reference_count = segments
+        .iter()
+        .filter(|segment| !matches!(segment, ComposerDraftSegment::Text { .. }))
+        .count();
+    if reference_count > MAX_COMPOSER_REFERENCES {
+        return Err(ComposerCatalogError::ContextOverLimit);
+    }
+    let text_bytes = segments.iter().try_fold(0_usize, |total, segment| {
+        let bytes = match segment {
+            ComposerDraftSegment::Text { text } => text.len(),
+            ComposerDraftSegment::ContextRef { .. }
+            | ComposerDraftSegment::CapabilityRef { .. } => 0,
+        };
+        total
+            .checked_add(bytes)
+            .ok_or(ComposerCatalogError::TextTooLong)
+    })?;
+    if text_bytes > MAX_COMPOSER_TEXT_BYTES {
+        return Err(ComposerCatalogError::TextTooLong);
+    }
+    Ok(())
 }
 
 pub fn valid_acp_command_name(name: &str) -> bool {
@@ -246,14 +365,34 @@ pub fn project_acp_catalog(
     revision: u64,
     payload: &Value,
 ) -> ComposerCatalogSnapshot {
-    project_catalog_with_trusted(
+    project_acp_catalog_with_contexts(
+        project_id,
+        conversation_id,
+        agent_id,
+        revision,
+        payload,
+        Vec::new(),
+    )
+}
+
+pub fn project_acp_catalog_with_contexts(
+    project_id: &str,
+    conversation_id: &str,
+    agent_id: AgentId,
+    revision: u64,
+    payload: &Value,
+    contexts: Vec<ComposerContextMeta>,
+) -> ComposerCatalogSnapshot {
+    let mut snapshot = project_catalog_with_trusted(
         project_id,
         conversation_id,
         agent_id,
         revision,
         payload,
         &[],
-    )
+    );
+    snapshot.contexts = contexts.into_iter().take(MAX_COMPOSER_CONTEXTS).collect();
+    snapshot
 }
 
 pub fn project_catalog_with_trusted(
@@ -465,6 +604,49 @@ fn opaque_command_id(
         "standard-acp",
         source_identity,
     )
+}
+
+pub fn opaque_context_id(
+    project_id: &str,
+    conversation_id: &str,
+    kind: ComposerContextKind,
+    normalized_relative_path: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"kubecode-composer-context-v1\0");
+    for part in [
+        project_id,
+        conversation_id,
+        context_kind_key(kind),
+        normalized_relative_path,
+    ] {
+        digest.update(part.len().to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    format!("ctx:{}", hex::encode(digest.finalize()))
+}
+
+pub fn context_kind_key(kind: ComposerContextKind) -> &'static str {
+    match kind {
+        ComposerContextKind::File => "file",
+        ComposerContextKind::Directory => "directory",
+        ComposerContextKind::GitDiff => "git_diff",
+        ComposerContextKind::Terminal => "terminal",
+        ComposerContextKind::SessionTurn => "session_turn",
+        ComposerContextKind::Diagnostics => "diagnostics",
+    }
+}
+
+pub fn parse_context_kind(value: &str) -> Option<ComposerContextKind> {
+    match value {
+        "file" => Some(ComposerContextKind::File),
+        "directory" => Some(ComposerContextKind::Directory),
+        "git_diff" => Some(ComposerContextKind::GitDiff),
+        "terminal" => Some(ComposerContextKind::Terminal),
+        "session_turn" => Some(ComposerContextKind::SessionTurn),
+        "diagnostics" => Some(ComposerContextKind::Diagnostics),
+        _ => None,
+    }
 }
 
 fn opaque_item_id(
@@ -783,6 +965,41 @@ mod tests {
                 ""
             ),
             Err(ComposerCatalogError::ItemDisabled)
+        );
+    }
+
+    #[test]
+    fn item_and_context_snapshot_caps_are_independent() {
+        let commands = (0..=MAX_COMPOSER_ITEMS)
+            .map(|index| json!({"name":format!("command-{index}"), "description":"Command"}))
+            .collect::<Vec<_>>();
+        let contexts = (0..=MAX_COMPOSER_CONTEXTS)
+            .map(|index| ComposerContextMeta {
+                id: format!("ctx:{index}"),
+                kind: ComposerContextKind::File,
+                display: format!("src/context-{index}.rs"),
+                enabled: true,
+                disabled_reason: None,
+            })
+            .collect::<Vec<_>>();
+
+        let snapshot = project_acp_catalog_with_contexts(
+            "project",
+            "session",
+            AgentId::Codex,
+            1,
+            &json!({"availableCommands":commands}),
+            contexts,
+        );
+
+        assert_eq!(snapshot.items.len(), MAX_COMPOSER_ITEMS);
+        assert_eq!(snapshot.contexts.len(), MAX_COMPOSER_CONTEXTS);
+        assert!(snapshot.items.iter().all(|item| item.name != "command-256"));
+        assert!(
+            snapshot
+                .contexts
+                .iter()
+                .all(|context| context.id != "ctx:256")
         );
     }
 }

@@ -229,10 +229,21 @@ catalog, and a conversation-scoped full-snapshot workspace event. `POST
 transitional exact-name selector or an opaque item ID with its catalog revision;
 the typed path validates and creates its internal run in one store transaction,
 then dispatches only the server-resolved prompt. Unknown slash text remains an
-ordinary prompt. Ordered structured draft submission remains a later ADR 0206
-phase. Catalog revision issuance uses a durable Session-row high-water mark that
-is not rewound with chat history, so a restored older snapshot cannot cause a
-previous revision number to be reused. Safe snapshots are bounded across standard
+ordinary prompt. File and directory chips are registered and batch-validated
+through Session-scoped Composer context endpoints. Structured run requests carry
+only ordered text plus opaque context/capability coordinates; filesystem
+eligibility is preflighted through `WorkspaceService`, then database-owned
+authorization, historical selection proof, current-catalog proof, availability,
+and run creation are rechecked in one immediate store transaction. Standard ACP
+commands resolve the ordered segment text as their input. Capability references
+without a registered server resolver fail closed and never degrade to display
+text or the legacy command-name route. Catalog revision issuance uses a durable
+Session-row high-water mark that is not rewound with chat history. Rewind
+reconciliation compares the retained snapshot with durable Session context
+identities inside the same transaction and, when they differ, emits one new full
+snapshot above that high-water mark. Structured request bounds are checked before
+`WorkspaceService` resolves the exact Shared or Session-owned worktree execution
+root, including for drafts with no context references. Safe snapshots are bounded across standard
 ACP and trusted-adapter sources; invalid identities are omitted, and unsupported
 trusted command shapes stay disabled rather than falling through to ACP name
 resolution.

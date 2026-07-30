@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyComposerContextValidation,
+  composerDraftCapabilityReferences,
   composerDraftFromEditorValue,
   composerDraftPlainText,
   composerDraftToEditorValue,
+  composerDraftToStructuredSegments,
   appendComposerText,
   appendComposerContext,
   composerDraftReferences,
@@ -13,7 +15,26 @@ import {
   parseStoredComposerDraft,
   serializeComposerDraft,
   textComposerDraft,
+  type ComposerDraft,
 } from './composerDraft'
+
+const catalog = {
+  conversation_id: 'session-1',
+  revision: 7,
+  items: [],
+  contexts: [],
+}
+
+function context(overrides: Partial<Parameters<typeof createComposerContextReference>[0]> = {}) {
+  return createComposerContextReference({
+    catalogRevision: 7,
+    id: 'file-token',
+    kind: 'file',
+    name: 'main.ts',
+    path: 'src/main.ts',
+    ...overrides,
+  })
+}
 
 describe('typed Composer drafts', () => {
   it('migrates legacy string drafts without trusting @ text as context', () => {
@@ -23,20 +44,15 @@ describe('typed Composer drafts', () => {
   })
 
   it('restores ordered file and directory references as unvalidated', () => {
-    const file = createComposerContextReference({
-      localKey: 'file-token',
-      kind: 'file',
-      name: 'main.ts',
-      path: 'src/main.ts',
-    })
-    const directory = createComposerContextReference({
-      localKey: 'directory-token',
+    const file = context()
+    const directory = context({
+      id: 'directory-token',
       kind: 'directory',
       name: 'components',
       path: 'src/components',
     })
-    const draft = {
-      version: 1 as const,
+    const draft: ComposerDraft = {
+      version: 2,
       segments: [
         { kind: 'text' as const, text: 'Review ' },
         { kind: 'context' as const, reference: file },
@@ -56,15 +72,12 @@ describe('typed Composer drafts', () => {
 
   it('never trusts persisted reference availability during hydration', () => {
     const stored = serializeComposerDraft({
-      version: 1,
+      version: 2,
       segments: [{
         kind: 'context',
-        reference: createComposerContextReference({
+        reference: context({
           availability: 'available',
-          localKey: 'browser-invented-token',
-          kind: 'file',
-          name: 'main.ts',
-          path: 'src/main.ts',
+          id: 'browser-invented-token',
         }),
       }],
     })
@@ -73,21 +86,18 @@ describe('typed Composer drafts', () => {
   })
 
   it('applies late validation without overwriting references added to the newest draft', () => {
-    const restored = createComposerContextReference({
+    const restored = context({
       availability: 'stale',
-      localKey: 'restored-token',
-      kind: 'file',
-      name: 'main.ts',
-      path: 'src/main.ts',
+      id: 'restored-token',
     })
-    const selected = createComposerContextReference({
-      localKey: 'selected-token',
+    const selected = context({
+      id: 'selected-token',
       kind: 'directory',
       name: 'components',
       path: 'src/components',
     })
-    const newestDraft = {
-      version: 1 as const,
+    const newestDraft: ComposerDraft = {
+      version: 2,
       segments: [
         { kind: 'context' as const, reference: restored },
         { kind: 'text' as const, text: ' and ' },
@@ -97,12 +107,19 @@ describe('typed Composer drafts', () => {
 
     const validated = applyComposerContextValidation(
       newestDraft,
-      [restored],
-      [{ kind: 'file', path: 'src/main.ts' }],
+      {
+        catalog,
+        references: [{
+          id: restored.id,
+          catalog_revision: restored.catalogRevision,
+          context_kind: restored.kind,
+          available: true,
+        }],
+      },
     )
 
-    expect(composerDraftReferences(validated).map(({ localKey, availability }) => (
-      [localKey, availability]
+    expect(composerDraftReferences(validated).map(({ id, availability }) => (
+      [id, availability]
     ))).toEqual([
       ['restored-token', 'available'],
       ['selected-token', 'available'],
@@ -110,14 +127,9 @@ describe('typed Composer drafts', () => {
   })
 
   it('uses private editor tokens only for explicitly selected references', () => {
-    const reference = createComposerContextReference({
-      localKey: 'selected-token',
-      kind: 'file',
-      name: 'main.ts',
-      path: 'src/main.ts',
-    })
-    const draft = {
-      version: 1 as const,
+    const reference = context({ id: 'selected-token' })
+    const draft: ComposerDraft = {
+      version: 2,
       segments: [
         { kind: 'text' as const, text: 'Look at ' },
         { kind: 'context' as const, reference },
@@ -135,10 +147,10 @@ describe('typed Composer drafts', () => {
 
   it('downgrades malformed or absolute persisted references to ordinary fallback text', () => {
     const stored = JSON.stringify({
-      version: 1,
+      version: 2,
       segments: [
         { kind: 'context', reference: {
-          localKey: 'bad', kind: 'file', name: 'passwd', path: '/etc/passwd', availability: 'available',
+          id: 'bad', catalogRevision: 7, kind: 'file', name: 'passwd', path: '/etc/passwd', availability: 'available',
         } },
       ],
     })
@@ -147,11 +159,9 @@ describe('typed Composer drafts', () => {
   })
 
   it('appends command text without flattening existing context segments', () => {
-    const reference = createComposerContextReference({
-      localKey: 'context-token', kind: 'file', name: 'main.ts', path: 'src/main.ts',
-    })
+    const reference = context({ id: 'context-token' })
     const draft: Parameters<typeof appendComposerText>[0] = {
-      version: 1,
+      version: 2,
       segments: [{ kind: 'context', reference }],
     }
 
@@ -164,14 +174,64 @@ describe('typed Composer drafts', () => {
   it('caps the number of active typed references in a draft', () => {
     let draft = textComposerDraft()
     for (let index = 0; index <= MAX_COMPOSER_CONTEXT_REFERENCES; index += 1) {
-      draft = appendComposerContext(draft, createComposerContextReference({
-        localKey: `context-${index}`,
-        kind: 'file',
+      draft = appendComposerContext(draft, context({
+        id: `context-${index}`,
         name: `file-${index}.ts`,
         path: `src/file-${index}.ts`,
       }))
     }
 
     expect(composerDraftReferences(draft)).toHaveLength(MAX_COMPOSER_CONTEXT_REFERENCES)
+  })
+
+  it('migrates v1 context chips to readable text instead of trusting legacy identifiers', () => {
+    const restored = parseStoredComposerDraft(JSON.stringify({
+      version: 1,
+      segments: [
+        { kind: 'text', text: 'Review ' },
+        { kind: 'context', reference: { path: 'src/main.ts', id: 'legacy-token' } },
+      ],
+    }))
+
+    expect(restored).toEqual(textComposerDraft('Review @src/main.ts'))
+    expect(composerDraftReferences(restored)).toEqual([])
+  })
+
+  it('serializes only opaque context coordinates and ordered command arguments', () => {
+    const reference = context({ id: 'ctx:opaque' })
+    const draft: ComposerDraft = {
+      version: 2,
+      segments: [
+        { kind: 'text', text: '/review focus ' },
+        { kind: 'context', reference },
+        { kind: 'text', text: ' last' },
+      ],
+    }
+
+    expect(composerDraftToStructuredSegments(draft, 'review')).toEqual([
+      { kind: 'text', text: 'focus ' },
+      { kind: 'context_ref', id: 'ctx:opaque', catalog_revision: 7, context_kind: 'file' },
+      { kind: 'text', text: ' last' },
+    ])
+    expect(JSON.stringify(composerDraftToStructuredSegments(draft, 'review'))).not.toContain('src/main.ts')
+  })
+
+  it('restores capability references as unsupported readable fallbacks', () => {
+    const restored = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: [{
+        kind: 'capability',
+        reference: {
+          id: 'cap:opaque',
+          catalogRevision: 9,
+          itemKind: 'skill',
+          name: 'summarize',
+          availability: 'available',
+        },
+      }],
+    }))
+
+    expect(composerDraftCapabilityReferences(restored)[0]?.availability).toBe('unsupported')
+    expect(composerDraftPlainText(restored)).toBe('$summarize')
   })
 })

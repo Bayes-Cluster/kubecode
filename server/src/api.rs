@@ -19,12 +19,17 @@ use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
-use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun, StartComposerCommand};
+use crate::agent_runtime::{
+    AgentRuntime, RuntimeError, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
+};
 use crate::agents::{
     AgentEvent, AgentId, AgentStore, Conversation, ExecutionMode, RunStatus, SessionEvent,
     StoreError, WorkspaceEvent,
 };
-use crate::composer_catalog::{ComposerCatalogError, ComposerCatalogSnapshot};
+use crate::composer_catalog::{
+    ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextSelector,
+    ComposerDraftSegment, ComposerPreflightContext, MAX_COMPOSER_VALIDATION_ROWS,
+};
 use crate::git::{GitError, GitMutation, GitService};
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::terminal::{
@@ -523,6 +528,14 @@ fn client_api_router(state: AppState) -> Router {
             get(list_session_entries),
         )
         .route(
+            "/sessions/{conversation_id}/composer/contexts",
+            axum::routing::post(register_composer_context),
+        )
+        .route(
+            "/sessions/{conversation_id}/composer/contexts/validate",
+            axum::routing::post(validate_composer_contexts),
+        )
+        .route(
             "/sessions/{conversation_id}/side-questions",
             axum::routing::post(ask_side_question),
         )
@@ -1003,23 +1016,64 @@ async fn create_team_member(
 }
 
 #[derive(Debug, Deserialize)]
-struct StartRunRequest {
+#[serde(deny_unknown_fields)]
+struct LegacyStartRunRequest {
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredStartRunRequest {
+    #[serde(default)]
+    item_id: Option<String>,
+    catalog_revision: u64,
+    segments: Vec<ComposerDraftSegment>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StartRunRequest {
+    Legacy(LegacyStartRunRequest),
+    Structured(StructuredStartRunRequest),
 }
 
 async fn start_agent_run(
     State(state): State<AppState>,
     Path((project_id, conversation_id)): Path<(String, String)>,
-    Json(request): Json<StartRunRequest>,
+    Json(request): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if request.message.trim().is_empty() {
-        return Err(ApiError::InvalidRequest("message must not be empty".into()));
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)?;
+    if conversation.project_id != project_id {
+        return Err(StoreError::ConversationNotFound(conversation_id).into());
     }
-    let run = state.agent_runtime.start(StartAgentRun {
-        conversation_id,
-        project_id,
-        message: request.message,
-    })?;
+    let request = serde_json::from_value::<StartRunRequest>(request)
+        .map_err(|_| ApiError::InvalidRequest("invalid run request".into()))?;
+    let run = match request {
+        StartRunRequest::Legacy(request) => {
+            if request.message.trim().is_empty() {
+                return Err(ApiError::InvalidRequest("message must not be empty".into()));
+            }
+            state.agent_runtime.start(StartAgentRun {
+                conversation_id,
+                project_id,
+                message: request.message,
+            })?
+        }
+        StartRunRequest::Structured(request) => {
+            state
+                .agent_runtime
+                .start_structured_composer(StartStructuredComposerRun {
+                    conversation_id,
+                    project_id,
+                    item_id: request.item_id,
+                    catalog_revision: request.catalog_revision,
+                    segments: request.segments,
+                })?
+        }
+    };
     Ok((StatusCode::ACCEPTED, Json(run)))
 }
 
@@ -2259,6 +2313,154 @@ async fn list_session_entries(
     Ok(Json(entries))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegisterComposerContextRequest {
+    kind: ComposerContextKind,
+    path: String,
+}
+
+async fn register_composer_context(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<RegisterComposerContextRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let store = state.agent_runtime.store();
+    let conversation = store.get_conversation(&conversation_id)?;
+    let expected_kind = workspace_kind(request.kind)?;
+    let workspace = Arc::clone(&state.workspace);
+    let project_id = conversation.project_id.clone();
+    let agent_session_id = conversation.agent_session_id.clone();
+    let workspace_path = conversation.workspace_path.clone();
+    let path = request.path;
+    let resolved = run_workspace_operation(move || {
+        workspace.resolve_session_context_entry(
+            &project_id,
+            &agent_session_id,
+            conversation.execution_mode,
+            workspace_path.as_deref(),
+            &path,
+            expected_kind,
+        )
+    })
+    .await
+    .map_err(|error| match error {
+        ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id)) => {
+            ApiError::Workspace(WorkspaceError::ProjectNotFound(project_id))
+        }
+        ApiError::Workspace(error @ WorkspaceError::IneligibleContext(_)) => {
+            ApiError::ComposerContextOutsideProject(error.to_string())
+        }
+        ApiError::Workspace(WorkspaceError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            ApiError::ComposerContextOutsideProject(error.to_string())
+        }
+        other => other,
+    })?;
+    let registration = store.register_composer_context(
+        &conversation.id,
+        &conversation.project_id,
+        request.kind,
+        &resolved.path,
+    )?;
+    Ok((StatusCode::CREATED, Json(registration)))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ValidateComposerContextsRequest {
+    references: Vec<ComposerContextSelector>,
+}
+
+async fn validate_composer_contexts(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<ValidateComposerContextsRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if request.references.len() > MAX_COMPOSER_VALIDATION_ROWS {
+        return Err(ComposerCatalogError::ContextOverLimit.into());
+    }
+    let mut ids = BTreeSet::new();
+    if request
+        .references
+        .iter()
+        .any(|reference| !ids.insert(reference.id.as_str()))
+    {
+        return Err(ApiError::InvalidRequest(
+            "composer context validation IDs must be unique".into(),
+        ));
+    }
+    let store = state.agent_runtime.store();
+    let conversation = store.get_conversation(&conversation_id)?;
+    let records = store.composer_context_records_for_preflight(
+        &conversation.id,
+        &conversation.project_id,
+        &request.references,
+    )?;
+    let workspace = Arc::clone(&state.workspace);
+    let project_id = conversation.project_id.clone();
+    let agent_session_id = conversation.agent_session_id.clone();
+    let execution_mode = conversation.execution_mode;
+    let workspace_path = conversation.workspace_path.clone();
+    let selectors = request.references.clone();
+    let preflight = run_workspace_operation(move || {
+        selectors
+            .iter()
+            .zip(records)
+            .map(|(selector, record)| {
+                let Some(record) = record else {
+                    return Ok(None);
+                };
+                if record.kind != selector.context_kind {
+                    return Ok(None);
+                }
+                let expected_kind = match record.kind {
+                    ComposerContextKind::File => EntryKind::File,
+                    ComposerContextKind::Directory => EntryKind::Directory,
+                    _ => return Ok(None),
+                };
+                match workspace.resolve_session_context_entry(
+                    &project_id,
+                    &agent_session_id,
+                    execution_mode,
+                    workspace_path.as_deref(),
+                    &record.path,
+                    expected_kind,
+                ) {
+                    Ok(resolved) => Ok(Some(ComposerPreflightContext {
+                        id: record.id,
+                        kind: record.kind,
+                        path: resolved.path,
+                    })),
+                    Err(WorkspaceError::IneligibleContext(_)) => Ok(None),
+                    Err(WorkspaceError::Io(error))
+                        if error.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
+                }
+            })
+            .collect::<Result<Vec<_>, WorkspaceError>>()
+    })
+    .await?;
+    Ok(Json(store.validate_composer_contexts(
+        &conversation.id,
+        &conversation.project_id,
+        &request.references,
+        &preflight,
+    )?))
+}
+
+fn workspace_kind(kind: ComposerContextKind) -> Result<EntryKind, ApiError> {
+    match kind {
+        ComposerContextKind::File => Ok(EntryKind::File),
+        ComposerContextKind::Directory => Ok(EntryKind::Directory),
+        _ => Err(ComposerCatalogError::ItemUnsupported.into()),
+    }
+}
+
 async fn run_workspace_operation<T, Operation>(operation: Operation) -> Result<T, ApiError>
 where
     T: Send + 'static,
@@ -2653,11 +2855,18 @@ enum ApiError {
     TeammateDeletionRequiresLeader,
     SessionModeLocked(SessionModeLockReason),
     AcpCommand(AcpCommandError),
+    ComposerContextOutsideProject(String),
 }
 
 impl From<AcpCommandError> for ApiError {
     fn from(error: AcpCommandError) -> Self {
         Self::AcpCommand(error)
+    }
+}
+
+impl From<ComposerCatalogError> for ApiError {
+    fn from(error: ComposerCatalogError) -> Self {
+        Self::AgentStore(StoreError::Composer(error))
     }
 }
 
@@ -2719,6 +2928,11 @@ impl IntoResponse for ApiError {
                 let (status, code) = workspace_error_status(&error);
                 (status, code, error.to_string())
             }
+            ApiError::ComposerContextOutsideProject(message) => (
+                StatusCode::FORBIDDEN,
+                "composer_context_outside_project",
+                message,
+            ),
             ApiError::Terminal(error) => {
                 let (status, code) = match &error {
                     TerminalError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
@@ -2968,6 +3182,13 @@ fn composer_error_status(error: ComposerCatalogError) -> (StatusCode, &'static s
         ComposerCatalogError::ArgumentsTooLong => {
             (StatusCode::PAYLOAD_TOO_LARGE, "acp_command_input_too_long")
         }
+        ComposerCatalogError::ContextStale => (StatusCode::CONFLICT, "composer_context_stale"),
+        ComposerCatalogError::ContextOverLimit
+        | ComposerCatalogError::SegmentsOverLimit
+        | ComposerCatalogError::TextTooLong => {
+            (StatusCode::PAYLOAD_TOO_LARGE, "composer_context_over_limit")
+        }
+        ComposerCatalogError::InvalidDraft => (StatusCode::BAD_REQUEST, "invalid_request"),
     }
 }
 
@@ -2975,6 +3196,7 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
     match error {
         WorkspaceError::InvalidPath(_)
         | WorkspaceError::SessionWorkspaceUnavailable
+        | WorkspaceError::IneligibleContext(_)
         | WorkspaceError::UnsupportedText
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
         WorkspaceError::AssetTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large"),

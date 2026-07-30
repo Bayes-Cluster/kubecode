@@ -2,6 +2,11 @@ use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
+use kubecode_server::composer_catalog::{
+    ComposerContextKind, ComposerContextSelector, ComposerDraftSegment, ComposerItemKind,
+    ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_REFERENCES,
+    MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES, MAX_COMPOSER_VALIDATION_ROWS,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -211,6 +216,773 @@ fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
         reopened
             .latest_workspace_event_id()
             .expect("workspace cursor"),
+        workspace_cursor
+    );
+}
+
+#[test]
+fn rewind_reconciles_lifetime_contexts_with_a_new_non_reused_catalog() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let target = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Retained question",
+            PermissionMode::Safe,
+        )
+        .expect("target run");
+    store
+        .finish_run(&target.id, RunStatus::Completed, None)
+        .expect("finish target");
+    let first = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("register after target");
+    let selector = ComposerContextSelector {
+        id: first.context.id.clone(),
+        catalog_revision: first.catalog.revision,
+        context_kind: ComposerContextKind::File,
+    };
+    let unavailable = store
+        .validate_composer_contexts(&conversation.id, "project", &[selector.clone()], &[None])
+        .expect("change availability after target");
+    let selected = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("reselect after target");
+    assert_eq!(selected.context.id, first.context.id);
+    assert!(selected.catalog.revision > unavailable.catalog.revision);
+    let removed_revision = selected.catalog.revision;
+
+    store
+        .revise_conversation_at_run(&conversation.id, &target.id)
+        .expect("rewind");
+    let reconciled = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("reconciled catalog");
+    assert!(reconciled.revision > removed_revision);
+    assert!(reconciled.contexts.iter().any(|context| {
+        context.id == first.context.id
+            && context.kind == ComposerContextKind::File
+            && context.enabled
+    }));
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopen store");
+    let reopened_catalog = reopened
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("reopened catalog");
+    assert_eq!(reopened_catalog, reconciled);
+    let old_error = reopened
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            reconciled.revision,
+            &[ComposerDraftSegment::ContextRef {
+                id: first.context.id.clone(),
+                catalog_revision: removed_revision,
+                context_kind: ComposerContextKind::File,
+            }],
+            &[ComposerPreflightContext {
+                id: first.context.id.clone(),
+                kind: ComposerContextKind::File,
+                path: "src/main.rs".into(),
+            }],
+            PermissionMode::Safe,
+        )
+        .expect_err("removed historical selector must be stale");
+    assert!(matches!(
+        old_error,
+        StoreError::Composer(kubecode_server::composer_catalog::ComposerCatalogError::ContextStale)
+    ));
+    let reselected = reopened
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("reselect same identity after reopen");
+    assert_eq!(reselected.context.id, first.context.id);
+    let run = reopened
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            reselected.catalog.revision,
+            &[ComposerDraftSegment::ContextRef {
+                id: reselected.context.id.clone(),
+                catalog_revision: reselected.catalog.revision,
+                context_kind: ComposerContextKind::File,
+            }],
+            &[ComposerPreflightContext {
+                id: reselected.context.id,
+                kind: ComposerContextKind::File,
+                path: "src/main.rs".into(),
+            }],
+            PermissionMode::Safe,
+        )
+        .expect("current selector must not hit an inconsistent-catalog 500");
+    assert_eq!(run.message, "@src/main.rs");
+}
+
+#[test]
+fn composer_context_registration_is_session_local_and_preserves_catalog_items() {
+    let (_temp, store) = store();
+    let first = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("first");
+    let second = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("second");
+    store
+        .append_runtime_update(
+            &first.id,
+            "available_commands",
+            &json!({"availableCommands":[{"name":"review","description":"Review"}]}),
+            None,
+        )
+        .expect("commands");
+
+    let first_registration = store
+        .register_composer_context(
+            &first.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("register");
+    let repeated = store
+        .register_composer_context(
+            &first.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("idempotent register");
+    let second_registration = store
+        .register_composer_context(
+            &second.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("second register");
+
+    assert_eq!(first_registration.context.id, repeated.context.id);
+    assert_eq!(
+        first_registration.catalog.revision,
+        repeated.catalog.revision
+    );
+    assert_ne!(
+        first_registration.context.id,
+        second_registration.context.id
+    );
+    assert_eq!(first_registration.catalog.items.len(), 1);
+    assert_eq!(
+        first_registration.catalog.contexts,
+        vec![first_registration.context]
+    );
+}
+
+#[test]
+fn structured_composer_run_uses_exact_historical_contexts_in_order() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let first = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/first.rs",
+        )
+        .expect("first");
+    let second = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::Directory,
+            "src/components",
+        )
+        .expect("second");
+    let segments = vec![
+        ComposerDraftSegment::Text {
+            text: "Review ".into(),
+        },
+        ComposerDraftSegment::ContextRef {
+            id: first.context.id.clone(),
+            catalog_revision: first.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        },
+        ComposerDraftSegment::Text {
+            text: " then ".into(),
+        },
+        ComposerDraftSegment::ContextRef {
+            id: second.context.id.clone(),
+            catalog_revision: second.catalog.revision,
+            context_kind: ComposerContextKind::Directory,
+        },
+    ];
+    let preflight = vec![
+        ComposerPreflightContext {
+            id: first.context.id,
+            kind: ComposerContextKind::File,
+            path: "src/first.rs".into(),
+        },
+        ComposerPreflightContext {
+            id: second.context.id,
+            kind: ComposerContextKind::Directory,
+            path: "src/components".into(),
+        },
+    ];
+
+    let run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            second.catalog.revision,
+            &segments,
+            &preflight,
+            PermissionMode::Safe,
+        )
+        .expect("structured run");
+
+    assert_eq!(run.message, "Review @src/first.rs then @src/components");
+    assert!(!run.internal);
+}
+
+#[test]
+fn unsupported_capability_reference_creates_no_run() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "available_commands",
+            &json!({"availableCommands":[{"name":"review","description":"Review"}]}),
+            None,
+        )
+        .expect("catalog");
+    let catalog = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("catalog");
+    let error = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            catalog.revision,
+            &[ComposerDraftSegment::CapabilityRef {
+                id: catalog.items[0].id.clone(),
+                catalog_revision: catalog.revision,
+                item_kind: ComposerItemKind::Command,
+            }],
+            &[],
+            PermissionMode::Safe,
+        )
+        .expect_err("unsupported capability");
+
+    assert!(matches!(
+        error,
+        StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::ItemUnsupported
+        )
+    ));
+    assert!(store.list_runs(&conversation.id).expect("runs").is_empty());
+}
+
+#[test]
+fn context_validation_batches_availability_into_one_catalog_revision() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let first = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/first.rs",
+        )
+        .expect("first");
+    let second = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::Directory,
+            "src/components",
+        )
+        .expect("second");
+    let session_events_before = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events")
+        .len();
+    let workspace_events_before = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .len();
+    let selectors = vec![
+        ComposerContextSelector {
+            id: first.context.id,
+            catalog_revision: first.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        },
+        ComposerContextSelector {
+            id: second.context.id,
+            catalog_revision: second.catalog.revision,
+            context_kind: ComposerContextKind::Directory,
+        },
+    ];
+
+    let response = store
+        .validate_composer_contexts(&conversation.id, "project", &selectors, &[None, None])
+        .expect("batch validation");
+
+    assert!(
+        response
+            .references
+            .iter()
+            .all(|reference| !reference.available)
+    );
+    assert_eq!(response.catalog.revision, second.catalog.revision + 1);
+    assert!(
+        response
+            .catalog
+            .contexts
+            .iter()
+            .all(|context| !context.enabled)
+    );
+    assert_eq!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("session events")
+            .len(),
+        session_events_before + 1
+    );
+    assert_eq!(
+        store
+            .workspace_events_after(0)
+            .expect("workspace events")
+            .len(),
+        workspace_events_before + 1
+    );
+}
+
+#[test]
+fn structured_run_rechecks_catalog_after_preflight_and_rejects_a_committed_race() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let registration = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("registration");
+    let selector = ComposerContextSelector {
+        id: registration.context.id.clone(),
+        catalog_revision: registration.catalog.revision,
+        context_kind: ComposerContextKind::File,
+    };
+    let records = store
+        .composer_context_records_for_preflight(
+            &conversation.id,
+            "project",
+            std::slice::from_ref(&selector),
+        )
+        .expect("filesystem preflight records");
+    let record = records[0].as_ref().expect("registered context");
+    let preflight = [ComposerPreflightContext {
+        id: record.id.clone(),
+        kind: record.kind,
+        path: record.path.clone(),
+    }];
+    store
+        .append_runtime_update(
+            &conversation.id,
+            "available_commands",
+            &json!({"availableCommands":[{"name":"review","description":"Review"}]}),
+            None,
+        )
+        .expect("catalog race");
+    let event_count = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events")
+        .len();
+    let workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+
+    let error = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &[ComposerDraftSegment::ContextRef {
+                id: selector.id,
+                catalog_revision: selector.catalog_revision,
+                context_kind: selector.context_kind,
+            }],
+            &preflight,
+            PermissionMode::Safe,
+        )
+        .expect_err("stale catalog race");
+
+    assert!(matches!(
+        error,
+        StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::StaleRevision
+        )
+    ));
+    assert!(store.list_runs(&conversation.id).expect("runs").is_empty());
+    assert_eq!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("session events")
+            .len(),
+        event_count
+    );
+    assert_eq!(
+        store.latest_workspace_event_id().expect("workspace cursor"),
+        workspace_cursor
+    );
+}
+
+#[test]
+fn structured_run_enforces_segment_reference_and_text_bounds() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let registration = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/main.rs",
+        )
+        .expect("registration");
+    let preflight = [ComposerPreflightContext {
+        id: registration.context.id.clone(),
+        kind: ComposerContextKind::File,
+        path: "src/main.rs".into(),
+    }];
+    let too_many_segments = (0..=MAX_COMPOSER_SEGMENTS)
+        .map(|_| ComposerDraftSegment::Text { text: "x".into() })
+        .collect::<Vec<_>>();
+    let too_many_references = (0..=MAX_COMPOSER_REFERENCES)
+        .map(|_| ComposerDraftSegment::ContextRef {
+            id: registration.context.id.clone(),
+            catalog_revision: registration.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        })
+        .collect::<Vec<_>>();
+
+    let exact_segments = (0..MAX_COMPOSER_SEGMENTS)
+        .map(|_| ComposerDraftSegment::Text { text: "x".into() })
+        .collect::<Vec<_>>();
+    let exact_segment_run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &exact_segments,
+            &[],
+            PermissionMode::Safe,
+        )
+        .expect("exact segment limit");
+    store
+        .finish_run(&exact_segment_run.id, RunStatus::Completed, None)
+        .expect("finish exact segments");
+    let exact_references = (0..MAX_COMPOSER_REFERENCES)
+        .map(|_| ComposerDraftSegment::ContextRef {
+            id: registration.context.id.clone(),
+            catalog_revision: registration.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        })
+        .collect::<Vec<_>>();
+    let exact_reference_run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &exact_references,
+            &preflight,
+            PermissionMode::Safe,
+        )
+        .expect("exact reference limit");
+    store
+        .finish_run(&exact_reference_run.id, RunStatus::Completed, None)
+        .expect("finish exact references");
+    let exact_text_run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &[ComposerDraftSegment::Text {
+                text: "x".repeat(MAX_COMPOSER_TEXT_BYTES),
+            }],
+            &[],
+            PermissionMode::Safe,
+        )
+        .expect("exact aggregate text limit");
+    store
+        .finish_run(&exact_text_run.id, RunStatus::Completed, None)
+        .expect("finish exact text");
+
+    let rendered_reference_bytes = 1 + "src/main.rs".len();
+    let exact_rendered_segments = [
+        ComposerDraftSegment::Text {
+            text: "x".repeat(MAX_COMPOSER_TEXT_BYTES - rendered_reference_bytes),
+        },
+        ComposerDraftSegment::ContextRef {
+            id: registration.context.id.clone(),
+            catalog_revision: registration.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        },
+    ];
+    let exact_rendered_run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &exact_rendered_segments,
+            &preflight,
+            PermissionMode::Safe,
+        )
+        .expect("exact rendered text limit");
+    assert_eq!(exact_rendered_run.message.len(), MAX_COMPOSER_TEXT_BYTES);
+    store
+        .finish_run(&exact_rendered_run.id, RunStatus::Completed, None)
+        .expect("finish exact rendered text");
+    let rendered_over = [
+        ComposerDraftSegment::Text {
+            text: "x".repeat(MAX_COMPOSER_TEXT_BYTES - rendered_reference_bytes + 1),
+        },
+        ComposerDraftSegment::ContextRef {
+            id: registration.context.id.clone(),
+            catalog_revision: registration.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        },
+    ];
+
+    let errors = [
+        store.start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &too_many_segments,
+            &[],
+            PermissionMode::Safe,
+        ),
+        store.start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &rendered_over,
+            &preflight,
+            PermissionMode::Safe,
+        ),
+        store.start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &too_many_references,
+            &preflight,
+            PermissionMode::Safe,
+        ),
+        store.start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &[ComposerDraftSegment::Text {
+                text: "x".repeat(MAX_COMPOSER_TEXT_BYTES + 1),
+            }],
+            &[],
+            PermissionMode::Safe,
+        ),
+    ];
+
+    assert!(matches!(
+        errors[0],
+        Err(StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::SegmentsOverLimit
+        ))
+    ));
+    assert!(matches!(
+        errors[1],
+        Err(StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::TextTooLong
+        ))
+    ));
+    assert!(matches!(
+        errors[2],
+        Err(StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::ContextOverLimit
+        ))
+    ));
+    assert!(matches!(
+        errors[3],
+        Err(StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::TextTooLong
+        ))
+    ));
+    assert_eq!(
+        store
+            .list_runs(&conversation.id)
+            .expect("runs")
+            .iter()
+            .filter(|run| run.status == RunStatus::Running)
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn composer_context_registry_is_full_without_evicting_existing_identities() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let mut ids = Vec::with_capacity(MAX_COMPOSER_CONTEXTS);
+    for index in 0..MAX_COMPOSER_CONTEXTS {
+        let registration = store
+            .register_composer_context(
+                &conversation.id,
+                "project",
+                ComposerContextKind::File,
+                &format!("src/context-{index}.rs"),
+            )
+            .expect("register within context limit");
+        ids.push(registration.context.id);
+    }
+    let before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("full catalog");
+    assert_eq!(before.contexts.len(), MAX_COMPOSER_CONTEXTS);
+    let error = store
+        .register_composer_context(
+            &conversation.id,
+            "project",
+            ComposerContextKind::File,
+            "src/context-over.rs",
+        )
+        .expect_err("257th context rejected");
+    assert!(matches!(
+        error,
+        StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::ContextOverLimit
+        )
+    ));
+    let after = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("unchanged full catalog");
+    assert_eq!(after, before);
+    assert!(
+        ids.iter()
+            .all(|id| after.contexts.iter().any(|context| &context.id == id))
+    );
+}
+
+#[test]
+fn composer_context_validation_accepts_32_unique_rows_and_rejects_33_atomically() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let mut selectors = Vec::with_capacity(MAX_COMPOSER_VALIDATION_ROWS + 1);
+    for index in 0..=MAX_COMPOSER_VALIDATION_ROWS {
+        let registration = store
+            .register_composer_context(
+                &conversation.id,
+                "project",
+                ComposerContextKind::File,
+                &format!("src/validation-{index}.rs"),
+            )
+            .expect("register validation context");
+        selectors.push(ComposerContextSelector {
+            id: registration.context.id,
+            catalog_revision: registration.catalog.revision,
+            context_kind: ComposerContextKind::File,
+        });
+    }
+    let exact = store
+        .validate_composer_contexts(
+            &conversation.id,
+            "project",
+            &selectors[..MAX_COMPOSER_VALIDATION_ROWS],
+            &vec![None; MAX_COMPOSER_VALIDATION_ROWS],
+        )
+        .expect("32 unique validation rows");
+    assert_eq!(exact.references.len(), MAX_COMPOSER_VALIDATION_ROWS);
+    let before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("catalog before over-limit validation");
+    let session_events = store
+        .session_events_after(&conversation.id, 0)
+        .expect("session events before over-limit validation")
+        .len();
+    let workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+    let error = store
+        .validate_composer_contexts(
+            &conversation.id,
+            "project",
+            &selectors,
+            &vec![None; MAX_COMPOSER_VALIDATION_ROWS + 1],
+        )
+        .expect_err("33 unique validation rows rejected");
+    assert!(matches!(
+        error,
+        StoreError::Composer(
+            kubecode_server::composer_catalog::ComposerCatalogError::ContextOverLimit
+        )
+    ));
+    assert_eq!(
+        store
+            .composer_catalog_snapshot(&conversation.id)
+            .expect("catalog after rejected validation"),
+        before
+    );
+    assert_eq!(
+        store
+            .session_events_after(&conversation.id, 0)
+            .expect("session events after rejected validation")
+            .len(),
+        session_events
+    );
+    assert_eq!(
+        store
+            .latest_workspace_event_id()
+            .expect("workspace cursor after rejection"),
         workspace_cursor
     );
 }

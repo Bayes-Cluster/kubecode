@@ -1,4 +1,5 @@
 export type InlineContextKind = 'file' | 'directory'
+export type InlineReferenceKind = InlineContextKind | 'capability'
 
 export type InlineContextSuggestion = {
   kind: InlineContextKind
@@ -6,7 +7,8 @@ export type InlineContextSuggestion = {
   path: string
 }
 
-export type InlineContextReference = InlineContextSuggestion & {
-  availability: 'available' | 'stale'
+export type InlineContextReference = Omit<InlineContextSuggestion, 'kind'> & {
+  availability: 'available' | 'stale' | 'unsupported'
   id: string
+  kind: InlineReferenceKind
 }

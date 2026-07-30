@@ -5,7 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
-import { File, Folder, WarningCircle, X } from '@phosphor-icons/react'
+import { File, Folder, Lightning, WarningCircle, X } from '@phosphor-icons/react'
 import type { CSSProperties } from 'react'
 import type { VaultEntry } from '../types'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
@@ -44,8 +44,10 @@ export function InlineWikilinkChipView({
   typeEntryMap: Record<string, VaultEntry>
 }) {
   if (contextReference) {
-    const stale = contextReference.availability === 'stale'
-    const ContextIcon = contextReference.kind === 'directory' ? Folder : File
+    const stale = contextReference.availability !== 'available'
+    const ContextIcon = contextReference.kind === 'directory'
+      ? Folder
+      : contextReference.kind === 'capability' ? Lightning : File
     return (
       <span
         contentEditable={false}

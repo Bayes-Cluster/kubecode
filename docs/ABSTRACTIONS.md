@@ -208,18 +208,21 @@ revision and appends one `composer_catalog_snapshot` row to the existing durable
 workspace-event log; an equivalent projection does neither. Hydration reads the
 latest safe journal snapshot, so process reopen preserves the exact revision and
 opaque IDs. A durable revision high-water mark belongs to the Session row rather
-than its rewindable transcript: revision can restore an older snapshot, but the
-next changed snapshot consumes a number greater than every revision previously
-issued for that Session. Typed command resolution checks Project/Session
+than its rewindable transcript. The rewind transaction compares the retained
+snapshot with the raw command and Session-lifetime context registry projection;
+a mismatch emits exactly one reconciled full snapshot whose revision is greater
+than every revision previously issued for that Session. Typed command resolution checks Project/Session
 ownership, revision, ID, availability, and the authoritative raw snapshot in the
 same transaction that creates the internal run, preventing a replacement from
 interleaving between validation and dispatch eligibility.
 
-The safe full snapshot is bounded to 256 items, including at most 64 trusted
-adapter contributions. Invalid or over-limit trusted source identities and item
-names are omitted without truncating identity. Duplicate trusted identities and
-trusted `Command` shapes without an implemented server resolver remain disabled,
-so they cannot fall through to exact-name ACP command dispatch.
+The safe full snapshot is bounded separately to 256 items and 256 Session
+context identities, including at most 64 trusted adapter contributions. The
+context registry never evicts or truncates an existing identity when full.
+Invalid or over-limit trusted source identities and item names are omitted
+without truncating identity. Duplicate trusted identities and trusted `Command`
+shapes without an implemented server resolver remain disabled, so they cannot
+fall through to exact-name ACP command dispatch.
 
 Provider invocation is server-only. The browser submits the Session ID, the
 catalog revision the draft was built against, an optional item ID, arguments,
@@ -230,6 +233,31 @@ the browser refresh without dispatching the wrong item) and then independently
 revalidates each resolved context reference for ownership, scope, availability,
 containment, type-specific size and count bounds, and staleness. Disabled,
 ambiguous, or unavailable items are rejected rather than guessed.
+
+File and directory selection first registers a normalized Project-relative path
+against the already-authorized Session and receives a deterministic Session-local
+opaque ID. Restoration marks every persisted reference stale and batch-validates
+at most 32 references; one successful batch applies all availability changes and
+at most one full catalog revision/event atomically. A foreign-Session or invented
+ID has the same stale result because lookup is always keyed by Session and opaque
+ID, never by a global ID oracle. Registration, validation, and submit all resolve
+filesystem eligibility through `WorkspaceService`, including ancestor and final
+symlink rejection. That filesystem preflight runs immediately before, but outside,
+the AgentStore database mutex. The following immediate SQLite transaction repeats
+all database-owned Session, Project, current and historical revision, ID, kind,
+enabled, and scope checks before creating a run; filesystem state itself is not
+claimed to be locked by SQLite. A failed structured-run preflight does not mutate
+context availability, catalog snapshots, events, or runs.
+
+Every structured request first applies the shared segment, reference, and
+aggregate-text limits, then resolves its exact Shared or Session-owned worktree
+execution root through `WorkspaceService`; text-only drafts cannot bypass the
+Session worktree ownership check.
+
+Structured drafts accept at most 128 segments, 32 total references, and 131072
+aggregate text bytes; rendered server-owned prompt text has the same byte bound.
+Historical revision proof uses the exact indexed `(conversation_id, revision)`
+snapshot key rather than scanning an unbounded Session journal.
 
 Standard ACP commands stay authoritative for `/`; a command is reclassified as a
 capability only when its owning adapter supplies trusted typed metadata, never

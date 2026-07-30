@@ -4,16 +4,16 @@ import { InlineWikilinkInput } from '@/components/InlineWikilinkInput'
 import type { InlineContextReference, InlineContextSuggestion } from '@/components/inlineContext'
 import type { VaultEntry } from '@/types'
 
-import type { KubecodeApi } from './api'
+import type { ComposerCatalogSnapshot, KubecodeApi } from './api'
 import {
   composerDraftFromEditorValue,
+  composerDraftAllReferences,
   composerDraftPlainText,
   composerDraftReferences,
   composerDraftToEditorValue,
   createComposerContextReference,
   applyComposerContextValidation,
   MAX_COMPOSER_CONTEXT_REFERENCES,
-  type ComposerContextReference,
   type ComposerDraft,
 } from './composerDraft'
 import { searchSessionEntries } from './projectPathSearch'
@@ -30,28 +30,26 @@ type ComposerContextInputProps = {
   draft: ComposerDraft
   inputRef: React.RefObject<HTMLDivElement | null>
   onChange: (draft: ComposerDraft | ((current: ComposerDraft) => ComposerDraft)) => void
+  onCatalogChange?: (catalog: ComposerCatalogSnapshot) => void
+  onPendingChange?: (pending: boolean) => void
+  onRegistrationError?: (cause: unknown) => void
   onKeyDownCapture?: (event: React.KeyboardEvent<HTMLDivElement>) => void
   onSubmit: (plainText: string) => void
   placeholder: string
   submitDisabled?: boolean
 }
 
-function contextVaultEntry(reference: ComposerContextReference): VaultEntry {
+function contextVaultEntry(reference: InlineContextReference): VaultEntry {
   return {
     aliases: [],
     archived: false,
     color: null,
-    filename: reference.localKey,
+    filename: reference.id,
     icon: null,
     isA: null,
-    path: reference.localKey,
+    path: reference.id,
     title: reference.name,
   }
-}
-
-function parentPath(path: string): string {
-  const separator = path.lastIndexOf('/')
-  return separator < 0 ? '' : path.slice(0, separator)
 }
 
 export function ComposerContextInput({
@@ -66,69 +64,76 @@ export function ComposerContextInput({
   draft,
   inputRef,
   onChange,
+  onCatalogChange,
+  onPendingChange,
+  onRegistrationError,
   onKeyDownCapture,
   onSubmit,
   placeholder,
   submitDisabled = false,
 }: ComposerContextInputProps) {
-  const references = useMemo(() => composerDraftReferences(draft), [draft])
+  const contextReferences = useMemo(() => composerDraftReferences(draft), [draft])
+  const references = useMemo(() => composerDraftAllReferences(draft), [draft])
+  const inlineReferences = useMemo<InlineContextReference[]>(() => references.map((reference) => (
+    'path' in reference ? reference : {
+      availability: reference.availability,
+      id: reference.id,
+      kind: 'capability',
+      name: reference.name,
+      path: `$${reference.name}`,
+    }
+  )), [references])
   const staleReferenceKey = useMemo(
-    () => JSON.stringify(references
+    () => JSON.stringify(contextReferences
       .filter((reference) => reference.availability === 'stale')
       .map((reference) => ({
-        localKey: reference.localKey,
-        kind: reference.kind,
-        parent: parentPath(reference.path),
-        path: reference.path,
+        id: reference.id,
+        catalog_revision: reference.catalogRevision,
+        context_kind: reference.kind,
       }))),
-    [references],
+    [contextReferences],
   )
   const referencesRef = useRef(references)
   useEffect(() => {
     referencesRef.current = references
   }, [references])
   const editorValue = useMemo(() => composerDraftToEditorValue(draft), [draft])
-  const entries = useMemo(() => references.map(contextVaultEntry), [references])
-  const inlineReferences = useMemo<InlineContextReference[]>(() => references.map((reference) => ({
-    ...reference,
-    id: reference.localKey,
-  })), [references])
+  const entries = useMemo(() => inlineReferences.map(contextVaultEntry), [inlineReferences])
+  const generationRef = useRef(0)
+  const pendingRegistrationsRef = useRef(0)
+
+  useEffect(() => {
+    generationRef.current += 1
+    pendingRegistrationsRef.current = 0
+    onPendingChange?.(false)
+    return () => {
+      generationRef.current += 1
+      pendingRegistrationsRef.current = 0
+      onPendingChange?.(false)
+    }
+  }, [conversationId, onPendingChange])
 
   useEffect(() => {
     const referenceRecords = JSON.parse(staleReferenceKey) as Array<{
-      localKey: string
-      kind: 'file' | 'directory'
-      parent: string
-      path: string
+      id: string
+      catalog_revision: number
+      context_kind: 'file' | 'directory'
     }>
     if (referenceRecords.length === 0) return
     let current = true
-    const controller = new AbortController()
-    const directories = [...new Set(referenceRecords.map((reference) => reference.parent))]
-    void Promise.all(directories.map((directory) => (
-      api.listSessionEntries(conversationId, directory, controller.signal)
-    )))
-      .then((pages) => {
+    void api.validateComposerContexts(conversationId, referenceRecords)
+      .then((response) => {
         if (!current) return
-        onChange((currentDraft) => applyComposerContextValidation(
-          currentDraft,
-          referenceRecords,
-          pages.flat(),
-        ))
+        onCatalogChange?.(response.catalog)
+        onChange((currentDraft) => applyComposerContextValidation(currentDraft, response))
       })
       .catch(() => {
-        if (!current) return
-        onChange((currentDraft) => applyComposerContextValidation(
-          currentDraft,
-          referenceRecords,
-          [],
-        ))
+        // Hydration is already stale; endpoint failure must not promote refs.
       })
     return () => {
       current = false
-      controller.abort()
     }
-  }, [api, conversationId, onChange, staleReferenceKey])
+  }, [api, conversationId, onCatalogChange, onChange, staleReferenceKey])
 
   const loadContextSuggestions = useCallback(async (
     query: string,
@@ -144,23 +149,58 @@ export function ComposerContextInput({
     })
   ), [api, conversationId])
 
-  const selectContextSuggestion = useCallback((suggestion: InlineContextSuggestion) => {
+  const selectContextSuggestion = useCallback(async (suggestion: InlineContextSuggestion) => {
     if (referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return null
-    const reference = createComposerContextReference(suggestion)
-    referencesRef.current = [...referencesRef.current, reference]
-    return reference.localKey
-  }, [])
+    const generation = generationRef.current
+    pendingRegistrationsRef.current += 1
+    onPendingChange?.(true)
+    try {
+      const registration = await api.registerComposerContext(conversationId, {
+        kind: suggestion.kind,
+        path: suggestion.path,
+      })
+      if (generation !== generationRef.current
+        || registration.context.kind !== suggestion.kind
+        || registration.context.display !== suggestion.path
+        || !registration.context.enabled) return null
+      const reference = createComposerContextReference({
+        catalogRevision: registration.catalog.revision,
+        id: registration.context.id,
+        kind: registration.context.kind,
+        name: suggestion.name,
+        path: registration.context.display,
+      })
+      return {
+        token: reference.id,
+        commit: () => {
+          if (generation !== generationRef.current
+            || referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return false
+          referencesRef.current = [...referencesRef.current, reference]
+          onCatalogChange?.(registration.catalog)
+          return true
+        },
+      }
+    } catch (cause) {
+      if (generation === generationRef.current) onRegistrationError?.(cause)
+      return null
+    } finally {
+      if (generation === generationRef.current) {
+        pendingRegistrationsRef.current = Math.max(0, pendingRegistrationsRef.current - 1)
+        onPendingChange?.(pendingRegistrationsRef.current > 0)
+      }
+    }
+  }, [api, conversationId, onCatalogChange, onPendingChange, onRegistrationError])
 
   const updateEditorValue = useCallback((value: string) => {
     onChange(composerDraftFromEditorValue(value, referencesRef.current))
   }, [onChange])
 
-  const removeContext = useCallback((localKey: string) => {
-    const marker = `[[${localKey}]]`
+  const removeContext = useCallback((id: string) => {
+    const marker = `[[${id}]]`
     const nextValue = editorValue.replace(marker, '')
     onChange(composerDraftFromEditorValue(
       nextValue,
-      referencesRef.current.filter((reference) => reference.localKey !== localKey),
+      referencesRef.current.filter((reference) => reference.id !== id),
     ))
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }, [editorValue, inputRef, onChange])
@@ -169,7 +209,10 @@ export function ComposerContextInput({
     composerDraftFromEditorValue(value, referencesRef.current),
   ), [])
   const sanitizePastedText = useCallback((value: string) => referencesRef.current.reduce(
-    (text, reference) => text.replaceAll(`[[${reference.localKey}]]`, `@${reference.path}`),
+    (text, reference) => text.replaceAll(
+      `[[${reference.id}]]`,
+      'path' in reference ? `@${reference.path}` : `$${reference.name}`,
+    ),
     value,
   ), [])
 

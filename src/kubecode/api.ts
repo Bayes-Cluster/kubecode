@@ -368,10 +368,66 @@ export type AgentSessionState = {
   config_options: Record<string, unknown> | null
   plan: Record<string, unknown> | null
   usage: Record<string, unknown> | null
+  composer?: {
+    catalog: ComposerCatalogSnapshot
+  }
   mode_access?: {
     can_change: boolean
     reason: NativeModeLockReason | null
   }
+}
+export type ComposerItemKind = 'command' | 'skill' | 'plugin_action' | 'provider_app'
+export type ComposerContextKind = 'file' | 'directory'
+export type ComposerCatalogItem = {
+  id: string
+  kind: ComposerItemKind
+  name: string
+  description: string | null
+  source_label: string
+  scope: 'session' | 'project' | 'user' | 'bundled' | 'plugin'
+  input_hint: string | null
+  enabled: boolean
+  disabled_reason: string | null
+}
+export type ComposerCatalogContext = {
+  id: string
+  kind: ComposerContextKind
+  display: string
+  enabled: boolean
+  disabled_reason: string | null
+}
+export type ComposerCatalogSnapshot = {
+  conversation_id: string
+  revision: number
+  items: ComposerCatalogItem[]
+  contexts: ComposerCatalogContext[]
+}
+export type ComposerContextSelector = {
+  id: string
+  catalog_revision: number
+  context_kind: ComposerContextKind
+}
+export type ComposerContextRegistration = {
+  context: ComposerCatalogContext
+  catalog: ComposerCatalogSnapshot
+}
+export type ComposerContextValidationResponse = {
+  references: Array<ComposerContextSelector & { available: boolean }>
+  catalog: ComposerCatalogSnapshot
+}
+export type StructuredComposerSegment =
+  | { kind: 'text'; text: string }
+  | (ComposerContextSelector & { kind: 'context_ref' })
+  | {
+      kind: 'capability_ref'
+      id: string
+      catalog_revision: number
+      item_kind: ComposerItemKind
+    }
+export type StructuredComposerRunRequest = {
+  item_id?: string
+  catalog_revision: number
+  segments: StructuredComposerSegment[]
 }
 export type SideQuestionAccepted = {
   id: string
@@ -814,6 +870,46 @@ export class KubecodeApi {
       {
         method: 'POST',
         body: JSON.stringify({ message }),
+      },
+    )
+  }
+
+  startStructuredRun(
+    projectId: string,
+    conversationId: string,
+    request: StructuredComposerRunRequest,
+  ): Promise<AgentRun> {
+    return this.request(
+      `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/runs`,
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      },
+    )
+  }
+
+  registerComposerContext(
+    conversationId: string,
+    context: { kind: ComposerContextKind; path: string },
+  ): Promise<ComposerContextRegistration> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/composer/contexts`,
+      {
+        method: 'POST',
+        body: JSON.stringify(context),
+      },
+    )
+  }
+
+  validateComposerContexts(
+    conversationId: string,
+    references: ComposerContextSelector[],
+  ): Promise<ComposerContextValidationResponse> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/composer/contexts/validate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ references }),
       },
     )
   }
