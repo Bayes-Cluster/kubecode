@@ -18,10 +18,19 @@ type TerminalViewProps = {
   projectId: string
   terminal: TerminalInfo
   visible: boolean
+  onSelectionChange?: (terminalId: string, selectedText: string | null) => void
   onStatus: (terminal: TerminalInfo) => void
 }
 
-export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, visible }: TerminalViewProps) {
+export function TerminalView({
+  api,
+  fontFamily,
+  onSelectionChange,
+  onStatus,
+  projectId,
+  terminal,
+  visible,
+}: TerminalViewProps) {
   const container = useRef<HTMLDivElement>(null)
   const fitAddon = useRef<FitAddon>(null)
   const xtermRef = useRef<Terminal>(null)
@@ -104,6 +113,9 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
         socket.send(JSON.stringify({ type: 'input', data }))
       }
     })
+    const selection = xterm.onSelectionChange(() => {
+      onSelectionChange?.(terminal.id, xterm.hasSelection() ? xterm.getSelection() : null)
+    })
     const resize = new ResizeObserver(() => {
       if (!visibleRef.current || !container.current?.clientWidth || !container.current.clientHeight) return
       fit.fit()
@@ -135,14 +147,16 @@ export function TerminalView({ api, fontFamily, onStatus, projectId, terminal, v
       cancelAnimationFrame(themeFrame)
       themeObserver.disconnect()
       resize.disconnect()
+      selection.dispose()
       input.dispose()
+      onSelectionChange?.(terminal.id, null)
       socket.close()
       serialize.dispose()
       xterm.dispose()
       fitAddon.current = null
       xtermRef.current = null
     }
-  }, [api, onStatus, projectId, terminal.id])
+  }, [api, onSelectionChange, onStatus, projectId, terminal.id])
 
   return <div className="kubecode-terminal-view" ref={container} />
 }

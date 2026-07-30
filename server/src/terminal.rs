@@ -6,12 +6,18 @@ use std::thread;
 
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agents::AgentId;
 use crate::workspace::{WorkspaceError, WorkspaceService};
+
+pub const MAX_TERMINAL_CONTEXT_BYTES: usize = 16 * 1024;
+pub const MAX_TERMINAL_CONTEXT_LINES: usize = 120;
+const MAX_TERMINAL_SELECTION_INPUT_BYTES: usize = 64 * 1024;
+const MAX_TERMINAL_CONTEXT_CAPTURES: usize = 2_048;
 
 #[derive(Debug, Error)]
 pub enum TerminalError {
@@ -23,6 +29,14 @@ pub enum TerminalError {
     AgentUnavailable(AgentId),
     #[error("terminal title must be 1-80 characters without control characters")]
     InvalidTitle,
+    #[error("terminal context exceeds its line or byte limit")]
+    ContextOverLimit,
+    #[error("terminal context contains binary data")]
+    ContextBinary,
+    #[error("terminal context selection is empty or unavailable")]
+    ContextSelectionUnavailable,
+    #[error("terminal context is stale or disconnected")]
+    ContextStale,
     #[error("PTY error: {0}")]
     Pty(String),
     #[error(transparent)]
@@ -48,6 +62,35 @@ pub enum TerminalStatus {
     #[default]
     Running,
     Exited,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalContextCaptureKind {
+    Selection,
+    Recent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalContextCapture {
+    pub terminal_id: String,
+    pub target_conversation_id: String,
+    pub capture: TerminalContextCaptureKind,
+    pub content: String,
+    pub source_revision: String,
+    pub line_count: usize,
+    pub byte_count: usize,
+    pub truncated: bool,
+    observed_start_cursor: u64,
+    observed_end_cursor: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BoundedTerminalContext {
+    content: String,
+    line_count: usize,
+    byte_count: usize,
+    truncated: bool,
 }
 
 impl TerminalKind {
@@ -167,6 +210,7 @@ pub struct TerminalManager {
     buffer_capacity: usize,
     agents: Arc<AgentCatalog>,
     sessions: Mutex<HashMap<String, Arc<TerminalSession>>>,
+    context_captures: Mutex<HashMap<String, TerminalContextCapture>>,
     event_sink: TerminalEventSink,
 }
 
@@ -238,6 +282,7 @@ impl TerminalManager {
             buffer_capacity,
             agents,
             sessions: Mutex::new(HashMap::new()),
+            context_captures: Mutex::new(HashMap::new()),
             event_sink,
         }
     }
@@ -464,6 +509,141 @@ impl TerminalManager {
             .snapshot(cursor))
     }
 
+    pub fn capture_context(
+        &self,
+        terminal_id: &str,
+        target_conversation_id: &str,
+        capture: TerminalContextCaptureKind,
+        selected_text: Option<&str>,
+    ) -> Result<TerminalContextCapture, TerminalError> {
+        let session = self.session(terminal_id)?;
+        if session
+            .info
+            .lock()
+            .expect("terminal info mutex poisoned")
+            .status
+            != TerminalStatus::Running
+        {
+            return Err(TerminalError::ContextStale);
+        }
+        let (bytes, observed_start_cursor, observed_end_cursor) = session
+            .buffer
+            .lock()
+            .expect("terminal buffer mutex poisoned")
+            .window();
+        let sanitized_buffer = sanitize_terminal_context(&bytes)?;
+        let bounded = match capture {
+            TerminalContextCaptureKind::Selection => {
+                let selected_text = selected_text
+                    .filter(|selection| !selection.is_empty())
+                    .ok_or(TerminalError::ContextSelectionUnavailable)?;
+                if selected_text.len() > MAX_TERMINAL_SELECTION_INPUT_BYTES {
+                    return Err(TerminalError::ContextOverLimit);
+                }
+                let selected = sanitize_terminal_context(selected_text.as_bytes())?;
+                let bounded = bounded_terminal_context(
+                    selected.trim_matches('\n'),
+                    TerminalContextCaptureKind::Selection,
+                )?;
+                if bounded.content.is_empty() || !sanitized_buffer.contains(&bounded.content) {
+                    return Err(TerminalError::ContextSelectionUnavailable);
+                }
+                bounded
+            }
+            TerminalContextCaptureKind::Recent => {
+                if selected_text.is_some() {
+                    return Err(TerminalError::ContextSelectionUnavailable);
+                }
+                bounded_terminal_context(&sanitized_buffer, TerminalContextCaptureKind::Recent)?
+            }
+        };
+        if bounded.content.is_empty() {
+            return Err(TerminalError::ContextSelectionUnavailable);
+        }
+        let source_revision =
+            terminal_context_revision(terminal_id, capture, observed_end_cursor, &bounded.content);
+        Ok(TerminalContextCapture {
+            terminal_id: terminal_id.to_owned(),
+            target_conversation_id: target_conversation_id.to_owned(),
+            capture,
+            content: bounded.content,
+            source_revision,
+            line_count: bounded.line_count,
+            byte_count: bounded.byte_count,
+            truncated: bounded.truncated,
+            observed_start_cursor,
+            observed_end_cursor,
+        })
+    }
+
+    pub fn retain_context_capture(
+        &self,
+        id: String,
+        capture: TerminalContextCapture,
+    ) -> Result<bool, TerminalError> {
+        let mut captures = self
+            .context_captures
+            .lock()
+            .expect("terminal context captures mutex poisoned");
+        if captures.contains_key(&id) {
+            return Ok(false);
+        }
+        if captures.len() >= MAX_TERMINAL_CONTEXT_CAPTURES {
+            return Err(TerminalError::ContextOverLimit);
+        }
+        captures.insert(id, capture);
+        Ok(true)
+    }
+
+    pub fn discard_context_capture(&self, id: &str) {
+        self.context_captures
+            .lock()
+            .expect("terminal context captures mutex poisoned")
+            .remove(id);
+    }
+
+    pub fn resolve_context_capture(
+        &self,
+        id: &str,
+        target_conversation_id: &str,
+    ) -> Result<TerminalContextCapture, TerminalError> {
+        let capture = self
+            .context_captures
+            .lock()
+            .expect("terminal context captures mutex poisoned")
+            .get(id)
+            .filter(|capture| capture.target_conversation_id == target_conversation_id)
+            .cloned()
+            .ok_or(TerminalError::ContextStale)?;
+        let session = self
+            .session(&capture.terminal_id)
+            .map_err(|_| TerminalError::ContextStale)?;
+        if session
+            .info
+            .lock()
+            .expect("terminal info mutex poisoned")
+            .status
+            != TerminalStatus::Running
+        {
+            return Err(TerminalError::ContextStale);
+        }
+        let (bytes, start_cursor, end_cursor) = session
+            .buffer
+            .lock()
+            .expect("terminal buffer mutex poisoned")
+            .window();
+        if start_cursor > capture.observed_start_cursor || end_cursor < capture.observed_end_cursor
+        {
+            return Err(TerminalError::ContextStale);
+        }
+        if capture.capture == TerminalContextCaptureKind::Selection
+            && !sanitize_terminal_context(&bytes)?.contains(&capture.content)
+        {
+            return Err(TerminalError::ContextStale);
+        }
+        Ok(capture)
+    }
+
     pub fn close(&self, terminal_id: &str) -> Result<(), TerminalError> {
         let session = self
             .sessions
@@ -484,6 +664,10 @@ impl TerminalManager {
                 .expect("terminal killer mutex poisoned")
                 .kill()?;
         }
+        self.context_captures
+            .lock()
+            .expect("terminal context captures mutex poisoned")
+            .retain(|_, capture| capture.terminal_id != terminal_id);
         Ok(())
     }
 
@@ -527,6 +711,157 @@ impl TerminalBuffer {
             truncated,
         }
     }
+
+    fn window(&self) -> (Vec<u8>, u64, u64) {
+        (
+            self.bytes.iter().copied().collect(),
+            self.start_cursor,
+            self.end_cursor,
+        )
+    }
+}
+
+fn sanitize_terminal_context(bytes: &[u8]) -> Result<String, TerminalError> {
+    #[derive(Clone, Copy)]
+    enum State {
+        Ground,
+        Escape,
+        Csi,
+        Osc,
+        OscEscape,
+        Dcs,
+        DcsEscape,
+    }
+
+    if bytes.contains(&0) {
+        return Err(TerminalError::ContextBinary);
+    }
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut state = State::Ground;
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match state {
+            State::Ground => match byte {
+                0x1b => state = State::Escape,
+                b'\r' => {
+                    output.push(b'\n');
+                    if bytes.get(index + 1) == Some(&b'\n') {
+                        index += 1;
+                    }
+                }
+                b'\n' | b'\t' => output.push(byte),
+                0x00..=0x1f | 0x7f => {}
+                _ => output.push(byte),
+            },
+            State::Escape => {
+                state = match byte {
+                    b'[' => State::Csi,
+                    b']' => State::Osc,
+                    b'P' | b'^' | b'_' => State::Dcs,
+                    _ => State::Ground,
+                };
+            }
+            State::Csi => {
+                if (0x40..=0x7e).contains(&byte) {
+                    state = State::Ground;
+                }
+            }
+            State::Osc => match byte {
+                0x07 => state = State::Ground,
+                0x1b => state = State::OscEscape,
+                _ => {}
+            },
+            State::OscEscape => {
+                state = if byte == b'\\' {
+                    State::Ground
+                } else {
+                    State::Osc
+                };
+            }
+            State::Dcs => {
+                if byte == 0x1b {
+                    state = State::DcsEscape;
+                }
+            }
+            State::DcsEscape => {
+                state = if byte == b'\\' {
+                    State::Ground
+                } else {
+                    State::Dcs
+                };
+            }
+        }
+        index += 1;
+    }
+    String::from_utf8(output).map_err(|_| TerminalError::ContextBinary)
+}
+
+fn bounded_terminal_context(
+    content: &str,
+    capture: TerminalContextCaptureKind,
+) -> Result<BoundedTerminalContext, TerminalError> {
+    let line_count = || {
+        if content.is_empty() {
+            0
+        } else {
+            content.split('\n').count()
+        }
+    };
+    if capture == TerminalContextCaptureKind::Selection {
+        if content.len() > MAX_TERMINAL_CONTEXT_BYTES || line_count() > MAX_TERMINAL_CONTEXT_LINES {
+            return Err(TerminalError::ContextOverLimit);
+        }
+        return Ok(BoundedTerminalContext {
+            content: content.to_owned(),
+            line_count: line_count(),
+            byte_count: content.len(),
+            truncated: false,
+        });
+    }
+
+    let lines = content.split('\n').collect::<Vec<_>>();
+    let first_line = lines.len().saturating_sub(MAX_TERMINAL_CONTEXT_LINES);
+    let mut bounded = lines[first_line..].join("\n");
+    let mut truncated = first_line > 0;
+    if bounded.len() > MAX_TERMINAL_CONTEXT_BYTES {
+        let mut start = bounded.len() - MAX_TERMINAL_CONTEXT_BYTES;
+        while !bounded.is_char_boundary(start) {
+            start += 1;
+        }
+        bounded = bounded[start..].to_owned();
+        truncated = true;
+    }
+    Ok(BoundedTerminalContext {
+        line_count: if bounded.is_empty() {
+            0
+        } else {
+            bounded.split('\n').count()
+        },
+        byte_count: bounded.len(),
+        content: bounded,
+        truncated,
+    })
+}
+
+fn terminal_context_revision(
+    terminal_id: &str,
+    capture: TerminalContextCaptureKind,
+    cursor: u64,
+    content: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"kubecode-terminal-context-v1\0");
+    digest.update(terminal_id.len().to_be_bytes());
+    digest.update(terminal_id.as_bytes());
+    digest.update(match capture {
+        TerminalContextCaptureKind::Selection => b"selection".as_slice(),
+        TerminalContextCaptureKind::Recent => b"recent".as_slice(),
+    });
+    digest.update(cursor.to_be_bytes());
+    digest.update(content.len().to_be_bytes());
+    digest.update(content.as_bytes());
+    hex::encode(digest.finalize())
 }
 
 fn copy_pty_output(reader: &mut dyn Read, buffer: &Arc<Mutex<TerminalBuffer>>) {
@@ -539,5 +874,57 @@ fn copy_pty_output(reader: &mut dyn Read, buffer: &Arc<Mutex<TerminalBuffer>>) {
                 .expect("terminal buffer mutex poisoned")
                 .push(&chunk[..read]),
         }
+    }
+}
+
+#[cfg(test)]
+mod context_capture_tests {
+    use super::{
+        MAX_TERMINAL_CONTEXT_BYTES, MAX_TERMINAL_CONTEXT_LINES, TerminalContextCaptureKind,
+        TerminalError, bounded_terminal_context, sanitize_terminal_context,
+    };
+
+    #[test]
+    fn terminal_context_strips_ansi_osc_and_unsafe_controls() {
+        let sanitized = sanitize_terminal_context(
+            b"\x1b[31mfailed\x1b[0m\r\n\x1b]0;/private/project\x07next\x08!\tvalue",
+        )
+        .expect("text output");
+
+        assert_eq!(sanitized, "failed\nnext!\tvalue");
+        assert!(!sanitized.contains("/private/project"));
+    }
+
+    #[test]
+    fn terminal_context_rejects_binary_and_oversized_explicit_selections() {
+        assert!(matches!(
+            sanitize_terminal_context(b"text\0binary"),
+            Err(TerminalError::ContextBinary)
+        ));
+        let oversized = "x".repeat(MAX_TERMINAL_CONTEXT_BYTES + 1);
+        assert!(matches!(
+            bounded_terminal_context(&oversized, TerminalContextCaptureKind::Selection),
+            Err(TerminalError::ContextOverLimit)
+        ));
+    }
+
+    #[test]
+    fn recent_terminal_context_keeps_only_an_explicit_bounded_tail() {
+        let output = (0..MAX_TERMINAL_CONTEXT_LINES + 10)
+            .map(|index| format!("line-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let bounded = bounded_terminal_context(&output, TerminalContextCaptureKind::Recent)
+            .expect("bounded tail");
+
+        assert!(bounded.truncated);
+        assert_eq!(bounded.line_count, MAX_TERMINAL_CONTEXT_LINES);
+        assert!(bounded.content.len() <= MAX_TERMINAL_CONTEXT_BYTES);
+        assert!(!bounded.content.contains("line-0\n"));
+        assert!(
+            bounded
+                .content
+                .ends_with(&format!("line-{}", MAX_TERMINAL_CONTEXT_LINES + 9))
+        );
     }
 }

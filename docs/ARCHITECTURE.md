@@ -40,7 +40,8 @@ The Axum server composes eight services:
   at four, while active prompts are never evicted.
 - `AgentCatalog` owns the process-wide, dynamically refreshable CLI and ACP
   adapter readiness snapshot shared by Agent Sessions, Teams, and TUI terminals.
-- `TerminalManager` owns reconnectable PTYs independently of browser sockets.
+- `TerminalManager` owns reconnectable PTYs independently of browser sockets and
+  process-lifetime bounded Composer captures selected from those PTYs.
 - `GitService` performs Project- and Session-scoped Git operations without shell
   interpolation, including bounded Composer diff discovery and resolution.
 - `TeamStore` persists Team authority, membership, tasks, and mailboxes.
@@ -252,7 +253,7 @@ catalog, and a conversation-scoped full-snapshot workspace event. `POST
 transitional exact-name selector or an opaque item ID with its catalog revision;
 the typed path validates and creates its internal run in one store transaction,
 then dispatches only the server-resolved prompt. Unknown slash text remains an
-ordinary prompt. File, directory, and Git diff chips are registered and
+ordinary prompt. File, directory, Git diff, and terminal-output chips are registered and
 batch-validated through Session-scoped Composer context endpoints. Git diff
 discovery uses `GET /sessions/{conversation_id}/composer/git-diffs`; registration
 submits a selector and patch revision, never patch content. Structured run requests carry
@@ -279,6 +280,17 @@ Composer errors rather than truncation. Safe snapshots are bounded across standa
 ACP and trusted-adapter sources; invalid identities are omitted, and unsupported
 trusted command shapes stay disabled rather than falling through to ACP name
 resolution.
+
+Terminal references are created only by an explicit selection or recent-output
+action. Selection text is checked against the live PTY ring buffer; recent output
+is captured only on the server and is capped at 120 lines and 16 KiB. ANSI, OSC,
+and unsafe control data are removed and binary input is rejected. The target
+Session and source terminal must resolve through `WorkspaceService` to the same
+Project execution path. The private capture remains in `TerminalManager`, while
+SQLite stores only its digest, private terminal selector, and safe pane/count
+summary. Browser socket reconnect does not invalidate it, but PTY exit/close,
+ring-buffer eviction, ownership changes, or server restart do. Provider dispatch
+rechecks all of those conditions and never substitutes newer scrollback.
 
 Claude skill discovery is owned by the bundled adapter. Each standard Claude
 `available_commands_update` is forwarded immediately, then the adapter refreshes

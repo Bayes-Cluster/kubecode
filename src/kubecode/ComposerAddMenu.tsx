@@ -1,9 +1,9 @@
-import { CaretLeft, File, GitDiff, Plus, Sparkle } from '@phosphor-icons/react'
+import { CaretLeft, File, GitDiff, Plus, Sparkle, TerminalWindow } from '@phosphor-icons/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { TranslationKey } from '@/lib/i18n'
+import type { TranslationKey, TranslationValues } from '@/lib/i18n'
 
 import type {
   ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi,
@@ -11,8 +11,14 @@ import type {
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
 import { ProjectFilePicker } from './ProjectFilePicker'
+import type { TerminalContextSource } from './TerminalWorkspace'
 
 export type ComposerAgentCommand = { name: string; description: string }
+export type TerminalContextRequest = {
+  terminalId: string
+  capture: 'selection' | 'recent'
+  selectedText?: string
+}
 
 type ComposerAddMenuProps = {
   api: KubecodeApi
@@ -31,8 +37,10 @@ type ComposerAddMenuProps = {
   onCapability?: (capability: RankedComposerCapability) => void
   onGitDiff?: (candidate: GitDiffContextCandidate) => void
   onReference: (entry: Entry) => void
+  onTerminalContext?: (request: TerminalContextRequest) => void
   projectId: string
-  t: (key: TranslationKey) => string
+  t: (key: TranslationKey, values?: TranslationValues) => string
+  terminalSources?: TerminalContextSource[]
 }
 
 export function ComposerAddMenu({
@@ -48,12 +56,15 @@ export function ComposerAddMenu({
   onCapability,
   onGitDiff,
   onReference,
+  onTerminalContext,
   projectId,
   t,
+  terminalSources = [],
 }: ComposerAddMenuProps) {
   const [open, setOpen] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [showGitDiffs, setShowGitDiffs] = useState(false)
+  const [showTerminals, setShowTerminals] = useState(false)
   const [gitDiffState, setGitDiffState] = useState<{
     candidates: GitDiffContextCandidate[]
     status: 'error' | 'loading' | 'ready'
@@ -110,6 +121,7 @@ export function ComposerAddMenu({
     setQuery('')
     setShowFiles(false)
     setShowGitDiffs(false)
+    setShowTerminals(false)
     setSelectedCapabilityIndex(0)
   }
 
@@ -143,6 +155,7 @@ export function ComposerAddMenu({
           setOpen((current) => !current)
           setShowFiles(false)
           setShowGitDiffs(false)
+          setShowTerminals(false)
         }}
       >
         <Plus size={19} />
@@ -233,6 +246,76 @@ export function ComposerAddMenu({
                 ))}
               </div>
             </>
+          ) : showTerminals && onTerminalContext ? (
+            <>
+              <div className="flex items-center border-b border-border px-2 py-1.5">
+                <Button
+                  className="min-w-0 justify-start gap-2"
+                  onClick={() => setShowTerminals(false)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <CaretLeft />
+                  <span className="truncate">{t('kubecode.referenceTerminalOutput')}</span>
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                {terminalSources.map((source) => {
+                  const pane = t('kubecode.terminalPane', { index: source.paneIndex })
+                  return (
+                    <div className="border-b border-border py-1 last:border-b-0" key={source.terminalId}>
+                      <div className="flex min-w-0 items-center gap-2 px-3 py-1 text-sm font-medium">
+                        <TerminalWindow className="shrink-0" size={18} />
+                        <span className="truncate">{pane}</span>
+                      </div>
+                      <Button
+                        aria-label={t('kubecode.attachSelectedTerminalOutput', { pane })}
+                        className="h-auto w-full justify-start px-8 py-2 text-left"
+                        disabled={!source.selectedText}
+                        onClick={() => {
+                          if (!source.selectedText) return
+                          onTerminalContext({
+                            capture: 'selection',
+                            selectedText: source.selectedText,
+                            terminalId: source.terminalId,
+                          })
+                          close()
+                        }}
+                        type="button"
+                        variant="ghost"
+                      >
+                        <span className="min-w-0">
+                          <strong className="block font-medium">{t('kubecode.terminalSelectedOutput')}</strong>
+                          <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                            {source.selectedText
+                              ? t('kubecode.terminalSelectionReady')
+                              : t('kubecode.terminalSelectionUnavailable')}
+                          </small>
+                        </span>
+                      </Button>
+                      <Button
+                        aria-label={t('kubecode.attachRecentTerminalOutput', { pane })}
+                        className="h-auto w-full justify-start px-8 py-2 text-left"
+                        onClick={() => {
+                          onTerminalContext({ capture: 'recent', terminalId: source.terminalId })
+                          close()
+                        }}
+                        type="button"
+                        variant="ghost"
+                      >
+                        <span className="min-w-0">
+                          <strong className="block font-medium">{t('kubecode.terminalRecentOutput')}</strong>
+                          <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                            {t('kubecode.terminalRecentOutputDescription')}
+                          </small>
+                        </span>
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -267,6 +350,22 @@ export function ComposerAddMenu({
                     <strong className="block truncate font-medium">{t('kubecode.referenceGitDiff')}</strong>
                     <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
                       {t('kubecode.chooseGitDiffReference')}
+                    </small>
+                  </span>
+                </Button>}
+                {terminalSources.length > 0 && onTerminalContext && <Button
+                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  onClick={() => setShowTerminals(true)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <TerminalWindow className="shrink-0" size={20} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">
+                      {t('kubecode.referenceTerminalOutput')}
+                    </strong>
+                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      {t('kubecode.chooseTerminalOutputReference')}
                     </small>
                   </span>
                 </Button>}

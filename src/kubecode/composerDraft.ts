@@ -1,12 +1,12 @@
 import type {
   ComposerCatalogSnapshot,
-  ComposerGitDiffSummary,
+  ComposerContextSummary,
   ComposerContextValidationResponse,
   ComposerItemKind,
   StructuredComposerSegment,
 } from './api'
 
-export type ComposerContextKind = 'file' | 'directory' | 'git_diff'
+export type ComposerContextKind = 'file' | 'directory' | 'git_diff' | 'terminal'
 export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
 export type ComposerCapabilityItemKind = Exclude<ComposerItemKind, 'command'>
 
@@ -17,7 +17,7 @@ export type ComposerContextReference = {
   name: string
   path: string
   availability: 'available' | 'stale'
-  summary?: ComposerGitDiffSummary
+  summary?: ComposerContextSummary
 }
 
 export type ComposerCapabilityReference = {
@@ -91,7 +91,7 @@ function isContextReference(value: unknown): value is ComposerContextReference {
   const reference = value as Partial<ComposerContextReference>
   return isOpaqueId(reference.id)
     && isCatalogRevision(reference.catalogRevision)
-    && (reference.kind === 'file' || reference.kind === 'directory' || reference.kind === 'git_diff')
+    && ['file', 'directory', 'git_diff', 'terminal'].includes(reference.kind ?? '')
     && typeof reference.name === 'string'
     && reference.name.length > 0
     && typeof reference.path === 'string'
@@ -103,14 +103,22 @@ function isContextReference(value: unknown): value is ComposerContextReference {
 function isComposerContextSummary(
   kind: ComposerContextKind | undefined,
   summary: unknown,
-): summary is ComposerGitDiffSummary | undefined {
-  if (kind !== 'git_diff') return summary === undefined
+): summary is ComposerContextSummary | undefined {
+  if (kind !== 'git_diff' && kind !== 'terminal') return summary === undefined
   if (!summary || typeof summary !== 'object') return false
-  const candidate = summary as Partial<ComposerGitDiffSummary>
-  return candidate.kind === 'git_diff'
-    && (candidate.scope === 'all' || candidate.scope === 'file')
-    && [candidate.file_count, candidate.hunk_count, candidate.byte_count]
-      .every((value) => Number.isSafeInteger(value) && (value ?? -1) >= 0)
+  const candidate = summary as Partial<ComposerContextSummary>
+  if (kind === 'git_diff') {
+    return candidate.kind === 'git_diff'
+      && (candidate.scope === 'all' || candidate.scope === 'file')
+      && [candidate.file_count, candidate.hunk_count, candidate.byte_count]
+        .every((value) => Number.isSafeInteger(value) && (value ?? -1) >= 0)
+  }
+  return candidate.kind === 'terminal'
+    && (candidate.capture === 'selection' || candidate.capture === 'recent')
+    && Number.isSafeInteger(candidate.pane_index) && (candidate.pane_index ?? 0) > 0
+    && Number.isSafeInteger(candidate.line_count) && (candidate.line_count ?? -1) >= 0
+    && Number.isSafeInteger(candidate.byte_count) && (candidate.byte_count ?? -1) >= 0
+    && typeof candidate.truncated === 'boolean'
 }
 
 function isCapabilityReference(value: unknown): value is ComposerCapabilityReference {

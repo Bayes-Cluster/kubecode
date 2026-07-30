@@ -1487,5 +1487,19 @@
   "kubecode.agentError.sessionRestore": "The Agent could not restore its provider Session.",
   "kubecode.agentError.authentication": "The Agent CLI is not authenticated. Sign in with the CLI and retry.",
   "kubecode.agentError.directory": "The Agent could not open this project directory.",
-  "kubecode.agentError.unavailable": "This Agent is not ready. Check its CLI and ACP adapter."
+  "kubecode.agentError.unavailable": "This Agent is not ready. Check its CLI and ACP adapter.",
+  "kubecode.referenceTerminalOutput": "Reference terminal output",
+  "kubecode.chooseTerminalOutputReference": "Attach only a selection or a bounded recent output window.",
+  "kubecode.terminalPane": "Terminal pane {index}",
+  "kubecode.attachSelectedTerminalOutput": "Attach selected output from {pane}",
+  "kubecode.attachRecentTerminalOutput": "Attach recent output from {pane}",
+  "kubecode.terminalSelectedOutput": "Selected output",
+  "kubecode.terminalSelectionReady": "Attach the current explicit selection.",
+  "kubecode.terminalSelectionUnavailable": "Select output in this pane first.",
+  "kubecode.terminalRecentOutput": "Recent output",
+  "kubecode.terminalRecentOutputDescription": "Attach a bounded server-side tail of this pane.",
+  "kubecode.terminalCaptureSelection": "selection",
+  "kubecode.terminalCaptureRecent": "recent output",
+  "kubecode.terminalContextSummary": "{pane} · {capture} · {lines} lines · {bytes} bytes",
+  "kubecode.terminalContextSummaryTruncated": "{pane} · bounded {capture} · {lines} lines · {bytes} bytes"
 }

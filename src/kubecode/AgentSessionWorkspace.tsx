@@ -62,7 +62,7 @@ import {
   type WorkspaceEvent,
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
-import { ComposerAddMenu } from './ComposerAddMenu'
+import { ComposerAddMenu, type TerminalContextRequest } from './ComposerAddMenu'
 import type { ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import type { CommandPaletteSessionSnapshot, RankedCommandPaletteItem } from './commandPalette'
 import { ComposerContextInput } from './ComposerContextInput'
@@ -90,6 +90,7 @@ import { SideQuestionPanel, type SideQuestionItem } from './SideQuestionPanel'
 import { useSystemMessages } from './systemMessages'
 import { TeamSessionOverview } from './TeamSessionOverview'
 import { TeamWorkspaceView } from './TeamWorkspaceView'
+import type { TerminalContextSource } from './TerminalWorkspace'
 import { AcpCommandMenu } from './AcpCommandMenu'
 import {
   acpCommandCanDispatch,
@@ -149,6 +150,7 @@ type AgentSessionWorkspaceProps = {
   t: Translator
   workspaceEvents: WorkspaceEvent[]
   team?: TeamSnapshot | null
+  terminalContextSources?: TerminalContextSource[]
   titlebarTarget?: HTMLElement | null
 }
 
@@ -228,6 +230,7 @@ export function AgentSessionWorkspace({
   onTeamUpdated,
   onSelectTeamMember,
   projectId,
+  terminalContextSources = [],
   t,
   workspaceEvents,
   team,
@@ -1137,6 +1140,65 @@ export function AgentSessionWorkspace({
     })
   }
 
+  const insertComposerTerminalContext = (terminalRequest: TerminalContextRequest) => {
+    if (directTeammateChatDisabled || hardReadOnly) return
+    const targetConversationId = conversation.id
+    const request = ++menuContextRequestRef.current
+    setMenuContextPending(true)
+    void api.registerComposerContext(targetConversationId, {
+      kind: 'terminal',
+      path: terminalRequest.capture,
+      terminal_id: terminalRequest.terminalId,
+      selected_text: terminalRequest.selectedText,
+    }).then((registration) => {
+      if (request !== menuContextRequestRef.current
+        || activeConversationIdRef.current !== targetConversationId
+        || registration.context.kind !== 'terminal'
+        || !registration.context.enabled
+        || registration.context.summary?.kind !== 'terminal') return
+      const summary = registration.context.summary
+      const pane = t('kubecode.terminalPane', { index: summary.pane_index })
+      const capture = t(summary.capture === 'selection'
+        ? 'kubecode.terminalCaptureSelection'
+        : 'kubecode.terminalCaptureRecent')
+      const name = t(summary.truncated
+        ? 'kubecode.terminalContextSummaryTruncated'
+        : 'kubecode.terminalContextSummary', {
+        pane,
+        capture,
+        lines: summary.line_count,
+        bytes: summary.byte_count,
+      })
+      applyComposerCatalog(registration.catalog)
+      updateComposerDraft((current) => appendComposerContext(
+        current,
+        createComposerContextReference({
+          catalogRevision: registration.catalog.revision,
+          id: registration.context.id,
+          kind: 'terminal',
+          name,
+          path: 'terminal',
+          summary,
+        }),
+      ))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_agent_context_inserted', {
+        agent_id: conversation.agent_id,
+        kind: 'terminal',
+      })
+    }).catch((cause) => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        reportError(cause)
+      }
+    }).finally(() => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        setMenuContextPending(false)
+      }
+    })
+  }
+
   const insertComposerCapability = (capability: RankedComposerCapability) => {
     if (directTeammateChatDisabled || hardReadOnly || !capability.enabled) return
     const catalog = sessionState?.composer?.catalog
@@ -1566,8 +1628,10 @@ export function AgentSessionWorkspace({
                   onGitDiff={insertComposerGitDiff}
                   onInsert={insertComposerText}
                   onReference={insertComposerContext}
+                  onTerminalContext={insertComposerTerminalContext}
                   projectId={projectId}
                   t={t}
+                  terminalSources={terminalContextSources}
                 />
               ) : undefined}
               controls={nativeMode || configSelects.length > 0 ? (

@@ -1,4 +1,4 @@
-export type InlineContextKind = 'file' | 'directory' | 'git_diff'
+export type InlineContextKind = 'file' | 'directory' | 'git_diff' | 'terminal'
 export type InlineReferenceKind = InlineContextKind | 'capability'
 
 export type InlineContextSuggestion = {
@@ -16,6 +16,13 @@ export type InlineContextSuggestion = {
     file_count: number
     hunk_count: number
     byte_count: number
+  } | {
+    kind: 'terminal'
+    capture: 'selection' | 'recent'
+    pane_index: number
+    line_count: number
+    byte_count: number
+    truncated: boolean
   }
 }
 

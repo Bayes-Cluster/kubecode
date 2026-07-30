@@ -5,7 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
-import { File, Folder, GitDiff, Lightning, WarningCircle, X } from '@phosphor-icons/react'
+import { File, Folder, GitDiff, Lightning, TerminalWindow, WarningCircle, X } from '@phosphor-icons/react'
 import type { CSSProperties } from 'react'
 import type { VaultEntry } from '../types'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
@@ -49,11 +49,13 @@ export function InlineWikilinkChipView({
       ? Folder
       : contextReference.kind === 'capability'
         ? Lightning
-        : contextReference.kind === 'git_diff' ? GitDiff : File
+        : contextReference.kind === 'git_diff'
+          ? GitDiff
+          : contextReference.kind === 'terminal' ? TerminalWindow : File
     const capabilityTitle = contextReference.kind === 'capability'
       ? [contextReference.name, contextReference.sourceLabel, contextReference.scopeLabel]
         .filter(Boolean).join(' · ')
-      : contextReference.path
+      : contextReference.kind === 'terminal' ? contextReference.name : contextReference.path
     return (
       <span
         contentEditable={false}

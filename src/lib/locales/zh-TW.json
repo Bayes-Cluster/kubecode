@@ -1487,5 +1487,19 @@
   "kubecode.agentError.sessionRestore": "Agent 無法還原其 provider Session。",
   "kubecode.agentError.authentication": "Agent CLI 尚未驗證。請在 CLI 中登入後重試。",
   "kubecode.agentError.directory": "Agent 無法開啟此專案目錄。",
-  "kubecode.agentError.unavailable": "此 Agent 尚未就緒。請檢查 CLI 和 ACP 轉接器。"
+  "kubecode.agentError.unavailable": "此 Agent 尚未就緒。請檢查 CLI 和 ACP 轉接器。",
+  "kubecode.referenceTerminalOutput": "Reference terminal output",
+  "kubecode.chooseTerminalOutputReference": "Attach only a selection or a bounded recent output window.",
+  "kubecode.terminalPane": "Terminal pane {index}",
+  "kubecode.attachSelectedTerminalOutput": "Attach selected output from {pane}",
+  "kubecode.attachRecentTerminalOutput": "Attach recent output from {pane}",
+  "kubecode.terminalSelectedOutput": "Selected output",
+  "kubecode.terminalSelectionReady": "Attach the current explicit selection.",
+  "kubecode.terminalSelectionUnavailable": "Select output in this pane first.",
+  "kubecode.terminalRecentOutput": "Recent output",
+  "kubecode.terminalRecentOutputDescription": "Attach a bounded server-side tail of this pane.",
+  "kubecode.terminalCaptureSelection": "selection",
+  "kubecode.terminalCaptureRecent": "recent output",
+  "kubecode.terminalContextSummary": "{pane} · {capture} · {lines} lines · {bytes} bytes",
+  "kubecode.terminalContextSummaryTruncated": "{pane} · bounded {capture} · {lines} lines · {bytes} bytes"
 }

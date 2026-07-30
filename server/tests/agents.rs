@@ -3,10 +3,12 @@ use kubecode_server::agents::{
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use kubecode_server::composer_catalog::{
-    ComposerContextKind, ComposerContextSelector, ComposerDraftSegment, ComposerInvocation,
-    ComposerItemKind, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_REFERENCES,
-    MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES, MAX_COMPOSER_VALIDATION_ROWS,
+    ComposerContextKind, ComposerContextSelector, ComposerContextSummary, ComposerDraftSegment,
+    ComposerInvocation, ComposerItemKind, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS,
+    MAX_COMPOSER_REFERENCES, MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES,
+    MAX_COMPOSER_VALIDATION_ROWS,
 };
+use kubecode_server::terminal::TerminalContextCaptureKind;
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -665,6 +667,61 @@ fn structured_composer_run_uses_exact_historical_contexts_in_order() {
 
     assert_eq!(run.message, "Review @src/first.rs then @src/components");
     assert!(!run.internal);
+}
+
+#[test]
+fn structured_terminal_context_dispatches_only_the_explicit_sanitized_capture() {
+    let (_temp, store) = store();
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let selector = "private-terminal-id:selection";
+    let source_revision = "a".repeat(64);
+    let registration = store
+        .register_composer_terminal_context(
+            &conversation.id,
+            "project",
+            selector,
+            &source_revision,
+            ComposerContextSummary::Terminal {
+                capture: TerminalContextCaptureKind::Selection,
+                pane_index: 1,
+                line_count: 2,
+                byte_count: 25,
+                truncated: false,
+            },
+        )
+        .expect("terminal context");
+    assert!(
+        !serde_json::to_string(&registration.context)
+            .expect("safe context")
+            .contains(selector)
+    );
+
+    let run = store
+        .start_structured_composer_run(
+            &conversation.id,
+            "project",
+            None,
+            registration.catalog.revision,
+            &[ComposerDraftSegment::ContextRef {
+                id: registration.context.id.clone(),
+                catalog_revision: registration.catalog.revision,
+                context_kind: ComposerContextKind::Terminal,
+            }],
+            &[ComposerPreflightContext {
+                id: registration.context.id,
+                kind: ComposerContextKind::Terminal,
+                path: selector.into(),
+                content: Some("explicit-output\nsecond-line".into()),
+            }],
+            PermissionMode::Safe,
+        )
+        .expect("terminal dispatch");
+
+    assert!(run.message.contains("explicit-output\n    second-line"));
+    assert!(!run.message.contains(selector));
+    assert!(!run.message.contains("unselected-output"));
 }
 
 #[test]

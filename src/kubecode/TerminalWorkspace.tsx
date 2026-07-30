@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   closestCenter,
   DndContext,
@@ -70,10 +70,17 @@ type TerminalWorkspaceProps = {
   conversationId?: string | null
   initialTerminals: TerminalInfo[]
   onCollapse?: () => void
+  onContextSourcesChange?: (sources: TerminalContextSource[]) => void
   open?: boolean
   projectId: string
   t: (key: TranslationKey, values?: TranslationValues) => string
   terminalFont?: string
+}
+
+export type TerminalContextSource = {
+  terminalId: string
+  paneIndex: number
+  selectedText: string | null
 }
 
 const agentKinds: Array<{ id: AgentId; kind: TerminalKind; label: string }> = [
@@ -95,6 +102,7 @@ export function TerminalWorkspace({
   conversationId = null,
   initialTerminals,
   onCollapse,
+  onContextSourcesChange,
   open = true,
   projectId,
   t,
@@ -106,6 +114,7 @@ export function TerminalWorkspace({
   ))
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [terminalSelections, setTerminalSelections] = useState<Record<string, string | null>>({})
   const systemMessages = useSystemMessages()
   const [navigatorWidth, setNavigatorWidth] = useState(() => readTerminalNavigatorLayout(projectId).width)
   const sequence = useRef(0)
@@ -113,6 +122,10 @@ export function TerminalWorkspace({
   const body = useRef<HTMLDivElement>(null)
   const activeGroup = workspace.groups.find((group) => group.id === workspace.activeGroupId) ?? null
   const activeTerminal = terminals.find((terminal) => terminal.id === activeGroup?.activeTerminalId) ?? null
+  const activePaneIds = useMemo(
+    () => activeGroup ? terminalIds(activeGroup.layout) : [],
+    [activeGroup],
+  )
   const navigatorVisible = terminals.length > 1
   const navigatorNarrow = navigatorWidth < TERMINAL_NAVIGATOR_MIDPOINT
   const sensors = useSensors(
@@ -138,6 +151,20 @@ export function TerminalWorkspace({
     setTerminals(initialTerminals)
     setWorkspace((current) => reconcileTerminalWorkspace(current, initialTerminals))
   }, [initialTerminals])
+
+  useEffect(() => {
+    onContextSourcesChange?.(activePaneIds.flatMap((terminalId, index) => (
+      terminals.some((terminal) => terminal.id === terminalId && terminal.status === 'running')
+        ? [{
+            terminalId,
+            paneIndex: index + 1,
+            selectedText: terminalSelections[terminalId] ?? null,
+          }]
+        : []
+    )))
+  }, [activePaneIds, onContextSourcesChange, terminalSelections, terminals])
+
+  useEffect(() => () => onContextSourcesChange?.([]), [onContextSourcesChange])
 
   useEffect(() => {
     if (terminals.length > 0) {
@@ -276,6 +303,12 @@ export function TerminalWorkspace({
     setTerminals((current) => current.map((terminal) => terminal.id === updated.id ? updated : terminal))
   }, [])
 
+  const updateSelection = useCallback((terminalId: string, selectedText: string | null) => {
+    setTerminalSelections((current) => current[terminalId] === selectedText
+      ? current
+      : { ...current, [terminalId]: selectedText })
+  }, [])
+
   const resizeNavigator = useCallback((delta: number) => {
     setNavigatorWidth((current) => resizeTerminalNavigator(
       current,
@@ -372,6 +405,7 @@ export function TerminalWorkspace({
                   : group),
               }))}
               onRestart={restart}
+              onSelectionChange={updateSelection}
               onStatus={updateStatus}
               projectId={projectId}
               terminalFont={terminalFont}
@@ -635,6 +669,7 @@ function TerminalLayoutView({
   onActivate,
   onResizeSplit,
   onRestart,
+  onSelectionChange,
   onStatus,
   projectId,
   terminalFont,
@@ -648,6 +683,7 @@ function TerminalLayoutView({
   onActivate: (terminalId: string) => void
   onResizeSplit: (splitId: string, ratio: number) => void
   onRestart: (terminal: TerminalInfo) => Promise<void>
+  onSelectionChange: (terminalId: string, selectedText: string | null) => void
   onStatus: (terminal: TerminalInfo) => void
   projectId: string
   terminalFont: string
@@ -665,7 +701,15 @@ function TerminalLayoutView({
         data-status={terminal.status}
         onMouseDown={() => onActivate(layout.terminalId)}
       >
-        <TerminalView api={api} fontFamily={terminalFont} onStatus={onStatus} projectId={projectId} terminal={terminal} visible={visible} />
+        <TerminalView
+          api={api}
+          fontFamily={terminalFont}
+          onSelectionChange={onSelectionChange}
+          onStatus={onStatus}
+          projectId={projectId}
+          terminal={terminal}
+          visible={visible}
+        />
         {terminal.status === 'exited' && (
           <div className="kubecode-terminal-exited">
             <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
@@ -683,6 +727,7 @@ function TerminalLayoutView({
       onActivate={onActivate}
       onResizeSplit={onResizeSplit}
       onRestart={onRestart}
+      onSelectionChange={onSelectionChange}
       onStatus={onStatus}
       projectId={projectId}
       terminalFont={terminalFont}

@@ -29,13 +29,13 @@ use crate::agents::{
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextSelector,
     ComposerContextSummary, ComposerDraftSegment, ComposerGitDiffScope, ComposerPreflightContext,
-    MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id,
+    MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id, opaque_terminal_context_id,
 };
 use crate::git::{GitError, GitMutation, GitService};
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::terminal::{
-    TerminalError, TerminalEventSink, TerminalKind, TerminalLifecycleEvent, TerminalManager,
-    TerminalSnapshot, TerminalStatus,
+    TerminalContextCaptureKind, TerminalError, TerminalEventSink, TerminalKind,
+    TerminalLifecycleEvent, TerminalManager, TerminalSnapshot, TerminalStatus,
 };
 use crate::workspace::{DirectoryListing, EntryKind, Project, WorkspaceError, WorkspaceService};
 
@@ -71,7 +71,8 @@ impl AppState {
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
-                .with_team_store(Arc::clone(&teams)),
+                .with_team_store(Arc::clone(&teams))
+                .with_terminal_manager(Arc::clone(&terminals)),
         );
         Self {
             workspace,
@@ -102,7 +103,8 @@ impl AppState {
                 self.agent_runtime.store(),
                 Arc::clone(&agents),
             )
-            .with_team_store(Arc::clone(&self.teams)),
+            .with_team_store(Arc::clone(&self.teams))
+            .with_terminal_manager(Arc::clone(&self.terminals)),
         );
         self.agents = agents;
         self
@@ -2325,6 +2327,10 @@ struct RegisterComposerContextRequest {
     path: String,
     #[serde(default)]
     source_revision: Option<String>,
+    #[serde(default)]
+    terminal_id: Option<String>,
+    #[serde(default)]
+    selected_text: Option<String>,
 }
 
 async fn register_composer_context(
@@ -2336,7 +2342,10 @@ async fn register_composer_context(
     let conversation = store.get_conversation(&conversation_id)?;
     let registration = match request.kind {
         ComposerContextKind::File | ComposerContextKind::Directory => {
-            if request.source_revision.is_some() {
+            if request.source_revision.is_some()
+                || request.terminal_id.is_some()
+                || request.selected_text.is_some()
+            {
                 return Err(ComposerCatalogError::InvalidDraft.into());
             }
             let expected_kind = workspace_kind(request.kind)?;
@@ -2365,6 +2374,9 @@ async fn register_composer_context(
             )?
         }
         ComposerContextKind::GitDiff => {
+            if request.terminal_id.is_some() || request.selected_text.is_some() {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
             let source_revision = request
                 .source_revision
                 .ok_or(ComposerCatalogError::InvalidDraft)?;
@@ -2401,6 +2413,67 @@ async fn register_composer_context(
                 &snapshot.source_revision,
                 summary,
             )?
+        }
+        ComposerContextKind::Terminal => {
+            if request.source_revision.is_some() {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
+            let capture_kind = match request.path.as_str() {
+                "selection" => TerminalContextCaptureKind::Selection,
+                "recent" => TerminalContextCaptureKind::Recent,
+                _ => return Err(ComposerCatalogError::InvalidDraft.into()),
+            };
+            let terminal_id = request
+                .terminal_id
+                .ok_or(ComposerCatalogError::InvalidDraft)?;
+            let (terminal, pane_index) = state
+                .agent_runtime
+                .authorize_terminal_context(&conversation.id, &terminal_id)?;
+            let capture = state.terminals.capture_context(
+                &terminal.id,
+                &conversation.id,
+                capture_kind,
+                request.selected_text.as_deref(),
+            )?;
+            let selector = format!(
+                "{}:{}",
+                terminal.id,
+                match capture_kind {
+                    TerminalContextCaptureKind::Selection => "selection",
+                    TerminalContextCaptureKind::Recent => "recent",
+                }
+            );
+            let id = opaque_terminal_context_id(
+                &conversation.project_id,
+                &conversation.id,
+                &selector,
+                &capture.source_revision,
+            );
+            let retained = state
+                .terminals
+                .retain_context_capture(id.clone(), capture.clone())?;
+            let summary = ComposerContextSummary::Terminal {
+                capture: capture.capture,
+                pane_index,
+                line_count: capture.line_count,
+                byte_count: capture.byte_count,
+                truncated: capture.truncated,
+            };
+            match store.register_composer_terminal_context(
+                &conversation.id,
+                &conversation.project_id,
+                &selector,
+                &capture.source_revision,
+                summary,
+            ) {
+                Ok(registration) => registration,
+                Err(error) => {
+                    if retained {
+                        state.terminals.discard_context_capture(&id);
+                    }
+                    return Err(error.into());
+                }
+            }
         }
         _ => return Err(ComposerCatalogError::ItemUnsupported.into()),
     };
@@ -2535,6 +2608,13 @@ async fn validate_composer_contexts(
                     path: record.path,
                     content: Some(snapshot.content),
                 }));
+            }
+            ComposerContextKind::Terminal => {
+                preflight.push(
+                    state
+                        .agent_runtime
+                        .resolve_terminal_composer_context(&conversation.id, &record)?,
+                );
             }
             _ => preflight.push(None),
         }
@@ -3079,6 +3159,16 @@ impl IntoResponse for ApiError {
                         (StatusCode::CONFLICT, "agent_unavailable")
                     }
                     TerminalError::InvalidTitle => (StatusCode::BAD_REQUEST, "invalid_title"),
+                    TerminalError::ContextOverLimit => {
+                        (StatusCode::PAYLOAD_TOO_LARGE, "composer_context_over_limit")
+                    }
+                    TerminalError::ContextBinary => (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "composer_item_unsupported",
+                    ),
+                    TerminalError::ContextSelectionUnavailable | TerminalError::ContextStale => {
+                        (StatusCode::CONFLICT, "composer_context_stale")
+                    }
                     TerminalError::Workspace(workspace) => workspace_error_status(workspace),
                     TerminalError::Pty(_) | TerminalError::Io(_) => {
                         (StatusCode::INTERNAL_SERVER_ERROR, "terminal_error")

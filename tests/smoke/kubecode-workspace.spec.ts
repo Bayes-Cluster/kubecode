@@ -236,6 +236,46 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await expect(page.locator('.kubecode-terminal-toolbar')).toHaveText('')
   await expect(page.locator('.xterm')).toBeVisible()
 
+  await page.locator('.xterm-helper-textarea').first().focus()
+  await page.keyboard.type("printf 'smoke-terminal-output\\n'")
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.xterm-rows').first()).toContainText('smoke-terminal-output')
+  await addContext.click()
+  const terminalContextDialog = page.getByRole('dialog', { name: 'Add context' })
+  await terminalContextDialog.getByRole('button', { name: /Reference terminal output/ }).click()
+  await terminalContextDialog.getByRole('button', {
+    name: /Attach recent output from Terminal pane 1/,
+  }).click()
+  const terminalContextChip = page.getByTestId('composer-context-chip')
+  await expect(terminalContextChip).toHaveAttribute('data-context-kind', 'terminal')
+  await expect(terminalContextChip).not.toContainText('smoke-terminal-output')
+  await expect(terminalContextChip).not.toContainText(projectPath)
+  await page.setViewportSize({ width: 680, height: 720 })
+  const [terminalComposerBox, terminalChipBox] = await Promise.all([
+    composer.boundingBox(),
+    terminalContextChip.boundingBox(),
+  ])
+  if (!terminalComposerBox || !terminalChipBox) throw new Error('Terminal context chip is not visible')
+  expect(terminalChipBox.x).toBeGreaterThanOrEqual(terminalComposerBox.x)
+  expect(terminalChipBox.x + terminalChipBox.width)
+    .toBeLessThanOrEqual(terminalComposerBox.x + terminalComposerBox.width)
+  await page.evaluate(() => {
+    (window as unknown as { __disconnectWorkspaceEvents: () => void })
+      .__disconnectWorkspaceEvents()
+  })
+  await expect(page.getByRole('button', { name: 'Runtime connection: Reconnecting' })).toBeVisible()
+  await expect(terminalContextChip).toBeVisible()
+  await page.evaluate(() => {
+    (window as unknown as { __reconnectWorkspaceEvents: () => void })
+      .__reconnectWorkspaceEvents()
+  })
+  await expect(page.getByRole('button', { name: 'Runtime connection: Live' })).toBeVisible()
+  await expect(terminalContextChip).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('composer-terminal-context-narrow.png') })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.getByRole('button', { name: 'Remove context' }).click()
+  await expect(terminalContextChip).toHaveCount(0)
+
   await page.getByRole('button', { name: 'Split terminal right' }).click()
   await expect(page.locator('.kubecode-terminal-leaf')).toHaveCount(2)
   await expect(page.getByRole('tree', { name: 'Terminal' }).getByRole('treeitem')).toHaveCount(2)

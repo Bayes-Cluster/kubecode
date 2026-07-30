@@ -20,6 +20,7 @@ use kubecode_server::composer_catalog::{
     MAX_COMPOSER_VALIDATION_ROWS,
 };
 use kubecode_server::teams::{MemberWorkspaceMode, NewTeam, NewTeammate, TeamStore, TeamWorkspace};
+use kubecode_server::terminal::TerminalKind;
 use kubecode_server::workspace::WorkspaceService;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -3061,6 +3062,201 @@ done"#,
     assert!(prompt.contains("Git diff context from Kubecode"));
     assert!(prompt.contains("+second"));
     assert!(!prompt.contains("+first"));
+}
+
+#[tokio::test]
+async fn terminal_context_is_session_authorized_sanitized_bounded_and_transient() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_root = root.join(".state/kubecode");
+    fs::create_dir_all(&state_root).expect("state directory");
+    let database = state_root.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let first_project = workspace
+        .create_project_at(root.join("terminal-context-first"))
+        .expect("first project");
+    let second_project = workspace
+        .create_project_at(root.join("terminal-context-second"))
+        .expect("second project");
+    let store = Arc::new(AgentStore::open(&database).expect("store"));
+    let target = store
+        .create_conversation(&first_project.id, AgentId::Codex, None)
+        .expect("target conversation");
+    let compatible = store
+        .create_conversation(&first_project.id, AgentId::Codex, None)
+        .expect("compatible conversation");
+    let cross_project = store
+        .create_conversation(&second_project.id, AgentId::Codex, None)
+        .expect("cross-project conversation");
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let state = AppState::new(Arc::clone(&workspace), Arc::clone(&store), teams).with_agents(vec![
+        AgentDescriptor {
+            id: AgentId::Codex,
+            available: true,
+            version: Some("test".into()),
+            executable: "/bin/true".into(),
+            error: None,
+        },
+    ]);
+    let terminal = state
+        .terminals
+        .create(
+            &first_project.id,
+            Some(&target.id),
+            None,
+            TerminalKind::Regular,
+            100,
+            28,
+        )
+        .expect("terminal");
+    state
+        .terminals
+        .write(
+            &terminal.id,
+            b"printf '\033[31mterminal-visible\033[0m\\n'\n",
+        )
+        .expect("terminal input");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if state
+                .terminals
+                .read_since(&terminal.id, 0)
+                .expect("terminal output")
+                .data
+                .contains("terminal-visible")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("terminal output timeout");
+    let app = app_router(state.clone(), BASE_PATH);
+    let registration_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        target.id
+    );
+    let (status, registration) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({
+            "kind":"terminal", "path":"selection", "terminal_id":terminal.id,
+            "selected_text":"terminal-visible"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(registration["context"]["kind"], "terminal");
+    assert_eq!(registration["context"]["display"], "terminal");
+    assert_eq!(registration["context"]["summary"]["capture"], "selection");
+    assert_eq!(registration["context"]["summary"]["line_count"], 1);
+    assert_eq!(registration["context"]["summary"]["byte_count"], 16);
+    let serialized = registration.to_string();
+    assert!(!serialized.contains("terminal-visible"));
+    assert!(!serialized.contains(&terminal.id));
+
+    let compatible_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        compatible.id
+    );
+    let (status, compatible_registration) = json_request(
+        &app,
+        Method::POST,
+        &compatible_uri,
+        json!({
+            "kind":"terminal", "path":"recent", "terminal_id":terminal.id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(compatible_registration["context"]["kind"], "terminal");
+    assert!(!compatible_registration.to_string().contains(&terminal.id));
+
+    let cross_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts",
+        cross_project.id
+    );
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &cross_uri,
+        json!({
+            "kind":"terminal", "path":"recent", "terminal_id":terminal.id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({
+            "kind":"terminal", "path":"recent", "terminal_id":"missing-terminal"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+
+    let oversized = "x".repeat(64 * 1024 + 1);
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &registration_uri,
+        json!({
+            "kind":"terminal", "path":"selection", "terminal_id":terminal.id,
+            "selected_text":oversized
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(error["code"], "composer_context_over_limit");
+
+    let context_id = registration["context"]["id"].as_str().expect("context id");
+    let catalog_revision = registration["catalog"]["revision"]
+        .as_u64()
+        .expect("catalog revision");
+    let validation_uri = format!(
+        "{BASE_PATH}/api/v1/sessions/{}/composer/contexts/validate",
+        target.id
+    );
+    let validation = json!({"references":[{
+        "id":context_id, "catalog_revision":catalog_revision, "context_kind":"terminal"
+    }]});
+    let (status, available) =
+        json_request(&app, Method::POST, &validation_uri, validation.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(available["references"][0]["available"], true);
+
+    state.terminals.close(&terminal.id).expect("close terminal");
+    let runs_uri = format!(
+        "{BASE_PATH}/api/v1/projects/{}/sessions/{}/runs",
+        first_project.id, target.id
+    );
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({
+            "catalog_revision":catalog_revision,
+            "segments":[{
+                "kind":"context_ref", "id":context_id,
+                "catalog_revision":catalog_revision, "context_kind":"terminal"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "composer_context_stale");
+    assert!(store.list_runs(&target.id).expect("runs").is_empty());
+
+    let (status, stale) = json_request(&app, Method::POST, &validation_uri, validation).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stale["references"][0]["available"], false);
 }
 
 #[tokio::test]

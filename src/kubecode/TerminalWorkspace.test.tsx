@@ -5,8 +5,22 @@ import { TerminalWorkspace } from './TerminalWorkspace'
 import type { KubecodeApi, TerminalInfo } from './api'
 
 vi.mock('./TerminalView', () => ({
-  TerminalView: ({ terminal }: { terminal: TerminalInfo }) => (
-    <div data-testid={`terminal-${terminal.id}`}>{terminal.title}</div>
+  TerminalView: ({
+    onSelectionChange,
+    terminal,
+  }: {
+    onSelectionChange?: (terminalId: string, selectedText: string | null) => void
+    terminal: TerminalInfo
+  }) => (
+    <div data-testid={`terminal-${terminal.id}`}>
+      {terminal.title}
+      <button
+        data-has-selection-callback={Boolean(onSelectionChange)}
+        onClick={() => onSelectionChange?.(terminal.id, `selected-${terminal.id}`)}
+        onMouseDown={(event) => event.stopPropagation()}
+        type="button"
+      >{`select-${terminal.id}`}</button>
+    </div>
   ),
 }))
 
@@ -18,6 +32,45 @@ const agents = [
 
 describe('TerminalWorkspace', () => {
   beforeEach(() => localStorage.clear())
+
+  it('reports each visible split pane and only its explicit current selection', async () => {
+    const first = terminal('terminal-1', 'Sensitive /project/path', 'regular')
+    const second = terminal('terminal-2', 'npm run private-command', 'regular')
+    localStorage.setItem('kubecode:terminal-layout:project-1', JSON.stringify({
+      activeTerminalId: first.id,
+      layout: {
+        type: 'split', id: 'split-1', direction: 'horizontal', ratio: 50,
+        first: { type: 'leaf', terminalId: first.id },
+        second: { type: 'leaf', terminalId: second.id },
+      },
+    }))
+    const onContextSourcesChange = vi.fn()
+    render(
+      <TerminalWorkspace
+        agents={agents}
+        api={{} as KubecodeApi}
+        initialTerminals={[first, second]}
+        onContextSourcesChange={onContextSourcesChange}
+        projectId="project-1"
+        t={(key) => key}
+      />,
+    )
+
+    await waitFor(() => expect(onContextSourcesChange).toHaveBeenCalledWith([
+      { terminalId: 'terminal-1', paneIndex: 1, selectedText: null },
+      { terminalId: 'terminal-2', paneIndex: 2, selectedText: null },
+    ]))
+    const selection = screen.getByRole('button', { name: 'select-terminal-2' })
+    expect(selection).toHaveAttribute('data-has-selection-callback', 'true')
+    fireEvent.click(selection)
+    await waitFor(() => expect(onContextSourcesChange).toHaveBeenCalledWith([
+      { terminalId: 'terminal-1', paneIndex: 1, selectedText: null },
+      { terminalId: 'terminal-2', paneIndex: 2, selectedText: 'selected-terminal-2' },
+    ]))
+    expect(onContextSourcesChange.mock.calls.at(-1)?.[0]).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: expect.anything() }),
+    ]))
+  })
 
   it('creates regular or agent TUI terminals from the profile menu', async () => {
     const codex = terminal('codex-1', 'Codex', 'codex')

@@ -390,6 +390,23 @@ the provider prompt. Any intervening edit, missing repository, ownership
 change, or no-longer-eligible patch makes the chip stale and blocks dispatch.
 A draft with no references is exactly today's plain-text prompt.
 
+Terminal context is an explicitly created, process-lifetime Composer reference,
+not the browser's serialized xterm snapshot. The selection form accepts only the
+current xterm selection and verifies its sanitized text is present in the live
+server PTY buffer. The recent-output form is a distinct user action that captures
+a server-side tail of at most 120 lines and 16 KiB. Both forms remove ANSI, OSC,
+and unsafe controls, reject binary or oversized input, and expose only a localized
+pane/count summary through the catalog. Terminal titles, commands, paths, and
+content are never catalog or analytics fields.
+
+`AgentRuntime` authorizes the source terminal and target Session against the same
+`WorkspaceService` execution path before registration and before each dispatch.
+The bounded content is retained only in `TerminalManager`; the durable context row
+contains a digest and private selector so a server restart makes the reference
+stale rather than reconstructing it from browser scrollback. WebSocket reconnect
+does not change PTY or capture ownership. Closing or exiting the PTY, losing its
+captured ring-buffer window, or changing execution compatibility blocks dispatch.
+
 ## Project path picker
 
 The Project path picker is a browser presentation abstraction shared by quick
@@ -548,7 +565,9 @@ Agent TUI.
 The frontend's terminal group and recursive split tree are presentation state;
 each leaf still refers to an independent server PTY. Selecting another Session
 does not move existing PTYs. Splits and restarts inherit their source PTY's
-Session context.
+Session context. Each visible leaf may report only its current explicit xterm
+selection and a safe pane ordinal to the in-memory Composer UI. It never reports
+the terminal title or browser-session scrollback as authoritative context.
 
 ## Workspace event
 
