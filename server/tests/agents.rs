@@ -3,8 +3,8 @@ use kubecode_server::agents::{
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use kubecode_server::composer_catalog::{
-    ComposerContextKind, ComposerContextSelector, ComposerDraftSegment, ComposerItemKind,
-    ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_REFERENCES,
+    ComposerContextKind, ComposerContextSelector, ComposerDraftSegment, ComposerInvocation,
+    ComposerItemKind, ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_REFERENCES,
     MAX_COMPOSER_SEGMENTS, MAX_COMPOSER_TEXT_BYTES, MAX_COMPOSER_VALIDATION_ROWS,
 };
 use serde_json::json;
@@ -171,6 +171,83 @@ fn claude_skill_catalog_reopens_and_dispatches_the_exact_advertised_identity() {
         .expect("Claude skill run");
     assert_eq!(run.message, "/review src/lib.rs");
     assert!(run.internal);
+}
+
+#[test]
+fn codex_skill_catalog_reopens_with_private_structured_dispatch() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("Codex conversation");
+    let path = "/srv/project/.agents/skills/review/SKILL.md";
+    let raw = json!({
+        "availableCommands": [{"name":"status", "description":"Show status"}],
+        "_meta": {"kubecode":{"codexSkills":{
+            "version":1,
+            "supported":true,
+            "structuredInput":true,
+            "textFallback":false,
+            "skills":[{
+                "identity":path,
+                "name":"review",
+                "description":"Review code",
+                "path":path,
+                "providerScope":"repo",
+                "sourceLabel":"Project skill",
+                "enabled":true
+            }]
+        }}}
+    });
+    store
+        .append_runtime_update(&conversation.id, "available_commands", &raw, None)
+        .expect("Codex skill update");
+    let before = store
+        .composer_catalog_snapshot(&conversation.id)
+        .expect("Codex skill catalog");
+    let skill = before
+        .items
+        .iter()
+        .find(|item| item.kind == ComposerItemKind::Skill)
+        .expect("skill")
+        .clone();
+    assert!(
+        !serde_json::to_string(&before)
+            .expect("safe catalog")
+            .contains(path)
+    );
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let dispatch = reopened
+        .start_typed_composer_command_dispatch(
+            &conversation.id,
+            "project",
+            &skill.id,
+            before.revision,
+            "focus on tests",
+            PermissionMode::Safe,
+        )
+        .expect("Codex structured dispatch");
+    assert_eq!(dispatch.run.message, "$review focus on tests");
+    assert_eq!(dispatch.prompt_message, "focus on tests");
+    assert_eq!(
+        dispatch.provider_input,
+        Some(ComposerInvocation::ProviderStructuredInput {
+            adapter_kind: "codex".to_owned(),
+            payload: json!({"type":"skill", "name":"review", "path":path}),
+        })
+    );
+    let user_message = reopened
+        .session_events_after(&conversation.id, 0)
+        .expect("session events")
+        .into_iter()
+        .filter(|event| event.kind == "user_message")
+        .next_back()
+        .expect("safe user message");
+    assert_eq!(user_message.payload["text"], "$review focus on tests");
+    assert!(!user_message.payload.to_string().contains(path));
 }
 
 #[test]

@@ -14,7 +14,7 @@ use agent_client_protocol::schema::v1::{
     McpServerHttp, NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigOptionValue,
-    SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
+    SessionConfigOptionsCapabilities, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use agent_client_protocol::schema::{MaybeUndefined, ProtocolVersion};
@@ -34,8 +34,8 @@ use crate::agents::{
     PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
 };
 use crate::composer_catalog::{
-    ComposerCatalogError, ComposerContextSelector, ComposerDraftSegment, ComposerPreflightContext,
-    validate_structured_composer_segments,
+    ComposerCatalogError, ComposerContextSelector, ComposerDraftSegment, ComposerInvocation,
+    ComposerPreflightContext, validate_structured_composer_segments,
 };
 use crate::teams::{TeamMemberStatus, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
@@ -754,7 +754,7 @@ impl AgentRuntime {
         let cwd = self
             .workspace
             .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
-        let run = self.store.start_typed_composer_command(
+        let dispatch = self.store.start_typed_composer_command_dispatch(
             &request.conversation_id,
             &request.project_id,
             &request.item_id,
@@ -762,6 +762,7 @@ impl AgentRuntime {
             &request.arguments,
             PermissionMode::Safe,
         )?;
+        let run = dispatch.run;
         if let Ok(Some(tree)) = self
             .workspace
             .capture_git_tree(&cwd, &format!("{}-before", run.id))
@@ -780,13 +781,14 @@ impl AgentRuntime {
             .map(|context| {
                 format!(
                     "{context}\n\nContinue with this user request:\n{}",
-                    run.message
+                    dispatch.prompt_message
                 )
             })
-            .unwrap_or_else(|| run.message.clone());
+            .unwrap_or(dispatch.prompt_message);
         let command = AgentCommand {
             run: run.clone(),
             message: agent_message,
+            provider_input: dispatch.provider_input.map(Box::new),
             cancelled,
         };
         let config = AgentSessionConfig {
@@ -888,7 +890,7 @@ impl AgentRuntime {
             });
         }
         before_store();
-        let run = self.store.start_structured_composer_run(
+        let dispatch = self.store.start_structured_composer_run_dispatch(
             &conversation.id,
             &conversation.project_id,
             request.item_id.as_deref(),
@@ -897,6 +899,7 @@ impl AgentRuntime {
             &preflight,
             PermissionMode::Safe,
         )?;
+        let run = dispatch.run;
         if let Ok(Some(tree)) = self
             .workspace
             .capture_git_tree(&cwd, &format!("{}-before", run.id))
@@ -915,13 +918,14 @@ impl AgentRuntime {
             .map(|context| {
                 format!(
                     "{context}\n\nContinue with this user request:\n{}",
-                    run.message
+                    dispatch.prompt_message
                 )
             })
-            .unwrap_or_else(|| run.message.clone());
+            .unwrap_or(dispatch.prompt_message);
         let command = AgentCommand {
             run: run.clone(),
             message: agent_message,
+            provider_input: dispatch.provider_input.map(Box::new),
             cancelled,
         };
         let config = AgentSessionConfig {
@@ -998,6 +1002,7 @@ impl AgentRuntime {
         let command = AgentCommand {
             run: run.clone(),
             message: agent_message,
+            provider_input: None,
             cancelled,
         };
         let config = AgentSessionConfig {
@@ -1949,7 +1954,29 @@ type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 struct AgentCommand {
     run: AgentRun,
     message: String,
+    provider_input: Option<Box<ComposerInvocation>>,
     cancelled: oneshot::Receiver<()>,
+}
+
+fn prompt_request_for_command(session_id: &SessionId, command: &AgentCommand) -> PromptRequest {
+    let mut request = PromptRequest::new(session_id.clone(), vec![command.message.clone().into()]);
+    if let Some(ComposerInvocation::ProviderStructuredInput {
+        adapter_kind,
+        payload,
+    }) = command.provider_input.as_deref()
+    {
+        request.meta = json!({
+            "kubecode": {
+                "providerStructuredInput": {
+                    "adapterKind": adapter_kind,
+                    "payload": payload,
+                }
+            }
+        })
+        .as_object()
+        .cloned();
+    }
+    request
 }
 
 enum SessionCommand {
@@ -2580,13 +2607,9 @@ async fn run_acp_session(
                 actor_active.store(true, Ordering::Release);
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
+                let prompt_request = prompt_request_for_command(&session_id, &command);
                 let mut cancelled = command.cancelled;
-                let prompt = connection
-                    .send_request(PromptRequest::new(
-                        session_id.clone(),
-                        vec![command.message.into()],
-                    ))
-                    .block_task();
+                let prompt = connection.send_request(prompt_request).block_task();
                 tokio::pin!(prompt);
                 let mut controls_open = true;
                 let mut shutdown_response = None;
@@ -3837,6 +3860,52 @@ fn tool_updated(update: ToolCallUpdate) -> (AgentEventKind, Value) {
 mod tests {
     use super::*;
     use agent_client_protocol::schema::v1::{TextContent, ToolCallId, ToolCallUpdateFields};
+
+    #[test]
+    fn codex_skill_prompt_uses_private_structured_meta_without_text_injection() {
+        let (_cancel, cancelled) = oneshot::channel();
+        let command = AgentCommand {
+            run: AgentRun {
+                id: "run".into(),
+                conversation_id: "conversation".into(),
+                project_id: "project".into(),
+                message: "$review focus on tests".into(),
+                status: RunStatus::Running,
+                permission_mode: PermissionMode::Safe,
+                error: None,
+                internal: true,
+            },
+            message: "focus on tests".into(),
+            provider_input: Some(Box::new(ComposerInvocation::ProviderStructuredInput {
+                adapter_kind: "codex".into(),
+                payload: json!({
+                    "type":"skill",
+                    "name":"review",
+                    "path":"/srv/project/.agents/skills/review/SKILL.md"
+                }),
+            })),
+            cancelled,
+        };
+
+        let request = serde_json::to_value(prompt_request_for_command(
+            &SessionId::from("provider-session"),
+            &command,
+        ))
+        .expect("prompt request JSON");
+        assert_eq!(request["prompt"][0]["text"], "focus on tests");
+        assert_eq!(
+            request["_meta"]["kubecode"]["providerStructuredInput"],
+            json!({
+                "adapterKind":"codex",
+                "payload":{
+                    "type":"skill",
+                    "name":"review",
+                    "path":"/srv/project/.agents/skills/review/SKILL.md"
+                }
+            })
+        );
+        assert!(!request["prompt"].to_string().contains("$review"));
+    }
 
     #[test]
     fn structured_catalog_replacement_after_preflight_never_dispatches_a_provider() {

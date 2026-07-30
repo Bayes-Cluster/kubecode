@@ -293,6 +293,25 @@ that raw authoritative snapshot in the same transaction that starts the run,
 then emits Claude's canonical slash invocation server-side; the browser never
 synthesizes or receives the provider invocation template.
 
+The bundled Codex adapter obtains its skill inventory from App Server
+`skills/list` for the exact Session cwd and additional roots. Its private
+`available_commands_update._meta.kubecode.codexSkills` replacement declares
+structured input support and explicitly disables text fallback. Each skill path
+is retained only in the private authoritative snapshot as the provider identity;
+the safe catalog projects an opaque `cap:` ID, name, description, scope, source
+label, and availability. Provider scopes preserve Project, User, System, Admin,
+Bundled, and Plugin labels without sending absolute paths to the browser.
+
+Codex skill submission resolves the opaque ID against that raw snapshot in the
+same transaction that creates the run. The durable run and user-message event
+contain only `$name` plus optional arguments. The exact App Server
+`{type: "skill", name, path}` payload is carried in memory through ACP prompt
+`_meta`; the adapter inserts it once before ordinary prompt content, so neither
+the display token nor the path is double-injected as user text. Reconnect and
+process reopen reconstruct the same mapping from the private Session journal,
+while unsupported discovery publishes an empty replacement and
+`skills/changed` refreshes the current Session catalog.
+
 ## Composer reference and structured draft
 
 A Composer reference is a typed context or capability chip backed by an opaque

@@ -12,10 +12,11 @@ use uuid::Uuid;
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerCatalogSnapshot, ComposerContextKind, ComposerContextRecord,
     ComposerContextRegistration, ComposerContextSelector, ComposerContextValidationResponse,
-    ComposerContextValidationResult, ComposerDraftSegment, ComposerPreflightContext,
-    MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES, context_kind_key, opaque_context_id,
-    parse_context_kind, project_acp_catalog_with_contexts, project_available_commands,
-    resolve_composer_catalog_item, validate_structured_composer_segments,
+    ComposerContextValidationResult, ComposerDraftSegment, ComposerInvocation,
+    ComposerPreflightContext, MAX_COMPOSER_CONTEXTS, MAX_COMPOSER_TEXT_BYTES, context_kind_key,
+    opaque_context_id, parse_context_kind, project_acp_catalog_with_contexts,
+    project_available_commands, resolve_composer_catalog_dispatch,
+    validate_structured_composer_segments,
 };
 use crate::database::{Database, DatabaseError};
 
@@ -147,6 +148,13 @@ pub struct AgentRun {
     pub permission_mode: PermissionMode,
     pub error: Option<String>,
     pub internal: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComposerRunDispatch {
+    pub run: AgentRun,
+    pub prompt_message: String,
+    pub provider_input: Option<ComposerInvocation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1365,6 +1373,26 @@ impl AgentStore {
         arguments: &str,
         permission_mode: PermissionMode,
     ) -> Result<AgentRun, StoreError> {
+        self.start_typed_composer_command_dispatch(
+            conversation_id,
+            project_id,
+            item_id,
+            catalog_revision,
+            arguments,
+            permission_mode,
+        )
+        .map(|dispatch| dispatch.run)
+    }
+
+    pub fn start_typed_composer_command_dispatch(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        item_id: &str,
+        catalog_revision: u64,
+        arguments: &str,
+        permission_mode: PermissionMode,
+    ) -> Result<ComposerRunDispatch, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
@@ -1391,7 +1419,7 @@ impl AgentStore {
                 "composer catalog does not match its authoritative sources".into(),
             ));
         }
-        let message = resolve_composer_catalog_item(
+        let dispatch = resolve_composer_catalog_dispatch(
             project_id,
             conversation_id,
             agent_id,
@@ -1417,7 +1445,7 @@ impl AgentStore {
             &transaction,
             conversation_id,
             project_id,
-            &message,
+            &dispatch.display_message,
             permission_mode,
             true,
         )?;
@@ -1428,9 +1456,13 @@ impl AgentStore {
         self.append_session_event(
             conversation_id,
             "user_message",
-            &json!({"run_id":run.id, "text":message, "internal":true}),
+            &json!({"run_id":run.id, "text":dispatch.display_message, "internal":true}),
         )?;
-        Ok(run)
+        Ok(ComposerRunDispatch {
+            run,
+            prompt_message: dispatch.prompt_message,
+            provider_input: dispatch.provider_input,
+        })
     }
 
     fn start_run_with_visibility(
@@ -2076,6 +2108,29 @@ impl AgentStore {
         preflight: &[ComposerPreflightContext],
         permission_mode: PermissionMode,
     ) -> Result<AgentRun, StoreError> {
+        self.start_structured_composer_run_dispatch(
+            conversation_id,
+            project_id,
+            item_id,
+            catalog_revision,
+            segments,
+            preflight,
+            permission_mode,
+        )
+        .map(|dispatch| dispatch.run)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_structured_composer_run_dispatch(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        item_id: Option<&str>,
+        catalog_revision: u64,
+        segments: &[ComposerDraftSegment],
+        preflight: &[ComposerPreflightContext],
+        permission_mode: PermissionMode,
+    ) -> Result<ComposerRunDispatch, StoreError> {
         validate_structured_composer_segments(segments)?;
         let preflight = preflight
             .iter()
@@ -2171,7 +2226,7 @@ impl AgentStore {
         if resolved.len() > MAX_COMPOSER_TEXT_BYTES {
             return Err(ComposerCatalogError::TextTooLong.into());
         }
-        let (message, internal) = if let Some(item_id) = item_id {
+        let (dispatch, internal) = if let Some(item_id) = item_id {
             let raw = latest_session_payload_transaction(
                 &transaction,
                 conversation_id,
@@ -2179,7 +2234,7 @@ impl AgentStore {
             )?
             .ok_or(ComposerCatalogError::ItemMissing)?;
             (
-                resolve_composer_catalog_item(
+                resolve_composer_catalog_dispatch(
                     project_id,
                     conversation_id,
                     agent_id,
@@ -2195,7 +2250,14 @@ impl AgentStore {
             if resolved.trim().is_empty() {
                 return Err(ComposerCatalogError::InvalidDraft.into());
             }
-            (resolved, false)
+            (
+                crate::composer_catalog::ResolvedComposerDispatch {
+                    display_message: resolved.clone(),
+                    prompt_message: resolved,
+                    provider_input: None,
+                },
+                false,
+            )
         };
         let active = transaction
             .query_row(
@@ -2213,7 +2275,7 @@ impl AgentStore {
             &transaction,
             conversation_id,
             project_id,
-            &message,
+            &dispatch.display_message,
             permission_mode,
             internal,
         )?;
@@ -2221,16 +2283,20 @@ impl AgentStore {
             &transaction,
             conversation_id,
             "user_message",
-            &json!({"run_id":run.id, "text":message, "internal":internal}),
+            &json!({"run_id":run.id, "text":dispatch.display_message, "internal":internal}),
         )?;
         let workspace_cursor = latest_workspace_event_id(&transaction)?;
         transaction.commit()?;
         self.workspace_event_bus.publish_committed(workspace_cursor);
         drop(database);
         if !internal {
-            self.set_agent_title_if_untitled(conversation_id, &message)?;
+            self.set_agent_title_if_untitled(conversation_id, &dispatch.display_message)?;
         }
-        Ok(run)
+        Ok(ComposerRunDispatch {
+            run,
+            prompt_message: dispatch.prompt_message,
+            provider_input: dispatch.provider_input,
+        })
     }
 
     pub fn append_session_event(

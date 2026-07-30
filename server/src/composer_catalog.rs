@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -188,7 +189,7 @@ pub struct AcpCommand {
     pub input: AcpCommandInput,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComposerInvocation {
     AcpPromptTemplate {
         command_name: String,
@@ -204,6 +205,13 @@ pub enum ComposerInvocation {
     HostAction {
         action: String,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedComposerDispatch {
+    pub display_message: String,
+    pub prompt_message: String,
+    pub provider_input: Option<ComposerInvocation>,
 }
 
 #[derive(Clone, Debug)]
@@ -549,9 +557,14 @@ fn trusted_contributions_from_payload(
     agent_id: AgentId,
     payload: &Value,
 ) -> Vec<TrustedComposerContribution> {
-    if agent_id != AgentId::ClaudeCode {
-        return Vec::new();
+    match agent_id {
+        AgentId::ClaudeCode => claude_skill_contributions(payload),
+        AgentId::Codex => codex_skill_contributions(payload),
+        AgentId::OpenCode => Vec::new(),
     }
+}
+
+fn claude_skill_contributions(payload: &Value) -> Vec<TrustedComposerContribution> {
     let Some(metadata) = payload
         .get("_meta")
         .and_then(|value| value.get("kubecode"))
@@ -630,6 +643,71 @@ fn trusted_contributions_from_payload(
         .collect()
 }
 
+fn codex_skill_contributions(payload: &Value) -> Vec<TrustedComposerContribution> {
+    let Some(metadata) = payload
+        .get("_meta")
+        .and_then(|value| value.get("kubecode"))
+        .and_then(|value| value.get("codexSkills"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    if metadata.get("version").and_then(Value::as_u64) != Some(1)
+        || metadata.get("supported").and_then(Value::as_bool) != Some(true)
+        || metadata.get("structuredInput").and_then(Value::as_bool) != Some(true)
+        || metadata.get("textFallback").and_then(Value::as_bool) != Some(false)
+    {
+        return Vec::new();
+    }
+    metadata
+        .get("skills")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(MAX_TRUSTED_COMPOSER_ITEMS)
+        .filter_map(|value| {
+            let skill = value.as_object()?;
+            let source_identity = skill.get("identity")?.as_str()?.to_owned();
+            let path = skill.get("path")?.as_str()?.to_owned();
+            if source_identity != path || !Path::new(&path).is_absolute() {
+                return None;
+            }
+            let name = skill.get("name")?.as_str()?.to_owned();
+            let (scope, source_label) = match skill.get("providerScope")?.as_str()? {
+                "repo" => (ComposerItemScope::Project, "Project skill"),
+                "user" => (ComposerItemScope::User, "User skill"),
+                "system" => (ComposerItemScope::Bundled, "System skill"),
+                "admin" => (ComposerItemScope::Bundled, "Admin skill"),
+                "bundled" => (ComposerItemScope::Bundled, "Bundled skill"),
+                "plugin" => (ComposerItemScope::Plugin, "Plugin skill"),
+                _ => return None,
+            };
+            let enabled = skill.get("enabled").and_then(Value::as_bool) == Some(true);
+            Some(TrustedComposerContribution {
+                kind: ComposerItemKind::Skill,
+                source_identity,
+                name: name.clone(),
+                description: skill
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                source_label: source_label.to_owned(),
+                scope,
+                input_hint: None,
+                disabled_reason: if enabled {
+                    None
+                } else {
+                    Some("provider_disabled".to_owned())
+                },
+                invocation: Some(ComposerInvocation::ProviderStructuredInput {
+                    adapter_kind: "codex".to_owned(),
+                    payload: json!({"type":"skill", "name":name, "path":path}),
+                }),
+            })
+        })
+        .collect()
+}
+
 fn valid_trusted_source_identity(identity: &str) -> bool {
     !identity.trim().is_empty()
         && identity.len() <= MAX_TRUSTED_SOURCE_IDENTITY_BYTES
@@ -680,6 +758,30 @@ pub fn resolve_composer_catalog_item(
     item_id: &str,
     arguments: &str,
 ) -> Result<String, ComposerCatalogError> {
+    resolve_composer_catalog_dispatch(
+        project_id,
+        conversation_id,
+        agent_id,
+        snapshot,
+        raw_commands,
+        expected_revision,
+        item_id,
+        arguments,
+    )
+    .map(|dispatch| dispatch.display_message)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_composer_catalog_dispatch(
+    project_id: &str,
+    conversation_id: &str,
+    agent_id: AgentId,
+    snapshot: &ComposerCatalogSnapshot,
+    raw_commands: &Value,
+    expected_revision: u64,
+    item_id: &str,
+    arguments: &str,
+) -> Result<ResolvedComposerDispatch, ComposerCatalogError> {
     if arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
         return Err(ComposerCatalogError::ArgumentsTooLong);
     }
@@ -695,15 +797,22 @@ pub fn resolve_composer_catalog_item(
         return Err(ComposerCatalogError::ItemDisabled);
     }
     if item.kind == ComposerItemKind::Command {
-        return resolve_acp_catalog_item(
+        let message = resolve_acp_catalog_item(
             snapshot,
             raw_commands,
             expected_revision,
             item_id,
             arguments,
-        );
+        )?;
+        return Ok(ResolvedComposerDispatch {
+            display_message: message.clone(),
+            prompt_message: message,
+            provider_input: None,
+        });
     }
-    if item.kind != ComposerItemKind::Skill || agent_id != AgentId::ClaudeCode {
+    if item.kind != ComposerItemKind::Skill
+        || !matches!(agent_id, AgentId::ClaudeCode | AgentId::Codex)
+    {
         return Err(ComposerCatalogError::ItemUnsupported);
     }
     let contributions = trusted_contributions_from_payload(agent_id, raw_commands);
@@ -727,7 +836,28 @@ pub fn resolve_composer_catalog_item(
     }
     match &contribution.invocation {
         Some(ComposerInvocation::AcpPromptTemplate { command_name }) => {
-            resolve_acp_command_message(raw_commands, command_name, arguments.trim())
+            let message =
+                resolve_acp_command_message(raw_commands, command_name, arguments.trim())?;
+            Ok(ResolvedComposerDispatch {
+                display_message: message.clone(),
+                prompt_message: message,
+                provider_input: None,
+            })
+        }
+        Some(input @ ComposerInvocation::ProviderStructuredInput { adapter_kind, .. })
+            if agent_id == AgentId::Codex && adapter_kind == "codex" =>
+        {
+            let arguments = arguments.trim();
+            let display_message = if arguments.is_empty() {
+                format!("${}", contribution.name)
+            } else {
+                format!("${} {arguments}", contribution.name)
+            };
+            Ok(ResolvedComposerDispatch {
+                display_message,
+                prompt_message: arguments.to_owned(),
+                provider_input: Some(input.clone()),
+            })
         }
         Some(
             ComposerInvocation::AcpPrivateMethod { .. }
@@ -1132,6 +1262,112 @@ mod tests {
                 .items
                 .iter()
                 .any(|item| { item.disabled_reason.as_deref() == Some("command_unavailable") })
+        );
+    }
+
+    #[test]
+    fn codex_skill_metadata_preserves_identity_and_resolves_structured_input() {
+        let raw = json!({
+            "availableCommands": [{"name":"status", "description":"Show status"}],
+            "_meta": {"kubecode":{"codexSkills":{
+                "version": 1,
+                "supported": true,
+                "structuredInput": true,
+                "textFallback": false,
+                "skills": [
+                    {
+                        "identity":"/srv/project/.agents/skills/review/SKILL.md",
+                        "name":"review",
+                        "description":"Project review",
+                        "path":"/srv/project/.agents/skills/review/SKILL.md",
+                        "providerScope":"repo",
+                        "sourceLabel":"Project skill",
+                        "enabled":true
+                    },
+                    {
+                        "identity":"/home/user/.codex/skills/review/SKILL.md",
+                        "name":"review",
+                        "description":"User review",
+                        "path":"/home/user/.codex/skills/review/SKILL.md",
+                        "providerScope":"user",
+                        "sourceLabel":"User skill",
+                        "enabled":true
+                    }
+                ]
+            }}}
+        });
+        let snapshot = project_acp_catalog("project", "session", AgentId::Codex, 11, &raw);
+        let skills = snapshot
+            .items
+            .iter()
+            .filter(|item| item.kind == ComposerItemKind::Skill)
+            .collect::<Vec<_>>();
+
+        assert_eq!(skills.len(), 2);
+        assert!(skills.iter().all(|item| item.enabled));
+        assert_ne!(skills[0].id, skills[1].id);
+        assert_eq!(skills[0].scope, ComposerItemScope::Project);
+        assert_eq!(skills[1].scope, ComposerItemScope::User);
+        assert!(
+            !serde_json::to_string(&snapshot)
+                .expect("safe snapshot")
+                .contains("/srv/project")
+        );
+
+        let selected = skills
+            .iter()
+            .find(|item| item.scope == ComposerItemScope::Project)
+            .expect("project skill");
+        assert_eq!(
+            resolve_composer_catalog_dispatch(
+                "project",
+                "session",
+                AgentId::Codex,
+                &snapshot,
+                &raw,
+                11,
+                &selected.id,
+                "focus on tests"
+            ),
+            Ok(ResolvedComposerDispatch {
+                display_message: "$review focus on tests".to_owned(),
+                prompt_message: "focus on tests".to_owned(),
+                provider_input: Some(ComposerInvocation::ProviderStructuredInput {
+                    adapter_kind: "codex".to_owned(),
+                    payload: json!({
+                        "type":"skill",
+                        "name":"review",
+                        "path":"/srv/project/.agents/skills/review/SKILL.md"
+                    }),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn codex_skill_metadata_fails_closed_when_text_fallback_is_advertised() {
+        let raw = json!({
+            "availableCommands": [],
+            "_meta": {"kubecode":{"codexSkills":{
+                "version": 1,
+                "supported": true,
+                "structuredInput": true,
+                "textFallback": true,
+                "skills": [{
+                    "identity":"/private/review/SKILL.md",
+                    "name":"review",
+                    "path":"/private/review/SKILL.md",
+                    "providerScope":"repo",
+                    "sourceLabel":"Project skill",
+                    "enabled":true
+                }]
+            }}}
+        });
+
+        assert!(
+            project_acp_catalog("project", "session", AgentId::Codex, 1, &raw)
+                .items
+                .is_empty()
         );
     }
 

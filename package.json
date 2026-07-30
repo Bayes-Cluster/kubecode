@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:agents:real": "cargo test --manifest-path server/Cargo.toml --test real_agents -- --ignored --nocapture",
-    "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs scripts/claude-adapter.test.mjs",
+    "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs scripts/claude-adapter.test.mjs scripts/codex-adapter.test.mjs",
     "test:standalone": "node --test scripts/standalone.test.mjs",
     "test:watch": "vitest",
     "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke/kubecode-workspace.spec.ts",
@@ -101,6 +101,9 @@
       "qs": "6.15.2",
       "rollup": "4.59.0",
       "undici": "7.25.0"
+    },
+    "patchedDependencies": {
+      "@agentclientprotocol/codex-acp@1.1.2": "patches/@agentclientprotocol__codex-acp@1.1.2.patch"
     }
   }
 }
