@@ -9,6 +9,10 @@ use thiserror::Error;
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::composer_catalog::{
+    ComposerCatalogError, ComposerCatalogSnapshot, project_acp_catalog, project_available_commands,
+    resolve_acp_catalog_item,
+};
 use crate::database::{Database, DatabaseError};
 
 #[derive(Debug, Error)]
@@ -27,6 +31,8 @@ pub enum StoreError {
     DatabaseSetup(#[from] DatabaseError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Composer(#[from] ComposerCatalogError),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -349,6 +355,13 @@ impl AgentStore {
             "internal_revision",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        ensure_column(
+            &connection,
+            "conversations",
+            "composer_catalog_revision",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        backfill_catalog_revision_high_water(&connection)?;
         connection.execute(
             "UPDATE conversations SET agent_session_id = id WHERE agent_session_id IS NULL",
             [],
@@ -705,7 +718,11 @@ impl AgentStore {
                 conversation.context_prefix,
             ],
         )?;
-        for (index, event) in retained_events.iter().enumerate() {
+        for (index, event) in retained_events
+            .iter()
+            .filter(|event| event.kind != "composer_catalog")
+            .enumerate()
+        {
             transaction.execute(
                 "INSERT INTO session_events
                  (conversation_id, seq, kind, payload, created_at)
@@ -889,7 +906,10 @@ impl AgentStore {
             }
         }
 
-        for event in &source_events {
+        for event in source_events
+            .iter()
+            .filter(|event| event.kind != "composer_catalog")
+        {
             let mut payload = event.payload.clone();
             rewrite_payload_run_id(&mut payload, &run_id_map);
             transaction.execute(
@@ -1255,6 +1275,75 @@ impl AgentStore {
         self.start_run_with_visibility(conversation_id, project_id, message, permission_mode, true)
     }
 
+    pub fn start_typed_composer_command(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        item_id: &str,
+        catalog_revision: u64,
+        arguments: &str,
+        permission_mode: PermissionMode,
+    ) -> Result<AgentRun, StoreError> {
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (conversation_project, agent_id) = conversation_scope(&transaction, conversation_id)?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let snapshot = latest_catalog_transaction(&transaction, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+        let raw = latest_session_payload_transaction(
+            &transaction,
+            conversation_id,
+            "available_commands",
+        )?
+        .ok_or(ComposerCatalogError::ItemMissing)?;
+        let expected = project_acp_catalog(
+            project_id,
+            conversation_id,
+            agent_id,
+            snapshot.revision,
+            &raw,
+        );
+        if !snapshot.same_contents(&expected) {
+            return Err(StoreError::InvalidStoredValue(
+                "composer catalog does not match its authoritative ACP snapshot".into(),
+            ));
+        }
+        let message =
+            resolve_acp_catalog_item(&snapshot, &raw, catalog_revision, item_id, arguments)?;
+        let active = transaction
+            .query_row(
+                "SELECT id FROM agent_runs
+                 WHERE conversation_id = ?1 AND status IN ('running', 'waiting_permission')
+                 LIMIT 1",
+                [conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if active.is_some() {
+            return Err(StoreError::ActiveRun(project_id.to_owned()));
+        }
+        let run = insert_run_transaction(
+            &transaction,
+            conversation_id,
+            project_id,
+            &message,
+            permission_mode,
+            true,
+        )?;
+        let workspace_cursor = latest_workspace_event_id(&transaction)?;
+        transaction.commit()?;
+        self.workspace_event_bus.publish_committed(workspace_cursor);
+        drop(database);
+        self.append_session_event(
+            conversation_id,
+            "user_message",
+            &json!({"run_id":run.id, "text":message, "internal":true}),
+        )?;
+        Ok(run)
+    }
+
     fn start_run_with_visibility(
         &self,
         conversation_id: &str,
@@ -1550,14 +1639,16 @@ impl AgentStore {
         }
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let project_id = transaction
+        let conversation = transaction
             .query_row(
-                "SELECT project_id FROM conversations WHERE id = ?1",
+                "SELECT project_id, agent_id FROM conversations WHERE id = ?1",
                 [conversation_id],
-                |row| row.get::<_, String>(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?
             .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+        let project_id = conversation.0.clone();
+        let agent_id = AgentId::from_str(&conversation.1)?;
         let mut latest_workspace_cursor = None;
         let mut publish_session_state = false;
         for update in updates {
@@ -1567,12 +1658,58 @@ impl AgentStore {
                 &update.session_kind,
                 &update.session_payload,
             )?;
+            if update.session_kind == "available_commands" {
+                let previous = latest_catalog_transaction(&transaction, conversation_id)?
+                    .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id));
+                let candidate = project_acp_catalog(
+                    &project_id,
+                    conversation_id,
+                    agent_id,
+                    previous.revision,
+                    &update.session_payload,
+                );
+                if !previous.same_contents(&candidate) {
+                    let next_revision =
+                        next_catalog_revision_transaction(&transaction, conversation_id)?;
+                    let candidate = project_acp_catalog(
+                        &project_id,
+                        conversation_id,
+                        agent_id,
+                        next_revision,
+                        &update.session_payload,
+                    );
+                    append_session_event_transaction(
+                        &transaction,
+                        conversation_id,
+                        "composer_catalog",
+                        &serde_json::to_value(&candidate)?,
+                    )?;
+                    let payload = json!({
+                        "conversation_id": conversation_id,
+                        "revision": candidate.revision,
+                        "snapshot": candidate,
+                    });
+                    latest_workspace_cursor = Some(append_workspace_event_transaction(
+                        &transaction,
+                        "composer_catalog_snapshot",
+                        Some(&project_id),
+                        Some(conversation_id),
+                        None,
+                        &payload,
+                    )?);
+                }
+            }
             if let Some(run_event) = &update.run_event {
+                let run_payload = if run_event.kind == AgentEventKind::AvailableCommands {
+                    project_available_commands(&run_event.payload)
+                } else {
+                    run_event.payload.clone()
+                };
                 let (_, workspace_cursor) = append_event_transaction(
                     &transaction,
                     &run_event.run_id,
                     run_event.kind,
-                    &run_event.payload,
+                    &run_payload,
                 )?;
                 latest_workspace_cursor = Some(workspace_cursor);
             } else {
@@ -1621,6 +1758,16 @@ impl AgentStore {
         };
         self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(())
+    }
+
+    pub fn composer_catalog_snapshot(
+        &self,
+        conversation_id: &str,
+    ) -> Result<ComposerCatalogSnapshot, StoreError> {
+        self.get_conversation(conversation_id)?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        Ok(latest_catalog_connection(&database, conversation_id)?
+            .unwrap_or_else(|| ComposerCatalogSnapshot::empty(conversation_id)))
     }
 
     pub fn append_session_event(
@@ -1936,6 +2083,167 @@ fn append_event_transaction(
     ))
 }
 
+fn insert_run_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    project_id: &str,
+    message: &str,
+    permission_mode: PermissionMode,
+    internal: bool,
+) -> Result<AgentRun, StoreError> {
+    let run = AgentRun {
+        id: Uuid::new_v4().to_string(),
+        conversation_id: conversation_id.to_owned(),
+        project_id: project_id.to_owned(),
+        message: message.to_owned(),
+        status: RunStatus::Running,
+        permission_mode,
+        error: None,
+        internal,
+    };
+    transaction.execute(
+        "INSERT INTO agent_runs
+         (id, conversation_id, project_id, message, status, permission_mode, internal)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            run.id,
+            run.conversation_id,
+            run.project_id,
+            run.message,
+            run.status.as_str(),
+            run.permission_mode.as_str(),
+            run.internal,
+        ],
+    )?;
+    transaction.execute(
+        "UPDATE conversations
+         SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'now')
+         WHERE id = ?1",
+        [&run.conversation_id],
+    )?;
+    append_event_transaction(
+        transaction,
+        &run.id,
+        AgentEventKind::RunStarted,
+        &json!({"permission_mode": permission_mode}),
+    )?;
+    Ok(run)
+}
+
+fn conversation_scope(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<(String, AgentId), StoreError> {
+    let (project_id, agent_id) = transaction
+        .query_row(
+            "SELECT project_id, agent_id FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+    Ok((project_id, AgentId::from_str(&agent_id)?))
+}
+
+fn latest_session_payload_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    kind: &str,
+) -> Result<Option<Value>, StoreError> {
+    let payload = transaction
+        .query_row(
+            "SELECT payload FROM session_events
+             WHERE conversation_id = ?1 AND kind = ?2
+             ORDER BY seq DESC LIMIT 1",
+            params![conversation_id, kind],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    payload
+        .map(|payload| serde_json::from_str(&payload).map_err(StoreError::from))
+        .transpose()
+}
+
+fn latest_catalog_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<Option<ComposerCatalogSnapshot>, StoreError> {
+    let snapshot =
+        latest_session_payload_transaction(transaction, conversation_id, "composer_catalog")?
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(StoreError::from)?;
+    Ok(snapshot
+        .filter(|snapshot: &ComposerCatalogSnapshot| snapshot.conversation_id == conversation_id))
+}
+
+fn latest_catalog_connection(
+    database: &Connection,
+    conversation_id: &str,
+) -> Result<Option<ComposerCatalogSnapshot>, StoreError> {
+    let payload = database
+        .query_row(
+            "SELECT payload FROM session_events
+             WHERE conversation_id = ?1 AND kind = 'composer_catalog'
+             ORDER BY seq DESC LIMIT 1",
+            [conversation_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let snapshot = payload
+        .map(|payload| serde_json::from_str(&payload).map_err(StoreError::from))
+        .transpose()?;
+    Ok(snapshot
+        .filter(|snapshot: &ComposerCatalogSnapshot| snapshot.conversation_id == conversation_id))
+}
+
+fn next_catalog_revision_transaction(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+) -> Result<u64, StoreError> {
+    let current = transaction
+        .query_row(
+            "SELECT composer_catalog_revision FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+    let next = current.checked_add(1).ok_or_else(|| {
+        StoreError::InvalidStoredValue("composer catalog revision overflow".into())
+    })?;
+    transaction.execute(
+        "UPDATE conversations SET composer_catalog_revision = ?2 WHERE id = ?1",
+        params![conversation_id, next],
+    )?;
+    u64::try_from(next)
+        .map_err(|_| StoreError::InvalidStoredValue("negative composer catalog revision".into()))
+}
+
+fn append_workspace_event_transaction(
+    transaction: &Transaction<'_>,
+    kind: &str,
+    project_id: Option<&str>,
+    conversation_id: Option<&str>,
+    run_id: Option<&str>,
+    payload: &Value,
+) -> Result<u64, StoreError> {
+    transaction.execute(
+        "INSERT INTO workspace_events
+         (kind, project_id, conversation_id, run_id, payload)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            kind,
+            project_id,
+            conversation_id,
+            run_id,
+            serde_json::to_string(payload)?,
+        ],
+    )?;
+    u64::try_from(transaction.last_insert_rowid())
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+}
+
 fn latest_workspace_event_id(database: &Connection) -> Result<u64, StoreError> {
     let id = database.query_row(
         "SELECT COALESCE(MAX(id), 0) FROM workspace_events",
@@ -2209,6 +2517,45 @@ fn ensure_column(
     Ok(())
 }
 
+fn backfill_catalog_revision_high_water(database: &Connection) -> Result<(), StoreError> {
+    let stored = {
+        let mut statement = database.prepare(
+            "SELECT se.conversation_id, se.payload
+             FROM session_events se
+             JOIN conversations c ON c.id = se.conversation_id
+             WHERE se.kind = 'composer_catalog' AND c.composer_catalog_revision = 0",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let mut high_water = std::collections::BTreeMap::<String, u64>::new();
+    for (conversation_id, payload) in stored {
+        let Ok(snapshot) = serde_json::from_str::<ComposerCatalogSnapshot>(&payload) else {
+            continue;
+        };
+        if snapshot.conversation_id != conversation_id {
+            continue;
+        }
+        high_water
+            .entry(conversation_id)
+            .and_modify(|revision| *revision = (*revision).max(snapshot.revision))
+            .or_insert(snapshot.revision);
+    }
+    for (conversation_id, revision) in high_water {
+        let revision = i64::try_from(revision).map_err(|_| {
+            StoreError::InvalidStoredValue("composer catalog revision exceeds SQLite range".into())
+        })?;
+        database.execute(
+            "UPDATE conversations SET composer_catalog_revision = ?2 WHERE id = ?1",
+            params![conversation_id, revision],
+        )?;
+    }
+    Ok(())
+}
+
 fn to_sql_conversion_error(error: StoreError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
 }
@@ -2287,3 +2634,95 @@ string_enum!(AgentEventKind, {
     AgentEventKind::Error => "error",
     AgentEventKind::RunCompleted => "run_completed",
 });
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn catalog_replacement_committing_before_typed_critical_section_wins() {
+        let temp = TempDir::new().expect("tempdir");
+        let store =
+            Arc::new(AgentStore::open(temp.path().join("kubecode.sqlite3")).expect("agent store"));
+        let conversation = store
+            .create_conversation("project", AgentId::Codex, None)
+            .expect("conversation");
+        store
+            .append_runtime_update(
+                &conversation.id,
+                "available_commands",
+                &json!({"availableCommands":[{
+                    "name":"status", "description":"Status"
+                }]}),
+                None,
+            )
+            .expect("initial catalog");
+        let initial = store
+            .composer_catalog_snapshot(&conversation.id)
+            .expect("initial snapshot");
+        let item_id = initial.items[0].id.clone();
+        let gate = Arc::new(Barrier::new(2));
+
+        let mut database = store.database.lock().expect("agent database mutex");
+        let transaction = database
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("replacement transaction");
+        let replacement = json!({"availableCommands":[]});
+        append_session_event_transaction(
+            &transaction,
+            &conversation.id,
+            "available_commands",
+            &replacement,
+        )
+        .expect("raw replacement");
+        let revision = next_catalog_revision_transaction(&transaction, &conversation.id)
+            .expect("replacement revision");
+        let candidate = project_acp_catalog(
+            "project",
+            &conversation.id,
+            AgentId::Codex,
+            revision,
+            &replacement,
+        );
+        append_session_event_transaction(
+            &transaction,
+            &conversation.id,
+            "composer_catalog",
+            &serde_json::to_value(&candidate).expect("catalog JSON"),
+        )
+        .expect("safe replacement");
+
+        let request_store = Arc::clone(&store);
+        let request_conversation = conversation.id.clone();
+        let request_gate = Arc::clone(&gate);
+        let request = std::thread::spawn(move || {
+            request_gate.wait();
+            request_store.start_typed_composer_command(
+                &request_conversation,
+                "project",
+                &item_id,
+                initial.revision,
+                "",
+                PermissionMode::Safe,
+            )
+        });
+        gate.wait();
+        transaction.commit().expect("commit replacement");
+        drop(database);
+
+        let error = request
+            .join()
+            .expect("typed request thread")
+            .expect_err("stale request");
+        assert!(matches!(
+            error,
+            StoreError::Composer(ComposerCatalogError::StaleRevision)
+        ));
+        assert!(store.list_runs(&conversation.id).expect("runs").is_empty());
+    }
+}

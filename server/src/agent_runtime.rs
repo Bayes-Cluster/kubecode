@@ -128,6 +128,15 @@ pub struct StartAgentRun {
     pub message: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct StartComposerCommand {
+    pub conversation_id: String,
+    pub project_id: String,
+    pub item_id: String,
+    pub catalog_revision: u64,
+    pub arguments: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SideQuestionAccepted {
     pub id: String,
@@ -714,6 +723,69 @@ impl AgentRuntime {
 
     pub fn start_acp_command(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
         self.start_with_visibility(request, true)
+    }
+
+    pub fn start_composer_command(
+        &self,
+        request: StartComposerCommand,
+    ) -> Result<AgentRun, RuntimeError> {
+        let conversation = self.store.get_conversation(&request.conversation_id)?;
+        if conversation.project_id != request.project_id {
+            return Err(StoreError::ConversationNotFound(request.conversation_id).into());
+        }
+        let descriptor = self
+            .agents
+            .descriptor(conversation.agent_id)
+            .filter(|agent| agent.available)
+            .ok_or(RuntimeError::AgentUnavailable(conversation.agent_id))?;
+        let cwd = self
+            .workspace
+            .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
+        let run = self.store.start_typed_composer_command(
+            &request.conversation_id,
+            &request.project_id,
+            &request.item_id,
+            request.catalog_revision,
+            &request.arguments,
+            PermissionMode::Safe,
+        )?;
+        if let Ok(Some(tree)) = self
+            .workspace
+            .capture_git_tree(&cwd, &format!("{}-before", run.id))
+        {
+            let _ = self.store.set_run_checkpoint(&run.id, Some(&tree), None);
+        }
+        let (cancel, cancelled) = oneshot::channel();
+        self.cancellations
+            .lock()
+            .expect("agent cancellation mutex poisoned")
+            .insert(run.id.clone(), cancel);
+        let agent_message = conversation
+            .context_prefix
+            .as_deref()
+            .filter(|_| conversation.provider_session_id.is_none())
+            .map(|context| {
+                format!(
+                    "{context}\n\nContinue with this user request:\n{}",
+                    run.message
+                )
+            })
+            .unwrap_or_else(|| run.message.clone());
+        let command = AgentCommand {
+            run: run.clone(),
+            message: agent_message,
+            cancelled,
+        };
+        let config = AgentSessionConfig {
+            conversation_id: conversation.id,
+            agent_id: conversation.agent_id,
+            descriptor,
+            provider_session_id: conversation.provider_session_id,
+            cwd,
+            permission_profile: self.permission_profile(&request.conversation_id),
+        };
+        self.dispatch(config, SessionCommand::Prompt(command));
+        Ok(run)
     }
 
     fn start_internal(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
@@ -4130,16 +4202,26 @@ mod tests {
         let session_events = store
             .session_events_after(&conversation.id, 0)
             .expect("session replay");
-        assert_eq!(session_events.len(), 1);
+        assert_eq!(session_events.len(), 2);
+        let command_event = session_events
+            .iter()
+            .find(|event| event.kind == "available_commands")
+            .expect("raw command snapshot");
         assert_eq!(
-            session_events[0].payload["availableCommands"][0]["name"],
+            command_event.payload["availableCommands"][0]["name"],
             "fresh"
         );
+        let catalog_event = session_events
+            .iter()
+            .find(|event| event.kind == "composer_catalog")
+            .expect("safe catalog snapshot");
+        assert_eq!(catalog_event.payload["items"][0]["name"], "fresh");
         let workspace_events = store
             .workspace_events_after(workspace_cursor)
             .expect("workspace replay");
-        assert_eq!(workspace_events.len(), 1);
-        assert_eq!(workspace_events[0].kind, "session_state");
+        assert_eq!(workspace_events.len(), 2);
+        assert_eq!(workspace_events[0].kind, "composer_catalog_snapshot");
+        assert_eq!(workspace_events[1].kind, "session_state");
     }
 
     #[test]
@@ -4220,11 +4302,17 @@ mod tests {
         let session_events = store
             .session_events_after(&conversation.id, 0)
             .expect("session replay");
-        assert_eq!(session_events.len(), 1);
-        assert_eq!(
-            session_events[0].payload["availableCommands"][0]["name"],
-            "old"
-        );
+        assert_eq!(session_events.len(), 2);
+        let command_event = session_events
+            .iter()
+            .find(|event| event.kind == "available_commands")
+            .expect("raw command snapshot");
+        assert_eq!(command_event.payload["availableCommands"][0]["name"], "old");
+        let catalog_event = session_events
+            .iter()
+            .find(|event| event.kind == "composer_catalog")
+            .expect("safe catalog snapshot");
+        assert_eq!(catalog_event.payload["items"][0]["name"], "old");
     }
 
     #[tokio::test]

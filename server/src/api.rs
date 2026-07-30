@@ -19,11 +19,12 @@ use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
-use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun};
+use crate::agent_runtime::{AgentRuntime, RuntimeError, StartAgentRun, StartComposerCommand};
 use crate::agents::{
-    AgentEvent, AgentId, AgentStore, Conversation, ExecutionMode, RunStatus, StoreError,
-    WorkspaceEvent,
+    AgentEvent, AgentId, AgentStore, Conversation, ExecutionMode, RunStatus, SessionEvent,
+    StoreError, WorkspaceEvent,
 };
+use crate::composer_catalog::{ComposerCatalogError, ComposerCatalogSnapshot};
 use crate::git::{GitError, GitMutation, GitService};
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus, TeamStore};
 use crate::terminal::{
@@ -1023,16 +1024,33 @@ async fn start_agent_run(
 }
 
 #[derive(Debug, Deserialize)]
-struct DispatchAcpCommandRequest {
+#[serde(deny_unknown_fields)]
+struct LegacyAcpCommandSelector {
     name: String,
     #[serde(default)]
     arguments: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TypedComposerCommandSelector {
+    item_id: String,
+    catalog_revision: u64,
+    #[serde(default)]
+    arguments: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DispatchAcpCommandSelector {
+    Legacy(LegacyAcpCommandSelector),
+    Typed(TypedComposerCommandSelector),
+}
+
 async fn dispatch_acp_command(
     State(state): State<AppState>,
     Path((project_id, conversation_id)): Path<(String, String)>,
-    Json(request): Json<DispatchAcpCommandRequest>,
+    Json(request): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, ApiError> {
     let conversation = state
         .agent_runtime
@@ -1041,21 +1059,39 @@ async fn dispatch_acp_command(
     if conversation.project_id != project_id {
         return Err(StoreError::ConversationNotFound(conversation_id).into());
     }
-    if !valid_acp_command_name(&request.name) {
-        return Err(AcpCommandError::Unavailable.into());
-    }
-    if request.arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
-        return Err(AcpCommandError::ArgumentsTooLong.into());
-    }
-    let arguments = request.arguments.trim();
-    let raw = latest_available_commands(state.agent_runtime.store().as_ref(), &conversation_id)?
-        .ok_or(AcpCommandError::Unavailable)?;
-    let message = resolve_acp_command_message(&raw, &request.name, arguments)?;
-    let run = state.agent_runtime.start_acp_command(StartAgentRun {
-        conversation_id,
-        project_id,
-        message,
-    })?;
+    let selector = serde_json::from_value::<DispatchAcpCommandSelector>(request)
+        .map_err(|_| ApiError::InvalidRequest("invalid command selector".into()))?;
+    let run = match selector {
+        DispatchAcpCommandSelector::Legacy(request) => {
+            if !valid_acp_command_name(&request.name) {
+                return Err(AcpCommandError::Unavailable.into());
+            }
+            if request.arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
+                return Err(AcpCommandError::ArgumentsTooLong.into());
+            }
+            let arguments = request.arguments.trim();
+            let raw =
+                latest_available_commands(state.agent_runtime.store().as_ref(), &conversation_id)?
+                    .ok_or(AcpCommandError::Unavailable)?;
+            let message = resolve_acp_command_message(&raw, &request.name, arguments)?;
+            state.agent_runtime.start_acp_command(StartAgentRun {
+                conversation_id,
+                project_id,
+                message,
+            })?
+        }
+        DispatchAcpCommandSelector::Typed(request) => {
+            state
+                .agent_runtime
+                .start_composer_command(StartComposerCommand {
+                    conversation_id,
+                    project_id,
+                    item_id: request.item_id,
+                    catalog_revision: request.catalog_revision,
+                    arguments: request.arguments,
+                })?
+        }
+    };
     Ok((StatusCode::ACCEPTED, Json(run)))
 }
 
@@ -1100,7 +1136,14 @@ async fn list_conversation_history(
         store.list_runs_page(&conversation_id, query.before.as_deref(), limit)?;
     let mut events = BTreeMap::new();
     for run in &runs {
-        events.insert(run.id.clone(), store.events_after(&run.id, 0)?);
+        events.insert(
+            run.id.clone(),
+            store
+                .events_after(&run.id, 0)?
+                .into_iter()
+                .map(safe_agent_event)
+                .collect(),
+        );
     }
     let all_session_events = store.session_events_after(&conversation_id, 0)?;
     let session_events = runs.first().map_or_else(Vec::new, |first| {
@@ -1127,7 +1170,11 @@ async fn list_conversation_history(
                 })
             })
             .unwrap_or(all_session_events.len());
-        all_session_events[start..end.max(start)].to_vec()
+        all_session_events[start..end.max(start)]
+            .iter()
+            .cloned()
+            .map(safe_session_event)
+            .collect()
     });
     let next_cursor = has_more
         .then(|| runs.first().map(|run| run.id.clone()))
@@ -1251,7 +1298,10 @@ async fn list_agent_events(
         state
             .agent_runtime
             .store()
-            .events_after(&run_id, query.after)?,
+            .events_after(&run_id, query.after)?
+            .into_iter()
+            .map(safe_agent_event)
+            .collect::<Vec<_>>(),
     ))
 }
 
@@ -1264,7 +1314,10 @@ async fn list_session_events(
         state
             .agent_runtime
             .store()
-            .session_events_after(&conversation_id, query.after)?,
+            .session_events_after(&conversation_id, query.after)?
+            .into_iter()
+            .map(safe_session_event)
+            .collect::<Vec<_>>(),
     ))
 }
 
@@ -1316,7 +1369,12 @@ impl Default for SessionModeAccess {
     }
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
+struct SessionComposerState {
+    catalog: ComposerCatalogSnapshot,
+}
+
+#[derive(Debug, Serialize)]
 struct SessionState {
     capabilities: Option<serde_json::Value>,
     available_commands: Option<serde_json::Value>,
@@ -1325,19 +1383,26 @@ struct SessionState {
     plan: Option<serde_json::Value>,
     usage: Option<serde_json::Value>,
     mode_access: SessionModeAccess,
+    composer: SessionComposerState,
 }
 
 async fn get_session_state(
     State(state): State<AppState>,
     Path(conversation_id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let events = state
-        .agent_runtime
-        .store()
-        .session_events_after(&conversation_id, 0)?;
+    let store = state.agent_runtime.store();
+    let events = store.session_events_after(&conversation_id, 0)?;
     let mut session = SessionState {
+        capabilities: None,
+        available_commands: None,
+        current_mode: None,
+        config_options: None,
+        plan: None,
+        usage: None,
         mode_access: session_mode_access(&state, &conversation_id)?,
-        ..SessionState::default()
+        composer: SessionComposerState {
+            catalog: store.composer_catalog_snapshot(&conversation_id)?,
+        },
     };
     let mut raw_available_commands = None;
     for event in events {
@@ -1440,25 +1505,28 @@ fn parse_available_commands(payload: &serde_json::Value) -> Vec<AcpCommand> {
 }
 
 fn project_available_commands(payload: &serde_json::Value) -> serde_json::Value {
-    let available_commands = parse_available_commands(payload)
-        .into_iter()
-        .map(|command| {
-            let input = match command.input {
-                AcpCommandInput::None => serde_json::Value::Null,
-                AcpCommandInput::Text { hint } => match hint {
-                    Some(hint) => json!({"kind":"text", "hint":hint}),
-                    None => json!({"kind":"text"}),
-                },
-                AcpCommandInput::Unsupported => json!({"kind":"unsupported"}),
-            };
-            json!({
-                "name": command.name,
-                "description": command.description,
-                "input": input,
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({"availableCommands": available_commands})
+    crate::composer_catalog::project_available_commands(payload)
+}
+
+fn safe_agent_event(mut event: AgentEvent) -> AgentEvent {
+    if event.kind == crate::agents::AgentEventKind::AvailableCommands {
+        event.payload = project_available_commands(&event.payload);
+    }
+    event
+}
+
+fn safe_session_event(mut event: SessionEvent) -> SessionEvent {
+    if event.kind == "available_commands" {
+        event.payload = project_available_commands(&event.payload);
+    }
+    event
+}
+
+fn safe_workspace_event(mut event: WorkspaceEvent) -> WorkspaceEvent {
+    if event.kind == "available_commands" {
+        event.payload = project_available_commands(&event.payload);
+    }
+    event
 }
 
 fn valid_acp_command_name(name: &str) -> bool {
@@ -1662,6 +1730,7 @@ async fn stream_workspace_events(
             loop {
                 if let Some(workspace_event) = state.pending.pop_front() {
                     state.cursor = workspace_event.id;
+                    let workspace_event = safe_workspace_event(workspace_event);
                     let event = Event::default()
                         .id(workspace_event.id.to_string())
                         .event("workspace_event")
@@ -1716,6 +1785,7 @@ async fn stream_agent_events(
             loop {
                 if let Some(agent_event) = state.pending.pop_front() {
                     state.cursor = agent_event.seq;
+                    let agent_event = safe_agent_event(agent_event);
                     let event = Event::default()
                         .id(agent_event.seq.to_string())
                         .event(agent_event.kind.as_str())
@@ -2866,10 +2936,38 @@ fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
             (StatusCode::NOT_FOUND, "not_found")
         }
         StoreError::ActiveRun(_) => (StatusCode::CONFLICT, "active_run"),
+        StoreError::Composer(error) => composer_error_status(*error),
         StoreError::InvalidStoredValue(_)
         | StoreError::Json(_)
         | StoreError::Database(_)
         | StoreError::DatabaseSetup(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+    }
+}
+
+fn composer_error_status(error: ComposerCatalogError) -> (StatusCode, &'static str) {
+    match error {
+        ComposerCatalogError::StaleRevision => (StatusCode::CONFLICT, "composer_stale_revision"),
+        ComposerCatalogError::ItemMissing | ComposerCatalogError::CommandUnavailable => {
+            (StatusCode::NOT_FOUND, "composer_item_missing")
+        }
+        ComposerCatalogError::ItemDisabled | ComposerCatalogError::CommandAmbiguous => {
+            (StatusCode::CONFLICT, "composer_item_disabled")
+        }
+        ComposerCatalogError::ItemUnsupported | ComposerCatalogError::InputUnsupported => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "composer_item_unsupported",
+        ),
+        ComposerCatalogError::InputRequired => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "acp_command_input_required",
+        ),
+        ComposerCatalogError::UnexpectedInput => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "acp_command_input_unexpected",
+        ),
+        ComposerCatalogError::ArgumentsTooLong => {
+            (StatusCode::PAYLOAD_TOO_LARGE, "acp_command_input_too_long")
+        }
     }
 }
 
