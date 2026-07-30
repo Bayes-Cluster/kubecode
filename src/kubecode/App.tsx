@@ -52,6 +52,13 @@ import { createTranslator, resolveEffectiveLocale } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from './AgentSessionWorkspace'
+import { GlobalCommandPalette } from './GlobalCommandPalette'
+import { createHostActionRegistry, type RegisteredHostAction } from './hostActions'
+import {
+  isGlobalCommandPaletteShortcut,
+  type CommandPaletteSessionSnapshot,
+  type RankedCommandPaletteItem,
+} from './commandPalette'
 import {
   readAgentPreferences,
   writeAgentPreferences,
@@ -140,6 +147,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
@@ -178,6 +187,8 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const navigatorSearchRef = useRef<HTMLInputElement>(null)
+  const commandPaletteReturnFocusRef = useRef<HTMLElement | null>(null)
+  const commandPaletteSkipRestoreRef = useRef(false)
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -211,13 +222,34 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
 
   useEffect(() => {
     const focusNavigatorSearch = (event: KeyboardEvent) => {
-      if (event.key.toLocaleLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
+      if (event.defaultPrevented
+        || event.altKey
+        || event.shiftKey
+        || event.key.toLocaleLowerCase() !== 'k'
+        || (!event.metaKey && !event.ctrlKey)) return
       event.preventDefault()
       navigatorSearchRef.current?.focus()
       navigatorSearchRef.current?.select()
     }
     document.addEventListener('keydown', focusNavigatorSearch)
     return () => document.removeEventListener('keydown', focusNavigatorSearch)
+  }, [])
+
+  useEffect(() => {
+    const openCommandPalette = (event: KeyboardEvent) => {
+      if (event.defaultPrevented
+        || document.querySelector('[role="dialog"]')
+        || !isGlobalCommandPaletteShortcut(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      commandPaletteReturnFocusRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+      commandPaletteSkipRestoreRef.current = false
+      setCommandPaletteOpen(true)
+    }
+    document.addEventListener('keydown', openCommandPalette, true)
+    return () => document.removeEventListener('keydown', openCommandPalette, true)
   }, [])
 
   useEffect(() => {
@@ -605,6 +637,58 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     trackEvent('kubecode_notification_tested', { result: delivery.status })
   }, [notifications.sound.completion, t])
 
+  const commandPaletteHostActions = createHostActionRegistry({
+    addProject: () => setProjectDialog(true),
+    focusSessionSearch: () => {
+      window.requestAnimationFrame(() => {
+        navigatorSearchRef.current?.focus()
+        navigatorSearchRef.current?.select()
+      })
+    },
+    newSession: () => setSessionDialog(true),
+    openSettings: () => {
+      setSettingsSection('general')
+      setSettingsOpen(true)
+    },
+    toggleContext: () => {
+      setContextOpen((open) => {
+        const nextOpen = togglePanel('context', open)
+        if (narrowLayout && nextOpen) setSessionSidebarOpen(false)
+        return nextOpen
+      })
+    },
+    toggleNavigator: () => {
+      setSessionSidebarOpen((open) => {
+        const nextOpen = togglePanel('sessions', open)
+        if (narrowLayout && nextOpen) setContextOpen(false)
+        return nextOpen
+      })
+    },
+    toggleTerminal: () => setTerminalOpen((open) => togglePanel('terminal', open)),
+  }, { hasProject: Boolean(projectId) })
+
+  const runCommandPaletteHostAction = (action: RegisteredHostAction) => {
+    if (!action.enabled) return
+    commandPaletteSkipRestoreRef.current = [
+      'add-project',
+      'focus-session-search',
+      'new-session',
+      'open-settings',
+    ].includes(action.id)
+    setCommandPaletteOpen(false)
+    action.execute()
+  }
+
+  const runCommandPaletteCatalogItem = (item: RankedCommandPaletteItem) => {
+    const session = commandPaletteSession
+    if (!session?.writable
+      || session.conversationId !== conversationId
+      || session.projectId !== projectId) return
+    commandPaletteSkipRestoreRef.current = true
+    setCommandPaletteOpen(false)
+    void session.execute(item)
+  }
+
   return (
     <IconContext.Provider value={{ size: 16, weight: 'regular' }}>
       <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
@@ -782,6 +866,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               onConversationRemoved={handleConversationRemoved}
               onConversationUpdated={handleConversationUpdated}
               onAddProject={() => setProjectDialog(true)}
+              onCommandPaletteSessionChange={setCommandPaletteSession}
               onNewSession={() => setSessionDialog(true)}
               onOpenAgentSettings={() => {
                 setSettingsSection('agents')
@@ -881,6 +966,29 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
           </Button>
         </aside>
       )}
+
+      <GlobalCommandPalette
+        catalog={commandPaletteSession?.catalog ?? null}
+        catalogStatus={commandPaletteSession?.catalogStatus ?? 'ready'}
+        hostActions={commandPaletteHostActions}
+        onCatalogItem={runCommandPaletteCatalogItem}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const skipRestore = commandPaletteSkipRestoreRef.current
+          commandPaletteSkipRestoreRef.current = false
+          if (!skipRestore) {
+            window.requestAnimationFrame(() => commandPaletteReturnFocusRef.current?.focus())
+          }
+        }}
+        onHostAction={runCommandPaletteHostAction}
+        onOpenChange={setCommandPaletteOpen}
+        open={commandPaletteOpen}
+        sessionDisabledReason={commandPaletteSession?.writable
+          ? null
+          : t('kubecode.commandPaletteNoWritableSession')}
+        sessionWritable={commandPaletteSession?.writable ?? false}
+        t={t}
+      />
 
       <ProjectDialog
         api={api}

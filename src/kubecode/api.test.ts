@@ -171,6 +171,22 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('dispatches a palette command by opaque catalog coordinates below the base path', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'run-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.dispatchComposerCommand('project/id', 'session/id', 'cmd:opaque', 12, '')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/projects/project%2Fid/sessions/session%2Fid/commands',
+      expect.objectContaining({
+        body: JSON.stringify({ item_id: 'cmd:opaque', catalog_revision: 12, arguments: '' }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('sends a Claude side question through the Session extension endpoint', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       id: 'side-1',
