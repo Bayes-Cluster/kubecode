@@ -34,6 +34,8 @@ use crate::workspace::{DirectoryListing, EntryKind, Project, WorkspaceError, Wor
 
 const API_PATH: &str = "/api/v1";
 const WORKSPACE_EVENT_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
+const MAX_ACP_COMMAND_NAME_BYTES: usize = 256;
+const MAX_ACP_COMMAND_ARGUMENT_BYTES: usize = 8 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -469,6 +471,10 @@ fn client_api_router(state: AppState) -> Router {
         .route(
             "/projects/{project_id}/sessions/{conversation_id}/runs",
             axum::routing::post(start_agent_run),
+        )
+        .route(
+            "/projects/{project_id}/sessions/{conversation_id}/commands",
+            axum::routing::post(dispatch_acp_command),
         )
         .route(
             "/conversations/{conversation_id}/runs",
@@ -1016,6 +1022,43 @@ async fn start_agent_run(
     Ok((StatusCode::ACCEPTED, Json(run)))
 }
 
+#[derive(Debug, Deserialize)]
+struct DispatchAcpCommandRequest {
+    name: String,
+    #[serde(default)]
+    arguments: String,
+}
+
+async fn dispatch_acp_command(
+    State(state): State<AppState>,
+    Path((project_id, conversation_id)): Path<(String, String)>,
+    Json(request): Json<DispatchAcpCommandRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)?;
+    if conversation.project_id != project_id {
+        return Err(StoreError::ConversationNotFound(conversation_id).into());
+    }
+    if !valid_acp_command_name(&request.name) {
+        return Err(AcpCommandError::Unavailable.into());
+    }
+    if request.arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
+        return Err(AcpCommandError::ArgumentsTooLong.into());
+    }
+    let arguments = request.arguments.trim();
+    let raw = latest_available_commands(state.agent_runtime.store().as_ref(), &conversation_id)?
+        .ok_or(AcpCommandError::Unavailable)?;
+    let message = resolve_acp_command_message(&raw, &request.name, arguments)?;
+    let run = state.agent_runtime.start_acp_command(StartAgentRun {
+        conversation_id,
+        project_id,
+        message,
+    })?;
+    Ok((StatusCode::ACCEPTED, Json(run)))
+}
+
 async fn get_agent_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
@@ -1296,10 +1339,11 @@ async fn get_session_state(
         mode_access: session_mode_access(&state, &conversation_id)?,
         ..SessionState::default()
     };
+    let mut raw_available_commands = None;
     for event in events {
         match event.kind.as_str() {
             "capabilities" => session.capabilities = Some(event.payload),
-            "available_commands" => session.available_commands = Some(event.payload),
+            "available_commands" => raw_available_commands = Some(event.payload),
             "current_mode" => {
                 if let (Some(current), Some(mode_id)) = (
                     session
@@ -1327,7 +1371,133 @@ async fn get_session_state(
             _ => {}
         }
     }
+    session.available_commands = raw_available_commands
+        .as_ref()
+        .map(project_available_commands);
     Ok(Json(session))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AcpCommandInput {
+    None,
+    Text { hint: Option<String> },
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AcpCommand {
+    name: String,
+    description: String,
+    input: AcpCommandInput,
+}
+
+fn latest_available_commands(
+    store: &AgentStore,
+    conversation_id: &str,
+) -> Result<Option<serde_json::Value>, StoreError> {
+    Ok(store
+        .session_events_after(conversation_id, 0)?
+        .into_iter()
+        .filter(|event| event.kind == "available_commands")
+        .map(|event| event.payload)
+        .next_back())
+}
+
+fn parse_available_commands(payload: &serde_json::Value) -> Vec<AcpCommand> {
+    payload
+        .get("availableCommands")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            let command = value.as_object()?;
+            let name = command.get("name")?.as_str()?;
+            let description = command.get("description")?.as_str()?;
+            let input = match command.get("input") {
+                None | Some(serde_json::Value::Null) => AcpCommandInput::None,
+                Some(serde_json::Value::Object(input)) => {
+                    let kind = input.get("type").and_then(serde_json::Value::as_str);
+                    let hint = input.get("hint");
+                    match (kind, hint) {
+                        (None | Some("text"), None) => AcpCommandInput::Text { hint: None },
+                        (None | Some("text"), Some(serde_json::Value::String(hint))) => {
+                            AcpCommandInput::Text {
+                                hint: Some(hint.to_owned()),
+                            }
+                        }
+                        _ => AcpCommandInput::Unsupported,
+                    }
+                }
+                Some(_) => AcpCommandInput::Unsupported,
+            };
+            Some(AcpCommand {
+                name: name.to_owned(),
+                description: description.to_owned(),
+                input,
+            })
+        })
+        .collect()
+}
+
+fn project_available_commands(payload: &serde_json::Value) -> serde_json::Value {
+    let available_commands = parse_available_commands(payload)
+        .into_iter()
+        .map(|command| {
+            let input = match command.input {
+                AcpCommandInput::None => serde_json::Value::Null,
+                AcpCommandInput::Text { hint } => match hint {
+                    Some(hint) => json!({"kind":"text", "hint":hint}),
+                    None => json!({"kind":"text"}),
+                },
+                AcpCommandInput::Unsupported => json!({"kind":"unsupported"}),
+            };
+            json!({
+                "name": command.name,
+                "description": command.description,
+                "input": input,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({"availableCommands": available_commands})
+}
+
+fn valid_acp_command_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_ACP_COMMAND_NAME_BYTES
+        && name.chars().all(|character| {
+            !character.is_control() && !character.is_whitespace() && character != '/'
+        })
+}
+
+fn resolve_acp_command_message(
+    payload: &serde_json::Value,
+    name: &str,
+    arguments: &str,
+) -> Result<String, AcpCommandError> {
+    let matches = parse_available_commands(payload)
+        .into_iter()
+        .filter(|command| command.name == name)
+        .collect::<Vec<_>>();
+    let command = match matches.as_slice() {
+        [] => return Err(AcpCommandError::Unavailable),
+        [command] => command,
+        _ => return Err(AcpCommandError::Ambiguous),
+    };
+    match command.input {
+        AcpCommandInput::None if !arguments.is_empty() => {
+            return Err(AcpCommandError::UnexpectedInput);
+        }
+        AcpCommandInput::Text { .. } if arguments.is_empty() => {
+            return Err(AcpCommandError::InputRequired);
+        }
+        AcpCommandInput::Unsupported => return Err(AcpCommandError::UnsupportedInput),
+        AcpCommandInput::None | AcpCommandInput::Text { .. } => {}
+    }
+    Ok(if arguments.is_empty() {
+        format!("/{name}")
+    } else {
+        format!("/{name} {arguments}")
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -2387,6 +2557,16 @@ struct ErrorBody {
     stage: Option<crate::agent_runtime::AgentStartupStage>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AcpCommandError {
+    Unavailable,
+    Ambiguous,
+    UnsupportedInput,
+    InputRequired,
+    UnexpectedInput,
+    ArgumentsTooLong,
+}
+
 enum ApiError {
     Workspace(WorkspaceError),
     Terminal(TerminalError),
@@ -2402,6 +2582,13 @@ enum ApiError {
     Team(TeamError),
     TeammateDeletionRequiresLeader,
     SessionModeLocked(SessionModeLockReason),
+    AcpCommand(AcpCommandError),
+}
+
+impl From<AcpCommandError> for ApiError {
+    fn from(error: AcpCommandError) -> Self {
+        Self::AcpCommand(error)
+    }
 }
 
 impl From<WorkspaceError> for ApiError {
@@ -2574,6 +2761,38 @@ impl IntoResponse for ApiError {
                 "session_mode_locked",
                 session_mode_lock_message(reason).to_owned(),
             ),
+            ApiError::AcpCommand(error) => match error {
+                AcpCommandError::Unavailable => (
+                    StatusCode::CONFLICT,
+                    "acp_command_unavailable",
+                    "command is no longer available".to_owned(),
+                ),
+                AcpCommandError::Ambiguous => (
+                    StatusCode::CONFLICT,
+                    "acp_command_ambiguous",
+                    "command name is advertised more than once".to_owned(),
+                ),
+                AcpCommandError::UnsupportedInput => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "acp_command_input_unsupported",
+                    "command uses an unsupported input specification".to_owned(),
+                ),
+                AcpCommandError::InputRequired => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "acp_command_input_required",
+                    "command input is required".to_owned(),
+                ),
+                AcpCommandError::UnexpectedInput => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "acp_command_input_unexpected",
+                    "command does not accept input".to_owned(),
+                ),
+                AcpCommandError::ArgumentsTooLong => (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "acp_command_input_too_long",
+                    "command input exceeds the size limit".to_owned(),
+                ),
+            },
         };
         (
             status,
@@ -2691,7 +2910,86 @@ fn normalize_base_path(base_path: &str) -> String {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::run_workspace_operation;
+    use super::{
+        AcpCommandError, project_available_commands, resolve_acp_command_message,
+        run_workspace_operation,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn projects_only_safe_standard_acp_command_fields() {
+        let projected = project_available_commands(&json!({
+            "availableCommands": [
+                {"name":"status", "description":"Show status", "_meta":{"secret":"no"}},
+                {"name":"review", "description":"Review", "input":{"hint":"focus"}},
+                {"name":"search", "description":"Search", "input":{"type":"text", "hint":"query"}},
+                {"name":"ask", "description":"Ask", "input":{"type":"text"}},
+                {"name":"empty", "description":"Empty", "input":{"hint":""}},
+                {"name":"unicode", "description":"Unicode", "input":{"hint":"问题"}},
+                {"name":"future", "description":"Future", "input":{"type":"choices", "values":["a"]}},
+                {"name":"broken", "description":"Broken", "input":{"type":"text", "hint":7}},
+                {"name":7, "description":"invalid"}
+            ],
+            "_meta": {"private":"no"}
+        }));
+        assert_eq!(
+            projected,
+            json!({"availableCommands":[
+                {"name":"status", "description":"Show status", "input":null},
+                {"name":"review", "description":"Review", "input":{"kind":"text", "hint":"focus"}},
+                {"name":"search", "description":"Search", "input":{"kind":"text", "hint":"query"}},
+                {"name":"ask", "description":"Ask", "input":{"kind":"text"}},
+                {"name":"empty", "description":"Empty", "input":{"kind":"text", "hint":""}},
+                {"name":"unicode", "description":"Unicode", "input":{"kind":"text", "hint":"问题"}},
+                {"name":"future", "description":"Future", "input":{"kind":"unsupported"}},
+                {"name":"broken", "description":"Broken", "input":{"kind":"unsupported"}}
+            ]})
+        );
+    }
+
+    #[test]
+    fn resolves_only_one_current_command_with_the_declared_input_shape() {
+        let commands = json!({"availableCommands":[
+            {"name":"status", "description":"Show status"},
+            {"name":"review", "description":"Review", "input":{"hint":"focus"}},
+            {"name":"ask", "description":"Ask", "input":{"type":"text"}},
+            {"name":"future", "description":"Future", "input":{"type":"choices"}},
+            {"name":"duplicate", "description":"One"},
+            {"name":"duplicate", "description":"Two"}
+        ]});
+        assert_eq!(
+            resolve_acp_command_message(&commands, "status", ""),
+            Ok("/status".into())
+        );
+        assert_eq!(
+            resolve_acp_command_message(&commands, "review", "security"),
+            Ok("/review security".into())
+        );
+        assert_eq!(
+            resolve_acp_command_message(&commands, "ask", "anything"),
+            Ok("/ask anything".into())
+        );
+        assert!(matches!(
+            resolve_acp_command_message(&commands, "removed", ""),
+            Err(AcpCommandError::Unavailable)
+        ));
+        assert!(matches!(
+            resolve_acp_command_message(&commands, "duplicate", ""),
+            Err(AcpCommandError::Ambiguous)
+        ));
+        assert!(matches!(
+            resolve_acp_command_message(&commands, "future", ""),
+            Err(AcpCommandError::UnsupportedInput)
+        ));
+        assert!(matches!(
+            resolve_acp_command_message(&commands, "review", ""),
+            Err(AcpCommandError::InputRequired)
+        ));
+        assert!(matches!(
+            resolve_acp_command_message(&commands, "status", "extra"),
+            Err(AcpCommandError::UnexpectedInput)
+        ));
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn blocking_workspace_operations_leave_the_async_executor_responsive() {

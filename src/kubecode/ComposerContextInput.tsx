@@ -30,6 +30,7 @@ type ComposerContextInputProps = {
   draft: ComposerDraft
   inputRef: React.RefObject<HTMLDivElement | null>
   onChange: (draft: ComposerDraft | ((current: ComposerDraft) => ComposerDraft)) => void
+  onKeyDownCapture?: (event: React.KeyboardEvent<HTMLDivElement>) => void
   onSubmit: (plainText: string) => void
   placeholder: string
   submitDisabled?: boolean
@@ -65,6 +66,7 @@ export function ComposerContextInput({
   draft,
   inputRef,
   onChange,
+  onKeyDownCapture,
   onSubmit,
   placeholder,
   submitDisabled = false,
@@ -172,6 +174,7 @@ export function ComposerContextInput({
   ), [])
 
   return (
+    <div onKeyDownCapture={onKeyDownCapture}>
     <InlineWikilinkInput
       contextEmptyLabel={contextEmptyLabel}
       contextErrorLabel={contextErrorLabel}
@@ -204,5 +207,6 @@ export function ComposerContextInput({
       sanitizePastedText={sanitizePastedText}
       value={editorValue}
     />
+    </div>
   )
 }

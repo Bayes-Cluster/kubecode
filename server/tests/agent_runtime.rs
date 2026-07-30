@@ -391,7 +391,8 @@ async fn initializes_provider_session_and_commands_before_the_first_prompt() {
       ;;
     *'"method":"session/new"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-ready","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"status","description":"Show session status"}]}}}'
-      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-ready\"}}"
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-ready","update":{"sessionUpdate":"current_mode_update","currentModeId":"build"}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-ready\",\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\"}]},\"_meta\":{\"private\":\"journal-only\"}}}"
       ;;
   esac
 done"#,
@@ -430,6 +431,118 @@ done"#,
         event.kind == "available_commands"
             && event.payload["availableCommands"][0]["name"] == "status"
     }));
+    let current_mode = events
+        .iter()
+        .position(|event| event.kind == "current_mode")
+        .expect("partial current mode");
+    let checkpoint = events
+        .iter()
+        .position(|event| event.kind == "session_created_state")
+        .expect("full session checkpoint");
+    assert!(current_mode < checkpoint);
+    assert_eq!(
+        events[checkpoint].payload["modes"]["availableModes"][0]["name"],
+        "Build"
+    );
+    assert_eq!(
+        events[checkpoint].payload["_meta"]["private"],
+        "journal-only"
+    );
+    let state_events = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .filter(|event| event.kind == "session_state")
+        .collect::<Vec<_>>();
+    assert_eq!(state_events.len(), 3);
+    assert_eq!(
+        state_events
+            .last()
+            .and_then(|event| event.project_id.as_deref()),
+        Some(project.id.as_str())
+    );
+    assert_eq!(
+        state_events
+            .last()
+            .and_then(|event| event.conversation_id.as_deref()),
+        Some(conversation.id.as_str())
+    );
+    assert!(
+        state_events
+            .iter()
+            .all(|event| event.payload == serde_json::json!({}))
+    );
+}
+
+#[tokio::test]
+async fn session_checkpoint_failure_prevents_the_actor_from_reporting_ready() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "checkpoint-failure-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let request_received = temp.path().join("session-new-received");
+    let release_response = temp.path().join("release-session-new");
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      touch '{}'
+      while [ ! -f '{}' ]; do sleep 0.01; done
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"deleted-session\",\"modes\":{{\"currentModeId\":\"build\",\"availableModes\":[{{\"id\":\"build\",\"name\":\"Build\"}}]}}}}}}"
+      ;;
+  esac
+done"#,
+            request_received.display(),
+            release_response.display(),
+        ),
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let runtime_task = runtime.clone();
+    let conversation_id = conversation.id.clone();
+    let initializing =
+        tokio::spawn(async move { runtime_task.initialize_conversation(&conversation_id).await });
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !request_received.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("session/new request");
+    store
+        .delete_conversation(&conversation.id)
+        .expect("delete conversation before checkpoint");
+    fs::write(&release_response, "ready").expect("release response");
+
+    let error = initializing
+        .await
+        .expect("initialization task")
+        .expect_err("checkpoint failure must reject readiness");
+    assert!(error.to_string().contains("conversation not found"));
+    assert_eq!(runtime.session_counts().active, 0);
 }
 
 #[tokio::test]
@@ -522,7 +635,7 @@ async fn importing_provider_session_loads_history_before_resuming() {
     *'"method":"session/load"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"provider-session","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Earlier request"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"provider-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Earlier response"}}}}'
-      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\"}]},\"_meta\":{\"private\":\"loaded-journal-only\"}}}"
       ;;
   esac
 done"#,
@@ -568,6 +681,26 @@ done"#,
         history_end < loaded,
         "history must precede the load checkpoint"
     );
+    assert_eq!(
+        events[loaded].payload["modes"]["availableModes"][0]["name"],
+        "Build"
+    );
+    assert_eq!(
+        events[loaded].payload["_meta"]["private"],
+        "loaded-journal-only"
+    );
+    let state_event = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .find(|event| event.kind == "session_state")
+        .expect("load state invalidation");
+    assert_eq!(state_event.project_id.as_deref(), Some(project.id.as_str()));
+    assert_eq!(
+        state_event.conversation_id.as_deref(),
+        Some(conversation.id.as_str())
+    );
+    assert_eq!(state_event.payload, serde_json::json!({}));
     assert_eq!(
         store
             .get_conversation(&conversation.id)

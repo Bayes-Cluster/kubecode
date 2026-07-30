@@ -109,6 +109,22 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('dispatches an advertised ACP command through the dedicated endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'run-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.dispatchAcpCommand('project/id', 'session/id', 'review', 'security')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/user/alice/kubecode/api/v1/projects/project%2Fid/sessions/session%2Fid/commands',
+      expect.objectContaining({
+        body: JSON.stringify({ name: 'review', arguments: 'security' }),
+        method: 'POST',
+      }),
+    )
+  })
+
   it('sends a Claude side question through the Session extension endpoint', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       id: 'side-1',

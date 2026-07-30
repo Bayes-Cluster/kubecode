@@ -191,6 +191,21 @@ YOLO owns Codex and Claude Code permission modes, while OpenCode Build/Plan
 remains a Leader-editable profile because its maximum permission policy is
 process-scoped.
 
+Full ACP NewSession and LoadSession responses are durable Session-state
+checkpoints. The server atomically appends the raw response to the private
+Session journal and a conversation-scoped `session_state` workspace
+invalidation whose browser payload is exactly `{}`; only after that transaction
+commits does it publish the workspace cursor. Browsers then refetch the Session
+state projection through the same request-generation and active-Session guards
+used by other state invalidations. This lets provider-authored labels replace
+an earlier partial mode ID without exposing `_meta` or allowing an older fetch
+or a previous Session to overwrite current state.
+Incremental ACP state updates use the same atomic, empty-payload invalidation
+path while idle or running, so command and mode changes wake connected browsers
+without placing raw provider metadata in run or workspace events.
+Actor-generation guards cover both incremental updates and full checkpoints;
+an evicted or replaced actor cannot overwrite state from its successor.
+
 The Composer resolves context references, Agent and Session commands, and
 user-invocable capabilities through one server-owned typed Composer catalog
 (ADR 0206), not by routing everything through `/`. `@` attaches bounded
@@ -204,6 +219,15 @@ resolving a private provider invocation. Standard ACP commands stay
 authoritative, private adapter extensions are opt-in, and plain-text prompts
 remain backward compatible. Long prompts stop growing at a bounded editor
 height and scroll inside the Composer instead of resizing the Agent workspace.
+During the phased migration, the existing `available_commands` Session-state
+field exposes only safe standard command display fields and recognized text
+input shapes with optional provider-authored hints.
+`POST /projects/:project_id/sessions/:conversation_id/commands`
+accepts an exact advertised name plus bounded arguments, revalidates the latest
+full ACP snapshot server-side, and dispatches an internal run so provider
+responses are durable without fabricating a visible user turn. Unknown slash
+text remains an ordinary prompt. Opaque catalog identity and structured draft
+submission remain later ADR 0206 phases.
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.
