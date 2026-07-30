@@ -9,7 +9,7 @@ const port = requestedURL.port || '41741'
 
 export default defineConfig({
   grep: /@smoke/,
-  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+  projects: [{ name: 'chromium', use: { browserName: 'chromium', hasTouch: true } }],
   retries: 1,
   testDir: './tests',
   timeout: 30_000,
