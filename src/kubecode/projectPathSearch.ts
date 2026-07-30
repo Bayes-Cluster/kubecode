@@ -43,6 +43,7 @@ export async function searchSessionEntries({
   maxEntries = 2_000,
   maxResults = 100,
   query,
+  signal,
 }: {
   api: KubecodeApi
   conversationId: string
@@ -51,14 +52,18 @@ export async function searchSessionEntries({
   maxEntries?: number
   maxResults?: number
   query: string
+  signal?: AbortSignal
 }): Promise<Entry[]> {
   return searchEntries({
     includeExcluded,
     kind,
-    listEntries: (path) => api.listSessionEntries(conversationId, path),
+    listEntries: (path) => signal
+      ? api.listSessionEntries(conversationId, path, signal)
+      : api.listSessionEntries(conversationId, path),
     maxEntries,
     maxResults,
     query,
+    signal,
   })
 }
 
@@ -69,6 +74,7 @@ async function searchEntries({
   maxEntries,
   maxResults,
   query,
+  signal,
 }: {
   includeExcluded: boolean
   kind?: Entry['kind']
@@ -76,6 +82,7 @@ async function searchEntries({
   maxEntries: number
   maxResults: number
   query: string
+  signal?: AbortSignal
 }): Promise<Entry[]> {
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const pending = ['']
@@ -86,10 +93,12 @@ async function searchEntries({
   let order = 0
 
   while (pending.length > 0 && visitedEntries < maxEntries) {
+    signal?.throwIfAborted()
     const directory = pending.shift() as string
     if (visitedDirectories.has(directory)) continue
     visitedDirectories.add(directory)
     const entries = await listEntries(directory)
+    signal?.throwIfAborted()
     const boundedEntries = entries.slice(0, Math.max(0, maxEntries - visitedEntries))
     visitedEntries += boundedEntries.length
 

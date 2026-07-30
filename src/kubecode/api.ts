@@ -504,8 +504,11 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/entries?${query({ path })}`)
   }
 
-  listSessionEntries(conversationId: string, path = ''): Promise<Entry[]> {
-    return this.request(`/sessions/${encodeURIComponent(conversationId)}/entries?${query({ path })}`)
+  listSessionEntries(conversationId: string, path = '', signal?: AbortSignal): Promise<Entry[]> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/entries?${query({ path })}`,
+      { signal },
+    )
   }
 
   createEntry(projectId: string, path: string, kind: Entry['kind']): Promise<void> {

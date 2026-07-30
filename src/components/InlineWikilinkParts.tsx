@@ -114,6 +114,8 @@ export function InlineWikilinkChipView({
 }
 
 export function InlineContextSuggestionList({
+  id,
+  label,
   emptyLabel,
   errorLabel,
   loading,
@@ -123,6 +125,8 @@ export function InlineContextSuggestionList({
   selectedIndex,
   suggestions,
 }: {
+  id: string
+  label: string
   emptyLabel: string
   errorLabel?: string
   loading: boolean
@@ -134,9 +138,12 @@ export function InlineContextSuggestionList({
 }) {
   return (
     <div
+      aria-label={label}
       aria-busy={loading}
+      aria-live="polite"
       className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
       data-testid="composer-context-menu"
+      id={id}
       role="listbox"
     >
       {loading ? (
@@ -149,9 +156,10 @@ export function InlineContextSuggestionList({
         const Icon = suggestion.kind === 'directory' ? Folder : File
         return (
           <button
+            id={`${id}-option-${index}`}
             aria-selected={index === selectedIndex}
             className={cn(
-              'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
+              'flex min-h-11 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
               index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60',
             )}
             key={`${suggestion.kind}:${suggestion.path}`}
@@ -296,6 +304,8 @@ export function InlineWikilinkEditorField({
   onPaste,
   onSelectionChange,
   segments,
+  contextActiveDescendantId,
+  contextListboxId,
   contextReferences,
   contextRemoveLabel,
   onRemoveContext,
@@ -320,6 +330,8 @@ export function InlineWikilinkEditorField({
   onPaste: (event: React.ClipboardEvent<HTMLDivElement>) => void
   onSelectionChange: () => void
   segments: InlineWikilinkSegment[]
+  contextActiveDescendantId?: string
+  contextListboxId?: string
   contextReferences?: InlineContextReference[]
   contextRemoveLabel?: string
   onRemoveContext?: (id: string) => void
@@ -357,10 +369,16 @@ export function InlineWikilinkEditorField({
       )}
       <div
         ref={editorRef}
+        aria-activedescendant={contextActiveDescendantId}
+        aria-autocomplete={contextListboxId ? 'list' : undefined}
+        aria-controls={contextListboxId}
+        aria-label={contextListboxId ? placeholder : undefined}
         contentEditable={!disabled}
         suppressContentEditableWarning={true}
         aria-disabled={disabled ? 'true' : undefined}
+        aria-expanded={contextListboxId ? true : undefined}
         data-testid={dataTestId}
+        role={contextListboxId ? 'combobox' : undefined}
         className={cn(
           'min-h-[34px] w-full rounded-lg border border-border bg-transparent px-[10px] py-[8px] text-[13px] text-foreground outline-none',
           disabled && 'cursor-not-allowed opacity-60',

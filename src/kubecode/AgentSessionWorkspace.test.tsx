@@ -1384,7 +1384,7 @@ describe('AgentSessionWorkspace', () => {
         kind: 'context',
         reference: {
           availability: 'available',
-          id: 'persisted-file',
+          localKey: 'persisted-file',
           kind: 'file',
           name: 'main.ts',
           path: 'src/main.ts',
@@ -1422,7 +1422,11 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.getByRole('button', { name: 'Send composer' })).toBeDisabled()
     fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
     expect(startRun).not.toHaveBeenCalled()
-    await waitFor(() => expect(listSessionEntries).toHaveBeenCalledWith('session-1', 'src'))
+    await waitFor(() => expect(listSessionEntries).toHaveBeenCalledWith(
+      'session-1',
+      'src',
+      expect.any(AbortSignal),
+    ))
   })
 
   it('loads bounded older history without replacing the newest turns', async () => {

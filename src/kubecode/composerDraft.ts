@@ -2,7 +2,7 @@ export type ComposerContextKind = 'file' | 'directory'
 export type ComposerContextAvailability = 'available' | 'stale'
 
 export type ComposerContextReference = {
-  id: string
+  localKey: string
   kind: ComposerContextKind
   name: string
   path: string
@@ -35,23 +35,23 @@ export function isProjectRelativePath(path: string): boolean {
 
 export function createComposerContextReference({
   availability = 'available',
-  id = globalThis.crypto?.randomUUID?.() ?? `context-${Date.now()}-${Math.random()}`,
+  localKey = globalThis.crypto?.randomUUID?.() ?? `context-${Date.now()}-${Math.random()}`,
   kind,
   name,
   path,
-}: Omit<ComposerContextReference, 'availability' | 'id'> & {
+}: Omit<ComposerContextReference, 'availability' | 'localKey'> & {
   availability?: ComposerContextAvailability
-  id?: string
+  localKey?: string
 }): ComposerContextReference {
   if (!isProjectRelativePath(path)) throw new Error('Composer context paths must be Project-relative')
-  return { availability, id, kind, name, path }
+  return { availability, localKey, kind, name, path }
 }
 
 function isContextReference(value: unknown): value is ComposerContextReference {
   if (!value || typeof value !== 'object') return false
   const reference = value as Partial<ComposerContextReference>
-  return typeof reference.id === 'string'
-    && /^[A-Za-z0-9._:-]+$/.test(reference.id)
+  return typeof reference.localKey === 'string'
+    && /^[A-Za-z0-9._:-]+$/.test(reference.localKey)
     && (reference.kind === 'file' || reference.kind === 'directory')
     && typeof reference.name === 'string'
     && reference.name.length > 0
@@ -127,7 +127,7 @@ export function composerDraftPlainText(draft: ComposerDraft): string {
 
 export function composerDraftToEditorValue(draft: ComposerDraft): string {
   return draft.segments.map((segment) => (
-    segment.kind === 'text' ? segment.text : `[[${segment.reference.id}]]`
+    segment.kind === 'text' ? segment.text : `[[${segment.reference.localKey}]]`
   )).join('')
 }
 
@@ -135,7 +135,7 @@ export function composerDraftFromEditorValue(
   value: string,
   references: ComposerContextReference[],
 ): ComposerDraft {
-  const referencesById = new Map(references.map((reference) => [reference.id, reference]))
+  const referencesById = new Map(references.map((reference) => [reference.localKey, reference]))
   const segments: ComposerDraftSegment[] = []
   let cursor = 0
   CONTEXT_TOKEN_PATTERN.lastIndex = 0
@@ -189,7 +189,7 @@ export function appendComposerText(draft: ComposerDraft, text: string): Composer
   }
 }
 
-type ComposerContextIdentity = Pick<ComposerContextReference, 'id' | 'kind' | 'path'>
+type ComposerContextIdentity = Pick<ComposerContextReference, 'localKey' | 'kind' | 'path'>
 type AvailableComposerContext = Pick<ComposerContextReference, 'kind' | 'path'>
 
 function composerContextKey(context: AvailableComposerContext): string {
@@ -201,12 +201,12 @@ export function applyComposerContextValidation(
   requestedReferences: ComposerContextIdentity[],
   availableContexts: AvailableComposerContext[],
 ): ComposerDraft {
-  const requestedById = new Map(requestedReferences.map((reference) => [reference.id, reference]))
+  const requestedById = new Map(requestedReferences.map((reference) => [reference.localKey, reference]))
   const availableKeys = new Set(availableContexts.map(composerContextKey))
   let changed = false
   const segments = draft.segments.map((segment) => {
     if (segment.kind === 'text') return segment
-    const requested = requestedById.get(segment.reference.id)
+    const requested = requestedById.get(segment.reference.localKey)
     if (!requested
       || requested.kind !== segment.reference.kind
       || requested.path !== segment.reference.path) return segment

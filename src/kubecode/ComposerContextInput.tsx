@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { InlineWikilinkInput } from '@/components/InlineWikilinkInput'
-import type { InlineContextSuggestion } from '@/components/inlineContext'
+import type { InlineContextReference, InlineContextSuggestion } from '@/components/inlineContext'
 import type { VaultEntry } from '@/types'
 
 import type { KubecodeApi } from './api'
@@ -23,6 +23,7 @@ type ComposerContextInputProps = {
   contextEmptyLabel: string
   contextErrorLabel: string
   contextLoadingLabel: string
+  contextPickerLabel: string
   contextRemoveLabel: string
   conversationId: string
   disabled: boolean
@@ -39,10 +40,10 @@ function contextVaultEntry(reference: ComposerContextReference): VaultEntry {
     aliases: [],
     archived: false,
     color: null,
-    filename: reference.id,
+    filename: reference.localKey,
     icon: null,
     isA: null,
-    path: reference.id,
+    path: reference.localKey,
     title: reference.name,
   }
 }
@@ -57,6 +58,7 @@ export function ComposerContextInput({
   contextEmptyLabel,
   contextErrorLabel,
   contextLoadingLabel,
+  contextPickerLabel,
   contextRemoveLabel,
   conversationId,
   disabled,
@@ -72,7 +74,7 @@ export function ComposerContextInput({
     () => JSON.stringify(references
       .filter((reference) => reference.availability === 'stale')
       .map((reference) => ({
-        id: reference.id,
+        localKey: reference.localKey,
         kind: reference.kind,
         parent: parentPath(reference.path),
         path: reference.path,
@@ -85,18 +87,25 @@ export function ComposerContextInput({
   }, [references])
   const editorValue = useMemo(() => composerDraftToEditorValue(draft), [draft])
   const entries = useMemo(() => references.map(contextVaultEntry), [references])
+  const inlineReferences = useMemo<InlineContextReference[]>(() => references.map((reference) => ({
+    ...reference,
+    id: reference.localKey,
+  })), [references])
 
   useEffect(() => {
     const referenceRecords = JSON.parse(staleReferenceKey) as Array<{
-      id: string
+      localKey: string
       kind: 'file' | 'directory'
       parent: string
       path: string
     }>
     if (referenceRecords.length === 0) return
     let current = true
+    const controller = new AbortController()
     const directories = [...new Set(referenceRecords.map((reference) => reference.parent))]
-    void Promise.all(directories.map((directory) => api.listSessionEntries(conversationId, directory)))
+    void Promise.all(directories.map((directory) => (
+      api.listSessionEntries(conversationId, directory, controller.signal)
+    )))
       .then((pages) => {
         if (!current) return
         onChange((currentDraft) => applyComposerContextValidation(
@@ -115,16 +124,21 @@ export function ComposerContextInput({
       })
     return () => {
       current = false
+      controller.abort()
     }
   }, [api, conversationId, onChange, staleReferenceKey])
 
-  const loadContextSuggestions = useCallback(async (query: string): Promise<InlineContextSuggestion[]> => (
+  const loadContextSuggestions = useCallback(async (
+    query: string,
+    signal: AbortSignal,
+  ): Promise<InlineContextSuggestion[]> => (
     searchSessionEntries({
       api,
       conversationId,
       maxEntries: 2_000,
       maxResults: 100,
       query,
+      signal,
     })
   ), [api, conversationId])
 
@@ -132,19 +146,19 @@ export function ComposerContextInput({
     if (referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return null
     const reference = createComposerContextReference(suggestion)
     referencesRef.current = [...referencesRef.current, reference]
-    return reference.id
+    return reference.localKey
   }, [])
 
   const updateEditorValue = useCallback((value: string) => {
     onChange(composerDraftFromEditorValue(value, referencesRef.current))
   }, [onChange])
 
-  const removeContext = useCallback((id: string) => {
-    const marker = `[[${id}]]`
+  const removeContext = useCallback((localKey: string) => {
+    const marker = `[[${localKey}]]`
     const nextValue = editorValue.replace(marker, '')
     onChange(composerDraftFromEditorValue(
       nextValue,
-      referencesRef.current.filter((reference) => reference.id !== id),
+      referencesRef.current.filter((reference) => reference.localKey !== localKey),
     ))
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }, [editorValue, inputRef, onChange])
@@ -152,13 +166,19 @@ export function ComposerContextInput({
   const clipboardText = useCallback((value: string) => composerDraftPlainText(
     composerDraftFromEditorValue(value, referencesRef.current),
   ), [])
+  const sanitizePastedText = useCallback((value: string) => referencesRef.current.reduce(
+    (text, reference) => text.replaceAll(`[[${reference.localKey}]]`, `@${reference.path}`),
+    value,
+  ), [])
 
   return (
     <InlineWikilinkInput
       contextEmptyLabel={contextEmptyLabel}
       contextErrorLabel={contextErrorLabel}
       contextLoadingLabel={contextLoadingLabel}
-      contextReferences={references}
+      contextPickerLabel={contextPickerLabel}
+      contextReferences={inlineReferences}
+      contextScopeKey={conversationId}
       contextRemoveLabel={contextRemoveLabel}
       dataTestId="agent-input"
       disabled={disabled}
@@ -181,6 +201,7 @@ export function ComposerContextInput({
       placeholder={placeholder}
       placeholderClassName="kubecode-composer-placeholder px-2 py-1.5 leading-5"
       serializeClipboardText={clipboardText}
+      sanitizePastedText={sanitizePastedText}
       value={editorValue}
     />
   )

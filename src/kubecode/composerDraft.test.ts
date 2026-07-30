@@ -24,13 +24,13 @@ describe('typed Composer drafts', () => {
 
   it('restores ordered file and directory references as unvalidated', () => {
     const file = createComposerContextReference({
-      id: 'file-token',
+      localKey: 'file-token',
       kind: 'file',
       name: 'main.ts',
       path: 'src/main.ts',
     })
     const directory = createComposerContextReference({
-      id: 'directory-token',
+      localKey: 'directory-token',
       kind: 'directory',
       name: 'components',
       path: 'src/components',
@@ -61,7 +61,7 @@ describe('typed Composer drafts', () => {
         kind: 'context',
         reference: createComposerContextReference({
           availability: 'available',
-          id: 'browser-invented-token',
+          localKey: 'browser-invented-token',
           kind: 'file',
           name: 'main.ts',
           path: 'src/main.ts',
@@ -75,13 +75,13 @@ describe('typed Composer drafts', () => {
   it('applies late validation without overwriting references added to the newest draft', () => {
     const restored = createComposerContextReference({
       availability: 'stale',
-      id: 'restored-token',
+      localKey: 'restored-token',
       kind: 'file',
       name: 'main.ts',
       path: 'src/main.ts',
     })
     const selected = createComposerContextReference({
-      id: 'selected-token',
+      localKey: 'selected-token',
       kind: 'directory',
       name: 'components',
       path: 'src/components',
@@ -101,8 +101,8 @@ describe('typed Composer drafts', () => {
       [{ kind: 'file', path: 'src/main.ts' }],
     )
 
-    expect(composerDraftReferences(validated).map(({ id, availability }) => (
-      [id, availability]
+    expect(composerDraftReferences(validated).map(({ localKey, availability }) => (
+      [localKey, availability]
     ))).toEqual([
       ['restored-token', 'available'],
       ['selected-token', 'available'],
@@ -111,7 +111,7 @@ describe('typed Composer drafts', () => {
 
   it('uses private editor tokens only for explicitly selected references', () => {
     const reference = createComposerContextReference({
-      id: 'selected-token',
+      localKey: 'selected-token',
       kind: 'file',
       name: 'main.ts',
       path: 'src/main.ts',
@@ -138,7 +138,7 @@ describe('typed Composer drafts', () => {
       version: 1,
       segments: [
         { kind: 'context', reference: {
-          id: 'bad', kind: 'file', name: 'passwd', path: '/etc/passwd', availability: 'available',
+          localKey: 'bad', kind: 'file', name: 'passwd', path: '/etc/passwd', availability: 'available',
         } },
       ],
     })
@@ -148,7 +148,7 @@ describe('typed Composer drafts', () => {
 
   it('appends command text without flattening existing context segments', () => {
     const reference = createComposerContextReference({
-      id: 'context-token', kind: 'file', name: 'main.ts', path: 'src/main.ts',
+      localKey: 'context-token', kind: 'file', name: 'main.ts', path: 'src/main.ts',
     })
     const draft: Parameters<typeof appendComposerText>[0] = {
       version: 1,
@@ -165,7 +165,7 @@ describe('typed Composer drafts', () => {
     let draft = textComposerDraft()
     for (let index = 0; index <= MAX_COMPOSER_CONTEXT_REFERENCES; index += 1) {
       draft = appendComposerContext(draft, createComposerContextReference({
-        id: `context-${index}`,
+        localKey: `context-${index}`,
         kind: 'file',
         name: `file-${index}.ts`,
         path: `src/file-${index}.ts`,

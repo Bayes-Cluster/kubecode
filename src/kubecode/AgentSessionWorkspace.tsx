@@ -1143,6 +1143,7 @@ export function AgentSessionWorkspace({
                   contextEmptyLabel={t('kubecode.noContextFound')}
                   contextErrorLabel={t('kubecode.contextLoadFailed')}
                   contextLoadingLabel={t('kubecode.loadingContext')}
+                  contextPickerLabel={t('kubecode.addContext')}
                   contextRemoveLabel={t('kubecode.removeContext')}
                   conversationId={conversation.id}
                   disabled={directTeammateChatDisabled || readiness !== 'ready'}

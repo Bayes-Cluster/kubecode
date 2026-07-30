@@ -27,12 +27,16 @@ describe('Kubecode API client', () => {
     const fetch = vi.fn().mockResolvedValue(new Response('[]'))
     vi.stubGlobal('fetch', fetch)
     const api = new KubecodeApi('/user/alice/kubecode')
+    const controller = new AbortController()
 
-    await api.listSessionEntries('session/id', 'src/a folder')
+    await api.listSessionEntries('session/id', 'src/a folder', controller.signal)
 
     expect(fetch).toHaveBeenCalledWith(
       '/user/alice/kubecode/api/v1/sessions/session%2Fid/entries?path=src%2Fa+folder',
-      expect.objectContaining({ headers: expect.any(Headers) }),
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        signal: controller.signal,
+      }),
     )
   })
 
