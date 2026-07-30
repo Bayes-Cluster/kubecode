@@ -40,7 +40,7 @@ export function AcpCommandMenu({
           >
             <code>/{command.name}</code>
             <span className="kubecode-command-description">{command.description}</span>
-            {command.input.kind === 'text' && (
+            {command.input.kind === 'text' && command.input.hint !== undefined && (
               <small className="kubecode-command-hint">{command.input.hint}</small>
             )}
             {disabled && (

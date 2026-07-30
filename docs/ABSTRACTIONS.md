@@ -311,6 +311,12 @@ after commit. Checkpoint persistence is part of Session readiness: failure
 prevents the actor from reporting ready. The browser responds by rehydrating
 the existing Session-state API projection through generation and active-Session
 guards, so stale or cross-Session responses cannot replace newer state.
+Incremental state updates such as ACP `available_commands_update` use the same
+atomic invalidation path whether the actor is idle or running a turn. Multiple
+state changes in one store batch produce one conversation-scoped wakeup, and
+the browser always rehydrates the complete safe projection rather than
+interpreting private journal payloads. Raw provider metadata remains only in
+the private Session journal and never enters a run or workspace event.
 
 Session history is read in bounded cursor pages ordered by run insertion. Each
 page returns its run events and the corresponding Session events, while the
@@ -343,6 +349,10 @@ short interval and before semantic or lifecycle events. One transaction commits
 the complete window across Session, run, and workspace projections. Shutdown
 rejects new producers, drains accepted updates, and joins the journal worker,
 so batching changes neither text reconstruction nor durable ordering.
+Each actor journal also carries the actor generation. Generation replacement
+is mutually exclusive with a journal commit: an old actor may commit before its
+replacement, but it cannot publish Session state after the new actor becomes
+current. Session creation and load checkpoints use the same guard.
 
 The actor also brokers capability-gated provider extensions without changing
 the shared Agent abstraction. Claude side questions are accepted only while a

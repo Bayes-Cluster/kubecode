@@ -196,6 +196,7 @@ pub struct RuntimeUpdate {
     pub session_kind: String,
     pub session_payload: Value,
     pub run_event: Option<RuntimeRunEvent>,
+    pub publish_session_state: bool,
 }
 
 #[derive(Debug)]
@@ -1534,6 +1535,7 @@ impl AgentStore {
                 kind,
                 payload: payload.clone(),
             }),
+            publish_session_state: false,
         };
         self.append_runtime_updates(conversation_id, &[update])
     }
@@ -1548,18 +1550,16 @@ impl AgentStore {
         }
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let conversation_exists = transaction
+        let project_id = transaction
             .query_row(
-                "SELECT 1 FROM conversations WHERE id = ?1",
+                "SELECT project_id FROM conversations WHERE id = ?1",
                 [conversation_id],
-                |_| Ok(()),
+                |row| row.get::<_, String>(0),
             )
             .optional()?
-            .is_some();
-        if !conversation_exists {
-            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
-        }
+            .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
         let mut latest_workspace_cursor = None;
+        let mut publish_session_state = false;
         for update in updates {
             append_session_event_transaction(
                 &transaction,
@@ -1575,7 +1575,16 @@ impl AgentStore {
                     &run_event.payload,
                 )?;
                 latest_workspace_cursor = Some(workspace_cursor);
+            } else {
+                publish_session_state |= update.publish_session_state;
             }
+        }
+        if publish_session_state {
+            latest_workspace_cursor = Some(append_session_state_workspace_event_transaction(
+                &transaction,
+                &project_id,
+                conversation_id,
+            )?);
         }
         transaction.commit()?;
         if let Some(cursor) = latest_workspace_cursor {
@@ -1602,20 +1611,11 @@ impl AgentStore {
                 .optional()?
                 .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
             append_session_event_transaction(&transaction, conversation_id, kind, payload)?;
-            transaction.execute(
-                "INSERT INTO workspace_events
-                 (kind, project_id, conversation_id, run_id, payload)
-                 VALUES ('session_state', ?1, ?2, NULL, ?3)",
-                params![
-                    project_id,
-                    conversation_id,
-                    serde_json::to_string(&json!({}))?
-                ],
+            let workspace_cursor = append_session_state_workspace_event_transaction(
+                &transaction,
+                &project_id,
+                conversation_id,
             )?;
-            let workspace_cursor =
-                u64::try_from(transaction.last_insert_rowid()).map_err(|_| {
-                    StoreError::InvalidStoredValue("negative workspace event id".into())
-                })?;
             transaction.commit()?;
             workspace_cursor
         };
@@ -1863,6 +1863,25 @@ impl AgentStore {
         }
         Ok(())
     }
+}
+
+fn append_session_state_workspace_event_transaction(
+    transaction: &Transaction<'_>,
+    project_id: &str,
+    conversation_id: &str,
+) -> Result<u64, StoreError> {
+    transaction.execute(
+        "INSERT INTO workspace_events
+         (kind, project_id, conversation_id, run_id, payload)
+         VALUES ('session_state', ?1, ?2, NULL, ?3)",
+        params![
+            project_id,
+            conversation_id,
+            serde_json::to_string(&json!({}))?
+        ],
+    )?;
+    u64::try_from(transaction.last_insert_rowid())
+        .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
 }
 
 fn append_event_transaction(

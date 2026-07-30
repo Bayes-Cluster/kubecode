@@ -331,6 +331,52 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.queryByText('/status', { selector: 'article *' })).not.toBeInTheDocument()
   })
 
+  it('keeps a provider /btw command dispatchable while the Session is idle', async () => {
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/btw provider input')
+    const dispatchAcpCommand = vi.fn().mockResolvedValue({
+      ...run,
+      id: 'command-run',
+      message: '/btw provider input',
+      internal: true,
+    })
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        capabilities: { _meta: { claudeCode: { sideQuestion: true } } },
+        available_commands: {
+          availableCommands: [{
+            name: 'btw',
+            description: 'Provider command',
+            input: { kind: 'text' },
+          }],
+        },
+      }),
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'claude_code', available: true, version: '1', executable: 'claude', error: null }]}
+      api={api}
+      conversation={{ ...conversation, agent_id: 'claude_code' }}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.keyDown(await screen.findByTestId('agent-input'), { key: 'Enter' })
+    await waitFor(() => expect(dispatchAcpCommand).toHaveBeenCalledWith(
+      'project-1', 'session-1', 'btw', 'provider input',
+    ))
+  })
+
   it('does not submit an advertised command until its required input is present', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/review')
     const startRun = vi.fn()
@@ -538,7 +584,7 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByText('/review')).toBeInTheDocument()
     const update = {
       id: 42,
-      kind: 'available_commands',
+      kind: 'session_state',
       project_id: 'project-1',
       conversation_id: 'session-1',
       run_id: null,
@@ -593,7 +639,7 @@ describe('AgentSessionWorkspace', () => {
     }
     const event = (id: number) => ({
       id,
-      kind: 'available_commands',
+      kind: 'session_state',
       project_id: 'project-1',
       conversation_id: 'session-1',
       run_id: null,
@@ -1675,12 +1721,14 @@ describe('AgentSessionWorkspace', () => {
     expect(blocks[1]).toHaveTextContent('Second answer.')
   })
 
-  it('sends Claude /btw through the native side-question channel while a turn is running', async () => {
+  it('gives native Claude /btw priority over a provider command with the same name', async () => {
     const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
     const running = { ...run, status: 'running' as const }
     const askSideQuestion = vi.fn().mockResolvedValue({ id: 'side-1', status: 'pending' })
+    const dispatchAcpCommand = vi.fn()
     const api = {
       askSideQuestion,
+      dispatchAcpCommand,
       cancelRun: vi.fn().mockResolvedValue(undefined),
       listRuns: vi.fn().mockResolvedValue([running]),
       listEvents: vi.fn().mockResolvedValue([]),
@@ -1688,6 +1736,13 @@ describe('AgentSessionWorkspace', () => {
       getSessionState: vi.fn().mockResolvedValue({
         ...emptySessionState,
         capabilities: { _meta: { claudeCode: { sideQuestion: true } } },
+        available_commands: {
+          availableCommands: [{
+            name: 'btw',
+            description: 'Provider command',
+            input: { kind: 'text', hint: 'provider input' },
+          }],
+        },
       }),
     } as unknown as KubecodeApi
     sessionStorage.setItem('kubecode:session-draft:session-1', '/btw Are tests done?')
@@ -1704,11 +1759,12 @@ describe('AgentSessionWorkspace', () => {
     }
     const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Ask without interrupting' }))
+    fireEvent.keyDown(await screen.findByTestId('agent-input'), { key: 'Enter' })
     await waitFor(() => expect(askSideQuestion).toHaveBeenCalledWith(
       conversation.id,
       'Are tests done?',
     ))
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
     expect(screen.getByTestId('side-question-panel')).toHaveTextContent('Are tests done?')
 
     rerender(<AgentSessionWorkspace {...props} workspaceEvents={[{
@@ -1727,6 +1783,52 @@ describe('AgentSessionWorkspace', () => {
     }]} />)
 
     expect(await screen.findByText('Yes, the focused tests passed.')).toBeInTheDocument()
+  })
+
+  it('keeps an empty active Claude /btw draft without calling either command channel', async () => {
+    const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
+    const askSideQuestion = vi.fn()
+    const dispatchAcpCommand = vi.fn()
+    const api = {
+      askSideQuestion,
+      cancelRun: vi.fn().mockResolvedValue(undefined),
+      dispatchAcpCommand,
+      listRuns: vi.fn().mockResolvedValue([{ ...run, status: 'running' as const }]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        capabilities: { _meta: { claudeCode: { sideQuestion: true } } },
+        available_commands: {
+          availableCommands: [{
+            name: 'btw',
+            description: 'Provider command',
+            input: { kind: 'text' },
+          }],
+        },
+      }),
+    } as unknown as KubecodeApi
+    sessionStorage.setItem('kubecode:session-draft:session-1', '/btw')
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'claude_code', available: true, version: '1', executable: 'claude', error: null }]}
+      api={api}
+      conversation={claudeConversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.keyDown(await screen.findByTestId('agent-input'), { key: 'Enter' })
+
+    expect(askSideQuestion).not.toHaveBeenCalled()
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/btw')
+    expect(screen.getByRole('option')).toHaveTextContent('without interrupting')
   })
 
   it('reconstructs Agent reasoning, tool progress, errors, and completion from persisted events', async () => {

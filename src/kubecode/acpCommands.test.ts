@@ -32,6 +32,18 @@ describe('ACP commands', () => {
     ])
   })
 
+  it('accepts text commands without inventing an input hint', () => {
+    expect(availableAcpCommands({ availableCommands: [
+      { name: 'ask', description: 'Ask', input: { kind: 'text' } },
+      { name: 'empty', description: 'Empty', input: { kind: 'text', hint: '' } },
+      { name: 'broken', description: 'Broken', input: { kind: 'text', hint: 7 } },
+    ] })).toEqual([
+      expect.objectContaining({ name: 'ask', input: { kind: 'text' } }),
+      expect.objectContaining({ name: 'empty', input: { kind: 'text', hint: '' } }),
+      expect.objectContaining({ name: 'broken', input: { kind: 'unsupported' } }),
+    ])
+  })
+
   it('ranks exact, prefix, substring, then subsequence with provider order as tie-breaker', () => {
     expect(matchingAcpCommands(commands, 'review').map((command) => command.name)).toEqual([
       'review', 'preview', 'restore-view',

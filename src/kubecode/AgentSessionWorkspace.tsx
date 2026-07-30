@@ -1524,15 +1524,15 @@ function availableCommands(
   sideQuestionDescription: string | null = null,
 ): AcpCommand[] {
   const commands = availableAcpCommands(state?.available_commands)
-  if (sideQuestionDescription && !commands.some((command) => command.name === 'btw')) {
-    commands.push({
+  if (sideQuestionDescription) {
+    return [{
       name: 'btw',
       description: sideQuestionDescription,
       input: { kind: 'text', hint: sideQuestionDescription },
-      providerIndex: commands.length,
+      providerIndex: -1,
       ambiguous: false,
       privateSideQuestion: true,
-    })
+    }, ...commands.filter((command) => command.name !== 'btw')]
   }
   return commands
 }

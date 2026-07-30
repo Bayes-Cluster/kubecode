@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
@@ -176,6 +176,7 @@ pub struct AgentRuntime {
     agents: Arc<AgentCatalog>,
     cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     sessions: Arc<Mutex<HashMap<String, SessionActorHandle>>>,
+    session_generations: Arc<Mutex<HashMap<String, Arc<RwLock<String>>>>>,
     session_actor_policy: SessionActorPolicy,
     session_activity_sequence: Arc<AtomicU64>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
@@ -197,6 +198,37 @@ struct SessionActorHandle {
     sender: mpsc::UnboundedSender<SessionCommand>,
     active: Arc<AtomicBool>,
     last_activity: Arc<AtomicU64>,
+}
+
+#[derive(Clone)]
+struct SessionActorGeneration {
+    expected: String,
+    current: Arc<RwLock<String>>,
+}
+
+impl SessionActorGeneration {
+    fn is_current(&self) -> bool {
+        *self
+            .current
+            .read()
+            .expect("session generation lock poisoned")
+            == self.expected
+    }
+
+    fn persist_if_current(
+        &self,
+        operation: impl FnOnce() -> Result<(), StoreError>,
+    ) -> Result<bool, StoreError> {
+        let current = self
+            .current
+            .read()
+            .expect("session generation lock poisoned");
+        if *current != self.expected {
+            return Ok(false);
+        }
+        operation()?;
+        Ok(true)
+    }
 }
 
 struct PendingPermission {
@@ -279,6 +311,7 @@ impl AgentRuntime {
             agents,
             cancellations: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            session_generations: Arc::new(Mutex::new(HashMap::new())),
             session_actor_policy: SessionActorPolicy::default(),
             session_activity_sequence: Arc::new(AtomicU64::new(0)),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
@@ -955,7 +988,8 @@ impl AgentRuntime {
                     &state_conversation_id,
                     "capabilities",
                     &initialization.agent_capabilities,
-                );
+                    None,
+                )?;
                 let response = connection
                     .send_request(LoadSessionRequest::new(provider_session_id, cwd))
                     .block_task()
@@ -969,6 +1003,7 @@ impl AgentRuntime {
                     &state_conversation_id,
                     "session_loaded",
                     response,
+                    None,
                 )?;
                 Ok(())
             })
@@ -1266,6 +1301,22 @@ impl AgentRuntime {
             .send(command)
             .expect("new session actor receiver must be open");
         let generation = Uuid::new_v4().to_string();
+        let generation_guard = {
+            let mut generations = self
+                .session_generations
+                .lock()
+                .expect("session generation registry mutex poisoned");
+            let current = Arc::clone(
+                generations
+                    .entry(config.conversation_id.clone())
+                    .or_insert_with(|| Arc::new(RwLock::new(String::new()))),
+            );
+            *current.write().expect("session generation lock poisoned") = generation.clone();
+            SessionActorGeneration {
+                expected: generation.clone(),
+                current,
+            }
+        };
         let active = Arc::new(AtomicBool::new(starts_run));
         let last_activity = Arc::new(AtomicU64::new(activity));
         self.sessions
@@ -1285,7 +1336,7 @@ impl AgentRuntime {
         tokio::spawn(async move {
             let conversation_id = config.conversation_id.clone();
             runtime
-                .run_session_actor(config, receiver, active, last_activity)
+                .run_session_actor(config, receiver, active, last_activity, generation_guard)
                 .await;
             let mut sessions = runtime
                 .sessions
@@ -1296,6 +1347,16 @@ impl AgentRuntime {
                 .is_some_and(|handle| handle.generation == generation)
             {
                 sessions.remove(&conversation_id);
+            }
+            drop(sessions);
+            let mut generations = runtime
+                .session_generations
+                .lock()
+                .expect("session generation registry mutex poisoned");
+            if generations.get(&conversation_id).is_some_and(|current| {
+                *current.read().expect("session generation lock poisoned") == generation
+            }) {
+                generations.remove(&conversation_id);
             }
         });
     }
@@ -1352,6 +1413,7 @@ impl AgentRuntime {
         mut receiver: mpsc::UnboundedReceiver<SessionCommand>,
         active: Arc<AtomicBool>,
         last_activity: Arc<AtomicU64>,
+        generation: SessionActorGeneration,
     ) {
         let active_run_id = Arc::new(Mutex::new(None));
         let result = run_acp_session(
@@ -1361,6 +1423,7 @@ impl AgentRuntime {
             Arc::clone(&active_run_id),
             Arc::clone(&active),
             Arc::clone(&last_activity),
+            generation,
         )
         .await;
         active.store(false, Ordering::Release);
@@ -1715,15 +1778,14 @@ async fn process_session_control(
                 .await
             {
                 Ok(_) => match journal.flush().await {
-                    Ok(()) => {
-                        persist_serialized_session_event(
-                            store,
-                            conversation_id,
-                            "current_mode",
-                            json!({"currentModeId":selected_mode}),
-                        );
-                        Ok(())
-                    }
+                    Ok(()) => persist_serialized_session_state_checkpoint(
+                        store,
+                        conversation_id,
+                        "current_mode",
+                        json!({"currentModeId":selected_mode}),
+                        journal.generation.as_ref(),
+                    )
+                    .map_err(|error| error.to_string()),
                     Err(error) => Err(error.to_string()),
                 },
                 Err(error) => Err(error.to_string()),
@@ -1750,15 +1812,14 @@ async fn process_session_control(
                 .await
             {
                 Ok(update) => match journal.flush().await {
-                    Ok(()) => {
-                        persist_serialized_session_event(
-                            store,
-                            conversation_id,
-                            "config_options",
-                            update,
-                        );
-                        Ok(())
-                    }
+                    Ok(()) => persist_serialized_session_state_checkpoint(
+                        store,
+                        conversation_id,
+                        "config_options",
+                        update,
+                        journal.generation.as_ref(),
+                    )
+                    .map_err(|error| error.to_string()),
                     Err(error) => Err(error.to_string()),
                 },
                 Err(error) => Err(error.to_string()),
@@ -1797,6 +1858,7 @@ async fn run_acp_session(
     active_run_id: Arc<Mutex<Option<String>>>,
     actor_active: Arc<AtomicBool>,
     last_activity: Arc<AtomicU64>,
+    generation: SessionActorGeneration,
 ) -> Result<(), RuntimeError> {
     let hydrate_provider_history = config.provider_session_id.is_some()
         && runtime
@@ -1814,8 +1876,11 @@ async fn run_acp_session(
     .with_debug(move |line, direction| {
         capture_new_session_response(&response_capture, line, direction)
     });
-    let update_journal =
-        SessionUpdateJournal::spawn(Arc::clone(&runtime.store), config.conversation_id.clone());
+    let update_journal = SessionUpdateJournal::spawn_guarded(
+        Arc::clone(&runtime.store),
+        config.conversation_id.clone(),
+        generation.clone(),
+    );
     let notification_journal = update_journal.sink();
     let permission_journal = update_journal.sink();
     let elicitation_journal = update_journal.sink();
@@ -2105,7 +2170,8 @@ async fn run_acp_session(
                 &conversation_id,
                 "capabilities",
                 &initialization.agent_capabilities,
-            );
+                Some(&generation),
+            )?;
             let team_mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
                 runtime
                     .team_mcp_http_server(&conversation_id)
@@ -2135,6 +2201,7 @@ async fn run_acp_session(
                         &conversation_id,
                         "session_loaded",
                         response,
+                        Some(&generation),
                     )?;
                     (session_id.into(), None)
                 } else {
@@ -2163,7 +2230,8 @@ async fn run_acp_session(
                                     &conversation_id,
                                     "session_resumed",
                                     response,
-                                );
+                                    Some(&generation),
+                                )?;
                                 true
                             }
                             Err(_) => false,
@@ -2193,6 +2261,7 @@ async fn run_acp_session(
                                     &conversation_id,
                                     "session_loaded",
                                     response,
+                                    Some(&generation),
                                 )?;
                                 (session_id.into(), None)
                             }
@@ -2207,6 +2276,7 @@ async fn run_acp_session(
                                         captured_responses: &captured_session_responses,
                                         startup_stage: &connection_stage,
                                         journal: &connection_journal,
+                                        generation: &generation,
                                     },
                                 )
                                 .await?
@@ -2225,6 +2295,7 @@ async fn run_acp_session(
                         captured_responses: &captured_session_responses,
                         startup_stage: &connection_stage,
                         journal: &connection_journal,
+                        generation: &generation,
                     },
                 )
                 .await?
@@ -2233,11 +2304,18 @@ async fn run_acp_session(
                 .flush()
                 .await
                 .map_err(journal_protocol_error)?;
-            store
-                .set_provider_session(&conversation_id, &session_id.to_string())
+            let provider_session_id = session_id.to_string();
+            let persisted = generation
+                .persist_if_current(|| {
+                    store.set_provider_session(&conversation_id, &provider_session_id)
+                })
                 .map_err(|error| {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 })?;
+            if !persisted {
+                return Err(agent_client_protocol::Error::internal_error()
+                    .data("stale session actor generation"));
+            }
             apply_native_permission_profile(
                 &connection,
                 &session_id,
@@ -2526,6 +2604,7 @@ struct ProviderSessionCreation<'a> {
     captured_responses: &'a SessionResponseCapture,
     startup_stage: &'a StartupStageCapture,
     journal: &'a SessionUpdateSink,
+    generation: &'a SessionActorGeneration,
 }
 
 async fn create_provider_session(
@@ -2546,6 +2625,7 @@ async fn create_provider_session(
         captured_responses,
         startup_stage,
         journal,
+        generation,
     } = context;
     set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
     if let Some(mcp_server) = team_mcp_http {
@@ -2561,6 +2641,7 @@ async fn create_provider_session(
             conversation_id,
             "session_created_state",
             response,
+            Some(generation),
         )?;
         return Ok((session_id, None));
     }
@@ -2582,6 +2663,7 @@ async fn create_provider_session(
             conversation_id,
             "session_created_state",
             response,
+            Some(generation),
         )?;
         return Ok((session_id, Some(active_session)));
     }
@@ -2597,6 +2679,7 @@ async fn create_provider_session(
         conversation_id,
         "session_created_state",
         response,
+        Some(generation),
     )?;
     Ok((session_id, None))
 }
@@ -2920,6 +3003,14 @@ struct PersistedSessionUpdate {
     session_kind: &'static str,
     run_kind: Option<AgentEventKind>,
     payload: Value,
+    publish_session_state: bool,
+    title_update: Option<SessionTitleUpdate>,
+}
+
+#[derive(Clone, Debug)]
+enum SessionTitleUpdate {
+    IfUntitled(String),
+    Provider(String),
 }
 
 #[derive(Debug)]
@@ -2955,8 +3046,8 @@ struct SessionJournalSender {
 #[derive(Clone)]
 struct SessionUpdateSink {
     sender: Arc<SessionJournalSender>,
-    store: Arc<AgentStore>,
     conversation_id: Arc<str>,
+    generation: Option<SessionActorGeneration>,
 }
 
 struct SessionUpdateJournal {
@@ -2966,14 +3057,30 @@ struct SessionUpdateJournal {
 
 impl SessionUpdateJournal {
     fn spawn(store: Arc<AgentStore>, conversation_id: String) -> Self {
+        Self::spawn_with_generation(store, conversation_id, None)
+    }
+
+    fn spawn_guarded(
+        store: Arc<AgentStore>,
+        conversation_id: String,
+        generation: SessionActorGeneration,
+    ) -> Self {
+        Self::spawn_with_generation(store, conversation_id, Some(generation))
+    }
+
+    fn spawn_with_generation(
+        store: Arc<AgentStore>,
+        conversation_id: String,
+        generation: Option<SessionActorGeneration>,
+    ) -> Self {
         let (sender, mut receiver) = mpsc::channel(SESSION_UPDATE_CHANNEL_CAPACITY);
         let sink = SessionUpdateSink {
             sender: Arc::new(SessionJournalSender {
                 sender,
                 accepting: tokio::sync::Mutex::new(true),
             }),
-            store: Arc::clone(&store),
             conversation_id: Arc::from(conversation_id),
+            generation: generation.clone(),
         };
         let worker_conversation_id = Arc::clone(&sink.conversation_id);
         let worker = tokio::spawn(async move {
@@ -2984,7 +3091,12 @@ impl SessionUpdateJournal {
                     match tokio::time::timeout_at(deadline, receiver.recv()).await {
                         Ok(command) => command,
                         Err(_) => {
-                            persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                            persist_pending_updates(
+                                &store,
+                                &worker_conversation_id,
+                                &mut pending,
+                                generation.as_ref(),
+                            )?;
                             flush_deadline = None;
                             continue;
                         }
@@ -3002,19 +3114,29 @@ impl SessionUpdateJournal {
                             }
                             push_streaming_update(&mut pending, update);
                         } else {
-                            persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                            persist_pending_updates(
+                                &store,
+                                &worker_conversation_id,
+                                &mut pending,
+                                generation.as_ref(),
+                            )?;
                             flush_deadline = None;
                             persist_session_event(
                                 &store,
                                 &worker_conversation_id,
                                 update.run_id.as_deref(),
                                 update.event,
+                                generation.as_ref(),
                             )?;
                         }
                     }
                     Some(SessionJournalCommand::Flush(response)) => {
-                        let result =
-                            persist_pending_updates(&store, &worker_conversation_id, &mut pending);
+                        let result = persist_pending_updates(
+                            &store,
+                            &worker_conversation_id,
+                            &mut pending,
+                            generation.as_ref(),
+                        );
                         flush_deadline = None;
                         match result {
                             Ok(()) => {
@@ -3027,11 +3149,21 @@ impl SessionUpdateJournal {
                         }
                     }
                     Some(SessionJournalCommand::Shutdown) => {
-                        persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                        persist_pending_updates(
+                            &store,
+                            &worker_conversation_id,
+                            &mut pending,
+                            generation.as_ref(),
+                        )?;
                         break;
                     }
                     None => {
-                        persist_pending_updates(&store, &worker_conversation_id, &mut pending)?;
+                        persist_pending_updates(
+                            &store,
+                            &worker_conversation_id,
+                            &mut pending,
+                            generation.as_ref(),
+                        )?;
                         break;
                     }
                 }
@@ -3091,7 +3223,14 @@ impl SessionUpdateSink {
         if !*accepting {
             return Err(SessionJournalError::Closed);
         }
-        let Some(event) = session_update_event(&self.store, &self.conversation_id, update) else {
+        if self
+            .generation
+            .as_ref()
+            .is_some_and(|generation| !generation.is_current())
+        {
+            return Ok(());
+        }
+        let Some(event) = session_update_event(update) else {
             return Ok(());
         };
         self.sender
@@ -3154,9 +3293,24 @@ fn persist_pending_updates(
     store: &AgentStore,
     conversation_id: &str,
     pending: &mut Vec<PendingSessionUpdate>,
+    generation: Option<&SessionActorGeneration>,
 ) -> Result<(), StoreError> {
-    let updates = pending.drain(..).map(runtime_update).collect::<Vec<_>>();
-    store.append_runtime_updates(conversation_id, &updates)
+    let pending = std::mem::take(pending);
+    let title_updates = pending
+        .iter()
+        .filter_map(|update| update.event.title_update.clone())
+        .collect::<Vec<_>>();
+    let updates = pending.into_iter().map(runtime_update).collect::<Vec<_>>();
+    let persist = || {
+        store.append_runtime_updates(conversation_id, &updates)?;
+        apply_session_title_updates(store, conversation_id, &title_updates);
+        Ok(())
+    };
+    if let Some(generation) = generation {
+        generation.persist_if_current(persist).map(|_| ())
+    } else {
+        persist()
+    }
 }
 
 fn runtime_update(update: PendingSessionUpdate) -> RuntimeUpdate {
@@ -3176,6 +3330,7 @@ fn runtime_update(update: PendingSessionUpdate) -> RuntimeUpdate {
         session_kind: update.event.session_kind.to_owned(),
         session_payload,
         run_event,
+        publish_session_state: update.event.publish_session_state,
     }
 }
 
@@ -3207,16 +3362,13 @@ impl PersistedSessionUpdate {
     }
 }
 
-fn session_update_event(
-    store: &AgentStore,
-    conversation_id: &str,
-    update: SessionUpdate,
-) -> Option<PersistedSessionUpdate> {
+fn session_update_event(update: SessionUpdate) -> Option<PersistedSessionUpdate> {
+    let mut title_update = None;
     let event = match update {
         SessionUpdate::UserMessageChunk(chunk) => {
             text_event(AgentEventKind::TextDelta, chunk).map(|(_, payload)| {
                 if let Some(text) = payload.get("text").and_then(Value::as_str) {
-                    let _ = store.set_agent_title_if_untitled(conversation_id, text);
+                    title_update = Some(SessionTitleUpdate::IfUntitled(text.to_owned()));
                 }
                 ("user_message_delta", None, payload)
             })
@@ -3239,35 +3391,39 @@ fn session_update_event(
             Some((session_kind, Some(kind), payload))
         }
         SessionUpdate::Plan(plan) => serialized_update("plan", AgentEventKind::Plan, plan),
-        SessionUpdate::AvailableCommandsUpdate(commands) => serialized_update(
-            "available_commands",
-            AgentEventKind::AvailableCommands,
-            commands,
-        ),
-        SessionUpdate::CurrentModeUpdate(mode) => {
-            serialized_update("current_mode", AgentEventKind::CurrentMode, mode)
+        SessionUpdate::AvailableCommandsUpdate(commands) => {
+            serialized_state_update("available_commands", commands)
         }
+        SessionUpdate::CurrentModeUpdate(mode) => serialized_state_update("current_mode", mode),
         SessionUpdate::ConfigOptionUpdate(options) => {
-            serialized_update("config_options", AgentEventKind::ConfigOptions, options)
+            serialized_state_update("config_options", options)
         }
         SessionUpdate::SessionInfoUpdate(info) => {
             match &info.title {
                 MaybeUndefined::Value(title) if !title.trim().is_empty() => {
-                    let _ = store.set_agent_title(conversation_id, Some(title));
+                    title_update = Some(SessionTitleUpdate::Provider(title.to_owned()));
                 }
                 MaybeUndefined::Value(_) | MaybeUndefined::Null | MaybeUndefined::Undefined => {}
             }
-            serialized_update("session_info", AgentEventKind::SessionInfo, info)
+            serialized_state_update("session_info", info)
         }
-        SessionUpdate::UsageUpdate(usage) => {
-            serialized_update("usage", AgentEventKind::Usage, usage)
-        }
+        SessionUpdate::UsageUpdate(usage) => serialized_state_update("usage", usage),
         _ => None,
     };
     event.map(|(session_kind, run_kind, payload)| PersistedSessionUpdate {
         session_kind,
         run_kind,
         payload,
+        publish_session_state: matches!(
+            session_kind,
+            "available_commands"
+                | "current_mode"
+                | "config_options"
+                | "session_info"
+                | "usage"
+                | "plan"
+        ),
+        title_update,
     })
 }
 
@@ -3276,12 +3432,40 @@ fn persist_session_event(
     conversation_id: &str,
     run_id: Option<&str>,
     event: PersistedSessionUpdate,
+    generation: Option<&SessionActorGeneration>,
 ) -> Result<(), StoreError> {
+    let title_updates = event.title_update.clone().into_iter().collect::<Vec<_>>();
     let update = runtime_update(PendingSessionUpdate {
         run_id: run_id.map(str::to_owned),
         event,
     });
-    store.append_runtime_updates(conversation_id, &[update])
+    let persist = || {
+        store.append_runtime_updates(conversation_id, &[update])?;
+        apply_session_title_updates(store, conversation_id, &title_updates);
+        Ok(())
+    };
+    if let Some(generation) = generation {
+        generation.persist_if_current(persist).map(|_| ())
+    } else {
+        persist()
+    }
+}
+
+fn apply_session_title_updates(
+    store: &AgentStore,
+    conversation_id: &str,
+    updates: &[SessionTitleUpdate],
+) {
+    for update in updates {
+        match update {
+            SessionTitleUpdate::IfUntitled(title) => {
+                let _ = store.set_agent_title_if_untitled(conversation_id, title);
+            }
+            SessionTitleUpdate::Provider(title) => {
+                let _ = store.set_agent_title(conversation_id, Some(title));
+            }
+        }
+    }
 }
 
 fn serialized_update(
@@ -3294,14 +3478,44 @@ fn serialized_update(
         .map(|payload| (session_kind, Some(run_kind), payload))
 }
 
+fn serialized_state_update(
+    session_kind: &'static str,
+    value: impl serde::Serialize,
+) -> Option<(&'static str, Option<AgentEventKind>, Value)> {
+    serde_json::to_value(value)
+        .ok()
+        .map(|payload| (session_kind, None, payload))
+}
+
 fn persist_serialized_session_event(
     store: &AgentStore,
     conversation_id: &str,
     kind: &str,
     value: impl serde::Serialize,
-) {
-    if let Ok(payload) = serde_json::to_value(value) {
-        let _ = store.append_session_event(conversation_id, kind, &payload);
+    generation: Option<&SessionActorGeneration>,
+) -> Result<(), agent_client_protocol::Error> {
+    let payload = serde_json::to_value(value)
+        .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?;
+    let persist = || {
+        store
+            .append_session_event(conversation_id, kind, &payload)
+            .map(|_| ())
+    };
+    let persisted = match generation {
+        Some(generation) => generation.persist_if_current(persist).map_err(|error| {
+            agent_client_protocol::Error::internal_error().data(error.to_string())
+        })?,
+        None => {
+            persist().map_err(|error| {
+                agent_client_protocol::Error::internal_error().data(error.to_string())
+            })?;
+            true
+        }
+    };
+    if persisted {
+        Ok(())
+    } else {
+        Err(agent_client_protocol::Error::internal_error().data("stale session actor generation"))
     }
 }
 
@@ -3310,12 +3524,32 @@ fn persist_serialized_session_state_checkpoint(
     conversation_id: &str,
     kind: &str,
     value: impl serde::Serialize,
+    generation: Option<&SessionActorGeneration>,
 ) -> Result<(), agent_client_protocol::Error> {
     let payload = serde_json::to_value(value)
         .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?;
-    store
-        .append_session_state_checkpoint(conversation_id, kind, &payload)
-        .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))
+    let persisted = match generation {
+        Some(generation) => generation
+            .persist_if_current(|| {
+                store.append_session_state_checkpoint(conversation_id, kind, &payload)
+            })
+            .map_err(|error| {
+                agent_client_protocol::Error::internal_error().data(error.to_string())
+            })?,
+        None => {
+            store
+                .append_session_state_checkpoint(conversation_id, kind, &payload)
+                .map_err(|error| {
+                    agent_client_protocol::Error::internal_error().data(error.to_string())
+                })?;
+            true
+        }
+    };
+    if persisted {
+        Ok(())
+    } else {
+        Err(agent_client_protocol::Error::internal_error().data("stale session actor generation"))
+    }
 }
 
 fn merge_run_id(mut payload: Value, run_id: &str) -> Value {
@@ -3554,6 +3788,8 @@ mod tests {
             session_kind: "text_delta",
             run_kind: Some(AgentEventKind::TextDelta),
             payload: json!({"message_id":message_id, "text":text}),
+            publish_session_state: false,
+            title_update: None,
         };
         let mut pending = Vec::new();
         for _ in 0..1_000 {
@@ -3830,6 +4066,165 @@ mod tests {
             .await,
             Err(SessionJournalError::Closed)
         ));
+    }
+
+    #[test]
+    fn stale_actor_generation_cannot_overwrite_new_session_state() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("generation-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
+        let current = Arc::new(RwLock::new("old".to_owned()));
+        let old = SessionActorGeneration {
+            expected: "old".into(),
+            current: Arc::clone(&current),
+        };
+        let event = |name: &str| PendingSessionUpdate {
+            run_id: None,
+            event: PersistedSessionUpdate {
+                session_kind: "available_commands",
+                run_kind: Some(AgentEventKind::AvailableCommands),
+                payload: json!({
+                    "availableCommands":[{"name":name, "description":"Command"}]
+                }),
+                publish_session_state: true,
+                title_update: None,
+            },
+        };
+        let mut stale = vec![event("stale")];
+        stale[0].event.title_update = Some(SessionTitleUpdate::Provider("Stale title".into()));
+
+        *current.write().expect("generation lock") = "new".into();
+        persist_pending_updates(&store, &conversation.id, &mut stale, Some(&old))
+            .expect("stale update is discarded");
+        assert!(stale.is_empty());
+        assert!(
+            store
+                .session_events_after(&conversation.id, 0)
+                .expect("session replay")
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .get_conversation(&conversation.id)
+                .expect("conversation")
+                .agent_title,
+            None
+        );
+
+        let new = SessionActorGeneration {
+            expected: "new".into(),
+            current,
+        };
+        let mut fresh = vec![event("fresh")];
+        persist_pending_updates(&store, &conversation.id, &mut fresh, Some(&new))
+            .expect("current update persists");
+
+        let session_events = store
+            .session_events_after(&conversation.id, 0)
+            .expect("session replay");
+        assert_eq!(session_events.len(), 1);
+        assert_eq!(
+            session_events[0].payload["availableCommands"][0]["name"],
+            "fresh"
+        );
+        let workspace_events = store
+            .workspace_events_after(workspace_cursor)
+            .expect("workspace replay");
+        assert_eq!(workspace_events.len(), 1);
+        assert_eq!(workspace_events[0].kind, "session_state");
+    }
+
+    #[test]
+    fn session_generation_replacement_waits_for_an_inflight_state_commit() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("generation-fence-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let current = Arc::new(RwLock::new("old".to_owned()));
+        let old = SessionActorGeneration {
+            expected: "old".into(),
+            current: Arc::clone(&current),
+        };
+        let old_after_replacement = old.clone();
+        let old_store = Arc::clone(&store);
+        let old_conversation_id = conversation.id.clone();
+        let (commit_started, commit_started_rx) = std::sync::mpsc::channel();
+        let (release_commit, release_commit_rx) = std::sync::mpsc::channel();
+        let old_commit = std::thread::spawn(move || {
+            old.persist_if_current(|| {
+                commit_started.send(()).expect("commit started signal");
+                release_commit_rx.recv().expect("release commit");
+                old_store.append_runtime_updates(
+                    &old_conversation_id,
+                    &[RuntimeUpdate {
+                        session_kind: "available_commands".into(),
+                        session_payload: json!({
+                            "availableCommands":[{"name":"old", "description":"Old"}]
+                        }),
+                        run_event: None,
+                        publish_session_state: true,
+                    }],
+                )
+            })
+        });
+        commit_started_rx.recv().expect("old commit entered");
+
+        let replacement_generation = Arc::clone(&current);
+        let (replacement_started, replacement_started_rx) = std::sync::mpsc::channel();
+        let (replacement_finished, replacement_finished_rx) = std::sync::mpsc::channel();
+        let replacement = std::thread::spawn(move || {
+            replacement_started.send(()).expect("replacement started");
+            *replacement_generation.write().expect("generation lock") = "new".into();
+            replacement_finished.send(()).expect("replacement finished");
+        });
+        replacement_started_rx
+            .recv()
+            .expect("replacement attempted");
+        assert!(
+            replacement_finished_rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_err(),
+            "generation replacement must wait for the current commit"
+        );
+
+        release_commit.send(()).expect("release old commit");
+        assert!(
+            old_commit
+                .join()
+                .expect("old commit thread")
+                .expect("old commit")
+        );
+        replacement_finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("replacement completes after commit");
+        replacement.join().expect("replacement thread");
+
+        let late = old_after_replacement
+            .persist_if_current(|| panic!("stale generation must not execute its operation"))
+            .expect("stale check");
+        assert!(!late);
+        let session_events = store
+            .session_events_after(&conversation.id, 0)
+            .expect("session replay");
+        assert_eq!(session_events.len(), 1);
+        assert_eq!(
+            session_events[0].payload["availableCommands"][0]["name"],
+            "old"
+        );
     }
 
     #[tokio::test]

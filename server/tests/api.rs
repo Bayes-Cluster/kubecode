@@ -638,6 +638,7 @@ async fn runtime_status_cursor_advances_only_for_committed_workspace_events() {
                         kind: AgentEventKind::TextDelta,
                         payload: json!({"text":"rolled back"}),
                     }),
+                    publish_session_state: false,
                 },
                 RuntimeUpdate {
                     session_kind: "thinking_delta".into(),
@@ -647,6 +648,7 @@ async fn runtime_status_cursor_advances_only_for_committed_workspace_events() {
                         kind: AgentEventKind::ThinkingDelta,
                         payload: json!({"text":"invalid"}),
                     }),
+                    publish_session_state: false,
                 },
             ],
         )
@@ -1911,6 +1913,7 @@ async fn projects_and_dispatches_the_latest_advertised_acp_command() {
         *'"text":"/review security"'*) ;;
         *) exit 9 ;;
       esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Updated review","input":{"hint":"focus"},"_meta":{"active_private":"must-not-cross-workspace"}}],"_meta":{"active_private":"must-not-cross-workspace"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"command-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Reviewed"}}}}'
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
       ;;
@@ -1964,12 +1967,14 @@ done"#,
     );
     assert_eq!(state["current_mode"]["currentModeId"], "build");
     assert_eq!(state["current_mode"]["availableModes"][0]["name"], "Build");
-    let state_event = store
+    let state_events = store
         .workspace_events_after(0)
         .expect("workspace events")
         .into_iter()
-        .find(|event| event.kind == "session_state")
-        .expect("session state invalidation");
+        .filter(|event| event.kind == "session_state")
+        .collect::<Vec<_>>();
+    assert_eq!(state_events.len(), 3);
+    let state_event = state_events.first().expect("session state invalidation");
     assert_eq!(state_event.project_id.as_deref(), Some(project_id));
     assert_eq!(
         state_event.conversation_id.as_deref(),
@@ -2055,6 +2060,7 @@ done"#,
     assert_eq!(error["code"], "acp_command_input_required");
     assert!(store.list_runs(conversation_id).expect("runs").is_empty());
 
+    let command_workspace_cursor = store.latest_workspace_event_id().expect("workspace cursor");
     let (status, run) = json_request(
         &app,
         Method::POST,
@@ -2090,6 +2096,26 @@ done"#,
         event.kind == "text_delta"
             && event.payload["run_id"] == run_id
             && event.payload["text"] == "Reviewed"
+    }));
+    let active_command_update = events
+        .iter()
+        .rev()
+        .find(|event| event.kind == "available_commands")
+        .expect("active command update in private Session journal");
+    assert_eq!(
+        active_command_update.payload["_meta"]["active_private"],
+        "must-not-cross-workspace"
+    );
+    let command_workspace_events = store
+        .workspace_events_after(command_workspace_cursor)
+        .expect("command workspace events");
+    assert!(command_workspace_events.iter().any(|event| {
+        event.kind == "session_state" && event.run_id.is_none() && event.payload == json!({})
+    }));
+    assert!(command_workspace_events.iter().all(|event| {
+        !serde_json::to_string(&event.payload)
+            .expect("workspace payload")
+            .contains("must-not-cross-workspace")
     }));
 
     store

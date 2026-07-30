@@ -454,16 +454,24 @@ done"#,
         .into_iter()
         .filter(|event| event.kind == "session_state")
         .collect::<Vec<_>>();
-    assert_eq!(state_events.len(), 1);
+    assert_eq!(state_events.len(), 3);
     assert_eq!(
-        state_events[0].project_id.as_deref(),
+        state_events
+            .last()
+            .and_then(|event| event.project_id.as_deref()),
         Some(project.id.as_str())
     );
     assert_eq!(
-        state_events[0].conversation_id.as_deref(),
+        state_events
+            .last()
+            .and_then(|event| event.conversation_id.as_deref()),
         Some(conversation.id.as_str())
     );
-    assert_eq!(state_events[0].payload, serde_json::json!({}));
+    assert!(
+        state_events
+            .iter()
+            .all(|event| event.payload == serde_json::json!({}))
+    );
 }
 
 #[tokio::test]

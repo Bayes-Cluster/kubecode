@@ -1380,7 +1380,7 @@ async fn get_session_state(
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum AcpCommandInput {
     None,
-    Text { hint: String },
+    Text { hint: Option<String> },
     Unsupported,
 }
 
@@ -1417,11 +1417,14 @@ fn parse_available_commands(payload: &serde_json::Value) -> Vec<AcpCommand> {
                 None | Some(serde_json::Value::Null) => AcpCommandInput::None,
                 Some(serde_json::Value::Object(input)) => {
                     let kind = input.get("type").and_then(serde_json::Value::as_str);
-                    let hint = input.get("hint").and_then(serde_json::Value::as_str);
+                    let hint = input.get("hint");
                     match (kind, hint) {
-                        (None | Some("text"), Some(hint)) => AcpCommandInput::Text {
-                            hint: hint.to_owned(),
-                        },
+                        (None | Some("text"), None) => AcpCommandInput::Text { hint: None },
+                        (None | Some("text"), Some(serde_json::Value::String(hint))) => {
+                            AcpCommandInput::Text {
+                                hint: Some(hint.to_owned()),
+                            }
+                        }
                         _ => AcpCommandInput::Unsupported,
                     }
                 }
@@ -1442,7 +1445,10 @@ fn project_available_commands(payload: &serde_json::Value) -> serde_json::Value 
         .map(|command| {
             let input = match command.input {
                 AcpCommandInput::None => serde_json::Value::Null,
-                AcpCommandInput::Text { hint } => json!({"kind":"text", "hint":hint}),
+                AcpCommandInput::Text { hint } => match hint {
+                    Some(hint) => json!({"kind":"text", "hint":hint}),
+                    None => json!({"kind":"text"}),
+                },
                 AcpCommandInput::Unsupported => json!({"kind":"unsupported"}),
             };
             json!({
@@ -2917,7 +2923,11 @@ mod tests {
                 {"name":"status", "description":"Show status", "_meta":{"secret":"no"}},
                 {"name":"review", "description":"Review", "input":{"hint":"focus"}},
                 {"name":"search", "description":"Search", "input":{"type":"text", "hint":"query"}},
+                {"name":"ask", "description":"Ask", "input":{"type":"text"}},
+                {"name":"empty", "description":"Empty", "input":{"hint":""}},
+                {"name":"unicode", "description":"Unicode", "input":{"hint":"问题"}},
                 {"name":"future", "description":"Future", "input":{"type":"choices", "values":["a"]}},
+                {"name":"broken", "description":"Broken", "input":{"type":"text", "hint":7}},
                 {"name":7, "description":"invalid"}
             ],
             "_meta": {"private":"no"}
@@ -2928,7 +2938,11 @@ mod tests {
                 {"name":"status", "description":"Show status", "input":null},
                 {"name":"review", "description":"Review", "input":{"kind":"text", "hint":"focus"}},
                 {"name":"search", "description":"Search", "input":{"kind":"text", "hint":"query"}},
-                {"name":"future", "description":"Future", "input":{"kind":"unsupported"}}
+                {"name":"ask", "description":"Ask", "input":{"kind":"text"}},
+                {"name":"empty", "description":"Empty", "input":{"kind":"text", "hint":""}},
+                {"name":"unicode", "description":"Unicode", "input":{"kind":"text", "hint":"问题"}},
+                {"name":"future", "description":"Future", "input":{"kind":"unsupported"}},
+                {"name":"broken", "description":"Broken", "input":{"kind":"unsupported"}}
             ]})
         );
     }
@@ -2938,6 +2952,7 @@ mod tests {
         let commands = json!({"availableCommands":[
             {"name":"status", "description":"Show status"},
             {"name":"review", "description":"Review", "input":{"hint":"focus"}},
+            {"name":"ask", "description":"Ask", "input":{"type":"text"}},
             {"name":"future", "description":"Future", "input":{"type":"choices"}},
             {"name":"duplicate", "description":"One"},
             {"name":"duplicate", "description":"Two"}
@@ -2949,6 +2964,10 @@ mod tests {
         assert_eq!(
             resolve_acp_command_message(&commands, "review", "security"),
             Ok("/review security".into())
+        );
+        assert_eq!(
+            resolve_acp_command_message(&commands, "ask", "anything"),
+            Ok("/ask anything".into())
         );
         assert!(matches!(
             resolve_acp_command_message(&commands, "removed", ""),

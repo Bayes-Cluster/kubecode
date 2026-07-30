@@ -1,6 +1,6 @@
 export type AcpCommandInput =
   | { kind: 'none' }
-  | { kind: 'text'; hint: string }
+  | { kind: 'text'; hint?: string }
   | { kind: 'unsupported' }
 
 export type AcpCommand = {
@@ -48,8 +48,11 @@ function commandInput(value: unknown): AcpCommandInput {
   if (value === null || value === undefined) return { kind: 'none' }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { kind: 'unsupported' }
   const input = value as Record<string, unknown>
-  if (input.kind === 'text' && typeof input.hint === 'string') {
-    return { kind: 'text', hint: input.hint }
+  if (input.kind === 'text'
+    && (input.hint === undefined || typeof input.hint === 'string')) {
+    return input.hint === undefined
+      ? { kind: 'text' }
+      : { kind: 'text', hint: input.hint }
   }
   return { kind: 'unsupported' }
 }

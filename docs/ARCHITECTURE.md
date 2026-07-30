@@ -200,6 +200,11 @@ state projection through the same request-generation and active-Session guards
 used by other state invalidations. This lets provider-authored labels replace
 an earlier partial mode ID without exposing `_meta` or allowing an older fetch
 or a previous Session to overwrite current state.
+Incremental ACP state updates use the same atomic, empty-payload invalidation
+path while idle or running, so command and mode changes wake connected browsers
+without placing raw provider metadata in run or workspace events.
+Actor-generation guards cover both incremental updates and full checkpoints;
+an evicted or replaced actor cannot overwrite state from its successor.
 
 The Composer resolves context references, Agent and Session commands, and
 user-invocable capabilities through one server-owned typed Composer catalog
@@ -216,7 +221,8 @@ remain backward compatible. Long prompts stop growing at a bounded editor
 height and scroll inside the Composer instead of resizing the Agent workspace.
 During the phased migration, the existing `available_commands` Session-state
 field exposes only safe standard command display fields and recognized text
-input hints. `POST /projects/:project_id/sessions/:conversation_id/commands`
+input shapes with optional provider-authored hints.
+`POST /projects/:project_id/sessions/:conversation_id/commands`
 accepts an exact advertised name plus bounded arguments, revalidates the latest
 full ACP snapshot server-side, and dispatches an internal run so provider
 responses are durable without fabricating a visible user turn. Unknown slash
