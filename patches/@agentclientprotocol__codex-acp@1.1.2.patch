@@ -1,0 +1,99 @@
+diff --git a/dist/index.js b/dist/index.js
+index 6c155607e9c29c9eb5c4893cf4d9a2fe44b92043..c5e0d32dde196f3c39ba25cec2e86e461d7688da 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,5 +1,11 @@
+ #!/usr/bin/env node
+ import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);
++import { pathToFileURL as __pathToFileURL } from "node:url";
++const {
++  advertiseCodexSkills,
++  buildCodexPromptItems,
++  codexSkillHistoryContent
++} = await import(new URL("../../../../codex-skills.mjs", __pathToFileURL(process.argv[1])));
+ var __create = Object.create;
+ var __defProp = Object.defineProperty;
+ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+@@ -25889,7 +25895,7 @@ var CodexAcpClient = class {
+     });
+   }
+   async sendPrompt(request, agentMode, modelId, serviceTier, disableSummary, cwd, additionalDirectories, onTurnStarted, shouldCancel) {
+-    const input = buildPromptItems(request.prompt);
++    const input = buildCodexPromptItems(request, buildPromptItems);
+     const effort = modelId.effort;
+     await this.refreshSkills(cwd, additionalDirectories);
+     if (shouldCancel?.()) {
+@@ -26251,43 +26257,32 @@ var CodexCommands = class {
+     this.onLogout = onLogout;
+   }
+   async publish(sessionState) {
++    let skillsEntries = [];
++    let supported = true;
+     try {
+       const skillsResponse = await this.runWithProcessCheck(() => this.codexAcpClient.listSkills(this.createSkillsListParams(sessionState)));
+-      const availableCommands = this.buildAvailableCommands(skillsResponse?.data ?? []);
+-      if (availableCommands.length === 0) {
+-        return;
+-      }
+-      const session = new ACPSessionConnection(this.connection, sessionState.sessionId);
+-      await session.update({
+-        sessionUpdate: "available_commands_update",
+-        availableCommands
+-      });
++      skillsEntries = skillsResponse?.data ?? [];
+     } catch (err) {
++      supported = false;
+       logger.error(`Failed to publish available commands for session ${sessionState.sessionId}`, err);
+     }
++    const availableCommands = this.buildAvailableCommands();
++    const session = new ACPSessionConnection(this.connection, sessionState.sessionId);
++    await session.update(advertiseCodexSkills({
++      sessionUpdate: "available_commands_update",
++      availableCommands
++    }, skillsEntries, supported));
+   }
+   createSkillsListParams(sessionState) {
+     return {
+       cwds: [sessionState.cwd, ...sessionState.additionalDirectories]
+     };
+   }
+-  buildAvailableCommands(skillsEntries) {
++  buildAvailableCommands() {
+     const commands = /* @__PURE__ */ new Map();
+     for (const builtin of this.getBuiltinCommands()) {
+       commands.set(builtin.name, builtin);
+     }
+-    for (const entry of skillsEntries) {
+-      for (const skill of entry.skills) {
+-        const name = `$${skill.name}`;
+-        if (commands.has(name)) continue;
+-        const description = skill.shortDescription ?? skill.description ?? skill.name;
+-        commands.set(name, {
+-          name,
+-          description,
+-          input: null
+-        });
+-      }
+-    }
+     return Array.from(commands.values());
+   }
+   /**
+@@ -28530,7 +28525,7 @@ ${item.text}`
+         return [{ type: "text", text: this.formatUriAsLink(null, uri) }];
+       }
+       case "skill":
+-        return [{ type: "text", text: `skill:${input.name} (${input.path})` }];
++        return codexSkillHistoryContent(input);
+     }
+     return [];
+   }
+@@ -28817,6 +28812,9 @@ ${item.text}`
+       await this.codexAcpClient.subscribeToSessionEvents(
+         params.sessionId,
+         async (event) => {
++          if (event.method === "skills/changed") {
++            this.publishAvailableCommandsAsync(sessionState);
++          }
+           await elicitationHandler.handleNotification(event);
+           return eventHandler.handleNotification(event);
+         },

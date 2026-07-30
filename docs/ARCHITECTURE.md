@@ -261,6 +261,20 @@ safe catalog revision, and reconstructs the private canonical slash invocation
 after restart. Unsupported SDKs publish no skills; duplicate, disabled,
 unmatched, and unsupported-input rows fail closed.
 
+Codex skill discovery stays inside the bundled Codex ACP adapter and uses the
+App Server `skills/list` result for the exact Session cwd and additional roots.
+The pinned adapter dependency is compatibility-patched to publish a bounded
+private `codexSkills` replacement, refresh it after `skills/changed`, and omit
+configured skills from standard ACP commands because text `$skill` fallback is
+not advertised. The private inventory retains the provider path as its stable
+identity while the browser receives only opaque IDs, safe display fields, and
+scope labels. On selection, the server revalidates the raw inventory in the run
+transaction, stores only a safe `$name` display message, and places the exact
+`{type: "skill", name, path}` input in ACP prompt `_meta` for that in-memory
+dispatch. The patched adapter prepends that structured App Server input exactly
+once and redacts paths when replaying provider history. Missing support,
+malformed paths, duplicate identities, and disabled rows fail closed.
+
 While an Agent turn is running, the editor remains writable and stores an
 isolated draft per Session; submission resumes after the current turn completes
 or is stopped.
