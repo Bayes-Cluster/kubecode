@@ -157,7 +157,10 @@ export function ContextWorkbench({
   useEffect(() => {
     const openQuickFile = (event: KeyboardEvent) => {
       if (!projectId || event.defaultPrevented) return
-      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'p') {
+      if (!event.altKey
+        && !event.shiftKey
+        && (event.metaKey || event.ctrlKey)
+        && event.key.toLocaleLowerCase() === 'p') {
         event.preventDefault()
         setQuickOpen(true)
       }

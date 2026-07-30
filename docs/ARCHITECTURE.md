@@ -229,6 +229,18 @@ badges, while disabled ambiguity reasons and loading/error/empty states are
 localized. Selection inserts a typed capability chip, copy emits only the
 readable `$name` fallback, and paste remains plain text until an explicit
 catalog selection. IME input never triggers keyboard selection or submission.
+The browser-wide command palette opens with `Command-Shift-P` on macOS and
+`Control-Shift-P` elsewhere. A capture-phase shortcut keeps shifted `P` separate
+from the Context Workbench's unshifted file quick-open, while `Command/Control-K`
+continues to focus Session search. Palette rows are grouped as local Host
+actions, current-Session Agent commands, skills/capabilities, and plugin actions.
+Host actions execute only typed browser handlers. Agent rows are disabled when
+the active Session is missing, read-only, busy, unavailable, or incompatible;
+selection never searches for another writable Session. The active Session and
+catalog revision are checked again at selection time. Argument-free commands use
+the opaque typed command endpoint, text-input commands focus a completed `/`
+draft, and capabilities insert the same typed chip used by `$` and Composer `+`.
+Closing the palette without selecting restores its prior focus target.
 During the phased migration, the existing `available_commands` Session-state
 field exposes only safe standard command display fields and recognized text
 input shapes with optional provider-authored hints. Session state also hydrates

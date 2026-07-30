@@ -63,6 +63,7 @@ import {
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { ComposerAddMenu } from './ComposerAddMenu'
 import type { ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
+import type { CommandPaletteSessionSnapshot, RankedCommandPaletteItem } from './commandPalette'
 import { ComposerContextInput } from './ComposerContextInput'
 import type { RankedComposerCapability } from './composerCapabilities'
 import {
@@ -134,6 +135,7 @@ type AgentSessionWorkspaceProps = {
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
   onAddProject?: () => void
+  onCommandPaletteSessionChange?: (session: CommandPaletteSessionSnapshot | null) => void
   onNewSession?: () => void
   onOpenAgentSettings?: () => void
   onOpenPlan?: () => void
@@ -215,6 +217,7 @@ export function AgentSessionWorkspace({
   onConversationRemoved,
   onConversationUpdated,
   onAddProject,
+  onCommandPaletteSessionChange,
   onNewSession,
   onOpenAgentSettings,
   onOpenPlan,
@@ -592,6 +595,122 @@ export function AgentSessionWorkspace({
       reportError(cause)
     }
   }
+
+  const commandPaletteWritable = Boolean(
+    conversation
+      && projectId
+      && agent?.available
+      && !active
+      && !directTeammateChatDisabled
+      && !hardReadOnly
+      && !viewRevisionId,
+  )
+  const commandPaletteCatalog = sessionState?.composer?.catalog.conversation_id === conversationId
+    ? sessionState.composer.catalog
+    : null
+  const commandPaletteCatalogStatus = composerCatalogLoadFailed
+    ? 'error' as const
+    : conversation && !sessionState ? 'loading' as const : 'ready' as const
+  const executeCommandPaletteItem = useCallback(async (
+    selection: RankedCommandPaletteItem,
+  ): Promise<boolean> => {
+    if (!conversation
+      || !projectId
+      || !agent?.available
+      || active
+      || directTeammateChatDisabled
+      || hardReadOnly
+      || viewRevisionId) return false
+    const catalog = sessionState?.composer?.catalog
+    if (!catalog
+      || catalog.conversation_id !== conversation.id
+      || catalog.revision !== selection.catalogRevision) return false
+    const current = catalog.items.find((item) => (
+      item.id === selection.id && item.kind === selection.kind && item.enabled
+    ))
+    if (!current) return false
+    try {
+      const itemKind = current.kind
+      if (itemKind === 'command') {
+        const matchingCommands = availableAcpCommands(sessionState?.available_commands)
+          .filter((command) => command.name === current.name)
+        if (matchingCommands.length !== 1
+          || matchingCommands[0].ambiguous
+          || matchingCommands[0].input.kind === 'unsupported') return false
+        if (matchingCommands[0].input.kind === 'text') {
+          updatePrompt(`/${current.name} `)
+        } else {
+          attachRun(await api.dispatchComposerCommand(
+            projectId,
+            conversation.id,
+            current.id,
+            catalog.revision,
+            '',
+          ))
+          updatePrompt('')
+        }
+      } else {
+        updateComposerDraft((draft) => appendComposerCapability(
+          draft,
+          createComposerCapabilityReference({
+            catalogRevision: catalog.revision,
+            id: current.id,
+            itemKind,
+            name: current.name,
+            scope: current.scope,
+            sourceLabel: current.source_label,
+          }),
+        ))
+      }
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_command_palette_item_selected', {
+        agent_id: conversation.agent_id,
+        kind: itemKind,
+      })
+      return true
+    } catch (cause) {
+      reportError(cause)
+      return false
+    }
+  }, [
+    active,
+    agent?.available,
+    api,
+    attachRun,
+    conversation,
+    directTeammateChatDisabled,
+    hardReadOnly,
+    projectId,
+    reportError,
+    sessionState?.available_commands,
+    sessionState?.composer?.catalog,
+    updateComposerDraft,
+    updatePrompt,
+    viewRevisionId,
+  ])
+
+  useEffect(() => {
+    if (!onCommandPaletteSessionChange) return
+    onCommandPaletteSessionChange({
+      agentId: conversation?.agent_id ?? null,
+      catalog: commandPaletteCatalog,
+      catalogStatus: commandPaletteCatalogStatus,
+      conversationId,
+      execute: executeCommandPaletteItem,
+      projectId,
+      writable: commandPaletteWritable,
+    })
+    return () => onCommandPaletteSessionChange(null)
+  }, [
+    commandPaletteCatalog,
+    commandPaletteCatalogStatus,
+    commandPaletteWritable,
+    conversation?.agent_id,
+    conversationId,
+    executeCommandPaletteItem,
+    onCommandPaletteSessionChange,
+    projectId,
+  ])
 
   const sendSideQuestion = async (text: string) => {
     const question = sideQuestionText(text)

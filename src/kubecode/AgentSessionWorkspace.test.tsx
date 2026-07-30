@@ -353,6 +353,98 @@ describe('AgentSessionWorkspace', () => {
     expect(JSON.stringify(insertionEvent)).not.toContain('cap:')
   })
 
+  it('publishes only the active writable Session to the global palette and revalidates selections', async () => {
+    const catalog = {
+      conversation_id: 'session-1', revision: 11, contexts: [],
+      items: [
+        {
+          id: 'cmd:status', kind: 'command' as const, name: 'status', description: 'Show status',
+          source_label: 'Codex command', scope: 'session' as const, input_hint: null,
+          enabled: true, disabled_reason: null,
+        },
+        {
+          id: 'cmd:review', kind: 'command' as const, name: 'review', description: 'Review changes',
+          source_label: 'Codex command', scope: 'session' as const, input_hint: null,
+          enabled: true, disabled_reason: null,
+        },
+        {
+          id: 'cap:project:test', kind: 'skill' as const, name: 'test', description: 'Run tests',
+          source_label: 'Project skill', scope: 'project' as const, input_hint: null,
+          enabled: true, disabled_reason: null,
+        },
+      ],
+    }
+    const commandRun = { ...run, id: 'palette-command', message: '/status', status: 'running' as const }
+    const dispatchComposerCommand = vi.fn().mockResolvedValue(commandRun)
+    let paletteSession: import('./commandPalette').CommandPaletteSessionSnapshot | null = null
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue({
+        ...emptySessionState,
+        available_commands: { availableCommands: [
+          { name: 'status', description: 'Show status', input: null },
+          { name: 'review', description: 'Review changes', input: { kind: 'text' } },
+        ] },
+        composer: { catalog },
+      }),
+      dispatchComposerCommand,
+    } as unknown as KubecodeApi
+
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onCommandPaletteSessionChange={(next) => { paletteSession = next }}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await waitFor(() => expect(paletteSession?.catalog?.revision).toBe(11))
+    expect(paletteSession).toMatchObject({
+      agentId: 'codex',
+      catalogStatus: 'ready',
+      conversationId: 'session-1',
+      projectId: 'project-1',
+      writable: true,
+    })
+    expect(await paletteSession?.execute({ ...catalog.items[0], catalogRevision: 10 })).toBe(false)
+    expect(dispatchComposerCommand).not.toHaveBeenCalled()
+    await act(async () => {
+      await paletteSession?.execute({ ...catalog.items[1], catalogRevision: 11 })
+    })
+    expect(screen.getByTestId('composer-draft')).toHaveTextContent('/review')
+    expect(dispatchComposerCommand).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await paletteSession?.execute({ ...catalog.items[2], catalogRevision: 11 })
+    })
+    expect(await screen.findByTestId('composer-context-chip')).toHaveTextContent('Project skill')
+    const capabilitySelectionEvent = vi.mocked(trackEvent).mock.calls.find(([name, properties]) => (
+      name === 'kubecode_command_palette_item_selected' && properties?.kind === 'skill'
+    ))
+    expect(capabilitySelectionEvent).toEqual([
+      'kubecode_command_palette_item_selected',
+      { agent_id: 'codex', kind: 'skill' },
+    ])
+    expect(JSON.stringify(capabilitySelectionEvent)).not.toContain('cap:')
+    expect(JSON.stringify(capabilitySelectionEvent)).not.toContain('test')
+
+    await act(async () => {
+      await paletteSession?.execute({ ...catalog.items[0], catalogRevision: 11 })
+    })
+    expect(dispatchComposerCommand).toHaveBeenCalledWith(
+      'project-1', 'session-1', 'cmd:status', 11, '',
+    )
+
+    await waitFor(() => expect(paletteSession?.writable).toBe(false))
+    expect(await paletteSession?.execute({ ...catalog.items[2], catalogRevision: 11 })).toBe(false)
+  })
+
   it('shows OpenCode capability absence only after its catalog is hydrated', async () => {
     const opencodeConversation = { ...conversation, agent_id: 'opencode' as const }
     const api = {

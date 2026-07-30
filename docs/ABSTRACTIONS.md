@@ -274,7 +274,17 @@ Standard ACP commands stay authoritative for `/`; a command is reclassified as a
 capability only when its owning adapter supplies trusted typed metadata, never
 by name or description. Kubecode application actions live in a separate small
 typed host action registry consumed by the global palette and are never sent as
-prompts. Unknown ACP or private metadata is retained but not executable without a
+prompts. The registry has a closed action-ID set and typed local handlers; its
+Project requirements produce disabled rows rather than an Agent request. The
+global palette combines those local actions with the explicitly active
+Session's current catalog snapshot. Catalog selections carry the Session ID,
+item kind, opaque ID, and revision back to that Session workspace, which checks
+that it is still active and writable and revalidates the current snapshot before
+inserting a capability chip or using the typed command endpoint. A command with
+text input is completed into that Session's Composer; an argument-free command
+is dispatched by opaque coordinates. Catalog replacement swaps the palette
+projection wholesale, so a stale row cannot silently target another Session.
+Unknown ACP or private metadata is retained but not executable without a
 registered adapter decoder. Plugin contributions enter this same catalog only
 through explicit user-facing action descriptors; the plugin runtime itself is a
 separate management surface and a separate ADR.

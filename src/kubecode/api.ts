@@ -929,6 +929,26 @@ export class KubecodeApi {
     )
   }
 
+  dispatchComposerCommand(
+    projectId: string,
+    conversationId: string,
+    itemId: string,
+    catalogRevision: number,
+    commandArguments: string,
+  ): Promise<AgentRun> {
+    return this.request(
+      `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/commands`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          item_id: itemId,
+          catalog_revision: catalogRevision,
+          arguments: commandArguments,
+        }),
+      },
+    )
+  }
+
   listRuns(conversationId: string): Promise<AgentRun[]> {
     return this.request(`/sessions/${encodeURIComponent(conversationId)}/runs`)
   }

@@ -1261,6 +1261,39 @@ describe('Kubecode workspace', () => {
     expect(search).toHaveFocus()
   })
 
+  it('opens the global palette without stealing quick open and runs host actions locally', async () => {
+    const startRun = vi.fn()
+    const dispatchAcpCommand = vi.fn()
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+      startRun,
+      dispatchAcpCommand,
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    search.focus()
+    fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })
+
+    expect(await screen.findByRole('dialog', { name: 'Command Palette' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Search files' })).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(search).toHaveFocus())
+
+    fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })
+    fireEvent.click(await screen.findByRole('option', { name: 'Settings' }))
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })
+    expect(screen.queryByRole('dialog', { name: 'Command Palette' })).not.toBeInTheDocument()
+    expect(startRun).not.toHaveBeenCalled()
+    expect(dispatchAcpCommand).not.toHaveBeenCalled()
+  })
+
   it('waits for the selected Project terminal list before auto-creating a terminal', async () => {
     for (const projectId of ['project-1', 'project-2']) {
       localStorage.setItem(`kubecode:layout:${projectId}`, JSON.stringify({ terminalOpen: true }))
