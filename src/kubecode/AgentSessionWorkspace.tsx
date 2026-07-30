@@ -270,6 +270,7 @@ export function AgentSessionWorkspace({
     || !composerCatalogReady
   const activeConversationIdRef = useRef(conversationId)
   activeConversationIdRef.current = conversationId
+  const menuContextRequestRef = useRef(0)
   const agent = agents.find((item) => item.id === conversation?.agent_id)
   const agentLabel = conversation ? agentName(conversation.agent_id) : t('kubecode.agent')
   const active = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
@@ -358,6 +359,11 @@ export function AgentSessionWorkspace({
     const persisted = readSessionDraft(conversationId)
     conversationDraftsRef.current.set(conversationId, persisted)
     setComposerDraft(persisted)
+  }, [conversationId])
+
+  useEffect(() => {
+    menuContextRequestRef.current += 1
+    setMenuContextPending(false)
   }, [conversationId])
 
   useEffect(() => {
@@ -869,12 +875,14 @@ export function AgentSessionWorkspace({
   const insertComposerContext = (entry: Entry) => {
     if (directTeammateChatDisabled || hardReadOnly) return
     const targetConversationId = conversation.id
+    const request = ++menuContextRequestRef.current
     setMenuContextPending(true)
     void api.registerComposerContext(targetConversationId, {
       kind: entry.kind,
       path: entry.path,
     }).then((registration) => {
-      if (activeConversationIdRef.current !== targetConversationId
+      if (request !== menuContextRequestRef.current
+        || activeConversationIdRef.current !== targetConversationId
         || registration.context.kind !== entry.kind
         || registration.context.display !== entry.path
         || !registration.context.enabled) return
@@ -894,8 +902,14 @@ export function AgentSessionWorkspace({
         agent_id: conversation.agent_id,
         kind: entry.kind,
       })
-    }).catch(reportError).finally(() => {
-      if (activeConversationIdRef.current === targetConversationId) {
+    }).catch((cause) => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        reportError(cause)
+      }
+    }).finally(() => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
         setMenuContextPending(false)
       }
     })

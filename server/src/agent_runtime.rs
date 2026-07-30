@@ -825,7 +825,7 @@ impl AgentRuntime {
             .ok_or(RuntimeError::AgentUnavailable(conversation.agent_id))?;
         let cwd = self.workspace.session_execution_path(
             &request.project_id,
-            &conversation.id,
+            &conversation.agent_session_id,
             conversation.execution_mode,
             conversation.workspace_path.as_deref(),
         )?;
@@ -869,7 +869,7 @@ impl AgentRuntime {
             };
             let resolved = match self.workspace.resolve_session_context_entry(
                 &conversation.project_id,
-                &conversation.id,
+                &conversation.agent_session_id,
                 conversation.execution_mode,
                 conversation.workspace_path.as_deref(),
                 &record.path,
@@ -3943,6 +3943,81 @@ mod tests {
             runtime.session_counts(),
             AgentRuntimeSessionCounts { active: 0, idle: 0 }
         );
+    }
+
+    #[tokio::test]
+    async fn structured_context_uses_the_shared_agent_session_worktree() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let project_root = temp.path().join("structured-shared-session");
+        let project = workspace.create_project_at(&project_root).expect("project");
+        run_git(&project_root, &["init"]);
+        run_git(&project_root, &["config", "user.email", "test@example.com"]);
+        run_git(&project_root, &["config", "user.name", "Kubecode Test"]);
+        std::fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+        run_git(&project_root, &["add", "README.md"]);
+        run_git(&project_root, &["commit", "-m", "initial"]);
+        workspace
+            .set_workspaces_enabled(&project.id, true)
+            .expect("enable workspaces");
+
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let parent = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("parent conversation");
+        let worktree = workspace
+            .create_session_worktree(&project.id, &parent.agent_session_id)
+            .expect("worktree");
+        std::fs::write(worktree.join("context.txt"), "worktree\n").expect("context fixture");
+        store
+            .assign_execution_workspace(
+                &parent.id,
+                crate::agents::ExecutionMode::Worktree,
+                Some(worktree.to_str().expect("worktree path")),
+            )
+            .expect("parent workspace");
+        let child = store
+            .create_team_member(&parent.id, AgentId::OpenCode, false)
+            .expect("shared child conversation");
+        assert_ne!(child.id, child.agent_session_id);
+        assert_eq!(child.agent_session_id, parent.agent_session_id);
+        let registration = store
+            .register_composer_context(
+                &child.id,
+                &project.id,
+                crate::composer_catalog::ComposerContextKind::File,
+                "context.txt",
+            )
+            .expect("registration");
+        let runtime = AgentRuntime::new(
+            Arc::clone(&workspace),
+            Arc::clone(&store),
+            vec![AgentDescriptor {
+                id: AgentId::OpenCode,
+                available: true,
+                version: Some("test".into()),
+                executable: "/bin/false".into(),
+                error: None,
+            }],
+        );
+
+        let run = runtime
+            .start_structured_composer(StartStructuredComposerRun {
+                conversation_id: child.id.clone(),
+                project_id: project.id,
+                item_id: None,
+                catalog_revision: registration.catalog.revision,
+                segments: vec![ComposerDraftSegment::ContextRef {
+                    id: registration.context.id,
+                    catalog_revision: registration.catalog.revision,
+                    context_kind: crate::composer_catalog::ComposerContextKind::File,
+                }],
+            })
+            .expect("shared Agent Session context should resolve in its worktree");
+
+        assert_eq!(run.message, "@context.txt");
     }
 
     #[test]

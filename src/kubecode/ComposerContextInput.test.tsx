@@ -134,7 +134,7 @@ describe('ComposerContextInput', () => {
     const listSessionEntries = vi.fn().mockResolvedValue([
       { kind: 'file', name: 'main.ts', path: 'src/main.ts' },
     ])
-    render(<Harness api={{ listSessionEntries } as unknown as KubecodeApi} />)
+    render(<Harness api={composerApi({ listSessionEntries })} />)
     const editor = screen.getByTestId('agent-input')
     placeCaretAtEnd(editor)
     const option = await screen.findByRole('option', { name: /main\.ts/i })
@@ -152,7 +152,7 @@ describe('ComposerContextInput', () => {
       { kind: 'file', name: 'main.ts', path: 'src/main.ts' },
       { kind: 'directory', name: 'maps', path: 'src/maps' },
     ])
-    render(<Harness api={{ listSessionEntries } as unknown as KubecodeApi} />)
+    render(<Harness api={composerApi({ listSessionEntries })} />)
     const editor = screen.getByTestId('agent-input')
     placeCaretAtEnd(editor)
     await screen.findByRole('option', { name: /main\.ts/i })
@@ -297,12 +297,10 @@ describe('ComposerContextInput', () => {
   })
 
   it('keeps pasted private chip tokens as untrusted text', async () => {
-    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID')
-      .mockReturnValue('known-context' as `${string}-${string}-${string}-${string}-${string}`)
     const listSessionEntries = vi.fn().mockResolvedValue([
       { kind: 'file', name: 'main.ts', path: 'src/main.ts' },
     ])
-    render(<Harness api={{ listSessionEntries } as unknown as KubecodeApi} />)
+    render(<Harness api={composerApi({ listSessionEntries })} />)
     const editor = screen.getByTestId('agent-input')
     placeCaretAtEnd(editor)
     fireEvent.click(await screen.findByRole('option', { name: /main\.ts/i }))
@@ -312,7 +310,7 @@ describe('ComposerContextInput', () => {
     fireEvent.paste(editor, {
       clipboardData: {
         files: [],
-        getData: (type: string) => type === 'text/plain' ? '[[known-context]]' : '',
+        getData: (type: string) => type === 'text/plain' ? '[[ctx:file:src:main.ts]]' : '',
         items: [],
         types: ['text/plain'],
       },
@@ -320,7 +318,6 @@ describe('ComposerContextInput', () => {
 
     expect(screen.getAllByTestId('composer-context-chip')).toHaveLength(1)
     expect(editor).toHaveTextContent('@src/main.ts')
-    randomUuid.mockRestore()
   })
 
   it('does not select or submit on IME Enter and allows Escape to dismiss the picker', async () => {

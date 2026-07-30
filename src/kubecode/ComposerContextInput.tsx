@@ -209,7 +209,10 @@ export function ComposerContextInput({
     composerDraftFromEditorValue(value, referencesRef.current),
   ), [])
   const sanitizePastedText = useCallback((value: string) => referencesRef.current.reduce(
-    (text, reference) => text.replaceAll(`[[${reference.id}]]`, `@${reference.path ?? reference.name}`),
+    (text, reference) => text.replaceAll(
+      `[[${reference.id}]]`,
+      'path' in reference ? `@${reference.path}` : `$${reference.name}`,
+    ),
     value,
   ), [])
 

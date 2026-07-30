@@ -2153,6 +2153,73 @@ describe('AgentSessionWorkspace', () => {
     })
   })
 
+  it('discards a pending menu context registration when the Session changes', async () => {
+    const secondConversation = { ...conversation, id: 'session-2', title: 'Second session' }
+    let resolveRegistration: ((value: {
+      context: { id: string; kind: 'file'; display: string; enabled: boolean; disabled_reason: null }
+      catalog: { conversation_id: string; revision: number; items: never[]; contexts: never[] }
+    }) => void) | undefined
+    const registerComposerContext = vi.fn(() => new Promise((resolve) => {
+      resolveRegistration = resolve
+    }))
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      listSessionEntries: vi.fn().mockResolvedValue([
+        { kind: 'file', name: 'README.md', path: 'README.md' },
+      ]),
+      getSessionState: vi.fn().mockImplementation((conversationId: string) => Promise.resolve({
+        ...emptySessionState,
+        composer: {
+          catalog: {
+            conversation_id: conversationId,
+            revision: 1,
+            items: [],
+            contexts: [],
+          },
+        },
+      })),
+      registerComposerContext,
+      startRun: vi.fn().mockResolvedValue({ ...run, conversation_id: 'session-2' }),
+    } as unknown as KubecodeApi
+    const props = {
+      agents: [{ id: 'codex' as const, available: true, version: '1', executable: 'codex', error: null }],
+      api,
+      locale: 'en' as const,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      workspaceEvents: [] as WorkspaceEvent[],
+    }
+    const { rerender } = render(
+      <AgentSessionWorkspace {...props} conversation={conversation} />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference file/i }))
+    fireEvent.click(await screen.findByRole('option', { name: /README\.md/i }))
+    await waitFor(() => expect(registerComposerContext).toHaveBeenCalledWith(
+      'session-1',
+      { kind: 'file', path: 'README.md' },
+    ))
+
+    rerender(<AgentSessionWorkspace {...props} conversation={secondConversation} />)
+    const editor = screen.getByTestId('agent-input')
+    editor.textContent = 'Continue'
+    fireEvent.input(editor)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send composer' })).toBeEnabled())
+
+    resolveRegistration?.({
+      context: {
+        id: 'ctx:old', kind: 'file', display: 'README.md', enabled: true, disabled_reason: null,
+      },
+      catalog: { conversation_id: 'session-1', revision: 2, items: [], contexts: [] },
+    })
+    await waitFor(() => expect(screen.queryByTestId('composer-context-chip')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Send composer' })).toBeEnabled()
+  })
+
   it('restores a Composer draft after the workspace remounts', async () => {
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
