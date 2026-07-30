@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { InlineWikilinkInput } from '@/components/InlineWikilinkInput'
 import type { InlineContextReference, InlineContextSuggestion } from '@/components/inlineContext'
+import type { InlineCapabilitySuggestion } from '@/components/inlineContext'
 import type { VaultEntry } from '@/types'
 
 import type { ComposerCatalogSnapshot, KubecodeApi } from './api'
+import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
+import { rankComposerCapabilities } from './composerCapabilities'
 import {
   composerDraftFromEditorValue,
   composerDraftAllReferences,
@@ -12,6 +15,7 @@ import {
   composerDraftReferences,
   composerDraftToEditorValue,
   createComposerContextReference,
+  createComposerCapabilityReference,
   applyComposerContextValidation,
   MAX_COMPOSER_CONTEXT_REFERENCES,
   type ComposerDraft,
@@ -20,6 +24,9 @@ import { searchSessionEntries } from './projectPathSearch'
 
 type ComposerContextInputProps = {
   api: KubecodeApi
+  capabilityCatalog?: ComposerCatalogSnapshot
+  capabilityLabels: ComposerCapabilityPickerLabels
+  capabilityStatus: 'error' | 'loading' | 'ready'
   contextEmptyLabel: string
   contextErrorLabel: string
   contextLoadingLabel: string
@@ -54,6 +61,9 @@ function contextVaultEntry(reference: InlineContextReference): VaultEntry {
 
 export function ComposerContextInput({
   api,
+  capabilityCatalog,
+  capabilityLabels,
+  capabilityStatus,
   contextEmptyLabel,
   contextErrorLabel,
   contextLoadingLabel,
@@ -78,11 +88,15 @@ export function ComposerContextInput({
     'path' in reference ? reference : {
       availability: reference.availability,
       id: reference.id,
+      itemKind: reference.itemKind,
       kind: 'capability',
       name: reference.name,
       path: `$${reference.name}`,
+      scope: reference.scope,
+      scopeLabel: reference.scope ? capabilityLabels.scope[reference.scope] : undefined,
+      sourceLabel: reference.sourceLabel,
     }
-  )), [references])
+  )), [capabilityLabels.scope, references])
   const staleReferenceKey = useMemo(
     () => JSON.stringify(contextReferences
       .filter((reference) => reference.availability === 'stale')
@@ -191,6 +205,48 @@ export function ComposerContextInput({
     }
   }, [api, conversationId, onCatalogChange, onPendingChange, onRegistrationError])
 
+  const getCapabilitySuggestions = useCallback((query: string): InlineCapabilitySuggestion[] => (
+    rankComposerCapabilities(capabilityCatalog, query).map((item) => ({
+      catalogRevision: item.catalogRevision,
+      description: item.description,
+      disabledReason: item.disabled_reason,
+      enabled: item.enabled,
+      id: item.id,
+      itemKind: item.kind,
+      name: item.name,
+      scope: item.scope,
+      sourceLabel: item.source_label,
+    }))
+  ), [capabilityCatalog])
+
+  const selectCapabilitySuggestion = useCallback((suggestion: InlineCapabilitySuggestion) => {
+    if (!capabilityCatalog
+      || capabilityCatalog.revision !== suggestion.catalogRevision
+      || referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return null
+    const item = capabilityCatalog.items.find((candidate) => (
+      candidate.id === suggestion.id
+      && candidate.kind === suggestion.itemKind
+      && candidate.enabled
+    ))
+    if (!item) return null
+    const reference = createComposerCapabilityReference({
+      catalogRevision: capabilityCatalog.revision,
+      id: item.id,
+      itemKind: suggestion.itemKind,
+      name: item.name,
+      scope: item.scope,
+      sourceLabel: item.source_label,
+    })
+    return {
+      token: reference.id,
+      commit: () => {
+        if (referencesRef.current.length >= MAX_COMPOSER_CONTEXT_REFERENCES) return false
+        referencesRef.current = [...referencesRef.current, reference]
+        return true
+      },
+    }
+  }, [capabilityCatalog])
+
   const updateEditorValue = useCallback((value: string) => {
     onChange(composerDraftFromEditorValue(value, referencesRef.current))
   }, [onChange])
@@ -219,6 +275,7 @@ export function ComposerContextInput({
   return (
     <div onKeyDownCapture={onKeyDownCapture}>
     <InlineWikilinkInput
+      capabilityScopeKey={conversationId}
       contextEmptyLabel={contextEmptyLabel}
       contextErrorLabel={contextErrorLabel}
       contextLoadingLabel={contextLoadingLabel}
@@ -238,6 +295,8 @@ export function ComposerContextInput({
       entries={entries}
       inputRef={inputRef}
       loadContextSuggestions={loadContextSuggestions}
+      getCapabilitySuggestions={getCapabilitySuggestions}
+      onCapabilitySuggestionSelected={selectCapabilitySuggestion}
       onChange={updateEditorValue}
       onContextSuggestionSelected={selectContextSuggestion}
       onRemoveContext={removeContext}
@@ -248,6 +307,28 @@ export function ComposerContextInput({
       placeholderClassName="kubecode-composer-placeholder px-2 py-1.5 leading-5"
       serializeClipboardText={clipboardText}
       sanitizePastedText={sanitizePastedText}
+      renderCapabilityPicker={({ id, items, onHover, onSelect, selectedIndex }) => (
+        <ComposerCapabilityPicker
+          id={id}
+          items={items.map((item) => ({
+            catalogRevision: item.catalogRevision,
+            description: item.description,
+            disabled_reason: item.disabledReason,
+            enabled: item.enabled,
+            id: item.id,
+            input_hint: null,
+            kind: item.itemKind,
+            name: item.name,
+            scope: item.scope,
+            source_label: item.sourceLabel,
+          }))}
+          labels={capabilityLabels}
+          onHover={onHover}
+          onSelect={onSelect}
+          selectedIndex={selectedIndex}
+          status={capabilityStatus}
+        />
+      )}
       value={editorValue}
     />
     </div>

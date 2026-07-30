@@ -219,6 +219,16 @@ resolving a private provider invocation. Standard ACP commands stay
 authoritative, private adapter extensions are opt-in, and plain-text prompts
 remain backward compatible. Long prompts stop growing at a bounded editor
 height and scroll inside the Composer instead of resizing the Agent workspace.
+The inline `$` picker and Composer `+` capability section consume the same safe
+snapshot and ranking function. Trigger recognition is limited to input start or
+whitespace boundaries and accepts `$`, `＄`, `¥`, and `￥`; variants normalize
+only when the user selects a row. Exact, prefix, substring, subsequence, and
+description matches are followed by stable scope/source ordering. Duplicate
+display names remain separate opaque identities with kind, source, and scope
+badges, while disabled ambiguity reasons and loading/error/empty states are
+localized. Selection inserts a typed capability chip, copy emits only the
+readable `$name` fallback, and paste remains plain text until an explicit
+catalog selection. IME input never triggers keyboard selection or submission.
 During the phased migration, the existing `available_commands` Session-state
 field exposes only safe standard command display fields and recognized text
 input shapes with optional provider-authored hints. Session state also hydrates

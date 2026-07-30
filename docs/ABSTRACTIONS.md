@@ -192,6 +192,17 @@ optional input hint, an enabled state with disabled reason, and a stable opaque
 server-issued ID. Identity is `(kind, opaque ID)`, never display name; two items
 may share a name and both remain visible, resolving only by distinct IDs.
 
+The browser derives both the inline `$` picker and the Composer `+` capability
+section from that same safe snapshot. `$`, `＄`, `¥`, and `￥` start discovery
+only at the beginning of input or after whitespace; a full-width variant is
+removed only after an explicit selection. Results rank exact name, prefix,
+substring, subsequence, then description matches, with deterministic scope,
+source, kind, name, and opaque-ID tie breaks. Same-name rows are never
+deduplicated: kind, safe source, and localized scope remain visible on the row
+and chip, while ambiguous duplicates stay disabled with a localized reason.
+Other disabled or unsupported items, raw ACP commands, and unknown metadata
+cannot enter this picker.
+
 The catalog is a full snapshot with a monotonically increasing revision.
 `available_commands_update` replaces the `Command` portion; a trusted adapter
 skill update replaces the relevant skill portion; each replacement advances the
@@ -340,6 +351,12 @@ its opaque ID and the catalog revision it was selected against, and persists per
 Session. Copying the Composer yields a readable plain-text fallback such as
 `@src/main.rs` or `$skill`; pasting that fallback is ordinary text until the user
 re-selects a catalog result, so a pasted name is never trusted as an ID.
+Capability selection inserts a `CapabilityRef` immediately from the hydrated
+snapshot; it never writes provider wire text. Keyboard, pointer, and touch
+selection share one enabled-row cursor, and IME composition events cannot
+select, dismiss, or submit a result. Loading, failure, empty, stale, and
+unsupported states remain explicit; any non-available chip blocks submission
+until it is removed or selected again from a current catalog revision.
 File and directory context search uses a Session-scoped adapter over
 `WorkspaceService`: the server derives the exact Project/worktree execution root
 from the Session, accepts only relative directory queries, and mints an opaque

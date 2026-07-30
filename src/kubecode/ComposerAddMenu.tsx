@@ -1,21 +1,27 @@
 import { CaretLeft, File, Plus, Sparkle } from '@phosphor-icons/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { TranslationKey } from '@/lib/i18n'
 
-import type { Entry, KubecodeApi } from './api'
+import type { ComposerCatalogSnapshot, Entry, KubecodeApi } from './api'
+import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
+import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
 import { ProjectFilePicker } from './ProjectFilePicker'
 
 export type ComposerAgentCommand = { name: string; description: string }
 
 type ComposerAddMenuProps = {
   api: KubecodeApi
+  capabilityCatalog?: ComposerCatalogSnapshot
   capabilityEmptyLabel?: string
+  capabilityLabels?: ComposerCapabilityPickerLabels
+  capabilityStatus?: 'error' | 'loading' | 'ready'
   commands: ComposerAgentCommand[]
   conversationId: string
   onInsert: (text: string, kind: 'command') => void
+  onCapability?: (capability: RankedComposerCapability) => void
   onReference: (entry: Entry) => void
   projectId: string
   t: (key: TranslationKey) => string
@@ -23,10 +29,14 @@ type ComposerAddMenuProps = {
 
 export function ComposerAddMenu({
   api,
+  capabilityCatalog,
   capabilityEmptyLabel,
+  capabilityLabels,
+  capabilityStatus = 'loading',
   commands,
   conversationId,
   onInsert,
+  onCapability,
   onReference,
   projectId,
   t,
@@ -35,7 +45,9 @@ export function ComposerAddMenu({
   const [showFiles, setShowFiles] = useState(false)
   const [query, setQuery] = useState('')
   const [paletteLayout, setPaletteLayout] = useState({ left: 0, width: 680 })
+  const [selectedCapabilityIndex, setSelectedCapabilityIndex] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  const capabilityListboxId = useId()
   const visibleCommands = useMemo(() => {
     const search = query.trim().toLocaleLowerCase()
     if (!search) return commands
@@ -44,6 +56,23 @@ export function ComposerAddMenu({
         || command.description.toLocaleLowerCase().includes(search)
     ))
   }, [commands, query])
+  const visibleCapabilities = useMemo(
+    () => rankComposerCapabilities(capabilityCatalog, query),
+    [capabilityCatalog, query],
+  )
+  const hasCapabilities = useMemo(
+    () => rankComposerCapabilities(capabilityCatalog, '').length > 0,
+    [capabilityCatalog],
+  )
+  const enabledCapabilityIndexes = visibleCapabilities.flatMap((item, index) => (
+    item.enabled ? [index] : []
+  ))
+  const currentCapabilityIndex = visibleCapabilities[selectedCapabilityIndex]?.enabled
+    ? selectedCapabilityIndex
+    : enabledCapabilityIndexes[0] ?? 0
+  const capabilityPickerVisible = Boolean(
+    capabilityLabels && (hasCapabilities || capabilityStatus !== 'ready'),
+  )
 
   useEffect(() => {
     if (!open) return
@@ -65,6 +94,7 @@ export function ComposerAddMenu({
     setOpen(false)
     setQuery('')
     setShowFiles(false)
+    setSelectedCapabilityIndex(0)
   }
 
   const closeAndInsert = (text: string) => {
@@ -173,7 +203,26 @@ export function ComposerAddMenu({
                     </span>
                   </Button>
                 ))}
-                {commands.length === 0 && (
+                {capabilityLabels && capabilityPickerVisible && (
+                  <div className="mt-1 border-t border-border pt-1">
+                    <ComposerCapabilityPicker
+                      embedded
+                      id={capabilityListboxId}
+                      items={visibleCapabilities}
+                      labels={capabilityLabels}
+                      onHover={setSelectedCapabilityIndex}
+                      onSelect={(index) => {
+                        const capability = visibleCapabilities[index]
+                        if (!capability?.enabled || !onCapability) return
+                        onCapability(capability)
+                        close()
+                      }}
+                      selectedIndex={currentCapabilityIndex}
+                      status={capabilityStatus}
+                    />
+                  </div>
+                )}
+                {commands.length === 0 && !hasCapabilities && (
                   <p className="px-3 py-2 text-sm text-muted-foreground">
                     {t('kubecode.noAgentSkillsCommands')}
                   </p>
@@ -189,11 +238,41 @@ export function ComposerAddMenu({
               </div>
               <div className="border-t border-border p-2">
                 <Input
+                  aria-activedescendant={capabilityPickerVisible
+                    && visibleCapabilities[currentCapabilityIndex]?.enabled
+                    ? `${capabilityListboxId}-option-${currentCapabilityIndex}`
+                    : undefined}
                   aria-label={t('kubecode.searchContext')}
+                  aria-controls={capabilityPickerVisible ? capabilityListboxId : undefined}
+                  aria-expanded={capabilityPickerVisible}
+                  aria-autocomplete={capabilityPickerVisible ? 'list' : undefined}
                   autoFocus
                   className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
                   onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      if (enabledCapabilityIndexes.length === 0) return
+                      event.preventDefault()
+                      const currentPosition = Math.max(
+                        0,
+                        enabledCapabilityIndexes.indexOf(currentCapabilityIndex),
+                      )
+                      const direction = event.key === 'ArrowDown' ? 1 : -1
+                      const nextPosition = (
+                        currentPosition + direction + enabledCapabilityIndexes.length
+                      ) % enabledCapabilityIndexes.length
+                      setSelectedCapabilityIndex(enabledCapabilityIndexes[nextPosition])
+                    }
+                    if ((event.key === 'Enter' || event.key === 'Tab')
+                      && visibleCapabilities[currentCapabilityIndex]?.enabled
+                      && onCapability) {
+                      event.preventDefault()
+                      onCapability(visibleCapabilities[currentCapabilityIndex])
+                      close()
+                    }
+                  }}
                   placeholder={t('kubecode.searchContext')}
+                  role={capabilityPickerVisible ? 'combobox' : undefined}
                   value={query}
                 />
               </div>

@@ -49,10 +49,15 @@ import {
 } from './inlineWikilinkBeforeInput'
 import { restorePendingRemountState } from './inlineWikilinkRemountState'
 import type { InlineContextReference, InlineContextSuggestion } from './inlineContext'
+import type { InlineCapabilitySuggestion } from './inlineContext'
 import {
   findActiveComposerContextQuery,
   replaceActiveComposerContextQuery,
 } from './inlineContextQuery'
+import {
+  findActiveComposerCapabilityQuery,
+  replaceActiveComposerCapabilityQuery,
+} from './inlineCapabilityQuery'
 
 interface InlineWikilinkInputProps {
   entries: VaultEntry[]
@@ -85,6 +90,18 @@ interface InlineWikilinkInputProps {
   contextLoadingLabel?: string
   contextPickerLabel?: string
   contextRemoveLabel?: string
+  capabilityScopeKey?: string
+  getCapabilitySuggestions?: (query: string) => InlineCapabilitySuggestion[]
+  onCapabilitySuggestionSelected?: (
+    suggestion: InlineCapabilitySuggestion,
+  ) => InlineContextSelection | string | null | Promise<InlineContextSelection | string | null>
+  renderCapabilityPicker?: (props: {
+    id: string
+    items: InlineCapabilitySuggestion[]
+    onHover: (index: number) => void
+    onSelect: (index: number) => void
+    selectedIndex: number
+  }) => ReactNode
   serializeClipboardText?: (value: string) => string
   sanitizePastedText?: (value: string) => string
 }
@@ -248,12 +265,17 @@ export function InlineWikilinkInput({
   contextLoadingLabel = 'Loading',
   contextPickerLabel = 'Add context',
   contextRemoveLabel = 'Remove context',
+  capabilityScopeKey = '',
+  getCapabilitySuggestions,
+  onCapabilitySuggestionSelected,
+  renderCapabilityPicker,
   serializeClipboardText = (text) => text,
   sanitizePastedText = (text) => text,
 }: InlineWikilinkInputProps) {
   const latestValueRef = useRef(value)
   latestValueRef.current = value
   const contextSelectionRequestRef = useRef(0)
+  const capabilitySelectionRequestRef = useRef(0)
   const [renderVersion, forceRender] = useState(0)
   const isComposingRef = useRef(false)
   const segments = useMemo(
@@ -301,6 +323,12 @@ export function InlineWikilinkInput({
       : null,
     [activeQuery, selectionIndex, selectionRange.end, selectionRange.start, value],
   )
+  const activeCapabilityQuery = useMemo(
+    () => !activeQuery && !activeContextQuery && selectionRange.start === selectionRange.end
+      ? findActiveComposerCapabilityQuery(value, selectionIndex)
+      : null,
+    [activeContextQuery, activeQuery, selectionIndex, selectionRange.end, selectionRange.start, value],
+  )
   const contextQueryKey = activeContextQuery
     ? `${contextScopeKey}:${activeContextQuery.start}:${activeContextQuery.query}`
     : ''
@@ -315,6 +343,18 @@ export function InlineWikilinkInput({
   const contextRequestIdRef = useRef(0)
   const contextFocusTimerRef = useRef<number | null>(null)
   const contextListboxId = useId()
+  const capabilityQueryKey = activeCapabilityQuery
+    ? `${capabilityScopeKey}:${activeCapabilityQuery.start}:${activeCapabilityQuery.query}`
+    : ''
+  const capabilitySuggestions = useMemo(
+    () => activeCapabilityQuery && getCapabilitySuggestions
+      ? getCapabilitySuggestions(activeCapabilityQuery.query)
+      : [],
+    [activeCapabilityQuery, getCapabilitySuggestions],
+  )
+  const [capabilitySelection, setCapabilitySelection] = useState({ key: '', index: 0 })
+  const [dismissedCapabilityKey, setDismissedCapabilityKey] = useState('')
+  const capabilityListboxId = useId()
   useEffect(() => {
     const requestId = ++contextRequestIdRef.current
     const controller = new AbortController()
@@ -353,6 +393,10 @@ export function InlineWikilinkInput({
       }
     }
   }, [contextScopeKey])
+  useEffect(() => {
+    setCapabilitySelection({ key: '', index: 0 })
+    setDismissedCapabilityKey('')
+  }, [capabilityScopeKey])
   const contextSuggestions = contextPage.key === contextQueryKey ? contextPage.suggestions : []
   const selectedContextIndex = contextSelection.key === contextQueryKey
     ? Math.min(contextSelection.index, Math.max(contextSuggestions.length - 1, 0))
@@ -361,6 +405,19 @@ export function InlineWikilinkInput({
     activeContextQuery
     && loadContextSuggestions
     && dismissedContextKey !== contextQueryKey,
+  )
+  const enabledCapabilityIndexes = capabilitySuggestions.flatMap((item, index) => (
+    item.enabled ? [index] : []
+  ))
+  const selectedCapabilityIndex = capabilitySelection.key === capabilityQueryKey
+    && capabilitySuggestions[capabilitySelection.index]?.enabled
+    ? capabilitySelection.index
+    : enabledCapabilityIndexes[0] ?? 0
+  const capabilityMenuOpen = Boolean(
+    activeCapabilityQuery
+    && getCapabilitySuggestions
+    && renderCapabilityPicker
+    && dismissedCapabilityKey !== capabilityQueryKey,
   )
   const references = useMemo(() => extractInlineWikilinkReferences(value, entries), [entries, value])
   const {
@@ -678,6 +735,27 @@ export function InlineWikilinkInput({
       focusSelectionRange(collapseSelectionRange(replacement.nextSelectionIndex))
     }, 0)
   }
+  const selectCapabilitySuggestion = async (index: number) => {
+    const suggestion = capabilitySuggestions.at(index)
+    if (!suggestion?.enabled || !onCapabilitySuggestionSelected) return
+    const selectedValue = value
+    const selectedIndex = selectionIndex
+    const request = ++capabilitySelectionRequestRef.current
+    const selection = await onCapabilitySuggestionSelected(suggestion)
+    if (request !== capabilitySelectionRequestRef.current
+      || latestValueRef.current !== selectedValue) return
+    if (!selection) return
+    const token = typeof selection === 'string' ? selection : selection.token
+    const replacement = replaceActiveComposerCapabilityQuery(selectedValue, selectedIndex, token)
+    if (!replacement) return
+    if (typeof selection !== 'string' && !selection.commit()) return
+    onChange(replacement.value)
+    const nextSelection = collapseSelectionRange(replacement.nextSelectionIndex)
+    setSelectionRange(nextSelection)
+    setCapabilitySelection({ key: '', index: 0 })
+    setDismissedCapabilityKey('')
+    window.setTimeout(() => focusSelectionRange(nextSelection), 0)
+  }
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!disabled && isLineBreakShortcut(event, isComposingRef.current)) {
       event.preventDefault()
@@ -724,6 +802,37 @@ export function InlineWikilinkInput({
         return
       }
     }
+    if (!disabled && capabilityMenuOpen && !compositionEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDismissedCapabilityKey(capabilityQueryKey)
+        return
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        if (enabledCapabilityIndexes.length > 0) {
+          const currentPosition = Math.max(
+            0,
+            enabledCapabilityIndexes.indexOf(selectedCapabilityIndex),
+          )
+          const direction = event.key === 'ArrowDown' ? 1 : -1
+          const nextPosition = (
+            currentPosition + direction + enabledCapabilityIndexes.length
+          ) % enabledCapabilityIndexes.length
+          setCapabilitySelection({
+            key: capabilityQueryKey,
+            index: enabledCapabilityIndexes[nextPosition],
+          })
+        }
+        return
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab')
+        && capabilitySuggestions[selectedCapabilityIndex]?.enabled) {
+        event.preventDefault()
+        void selectCapabilitySuggestion(selectedCapabilityIndex)
+        return
+      }
+    }
 
     handleInlineWikilinkKeyDown({
       event,
@@ -761,8 +870,12 @@ export function InlineWikilinkInput({
       segments={segments}
       contextActiveDescendantId={contextMenuOpen && contextSuggestions.length > 0
         ? `${contextListboxId}-option-${selectedContextIndex}`
-        : undefined}
-      contextListboxId={contextMenuOpen ? contextListboxId : undefined}
+        : capabilityMenuOpen && capabilitySuggestions[selectedCapabilityIndex]?.enabled
+          ? `${capabilityListboxId}-option-${selectedCapabilityIndex}`
+          : undefined}
+      contextListboxId={contextMenuOpen
+        ? contextListboxId
+        : capabilityMenuOpen ? capabilityListboxId : undefined}
       contextReferences={contextReferences}
       contextRemoveLabel={contextRemoveLabel}
       onRemoveContext={onRemoveContext}
@@ -805,5 +918,18 @@ export function InlineWikilinkInput({
       suggestions={contextSuggestions}
     />
   ) : null
-  return <div className="relative">{editor}{contextSuggestionList ?? suggestionList}</div>
+  const capabilitySuggestionList = capabilityMenuOpen ? renderCapabilityPicker?.({
+    id: capabilityListboxId,
+    items: capabilitySuggestions,
+    onHover: (index) => capabilitySuggestions[index]?.enabled
+      && setCapabilitySelection({ key: capabilityQueryKey, index }),
+    onSelect: (index) => void selectCapabilitySuggestion(index),
+    selectedIndex: selectedCapabilityIndex,
+  }) : null
+  return (
+    <div className="relative">
+      {editor}
+      {contextSuggestionList ?? capabilitySuggestionList ?? suggestionList}
+    </div>
+  )
 }

@@ -62,8 +62,11 @@ import {
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { ComposerAddMenu } from './ComposerAddMenu'
+import type { ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { ComposerContextInput } from './ComposerContextInput'
+import type { RankedComposerCapability } from './composerCapabilities'
 import {
+  appendComposerCapability,
   appendComposerContext,
   appendComposerText,
   applyComposerCatalogSnapshot,
@@ -71,6 +74,7 @@ import {
   composerDraftHasTypedReferences,
   composerDraftPlainText,
   composerDraftToStructuredSegments,
+  createComposerCapabilityReference,
   createComposerContextReference,
   parseStoredComposerDraft,
   serializeComposerDraft,
@@ -238,6 +242,7 @@ export function AgentSessionWorkspace({
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sessionState, setSessionState] = useState<AgentSessionState | null>(null)
+  const [composerCatalogLoadFailed, setComposerCatalogLoadFailed] = useState(false)
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteTeamOpen, setDeleteTeamOpen] = useState(false)
@@ -290,6 +295,25 @@ export function AgentSessionWorkspace({
     () => sessionPlanEntries(sessionState?.plan),
     [sessionState?.plan],
   )
+  const capabilityLabels = useMemo<ComposerCapabilityPickerLabels>(() => ({
+    disabledReason: (reason) => capabilityDisabledReason(reason, t),
+    empty: t('kubecode.noCapabilitiesFound'),
+    error: t('kubecode.capabilitiesLoadFailed'),
+    kind: {
+      skill: t('kubecode.capabilityKindSkill'),
+      plugin_action: t('kubecode.capabilityKindPluginAction'),
+      provider_app: t('kubecode.capabilityKindProviderApp'),
+    },
+    loading: t('kubecode.loadingCapabilities'),
+    picker: t('kubecode.capabilities'),
+    scope: {
+      session: t('kubecode.capabilityScopeSession'),
+      project: t('kubecode.capabilityScopeProject'),
+      user: t('kubecode.capabilityScopeUser'),
+      bundled: t('kubecode.capabilityScopeBundled'),
+      plugin: t('kubecode.capabilityScopePlugin'),
+    },
+  }), [t])
   const reportError = useCallback((cause: unknown) => {
     const message = errorMessage(cause, t('kubecode.error'))
     if (systemMessages) {
@@ -306,6 +330,7 @@ export function AgentSessionWorkspace({
       if (request === sessionStateRequestRef.current
         && activeConversationIdRef.current === targetConversationId) {
         setSessionState(state)
+        if (state) setComposerCatalogLoadFailed(false)
       }
     }
   }, [])
@@ -313,7 +338,14 @@ export function AgentSessionWorkspace({
   const requestSessionState = useCallback(async (targetConversationId: string) => {
     if (activeConversationIdRef.current !== targetConversationId) return
     const applyState = beginSessionStateRequest(targetConversationId)
-    applyState(await api.getSessionState(targetConversationId))
+    try {
+      applyState(await api.getSessionState(targetConversationId))
+    } catch (cause) {
+      if (activeConversationIdRef.current === targetConversationId) {
+        setComposerCatalogLoadFailed(true)
+      }
+      throw cause
+    }
   }, [api, beginSessionStateRequest])
 
   const updatePrompt = useCallback((next: string | ((current: string) => string)) => {
@@ -352,6 +384,7 @@ export function AgentSessionWorkspace({
   }, [conversationId])
 
   useEffect(() => {
+    setComposerCatalogLoadFailed(false)
     if (!conversationId) {
       setComposerDraft(textComposerDraft())
       return
@@ -439,7 +472,10 @@ export function AgentSessionWorkspace({
       setSideQuestions(restoredSideQuestions)
       setHistoryCursor(restoredCursor)
     }).catch((cause: unknown) => {
-      if (current) reportError(cause)
+      if (current) {
+        setComposerCatalogLoadFailed(true)
+        reportError(cause)
+      }
     })
     return () => { current = false }
   }, [api, beginSessionStateRequest, conversation, historyConversationId, reportError])
@@ -794,6 +830,9 @@ export function AgentSessionWorkspace({
     && !sessionState.composer.catalog.items.some((item) => item.kind !== 'command')
     ? t('kubecode.noOpenCodeCapabilities')
     : undefined
+  const capabilityStatus = composerCatalogLoadFailed
+    ? 'error' as const
+    : sessionState ? 'ready' as const : 'loading' as const
   const canFork = Boolean(
     conversation.provider_session_id && sessionCapability(sessionState, 'fork'),
   )
@@ -917,6 +956,34 @@ export function AgentSessionWorkspace({
         && activeConversationIdRef.current === targetConversationId) {
         setMenuContextPending(false)
       }
+    })
+  }
+
+  const insertComposerCapability = (capability: RankedComposerCapability) => {
+    if (directTeammateChatDisabled || hardReadOnly || !capability.enabled) return
+    const catalog = sessionState?.composer?.catalog
+    if (!catalog
+      || catalog.conversation_id !== conversation.id
+      || catalog.revision !== capability.catalogRevision) return
+    const current = catalog.items.find((item) => (
+      item.id === capability.id && item.kind === capability.kind && item.enabled
+    ))
+    if (!current || current.kind === 'command') return
+    updateComposerDraft((draft) => appendComposerCapability(
+      draft,
+      createComposerCapabilityReference({
+        catalogRevision: catalog.revision,
+        id: current.id,
+        itemKind: capability.kind,
+        name: current.name,
+        scope: current.scope,
+        sourceLabel: current.source_label,
+      }),
+    ))
+    window.requestAnimationFrame(() => inputRef.current?.focus())
+    trackEvent('kubecode_agent_context_inserted', {
+      agent_id: conversation.agent_id,
+      kind: current.kind,
     })
   }
 
@@ -1310,9 +1377,13 @@ export function AgentSessionWorkspace({
               leadingControl={projectId && !directTeammateChatDisabled ? (
                 <ComposerAddMenu
                   api={api}
+                  capabilityCatalog={sessionState?.composer?.catalog}
                   capabilityEmptyLabel={openCodeCapabilityEmptyLabel}
+                  capabilityLabels={capabilityLabels}
+                  capabilityStatus={capabilityStatus}
                   commands={commands}
                   conversationId={conversation.id}
+                  onCapability={insertComposerCapability}
                   onInsert={insertComposerText}
                   onReference={insertComposerContext}
                   projectId={projectId}
@@ -1336,6 +1407,9 @@ export function AgentSessionWorkspace({
               inputContent={(
                 <ComposerContextInput
                   api={api}
+                  capabilityCatalog={sessionState?.composer?.catalog}
+                  capabilityLabels={capabilityLabels}
+                  capabilityStatus={capabilityStatus}
                   contextEmptyLabel={t('kubecode.noContextFound')}
                   contextErrorLabel={t('kubecode.contextLoadFailed')}
                   contextLoadingLabel={t('kubecode.loadingContext')}
@@ -1621,6 +1695,14 @@ function availableCommands(
     }, ...commands.filter((command) => command.name !== 'btw')]
   }
   return commands
+}
+
+function capabilityDisabledReason(reason: string | null, t: Translator): string {
+  if (reason === 'ambiguous_source_identity') return t('kubecode.capabilityDisabledAmbiguous')
+  if (reason === 'unsupported_input' || reason === 'unsupported_invocation') {
+    return t('kubecode.capabilityDisabledUnsupported')
+  }
+  return t('kubecode.capabilityDisabledUnavailable')
 }
 
 function canAskSideQuestion(

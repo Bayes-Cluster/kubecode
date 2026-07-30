@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyComposerContextValidation,
+  applyComposerCatalogSnapshot,
   composerDraftCapabilityReferences,
   composerDraftFromEditorValue,
   composerDraftPlainText,
@@ -233,5 +234,33 @@ describe('typed Composer drafts', () => {
 
     expect(composerDraftCapabilityReferences(restored)[0]?.availability).toBe('unsupported')
     expect(composerDraftPlainText(restored)).toBe('$summarize')
+  })
+
+  it('revalidates capability provenance only against an exact current catalog identity', () => {
+    const restored = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: [{
+        kind: 'capability',
+        reference: {
+          id: 'cap:opaque', catalogRevision: 9, itemKind: 'skill', name: 'review',
+          availability: 'available',
+        },
+      }],
+    }))
+    const currentCatalog = {
+      conversation_id: 'session-1', revision: 9, contexts: [],
+      items: [{
+        id: 'cap:opaque', kind: 'skill' as const, name: 'review', description: null,
+        source_label: 'Project skill', scope: 'project' as const, input_hint: null,
+        enabled: true, disabled_reason: null,
+      }],
+    }
+
+    const available = applyComposerCatalogSnapshot(restored, currentCatalog)
+    expect(composerDraftCapabilityReferences(available)[0]).toMatchObject({
+      availability: 'available', sourceLabel: 'Project skill', scope: 'project',
+    })
+    const stale = applyComposerCatalogSnapshot(available, { ...currentCatalog, revision: 10 })
+    expect(composerDraftCapabilityReferences(stale)[0]?.availability).toBe('stale')
   })
 })

@@ -4,7 +4,37 @@ import { describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import { ComposerAddMenu } from './ComposerAddMenu'
-import type { KubecodeApi } from './api'
+import type { ComposerCatalogSnapshot, KubecodeApi } from './api'
+
+const capabilityLabels = {
+  disabledReason: (reason: string | null) => reason === 'ambiguous_source_identity'
+    ? 'Same-name capabilities are ambiguous'
+    : 'Unavailable',
+  empty: 'No capabilities',
+  error: 'Capabilities failed',
+  kind: { skill: 'Skill', plugin_action: 'Plugin action', provider_app: 'Provider app' },
+  loading: 'Loading capabilities',
+  picker: 'Capabilities',
+  scope: {
+    session: 'Session', project: 'Project', user: 'User', bundled: 'Bundled', plugin: 'Plugin',
+  },
+} as const
+
+const capabilityCatalog: ComposerCatalogSnapshot = {
+  conversation_id: 'session-1', revision: 5, contexts: [],
+  items: [
+    {
+      id: 'cap:project:review', kind: 'skill', name: 'review', description: 'Review changes',
+      source_label: 'Project skill', scope: 'project', input_hint: null,
+      enabled: true, disabled_reason: null,
+    },
+    {
+      id: 'cap:user:review', kind: 'skill', name: 'review', description: 'Personal review',
+      source_label: 'User skill', scope: 'user', input_hint: null,
+      enabled: false, disabled_reason: 'ambiguous_source_identity',
+    },
+  ],
+}
 
 const commands = [
   { name: 'review', description: 'Review the current changes' },
@@ -69,6 +99,44 @@ describe('ComposerAddMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: /review/i }))
 
     expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
+  })
+
+  it('uses the same ranked collision-safe capability selection from the add menu', () => {
+    const onCapability = vi.fn()
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        capabilityCatalog={capabilityCatalog}
+        capabilityLabels={capabilityLabels}
+        capabilityStatus="ready"
+        commands={[]}
+        conversationId="session-1"
+        onCapability={onCapability}
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    const input = screen.getByRole('combobox', { name: 'Search skills, commands, and files' })
+    fireEvent.change(input, { target: { value: 'review' } })
+    const options = screen.getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options[0]).toHaveTextContent('Project skill')
+    expect(options[1]).toBeDisabled()
+    expect(input).toHaveAttribute('aria-controls', screen.getByRole('listbox').id)
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id)
+    expect(screen.queryByText('This Agent has not exposed any skills or commands yet.')).not.toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onCapability).toHaveBeenCalledWith(expect.objectContaining({
+      catalogRevision: 5,
+      id: 'cap:project:review',
+      kind: 'skill',
+    }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('shows a graceful capability absence without hiding native commands', () => {
