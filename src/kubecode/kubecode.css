@@ -3203,6 +3203,9 @@
     position: absolute;
     z-index: 39;
   }
+  .kubecode-workspace[data-narrow='true'] .kubecode-session-composer-dock {
+    z-index: 41;
+  }
   .kubecode-workspace[data-narrow='true'] > .kubecode-session-sidebar {
     bottom: 0;
     box-shadow: 12px 0 30px color-mix(in srgb, #000 22%, transparent);
@@ -3210,7 +3213,7 @@
     max-width: min(86vw, 420px);
     position: absolute;
     top: 0;
-    z-index: 40;
+    z-index: 42;
   }
   .kubecode-workspace[data-narrow='true'] .kubecode-context-workbench {
     bottom: 0;
@@ -3220,7 +3223,7 @@
     position: absolute;
     right: 0;
     top: 0;
-    z-index: 40;
+    z-index: 42;
   }
   .kubecode-workspace[data-narrow='true'] > .cursor-col-resize,
   .kubecode-workspace[data-narrow='true'] .kubecode-session-context-row > .cursor-col-resize {
