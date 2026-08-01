@@ -78,7 +78,7 @@ On Debian or Ubuntu, download the package for the machine architecture from
 GitHub Releases and install it with:
 
 ```bash
-sudo apt install ./kubecode_0.1.1_amd64.deb
+sudo apt install ./kubecode_0.1.2_amd64.deb
 kubecode
 ```
 
@@ -88,8 +88,8 @@ service.
 To install a fixed version or preview the operation:
 
 ```bash
-./install.sh --version 0.1.1
-./install.sh --version 0.1.1 --dry-run
+./install.sh --version 0.1.2
+./install.sh --version 0.1.2 --dry-run
 ```
 
 See [Installation](docs/guides/installation.md) for manual archive installation,

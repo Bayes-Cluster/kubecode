@@ -15,7 +15,7 @@
 架构，再安装对应文件：
 
 ```bash
-sudo apt install ./kubecode_0.1.1_amd64.deb
+sudo apt install ./kubecode_0.1.2_amd64.deb
 kubecode
 ```
 
@@ -29,6 +29,23 @@ sudo apt remove kubecode
 
 卸载不会删除用户状态或 Provider 原生历史。Kubecode 目前不提供 APT
 Repository，升级时需要从 GitHub Releases 下载更新的 Package。
+
+## 升级
+
+Kubecode 在升级时会保留用户状态、Project、Session 和 Provider 原生历史，
+在已有安装之上安装新版本是安全的。
+
+- **Debian Package**：下载新版 `.deb` 并重新安装，例如
+  `sudo apt install ./kubecode_<version>_amd64.deb`。`apt` 会就地升级现有的
+  `/usr/bin/kubecode` 和 Runtime。
+- **Standalone 安装**：重新运行 Installer 安装最新版本，或通过
+  `./install.sh --version <version>` 安装固定版本。
+- **手动安装 Archive**：将前缀目录下的版本目录替换为解压后的新版 Archive，
+  并更新 `kubecode` 命令链接。
+
+用 `kubecode --version` 检查当前版本。升级后请刷新连接到 Server 的浏览器
+标签页。跨 Minor 版本升级前请先阅读 GitHub 上的 Release Notes，并备份无法
+重新生成的内容（例如自定义配置文件）。
 
 ## 无 Root 的 Standalone 安装
 
@@ -46,9 +63,9 @@ Shell 启动文件。
 常用选项：
 
 ```bash
-./install.sh --version 0.1.1
+./install.sh --version 0.1.2
 ./install.sh --prefix /absolute/custom/prefix
-./install.sh --version 0.1.1 --dry-run
+./install.sh --version 0.1.2 --dry-run
 ```
 
 卸载应用时删除对应版本目录和命令链接即可。应用状态位于独立目录，不会被自动

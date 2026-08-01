@@ -72,7 +72,7 @@ Server、Node.js Runtime 和 Claude/Codex ACP Adapter；Agent CLI 及其凭据
 并安装：
 
 ```bash
-sudo apt install ./kubecode_0.1.1_amd64.deb
+sudo apt install ./kubecode_0.1.2_amd64.deb
 kubecode
 ```
 
@@ -81,8 +81,8 @@ Debian Package 安装的是同一套 Standalone Runtime，不会启用系统服�
 安装固定版本或预览安装操作：
 
 ```bash
-./install.sh --version 0.1.1
-./install.sh --version 0.1.1 --dry-run
+./install.sh --version 0.1.2
+./install.sh --version 0.1.2 --dry-run
 ```
 
 [安装指南](docs/zh-CN/guides/installation.md)包含手动解压安装、Server 参数、
