@@ -10,7 +10,15 @@ We currently support security fixes for:
 
 | Version | Supported |
 | --- | --- |
+| `0.1.x` (latest release line) | Yes |
 | `main` / `master` | Best effort |
+
+Security fixes ship in the next patch or minor release of the `0.1.x` line.
+Older `0.x` release lines are only supported on a best-effort basis; users on an
+older line should upgrade to the latest `0.1.x` release to receive fixes.
+Before 1.0, Kubecode follows a `0.minor.patch` scheme where minor releases can
+contain behavioral changes and patch releases contain fixes and non-breaking
+improvements.
 
 ## Reporting a vulnerability
 

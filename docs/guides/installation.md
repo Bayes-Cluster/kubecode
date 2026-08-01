@@ -17,7 +17,7 @@ Download `kubecode_<version>_amd64.deb` or
 architecture with `dpkg --print-architecture`, then install the matching file:
 
 ```bash
-sudo apt install ./kubecode_0.1.1_amd64.deb
+sudo apt install ./kubecode_0.1.2_amd64.deb
 kubecode
 ```
 
@@ -32,6 +32,26 @@ sudo apt remove kubecode
 Removal preserves user state and provider-native history. Kubecode does not
 currently publish an APT repository, so upgrades require downloading a newer
 package from GitHub Releases.
+
+## Upgrading
+
+Kubecode preserves your user state, Projects, Sessions, and provider-native
+history across upgrades; it is safe to install a newer release over an existing
+one.
+
+- **Debian package**: download the `.deb` for the newer version and reinstall it
+  with `sudo apt install ./kubecode_<version>_amd64.deb`. `apt` upgrades the
+  existing `/usr/bin/kubecode` and runtime in place.
+- **Standalone install**: rerun the installer with the target version, or
+  install a fixed version with
+  `./install.sh --version <version>`.
+- **Manual archive**: replace the installed version directory below your prefix
+  with the extracted newer archive and update the `kubecode` symlink.
+
+To check the running version, run `kubecode --version`. After upgrading, reload
+the browser tab that is connected to the server. Review the release notes on
+GitHub before upgrading across minor versions, and back up anything you cannot
+recreate (such as custom configuration files) first.
 
 ## Rootless standalone install
 
@@ -50,9 +70,9 @@ files.
 Useful options:
 
 ```bash
-./install.sh --version 0.1.1
+./install.sh --version 0.1.2
 ./install.sh --prefix /absolute/custom/prefix
-./install.sh --version 0.1.1 --dry-run
+./install.sh --version 0.1.2 --dry-run
 ```
 
 To uninstall the application, remove the installed version directory and
