@@ -268,6 +268,11 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
     return () => document.removeEventListener('keydown', closeOverlayPanels)
   }, [contextOpen, narrowLayout, sessionSidebarOpen])
 
+  useEffect(() => {
+    if (!narrowLayout || !sessionSidebarOpen || !contextOpen) return
+    setContextOpen(false)
+  }, [contextOpen, narrowLayout, sessionSidebarOpen])
+
   const applyProjectLayout = useCallback((nextProjectId: string) => {
     const layout = readProjectWorkbenchLayout(localStorage, nextProjectId)
     setContextWidth(layout.contextWidth)
@@ -875,6 +880,7 @@ export function KubecodeApp({ api = browserApi }: { api?: KubecodeApi }) {
               }}
               onOpenPlan={() => {
                 setContextOpen(true)
+                if (narrowLayout) setSessionSidebarOpen(false)
                 setPlanRevealVersion((current) => current + 1)
                 trackEvent('kubecode_context_section_opened', { section: 'plan' })
               }}

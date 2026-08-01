@@ -1188,7 +1188,7 @@ describe('Kubecode workspace', () => {
     expect(screen.getByTestId('agent-session-workspace')).toBeVisible()
   })
 
-  it('uses mutually exclusive overlay side panels on a narrow workbench', async () => {
+  it('keeps narrow overlay side panels mutually exclusive and dismissible by the backdrop', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 980px)',
       media: query,
@@ -1207,17 +1207,65 @@ describe('Kubecode workspace', () => {
 
     await screen.findByRole('button', { name: 'Demo' })
     expect(container.querySelector('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
-    expect(screen.getByRole('button', { name: 'Close side panels' })).toBeInTheDocument()
 
+    const sessionsToggle = screen.getByRole('button', { name: 'Toggle sessions' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
-    fireEvent.click(contextToggle)
+    const backdrop = screen.getByRole('button', { name: 'Close side panels' })
+    expect(backdrop).toBeInTheDocument()
+
+    await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(container.querySelector('.kubecode-context-workbench')).not.toBeInTheDocument()
+
     fireEvent.click(contextToggle)
     expect(contextToggle).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'false')
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(backdrop)
+    expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: 'Close side panels' })).not.toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
     expect(screen.queryByRole('button', { name: 'Close side panels' })).not.toBeInTheDocument()
+  })
+
+  it('reconciles a persisted narrow layout that opens both overlays to a single overlay', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 980px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    localStorage.setItem('kubecode:workbench-layout:v2', JSON.stringify({
+      expandedProjectIds: [],
+      navigatorOpen: true,
+      navigatorWidth: 300,
+    }))
+    localStorage.setItem('kubecode:project-layout:v2:project-1', JSON.stringify({
+      contextOpen: true,
+      contextWidth: 400,
+      terminalHeight: 260,
+      terminalOpen: false,
+    }))
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const { container } = render(<KubecodeApp api={api} />)
+
+    await screen.findByRole('button', { name: 'Demo' })
+    const sessionsToggle = screen.getByRole('button', { name: 'Toggle sessions' })
+    const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
+    expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('300px')
+
+    await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(container.querySelector('.kubecode-context-workbench')).not.toBeInTheDocument()
   })
 
   it('restores the saved pane layout for a project', async () => {
