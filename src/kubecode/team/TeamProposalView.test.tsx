@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { TeamWorkspaceView } from './TeamWorkspaceView'
-import type { KubecodeApi, TeamSnapshot } from './api'
+import { TeamWorkspaceView } from '../TeamWorkspaceView'
+import type { KubecodeApi, TeamSnapshot } from '../api'
 
 const snapshot = {
   team: {
@@ -41,35 +41,39 @@ const snapshot = {
 
 const t = ((key: string) => key) as never
 
-describe('TeamWorkspaceView', () => {
-  it('shows a full-width task board without a separate member list', async () => {
-    const selectMember = vi.fn()
+describe('TeamProposalView', () => {
+  it('lets the user approve a durable lineup proposal', async () => {
+    const updated = { ...snapshot, proposal: null }
+    const resolveTeamProposal = vi.fn().mockResolvedValue(updated)
+    const onSnapshotChange = vi.fn()
     render(
       <TeamWorkspaceView
-        api={{} as KubecodeApi}
-        onSelectMember={selectMember}
-        onSnapshotChange={vi.fn()}
-        snapshot={snapshot}
+        api={{ resolveTeamProposal } as unknown as KubecodeApi}
+        onSelectMember={vi.fn()}
+        onSnapshotChange={onSnapshotChange}
+        snapshot={{
+          ...snapshot,
+          proposal: {
+            id: 'proposal-1',
+            team_id: 'team-1',
+            summary: 'Use a reviewer and an implementer',
+            members_json: JSON.stringify([{ name: 'Reviewer' }, { name: 'Implementer' }]),
+            status: 'pending',
+            created_at: '2026-07-18 10:00:00',
+            resolved_at: null,
+          },
+        }}
         t={t}
       />,
     )
 
-    expect(screen.getByText('1', { selector: '[data-metric="running"] strong' })).toBeInTheDocument()
-    expect(screen.getByText('Review parser')).toBeInTheDocument()
-    expect(screen.queryByText('Explore', { exact: true })).not.toBeInTheDocument()
-    expect(screen.queryByText('Review', { exact: true })).not.toBeInTheDocument()
-    expect(screen.queryByTestId('team-member-rail')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId(/^team-board-column-/)).toHaveLength(5)
-    expect(within(screen.getByTestId('team-board-column-review')).getByText('1')).toBeInTheDocument()
-    expect(screen.getByText('Reviewer needs permission')).toBeInTheDocument()
-    fireEvent.click(within(screen.getByTestId('team-task-card-task-2')).getByRole('button', {
-      name: 'Reviewer',
-    }))
-    expect(selectMember).toHaveBeenCalledWith('reviewer')
-    const activityTab = screen.getByRole('tab', { name: 'kubecode.teamActivity' })
-    fireEvent.pointerDown(activityTab, { button: 0, ctrlKey: false, pointerType: 'mouse' })
-    fireEvent.click(activityTab)
-    expect(activityTab).toHaveAttribute('data-state', 'active')
-    expect(await screen.findByText('Delegated Review parser')).toBeInTheDocument()
+    expect(screen.getByTestId('team-lineup-proposal')).toHaveTextContent('Reviewer')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamProposalApprove' }))
+    await waitFor(() => expect(resolveTeamProposal).toHaveBeenCalledWith(
+      'team-1',
+      'proposal-1',
+      'approved',
+    ))
+    expect(onSnapshotChange).toHaveBeenCalledWith(updated)
   })
 })
