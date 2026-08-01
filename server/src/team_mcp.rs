@@ -21,7 +21,7 @@ use tower::ServiceExt;
 
 use crate::agent_runtime::{AgentRuntime, RuntimeError, SessionConfigInput};
 use crate::agents::AgentId;
-use crate::api::AppState;
+use crate::app_state::AppState;
 use crate::team_coordinator::{SpawnDiscriminator, SpawnTeammate, TeamCoordinator};
 use crate::teams::{
     MemberWorkspaceMode, NewTeamProposal, NewTeamTask, TeamMember, TeamMemberStatus,

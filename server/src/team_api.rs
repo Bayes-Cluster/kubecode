@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::RuntimeError;
 use crate::agents::{AgentId, Conversation, ExecutionMode, RunStatus, StoreError};
-use crate::api::AppState;
+use crate::app_state::AppState;
 use crate::team_coordinator::TeamCoordinator;
 use crate::teams::{
     MemberManagementPolicy, NewTeam, StartTeam, Team, TeamActivity, TeamDiscriminationRound,
