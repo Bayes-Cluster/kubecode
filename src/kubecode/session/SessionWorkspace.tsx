@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import type { AppLocale } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { availableAcpCommands } from '../acpCommands'
@@ -49,7 +49,6 @@ import {
   sessionCapability,
   sessionStateWithConfig,
   sessionStateWithMode,
-  type Translator,
 } from './sessionModel'
 import { useComposerController } from './useComposerController'
 import { useSessionEvents } from './useSessionEvents'

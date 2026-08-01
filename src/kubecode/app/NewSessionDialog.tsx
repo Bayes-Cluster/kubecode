@@ -34,7 +34,7 @@ import {
 } from '../api'
 import { SystemMessageNotice } from '../SystemMessageNotice'
 import { errorMessage } from './errors'
-import type { Translator } from './translator'
+import type { Translator } from '@/lib/i18n'
 
 export type NewSessionDialogProps = {
   agents: AgentDescriptor[]

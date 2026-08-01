@@ -2,7 +2,7 @@ import { CaretDown, CaretUp, ChatCircleDots, CircleNotch, Copy } from '@phosphor
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { TranslationKey } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 export type SideQuestionItem = {
   answer?: string
@@ -18,7 +18,7 @@ export function SideQuestionPanel({
   t,
 }: {
   items: SideQuestionItem[]
-  t: (key: TranslationKey) => string
+  t: Translator
 }) {
   const [collapsed, setCollapsed] = useState(false)
   if (items.length === 0) return null

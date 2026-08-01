@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 
 import type { AgentRun, Conversation, KubecodeApi, Project, RunStatus, TeamSnapshot } from '../api'
 import { SessionSidebarList } from '../SessionSidebarList'
-import type { Translator } from './translator'
+import type { Translator } from '@/lib/i18n'
 
 export type ProjectNavigatorProps = {
   activeConversationId: string | null

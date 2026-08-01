@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { SideQuestionItem } from '../SideQuestionPanel'
@@ -22,7 +23,6 @@ import {
   type ElicitationAnswer,
   type PendingElicitation,
   type PendingPermission,
-  type Translator,
 } from './sessionModel'
 
 export type SessionTranscript = {

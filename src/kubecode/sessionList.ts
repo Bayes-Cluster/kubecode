@@ -1,4 +1,6 @@
 import type { AgentId, Conversation } from './api'
+import { fuzzyMatchRank } from './fuzzyMatch'
+import { createPreferenceStorage, type PreferenceStorage } from './preferenceStorage'
 
 export const SESSION_LIST_STORAGE_KEY = 'kubecode:session-list:v1'
 
@@ -25,8 +27,6 @@ export const DEFAULT_SESSION_LIST_PREFERENCES: SessionListPreferences = {
   sort: 'activity',
 }
 
-type SessionListStorage = Pick<Storage, 'getItem' | 'setItem'>
-
 const AGENT_FILTERS = new Set<SessionAgentFilter>(['all', 'claude_code', 'codex', 'opencode'])
 const SORTS = new Set<SessionSort>(['activity', 'created', 'title'])
 const SECTION_ORDER: SessionSectionId[] = ['attention', 'running', 'today', 'week', 'older', 'archived']
@@ -47,24 +47,21 @@ export function normalizeSessionListPreferences(value: unknown): SessionListPref
   }
 }
 
-export function readSessionListPreferences(storage: SessionListStorage): SessionListPreferences {
-  try {
-    const value = storage.getItem(SESSION_LIST_STORAGE_KEY)
-    return normalizeSessionListPreferences(value ? JSON.parse(value) : null)
-  } catch {
-    return DEFAULT_SESSION_LIST_PREFERENCES
-  }
+const sessionListPreferenceStorage = createPreferenceStorage({
+  defaultValue: () => DEFAULT_SESSION_LIST_PREFERENCES,
+  key: () => SESSION_LIST_STORAGE_KEY,
+  normalize: normalizeSessionListPreferences,
+})
+
+export function readSessionListPreferences(storage: PreferenceStorage): SessionListPreferences {
+  return sessionListPreferenceStorage.read(storage)
 }
 
 export function writeSessionListPreferences(
-  storage: SessionListStorage,
+  storage: PreferenceStorage,
   preferences: SessionListPreferences,
 ): void {
-  try {
-    storage.setItem(SESSION_LIST_STORAGE_KEY, JSON.stringify(preferences))
-  } catch {
-    // Browser storage can be unavailable in restricted contexts.
-  }
+  sessionListPreferenceStorage.write(storage, preferences)
 }
 
 export function buildSessionSections(
@@ -76,7 +73,9 @@ export function buildSessionSections(
   const visible = conversations
     .filter((conversation) => preferences.showArchived || !conversation.archived)
     .filter((conversation) => preferences.agent === 'all' || conversation.agent_id === preferences.agent)
-    .filter((conversation) => !query || conversation.title.toLocaleLowerCase().includes(query))
+    .filter((conversation) => fuzzyMatchRank(query, {
+      primary: [conversation.title.toLocaleLowerCase()],
+    }, SESSION_SEARCH_WEIGHTS) !== null)
     .sort(sessionComparator(preferences.sort))
   const grouped = new Map<SessionSectionId, Conversation[]>()
   for (const conversation of visible) {
@@ -88,6 +87,14 @@ export function buildSessionSections(
     return sessions?.length ? [{ id, sessions }] : []
   })
 }
+
+const SESSION_SEARCH_WEIGHTS = {
+  empty: 0,
+  exact: 0,
+  prefix: 0,
+  subsequence: null,
+  substring: 0,
+} as const
 
 function sessionSection(conversation: Conversation, now: Date): SessionSectionId {
   if (conversation.archived) return 'archived'

@@ -10,9 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { TranslationKey, TranslationValues } from '@/lib/i18n'
-
-type Translator = (key: TranslationKey, values?: TranslationValues) => string
+import type { Translator } from '@/lib/i18n'
 
 type DeleteTeamDialogProps = {
   onConfirm: () => Promise<void>

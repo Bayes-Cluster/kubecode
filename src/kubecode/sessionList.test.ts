@@ -43,6 +43,7 @@ describe('session list model', () => {
     const sections = buildSessionSections([
       session('one', { agent_id: 'codex', title: 'Fix auth flow' }),
       session('two', { agent_id: 'claude_code', title: 'Document auth flow' }),
+      session('three', { agent_id: 'claude_code', title: 'Audit the history' }),
     ], {
       agent: 'claude_code', query: 'AUTH', showArchived: false, sort: 'title',
     }, new Date('2026-07-16T12:00:00Z'))

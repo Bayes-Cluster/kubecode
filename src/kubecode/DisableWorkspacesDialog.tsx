@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createTranslator } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type {
@@ -28,8 +28,6 @@ import type {
   WorkspaceMigrationStrategy,
 } from './api'
 import { SystemMessageNotice } from './SystemMessageNotice'
-
-type Translator = ReturnType<typeof createTranslator>
 
 export function DisableWorkspacesDialog({
   api,

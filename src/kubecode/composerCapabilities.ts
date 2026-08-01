@@ -1,4 +1,5 @@
 import type { ComposerCatalogItem, ComposerCatalogSnapshot } from './api'
+import { fuzzyMatchRank } from './fuzzyMatch'
 
 export {
   findActiveComposerCapabilityQuery,
@@ -30,25 +31,14 @@ function normalized(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase()
 }
 
-function isSubsequence(query: string, candidate: string): boolean {
-  let queryIndex = 0
-  for (const character of candidate) {
-    if (character === query[queryIndex]) queryIndex += 1
-    if (queryIndex === query.length) return true
-  }
-  return false
-}
-
-function matchRank(item: ComposerCatalogItem, query: string): number | null {
-  if (!query) return 5
-  const name = normalized(item.name)
-  if (name === query) return 0
-  if (name.startsWith(query)) return 1
-  if (name.includes(query)) return 2
-  if (isSubsequence(query, name)) return 3
-  if (normalized(item.description ?? '').includes(query)) return 4
-  return null
-}
+const CAPABILITY_MATCH_WEIGHTS = {
+  empty: 5,
+  exact: 0,
+  prefix: 1,
+  secondary: 4,
+  subsequence: 3,
+  substring: 2,
+} as const
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
@@ -67,7 +57,13 @@ export function rankComposerCapabilities(
   return catalog.items
     .filter(isComposerCapability)
     .filter((item) => item.enabled || item.disabled_reason === 'ambiguous_source_identity')
-    .map((item) => ({ item, rank: matchRank(item, normalizedQuery) }))
+    .map((item) => ({
+      item,
+      rank: fuzzyMatchRank(normalizedQuery, {
+        primary: [normalized(item.name)],
+        secondary: [normalized(item.description ?? '')],
+      }, CAPABILITY_MATCH_WEIGHTS),
+    }))
     .filter((match): match is { item: ComposerCapabilityItem; rank: number } => match.rank !== null)
     .sort((left, right) => (
       left.rank - right.rank

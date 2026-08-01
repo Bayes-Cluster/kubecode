@@ -13,11 +13,10 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import type { TranslationKey } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
 import { SystemMessageNotice } from '../SystemMessageNotice'
-import type { Translator } from './types'
 
 export function TeamStatusView({
   api,

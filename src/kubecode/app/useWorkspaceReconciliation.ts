@@ -17,7 +17,7 @@ import {
   type WorkspaceEventReconciliationRequest,
 } from '../useWorkspaceEventStream'
 import { errorMessage } from './errors'
-import type { Translator } from './translator'
+import type { Translator } from '@/lib/i18n'
 
 type Dispatch<State> = React.Dispatch<React.SetStateAction<State>>
 

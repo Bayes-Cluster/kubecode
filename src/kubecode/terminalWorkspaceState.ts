@@ -1,4 +1,5 @@
 import type { TerminalInfo } from './api'
+import { createPreferenceStorage } from './preferenceStorage'
 
 export type TerminalLayout =
   | { type: 'leaf'; terminalId: string }
@@ -22,6 +23,12 @@ export type StoredTerminalWorkspaceV2 = {
   activeGroupId: string | null
   groups: TerminalGroup[]
 }
+
+const terminalWorkspaceStorage = createPreferenceStorage<Record<string, unknown>, [projectId: string]>({
+  defaultValue: () => ({}),
+  key: (projectId) => storageKey(projectId),
+  normalize: (value) => isRecord(value) ? value : {},
+})
 
 export function createTerminalGroup(id: string, terminalId: string): TerminalGroup {
   return { id, activeTerminalId: terminalId, layout: leaf(terminalId) }
@@ -105,8 +112,8 @@ export function readTerminalWorkspace(
   terminals: TerminalInfo[],
 ): StoredTerminalWorkspaceV2 {
   const terminalIdSet = new Set(terminals.map((terminal) => terminal.id))
-  const stored = readStoredWorkspace(projectId)
-  const restored = stored?.version === 2
+  const stored = terminalWorkspaceStorage.read(localStorage, projectId)
+  const restored = stored.version === 2
     ? restoreVersionTwo(stored, terminalIdSet)
     : restoreLegacy(stored, terminalIdSet)
   return appendUnassignedTerminals(restored, terminals)
@@ -141,20 +148,7 @@ export function writeTerminalWorkspace(
   projectId: string,
   workspace: StoredTerminalWorkspaceV2,
 ): void {
-  try {
-    localStorage.setItem(storageKey(projectId), JSON.stringify(workspace))
-  } catch {
-    // Restricted browser contexts can disable local storage.
-  }
-}
-
-function readStoredWorkspace(projectId: string): Record<string, unknown> | null {
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(storageKey(projectId)) ?? 'null')
-    return isRecord(value) ? value : null
-  } catch {
-    return null
-  }
+  terminalWorkspaceStorage.write(localStorage, workspace, projectId)
 }
 
 function restoreVersionTwo(

@@ -14,7 +14,7 @@ import {
 import type { DirectoryListing, KubecodeApi, Project } from '../api'
 import { PathPicker, type PathPickerRow } from '../PathPicker'
 import { errorMessage } from './errors'
-import type { Translator } from './translator'
+import type { Translator } from '@/lib/i18n'
 
 export type ProjectDialogProps = {
   api: KubecodeApi

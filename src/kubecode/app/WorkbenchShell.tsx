@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, IconContext } from '@phosphor-icons/react'
-import { createTranslator, resolveEffectiveLocale } from '@/lib/i18n'
+import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { Button } from '@/components/ui/button'
@@ -42,7 +42,6 @@ import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
 import { WorkbenchTitlebar } from './WorkbenchTitlebar'
 import { mergeConversations, upsertConversation } from './sessionCatalog'
-import type { Translator } from './translator'
 
 const browserApi = new KubecodeApi()
 

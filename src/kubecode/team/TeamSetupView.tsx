@@ -16,7 +16,7 @@ import { trackEvent } from '@/lib/telemetry'
 import type { AgentId, AgentSessionState, KubecodeApi, TeamMode, TeamSnapshot } from '../api'
 import { SystemMessageNotice } from '../SystemMessageNotice'
 import { NativeLeaderOptions } from './TeamPermissionView'
-import type { Translator } from './types'
+import type { Translator } from '@/lib/i18n'
 
 export function TeamSetup({
   api,
