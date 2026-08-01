@@ -1,5 +1,6 @@
 pub mod agent_discovery;
 pub mod agent_runtime;
+pub mod agent_store;
 pub mod agents;
 pub mod api;
 pub mod composer_catalog;
