@@ -10,6 +10,7 @@ import {
 } from 'react'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { ComposerCapabilityPickerLabels } from '../ComposerCapabilityPicker'
@@ -60,7 +61,6 @@ import {
   MAX_SESSION_TURN_PICKER_SOURCES,
   sessionTurnPreview,
   sideQuestionText,
-  type Translator,
 } from './sessionModel'
 
 const SESSION_DRAFT_PREFIX = 'kubecode:session-draft:'

@@ -1,3 +1,5 @@
+import { fuzzyMatchRank } from './fuzzyMatch'
+
 export type AcpCommandInput =
   | { kind: 'none' }
   | { kind: 'text'; hint?: string }
@@ -67,7 +69,9 @@ export function matchingAcpCommands(commands: AcpCommand[], query: string): AcpC
   const normalized = query.toLocaleLowerCase()
   return commands
     .flatMap((command) => {
-      const score = commandMatchScore(command.name.toLocaleLowerCase(), normalized)
+      const score = fuzzyMatchRank(normalized, {
+        primary: [command.name.toLocaleLowerCase()],
+      }, ACP_COMMAND_MATCH_WEIGHTS)
       return score === null ? [] : [{ command, score }]
     })
     .sort((left, right) => left.score - right.score
@@ -75,18 +79,13 @@ export function matchingAcpCommands(commands: AcpCommand[], query: string): AcpC
     .map(({ command }) => command)
 }
 
-function commandMatchScore(name: string, query: string): number | null {
-  if (!query) return 1
-  if (name === query) return 0
-  if (name.startsWith(query)) return 1
-  if (name.includes(query)) return 2
-  let queryIndex = 0
-  for (const character of name) {
-    if (character === query[queryIndex]) queryIndex += 1
-    if (queryIndex === query.length) return 3
-  }
-  return null
-}
+const ACP_COMMAND_MATCH_WEIGHTS = {
+  empty: 1,
+  exact: 0,
+  prefix: 1,
+  subsequence: 3,
+  substring: 2,
+} as const
 
 export function completeAcpCommand(command: AcpCommand): string {
   return `/${command.name}${command.input.kind === 'text' ? ' ' : ''}`

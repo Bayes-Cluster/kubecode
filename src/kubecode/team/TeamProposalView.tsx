@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 
 import type { TeamProposal } from '../api'
-import type { Translator } from './types'
+import type { Translator } from '@/lib/i18n'
 
 export function TeamProposalView({ busyAction, onResolve, proposal, t }: {
   busyAction: string | null

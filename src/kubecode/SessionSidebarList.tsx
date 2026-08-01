@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { createTranslator } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { Conversation, KubecodeApi, Project, RunStatus, TeamRole, TeamSnapshot } from './api'
@@ -38,8 +38,6 @@ import {
   type SessionListPreferences,
   type SessionSort,
 } from './sessionList'
-
-type Translator = ReturnType<typeof createTranslator>
 
 type SessionSidebarListProps = {
   activeConversationId: string | null

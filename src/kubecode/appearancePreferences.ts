@@ -1,5 +1,7 @@
 import { applyThemeSelectionToDocument, type ThemeMode } from '@/lib/themeMode'
 
+import { createPreferenceStorage, type PreferenceStorage } from './preferenceStorage'
+
 export const KUBECODE_APPEARANCE_STORAGE_KEY = 'kubecode:appearance:v1'
 
 export const KUBECODE_THEME_OPTIONS = [
@@ -36,8 +38,6 @@ export const DEFAULT_KUBECODE_APPEARANCE: KubecodeAppearance = {
   codeFont: 'System Mono',
   terminalFont: 'JetBrainsMono Nerd Font Mono',
 }
-
-type AppearanceStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 const COLOR_SCHEMES = new Set<ThemeMode>(['system', 'light', 'dark'])
 const THEMES = new Set<KubecodeTheme>(KUBECODE_THEME_OPTIONS)
@@ -77,24 +77,21 @@ export function normalizeKubecodeAppearance(value: unknown): KubecodeAppearance 
   }
 }
 
-export function readKubecodeAppearance(storage: AppearanceStorage): KubecodeAppearance {
-  try {
-    const stored = storage.getItem(KUBECODE_APPEARANCE_STORAGE_KEY)
-    return normalizeKubecodeAppearance(stored ? JSON.parse(stored) : null)
-  } catch {
-    return DEFAULT_KUBECODE_APPEARANCE
-  }
+const appearancePreferenceStorage = createPreferenceStorage({
+  defaultValue: () => DEFAULT_KUBECODE_APPEARANCE,
+  key: () => KUBECODE_APPEARANCE_STORAGE_KEY,
+  normalize: normalizeKubecodeAppearance,
+})
+
+export function readKubecodeAppearance(storage: PreferenceStorage): KubecodeAppearance {
+  return appearancePreferenceStorage.read(storage)
 }
 
 export function writeKubecodeAppearance(
-  storage: AppearanceStorage,
+  storage: PreferenceStorage,
   appearance: KubecodeAppearance,
 ): void {
-  try {
-    storage.setItem(KUBECODE_APPEARANCE_STORAGE_KEY, JSON.stringify(appearance))
-  } catch {
-    // Local storage can be unavailable in restricted browser contexts.
-  }
+  appearancePreferenceStorage.write(storage, appearance)
 }
 
 export function applyKubecodeAppearance(

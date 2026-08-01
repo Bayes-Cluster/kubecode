@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
-import type { TranslationKey } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 import type { AgentId } from './api'
 import type { NativeSessionConfig, NativeSessionSelect } from './agentSessionOptions'
@@ -17,7 +17,7 @@ type AgentControlMenuProps = {
   modeDisabledReason?: string
   onConfigChange: (configId: string, value: string | boolean) => void
   onModeChange: (value: string) => void
-  t: (key: TranslationKey) => string
+  t: Translator
 }
 
 function selectedOption(group: NativeSessionSelect): string {

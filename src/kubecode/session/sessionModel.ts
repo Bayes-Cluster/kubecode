@@ -1,6 +1,6 @@
 import type { AiAction } from '@/components/AiMessage'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
-import type { TranslationKey, TranslationValues } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { AcpCommand } from '../acpCommands'
 import { availableAcpCommands } from '../acpCommands'
@@ -16,7 +16,6 @@ import type {
   TeamSnapshot,
 } from '../api'
 
-export type Translator = (key: TranslationKey, values?: TranslationValues) => string
 export type PermissionChoice = { id: string; label: string; kind: string }
 export type PendingPermission = { requestId: string; tool: string; options: PermissionChoice[] }
 export type ElicitationAnswer = string | boolean

@@ -6,11 +6,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { TranslationKey } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { AgentId, AgentSessionState, KubecodeApi, TeamMode } from '../api'
 import { nativeSessionOptions } from '../agentSessionOptions'
-import type { Translator } from './types'
 
 export function NativeLeaderOptions({
   agentId,

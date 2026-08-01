@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import type { Conversation, Project } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { togglePanel } from './panelToggles'
-import type { Translator } from './translator'
+import type { Translator } from '@/lib/i18n'
 
 export type WorkbenchTitlebarProps = {
   attentionSessions: Conversation[]
@@ -241,5 +241,4 @@ function PanelToggleIcon({
     </span>
   )
 }
-
 

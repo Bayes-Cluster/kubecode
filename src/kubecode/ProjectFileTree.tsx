@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CaretDown, CaretRight, Eye, EyeSlash } from '@phosphor-icons/react'
 
 import { Button } from '@/components/ui/button'
-import type { TranslationKey } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 import type { Entry, KubecodeApi } from './api'
 import { ProjectEntryIcon } from './fileIcons'
@@ -15,7 +15,7 @@ type ProjectFileTreeProps = {
   projectId: string
   projectName: string
   refreshVersion: number
-  t: (key: TranslationKey) => string
+  t: Translator
 }
 
 export function ProjectFileTree({

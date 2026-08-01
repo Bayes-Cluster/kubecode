@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { trackEvent } from '@/lib/telemetry'
-import type { TranslationKey, TranslationValues } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 import type { AgentDescriptor, AgentId, KubecodeApi, TerminalInfo, TerminalKind } from './api'
 import { removeTerminalSnapshot } from './terminalSnapshots'
@@ -62,6 +62,7 @@ import {
   type TerminalGroup,
   type TerminalLayout,
 } from './terminalWorkspaceState'
+import { createPreferenceStorage } from './preferenceStorage'
 
 type TerminalWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -73,7 +74,7 @@ type TerminalWorkspaceProps = {
   onContextSourcesChange?: (sources: TerminalContextSource[]) => void
   open?: boolean
   projectId: string
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   terminalFont?: string
 }
 
@@ -475,7 +476,7 @@ function TerminalNavigatorGroup({
   onActivate: (terminalId: string) => void
   onCloseTerminal: (terminalId: string) => void
   onRename: (terminalId: string, title: string) => Promise<void>
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   terminals: TerminalInfo[]
 }) {
   const ids = terminalIds(group.layout)
@@ -528,7 +529,7 @@ function TerminalNavigatorLeaf({
   onClose: () => void
   onRename: (terminalId: string, title: string) => Promise<void>
   prefix: string
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   terminal: TerminalInfo
 }) {
   const [editing, setEditing] = useState(false)
@@ -600,7 +601,7 @@ function TerminalNavigatorEditor({
   onChange: (value: string) => void
   onSave: () => Promise<void>
   prefix: string
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   title: string
 }) {
   return (
@@ -633,7 +634,7 @@ function TerminalProfileMenu({
   agents: AgentDescriptor[]
   disabled: boolean
   onCreate: (kind: TerminalKind) => void
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
 }) {
   return (
     <DropdownMenu>
@@ -688,7 +689,7 @@ function TerminalLayoutView({
   projectId: string
   terminalFont: string
   terminals: TerminalInfo[]
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   visible: boolean
 }) {
   if (layout.type === 'leaf') {
@@ -811,19 +812,21 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 type TerminalNavigatorLayout = { width: number }
 
-function readTerminalNavigatorLayout(projectId: string): TerminalNavigatorLayout {
-  try {
-    const stored = JSON.parse(localStorage.getItem(`kubecode:terminal-navigator:${projectId}`) ?? '{}') as {
-      width?: unknown
-    }
+const terminalNavigatorStorage = createPreferenceStorage<TerminalNavigatorLayout, [projectId: string]>({
+  defaultValue: () => ({ width: TERMINAL_NAVIGATOR_DEFAULT }),
+  key: (projectId) => `kubecode:terminal-navigator:${projectId}`,
+  normalize: (value) => {
+    const stored = value && typeof value === 'object' ? value as Record<string, unknown> : {}
     return {
       width: typeof stored.width === 'number' && Number.isFinite(stored.width)
         ? clamp(stored.width, TERMINAL_NAVIGATOR_NARROW, TERMINAL_NAVIGATOR_MAXIMUM)
         : TERMINAL_NAVIGATOR_DEFAULT,
     }
-  } catch {
-    return { width: TERMINAL_NAVIGATOR_DEFAULT }
-  }
+  },
+})
+
+function readTerminalNavigatorLayout(projectId: string): TerminalNavigatorLayout {
+  return terminalNavigatorStorage.read(localStorage, projectId)
 }
 
 function terminalSplitPrefix(index: number, count: number): string {
@@ -842,9 +845,5 @@ function resizeTerminalNavigator(current: number, delta: number, maximum: number
 }
 
 function writeTerminalNavigatorLayout(projectId: string, layout: TerminalNavigatorLayout): void {
-  try {
-    localStorage.setItem(`kubecode:terminal-navigator:${projectId}`, JSON.stringify(layout))
-  } catch {
-    // Restricted browser contexts can disable local storage.
-  }
+  terminalNavigatorStorage.write(localStorage, layout, projectId)
 }

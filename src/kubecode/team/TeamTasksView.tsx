@@ -26,10 +26,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { TranslationKey } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask } from '../api'
-import type { Translator } from './types'
 
 export function TeamTasksView({
   api,

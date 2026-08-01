@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { TranslationKey } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
@@ -47,7 +47,6 @@ import type {
   WorkspaceEvent,
 } from './api'
 
-type Translator = (key: TranslationKey) => string
 type EntryDialogState = { kind: Entry['kind'] } | null
 type OpenDocument = {
   document: TextDocument

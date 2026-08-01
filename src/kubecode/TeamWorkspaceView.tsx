@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from './api'
 import { TeamProposalView } from './team/TeamProposalView'
@@ -18,7 +19,6 @@ import { TeamStatusView } from './team/TeamStatusView'
 import { TeamTasksView } from './team/TeamTasksView'
 import { TeamVerificationView } from './team/TeamVerificationView'
 import { useTeamLifecycleEvents } from './team/teamLifecycle'
-import type { Translator } from './team/types'
 
 export function TeamWorkspaceView({
   api,

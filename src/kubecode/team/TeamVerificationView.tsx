@@ -1,7 +1,7 @@
 import { CheckCircle } from '@phosphor-icons/react'
 
 import type { TeamDiscriminationRound } from '../api'
-import type { Translator } from './types'
+import type { Translator } from '@/lib/i18n'
 
 export function TeamVerificationView({ rounds, t }: {
   rounds: TeamDiscriminationRound[]

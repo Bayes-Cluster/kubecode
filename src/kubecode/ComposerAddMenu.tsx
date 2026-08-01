@@ -5,7 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { TranslationKey, TranslationValues } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 import type {
   ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi,
@@ -51,7 +51,7 @@ type ComposerAddMenuProps = {
   onSessionTurnContext?: (request: SessionTurnContextRequest) => void
   onTerminalContext?: (request: TerminalContextRequest) => void
   projectId: string
-  t: (key: TranslationKey, values?: TranslationValues) => string
+  t: Translator
   sessionTurnSources?: SessionTurnContextSource[]
   terminalSources?: TerminalContextSource[]
 }

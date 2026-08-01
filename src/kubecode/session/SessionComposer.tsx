@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { AppLocale } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 import { AcpCommandMenu } from '../AcpCommandMenu'
 import { completeAcpCommand, type AcpCommand } from '../acpCommands'
@@ -33,7 +33,6 @@ import {
   type ElicitationAnswer,
   type PendingElicitation,
   type PendingPermission,
-  type Translator,
 } from './sessionModel'
 import type { ComposerController } from './useComposerController'
 import type { SessionStateController } from './useSessionState'
