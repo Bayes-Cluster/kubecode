@@ -9,10 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { Conversation, TeamSnapshot } from '../api'
-import type { Translator } from './sessionModel'
 
 type SessionTitlebarProps = {
   active: boolean

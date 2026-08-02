@@ -1,11 +1,10 @@
 import { AiPanelMessageHistory } from '@/components/AiPanelChrome'
 import { Button } from '@/components/ui/button'
-import type { AppLocale } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { ConversationRevision } from '../api'
 import { RevisionNavigator } from './RevisionNavigator'
-import type { Translator } from './sessionModel'
 
 type SessionTimelineProps = {
   agentLabel: string

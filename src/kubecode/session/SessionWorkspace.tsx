@@ -581,7 +581,7 @@ export function AgentSessionWorkspace({
       onTeamViewChange={setTeamView}
       pendingElicitation={Boolean(pendingElicitation)}
       t={t}
-      team={team}
+      team={team ?? null}
       teamView={teamView}
       waitingForInput={waitingForInput}
     />

@@ -33,6 +33,7 @@ import {
   activeAcpCommand,
   completeAcpCommand,
   matchingAcpCommands,
+  type ActiveAcpCommand,
   type AcpCommand,
 } from '../acpCommands'
 import {
@@ -91,7 +92,7 @@ function writeSessionDraft(conversationId: string, draft: ComposerDraft) {
 }
 
 export type ComposerController = {
-  activeCommand: AcpCommand | null
+  activeCommand: ActiveAcpCommand | null
   capabilityLabels: ComposerCapabilityPickerLabels
   composerContextPending: boolean
   composerDraft: ComposerDraft

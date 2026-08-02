@@ -1,8 +1,7 @@
 import { CaretLeft, CaretRight } from '@phosphor-icons/react'
 
 import { Button } from '@/components/ui/button'
-
-import type { Translator } from './sessionModel'
+import type { Translator } from '@/lib/i18n'
 
 type RevisionNavigatorProps = {
   activeIndex: number
