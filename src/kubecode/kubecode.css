@@ -1845,8 +1845,32 @@
 }
 .kubecode-git-row { align-items: center; display: flex; gap: 2px; }
 .kubecode-git-path { flex: 1; justify-content: space-between; min-width: 0; overflow: hidden; }
-.kubecode-git-path span { overflow: hidden; text-overflow: ellipsis; }
+.kubecode-git-path-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+}
+.kubecode-git-path-name > span { overflow: hidden; text-overflow: ellipsis; }
+.kubecode-git-rename-source {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kubecode-git-path code { color: var(--accent-orange); font-size: 12px; }
+.kubecode-git-notice {
+  background: color-mix(in srgb, var(--feedback-warning-bg) 45%, var(--surface-app));
+  border: 1px solid color-mix(in srgb, var(--feedback-warning-text) 25%, transparent);
+  border-radius: 6px;
+  color: var(--feedback-warning-text);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 4px 0 8px;
+  padding: 7px 9px;
+}
 .kubecode-commit-box {
   border-top: 1px solid var(--border-subtle);
   display: flex;

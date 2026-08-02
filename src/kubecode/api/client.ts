@@ -157,8 +157,8 @@ export class KubecodeApi {
     })
   }
 
-  gitStatus(projectId: string): Promise<GitStatus> {
-    return this.request(`${this.projectPath(projectId)}/git/status`)
+  gitStatus(projectId: string, signal?: AbortSignal): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/status`, { signal })
   }
 
   initializeGit(projectId: string): Promise<GitStatus> {
