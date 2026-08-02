@@ -13,9 +13,7 @@ use std::sync::Arc;
 
 use rusqlite::params;
 
-use crate::database::Database;
-
-use models::ensure_column;
+use crate::database::{Database, ensure_column};
 
 pub struct TeamStore {
     database: Arc<Database>,

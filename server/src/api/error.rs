@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::agent_runtime::{AgentStartupStage, RuntimeError};
 use crate::agents::StoreError;
-use crate::composer_catalog::ComposerCatalogError;
+use crate::composer_catalog::{AcpCommandError, ComposerCatalogError};
 use crate::git::GitError;
 use crate::teams::TeamError;
 use crate::terminal::TerminalError;
@@ -17,16 +17,6 @@ struct ErrorBody {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     stage: Option<AgentStartupStage>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum AcpCommandError {
-    Unavailable,
-    Ambiguous,
-    UnsupportedInput,
-    InputRequired,
-    UnexpectedInput,
-    ArgumentsTooLong,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -255,38 +245,10 @@ impl IntoResponse for ApiError {
                 "session_mode_locked",
                 session_mode_lock_message(reason).to_owned(),
             ),
-            ApiError::AcpCommand(error) => match error {
-                AcpCommandError::Unavailable => (
-                    StatusCode::CONFLICT,
-                    "acp_command_unavailable",
-                    "command is no longer available".to_owned(),
-                ),
-                AcpCommandError::Ambiguous => (
-                    StatusCode::CONFLICT,
-                    "acp_command_ambiguous",
-                    "command name is advertised more than once".to_owned(),
-                ),
-                AcpCommandError::UnsupportedInput => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "acp_command_input_unsupported",
-                    "command uses an unsupported input specification".to_owned(),
-                ),
-                AcpCommandError::InputRequired => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "acp_command_input_required",
-                    "command input is required".to_owned(),
-                ),
-                AcpCommandError::UnexpectedInput => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "acp_command_input_unexpected",
-                    "command does not accept input".to_owned(),
-                ),
-                AcpCommandError::ArgumentsTooLong => (
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "acp_command_input_too_long",
-                    "command input exceeds the size limit".to_owned(),
-                ),
-            },
+            ApiError::AcpCommand(error) => {
+                let (status, code, message) = acp_command_error_response(error);
+                (status, code, message.to_owned())
+            }
         };
         (
             status,
@@ -297,6 +259,41 @@ impl IntoResponse for ApiError {
             }),
         )
             .into_response()
+    }
+}
+
+fn acp_command_error_response(error: AcpCommandError) -> (StatusCode, &'static str, &'static str) {
+    match error {
+        AcpCommandError::Unavailable => (
+            StatusCode::CONFLICT,
+            "acp_command_unavailable",
+            "command is no longer available",
+        ),
+        AcpCommandError::Ambiguous => (
+            StatusCode::CONFLICT,
+            "acp_command_ambiguous",
+            "command name is advertised more than once",
+        ),
+        AcpCommandError::UnsupportedInput => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "acp_command_input_unsupported",
+            "command uses an unsupported input specification",
+        ),
+        AcpCommandError::InputRequired => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "acp_command_input_required",
+            "command input is required",
+        ),
+        AcpCommandError::UnexpectedInput => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "acp_command_input_unexpected",
+            "command does not accept input",
+        ),
+        AcpCommandError::ArgumentsTooLong => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "acp_command_input_too_long",
+            "command input exceeds the size limit",
+        ),
     }
 }
 
@@ -420,6 +417,51 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         }
         WorkspaceError::Io(_) | WorkspaceError::Database(_) | WorkspaceError::DatabaseSetup(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_domain_acp_command_errors_to_legacy_api_classifications() {
+        for (error, expected_status, expected_code) in [
+            (
+                AcpCommandError::Unavailable,
+                StatusCode::CONFLICT,
+                "acp_command_unavailable",
+            ),
+            (
+                AcpCommandError::Ambiguous,
+                StatusCode::CONFLICT,
+                "acp_command_ambiguous",
+            ),
+            (
+                AcpCommandError::UnsupportedInput,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "acp_command_input_unsupported",
+            ),
+            (
+                AcpCommandError::InputRequired,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "acp_command_input_required",
+            ),
+            (
+                AcpCommandError::UnexpectedInput,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "acp_command_input_unexpected",
+            ),
+            (
+                AcpCommandError::ArgumentsTooLong,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "acp_command_input_too_long",
+            ),
+        ] {
+            let (status, code, _) = acp_command_error_response(error);
+            assert_eq!(status, expected_status);
+            assert_eq!(code, expected_code);
         }
     }
 }

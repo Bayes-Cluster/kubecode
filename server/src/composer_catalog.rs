@@ -249,6 +249,22 @@ pub struct AcpCommand {
     pub input: AcpCommandInput,
 }
 
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum AcpCommandError {
+    #[error("command is unavailable")]
+    Unavailable,
+    #[error("command name is ambiguous")]
+    Ambiguous,
+    #[error("command input is unsupported")]
+    UnsupportedInput,
+    #[error("command input is required")]
+    InputRequired,
+    #[error("command input is unexpected")]
+    UnexpectedInput,
+    #[error("command input is too long")]
+    ArgumentsTooLong,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComposerInvocation {
     AcpPromptTemplate {
@@ -330,6 +346,19 @@ pub enum ComposerCatalogError {
     InvalidDraft,
 }
 
+impl From<AcpCommandError> for ComposerCatalogError {
+    fn from(error: AcpCommandError) -> Self {
+        match error {
+            AcpCommandError::Unavailable => Self::CommandUnavailable,
+            AcpCommandError::Ambiguous => Self::CommandAmbiguous,
+            AcpCommandError::UnsupportedInput => Self::InputUnsupported,
+            AcpCommandError::InputRequired => Self::InputRequired,
+            AcpCommandError::UnexpectedInput => Self::UnexpectedInput,
+            AcpCommandError::ArgumentsTooLong => Self::ArgumentsTooLong,
+        }
+    }
+}
+
 pub fn validate_structured_composer_segments(
     segments: &[ComposerDraftSegment],
 ) -> Result<(), ComposerCatalogError> {
@@ -368,12 +397,19 @@ pub fn valid_acp_command_name(name: &str) -> bool {
 }
 
 pub fn parse_available_commands(payload: &Value) -> Vec<AcpCommand> {
+    parse_available_commands_with_limit(payload, Some(MAX_ACP_COMMAND_ITEMS))
+}
+
+fn parse_available_commands_with_limit(
+    payload: &Value,
+    max_items: Option<usize>,
+) -> Vec<AcpCommand> {
     payload
         .get("availableCommands")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .take(MAX_ACP_COMMAND_ITEMS)
+        .take(max_items.unwrap_or(usize::MAX))
         .filter_map(|value| {
             let command = value.as_object()?;
             let name = command.get("name")?.as_str()?;
@@ -933,23 +969,52 @@ pub fn resolve_acp_command_message(
     name: &str,
     arguments: &str,
 ) -> Result<String, ComposerCatalogError> {
-    let matches = parse_available_commands(payload)
+    resolve_acp_command_message_with_limit(payload, name, arguments, Some(MAX_ACP_COMMAND_ITEMS))
+        .map_err(ComposerCatalogError::from)
+}
+
+pub fn resolve_legacy_acp_command_message(
+    payload: &Value,
+    name: &str,
+    arguments: &str,
+) -> Result<String, AcpCommandError> {
+    validate_legacy_acp_command(name, arguments)?;
+    resolve_acp_command_message_with_limit(payload, name, arguments.trim(), None)
+}
+
+pub fn validate_legacy_acp_command(name: &str, arguments: &str) -> Result<(), AcpCommandError> {
+    if !valid_acp_command_name(name) {
+        return Err(AcpCommandError::Unavailable);
+    }
+    if arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
+        return Err(AcpCommandError::ArgumentsTooLong);
+    }
+    Ok(())
+}
+
+fn resolve_acp_command_message_with_limit(
+    payload: &Value,
+    name: &str,
+    arguments: &str,
+    max_items: Option<usize>,
+) -> Result<String, AcpCommandError> {
+    let matches = parse_available_commands_with_limit(payload, max_items)
         .into_iter()
         .filter(|command| command.name == name)
         .collect::<Vec<_>>();
     let command = match matches.as_slice() {
-        [] => return Err(ComposerCatalogError::CommandUnavailable),
+        [] => return Err(AcpCommandError::Unavailable),
         [command] => command,
-        _ => return Err(ComposerCatalogError::CommandAmbiguous),
+        _ => return Err(AcpCommandError::Ambiguous),
     };
     match command.input {
         AcpCommandInput::None if !arguments.is_empty() => {
-            return Err(ComposerCatalogError::UnexpectedInput);
+            return Err(AcpCommandError::UnexpectedInput);
         }
         AcpCommandInput::Text { .. } if arguments.is_empty() => {
-            return Err(ComposerCatalogError::InputRequired);
+            return Err(AcpCommandError::InputRequired);
         }
-        AcpCommandInput::Unsupported => return Err(ComposerCatalogError::InputUnsupported),
+        AcpCommandInput::Unsupported => return Err(AcpCommandError::UnsupportedInput),
         AcpCommandInput::None | AcpCommandInput::Text { .. } => {}
     }
     Ok(if arguments.is_empty() {
@@ -1217,6 +1282,83 @@ mod tests {
         assert_eq!(
             resolve_acp_catalog_item(&snapshot, &raw, 7, &snapshot.items[0].id, ""),
             Ok("/status".to_owned())
+        );
+    }
+
+    #[test]
+    fn legacy_acp_commands_preserve_validation_limits_and_unbounded_ambiguity() {
+        let mut rows = (0..MAX_ACP_COMMAND_ITEMS)
+            .map(|index| json!({"name":format!("command-{index}"), "description":"Command"}))
+            .collect::<Vec<_>>();
+        rows.push(json!({"name":"command-0", "description":"Late duplicate"}));
+        let raw = json!({"availableCommands":rows});
+
+        assert_eq!(
+            resolve_legacy_acp_command_message(&raw, "command-0", ""),
+            Err(AcpCommandError::Ambiguous)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&raw, "bad name", ""),
+            Err(AcpCommandError::Unavailable)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(
+                &raw,
+                "command-1",
+                &"x".repeat(MAX_ACP_COMMAND_ARGUMENT_BYTES + 1),
+            ),
+            Err(AcpCommandError::ArgumentsTooLong)
+        );
+
+        let snapshot = project_acp_catalog("project", "session", AgentId::Codex, 1, &raw);
+        assert!(snapshot.items[0].enabled);
+        assert_eq!(
+            resolve_acp_catalog_item(&snapshot, &raw, 1, &snapshot.items[0].id, ""),
+            Ok("/command-0".to_owned())
+        );
+    }
+
+    #[test]
+    fn resolves_only_one_current_legacy_command_with_the_declared_input_shape() {
+        let commands = json!({"availableCommands":[
+            {"name":"status", "description":"Show status"},
+            {"name":"review", "description":"Review", "input":{"hint":"focus"}},
+            {"name":"ask", "description":"Ask", "input":{"type":"text"}},
+            {"name":"future", "description":"Future", "input":{"type":"choices"}},
+            {"name":"duplicate", "description":"One"},
+            {"name":"duplicate", "description":"Two"}
+        ]});
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "status", ""),
+            Ok("/status".into())
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "review", " security "),
+            Ok("/review security".into())
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "ask", "anything"),
+            Ok("/ask anything".into())
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "removed", ""),
+            Err(AcpCommandError::Unavailable)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "duplicate", ""),
+            Err(AcpCommandError::Ambiguous)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "future", ""),
+            Err(AcpCommandError::UnsupportedInput)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "review", ""),
+            Err(AcpCommandError::InputRequired)
+        );
+        assert_eq!(
+            resolve_legacy_acp_command_message(&commands, "status", "extra"),
+            Err(AcpCommandError::UnexpectedInput)
         );
     }
 
