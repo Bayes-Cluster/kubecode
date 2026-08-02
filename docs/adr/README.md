@@ -52,3 +52,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0205](0205-durable-wake-driven-workspace-event-delivery.md) | Durable wake-driven workspace event delivery |
 | [0206](0206-typed-composer-catalog-and-structured-draft.md) | Typed Composer catalog and structured draft |
 | [0207](0207-signed-wasi-plugin-runtime-and-approved-contributions.md) | Signed WASI plugin runtime and approved contributions |
+| [0208](0208-path-scoped-watched-project-invalidation.md) | Path-scoped watched Project invalidation |
