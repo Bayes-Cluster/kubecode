@@ -191,9 +191,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [contextOpen, contextWidth, layoutHydrated, projectId, terminalHeight, terminalOpen])
 
   useEffect(() => {
-    // Mirrors the pre-refactor App.tsx effect: sync the workspace stream
-    // diagnostic into the surface error. The set-state-in-effect heuristic
-    // only fires on the split module, not on the identical monolithic file.
+    // Surface workspace-stream failures through the existing application error state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (reconciliation.workspaceEventDiagnostic) setError(t('kubecode.error'))
   }, [t, reconciliation.workspaceEventDiagnostic])
@@ -256,11 +254,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [contextOpen, narrowLayout, sessionSidebarOpen])
 
   useEffect(() => {
-    // Narrow-layout reconciliation ported verbatim from the pre-refactor
-    // App.tsx: when both overlay panels are open, keep only the navigator.
+    // On narrow layouts, the navigator takes precedence if both overlays are open.
     if (!narrowLayout || !sessionSidebarOpen || !contextOpen) return
-    // The set-state-in-effect heuristic only fires on the split module, not
-    // on the identical monolithic file.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setContextOpen(false)
   }, [contextOpen, narrowLayout, sessionSidebarOpen])
