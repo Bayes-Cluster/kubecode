@@ -1,4 +1,3 @@
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -585,25 +584,6 @@ pub(crate) fn is_unique_violation(error: &rusqlite::Error) -> bool {
         rusqlite::Error::SqliteFailure(code, _)
             if code.code == rusqlite::ErrorCode::ConstraintViolation
     )
-}
-
-pub(crate) fn ensure_column(
-    database: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> Result<(), TeamError> {
-    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if !columns.iter().any(|current| current == column) {
-        database.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )?;
-    }
-    Ok(())
 }
 
 macro_rules! stored_enum {

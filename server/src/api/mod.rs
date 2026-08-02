@@ -24,6 +24,8 @@ use serde::Serialize;
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
+use crate::config::normalize_base_path;
+
 use self::agents::{list_agents, refresh_agents};
 use self::composer::{
     create_entry, delete_entry, list_composer_git_diffs, list_entries, list_session_entries,
@@ -378,13 +380,4 @@ fn health_router() -> Router {
 
 async fn health() -> &'static str {
     "ok"
-}
-
-fn normalize_base_path(base_path: &str) -> String {
-    let trimmed = base_path.trim().trim_matches('/');
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        format!("/{trimmed}")
-    }
 }

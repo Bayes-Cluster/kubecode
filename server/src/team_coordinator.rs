@@ -68,11 +68,11 @@ impl TeamCoordinator {
         if !team
             .allowed_agent_ids
             .iter()
-            .any(|allowed| allowed == agent_id_value(input.agent_id))
+            .any(|allowed| allowed == input.agent_id.as_str())
         {
             return Err(TeamError::InvalidStoredValue(format!(
                 "Agent is outside the Team budget: {}",
-                agent_id_value(input.agent_id)
+                input.agent_id.as_str()
             ))
             .into());
         }
@@ -289,12 +289,4 @@ fn ensure_leader(team: &Team, member: &TeamMember) -> Result<(), TeamError> {
         return Err(TeamError::LeaderRequired);
     }
     Ok(())
-}
-
-fn agent_id_value(agent_id: AgentId) -> &'static str {
-    match agent_id {
-        AgentId::ClaudeCode => "claude_code",
-        AgentId::Codex => "codex",
-        AgentId::OpenCode => "opencode",
-    }
 }

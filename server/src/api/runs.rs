@@ -7,14 +7,14 @@ use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
-use super::error::{AcpCommandError, ApiError};
+use super::error::ApiError;
 use super::runtime::{safe_agent_event, safe_session_event};
 use crate::agent_runtime::{StartAgentRun, StartComposerCommand, StartStructuredComposerRun};
 use crate::agents::{AgentEvent, AgentRun, AgentStore, SessionEvent, StoreError};
-use crate::composer_catalog::ComposerDraftSegment;
-
-const MAX_ACP_COMMAND_NAME_BYTES: usize = 256;
-const MAX_ACP_COMMAND_ARGUMENT_BYTES: usize = 8 * 1024;
+use crate::composer_catalog::{
+    AcpCommandError, ComposerDraftSegment, resolve_legacy_acp_command_message,
+    validate_legacy_acp_command,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,17 +118,12 @@ pub(super) async fn dispatch_acp_command(
         .map_err(|_| ApiError::InvalidRequest("invalid command selector".into()))?;
     let run = match selector {
         DispatchAcpCommandSelector::Legacy(request) => {
-            if !valid_acp_command_name(&request.name) {
-                return Err(AcpCommandError::Unavailable.into());
-            }
-            if request.arguments.len() > MAX_ACP_COMMAND_ARGUMENT_BYTES {
-                return Err(AcpCommandError::ArgumentsTooLong.into());
-            }
-            let arguments = request.arguments.trim();
+            validate_legacy_acp_command(&request.name, &request.arguments)?;
             let raw =
                 latest_available_commands(state.agent_runtime.store().as_ref(), &conversation_id)?
                     .ok_or(AcpCommandError::Unavailable)?;
-            let message = resolve_acp_command_message(&raw, &request.name, arguments)?;
+            let message =
+                resolve_legacy_acp_command_message(&raw, &request.name, &request.arguments)?;
             state.agent_runtime.start_acp_command(StartAgentRun {
                 conversation_id,
                 project_id,
@@ -337,20 +332,6 @@ pub(super) async fn resolve_elicitation(
     Ok(StatusCode::ACCEPTED)
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum AcpCommandInput {
-    None,
-    Text { hint: Option<String> },
-    Unsupported,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AcpCommand {
-    name: String,
-    description: String,
-    input: AcpCommandInput,
-}
-
 fn latest_available_commands(
     store: &AgentStore,
     conversation_id: &str,
@@ -361,130 +342,4 @@ fn latest_available_commands(
         .filter(|event| event.kind == "available_commands")
         .map(|event| event.payload)
         .next_back())
-}
-
-fn parse_available_commands(payload: &serde_json::Value) -> Vec<AcpCommand> {
-    payload
-        .get("availableCommands")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|value| {
-            let command = value.as_object()?;
-            let name = command.get("name")?.as_str()?;
-            let description = command.get("description")?.as_str()?;
-            let input = match command.get("input") {
-                None | Some(serde_json::Value::Null) => AcpCommandInput::None,
-                Some(serde_json::Value::Object(input)) => {
-                    let kind = input.get("type").and_then(serde_json::Value::as_str);
-                    let hint = input.get("hint");
-                    match (kind, hint) {
-                        (None | Some("text"), None) => AcpCommandInput::Text { hint: None },
-                        (None | Some("text"), Some(serde_json::Value::String(hint))) => {
-                            AcpCommandInput::Text {
-                                hint: Some(hint.to_owned()),
-                            }
-                        }
-                        _ => AcpCommandInput::Unsupported,
-                    }
-                }
-                Some(_) => AcpCommandInput::Unsupported,
-            };
-            Some(AcpCommand {
-                name: name.to_owned(),
-                description: description.to_owned(),
-                input,
-            })
-        })
-        .collect()
-}
-
-fn valid_acp_command_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= MAX_ACP_COMMAND_NAME_BYTES
-        && name.chars().all(|character| {
-            !character.is_control() && !character.is_whitespace() && character != '/'
-        })
-}
-
-fn resolve_acp_command_message(
-    payload: &serde_json::Value,
-    name: &str,
-    arguments: &str,
-) -> Result<String, AcpCommandError> {
-    let matches = parse_available_commands(payload)
-        .into_iter()
-        .filter(|command| command.name == name)
-        .collect::<Vec<_>>();
-    let command = match matches.as_slice() {
-        [] => return Err(AcpCommandError::Unavailable),
-        [command] => command,
-        _ => return Err(AcpCommandError::Ambiguous),
-    };
-    match command.input {
-        AcpCommandInput::None if !arguments.is_empty() => {
-            return Err(AcpCommandError::UnexpectedInput);
-        }
-        AcpCommandInput::Text { .. } if arguments.is_empty() => {
-            return Err(AcpCommandError::InputRequired);
-        }
-        AcpCommandInput::Unsupported => return Err(AcpCommandError::UnsupportedInput),
-        AcpCommandInput::None | AcpCommandInput::Text { .. } => {}
-    }
-    Ok(if arguments.is_empty() {
-        format!("/{name}")
-    } else {
-        format!("/{name} {arguments}")
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::{AcpCommandError, resolve_acp_command_message};
-
-    #[test]
-    fn resolves_only_one_current_command_with_the_declared_input_shape() {
-        let commands = json!({"availableCommands":[
-            {"name":"status", "description":"Show status"},
-            {"name":"review", "description":"Review", "input":{"hint":"focus"}},
-            {"name":"ask", "description":"Ask", "input":{"type":"text"}},
-            {"name":"future", "description":"Future", "input":{"type":"choices"}},
-            {"name":"duplicate", "description":"One"},
-            {"name":"duplicate", "description":"Two"}
-        ]});
-        assert_eq!(
-            resolve_acp_command_message(&commands, "status", ""),
-            Ok("/status".into())
-        );
-        assert_eq!(
-            resolve_acp_command_message(&commands, "review", "security"),
-            Ok("/review security".into())
-        );
-        assert_eq!(
-            resolve_acp_command_message(&commands, "ask", "anything"),
-            Ok("/ask anything".into())
-        );
-        assert!(matches!(
-            resolve_acp_command_message(&commands, "removed", ""),
-            Err(AcpCommandError::Unavailable)
-        ));
-        assert!(matches!(
-            resolve_acp_command_message(&commands, "duplicate", ""),
-            Err(AcpCommandError::Ambiguous)
-        ));
-        assert!(matches!(
-            resolve_acp_command_message(&commands, "future", ""),
-            Err(AcpCommandError::UnsupportedInput)
-        ));
-        assert!(matches!(
-            resolve_acp_command_message(&commands, "review", ""),
-            Err(AcpCommandError::InputRequired)
-        ));
-        assert!(matches!(
-            resolve_acp_command_message(&commands, "status", "extra"),
-            Err(AcpCommandError::UnexpectedInput)
-        ));
-    }
 }

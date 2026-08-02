@@ -77,6 +77,25 @@ impl Deref for Database {
     }
 }
 
+pub(crate) fn ensure_column(
+    database: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), rusqlite::Error> {
+    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|current| current == column) {
+        database.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 fn acquire_owner_lock(database_path: &Path) -> Result<File, DatabaseError> {
     let lock_path = database_path.with_extension("sqlite3.owner");
     let lock = OpenOptions::new()
@@ -91,4 +110,35 @@ fn acquire_owner_lock(database_path: &Path) -> Result<File, DatabaseError> {
             reason: error.to_string(),
         })?;
     Ok(lock)
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    use super::ensure_column;
+
+    #[test]
+    fn ensure_column_is_idempotent_and_preserves_sql_errors() {
+        let connection = Connection::open_in_memory().expect("in-memory database");
+        connection
+            .execute("CREATE TABLE records (id TEXT PRIMARY KEY)", [])
+            .expect("table");
+
+        ensure_column(&connection, "records", "label", "TEXT NOT NULL DEFAULT ''")
+            .expect("first migration");
+        ensure_column(&connection, "records", "label", "TEXT NOT NULL DEFAULT ''")
+            .expect("repeated migration");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('records') WHERE name = 'label'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .expect("column count"),
+            1
+        );
+        assert!(ensure_column(&connection, "missing", "label", "TEXT").is_err());
+    }
 }

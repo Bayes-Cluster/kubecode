@@ -11,7 +11,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::agents::ExecutionMode;
-use crate::database::{Database, DatabaseError};
+use crate::database::{Database, DatabaseError, ensure_column};
 
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
@@ -995,25 +995,6 @@ impl WorkspaceService {
         )?;
         Ok((relative, canonical))
     }
-}
-
-fn ensure_column(
-    database: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> Result<(), WorkspaceError> {
-    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if !columns.iter().any(|current| current == column) {
-        database.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )?;
-    }
-    Ok(())
 }
 
 fn validate_storage_id(value: &str) -> Result<(), WorkspaceError> {

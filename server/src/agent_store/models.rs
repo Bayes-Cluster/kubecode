@@ -256,3 +256,15 @@ string_enum!(AgentEventKind, {
     AgentEventKind::Error => "error",
     AgentEventKind::RunCompleted => "run_completed",
 });
+
+#[cfg(test)]
+mod tests {
+    use super::AgentId;
+
+    #[test]
+    fn agent_ids_have_one_canonical_stored_value() {
+        assert_eq!(AgentId::ClaudeCode.as_str(), "claude_code");
+        assert_eq!(AgentId::Codex.as_str(), "codex");
+        assert_eq!(AgentId::OpenCode.as_str(), "opencode");
+    }
+}

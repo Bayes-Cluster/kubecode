@@ -16,10 +16,10 @@ pub use models::{
 use std::path::Path;
 use std::sync::Arc;
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::TransactionBehavior;
 use serde_json::json;
 
-use crate::database::Database;
+use crate::database::{Database, ensure_column};
 
 pub struct AgentStore {
     database: Arc<Database>,
@@ -247,23 +247,4 @@ impl AgentStore {
         }
         Ok(())
     }
-}
-
-fn ensure_column(
-    database: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> Result<(), rusqlite::Error> {
-    let mut statement = database.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if !columns.iter().any(|current| current == column) {
-        database.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )?;
-    }
-    Ok(())
 }

@@ -1382,7 +1382,7 @@ impl TeamMcpServer {
             .teams
             .downgrade_to_standard(
                 team_id,
-                agent_id_value(agent_id),
+                agent_id.as_str(),
                 "native_permission_unavailable",
                 reason,
             )
@@ -1447,18 +1447,10 @@ impl TeamMcpServer {
             .find(|candidate| {
                 team.allowed_agent_ids
                     .iter()
-                    .any(|allowed| allowed == agent_id_value(*candidate))
+                    .any(|allowed| allowed == candidate.as_str())
                     && self.context.runtime.agent_available(*candidate)
             })
             .ok_or_else(|| mcp_error("no allowed and available Agent can run the discriminator"))
-    }
-}
-
-fn agent_id_value(agent_id: AgentId) -> &'static str {
-    match agent_id {
-        AgentId::ClaudeCode => "claude_code",
-        AgentId::Codex => "codex",
-        AgentId::OpenCode => "opencode",
     }
 }
 
