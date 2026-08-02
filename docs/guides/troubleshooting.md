@@ -75,11 +75,14 @@ waiting on a child process. A completed PTY should disappear from the terminal
 list. Server logs should include a process-exit event without exposing terminal
 contents.
 
-## Git diff returns an error
+## Git diff is unavailable
 
 Confirm the selected path is relative to the Project root and still exists in
-the repository. Refresh Git status before reopening a diff. For submodules,
-renames, binary files, or unusual worktree states, inspect the same path with
+the repository. Refresh Git status before reopening a diff. Binary, oversized,
+and unsupported diffs are recoverable states; select a smaller text change when
+appropriate. The status list is also bounded to 10,000 complete records or
+1 MiB; when its response is marked truncated, only a prefix is shown. For
+submodules, renames, or unusual worktree states, inspect the same path with
 local Git before reporting a Kubecode bug.
 
 ## Notifications do not appear

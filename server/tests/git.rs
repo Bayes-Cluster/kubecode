@@ -121,6 +121,12 @@ async fn projects_porcelain_v2_status_for_index_worktree_renames_and_unusual_pat
     fs::write(repository.join("white space.txt"), "space\n").expect("space path");
     let unicode_path = "na\u{00ef}ve.txt";
     fs::write(repository.join(unicode_path), "unicode\n").expect("unicode path");
+    fs::create_dir_all(repository.join("nested/untracked")).expect("nested directory");
+    fs::write(
+        repository.join("nested/untracked/file.txt"),
+        "nested untracked\n",
+    )
+    .expect("nested untracked path");
 
     let status = git.status(&project.id).await.expect("status");
     assert!(status.is_repository);
@@ -143,6 +149,10 @@ async fn projects_porcelain_v2_status_for_index_worktree_renames_and_unusual_pat
     );
     assert_eq!(change("white space.txt").worktree_status, Some('?'));
     assert_eq!(change(unicode_path).worktree_status, Some('?'));
+    assert_eq!(
+        change("nested/untracked/file.txt").worktree_status,
+        Some('?')
+    );
     assert!(status.files.iter().all(|change| !change.conflict));
 }
 
@@ -488,6 +498,7 @@ fn configure_identity(repository: &std::path::Path) {
         let status = Command::new("git")
             .args(["config", key, value])
             .current_dir(repository)
+            .env("GIT_TERMINAL_PROMPT", "0")
             .status()
             .expect("git config");
         assert!(status.success());
@@ -498,6 +509,7 @@ fn run_git(repository: &std::path::Path, arguments: &[&str]) {
     let status = Command::new("git")
         .args(arguments)
         .current_dir(repository)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .status()
         .expect("git command");
     assert!(status.success(), "git {arguments:?}");

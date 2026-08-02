@@ -285,6 +285,7 @@ fn run_git(cwd: impl AsRef<Path>, args: &[&str]) {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .expect("run git");
     assert!(
@@ -298,6 +299,7 @@ fn git_output(cwd: impl AsRef<Path>, args: &[&str]) -> String {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .expect("run git");
     assert!(output.status.success());

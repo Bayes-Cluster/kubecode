@@ -1875,6 +1875,7 @@ fn configure_git_identity(repository: &std::path::Path) {
         let status = Command::new("git")
             .args(["config", key, value])
             .current_dir(repository)
+            .env("GIT_TERMINAL_PROMPT", "0")
             .status()
             .expect("git config");
         assert!(status.success());
