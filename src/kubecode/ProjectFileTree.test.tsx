@@ -1,12 +1,36 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import type { KubecodeApi } from './api'
+import type { Entry, KubecodeApi } from './api'
+import type { FileTreeInvalidation } from './fileTreeInvalidation'
 import { ProjectFileTree } from './ProjectFileTree'
 
+function renderTree(
+  api: KubecodeApi,
+  props: Partial<Parameters<typeof ProjectFileTree>[0]> = {},
+) {
+  return render(
+    <ProjectFileTree
+      api={api}
+      invalidations={[]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={0}
+      t={createTranslator('en')}
+      {...props}
+    />,
+  )
+}
+
 describe('ProjectFileTree', () => {
+  beforeEach(() => {
+    globalThis.sessionStorage?.clear()
+  })
+
   it('renders the Project as a root and lazily expands nested directories', async () => {
     const onOpenFile = vi.fn()
     const api = {
@@ -73,5 +97,259 @@ describe('ProjectFileTree', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show hidden, ignored, and generated files' }))
     expect(await screen.findByRole('treeitem', { name: /\.env/ })).toBeInTheDocument()
     expect(screen.getByRole('treeitem', { name: /node_modules/ })).toBeInTheDocument()
+  })
+
+  it('expanding a directory loads only that directory', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    renderTree({ listEntries } as unknown as KubecodeApi)
+
+    expect(await screen.findByRole('treeitem', { name: /src/ })).toBeInTheDocument()
+    expect(listEntries).toHaveBeenCalledWith('project-1', '')
+    fireEvent.click(screen.getByRole('treeitem', { name: /src/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    expect(listEntries).not.toHaveBeenCalledWith('project-1', 'docs')
+    fireEvent.click(screen.getByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'docs'))
+  })
+
+  it('a scoped invalidation reloads only the affected loaded parent', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const { rerender } = renderTree({ listEntries } as unknown as KubecodeApi)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'docs'))
+    const srcCalls = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCalls = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      invalidations={[{ id: 1, payload: { paths: ['src/a.ts'] } }]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={0}
+      t={createTranslator('en')}
+    />)
+
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'src').length,
+      ).toBeGreaterThan(srcCalls)
+    })
+    expect(
+      listEntries.mock.calls.filter(([, path]) => path === 'docs').length,
+    ).toBe(docsCalls)
+  })
+
+  it('a cross-directory rename refreshes both parents and evicts stale descendant caches', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'old') {
+        return Promise.resolve([{ name: 'sub', path: 'old/sub', kind: 'directory' }])
+      }
+      if (path === 'old/sub') {
+        return Promise.resolve([{ name: 'deep.txt', path: 'old/sub/deep.txt', kind: 'file' }])
+      }
+      if (path === 'new' || path === 'docs') return Promise.resolve([])
+      return Promise.resolve([
+        { name: 'old', path: 'old', kind: 'directory' },
+        { name: 'new', path: 'new', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const { rerender } = renderTree({ listEntries } as unknown as KubecodeApi)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /old/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /sub/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /new/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'old'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'old/sub'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'new'))
+    const countFor = (path: string) => (
+      listEntries.mock.calls.filter(([, called]) => called === path).length
+    )
+    const oldBefore = countFor('old')
+    const newBefore = countFor('new')
+    const oldSubBefore = countFor('old/sub')
+    const docsBefore = countFor('docs')
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      invalidations={[{ id: 1, payload: { paths: ['old/sub', 'new/sub'] } }]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={0}
+      t={createTranslator('en')}
+    />)
+
+    await waitFor(() => {
+      expect(countFor('old')).toBeGreaterThan(oldBefore)
+      expect(countFor('new')).toBeGreaterThan(newBefore)
+      expect(countFor('old/sub')).toBeGreaterThan(oldSubBefore)
+    })
+    expect(countFor('docs')).toBe(docsBefore)
+  })
+
+  it('a late response from a stale request generation cannot overwrite current state', async () => {
+    let srcCalls = 0
+    let resolveFirst: (value: Entry[]) => void = () => undefined
+    let resolveSecond: (value: Entry[]) => void = () => undefined
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        srcCalls += 1
+        if (srcCalls === 1) {
+          return new Promise<Entry[]>((resolve) => { resolveFirst = resolve })
+        }
+        return new Promise<Entry[]>((resolve) => { resolveSecond = resolve })
+      }
+      if (path !== '') return Promise.resolve([])
+      return Promise.resolve([{ name: 'src', path: 'src', kind: 'directory' }])
+    })
+    const { rerender } = renderTree({ listEntries } as unknown as KubecodeApi)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      invalidations={[{ id: 1, payload: { paths: ['src/a.ts'] } }]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={0}
+      t={createTranslator('en')}
+    />)
+
+    await waitFor(() => expect(srcCalls).toBeGreaterThanOrEqual(2))
+    await act(async () => { resolveSecond([{ name: 'b.ts', path: 'src/b.ts', kind: 'file' }]) })
+    expect(await screen.findByRole('treeitem', { name: /b\.ts/ })).toBeInTheDocument()
+
+    await act(async () => { resolveFirst([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }]) })
+    expect(screen.queryByRole('treeitem', { name: /a\.ts/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: /b\.ts/ })).toBeInTheDocument()
+  })
+
+  it('a full reconciliation reloads every loaded directory', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const { rerender } = renderTree({ listEntries } as unknown as KubecodeApi)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'docs'))
+    const srcCalls = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCalls = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      invalidations={[]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={1}
+      t={createTranslator('en')}
+    />)
+
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'src').length,
+      ).toBeGreaterThan(srcCalls)
+    })
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'docs').length,
+      ).toBeGreaterThan(docsCalls)
+    })
+  })
+
+  it('a full invalidation payload reloads every loaded directory without server paths', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      return Promise.resolve([{ name: 'src', path: 'src', kind: 'directory' }])
+    })
+    const { rerender } = renderTree({ listEntries } as unknown as KubecodeApi)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    const srcCalls = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      invalidations={[{ id: 1, payload: { paths: [], full: true } } as FileTreeInvalidation]}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="project-1"
+      projectName="Demo"
+      refreshVersion={0}
+      t={createTranslator('en')}
+    />)
+
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'src').length,
+      ).toBeGreaterThan(srcCalls)
+    })
+  })
+
+  it('preserves expanded directories in sessionStorage across remounts', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      return Promise.resolve([{ name: 'src', path: 'src', kind: 'directory' }])
+    })
+    const props = {
+      api: { listEntries } as unknown as KubecodeApi,
+      onDirectoryChange: () => undefined,
+      onOpenFile: vi.fn(),
+      projectId: 'project-storage',
+      projectName: 'Demo',
+      refreshVersion: 0,
+      t: createTranslator('en'),
+    }
+    const first = render(<ProjectFileTree invalidations={[]} {...props} />)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    await waitFor(() => expect(screen.getByRole('treeitem', { name: /src/ })).toHaveAttribute('aria-expanded', 'true'))
+    first.unmount()
+
+    render(<ProjectFileTree invalidations={[]} {...props} />)
+    expect(await screen.findByRole('treeitem', { name: /src/ })).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-storage', 'src'))
   })
 })

@@ -129,7 +129,7 @@ describe('ContextWorkbench', () => {
         project_id: 'project-1',
         conversation_id: null,
         run_id: null,
-        payload: { path: 'new-file.ts' },
+        payload: { paths: ['new-file.ts'] },
         created_at: 'now',
       },
       {
@@ -146,6 +146,52 @@ describe('ContextWorkbench', () => {
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('new-file.ts')).toBeInTheDocument()
     expect(screen.getByText('new-folder')).toBeInTheDocument()
+  })
+
+  it('refreshes only the affected parent when a scoped file_changed arrives', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      if (path !== '') return Promise.resolve([])
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const api = {
+      listEntries,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const props = {
+      api,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      width: 440,
+    }
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'docs'))
+    const srcCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      fileChangedEvent(20, 'project-1', { paths: ['src/a.ts'] }),
+    ]} />)
+
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'src').length,
+      ).toBeGreaterThan(srcCallsBefore)
+    })
+    expect(
+      listEntries.mock.calls.filter(([, path]) => path === 'docs').length,
+    ).toBe(docsCallsBefore)
   })
 
   it('collapses Explorer sections without changing the active surface', async () => {
@@ -360,3 +406,19 @@ describe('ContextWorkbench', () => {
     expect(api.readFile).toHaveBeenCalledWith('project-1', 'notes/idea.md')
   })
 })
+
+function fileChangedEvent(
+  id: number,
+  projectId: string,
+  payload: { paths: string[]; full?: boolean },
+): Parameters<typeof ContextWorkbench>[0]['workspaceEvents'][number] {
+  return {
+    id,
+    kind: 'file_changed',
+    project_id: projectId,
+    conversation_id: null,
+    run_id: null,
+    payload,
+    created_at: 'now',
+  }
+}

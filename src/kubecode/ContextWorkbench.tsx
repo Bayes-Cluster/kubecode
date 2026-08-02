@@ -32,9 +32,15 @@ import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
 import type { SessionPlanEntry } from './AgentSessionWorkspace'
+import type { WorkspaceConnectionState } from './useWorkspaceEventStream'
 import { PathPicker, type PathPickerRow } from './PathPicker'
 import { ProjectFilePicker } from './ProjectFilePicker'
 import { ProjectFileTree } from './ProjectFileTree'
+import {
+  EMPTY_FILE_TREE_INVALIDATIONS,
+  aggregateFileChangedEvents,
+  type FileTreeInvalidation,
+} from './fileTreeInvalidation'
 import { searchProjectEntries } from './projectPathSearch'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
@@ -57,6 +63,7 @@ type OpenDocument = {
 type ContextWorkbenchProps = {
   api: KubecodeApi
   autoSave?: boolean
+  connectionState?: WorkspaceConnectionState
   planEntries?: SessionPlanEntry[]
   planRevealVersion?: number
   projectName?: string
@@ -69,6 +76,7 @@ type ContextWorkbenchProps = {
 export function ContextWorkbench({
   api,
   autoSave = false,
+  connectionState = 'live',
   planEntries = [],
   planRevealVersion = 0,
   projectName,
@@ -98,7 +106,10 @@ export function ContextWorkbench({
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
+  const lastForwardedFileEventIdRef = useRef(0)
+  const previousConnectionStateRef = useRef(connectionState)
   const savingDocumentsRef = useRef(new Set<string>())
+  const [fileTreeInvalidation, setFileTreeInvalidation] = useState<FileTreeInvalidation | null>(null)
   const projectDocuments = useMemo(
     () => documents.filter((item) => item.projectId === projectId),
     [documents, projectId],
@@ -147,11 +158,30 @@ export function ContextWorkbench({
       ?? processedWorkspaceEventRef.current
     const filesChanged = nextEvents.some((event) => event.kind === 'file_changed')
     const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
-    if (filesChanged) queueMicrotask(() => setFileTreeRevision((current) => current + 1))
     if (filesChanged || gitChanged) {
       void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
     }
+    const unforwardedFileEvents = nextEvents.filter(
+      (event) => event.kind === 'file_changed'
+        && event.id > lastForwardedFileEventIdRef.current,
+    )
+    if (unforwardedFileEvents.length > 0) {
+      lastForwardedFileEventIdRef.current = unforwardedFileEvents.at(-1)?.id
+        ?? lastForwardedFileEventIdRef.current
+      setFileTreeInvalidation({
+        id: lastForwardedFileEventIdRef.current,
+        payload: aggregateFileChangedEvents(unforwardedFileEvents),
+      })
+    }
   }, [api, projectId, reportError, workspaceEvents])
+
+  useEffect(() => {
+    const opened = connectionState === 'live' && previousConnectionStateRef.current !== 'live'
+    previousConnectionStateRef.current = connectionState
+    if (!opened || !projectId) return
+    setFileTreeRevision((current) => current + 1)
+    void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
+  }, [api, connectionState, projectId, reportError])
 
   useEffect(() => {
     const openQuickFile = (event: KeyboardEvent) => {
@@ -456,6 +486,9 @@ export function ContextWorkbench({
             {projectId && (
               <ProjectFileTree
                 api={api}
+                invalidations={fileTreeInvalidation
+                  ? [fileTreeInvalidation]
+                  : EMPTY_FILE_TREE_INVALIDATIONS}
                 key={projectId}
                 onDirectoryChange={setSelectedDirectory}
                 onOpenFile={(entry) => void openEntry(entry)}
@@ -526,7 +559,6 @@ export function ContextWorkbench({
         state={entryDialog}
         onOpenChange={(open) => { if (!open) setEntryDialog(null) }}
         onCreated={(entry) => {
-          setFileTreeRevision((current) => current + 1)
           if (entry.kind === 'file') void openEntry(entry)
         }}
         t={t}

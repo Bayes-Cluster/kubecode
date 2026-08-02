@@ -473,6 +473,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   <ContextWorkbench
                     api={api}
                     autoSave={editorPreferences.autoSave}
+                    connectionState={reconciliation.connectionState}
                     planEntries={activeSessionPlan}
                     planRevealVersion={planRevealVersion}
                     projectName={project?.name ?? undefined}

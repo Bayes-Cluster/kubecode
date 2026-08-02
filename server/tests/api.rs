@@ -1664,6 +1664,94 @@ async fn manages_project_registration_and_entry_lifecycle_over_http() {
 }
 
 #[tokio::test]
+async fn entry_mutations_publish_canonical_path_scoped_file_changed_events() {
+    let (temp, _, store, app) = workspace_sse_app();
+    let (status, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/paths")}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let project_id = project["id"].as_str().expect("project id");
+    let entries_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/entries");
+    let file_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/file");
+
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &entries_uri,
+        json!({"path":"src/main.rs", "kind":"file"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, document) = json_request(
+        &app,
+        Method::GET,
+        &format!("{file_uri}?path=src/main.rs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let revision = document["revision"].as_str().expect("document revision");
+    let (status, _) = json_request(
+        &app,
+        Method::PUT,
+        &format!("{file_uri}?path=src/main.rs"),
+        json!({"content":"let answer = 42;\n", "revision":revision}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = json_request(
+        &app,
+        Method::PATCH,
+        &entries_uri,
+        json!({"from":"src/main.rs", "to":"src/lib.rs"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = json_request(
+        &app,
+        Method::POST,
+        &entries_uri,
+        json!({"path":"docs/guide.md", "kind":"file"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{entries_uri}?path=src/lib.rs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let file_changed = store
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .filter(|event| event.kind == "file_changed")
+        .map(|event| event.payload)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        file_changed,
+        vec![
+            json!({"paths":["src/main.rs"]}),
+            json!({"paths":["src/main.rs"]}),
+            json!({"paths":["src/lib.rs","src/main.rs"]}),
+            json!({"paths":["docs/guide.md"]}),
+            json!({"paths":["src/lib.rs"]}),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn supports_session_aliases_global_events_permissions_and_git_review() {
     let (temp, app) = app();
     let (_, project) = json_request(
