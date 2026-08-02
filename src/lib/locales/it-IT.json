@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Questo diff supera il limite di blocchi. Seleziona invece un file modificato più piccolo.",
   "kubecode.gitDiffTooManyFiles": "Seleziona singoli file perché il diff completo contiene troppi file.",
   "kubecode.gitDiffContainsUnsupported": "Seleziona un file idoneo perché il diff completo contiene contenuti non supportati.",
+  "kubecode.gitDiffFailed": "Impossibile caricare questo diff.",
+  "kubecode.gitDiffLoading": "Caricamento diff…",
   "kubecode.gitDiffUnavailable": "Questo diff Git non è disponibile.",
   "kubecode.searchContext": "Cerca skill, comandi e file",
   "kubecode.noContextFound": "Nessun file o cartella corrispondente",

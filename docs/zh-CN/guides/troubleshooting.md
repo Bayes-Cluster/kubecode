@@ -67,11 +67,13 @@ Blocked Task 和 Provider Limit。解决根因后再 Resume Team。
 Child Process。完成的 PTY 应从 Terminal List 消失。Server Log 应包含 Process
 Exit Event，但不能记录 Terminal Content。
 
-## Git Diff 返回错误
+## Git Diff 不可用
 
 确认选择的 Path 相对于 Project Root，并且仍存在于 Repository 中。重新打开
-Diff 前先刷新 Git Status。对于 Submodule、Rename、Binary File 或特殊
-Worktree State，报告 Kubecode Bug 前先用本地 Git 检查相同路径。
+Diff 前先刷新 Git Status。Binary、超大或不支持的 Diff 是可恢复状态；适当
+情况下选择更小的文本变更。Diff 加载失败可以从 Diff 视图重试。对于
+Submodule、Rename 或特殊 Worktree State，报告 Kubecode Bug 前先用本地 Git
+检查相同路径。
 
 ## Notification 没有出现
 

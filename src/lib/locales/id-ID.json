@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Diff ini melebihi batas jumlah bagian. Pilih file lain yang diubah dengan ukuran lebih kecil.",
   "kubecode.gitDiffTooManyFiles": "Pilih file satu per satu karena diff lengkap berisi terlalu banyak file.",
   "kubecode.gitDiffContainsUnsupported": "Pilih file yang didukung karena diff lengkap berisi konten yang tidak didukung.",
+  "kubecode.gitDiffFailed": "Diff ini tidak dapat dimuat.",
+  "kubecode.gitDiffLoading": "Memuat diff…",
   "kubecode.gitDiffUnavailable": "Diff Git ini tidak tersedia.",
   "kubecode.searchContext": "Cari skill, perintah, dan file",
   "kubecode.noContextFound": "Tidak ada file atau folder yang cocok",

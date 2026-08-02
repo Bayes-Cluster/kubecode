@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Этот diff превышает лимит блоков. Вместо него выберите изменённый файл меньшего размера.",
   "kubecode.gitDiffTooManyFiles": "Выберите отдельные файлы: полный diff содержит слишком много файлов.",
   "kubecode.gitDiffContainsUnsupported": "Выберите допустимый файл: полный diff содержит неподдерживаемые данные.",
+  "kubecode.gitDiffFailed": "Не удалось загрузить этот diff.",
+  "kubecode.gitDiffLoading": "Загрузка diff…",
   "kubecode.gitDiffUnavailable": "Этот diff Git недоступен.",
   "kubecode.searchContext": "Поиск навыков, команд и файлов",
   "kubecode.noContextFound": "Подходящие файлы или папки не найдены",

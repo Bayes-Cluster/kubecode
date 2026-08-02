@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "此差異超過區塊數量限制，請改選較小的已變更檔案。",
   "kubecode.gitDiffTooManyFiles": "完整差異包含過多檔案，請選擇單一檔案。",
   "kubecode.gitDiffContainsUnsupported": "完整差異包含不支援的內容，請選擇可用檔案。",
+  "kubecode.gitDiffFailed": "無法載入此差異。",
+  "kubecode.gitDiffLoading": "正在載入差異…",
   "kubecode.gitDiffUnavailable": "此 Git 差異無法使用。",
   "kubecode.searchContext": "搜尋技能、命令與檔案",
   "kubecode.noContextFound": "沒有相符的檔案或資料夾",

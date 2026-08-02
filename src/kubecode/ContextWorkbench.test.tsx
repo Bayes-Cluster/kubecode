@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import { ContextWorkbench } from './ContextWorkbench'
-import type { KubecodeApi } from './api'
+import type { GitDiffResult, KubecodeApi } from './api'
 
 vi.mock('./CodeEditor', () => ({
   CodeEditor: ({ content, onChange }: { content: string; onChange: (value: string) => void }) => (
@@ -117,11 +117,275 @@ describe('ContextWorkbench', () => {
     fireEvent.click((await screen.findByText('new file.txt')).closest('button') as HTMLButtonElement)
     expect(await screen.findByText('+server patch')).toBeInTheDocument()
     expect(api.readFile).not.toHaveBeenCalled()
-    expect(gitDiff).toHaveBeenCalledWith('project-1', 'new file.txt', false)
+    expect(gitDiff).toHaveBeenCalledWith(
+      'project-1',
+      'new file.txt',
+      false,
+      expect.any(AbortSignal),
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
     fireEvent.click(screen.getByText('binary.dat').closest('button') as HTMLButtonElement)
     expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+  })
+
+  it('does not display a stale diff when the selection changes quickly', async () => {
+    let resolveFirst!: (value: GitDiffResult) => void
+    let resolveSecond!: (value: GitDiffResult) => void
+    const gitDiff = vi.fn()
+      .mockImplementationOnce(() => (
+        new Promise<GitDiffResult>((resolve) => { resolveFirst = resolve })
+      ))
+      .mockImplementationOnce(() => (
+        new Promise<GitDiffResult>((resolve) => { resolveSecond = resolve })
+      ))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'b.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    fireEvent.click(screen.getByText('b.txt').closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+
+    await act(async () => { resolveSecond({ diff: 'b diff', unavailable_reason: null }) })
+    expect(await screen.findByText('b diff')).toBeInTheDocument()
+
+    await act(async () => { resolveFirst({ diff: 'a diff', unavailable_reason: null }) })
+    expect(screen.queryByText('a diff')).not.toBeInTheDocument()
+    expect(screen.getByText('b diff')).toBeInTheDocument()
+  })
+
+  it('switches between staged and worktree diffs for a partially staged path', async () => {
+    const gitDiff = vi.fn().mockImplementation(
+      async (_projectId: string, _path: string, staged: boolean) => ({
+        diff: `staged=${String(staged)} diff`,
+        unavailable_reason: null,
+      }),
+    )
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{
+          path: 'partial.txt',
+          original_path: null,
+          index_status: 'M',
+          worktree_status: 'M',
+          conflict: false,
+        }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const rows = (await screen.findAllByText('partial.txt'))
+      .filter((element) => element.closest('.kubecode-git-path'))
+    expect(rows).toHaveLength(2)
+    fireEvent.click(rows[0].closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('staged=true diff')).toBeInTheDocument()
+    expect(gitDiff).toHaveBeenLastCalledWith(
+      'project-1',
+      'partial.txt',
+      true,
+      expect.any(AbortSignal),
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    const worktreeRows = screen.getAllByText('partial.txt')
+      .filter((element) => element.closest('.kubecode-git-path'))
+    fireEvent.click(worktreeRows[1].closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('staged=false diff')).toBeInTheDocument()
+    expect(gitDiff).toHaveBeenLastCalledWith(
+      'project-1',
+      'partial.txt',
+      false,
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('aborts an in-flight diff and resets the view when the Project changes', async () => {
+    const signals: AbortSignal[] = []
+    let resolveDiff!: (value: GitDiffResult) => void
+    const gitDiff = vi.fn().mockImplementation(
+      (_projectId: string, _path: string, _staged: boolean, signal?: AbortSignal) => {
+        signals.push(signal as AbortSignal)
+        return new Promise<GitDiffResult>((resolve) => { resolveDiff = resolve })
+      },
+    )
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+    const props = {
+      api,
+      t: createTranslator('en'),
+      width: 440,
+      workspaceEvents: [],
+    }
+    const { rerender } = render(<ContextWorkbench {...props} projectId="project-a" />)
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+    expect(signals[0].aborted).toBe(false)
+
+    rerender(<ContextWorkbench {...props} projectId="project-b" />)
+    await waitFor(() => expect(signals[0].aborted).toBe(true))
+    await act(async () => { resolveDiff({ diff: 'stale diff', unavailable_reason: null }) })
+    expect(screen.queryByText('stale diff')).not.toBeInTheDocument()
+  })
+
+  it('renders a localized recoverable state for every bounded diff reason', async () => {
+    const gitDiff = vi.fn().mockImplementation(async (_projectId: string, path: string) => {
+      if (path === 'binary.dat') return { diff: null, unavailable_reason: 'binary' }
+      if (path === 'large.txt') return { diff: null, unavailable_reason: 'oversized' }
+      if (path === 'unsupported.txt') return { diff: null, unavailable_reason: 'unsupported' }
+      return { diff: null, unavailable_reason: null }
+    })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'binary.dat', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'large.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'unsupported.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'empty.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const clickRow = async (path: string) => {
+      fireEvent.click((await screen.findByText(path)).closest('button') as HTMLButtonElement)
+    }
+
+    await clickRow('binary.dat')
+    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('large.txt')
+    expect(await screen.findByText('This diff exceeds the context byte limit. Select a smaller changed file instead.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('unsupported.txt')
+    expect(await screen.findByText('This Git diff is unavailable.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('empty.txt')
+    expect(await screen.findByText('No textual diff is available for this file.')).toBeInTheDocument()
+  })
+
+  it('shows a localized recoverable failed state and retries', async () => {
+    const gitDiff = vi.fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ diff: 'recovered diff', unavailable_reason: null })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('This diff could not be loaded.')
+    expect(screen.getByText('boom')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('recovered diff')).toBeInTheDocument()
+  })
+
+  it('closes the diff view back to the Explorer surface', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff: vi.fn().mockResolvedValue({ diff: 'a diff', unavailable_reason: null }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('a diff')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'a.txt' })).toHaveAttribute('data-state', 'active')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close diff' }))
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByText('a diff')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'a.txt' })).not.toBeInTheDocument()
   })
 
   it('initializes Git from an untracked project', async () => {

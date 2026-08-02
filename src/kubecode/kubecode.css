@@ -1855,6 +1855,25 @@
   padding: 12px 4px 4px;
 }
 .kubecode-diff-view { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
+.kubecode-diff-message {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+}
+.kubecode-diff-message strong { color: var(--text-primary); }
+.kubecode-diff-message small {
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
 .kubecode-diff-view pre {
   background: var(--surface-editor);
   color: var(--text-primary);
