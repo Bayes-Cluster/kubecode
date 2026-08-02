@@ -11,7 +11,7 @@ import {
   aiAgentPermissionModeLabels,
   type AiAgentPermissionMode,
 } from '../lib/aiAgentPermissionMode'
-import { createTranslator, type AppLocale } from '../lib/i18n'
+import { createTranslator, type AppLocale, type Translator } from '../lib/i18n'
 import type { AiAgentMessage } from '../lib/aiAgentConversation'
 import type { AiAgentReadiness } from '../lib/aiAgents'
 import type { NoteReference } from '../utils/ai-context'
@@ -80,7 +80,7 @@ interface AiPanelComposerProps {
 function getComposerPlaceholder(
   agentLabel: string,
   agentReadiness: AiAgentReadiness,
-  t: ReturnType<typeof createTranslator>,
+  t: Translator,
 ): string {
   if (agentReadiness === 'checking') {
     return t('ai.panel.placeholder.checking')
@@ -222,7 +222,7 @@ function ComposerStopButton({
 
 function permissionModeTooltip(
   mode: AiAgentPermissionMode,
-  t: ReturnType<typeof createTranslator>,
+  t: Translator,
 ): { label: string } {
   return {
     label: t(mode === 'power_user'
@@ -240,7 +240,7 @@ function headerStatusText({
   agentLabel: string
   agentReadiness: AiAgentReadiness
   modeLabel: string
-  t: ReturnType<typeof createTranslator>
+  t: Translator
 }): string {
   if (agentReadiness === 'checking') return t('ai.panel.status.checking')
   if (agentReadiness === 'missing') return t('ai.panel.status.missing', { agent: agentLabel })

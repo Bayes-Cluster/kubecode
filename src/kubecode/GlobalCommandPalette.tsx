@@ -13,7 +13,7 @@ import { useId, useMemo, useState, type ReactNode } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import type { TranslationKey, TranslationValues } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { ComposerCatalogSnapshot } from './api'
 import {
@@ -22,8 +22,6 @@ import {
   type RankedCommandPaletteItem,
 } from './commandPalette'
 import type { RegisteredHostAction } from './hostActions'
-
-type Translator = (key: TranslationKey, values?: TranslationValues) => string
 
 const SCOPE_LABEL_KEYS: Record<RankedCommandPaletteItem['scope'], TranslationKey> = {
   bundled: 'kubecode.capabilityScopeBundled',

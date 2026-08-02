@@ -2,7 +2,7 @@ import { Eye, EyeSlash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { TranslationKey } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
 import type { Entry, KubecodeApi } from './api'
 import { PathPicker, type PathPickerRow } from './PathPicker'
@@ -21,7 +21,7 @@ type ProjectFilePickerProps = {
   projectId: string
   recentPaths?: string[]
   refreshVersion?: number
-  t: (key: TranslationKey) => string
+  t: Translator
 }
 
 const EMPTY_PATHS: string[] = []

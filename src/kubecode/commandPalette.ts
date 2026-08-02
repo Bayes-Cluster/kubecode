@@ -1,5 +1,6 @@
 import type { AgentId, ComposerCatalogItem, ComposerCatalogSnapshot } from './api'
 import { rankComposerCapabilities } from './composerCapabilities'
+import { fuzzyMatchRank } from './fuzzyMatch'
 
 export type RankedCommandPaletteItem = ComposerCatalogItem & {
   catalogRevision: number
@@ -19,14 +20,14 @@ function normalized(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase()
 }
 
-function isSubsequence(query: string, candidate: string): boolean {
-  let queryIndex = 0
-  for (const character of candidate) {
-    if (character === query[queryIndex]) queryIndex += 1
-    if (queryIndex === query.length) return true
-  }
-  return false
-}
+const COMMAND_PALETTE_MATCH_WEIGHTS = {
+  empty: 5,
+  exact: 0,
+  prefix: 1,
+  secondary: 4,
+  subsequence: 3,
+  substring: 2,
+} as const
 
 export function commandPaletteMatchRank(
   name: string,
@@ -34,14 +35,10 @@ export function commandPaletteMatchRank(
   query: string,
 ): number | null {
   const normalizedQuery = normalized(query.trim())
-  if (!normalizedQuery) return 5
-  const normalizedName = normalized(name)
-  if (normalizedName === normalizedQuery) return 0
-  if (normalizedName.startsWith(normalizedQuery)) return 1
-  if (normalizedName.includes(normalizedQuery)) return 2
-  if (isSubsequence(normalizedQuery, normalizedName)) return 3
-  if (normalized(description ?? '').includes(normalizedQuery)) return 4
-  return null
+  return fuzzyMatchRank(normalizedQuery, {
+    primary: [normalized(name)],
+    secondary: [normalized(description ?? '')],
+  }, COMMAND_PALETTE_MATCH_WEIGHTS)
 }
 
 export function commandPaletteCatalogGroups(

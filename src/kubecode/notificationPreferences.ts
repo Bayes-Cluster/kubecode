@@ -1,3 +1,5 @@
+import { createPreferenceStorage, type PreferenceStorage } from './preferenceStorage'
+
 export const KUBECODE_NOTIFICATION_STORAGE_KEY = 'kubecode:notifications:v1'
 
 export const NOTIFICATION_CATEGORIES = ['completion', 'attention', 'error'] as const
@@ -19,8 +21,6 @@ export const DEFAULT_KUBECODE_NOTIFICATIONS: KubecodeNotifications = {
   sound: { completion: 'system', attention: 'system', error: 'system' },
   onboardingDismissed: false,
 }
-
-type NotificationStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 const MODES = new Set<NotificationMode>(['off', 'unfocused', 'always'])
 const SOUNDS = new Set<NotificationSound>(['system', 'none'])
@@ -49,24 +49,21 @@ export function normalizeKubecodeNotifications(value: unknown): KubecodeNotifica
   }
 }
 
-export function readKubecodeNotifications(storage: NotificationStorage): KubecodeNotifications {
-  try {
-    const stored = storage.getItem(KUBECODE_NOTIFICATION_STORAGE_KEY)
-    return normalizeKubecodeNotifications(stored ? JSON.parse(stored) : null)
-  } catch {
-    return DEFAULT_KUBECODE_NOTIFICATIONS
-  }
+const notificationPreferenceStorage = createPreferenceStorage({
+  defaultValue: () => DEFAULT_KUBECODE_NOTIFICATIONS,
+  key: () => KUBECODE_NOTIFICATION_STORAGE_KEY,
+  normalize: normalizeKubecodeNotifications,
+})
+
+export function readKubecodeNotifications(storage: PreferenceStorage): KubecodeNotifications {
+  return notificationPreferenceStorage.read(storage)
 }
 
 export function writeKubecodeNotifications(
-  storage: NotificationStorage,
+  storage: PreferenceStorage,
   preferences: KubecodeNotifications,
 ): void {
-  try {
-    storage.setItem(KUBECODE_NOTIFICATION_STORAGE_KEY, JSON.stringify(preferences))
-  } catch {
-    // Browser storage can be unavailable in restricted contexts.
-  }
+  notificationPreferenceStorage.write(storage, preferences)
 }
 
 function record(value: unknown): Record<string, unknown> {

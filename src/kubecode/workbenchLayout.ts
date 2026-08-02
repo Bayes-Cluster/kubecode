@@ -1,3 +1,5 @@
+import { createPreferenceStorage, type PreferenceStorage } from './preferenceStorage'
+
 export const WORKBENCH_LAYOUT_STORAGE_KEY = 'kubecode:workbench-layout:v2'
 
 export type WorkbenchNavigatorLayout = {
@@ -13,8 +15,6 @@ export type ProjectWorkbenchLayout = {
   terminalOpen: boolean
 }
 
-type LayoutStorage = Pick<Storage, 'getItem' | 'setItem'>
-
 const DEFAULT_NAVIGATOR_LAYOUT: WorkbenchNavigatorLayout = {
   expandedProjectIds: [],
   navigatorOpen: true,
@@ -28,55 +28,61 @@ const DEFAULT_PROJECT_LAYOUT: ProjectWorkbenchLayout = {
   terminalOpen: false,
 }
 
-export function readWorkbenchNavigatorLayout(
-  storage: LayoutStorage,
-  initialProjectId: string | null,
-): WorkbenchNavigatorLayout {
-  const stored = readRecord(storage, WORKBENCH_LAYOUT_STORAGE_KEY)
-  if (stored) {
-    return {
+const navigatorLayoutStorage = createPreferenceStorage<WorkbenchNavigatorLayout, [initialProjectId: string | null]>({
+  defaultValue: (initialProjectId) => defaultNavigatorLayout(initialProjectId),
+  key: () => WORKBENCH_LAYOUT_STORAGE_KEY,
+  migrate: (read, initialProjectId) => {
+    const legacy = initialProjectId ? record(read(legacyProjectLayoutKey(initialProjectId))) : null
+    return legacy ? {
+      expandedProjectIds: initialProjectId ? [initialProjectId] : [],
+      navigatorOpen: booleanValue(legacy.sessionSidebarOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
+      navigatorWidth: numericValue(legacy.sessionSidebarWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
+    } : undefined
+  },
+  normalize: (value) => {
+    const stored = record(value)
+    return stored ? {
       expandedProjectIds: normalizedProjectIds(stored.expandedProjectIds),
       navigatorOpen: booleanValue(stored.navigatorOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
       navigatorWidth: numericValue(stored.navigatorWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
-    }
-  }
-  const legacy = initialProjectId
-    ? readRecord(storage, legacyProjectLayoutKey(initialProjectId))
-    : null
-  return {
-    expandedProjectIds: initialProjectId ? [initialProjectId] : [],
-    navigatorOpen: booleanValue(legacy?.sessionSidebarOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
-    navigatorWidth: numericValue(legacy?.sessionSidebarWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
-  }
+    } : undefined
+  },
+})
+
+const projectLayoutStorage = createPreferenceStorage<ProjectWorkbenchLayout, [projectId: string]>({
+  defaultValue: () => DEFAULT_PROJECT_LAYOUT,
+  key: projectLayoutKey,
+  migrate: (read, projectId) => normalizedProjectLayout(read(legacyProjectLayoutKey(projectId))),
+  normalize: normalizedProjectLayout,
+})
+
+export function readWorkbenchNavigatorLayout(
+  storage: PreferenceStorage,
+  initialProjectId: string | null,
+): WorkbenchNavigatorLayout {
+  return navigatorLayoutStorage.read(storage, initialProjectId)
 }
 
 export function writeWorkbenchNavigatorLayout(
-  storage: LayoutStorage,
+  storage: PreferenceStorage,
   layout: WorkbenchNavigatorLayout,
 ): void {
-  writeRecord(storage, WORKBENCH_LAYOUT_STORAGE_KEY, layout)
+  navigatorLayoutStorage.write(storage, layout, null)
 }
 
 export function readProjectWorkbenchLayout(
-  storage: LayoutStorage,
+  storage: PreferenceStorage,
   projectId: string,
 ): ProjectWorkbenchLayout {
-  const stored = readRecord(storage, projectLayoutKey(projectId))
-    ?? readRecord(storage, legacyProjectLayoutKey(projectId))
-  return {
-    contextOpen: booleanValue(stored?.contextOpen, DEFAULT_PROJECT_LAYOUT.contextOpen),
-    contextWidth: numericValue(stored?.contextWidth, DEFAULT_PROJECT_LAYOUT.contextWidth),
-    terminalHeight: numericValue(stored?.terminalHeight, DEFAULT_PROJECT_LAYOUT.terminalHeight),
-    terminalOpen: booleanValue(stored?.terminalOpen, DEFAULT_PROJECT_LAYOUT.terminalOpen),
-  }
+  return projectLayoutStorage.read(storage, projectId)
 }
 
 export function writeProjectWorkbenchLayout(
-  storage: LayoutStorage,
+  storage: PreferenceStorage,
   projectId: string,
   layout: ProjectWorkbenchLayout,
 ): void {
-  writeRecord(storage, projectLayoutKey(projectId), layout)
+  projectLayoutStorage.write(storage, layout, projectId)
 }
 
 function projectLayoutKey(projectId: string): string {
@@ -87,21 +93,25 @@ function legacyProjectLayoutKey(projectId: string): string {
   return `kubecode:layout:${projectId}`
 }
 
-function readRecord(storage: LayoutStorage, key: string): Record<string, unknown> | null {
-  try {
-    const value: unknown = JSON.parse(storage.getItem(key) ?? 'null')
-    return value && typeof value === 'object' ? value as Record<string, unknown> : null
-  } catch {
-    return null
+function defaultNavigatorLayout(initialProjectId: string | null): WorkbenchNavigatorLayout {
+  return {
+    ...DEFAULT_NAVIGATOR_LAYOUT,
+    expandedProjectIds: initialProjectId ? [initialProjectId] : [],
   }
 }
 
-function writeRecord(storage: LayoutStorage, key: string, value: unknown): void {
-  try {
-    storage.setItem(key, JSON.stringify(value))
-  } catch {
-    // Restricted browser contexts can disable local storage.
-  }
+function normalizedProjectLayout(value: unknown): ProjectWorkbenchLayout | undefined {
+  const stored = record(value)
+  return stored ? {
+    contextOpen: booleanValue(stored.contextOpen, DEFAULT_PROJECT_LAYOUT.contextOpen),
+    contextWidth: numericValue(stored.contextWidth, DEFAULT_PROJECT_LAYOUT.contextWidth),
+    terminalHeight: numericValue(stored.terminalHeight, DEFAULT_PROJECT_LAYOUT.terminalHeight),
+    terminalOpen: booleanValue(stored.terminalOpen, DEFAULT_PROJECT_LAYOUT.terminalOpen),
+  } : undefined
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
 }
 
 function normalizedProjectIds(value: unknown): string[] {

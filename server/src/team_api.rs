@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::RuntimeError;
 use crate::agents::{AgentId, Conversation, ExecutionMode, RunStatus, StoreError};
-use crate::api::AppState;
+use crate::app_state::AppState;
 use crate::team_coordinator::TeamCoordinator;
 use crate::teams::{
     MemberManagementPolicy, NewTeam, StartTeam, Team, TeamActivity, TeamDiscriminationRound,
@@ -415,7 +415,7 @@ fn inspect_native_yolo(state: &AppState, team: &Team) -> Result<NativePreparatio
     }) {
         collect_native_choices(&event.payload, &mut choices);
     }
-    let agent_id = native_agent_id(conversation.agent_id);
+    let agent_id = conversation.agent_id.as_str();
     if conversation.agent_id != AgentId::OpenCode
         && !has_maximum_permission_profile(conversation.agent_id, &choices)
     {
@@ -434,14 +434,6 @@ fn inspect_native_yolo(state: &AppState, team: &Team) -> Result<NativePreparatio
             .flatten(),
         conversation_id: conversation.id,
     })
-}
-
-fn native_agent_id(agent_id: AgentId) -> &'static str {
-    match agent_id {
-        AgentId::ClaudeCode => "claude_code",
-        AgentId::Codex => "codex",
-        AgentId::OpenCode => "opencode",
-    }
 }
 
 fn current_native_mode(events: &[crate::agents::SessionEvent]) -> Option<String> {

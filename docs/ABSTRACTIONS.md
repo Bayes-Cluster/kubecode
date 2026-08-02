@@ -58,6 +58,17 @@ Export patch, or Discard resolution. Active Agent runs prevent migration, and a
 Git conflict leaves Workspaces enabled so the user can resolve it before
 continuing.
 
+## Persistence boundary
+
+`Database` is the process-owned SQLite boundary: one connection, one mutex, and
+one owner lock for the state database. Server startup constructs
+`WorkspaceService`, `AgentStore`, and `TeamStore` from the same `Arc<Database>`.
+The Agent and Team stores split their SQL operations into feature modules, but
+those modules are implementation units of the stores rather than Repository
+objects or independent connection owners. Multi-statement state transitions use
+the shared connection's immediate transactions; provider calls and filesystem
+changes remain outside those transactions.
+
 ## Agent Session and Agent Chat
 
 An Agent Session owns an execution boundary: Project, cwd, shared/worktree
@@ -521,7 +532,8 @@ another filesystem boundary or allow absolute paths.
 
 ## ACP actor
 
-`AgentRuntime` owns at most one actor per connected Session. The actor
+`AgentRuntime` is the sole owner of ACP actors and their adapter/provider
+subprocess lifecycle. It owns at most one actor per connected Session. The actor
 serializes prompts, polls mode and configuration changes while a prompt is
 active, and normalizes ACP updates into durable Kubecode events. It resumes an
 existing provider Session when possible and falls back to loading it. Inactive

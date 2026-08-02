@@ -48,10 +48,36 @@ The Axum server composes eight services:
 - `TeamCoordinator` creates teammate Agent Sessions and applies Team scheduling rules.
 
 SQLite is application metadata, not project content. One server-owned
-connection is shared by the Workspace, Agent, and Team stores and uses rollback
-journaling with immediate write transactions. A process owner lock rejects a
-second Kubecode server for the same state database. Project files remain on
-disk at their original absolute paths.
+`Database`, containing one connection and mutex, is shared by
+`WorkspaceService`, `AgentStore`, and `TeamStore`. The Agent and Team stores use
+that same persistence and transaction boundary directly; there is no Repository
+layer between a store and SQLite. The connection uses rollback journaling with
+immediate write transactions. A process owner lock rejects a second Kubecode
+server for the same state database. Project files remain on disk at their
+original absolute paths.
+
+## Source boundaries
+
+The server source tree follows the service boundaries. `server/src/api/`
+contains Axum route composition and request handlers. `server/src/agent_runtime/`
+contains the actor pool, ACP adapter launch, dispatch, event journal, and
+interactive request handling; `AgentRuntime` is the sole owner of ACP actors and
+their provider subprocess lifecycle. `server/src/agent_store/` and
+`server/src/team_store/` group persistence operations by feature while retaining
+one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
+`server/src/teams.rs` are public compatibility re-export shims, not competing
+store implementations.
+
+The browser workspace follows the same composition pattern.
+`src/kubecode/app/` owns application bootstrap, navigation, dialogs, preferences,
+and the workbench shell; `src/kubecode/session/` owns the Agent Session timeline,
+Composer, state, and history; `src/kubecode/api/` owns API types, queries, and the
+client; and `src/kubecode/team/` owns Team feature views and lifecycle helpers.
+`App.tsx` remains the application entry composition boundary,
+`AgentSessionWorkspace.tsx` remains a compatibility export,
+`TeamWorkspaceView.tsx` composes the Team feature views, and `api.ts` remains the
+public API barrel. These top-level files preserve stable imports without
+reintroducing feature implementations.
 
 A Project may opt into Workspaces. New Agent Sessions can then execute either
 at the shared Project root or in a server-managed Git worktree below the private
@@ -73,14 +99,15 @@ partial failures remain resumable while Workspaces stays enabled.
 
 ## Browser workspace
 
-`src/kubecode/App.tsx` renders one hierarchical Project/Session navigator, a
-primary Agent timeline/composer, a docked Explorer, and a Terminal dock. The
-single 44-pixel title bar contains the active Session identity, global Session
-search, attention, and layout controls. Navigator visibility is global; Explorer
-and Terminal geometry remain Project-scoped. All surrounding panels are
-resizable and independently collapsible. Below 980 pixels, the navigator and
-Explorer are mutually exclusive overlay panels with a dismissible backdrop;
-desktop geometry and resizing remain unchanged.
+`src/kubecode/App.tsx` delegates to `app/WorkbenchShell.tsx`, which renders one
+hierarchical Project/Session navigator, a primary Agent timeline/composer, a
+docked Explorer, and a Terminal dock. The single 44-pixel title bar contains the
+active Session identity, global Session search, attention, and layout controls.
+Navigator visibility is global; Explorer and Terminal geometry remain
+Project-scoped. All surrounding panels are resizable and independently
+collapsible. Below 980 pixels, the navigator and Explorer are mutually exclusive
+overlay panels with a dismissible backdrop; desktop geometry and resizing
+remain unchanged.
 
 The navigator searches, filters, sorts, groups, archives, forks, and deletes
 Sessions beneath their owning Project. Query matches temporarily reveal

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { KubecodeApi, apiBasePath, type RuntimeStatus } from './api'
+import { KubecodeApi, apiBasePath, type RuntimeStatus } from '../api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -620,5 +620,393 @@ describe('Kubecode API client', () => {
         method: 'PATCH',
       }),
     )
+  })
+
+  it('lists directories and creates, imports, and unregisters Projects', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.listDirectories('src')
+    await api.createProject('/tmp/foo')
+    await api.importProject('/tmp/bar')
+    await api.unregisterProject('project/1')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/filesystem/directories?path=src',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'create', path: '/tmp/foo' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/projects',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'import', path: '/tmp/bar' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/projects/project%2F1',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+
+  it('manages file entries through CRUD routes below the base path', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.listEntries('project/1', 'src')
+    await api.createEntry('project/1', 'src/readme.md', 'file')
+    await api.renameEntry('project/1', 'a.ts', 'b.ts')
+    await api.deleteEntry('project/1', 'src/old.ts')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/user/alice/kubecode/api/v1/projects/project%2F1/entries?path=src',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/user/alice/kubecode/api/v1/projects/project%2F1/entries',
+      expect.objectContaining({
+        body: JSON.stringify({ path: 'src/readme.md', kind: 'file' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/user/alice/kubecode/api/v1/projects/project%2F1/entries',
+      expect.objectContaining({
+        body: JSON.stringify({ from: 'a.ts', to: 'b.ts' }),
+        method: 'PATCH',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/user/alice/kubecode/api/v1/projects/project%2F1/entries?path=src%2Fold.ts',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+
+  it('writes a file with an optimistic revision', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ content: 'x' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.writeFile('project-1', 'README.md', 'hello', 'rev-3')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/file?path=README.md',
+      expect.objectContaining({
+        body: JSON.stringify({ content: 'hello', revision: 'rev-3' }),
+        method: 'PUT',
+      }),
+    )
+  })
+
+  it('reads Git status and drives Git init, mutate, and commit', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.gitStatus('project-1')
+    await api.initializeGit('project-1')
+    await api.mutateGit('project-1', 'stage', ['README.md'])
+    await api.commitGit('project-1', 'feat: split API client')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/projects/project-1/git/status',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-1/git/init',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/projects/project-1/git/mutate',
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'stage', paths: ['README.md'] }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/projects/project-1/git/commit',
+      expect.objectContaining({
+        body: JSON.stringify({ message: 'feat: split API client' }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('lists Agents and Session summaries at the project and global scopes', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.listAgents()
+    await api.listConversations('project-1')
+    await api.listProviderSessions('project/1', 'codex')
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/agents', expect.any(Object))
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/projects/project-1/sessions',
+      expect.any(Object),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/projects/project%2F1/agents/codex/sessions',
+      expect.any(Object),
+    )
+  })
+
+  it('creates a Session with optional context only when supplied', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'session-1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.createConversation('project-1', 'opencode', 'Work')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/projects/project-1/sessions',
+      expect.objectContaining({
+        body: JSON.stringify({ agent_id: 'opencode', title: 'Work' }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('loads a single Team snapshot and resolves a user input request', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      team: { id: 'team-1' },
+    }))))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    await api.listTeams('project-1')
+    await api.getTeam('team/1')
+    await api.resolveTeamUserInput('team/1', 'request/1', 'yes')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/user/alice/kubecode/api/v1/projects/project-1/teams',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/user/alice/kubecode/api/v1/teams/team%2F1',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/user/alice/kubecode/api/v1/teams/team%2F1/attention/request%2F1/resolve',
+      expect.objectContaining({
+        body: JSON.stringify({ answer: 'yes' }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('promotes, renames, forks, and renames a Session', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.promoteToTeam('session/1', 'Lead', 'Title')
+    await api.updateConversation('session/1', 'Manual title')
+    await api.forkConversation('session/1')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/sessions/session%2F1/promote-to-team',
+      expect.objectContaining({
+        body: JSON.stringify({ leader_name: 'Lead', title: 'Title' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/sessions/session%2F1',
+      expect.objectContaining({
+        body: JSON.stringify({ manual_title: 'Manual title' }),
+        method: 'PATCH',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/sessions/session%2F1/fork',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('loads runs, events, and Session state through their dedicated routes', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]')))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.listRuns('session/1')
+    await api.getRun('run/1')
+    await api.listEvents('run/1', 5)
+    await api.listSessionEvents('session/1', 6)
+    await api.getSessionState('session/1')
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/sessions/session%2F1/runs',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/runs/run%2F1',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/runs/run%2F1/events?after=5',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/sessions/session%2F1/events?after=6',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      '/api/v1/sessions/session%2F1/state',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+  })
+
+  it('updates Session mode and config options', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.setSessionMode('session/1', 'plan')
+    await api.setSessionConfig('session/1', 'max-turns', false)
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/sessions/session%2F1/options',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'mode', value: 'plan' }),
+        method: 'PATCH',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/sessions/session%2F1/options',
+      expect.objectContaining({
+        body: JSON.stringify({ kind: 'config', config_id: 'max-turns', value: false }),
+        method: 'PATCH',
+      }),
+    )
+  })
+
+  it('builds event stream URLs below the configured base path', () => {
+    const api = new KubecodeApi('/user/alice/kubecode')
+
+    expect(api.eventStreamUrl('run/1', 7)).toBe(
+      '/user/alice/kubecode/api/v1/runs/run%2F1/events/stream?after=7',
+    )
+    expect(api.workspaceEventStreamUrl(9)).toBe(
+      '/user/alice/kubecode/api/v1/events?after=9',
+    )
+  })
+
+  it('cancels a run and resolves permission and elicitation requests', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('')
+
+    await api.cancelRun('run/1')
+    await api.resolvePermission('permission/1', 'option/1')
+    await api.resolveElicitation('elicitation/1', { answer: 'yes' })
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/runs/run%2F1',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/permissions/permission%2F1',
+      expect.objectContaining({
+        body: JSON.stringify({ option_id: 'option/1' }),
+        method: 'POST',
+      }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/elicitations/elicitation%2F1',
+      expect.objectContaining({
+        body: JSON.stringify({ content: { answer: 'yes' } }),
+        method: 'POST',
+      }),
+    )
+  })
+
+  it('lists, closes, and renames Terminals and opens their socket', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]')))
+    vi.stubGlobal('fetch', fetch)
+    class MockWebSocket {
+      constructor(public url: string) {}
+    }
+    vi.stubGlobal('WebSocket', MockWebSocket)
+    const api = new KubecodeApi('')
+
+    await api.listTerminals('project/1')
+    await api.closeTerminal('terminal/1')
+    await api.updateTerminal('terminal/1', 'Runtime')
+
+    const socket = api.terminalSocket('project/1', 'terminal/1', 3)
+
+    expect(socket).toBeInstanceOf(MockWebSocket)
+    expect(socket.url).toBe(
+      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/v1/projects/project%2F1/terminals/terminal%2F1/attach?cursor=3`,
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/projects/project%2F1/terminals',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/terminals/terminal%2F1',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/terminals/terminal%2F1',
+      expect.objectContaining({
+        body: JSON.stringify({ title: 'Runtime' }),
+        method: 'PATCH',
+      }),
+    )
+  })
+
+  it('falls back to a generic ApiError when the error body is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 502 })))
+    const api = new KubecodeApi('')
+
+    await expect(api.listProjects()).rejects.toMatchObject({
+      code: 'request_failed',
+      message: 'Request failed (502)',
+      status: 502,
+    })
   })
 })

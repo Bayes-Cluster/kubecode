@@ -1,3 +1,5 @@
+import { createPreferenceStorage, type PreferenceStorage } from './preferenceStorage'
+
 export const KUBECODE_AGENT_PREFERENCES_KEY = 'kubecode:agent-preferences:v1'
 
 export type KubecodeAgentPreferences = {
@@ -8,8 +10,6 @@ export const DEFAULT_KUBECODE_AGENT_PREFERENCES: KubecodeAgentPreferences = {
   allowTeammateChat: false,
 }
 
-type AgentPreferencesStorage = Pick<Storage, 'getItem' | 'setItem'>
-
 export function normalizeAgentPreferences(value: unknown): KubecodeAgentPreferences {
   const stored = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   return {
@@ -19,24 +19,21 @@ export function normalizeAgentPreferences(value: unknown): KubecodeAgentPreferen
   }
 }
 
+const agentPreferenceStorage = createPreferenceStorage({
+  defaultValue: () => DEFAULT_KUBECODE_AGENT_PREFERENCES,
+  key: () => KUBECODE_AGENT_PREFERENCES_KEY,
+  normalize: normalizeAgentPreferences,
+})
+
 export function readAgentPreferences(
-  storage: AgentPreferencesStorage,
+  storage: PreferenceStorage,
 ): KubecodeAgentPreferences {
-  try {
-    const stored = storage.getItem(KUBECODE_AGENT_PREFERENCES_KEY)
-    return normalizeAgentPreferences(stored ? JSON.parse(stored) : null)
-  } catch {
-    return DEFAULT_KUBECODE_AGENT_PREFERENCES
-  }
+  return agentPreferenceStorage.read(storage)
 }
 
 export function writeAgentPreferences(
-  storage: AgentPreferencesStorage,
+  storage: PreferenceStorage,
   preferences: KubecodeAgentPreferences,
 ): void {
-  try {
-    storage.setItem(KUBECODE_AGENT_PREFERENCES_KEY, JSON.stringify(preferences))
-  } catch {
-    // Settings remain usable when browser storage is unavailable.
-  }
+  agentPreferenceStorage.write(storage, preferences)
 }

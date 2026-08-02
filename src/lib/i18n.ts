@@ -32,6 +32,7 @@ export type UiLanguagePreference = typeof SYSTEM_UI_LANGUAGE | AppLocale
 export type TranslationCatalog = typeof EN_TRANSLATIONS
 export type TranslationKey = keyof TranslationCatalog
 export type TranslationValues = Record<string, string | number>
+export type Translator = (key: TranslationKey, values?: TranslationValues) => string
 
 type LocaleDefinition = {
   code: AppLocale
@@ -284,7 +285,7 @@ export function translate(locale: AppLocale, key: TranslationKey, values?: Trans
   return interpolate(template ?? fallbackTemplate, localizedInterpolationValues(locale, values))
 }
 
-export function createTranslator(locale: AppLocale = DEFAULT_APP_LOCALE) {
+export function createTranslator(locale: AppLocale = DEFAULT_APP_LOCALE): Translator {
   return (key: TranslationKey, values?: TranslationValues) => translate(locale, key, values)
 }
 

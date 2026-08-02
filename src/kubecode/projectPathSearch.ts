@@ -1,4 +1,13 @@
 import type { Entry, KubecodeApi } from './api'
+import { fuzzyMatchRank } from './fuzzyMatch'
+
+const PATH_MATCH_WEIGHTS = {
+  empty: 0,
+  exact: 0,
+  prefix: 1,
+  subsequence: 3,
+  substring: 2,
+} as const
 
 export function isExcludedProjectEntry(entry: Entry): boolean {
   return Boolean(
@@ -130,20 +139,10 @@ async function searchEntries({
 }
 
 function fuzzyPathScore(entry: Entry, query: string): number | null {
-  if (!query) return 0
   const name = entry.name.toLocaleLowerCase()
   const path = entry.path.toLocaleLowerCase()
-  if (name === query || path === query) return 0
-  if (name.startsWith(query) || path.startsWith(query)) return 1
-  if (name.includes(query) || path.includes(query)) return 2
-  return isSubsequence(query, path) ? 3 : null
-}
-
-function isSubsequence(query: string, candidate: string): boolean {
-  let queryIndex = 0
-  for (const character of candidate) {
-    if (character === query[queryIndex]) queryIndex += 1
-    if (queryIndex === query.length) return true
-  }
-  return false
+  return fuzzyMatchRank(query, {
+    primary: [name, path],
+    subsequence: [path],
+  }, PATH_MATCH_WEIGHTS)
 }

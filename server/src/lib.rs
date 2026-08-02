@@ -1,7 +1,9 @@
 pub mod agent_discovery;
 pub mod agent_runtime;
+pub mod agent_store;
 pub mod agents;
 pub mod api;
+pub mod app_state;
 pub mod composer_catalog;
 pub mod config;
 pub mod database;
@@ -10,6 +12,7 @@ pub mod git;
 pub mod team_api;
 pub mod team_coordinator;
 pub mod team_mcp;
+pub mod team_store;
 pub mod teams;
 pub mod terminal;
 pub mod workspace;
