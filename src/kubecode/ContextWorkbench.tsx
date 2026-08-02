@@ -40,6 +40,7 @@ import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
 import type {
   Entry,
+  GitDiffUnavailableReason,
   GitFileChange,
   GitStatus,
   KubecodeApi,
@@ -93,7 +94,11 @@ export function ContextWorkbench({
   const [quickOpen, setQuickOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
-  const [diff, setDiff] = useState<{ path: string; content: string } | null>(null)
+  const [diff, setDiff] = useState<{
+    path: string
+    content: string | null
+    unavailableReason: GitDiffUnavailableReason | null
+  } | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
@@ -262,11 +267,12 @@ export function ContextWorkbench({
   const openDiff = async (change: GitFileChange, staged: boolean) => {
     if (!projectId) return
     try {
-      const content = change.index_status === '?' && change.worktree_status === '?'
-        ? (await api.readFile(projectId, change.path)).content
-            .split('\n').map((line) => `+${line}`).join('\n')
-        : await api.gitDiff(projectId, change.path, staged)
-      setDiff({ path: change.path, content })
+      const result = await api.gitDiff(projectId, change.path, staged)
+      setDiff({
+        path: change.path,
+        content: result.diff,
+        unavailableReason: result.unavailable_reason,
+      })
       setTab('diff')
     } catch (cause) {
       reportError(cause)
@@ -505,7 +511,7 @@ export function ContextWorkbench({
               <span>{diff.path}</span>
               <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={() => { setDiff(null); setTab('explorer') }}><X /></Button>
             </div>
-            <pre>{diff.content || t('kubecode.emptyDiff')}</pre>
+            <pre>{diff.content || gitDiffUnavailableMessage(diff.unavailableReason, t)}</pre>
           </TabsContent>
         )}
       </Tabs>
@@ -683,6 +689,16 @@ function isStaged(change: GitFileChange): boolean {
 
 function isWorktreeChanged(change: GitFileChange): boolean {
   return Boolean(change.worktree_status || change.index_status === '?')
+}
+
+function gitDiffUnavailableMessage(
+  reason: GitDiffUnavailableReason | null,
+  t: Translator,
+): string {
+  if (reason === 'binary') return t('kubecode.gitDiffBinary')
+  if (reason === 'oversized') return t('kubecode.gitDiffTooLarge')
+  if (reason === 'unsupported') return t('kubecode.gitDiffUnavailable')
+  return t('kubecode.emptyDiff')
 }
 
 function EntryDialog({

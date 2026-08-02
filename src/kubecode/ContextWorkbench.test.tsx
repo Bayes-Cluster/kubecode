@@ -79,6 +79,51 @@ describe('ContextWorkbench', () => {
     expect(screen.getByText('Staged changes')).toBeInTheDocument()
   })
 
+  it('loads untracked diffs from GitService and renders explicit unavailable reasons', async () => {
+    const gitDiff = vi.fn()
+      .mockResolvedValueOnce({ diff: '+server patch', unavailable_reason: null })
+      .mockResolvedValueOnce({ diff: null, unavailable_reason: 'binary' })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      readFile: vi.fn(),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          {
+            path: 'new file.txt', original_path: null, index_status: '?',
+            worktree_status: '?', conflict: false,
+          },
+          {
+            path: 'binary.dat', original_path: null, index_status: null,
+            worktree_status: 'M', conflict: false,
+          },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('new file.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('+server patch')).toBeInTheDocument()
+    expect(api.readFile).not.toHaveBeenCalled()
+    expect(gitDiff).toHaveBeenCalledWith('project-1', 'new file.txt', false)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    fireEvent.click(screen.getByText('binary.dat').closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+  })
+
   it('initializes Git from an untracked project', async () => {
     const api = {
       listEntries: vi.fn().mockResolvedValue([]),

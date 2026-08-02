@@ -159,6 +159,18 @@ impl WorkspaceService {
         self.project_root(project_id)
     }
 
+    pub fn validate_project_relative_path(
+        &self,
+        project_id: &str,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        self.project_root(project_id)?;
+        normalize_relative(relative, false).map(|path| path_string(&path))
+    }
+
     pub fn project(&self, project_id: &str) -> Result<Project, WorkspaceError> {
         let database = self
             .database
@@ -305,6 +317,7 @@ impl WorkspaceService {
         let mut child = Command::new("git")
             .args(["apply", "--whitespace=nowarn", "-"])
             .current_dir(cwd)
+            .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1058,6 +1071,7 @@ fn git_command_with_index(
     Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_INDEX_FILE", index)
         .output()
         .map_err(WorkspaceError::from)
@@ -1075,6 +1089,7 @@ fn git_command(cwd: &Path, args: &[&str]) -> Result<std::process::Output, Worksp
     Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .map_err(WorkspaceError::from)
 }
@@ -1087,6 +1102,7 @@ fn git_ignored_paths<'a>(
     command
         .args(["check-ignore", "--stdin", "-z"])
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());

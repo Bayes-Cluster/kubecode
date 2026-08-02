@@ -725,6 +725,59 @@ async fn updates_the_project_workspaces_preference_over_http() {
 }
 
 #[tokio::test]
+async fn exposes_bounded_git_status_and_server_generated_diff_contracts() {
+    let (temp, app) = app();
+    let project_path = temp.path().join("srv/git-read-api");
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":project_path}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let (status, initialized) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/git/init"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(initialized["truncated"], false);
+    fs::write(project_path.join("new.txt"), "server side\n").expect("untracked fixture");
+
+    let (status, git_status) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/git/status"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(git_status["truncated"], false);
+    assert_eq!(git_status["files"][0]["path"], "new.txt");
+    assert_eq!(git_status["files"][0]["original_path"], Value::Null);
+    assert_eq!(git_status["files"][0]["conflict"], false);
+
+    let (status, diff) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/git/diff?path=new.txt&staged=false"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        diff["diff"]
+            .as_str()
+            .expect("text diff")
+            .contains("+server side")
+    );
+    assert_eq!(diff["unavailable_reason"], Value::Null);
+}
+
+#[tokio::test]
 async fn creates_a_session_in_an_isolated_workspace_when_requested() {
     let (temp, app) = app();
     let project_path = temp.path().join("srv/session-worktree-api");

@@ -38,9 +38,12 @@ pub(super) async fn git_diff(
     Path(project_id): Path<String>,
     Query(query): Query<GitDiffQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(json!({
-        "diff": state.git.diff(&project_id, &query.path, query.staged).await?
-    })))
+    Ok(Json(
+        state
+            .git
+            .diff(&project_id, &query.path, query.staged)
+            .await?,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
