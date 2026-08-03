@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Esta diferencia supera el límite de bloques. Selecciona otro archivo modificado más pequeño.",
   "kubecode.gitDiffTooManyFiles": "Selecciona archivos individuales porque la diferencia completa contiene demasiados archivos.",
   "kubecode.gitDiffContainsUnsupported": "Selecciona un archivo compatible porque la diferencia completa contiene contenido no admitido.",
+  "kubecode.gitDiffFailed": "No se pudo cargar esta diferencia.",
+  "kubecode.gitDiffLoading": "Cargando diff…",
   "kubecode.gitDiffUnavailable": "Esta diferencia de Git no está disponible.",
   "kubecode.searchContext": "Buscar habilidades, comandos y archivos",
   "kubecode.noContextFound": "No hay archivos ni carpetas que coincidan",

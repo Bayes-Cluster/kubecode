@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Dieser Diff überschreitet das Block-Limit. Wählen Sie stattdessen eine kleinere geänderte Datei aus.",
   "kubecode.gitDiffTooManyFiles": "Wählen Sie einzelne Dateien aus, da der vollständige Diff zu viele Dateien enthält.",
   "kubecode.gitDiffContainsUnsupported": "Wählen Sie eine unterstützte Datei aus, da der vollständige Diff nicht unterstützte Inhalte enthält.",
+  "kubecode.gitDiffFailed": "Dieser Diff konnte nicht geladen werden.",
+  "kubecode.gitDiffLoading": "Diff wird geladen…",
   "kubecode.gitDiffUnavailable": "Dieser Git-Diff ist nicht verfügbar.",
   "kubecode.searchContext": "Skills, Befehle und Dateien durchsuchen",
   "kubecode.noContextFound": "Keine passenden Dateien oder Ordner",

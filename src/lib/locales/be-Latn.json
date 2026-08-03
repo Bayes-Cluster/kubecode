@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Hety diff pieravyšaje limit blokaŭ. Zamiest jaho vybierycie mienšy zmienieny fajł.",
   "kubecode.gitDiffTooManyFiles": "Abiarycie asobnyja fajły, bo poŭny diff źmiaščaje zanadta šmat fajłaŭ.",
   "kubecode.gitDiffContainsUnsupported": "Abiarycie prydatny fajł, bo poŭny diff źmiaščaje niepadtrymanae źmieściva.",
+  "kubecode.gitDiffFailed": "Nie ŭdałasia zahruzić hety diff.",
+  "kubecode.gitDiffLoading": "Zahruka diff…",
   "kubecode.gitDiffUnavailable": "Hety diff Git niedastupny.",
   "kubecode.searchContext": "Pošuk navykaŭ, kamandaŭ i fajłaŭ",
   "kubecode.noContextFound": "Adpaviednyja fajły albo katalohi nia znojdzieny",

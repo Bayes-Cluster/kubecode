@@ -1165,6 +1165,8 @@
   "kubecode.gitDiffTooManyHunks": "This diff exceeds the hunk limit. Select a smaller changed file instead.",
   "kubecode.gitDiffTooManyFiles": "Select individual files because the full diff has too many files.",
   "kubecode.gitDiffContainsUnsupported": "Select an eligible file because the full diff contains unsupported content.",
+  "kubecode.gitDiffFailed": "This diff could not be loaded.",
+  "kubecode.gitDiffLoading": "Loading diff…",
   "kubecode.gitDiffUnavailable": "This Git diff is unavailable.",
   "kubecode.searchContext": "Search skills, commands, and files",
   "kubecode.noContextFound": "No matching files or folders",

@@ -683,9 +683,12 @@ explicitly signals that more changes exist.
 One selected browser diff is resolved by `GitService` at a time. The request
 chooses the staged or worktree target but never supplies file content. Untracked
 patches are generated on the server, and the 2 MiB response is either a complete
-UTF-8 patch or a stable binary, oversized, or unsupported state. These browser
-limits do not replace the smaller file/hunk/byte bounds and content-addressed
-identity used by Composer Git context.
+UTF-8 patch or a stable binary, oversized, or unsupported state. The browser
+fences every result by active Project, path, staged target, and request
+generation, aborts superseded requests on selection or Project change, and
+renders localized recoverable states for loading, unavailable, and failed
+diffs. These browser limits do not replace the smaller file/hunk/byte bounds and
+content-addressed identity used by Composer Git context.
 
 ## Workspace attention
 

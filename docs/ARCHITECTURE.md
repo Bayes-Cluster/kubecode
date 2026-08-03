@@ -152,7 +152,11 @@ diff remains contextual. `GitService` reads porcelain-v2 status into a projectio
 of at most 1 MiB and 10,000 complete records, including rename/copy source,
 conflict, and truncation identity. Browser staged, unstaged, and server-generated
 untracked patches are capped at 2 MiB and return a complete text patch or the
-stable `binary`, `oversized`, or `unsupported` reason. Git reads suppress optional
+stable `binary`, `oversized`, or `unsupported` reason. A focused `useGitDiff`
+hook requests the selected Project, path, and staged target, fences each response
+by request generation, aborts in-flight diffs on selection change, Project change,
+or unmount, and drives localized loading, unavailable, and retryable failure
+states. Git reads suppress optional
 locks, every Git subprocess disables terminal prompts, and patch reads disable
 external diff drivers and text conversion. The Agent timeline and Composer use
 one bounded content width; their scroll containers retain wheel, touch, keyboard,
