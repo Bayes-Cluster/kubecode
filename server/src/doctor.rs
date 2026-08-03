@@ -203,7 +203,14 @@ fn static_assets_check(path: &Path) -> DoctorCheck {
 }
 
 async fn git_check() -> DoctorCheck {
-    let output = timeout(CHECK_TIMEOUT, Command::new("git").arg("--version").output()).await;
+    let output = timeout(
+        CHECK_TIMEOUT,
+        Command::new("git")
+            .arg("--version")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output(),
+    )
+    .await;
     match output {
         Ok(Ok(output)) if output.status.success() => DoctorCheck {
             id: "git",

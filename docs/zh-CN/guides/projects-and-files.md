@@ -44,6 +44,11 @@ Component，越过 Project Root 的请求会被拒绝。
 点击变更文件可以打开 Diff。Git Path 会相对于 Project 进行验证，并且不会被
 插值到 Shell Command 中。
 
+状态最多返回前 10,000 条完整记录或 1 MiB。响应会标记列表只是前缀；请减少
+Repository 中的变更并刷新以查看其余内容。单个 Staged、Unstaged 和
+Untracked Diff 最多为 2 MiB。二进制、超大或不支持的 Diff 会明确显示为不可用，
+而不会静默截断。
+
 Discard 是不可恢复的破坏性操作。操作前请检查 Diff 并确认路径属于正确的
 Project。
 

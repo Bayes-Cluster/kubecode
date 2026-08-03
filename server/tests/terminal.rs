@@ -283,6 +283,7 @@ fn run_git(cwd: &std::path::Path, args: &[&str]) {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .expect("run git");
     assert!(

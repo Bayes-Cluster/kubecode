@@ -1258,6 +1258,7 @@ fn run_git(path: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .args(args)
         .current_dir(path)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .status()
         .expect("git command");
     assert!(status.success(), "git {args:?}");

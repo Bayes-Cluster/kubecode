@@ -44,10 +44,11 @@ import {
 import { searchProjectEntries } from './projectPathSearch'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
+import { useGitStatusController } from './useGitStatusController'
 import type {
   Entry,
+  GitDiffUnavailableReason,
   GitFileChange,
-  GitStatus,
   KubecodeApi,
   TextDocument,
   WorkspaceEvent,
@@ -100,8 +101,11 @@ export function ContextWorkbench({
   const [entryDialog, setEntryDialog] = useState<EntryDialogState>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
-  const [diff, setDiff] = useState<{ path: string; content: string } | null>(null)
+  const [diff, setDiff] = useState<{
+    path: string
+    content: string | null
+    unavailableReason: GitDiffUnavailableReason | null
+  } | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
@@ -110,6 +114,26 @@ export function ContextWorkbench({
   const previousConnectionStateRef = useRef(connectionState)
   const savingDocumentsRef = useRef(new Set<string>())
   const [fileTreeInvalidation, setFileTreeInvalidation] = useState<FileTreeInvalidation | null>(null)
+  const reportError = useCallback((cause: unknown) => {
+    const message = errorMessage(cause, t('kubecode.error'))
+    if (systemMessages) {
+      systemMessages.publish({ level: 'error', message, source: t('kubecode.changes') })
+    } else {
+      setError(message)
+    }
+  }, [systemMessages, t])
+  const {
+    applyMutationResult,
+    beginMutation,
+    cancelMutation,
+    gitStatus,
+    refresh: refreshGitStatus,
+  } = useGitStatusController({
+    api,
+    onError: reportError,
+    projectId,
+    workspaceEvents,
+  })
   const projectDocuments = useMemo(
     () => documents.filter((item) => item.projectId === projectId),
     [documents, projectId],
@@ -120,27 +144,6 @@ export function ContextWorkbench({
   const dirty = Boolean(
     activeDocument && activeDocument.document.content !== activeDocument.draft,
   )
-  const reportError = useCallback((cause: unknown) => {
-    const message = errorMessage(cause, t('kubecode.error'))
-    if (systemMessages) {
-      systemMessages.publish({ level: 'error', message, source: t('kubecode.changes') })
-    } else {
-      setError(message)
-    }
-  }, [systemMessages, t])
-
-  useEffect(() => {
-    if (!projectId) {
-      return
-    }
-    let current = true
-    void api.gitStatus(projectId).then((status) => {
-      if (current) setGitStatus(status)
-    }).catch((cause: unknown) => {
-      if (current) reportError(cause)
-    })
-    return () => { current = false }
-  }, [api, projectId, reportError])
 
   useEffect(() => {
     setTab('explorer')
@@ -156,11 +159,6 @@ export function ContextWorkbench({
     ))
     processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
       ?? processedWorkspaceEventRef.current
-    const filesChanged = nextEvents.some((event) => event.kind === 'file_changed')
-    const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
-    if (filesChanged || gitChanged) {
-      void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
-    }
     const unforwardedFileEvents = nextEvents.filter(
       (event) => event.kind === 'file_changed'
         && event.id > lastForwardedFileEventIdRef.current,
@@ -173,15 +171,15 @@ export function ContextWorkbench({
         payload: aggregateFileChangedEvents(unforwardedFileEvents),
       })
     }
-  }, [api, projectId, reportError, workspaceEvents])
+  }, [projectId, workspaceEvents])
 
   useEffect(() => {
     const opened = connectionState === 'live' && previousConnectionStateRef.current !== 'live'
     previousConnectionStateRef.current = connectionState
     if (!opened || !projectId) return
     setFileTreeRevision((current) => current + 1)
-    void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
-  }, [api, connectionState, projectId, reportError])
+    refreshGitStatus()
+  }, [connectionState, projectId, refreshGitStatus])
 
   useEffect(() => {
     const openQuickFile = (event: KeyboardEvent) => {
@@ -292,11 +290,12 @@ export function ContextWorkbench({
   const openDiff = async (change: GitFileChange, staged: boolean) => {
     if (!projectId) return
     try {
-      const content = change.index_status === '?' && change.worktree_status === '?'
-        ? (await api.readFile(projectId, change.path)).content
-            .split('\n').map((line) => `+${line}`).join('\n')
-        : await api.gitDiff(projectId, change.path, staged)
-      setDiff({ path: change.path, content })
+      const result = await api.gitDiff(projectId, change.path, staged)
+      setDiff({
+        path: change.path,
+        content: result.diff,
+        unavailableReason: result.unavailable_reason,
+      })
       setTab('diff')
     } catch (cause) {
       reportError(cause)
@@ -305,41 +304,48 @@ export function ContextWorkbench({
 
   const mutateGit = async (action: 'stage' | 'unstage' | 'discard', path: string) => {
     if (!projectId) return
+    beginMutation(action)
     try {
-      setGitStatus(await api.mutateGit(projectId, action, [path]))
+      applyMutationResult(await api.mutateGit(projectId, action, [path]))
       trackEvent('kubecode_git_action_used', { action })
     } catch (cause) {
+      cancelMutation(action)
       reportError(cause)
     }
   }
 
   const commit = async () => {
     if (!projectId || !commitMessage.trim()) return
+    beginMutation('commit')
     try {
-      setGitStatus(await api.commitGit(projectId, commitMessage))
+      applyMutationResult(await api.commitGit(projectId, commitMessage))
       setCommitMessage('')
       trackEvent('kubecode_git_action_used', { action: 'commit' })
     } catch (cause) {
+      cancelMutation('commit')
       reportError(cause)
     }
   }
 
   const initializeGit = async () => {
     if (!projectId) return
+    beginMutation('init')
     try {
-      setGitStatus(await api.initializeGit(projectId))
+      applyMutationResult(await api.initializeGit(projectId))
       trackEvent('kubecode_git_action_used', { action: 'init' })
     } catch (cause) {
+      cancelMutation('init')
       reportError(cause)
     }
   }
 
+  const conflictChanges = gitStatus?.files.filter(isConflict) ?? []
   const stagedChanges = gitStatus?.files.filter(isStaged) ?? []
   const worktreeChanges = gitStatus?.files.filter(isWorktreeChanged) ?? []
 
   const refreshContext = () => {
     setFileTreeRevision((current) => current + 1)
-    if (projectId) void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
+    refreshGitStatus()
   }
 
   return (
@@ -415,19 +421,41 @@ export function ContextWorkbench({
               </div>
             ) : (
               <div className="kubecode-review-body">
+                {gitStatus.truncated && (
+                  <div className="kubecode-git-notice" role="status">
+                    {t('kubecode.gitStatusTruncated', { count: gitStatus.files.length })}
+                  </div>
+                )}
+                {conflictChanges.length > 0 && (
+                  <GitChangeGroup
+                    changes={conflictChanges}
+                    group="conflict"
+                    label={t('kubecode.conflicts')}
+                    onDiff={(change) => void openDiff(change, false)}
+                    statusColumn="conflict"
+                  />
+                )}
+                {conflictChanges.length > 0 && (
+                  <div className="kubecode-git-notice" role="status">
+                    {t('kubecode.conflictHint')}
+                  </div>
+                )}
                 {stagedChanges.length > 0 && (
                   <GitChangeGroup
                     changes={stagedChanges}
+                    group="staged"
                     label={t('kubecode.stagedChanges')}
                     onDiff={(change) => void openDiff(change, true)}
                     onPrimary={(change) => void mutateGit('unstage', change.path)}
                     primaryLabel={t('kubecode.unstage')}
                     primaryIcon={<Minus />}
+                    statusColumn="index"
                   />
                 )}
                 {worktreeChanges.length > 0 && (
                   <GitChangeGroup
                     changes={worktreeChanges}
+                    group="worktree"
                     label={t('kubecode.changes')}
                     onDiff={(change) => void openDiff(change, false)}
                     onDiscard={(change) => setDiscardPath(change.path)}
@@ -435,6 +463,7 @@ export function ContextWorkbench({
                     primaryLabel={t('kubecode.stage')}
                     primaryIcon={<Plus />}
                     discardLabel={t('kubecode.discard')}
+                    statusColumn="worktree"
                   />
                 )}
                 {stagedChanges.length > 0 && (
@@ -538,7 +567,7 @@ export function ContextWorkbench({
               <span>{diff.path}</span>
               <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={() => { setDiff(null); setTab('explorer') }}><X /></Button>
             </div>
-            <pre>{diff.content || t('kubecode.emptyDiff')}</pre>
+            <pre>{diff.content || gitDiffUnavailableMessage(diff.unavailableReason, t)}</pre>
           </TabsContent>
         )}
       </Tabs>
@@ -673,48 +702,86 @@ function ExplorerSection({
 
 function GitChangeGroup({
   changes,
+  group,
   label,
   onDiff,
   onDiscard,
   onPrimary,
   primaryIcon,
   primaryLabel,
+  statusColumn,
   discardLabel,
 }: {
   changes: GitFileChange[]
+  group: 'conflict' | 'staged' | 'worktree'
   label: string
   onDiff: (change: GitFileChange) => void
   onDiscard?: (change: GitFileChange) => void
-  onPrimary: (change: GitFileChange) => void
-  primaryIcon: ReactNode
-  primaryLabel: string
+  onPrimary?: (change: GitFileChange) => void
+  primaryIcon?: ReactNode
+  primaryLabel?: string
+  statusColumn: 'conflict' | 'index' | 'worktree'
   discardLabel?: string
 }) {
   return (
-    <section className="kubecode-git-group">
+    <section className="kubecode-git-group" data-group={group}>
       <header><strong>{label}</strong><span>{changes.length}</span></header>
       {changes.map((change) => (
         <div className="kubecode-git-row" key={`${label}:${change.path}`}>
           <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
-            <span>{change.path}</span>
-            <code>{change.worktree_status ?? change.index_status}</code>
+            <span className="kubecode-git-path-name">
+              {change.original_path && (
+                <small className="kubecode-git-rename-source">
+                  {change.original_path} →
+                </small>
+              )}
+              <span>{change.path}</span>
+            </span>
+            <code>{gitStatusColumn(change, statusColumn)}</code>
           </Button>
           {onDiscard && (
             <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
           )}
-          <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
+          {onPrimary && (
+            <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
+          )}
         </div>
       ))}
     </section>
   )
 }
 
+function isConflict(change: GitFileChange): boolean {
+  return change.conflict === true
+}
+
 function isStaged(change: GitFileChange): boolean {
   return Boolean(change.index_status && change.index_status !== '?')
+    && !isConflict(change)
 }
 
 function isWorktreeChanged(change: GitFileChange): boolean {
   return Boolean(change.worktree_status || change.index_status === '?')
+    && !isConflict(change)
+}
+
+function gitStatusColumn(
+  change: GitFileChange,
+  column: 'conflict' | 'index' | 'worktree',
+): string {
+  if (column === 'index') return change.index_status ?? ''
+  if (column === 'worktree') return change.worktree_status ?? ''
+  return `${change.index_status ?? ''}${change.worktree_status ?? ''}` || '?'
+}
+
+function gitDiffUnavailableMessage(
+  reason: GitDiffUnavailableReason | null,
+  t: Translator,
+): string {
+  if (reason === 'binary') return t('kubecode.gitDiffBinary')
+  if (reason === 'oversized') return t('kubecode.gitDiffTooLarge')
+  if (reason === 'unsupported') return t('kubecode.gitDiffUnavailable')
+  return t('kubecode.emptyDiff')
 }
 
 function EntryDialog({

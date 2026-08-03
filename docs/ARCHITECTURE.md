@@ -44,7 +44,9 @@ The Axum server composes eight services:
 - `TerminalManager` owns reconnectable PTYs independently of browser sockets and
   process-lifetime bounded Composer captures selected from those PTYs.
 - `GitService` performs Project- and Session-scoped Git operations without shell
-  interpolation, including bounded Composer diff discovery and resolution.
+  interpolation. Project status and browser diffs use bounded subprocess reads,
+  and Composer diff discovery and resolution retains its independent smaller
+  context limits.
 - `TeamStore` persists Team authority, membership, tasks, and mailboxes.
 - `TeamCoordinator` creates teammate Agent Sessions and applies Team scheduling rules.
 
@@ -146,10 +148,16 @@ Command/Ctrl-P. It traverses only the current registered Project, is bounded to
 2,000 visited entries and 100 displayed results, and ignores stale asynchronous
 responses. New file/folder paths and Composer file references reuse the same
 keyboard-navigable path picker rather than embedding another tree. Opening a
-diff remains contextual. The Agent timeline and Composer use one bounded
-content width; their scroll containers retain wheel, touch, keyboard, and
-auto-follow behavior without drawing scrollbar chrome. The Composer shows only
-a Plan progress summary and opens the full checklist in Explorer.
+diff remains contextual. `GitService` reads porcelain-v2 status into a projection
+of at most 1 MiB and 10,000 complete records, including rename/copy source,
+conflict, and truncation identity. Browser staged, unstaged, and server-generated
+untracked patches are capped at 2 MiB and return a complete text patch or the
+stable `binary`, `oversized`, or `unsupported` reason. Git reads suppress optional
+locks, every Git subprocess disables terminal prompts, and patch reads disable
+external diff drivers and text conversion. The Agent timeline and Composer use
+one bounded content width; their scroll containers retain wheel, touch, keyboard,
+and auto-follow behavior without drawing scrollbar chrome. The Composer shows
+only a Plan progress summary and opens the full checklist in Explorer.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,

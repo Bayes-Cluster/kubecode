@@ -79,6 +79,51 @@ describe('ContextWorkbench', () => {
     expect(screen.getByText('Staged changes')).toBeInTheDocument()
   })
 
+  it('loads untracked diffs from GitService and renders explicit unavailable reasons', async () => {
+    const gitDiff = vi.fn()
+      .mockResolvedValueOnce({ diff: '+server patch', unavailable_reason: null })
+      .mockResolvedValueOnce({ diff: null, unavailable_reason: 'binary' })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      readFile: vi.fn(),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          {
+            path: 'new file.txt', original_path: null, index_status: '?',
+            worktree_status: '?', conflict: false,
+          },
+          {
+            path: 'binary.dat', original_path: null, index_status: null,
+            worktree_status: 'M', conflict: false,
+          },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('new file.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('+server patch')).toBeInTheDocument()
+    expect(api.readFile).not.toHaveBeenCalled()
+    expect(gitDiff).toHaveBeenCalledWith('project-1', 'new file.txt', false)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    fireEvent.click(screen.getByText('binary.dat').closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+  })
+
   it('initializes Git from an untracked project', async () => {
     const api = {
       listEntries: vi.fn().mockResolvedValue([]),
@@ -404,6 +449,159 @@ describe('ContextWorkbench', () => {
       expect(api.createEntry).toHaveBeenCalledWith('project-1', 'notes/idea.md', 'file')
     })
     expect(api.readFile).toHaveBeenCalledWith('project-1', 'notes/idea.md')
+  })
+
+  it('projects Conflict, Staged, and Changes groups with their status columns', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'both.txt', index_status: 'A', worktree_status: 'M', conflict: false },
+          { path: 'staged.txt', index_status: 'M', worktree_status: null, conflict: false },
+          { path: 'changed.txt', index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'untracked.txt', index_status: '?', worktree_status: '?', conflict: false },
+          { path: 'conflict.txt', index_status: 'U', worktree_status: 'U', conflict: true },
+          {
+            path: 'renamed.txt',
+            original_path: 'old.txt',
+            index_status: 'R',
+            worktree_status: null,
+            conflict: false,
+          },
+        ],
+        truncated: true,
+      }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findByText('Conflicts')).toBeInTheDocument()
+    const staged = document.querySelector('[data-group="staged"]') as HTMLElement
+    const worktree = document.querySelector('[data-group="worktree"]') as HTMLElement
+    const conflict = document.querySelector('[data-group="conflict"]') as HTMLElement
+    expect(staged).not.toBeNull()
+    expect(worktree).not.toBeNull()
+    expect(conflict).not.toBeNull()
+
+    expect(within(staged).getByText('staged.txt')).toBeInTheDocument()
+    expect(within(staged).getByText('both.txt')).toBeInTheDocument()
+    expect(within(staged).getByText('renamed.txt')).toBeInTheDocument()
+    expect(within(staged).getByText(/old\.txt\s*→/)).toBeInTheDocument()
+    expect(within(worktree).queryByText('staged.txt')).not.toBeInTheDocument()
+
+    const stagedPartialRow = within(staged).getByText('both.txt').closest('.kubecode-git-row')
+    expect(within(stagedPartialRow as HTMLElement).getByText('A')).toBeInTheDocument()
+
+    expect(within(worktree).getByText('changed.txt')).toBeInTheDocument()
+    expect(within(worktree).getByText('untracked.txt')).toBeInTheDocument()
+    expect(within(worktree).getByText('both.txt')).toBeInTheDocument()
+    const worktreePartialRow = within(worktree).getByText('both.txt').closest('.kubecode-git-row')
+    expect(within(worktreePartialRow as HTMLElement).getByText('M')).toBeInTheDocument()
+    expect(within(worktree).queryByText('conflict.txt')).not.toBeInTheDocument()
+
+    expect(within(conflict).getByText('conflict.txt')).toBeInTheDocument()
+    expect(within(conflict).getByText('UU')).toBeInTheDocument()
+
+    const notices = screen.getAllByRole('status')
+    expect(notices.some((notice) => notice.textContent?.includes('first 6 changes'))).toBe(true)
+    expect(notices.some((notice) => notice.textContent?.includes('Resolve these conflicts'))).toBe(true)
+  })
+
+  it('applies mutation responses immediately and coalesces the echoed SSE invalidation', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      mutateGit: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: 'M', worktree_status: null, conflict: false }],
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+    const props = { api, projectId: 'project-1', t: createTranslator('en'), width: 440 }
+
+    vi.useFakeTimers()
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('README.md')).toBeInTheDocument()
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage: README.md' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(api.mutateGit).toHaveBeenCalledWith('project-1', 'stage', ['README.md'])
+    expect(screen.getByText('Staged changes')).toBeInTheDocument()
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      {
+        id: 10,
+        kind: 'git_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { action: 'stage' },
+        created_at: 'now',
+      },
+    ]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes Git status after a debounced invalidation', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [],
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+    const props = { api, projectId: 'project-1', t: createTranslator('en'), width: 440 }
+
+    vi.useFakeTimers()
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      {
+        id: 10,
+        kind: 'file_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { path: 'src/a.ts' },
+        created_at: 'now',
+      },
+      {
+        id: 11,
+        kind: 'git_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { action: 'commit' },
+        created_at: 'now',
+      },
+    ]} />)
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(2)
   })
 })
 
