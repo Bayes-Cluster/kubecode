@@ -503,6 +503,59 @@ describe('ContextWorkbench', () => {
     ).toBe(docsCallsBefore)
   })
 
+  it('reconciles all loaded Files parents and Git after an SSE reconnect without paths', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'main.ts', path: 'src/main.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const gitStatus = vi.fn().mockResolvedValue({
+      is_repository: true,
+      branch: 'main',
+      files: [],
+      truncated: false,
+    })
+    const api = { listEntries, gitStatus } as unknown as KubecodeApi
+    const props = {
+      api,
+      projectId: 'reconnect-project',
+      t: createTranslator('en'),
+      width: 440,
+      workspaceEvents: [],
+    }
+    const { rerender } = render(<ContextWorkbench {...props} connectionState="connecting" />)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => {
+      expect(listEntries).toHaveBeenCalledWith('reconnect-project', 'src')
+      expect(listEntries).toHaveBeenCalledWith('reconnect-project', 'docs')
+    })
+    const srcCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+    const statusCallsBefore = gitStatus.mock.calls.length
+
+    await act(async () => {
+      rerender(<ContextWorkbench {...props} connectionState="reconnecting" />)
+      await Promise.resolve()
+    })
+    rerender(<ContextWorkbench {...props} connectionState="live" />)
+
+    await waitFor(() => {
+      expect(listEntries.mock.calls.filter(([, path]) => path === 'src').length)
+        .toBeGreaterThan(srcCallsBefore)
+      expect(listEntries.mock.calls.filter(([, path]) => path === 'docs').length)
+        .toBeGreaterThan(docsCallsBefore)
+      expect(gitStatus.mock.calls.length).toBeGreaterThan(statusCallsBefore)
+    })
+  })
+
   it('collapses Explorer sections without changing the active surface', async () => {
     const api = {
       listEntries: vi.fn().mockResolvedValue([]),

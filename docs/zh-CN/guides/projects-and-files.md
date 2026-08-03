@@ -40,7 +40,16 @@ Kubecode 会监听每个已注册 Project Directory，让 Explorer 和 Git Chang
 一段时间内的活动，再通知浏览器；当它无法对变化分类或通知溢出时，会退化为刷新
 整个 Project。添加和移除 Project 会自动更新监听；监听失败不会隐藏 Project，
 Kubecode 会重试。Files 与 Git 视图始终可按需获得权威数据，Manual Refresh 也始终
-可用。每次重连都会为每个打开的 Project 请求一次全新的完整视图。
+可用。普通事件包含经过验证的 Project-relative Entry，只刷新其已加载的 Parent
+Directory；跨目录 Rename 会同时包含两侧，从而刷新两个 Parent 并清理受影响的
+Descendant Cache。`.git` Metadata 只产生 Git Event，普通事件还会让 Git Status
+变脏。Watcher Queue、Backend、Path 或 Batch 溢出会产生 Full Invalidation。事件不
+包含绝对 Server Path、File Content 或 Mutation Instruction。
+
+每次 Initial SSE Open、重连、Watcher 恢复或 Full Invalidation 都会把已加载的
+Directory 标记为 Stale，并刷新 Files 与 Git，而不会重放 Path。Directory Read 失败
+时旧 Row 会保留并标记为 Stale，同时显示可恢复错误；Manual Refresh 会重试。Diff
+失败可以重试，Status 截断会只显示有界前缀并显示警告。
 
 ## Git Changes
 
@@ -61,6 +70,12 @@ Repository 中的变更并刷新以查看其余内容。单个 Staged、Unstaged
 Untracked Diff 最多为 2 MiB。二进制、超大或不支持的 Diff 会明确显示为不可用，
 而不会静默截断。
 
+Status Invalidation 会等待 250 毫秒，每个 Project 同时最多执行一个 Status Request；
+Request 运行期间的更多变化只产生一个 Follow-up。Mutation Response 会立即应用，
+其 Echo Event 会合并。Files 和每个 Git Group 在可见 Row 不超过 200 时使用普通 DOM，
+超过 200 时使用 Virtualized List。Virtualization 只减少挂载的 Row，保留稳定 Path
+Identity、Tree Keyboard 和 Screen Reader 语义，以及 Selection 和 Expansion State。
+
 Discard 是不可恢复的破坏性操作。操作前请检查 Diff 并确认路径属于正确的
 Project。
 
@@ -78,3 +93,28 @@ Repository History。
 
 使用 Composer 的 **+** 菜单，或者输入 `@path` 引用 Project Context。
 Kubecode 会先验证引用，再交给 Agent；如何读取和使用文件仍由 Agent 决定。
+
+## #56 Verification Map
+
+Parent Issue 的 Acceptance Criteria 由以下测试或 Manual Check 负责：
+
+| #56 Criterion | Verification |
+| --- | --- |
+| Kubecode Mutation 刷新受影响 Parent | `server/tests/api.rs` Entry Mutation 测试；`ContextWorkbench.test.tsx` Scoped Refresh 测试 |
+| Agent、Terminal、Git 与外部修改自动出现 | `server/src/project_watcher.rs` External Write 测试；Manual Agent/Terminal Check |
+| 跨目录 Rename 刷新两侧 | `ProjectFileTree.test.tsx` Cross-directory Rename；`server/tests/workspace.rs` Rename |
+| Burst 有界且合并 | Watcher Coalescing；`useGitStatusController.test.tsx` Burst 与 Single-flight |
+| Overflow 变成 Full Invalidation | Watcher 257-path、Overflow Flag 与 Backend Error 测试 |
+| SSE 重连同时恢复 Files 与 Git 且不携带 Path | `ContextWorkbench.test.tsx` Reconnect；`useWorkspaceEventStream.test.tsx` Reconnect |
+| 丢弃过期 Directory、Status、Diff 响应 | `ProjectFileTree.test.tsx`、`useGitStatusController.test.tsx`、`ContextWorkbench.test.tsx` |
+| Porcelain v2 保留必需记录身份 | `server/src/git.rs` Parser；`server/tests/git.rs` Status/Conflict/Submodule |
+| Conflict、Staged、Changes 使用正确列 | `ContextWorkbench.test.tsx` Projection 测试 |
+| 大型 Status/Diff 有界且可恢复 | `server/tests/git.rs` Bounded 测试；浏览器 Localized State 测试 |
+| Untracked Diff 不在浏览器读取整文件 | `ContextWorkbench.test.tsx` `readFile` 断言；`server/tests/git.rs` |
+| 大型 Files 与 Git List 保持可访问 | `ProjectFileTree.test.tsx`、`ContextWorkbench.test.tsx`、Playwright Smoke |
+| Unregister 停止 Watcher 且不删除内容 | Watcher Unregister；`server/tests/workspace.rs` |
+| Analytics 不包含敏感数据 | `AgentSessionWorkspace.test.tsx`；Manual Event Schema Audit |
+| Required Gates 通过 | `AGENTS.md` 命令；本地 Docs 与 Localization Check |
+
+Manual Check 使用临时 Project，只删除 Kubecode Registration，不删除 Project
+Directory 或 Provider-native History。

@@ -100,7 +100,7 @@ export function ProjectFileTree({
         generation,
         loaded: existing?.loaded ?? false,
         loading: true,
-        stale: false,
+        stale: existing?.stale ?? false,
       })
       return next
     })
@@ -134,7 +134,7 @@ export function ProjectFileTree({
             error: message,
             loaded: true,
             loading: false,
-            stale: false,
+            stale: true,
           })
           return next
         })
@@ -150,7 +150,7 @@ export function ProjectFileTree({
       let changed = false
       const next = new Map(current)
       for (const [path, state] of next) {
-        next.set(path, { ...state, generation, loading: false, stale: true })
+        next.set(path, { ...state, error: null, generation, loading: false, stale: true })
         changed = true
       }
       return changed ? next : current
@@ -176,7 +176,13 @@ export function ProjectFileTree({
       for (const parent of parents) {
         const state = next.get(parent)
         if (state && expandedRef.current.has(parent)) {
-          next.set(parent, { ...state, generation, loading: false, stale: state.loaded })
+          next.set(parent, {
+            ...state,
+            error: null,
+            generation,
+            loading: false,
+            stale: state.loaded,
+          })
         }
       }
       return next
@@ -211,7 +217,7 @@ export function ProjectFileTree({
     for (const path of expanded) {
       const state = directories.get(path)
       if (state?.loading) continue
-      if (!state || !state.loaded || state.stale) {
+      if (!state || !state.loaded || (state.stale && !state.error)) {
         requestEntries(path)
       }
     }
@@ -228,6 +234,7 @@ export function ProjectFileTree({
     .map((path) => directories.get(path)?.error)
     .filter((message): message is string => Boolean(message))
   const isLoading = [...expanded].some((path) => directories.get(path)?.loading)
+  const hasStaleData = [...directories.values()].some((state) => state.stale)
 
   const visibleActivePath = rows.some((row) => row.path === activePath)
     ? activePath
@@ -363,6 +370,7 @@ export function ProjectFileTree({
         className="kubecode-project-file-tree"
         data-active-path={visibleActivePath}
         data-selected-path={visibleSelectedPath}
+        data-stale={hasStaleData || undefined}
         data-virtualized={isVirtualized || undefined}
         role="tree"
         tabIndex={-1}

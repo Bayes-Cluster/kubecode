@@ -75,6 +75,21 @@ Diff 前先刷新 Git Status。Binary、超大或不支持的 Diff 是可恢复�
 Submodule、Rename 或特殊 Worktree State，报告 Kubecode Bug 前先用本地 Git
 检查相同路径。
 
+## Files 或 Git 过期
+
+Watcher 是 best-effort 的 Invalidation 来源。Agent、Terminal、Git 或外部进程修改
+文件后请等待短暂的 Coalescing Window；如果仍未出现，请使用 Explorer 的
+Refresh Button。Watcher 安装或 Backend 失败不会禁用 Project：Kubecode 会重试，
+成功后会执行一次完整的 Files 与 Git Reconciliation。Queue Overflow、无法分类的
+Path 或漏掉的 Native Notification 也会走相同的 Full Recovery 流程。
+
+Runtime Connection 显示 **Reconnecting** 或 **Resynchronizing** 时，浏览器会重新
+打开 Durable SSE Stream，并在打开后刷新所有已加载的 Files Directory 和 Git Status。
+此流程只使用 Project ID 与经过验证的 Relative Path，不会重放绝对 Server Path 或
+File Content。Directory Error 会保留旧 Row 并标记为 Stale，直到 Manual Refresh
+成功；Git Status Error、Status Truncated Warning 和 Unavailable Diff 都可以通过
+Refresh 或 Diff Retry 恢复。
+
 ## Notification 没有出现
 
 1. 在 Settings 中启用对应 Category；

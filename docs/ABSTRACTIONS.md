@@ -672,6 +672,13 @@ entry; unrelated expanded directories are not reloaded. Full and manual refresh
 mark every loaded directory stale. Per-directory and Project request generations
 discard responses made obsolete by invalidation, eviction, Project change,
 collapse, or unmount.
+The visible tree is a derived flat projection with stable Project-relative row
+identity. It renders directly through 200 visible rows and switches to
+`react-virtuoso` above that threshold. Virtualization only limits mounted rows;
+it preserves `role="tree"`, `treeitem` levels and sibling metadata, expansion,
+selection, and keyboard focus, scrolling a focused row into the active window.
+Each Git Conflict, Staged, and Changes group applies the same 200-row cutoff
+with fixed-height keyed rows.
 
 The Changes section consumes a bounded `GitStatus` projection rather than Git
 porcelain. A change has a stable current path, optional rename/copy source path,
@@ -689,6 +696,15 @@ generation, aborts superseded requests on selection or Project change, and
 renders localized recoverable states for loading, unavailable, and failed
 diffs. These browser limits do not replace the smaller file/hunk/byte bounds and
 content-addressed identity used by Composer Git context.
+
+Git status scheduling is separate from the tree projection. The active Project
+loads immediately, filesystem invalidations debounce for 250 milliseconds, and
+at most one status request runs for a Project. Invalidations observed while it
+runs collapse into one follow-up; manual refresh and mutation responses apply
+immediately. Project and request generations, abort signals, and mutation-echo
+coalescing prevent stale status from replacing a newer projection. A failed
+directory or status read retains stale data with a recoverable error, while a
+manual refresh clears the error and retries the authoritative read.
 
 ## Workspace attention
 

@@ -328,6 +328,54 @@ describe('ProjectFileTree', () => {
     })
   })
 
+  it('keeps failed directory data marked stale until a manual refresh succeeds', async () => {
+    let srcCalls = 0
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path !== 'src') {
+        return Promise.resolve([{ name: 'src', path: 'src', kind: 'directory' }])
+      }
+      srcCalls += 1
+      if (srcCalls === 1) return Promise.resolve([{ name: 'old.ts', path: 'src/old.ts', kind: 'file' }])
+      if (srcCalls === 2) return Promise.reject(new Error('directory unavailable'))
+      return Promise.resolve([{ name: 'new.ts', path: 'src/new.ts', kind: 'file' }])
+    })
+    const { rerender } = renderTree(
+      { listEntries } as unknown as KubecodeApi,
+      { projectId: 'stale-recovery-project' },
+    )
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    expect(await screen.findByRole('treeitem', { name: /old\.ts/ })).toBeInTheDocument()
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="stale-recovery-project"
+      projectName="Demo"
+      refreshVersion={1}
+      t={createTranslator('en')}
+    />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('directory unavailable')
+    expect(screen.getByRole('tree')).toHaveAttribute('data-stale', 'true')
+    expect(screen.getByRole('treeitem', { name: /old\.ts/ })).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 20))
+    expect(srcCalls).toBe(2)
+
+    rerender(<ProjectFileTree
+      api={{ listEntries } as unknown as KubecodeApi}
+      onDirectoryChange={() => undefined}
+      onOpenFile={vi.fn()}
+      projectId="stale-recovery-project"
+      projectName="Demo"
+      refreshVersion={2}
+      t={createTranslator('en')}
+    />)
+
+    expect(await screen.findByRole('treeitem', { name: /new\.ts/ })).toBeInTheDocument()
+    expect(screen.getByRole('tree')).not.toHaveAttribute('data-stale', 'true')
+  })
+
   it('preserves expanded directories in sessionStorage across remounts', async () => {
     const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
       if (path === 'src') {
