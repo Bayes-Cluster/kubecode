@@ -50,9 +50,15 @@ Producers emit one of two canonical forms:
 
 Producers omit `full` for a scoped event and never emit `full: false` or combine
 `full: true` with paths. Consumers treat a malformed payload, an invalid path,
-or more than 256 paths as a full invalidation. An empty scoped event is ignored.
-There is no long-lived legacy `path`, `from`, or `to` form; explicit API
-producers and browser consumers move to this contract in the same rollout.
+or more than 256 paths as a full invalidation. `{ "paths": [] }` is malformed,
+and consumers fail closed to a full reconciliation; the only canonical
+empty-path form is `{ "paths": [], "full": true }`. There is no long-lived
+legacy `path`, `from`, or `to` form; explicit API producers and browser
+consumers move to this contract in the same rollout. This ADR supersedes only
+ADR 0205's statement that existing `file_changed` payloads remain unchanged.
+ADR 0205's SQLite payload and ordering authority, commit-before-publication,
+durable cursor, replay, and other ordering and durability decisions remain in
+force.
 
 Each path identifies an affected entry, not an absolute directory to enumerate.
 Create, write, and delete include that entry. Rename includes both the old and
@@ -88,7 +94,8 @@ registration that produced the callback, it:
 1. requires an absolute native path below that Project's registered canonical
    root and strips that root;
 2. rejects a prefix, root, parent, current-directory, empty, NUL-containing, or
-   non-UTF-8 relative component;
+   non-UTF-8 relative component, and rejects the private top-level `.state`
+   directory and every descendant of it;
 3. checks the target, or the nearest existing ancestor for a removed target,
    against the same containment and escaping-symlink rules used by Project file
    APIs; and
@@ -146,8 +153,11 @@ before the HTTP listener accepts requests, startup asks `WorkspaceService` to
 watch every registered Project. Project registration first commits the Project,
 then installs its watch. A watch failure does not roll back or hide an otherwise
 valid Project. Successful Project unregister invalidates the registration
-generation, cancels retry state, drops its native watcher, and discards pending
-callback state; it removes only Kubecode metadata and never Project content.
+generation, cancels retry state, drops its native watcher, and discards only
+not-yet-flushed pending batch state; it removes only Kubecode metadata and
+never Project content. Registration, callback, and unregister commands share
+one worker: a synchronous durable append already in progress finishes before a
+queued unregister is processed, after which unregister fences the generation.
 Late callbacks carrying an inactive generation are ignored.
 
 Watch installation failure is an explicit supported state. It is recorded as a

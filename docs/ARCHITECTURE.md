@@ -576,19 +576,25 @@ coalesces independently per Project after about 250 milliseconds quiet or at a
 2-second maximum interval, and persists at most 256 sorted relative paths.
 Queue, backend, path, or accumulation overflow becomes
 `file_changed {"paths":[],"full":true}`. A scoped event uses
-`{"paths":[...]}` and includes both sides of a rename. Absolute, escaping,
-invalid, and `.git` metadata paths never enter that payload.
+`{"paths":[...]}` and includes both sides of a rename. An empty scoped
+`{"paths":[]}` payload is malformed and consumers fail closed to full
+reconciliation; `{"paths":[],"full":true}` is the only canonical empty-path
+form. Absolute, escaping, invalid, top-level `.state` paths and descendants,
+and `.git` metadata paths never enter that payload.
 
 Ordinary paths produce `file_changed`, which invalidates the affected Files
 scopes and marks Git dirty. A batch containing only `.git` metadata produces a
 Git-only `git_changed`; a full Files invalidation reconciles both projections.
 Explicit API invalidations remain immediate even when watching is unavailable.
 Watch registrations start with persisted Projects, follow register/unregister,
-and use generations to reject late callbacks. Failed watches retry with bounded
-backoff and publish a full invalidation after recovery. Manual refresh always
-reads disk and Git directly. Every SSE open or reconnect also schedules a full
-client reconciliation, covering a missed process-local hint without changing
-durable cursor replay.
+and use generations to reject late callbacks. Registration, callback, and
+unregister commands share one worker: a synchronous durable append already in
+progress finishes before queued unregister is processed, after which it fences
+the generation and discards only not-yet-flushed pending batch state. Failed
+watches retry with bounded backoff and publish a full invalidation after
+recovery. Manual refresh always reads disk and Git directly. Every SSE open or
+reconnect also schedules a full client reconciliation, covering a missed
+process-local hint without changing durable cursor replay.
 ACP text and thinking fragments are combined by a connection-scoped journal
 for a fixed window of up to 33 milliseconds anchored at its first fragment.
 Semantic and lifecycle events force an immediate flush, and one SQLite
