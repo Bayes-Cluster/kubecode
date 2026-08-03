@@ -74,6 +74,107 @@ async fn supports_local_review_stage_diff_and_commit() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn preserves_unix_backslashes_as_distinct_git_paths() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, state).expect("workspace"));
+    let project = workspace
+        .create_project(".", "backslash-paths")
+        .expect("project");
+    let repository = root.join("backslash-paths");
+    let git = GitService::new(Arc::clone(&workspace));
+    git.initialize(&project.id).await.expect("initialize");
+    configure_identity(&repository);
+
+    fs::create_dir(repository.join("a")).expect("directory");
+    fs::write(repository.join("a/b.txt"), "slash base\n").expect("slash file");
+    fs::write(repository.join("a\\b.txt"), "backslash base\n").expect("backslash file");
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "initial"]);
+
+    fs::write(repository.join("a/b.txt"), "slash base\nslash change\n").expect("slash change");
+    fs::write(
+        repository.join("a\\b.txt"),
+        "backslash base\nbackslash change\n",
+    )
+    .expect("backslash change");
+
+    let status = git.status(&project.id).await.expect("status");
+    assert!(status.files.iter().any(|change| change.path == "a/b.txt"));
+    assert!(status.files.iter().any(|change| change.path == "a\\b.txt"));
+
+    let slash_diff = git
+        .diff(&project.id, "a/b.txt", false)
+        .await
+        .expect("slash diff")
+        .diff
+        .expect("slash text diff");
+    let backslash_diff = git
+        .diff(&project.id, "a\\b.txt", false)
+        .await
+        .expect("backslash diff")
+        .diff
+        .expect("backslash text diff");
+    assert!(slash_diff.contains("+slash change"));
+    assert!(!slash_diff.contains("+backslash change"));
+    assert!(backslash_diff.contains("+backslash change"));
+    assert!(!backslash_diff.contains("+slash change"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rejects_untracked_final_and_ancestor_symlink_ui_diffs() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state = root.join(".state/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, state).expect("workspace"));
+    let project = workspace
+        .create_project(".", "symlink-diffs")
+        .expect("project");
+    let repository = root.join("symlink-diffs");
+    let outside = temp.path().join("outside");
+    let git = GitService::new(Arc::clone(&workspace));
+    git.initialize(&project.id).await.expect("initialize");
+    configure_identity(&repository);
+
+    fs::create_dir_all(&outside).expect("outside directory");
+    fs::write(outside.join("secret.txt"), "outside secret content\n").expect("outside file");
+    symlink(
+        outside.join("secret.txt"),
+        repository.join("final-link.txt"),
+    )
+    .expect("final symlink");
+    symlink(&outside, repository.join("ancestor-link")).expect("ancestor symlink");
+    assert!(
+        workspace
+            .project_relative_path_contains_symlink(&project.id, "final-link.txt")
+            .expect("final symlink check")
+    );
+    assert!(
+        workspace
+            .project_relative_path_contains_symlink(&project.id, "ancestor-link/secret.txt")
+            .expect("ancestor symlink check")
+    );
+
+    for path in ["final-link.txt", "ancestor-link/secret.txt"] {
+        let diff = git
+            .diff(&project.id, path, false)
+            .await
+            .expect("symlink diff result");
+        assert_eq!(diff.diff, None, "{path} must not return outside content");
+        assert_eq!(
+            diff.unavailable_reason,
+            Some(GitDiffUnavailableReason::Unsupported),
+            "{path} must be unsupported"
+        );
+    }
+}
+
 #[tokio::test]
 async fn projects_porcelain_v2_status_for_index_worktree_renames_and_unusual_paths() {
     let temp = TempDir::new().expect("tempdir");
@@ -291,10 +392,16 @@ async fn exposes_stable_ui_diff_unavailable_reasons() {
     configure_identity(&repository);
     fs::write(repository.join("clean.txt"), "clean\n").expect("clean fixture");
     fs::write(repository.join("binary.dat"), [0, 159, 146, 150]).expect("binary fixture");
+    fs::write(repository.join("marker-words.txt"), "base\n").expect("marker fixture");
     fs::write(repository.join("large.txt"), "small\n").expect("large fixture");
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "initial"]);
     fs::write(repository.join("binary.dat"), [0, 159, 146, 151]).expect("binary change");
+    fs::write(
+        repository.join("marker-words.txt"),
+        "base\nBinary files a/file and b/file differ\nGIT binary patch\n",
+    )
+    .expect("marker text change");
     fs::write(
         repository.join("large.txt"),
         format!("{}\n", "x".repeat(MAX_GIT_UI_DIFF_BYTES + 1024)),
@@ -310,6 +417,12 @@ async fn exposes_stable_ui_diff_unavailable_reasons() {
         binary.unavailable_reason,
         Some(GitDiffUnavailableReason::Binary)
     );
+    let marker_words = git
+        .diff(&project.id, "marker-words.txt", false)
+        .await
+        .expect("marker words result");
+    assert!(marker_words.diff.is_some());
+    assert_eq!(marker_words.unavailable_reason, None);
     let oversized = git
         .diff(&project.id, "large.txt", false)
         .await

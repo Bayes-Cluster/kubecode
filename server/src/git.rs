@@ -137,9 +137,13 @@ impl GitService {
             .workspace
             .validate_project_relative_path(project_id, path)?;
         let cwd = self.workspace.project_path(project_id)?;
-        tokio::task::spawn_blocking(move || ui_diff_blocking(&cwd, &path, staged))
-            .await
-            .map_err(|error| GitError::Command(format!("Git diff task failed: {error}")))?
+        let workspace = Arc::clone(&self.workspace);
+        let project_id = project_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            ui_diff_blocking(&workspace, &project_id, &cwd, &path, staged)
+        })
+        .await
+        .map_err(|error| GitError::Command(format!("Git diff task failed: {error}")))?
     }
 
     pub async fn mutate(
@@ -376,7 +380,13 @@ fn status_blocking(cwd: &Path, allow_truncated: bool) -> Result<GitStatus, GitEr
     parse_status(&output, truncated)
 }
 
-fn ui_diff_blocking(cwd: &Path, path: &str, staged: bool) -> Result<GitDiff, GitError> {
+fn ui_diff_blocking(
+    workspace: &WorkspaceService,
+    project_id: &str,
+    cwd: &Path,
+    path: &str,
+    staged: bool,
+) -> Result<GitDiff, GitError> {
     let status = status_blocking(cwd, true)?;
     let Some(change) = status.files.iter().find(|change| change.path == path) else {
         return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
@@ -385,6 +395,9 @@ fn ui_diff_blocking(cwd: &Path, path: &str, staged: bool) -> Result<GitDiff, Git
     if (staged && (change.index_status.is_none() || untracked))
         || (!staged && change.worktree_status.is_none())
     {
+        return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
+    }
+    if untracked && workspace.project_relative_path_contains_symlink(project_id, path)? {
         return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
     }
 
@@ -741,12 +754,10 @@ fn hunk_count(content: &[u8]) -> usize {
 }
 
 fn contains_binary_marker(content: &[u8]) -> bool {
-    content
-        .windows(b"Binary files ".len())
-        .any(|window| window == b"Binary files ")
-        || content
-            .windows(b"GIT binary patch".len())
-            .any(|window| window == b"GIT binary patch")
+    content.split(|byte| *byte == b'\n').any(|line| {
+        line == b"GIT binary patch"
+            || (line.starts_with(b"Binary files ") && line.ends_with(b" differ"))
+    })
 }
 
 enum BoundedGitOutput {
@@ -1015,9 +1026,13 @@ fn parse_file_status<'a>(
     {
         worktree_status = Some('M');
     }
+    let path = String::from_utf8(path.to_vec()).map_err(|_| invalid())?;
+    let original_path = original_path
+        .map(|path| String::from_utf8(path.to_vec()).map_err(|_| invalid()))
+        .transpose()?;
     Ok(GitFileChange {
-        path: String::from_utf8_lossy(path).into_owned(),
-        original_path: original_path.map(|path| String::from_utf8_lossy(path).into_owned()),
+        path,
+        original_path,
         index_status,
         worktree_status,
         conflict,
@@ -1116,5 +1131,34 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
         assert!(validate_path("src/main.rs").is_ok());
         assert!(validate_path("../secret").is_err());
         assert!(validate_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_in_porcelain_path_records() {
+        assert!(parse_status(b"? invalid-\xff-name.txt\0", false).is_err());
+        assert!(
+            parse_status(
+                b"2 R. N... 100644 100644 100644 abc def R100 new.txt\0old-\xff-name.txt\0",
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn recognizes_only_git_binary_marker_lines() {
+        assert!(contains_binary_marker(b"GIT binary patch\n"));
+        assert!(contains_binary_marker(
+            b"Binary files a/file and b/file differ\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"+Binary files a/file and b/file differ\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"text mentioning GIT binary patch\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"not Binary files a and b differ\n"
+        ));
     }
 }
