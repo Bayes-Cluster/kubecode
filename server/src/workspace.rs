@@ -2,7 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::agents::ExecutionMode;
 use crate::database::{Database, DatabaseError, ensure_column};
+use crate::project_watcher::{ProjectWatcher, WorkspaceEventSink};
 
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
@@ -102,6 +103,7 @@ pub struct WorkspaceService {
     root: PathBuf,
     state_root: PathBuf,
     database: Arc<Database>,
+    watcher: Mutex<Option<ProjectWatcher>>,
 }
 
 impl WorkspaceService {
@@ -148,6 +150,7 @@ impl WorkspaceService {
             root,
             state_root,
             database,
+            watcher: Mutex::new(None),
         })
     }
 
@@ -609,15 +612,58 @@ impl WorkspaceService {
     }
 
     pub fn unregister_project(&self, project_id: &str) -> Result<(), WorkspaceError> {
-        let database = self
-            .database
+        {
+            let database = self
+                .database
+                .lock()
+                .expect("workspace database mutex poisoned");
+            let changed = database.execute("DELETE FROM projects WHERE id = ?1", [project_id])?;
+            if changed == 0 {
+                return Err(WorkspaceError::ProjectNotFound(project_id.to_owned()));
+            }
+        }
+        if let Some(watcher) = self
+            .watcher
             .lock()
-            .expect("workspace database mutex poisoned");
-        let changed = database.execute("DELETE FROM projects WHERE id = ?1", [project_id])?;
-        if changed == 0 {
-            return Err(WorkspaceError::ProjectNotFound(project_id.to_owned()));
+            .expect("workspace watcher mutex poisoned")
+            .as_ref()
+        {
+            watcher.unregister(project_id.to_owned());
         }
         Ok(())
+    }
+
+    /// Starts watching every registered Project. Called after the durable
+    /// workspace-event append sink is available and before the HTTP listener
+    /// accepts requests. Watch failures are an explicit supported state and
+    /// never roll back a valid Project.
+    pub fn start_watching(&self, sink: WorkspaceEventSink) {
+        let projects = self.list_projects().unwrap_or_default();
+        let mut guard = self
+            .watcher
+            .lock()
+            .expect("workspace watcher mutex poisoned");
+        if guard.is_some() {
+            return;
+        }
+        let watcher = ProjectWatcher::start(sink);
+        for project in projects {
+            watcher.register(project.id, PathBuf::from(&project.path));
+        }
+        *guard = Some(watcher);
+    }
+
+    /// Stops the watcher worker, draining and flushing pending batches. Used by
+    /// tests and orderly Runtime shutdown.
+    pub fn stop_watching(&self) {
+        if let Some(watcher) = self
+            .watcher
+            .lock()
+            .expect("workspace watcher mutex poisoned")
+            .take()
+        {
+            watcher.shutdown();
+        }
     }
 
     pub fn merge_isolated_tree(
@@ -947,31 +993,44 @@ impl WorkspaceService {
             .map(|value| value.to_string_lossy().into_owned())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| path.clone());
-        let database = self
-            .database
-            .lock()
-            .expect("workspace database mutex poisoned");
-        let exists = database
-            .query_row(
-                "SELECT 1 FROM projects WHERE path = ?1",
-                [&path],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
-        if exists {
-            return Err(WorkspaceError::DuplicateProject(path));
-        }
-        let project = Project {
-            id: Uuid::new_v4().to_string(),
-            name,
-            path,
-            workspaces_enabled: false,
+        let project = {
+            let database = self
+                .database
+                .lock()
+                .expect("workspace database mutex poisoned");
+            let exists = database
+                .query_row(
+                    "SELECT 1 FROM projects WHERE path = ?1",
+                    [&path],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if exists {
+                return Err(WorkspaceError::DuplicateProject(path));
+            }
+            let project = Project {
+                id: Uuid::new_v4().to_string(),
+                name,
+                path,
+                workspaces_enabled: false,
+            };
+            database.execute(
+                "INSERT INTO projects (id, name, path) VALUES (?1, ?2, ?3)",
+                params![project.id, project.name, project.path],
+            )?;
+            project
         };
-        database.execute(
-            "INSERT INTO projects (id, name, path) VALUES (?1, ?2, ?3)",
-            params![project.id, project.name, project.path],
-        )?;
+        // The Project is committed before its watch is installed; a watch
+        // failure must not roll back or hide an otherwise valid Project.
+        if let Some(watcher) = self
+            .watcher
+            .lock()
+            .expect("workspace watcher mutex poisoned")
+            .as_ref()
+        {
+            watcher.register(project.id.clone(), canonical);
+        }
         Ok(project)
     }
 
@@ -1289,8 +1348,74 @@ fn revision(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-fn path_string(path: &Path) -> String {
+pub(crate) fn path_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// How a native watch event path is exposed across the Project-relative
+/// boundary. Only `WorkspaceService` converts native paths.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum WatchedPathClassification {
+    /// An ordinary Project-relative entry path, serialized with `/`.
+    Ordinary(String),
+    /// A path whose first component is exactly `.git`; Git-only invalidation.
+    GitOnly,
+    /// The batch must become a full reconciliation (root, escaping, or unsafe).
+    Full,
+}
+
+/// Converts a native absolute path observed for a Project watch registration
+/// into a validated Project-relative classification.
+///
+/// The Project root itself is a full invalidation. A path that cannot be
+/// classified safely is also full so the complete Project batch fails closed
+/// rather than dropping the path.
+pub(crate) fn classify_watched_path(
+    project_root: &Path,
+    absolute: &Path,
+) -> WatchedPathClassification {
+    let relative = match absolute.strip_prefix(project_root) {
+        Ok(relative) => relative,
+        Err(_) => return WatchedPathClassification::Full,
+    };
+    if relative.as_os_str().is_empty() {
+        return WatchedPathClassification::Full;
+    }
+    let mut normalized = PathBuf::new();
+    for (index, component) in relative.components().enumerate() {
+        let Component::Normal(name) = component else {
+            return WatchedPathClassification::Full;
+        };
+        let name = match name.to_str() {
+            Some(name) => name,
+            None => return WatchedPathClassification::Full,
+        };
+        if name.is_empty() || name == "." || name == ".." || name.contains('\0') {
+            return WatchedPathClassification::Full;
+        }
+        if index == 0 && name == ".git" {
+            return WatchedPathClassification::GitOnly;
+        }
+        normalized.push(name);
+    }
+    // Containment: check the target, or the nearest existing ancestor for a
+    // removed target, against the same escaping-symlink rules used by the
+    // Project file APIs.
+    let mut existing = absolute;
+    loop {
+        if existing.exists() {
+            break;
+        }
+        match existing.parent() {
+            Some(parent) => existing = parent,
+            None => return WatchedPathClassification::Full,
+        }
+    }
+    match existing.canonicalize() {
+        Ok(canonical) if canonical.starts_with(project_root) => {}
+        _ => return WatchedPathClassification::Full,
+    }
+    WatchedPathClassification::Ordinary(path_string(&normalized))
 }
 
 fn entry_kind_rank(kind: &EntryKind) -> u8 {
@@ -1323,4 +1448,83 @@ fn is_generated_directory_name(name: &str) -> bool {
             | "node_modules"
             | "target"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn classify_temp(relative: &Path) -> WatchedPathClassification {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        if let Some(parent) = relative.parent() {
+            std::fs::create_dir_all(root.join(parent)).expect("parent dirs");
+        }
+        if let Some(name) = relative.file_name() {
+            std::fs::write(root.join(relative), name.to_string_lossy().as_bytes()).expect("entry");
+        }
+        let absolute = root.join(relative);
+        // Classification happens after the entry is removed so removed files
+        // resolve against their nearest existing ancestor.
+        std::fs::remove_file(&absolute).expect("remove entry");
+        classify_watched_path(&root, &absolute)
+    }
+
+    #[test]
+    fn classifies_nested_ordinary_path() {
+        assert_eq!(
+            classify_temp(Path::new("src/main.rs")),
+            WatchedPathClassification::Ordinary("src/main.rs".to_owned())
+        );
+    }
+
+    #[test]
+    fn classifies_root_as_full() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        assert_eq!(
+            classify_watched_path(&root, &root),
+            WatchedPathClassification::Full
+        );
+    }
+
+    #[test]
+    fn classifies_git_first_component_as_git_only() {
+        assert_eq!(
+            classify_temp(Path::new(".git/HEAD")),
+            WatchedPathClassification::GitOnly
+        );
+    }
+
+    #[test]
+    fn classifies_gitignore_as_ordinary() {
+        assert_eq!(
+            classify_temp(Path::new(".gitignore")),
+            WatchedPathClassification::Ordinary(".gitignore".to_owned())
+        );
+    }
+
+    #[test]
+    fn classifies_escaping_path_as_full() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        let outside = root.join("../../outside.txt");
+        assert_eq!(
+            classify_watched_path(&root, &outside),
+            WatchedPathClassification::Full
+        );
+    }
+
+    #[test]
+    fn classifies_symlink_escape_as_full() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        std::os::unix::fs::symlink(outside.path(), root.join("link")).expect("symlink");
+        let absolute = root.join("link/escape.txt");
+        assert_eq!(
+            classify_watched_path(&root, &absolute),
+            WatchedPathClassification::Full
+        );
+    }
 }
