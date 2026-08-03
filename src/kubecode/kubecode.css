@@ -1843,8 +1843,14 @@
   padding: 8px 6px 4px;
   text-transform: uppercase;
 }
-.kubecode-git-row { align-items: center; display: flex; gap: 2px; }
-.kubecode-git-path { flex: 1; justify-content: space-between; min-width: 0; overflow: hidden; }
+.kubecode-git-row {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+  height: 36px;
+  min-height: 36px;
+}
+.kubecode-git-path { flex: 1; height: 36px; justify-content: space-between; min-width: 0; overflow: hidden; }
 .kubecode-git-path-name {
   display: flex;
   flex-direction: column;
@@ -1861,6 +1867,12 @@
   white-space: nowrap;
 }
 .kubecode-git-path code { color: var(--accent-orange); font-size: 12px; }
+.kubecode-git-virtual-list {
+  flex: 0 0 auto;
+  height: min(480px, 55vh);
+  min-height: 120px;
+  width: 100%;
+}
 .kubecode-git-notice {
   background: color-mix(in srgb, var(--feedback-warning-bg) 45%, var(--surface-app));
   border: 1px solid color-mix(in srgb, var(--feedback-warning-text) 25%, transparent);
@@ -1906,11 +1918,15 @@
   padding: 2px 5px 0;
 }
 .kubecode-project-file-tree {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 6px 5px 12px;
 }
+.kubecode-project-file-tree[data-virtualized='true'] { overflow: hidden; }
+.kubecode-file-tree-virtual-list { flex: 1 1 auto; min-height: 0; }
 .kubecode-file-search-results { padding-top: 5px; }
 .kubecode-file-tree-empty {
   color: var(--text-muted);

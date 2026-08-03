@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type KeyboardEvent,
+} from 'react'
 import { CaretDown, CaretRight, Eye, EyeSlash } from '@phosphor-icons/react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -11,7 +21,11 @@ import {
   parentDirectoryPath,
   type FileTreeInvalidation,
 } from './fileTreeInvalidation'
-import { isExcludedProjectEntry } from './projectPathSearch'
+import {
+  deriveVisibleTreeRows,
+  TREE_VIRTUALIZATION_THRESHOLD,
+  type VisibleTreeRow,
+} from './visibleTreeRows'
 
 type ProjectFileTreeProps = {
   api: KubecodeApi
@@ -46,11 +60,16 @@ export function ProjectFileTree({
   const [expanded, setExpanded] = useState(() => readExpandedPaths(projectId))
   const [directories, setDirectories] = useState<Map<string, DirectoryState>>(() => new Map())
   const [showExcluded, setShowExcluded] = useState(false)
+  const [activePath, setActivePath] = useState('')
+  const [selectedPath, setSelectedPath] = useState('')
   const appliedInvalidationIdRef = useRef(0)
   const expandedRef = useRef(expanded)
   const generationRef = useRef(0)
   const mountedRef = useRef(true)
   const projectIdRef = useRef(projectId)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>())
+  const focusActiveRowRef = useRef(false)
 
   useEffect(() => {
     projectIdRef.current = projectId
@@ -198,7 +217,58 @@ export function ProjectFileTree({
     }
   }, [directories, expanded, requestEntries])
 
-  const toggleDirectory = (path: string) => {
+  const rows = useMemo(() => deriveVisibleTreeRows({
+    directories,
+    expanded,
+    projectName,
+    showExcluded,
+  }), [directories, expanded, projectName, showExcluded])
+  const isVirtualized = rows.length > TREE_VIRTUALIZATION_THRESHOLD
+  const expandedErrors = [...expanded]
+    .map((path) => directories.get(path)?.error)
+    .filter((message): message is string => Boolean(message))
+  const isLoading = [...expanded].some((path) => directories.get(path)?.loading)
+
+  const visibleActivePath = rows.some((row) => row.path === activePath)
+    ? activePath
+    : rows[0]?.path ?? ''
+  const visibleSelectedPath = rows.some((row) => row.path === selectedPath)
+    ? selectedPath
+    : rows[0]?.path ?? ''
+
+  const focusMountedActiveRow = useCallback(() => {
+    if (!focusActiveRowRef.current) return
+    const row = rowRefs.current.get(visibleActivePath)
+    if (!row) return
+    focusActiveRowRef.current = false
+    row.focus()
+  }, [visibleActivePath])
+
+  useEffect(() => {
+    if (!focusActiveRowRef.current) return
+    focusMountedActiveRow()
+    if (!focusActiveRowRef.current) return
+    const index = rows.findIndex((candidate) => candidate.path === visibleActivePath)
+    if (index < 0 || !isVirtualized) return
+    virtuosoRef.current?.scrollIntoView({
+      align: 'center',
+      behavior: 'auto',
+      done: focusMountedActiveRow,
+      index,
+    })
+    const frame = window.requestAnimationFrame(() => {
+      focusMountedActiveRow()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusMountedActiveRow, isVirtualized, rows, visibleActivePath])
+
+  const setActiveRow = useCallback((path: string, focus = false) => {
+    focusActiveRowRef.current = focus
+    setActivePath(path)
+    setSelectedPath(path)
+  }, [])
+
+  const toggleDirectory = useCallback((path: string) => {
     onDirectoryChange(path)
     setExpanded((current) => {
       const next = new Set(current)
@@ -206,7 +276,71 @@ export function ProjectFileTree({
       else next.add(path)
       return next
     })
-  }
+  }, [onDirectoryChange])
+
+  const activateRow = useCallback((row: VisibleTreeRow) => {
+    setActiveRow(row.path)
+    if (row.kind === 'directory') toggleDirectory(row.path)
+    else onOpenFile(row.entry)
+  }, [onOpenFile, setActiveRow, toggleDirectory])
+
+  const moveActiveRow = useCallback((index: number) => {
+    const next = rows[index]
+    if (next) setActiveRow(next.path, true)
+  }, [rows, setActiveRow])
+
+  const handleTreeKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    const targetPath = target.closest<HTMLElement>('[data-tree-row-path]')
+      ?.dataset.treeRowPath
+    const rowIndex = Math.max(0, rows.findIndex((row) => row.path === (targetPath ?? visibleActivePath)))
+    const row = rows[rowIndex]
+    if (!row) return
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveActiveRow(Math.max(0, Math.min(
+        rows.length - 1,
+        rowIndex + (event.key === 'ArrowDown' ? 1 : -1),
+      )))
+      return
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      moveActiveRow(event.key === 'Home' ? 0 : rows.length - 1)
+      return
+    }
+    if (event.key === 'ArrowRight' && row.kind === 'directory') {
+      event.preventDefault()
+      if (!row.isExpanded) toggleDirectory(row.path)
+      else if (rows[rowIndex + 1]?.parentPath === row.path) moveActiveRow(rowIndex + 1)
+      return
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      if (row.kind === 'directory' && row.isExpanded) toggleDirectory(row.path)
+      else if (row.parentPath !== row.path) setActiveRow(row.parentPath, true)
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      activateRow(row)
+    }
+  }, [activateRow, moveActiveRow, rows, setActiveRow, toggleDirectory, visibleActivePath])
+
+  const renderRow = useCallback((_index: number, row: VisibleTreeRow) => (
+    <TreeRow
+      active={visibleActivePath === row.path}
+      key={row.id}
+      onActivate={activateRow}
+      onRegister={(element) => {
+        if (element) rowRefs.current.set(row.path, element)
+        else rowRefs.current.delete(row.path)
+      }}
+      row={row}
+      selected={visibleSelectedPath === row.path}
+    />
+  ), [activateRow, visibleActivePath, visibleSelectedPath])
 
   return (
     <div className="kubecode-project-file-browser">
@@ -223,93 +357,88 @@ export function ProjectFileTree({
           {showExcluded ? <Eye /> : <EyeSlash />}
         </Button>
       </div>
-      <div aria-label={projectName} className="kubecode-project-file-tree" role="tree">
-        <TreeDirectoryRow
-          directories={directories}
-          entry={{ kind: 'directory', name: projectName, path: '' }}
-          expanded={expanded}
-          onOpenFile={onOpenFile}
-          onToggle={toggleDirectory}
-          showExcluded={showExcluded}
-          t={t}
-        />
+      <div
+        aria-busy={isLoading || undefined}
+        aria-label={projectName}
+        className="kubecode-project-file-tree"
+        data-active-path={visibleActivePath}
+        data-selected-path={visibleSelectedPath}
+        data-virtualized={isVirtualized || undefined}
+        role="tree"
+        tabIndex={-1}
+        onKeyDown={handleTreeKeyDown}
+      >
+        {isVirtualized ? (
+          <Virtuoso
+            ref={virtuosoRef}
+            className="kubecode-file-tree-virtual-list"
+            computeItemKey={(_index, row) => row.id}
+            data={rows}
+            defaultItemHeight={26}
+            fixedItemHeight={26}
+            increaseViewportBy={{ bottom: 260, top: 260 }}
+            itemContent={renderRow}
+            itemsRendered={focusMountedActiveRow}
+            components={{ Scroller: TreeVirtuosoScroller }}
+          />
+        ) : rows.map((row, index) => renderRow(index, row))}
       </div>
+      {isLoading && <div className="kubecode-file-tree-empty">{t('kubecode.loading')}</div>}
+      {expandedErrors.map((message) => (
+        <div className="kubecode-file-tree-empty" key={message} role="status">{message}</div>
+      ))}
     </div>
   )
 }
 
-function TreeDirectoryRow({
-  directories,
-  entry,
-  expanded,
-  onOpenFile,
-  onToggle,
-  showExcluded,
-  t,
+function TreeRow({
+  active,
+  onActivate,
+  onRegister,
+  row,
+  selected,
 }: {
-  directories: Map<string, DirectoryState>
-  entry: Entry
-  expanded: Set<string>
-  onOpenFile: (entry: Entry) => void
-  onToggle: (path: string) => void
-  showExcluded: boolean
-  t: Translator
+  active: boolean
+  onActivate: (row: VisibleTreeRow) => void
+  onRegister: (element: HTMLButtonElement | null) => void
+  row: VisibleTreeRow
+  selected: boolean
 }) {
-  const isExpanded = expanded.has(entry.path)
-  const state = directories.get(entry.path)
-  const children = (state?.entries ?? [])
-    .filter((child) => showExcluded || !isExcludedProjectEntry(child))
-
   return (
-    <>
-      <Button
-        aria-expanded={isExpanded}
-        className="kubecode-file-tree-row"
-        role="treeitem"
-        variant="ghost"
-        onClick={() => onToggle(entry.path)}
-      >
-        {isExpanded ? <CaretDown /> : <CaretRight />}
-        <ProjectEntryIcon expanded={isExpanded} kind="directory" name={entry.name} />
-        <span>{entry.name}</span>
-      </Button>
-      {isExpanded && (
-        <div role="group">
-          {state?.error && (
-            <div className="kubecode-file-tree-empty" role="status">{state.error}</div>
-          )}
-          {state?.loading && state.entries.length === 0 && (
-            <div className="kubecode-file-tree-empty">{t('kubecode.loading')}</div>
-          )}
-          {children.map((child) => child.kind === 'directory' ? (
-            <TreeDirectoryRow
-              directories={directories}
-              entry={child}
-              expanded={expanded}
-              key={child.path}
-              onOpenFile={onOpenFile}
-              onToggle={onToggle}
-              showExcluded={showExcluded}
-              t={t}
-            />
-          ) : (
-            <Button
-              className="kubecode-file-tree-row"
-              key={child.path}
-              role="treeitem"
-              variant="ghost"
-              onClick={() => onOpenFile(child)}
-            >
-              <span className="kubecode-file-tree-spacer" />
-              <ProjectEntryIcon kind="file" name={child.name} />
-              <span>{child.name}</span>
-            </Button>
-          ))}
-        </div>
-      )}
-    </>
+    <Button
+      ref={onRegister}
+      aria-expanded={row.kind === 'directory' ? row.isExpanded : undefined}
+      aria-level={row.depth + 1}
+      aria-posinset={row.siblingIndex + 1}
+      aria-selected={selected}
+      aria-setsize={row.siblingCount}
+      className="kubecode-file-tree-row"
+      data-active={active || undefined}
+      data-tree-row-path={row.path}
+      id={treeRowId(row.path)}
+      role="treeitem"
+      style={{ paddingLeft: `${7 + row.depth * 13}px` }}
+      tabIndex={active ? 0 : -1}
+      variant="ghost"
+      onClick={() => onActivate(row)}
+    >
+      {row.kind === 'directory' && (row.isExpanded ? <CaretDown /> : <CaretRight />)}
+      {row.kind === 'file' && <span className="kubecode-file-tree-spacer" />}
+      <ProjectEntryIcon expanded={row.isExpanded} kind={row.kind} name={row.name} />
+      <span>{row.name}</span>
+    </Button>
   )
 }
+
+function treeRowId(path: string): string {
+  return `kubecode-tree-row-${encodeURIComponent(path || 'root')}`
+}
+
+const TreeVirtuosoScroller = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function TreeVirtuosoScroller(props, ref) {
+    return <div {...props} ref={ref} tabIndex={-1} />
+  },
+)
 
 function readExpandedPaths(projectId: string): Set<string> {
   try {

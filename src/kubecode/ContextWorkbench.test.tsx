@@ -603,6 +603,44 @@ describe('ContextWorkbench', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(250) })
     expect(api.gitStatus).toHaveBeenCalledTimes(2)
   })
+
+  it('bounds mounted rows independently for large Conflict, Staged, and Changes groups', async () => {
+    const files = [
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `conflict-${index}.txt`, index_status: 'U', worktree_status: 'U', conflict: true,
+      })),
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `staged-${index}.txt`, index_status: 'M', worktree_status: null, conflict: false,
+      })),
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `changed-${index}.txt`, index_status: null, worktree_status: 'M', conflict: false,
+      })),
+    ]
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files,
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    for (const group of ['conflict', 'staged', 'worktree']) {
+      const list = await screen.findByTestId(`git-change-virtual-list-${group}`)
+      expect(list.querySelectorAll('.kubecode-git-row').length).toBeLessThan(210)
+    }
+  })
 })
 
 function fileChangedEvent(

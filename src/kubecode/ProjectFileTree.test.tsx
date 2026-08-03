@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { VirtuosoMockContext } from 'react-virtuoso'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -351,5 +352,97 @@ describe('ProjectFileTree', () => {
     render(<ProjectFileTree invalidations={[]} {...props} />)
     expect(await screen.findByRole('treeitem', { name: /src/ })).toHaveAttribute('aria-expanded', 'true')
     await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-storage', 'src'))
+  })
+
+  it('exposes tree levels and keyboard navigation for the active row', async () => {
+    const api = {
+      listEntries: vi.fn().mockImplementation((_projectId: string, path: string) => Promise.resolve(
+        path === 'src'
+          ? [{ name: 'main.ts', path: 'src/main.ts', kind: 'file' }]
+          : [{ name: 'src', path: 'src', kind: 'directory' }, { name: 'README.md', path: 'README.md', kind: 'file' }],
+      )),
+    } as unknown as KubecodeApi
+
+    renderTree(api)
+    const tree = await screen.findByRole('tree')
+    const root = await screen.findByRole('treeitem', { name: /Demo/ })
+    const src = screen.getByRole('treeitem', { name: /src/ })
+    expect(root).toHaveAttribute('aria-level', '1')
+    expect(src).toHaveAttribute('aria-level', '2')
+    expect(root).toHaveAttribute('tabindex', '0')
+
+    tree.focus()
+    fireEvent.keyDown(tree, { key: 'ArrowDown' })
+    expect(src).toHaveAttribute('aria-selected', 'true')
+    expect(src).toHaveAttribute('tabindex', '0')
+    expect(src).toHaveFocus()
+
+    fireEvent.keyDown(src, { key: 'ArrowRight' })
+    expect(src).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByRole('treeitem', { name: /main.ts/ })).toHaveAttribute('aria-level', '3')
+  })
+
+  it('bounds mounted rows for a large cached directory', async () => {
+    const entries = Array.from({ length: 1_200 }, (_value, index) => ({
+      kind: 'file' as const,
+      name: `file-${index}.ts`,
+      path: `file-${index}.ts`,
+    }))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue(entries),
+    } as unknown as KubecodeApi
+
+    render(
+      <VirtuosoMockContext.Provider value={{ itemHeight: 26, viewportHeight: 260 }}>
+        <ProjectFileTree
+          api={api}
+          onDirectoryChange={() => undefined}
+          onOpenFile={vi.fn()}
+          projectId="project-1"
+          projectName="Demo"
+          refreshVersion={0}
+          t={createTranslator('en')}
+        />
+      </VirtuosoMockContext.Provider>,
+    )
+    const tree = await screen.findByRole('tree')
+    await waitFor(() => expect(tree.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(0))
+    expect(tree.querySelectorAll('[role="treeitem"]').length).toBeLessThan(entries.length)
+    expect(tree).toHaveAttribute('data-virtualized', 'true')
+  })
+
+  it('moves keyboard focus through virtual windows without changing row identity', async () => {
+    const entries = Array.from({ length: 1_200 }, (_value, index) => ({
+      kind: 'file' as const,
+      name: `file-${index}.ts`,
+      path: `file-${index}.ts`,
+    }))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue(entries),
+    } as unknown as KubecodeApi
+
+    render(
+      <VirtuosoMockContext.Provider value={{ itemHeight: 26, viewportHeight: 260 }}>
+        <ProjectFileTree
+          api={api}
+          onDirectoryChange={() => undefined}
+          onOpenFile={vi.fn()}
+          projectId="project-1"
+          projectName="Demo"
+          refreshVersion={0}
+          t={createTranslator('en')}
+        />
+      </VirtuosoMockContext.Provider>,
+    )
+    const tree = await screen.findByRole('tree')
+    tree.focus()
+    for (let index = 0; index < 260; index += 1) {
+      fireEvent.keyDown(tree, { key: 'ArrowDown' })
+    }
+
+    await waitFor(() => expect(tree).toHaveAttribute('data-active-path', 'file-259.ts'))
+    expect(tree).toHaveAttribute('data-selected-path', 'file-259.ts')
+    expect(tree.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(0)
+    expect(tree.querySelectorAll('[role="treeitem"]').length).toBeLessThan(entries.length + 1)
   })
 })

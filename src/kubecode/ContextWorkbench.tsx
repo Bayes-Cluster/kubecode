@@ -14,6 +14,7 @@ import {
   Trash,
   X,
 } from '@phosphor-icons/react'
+import { Virtuoso } from 'react-virtuoso'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -60,6 +61,8 @@ type OpenDocument = {
   draft: string
   projectId: string
 }
+
+const GIT_GROUP_VIRTUALIZATION_THRESHOLD = 200
 
 type ContextWorkbenchProps = {
   api: KubecodeApi
@@ -723,31 +726,89 @@ function GitChangeGroup({
   statusColumn: 'conflict' | 'index' | 'worktree'
   discardLabel?: string
 }) {
+  const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
+
   return (
-    <section className="kubecode-git-group" data-group={group}>
+    <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
       <header><strong>{label}</strong><span>{changes.length}</span></header>
-      {changes.map((change) => (
-        <div className="kubecode-git-row" key={`${label}:${change.path}`}>
-          <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
-            <span className="kubecode-git-path-name">
-              {change.original_path && (
-                <small className="kubecode-git-rename-source">
-                  {change.original_path} →
-                </small>
-              )}
-              <span>{change.path}</span>
-            </span>
-            <code>{gitStatusColumn(change, statusColumn)}</code>
-          </Button>
-          {onDiscard && (
-            <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
+      {isVirtualized ? (
+        <Virtuoso
+          className="kubecode-git-virtual-list"
+          computeItemKey={(_index, change) => `${group}:${change.path}`}
+          data={changes}
+          data-testid={`git-change-virtual-list-${group}`}
+          defaultItemHeight={36}
+          fixedItemHeight={36}
+          increaseViewportBy={{ bottom: 216, top: 216 }}
+          itemContent={(_index, change) => (
+            <GitChangeRow
+              change={change}
+              discardLabel={discardLabel}
+              onDiscard={onDiscard}
+              onDiff={onDiff}
+              onPrimary={onPrimary}
+              primaryIcon={primaryIcon}
+              primaryLabel={primaryLabel}
+              statusColumn={statusColumn}
+            />
           )}
-          {onPrimary && (
-            <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
-          )}
-        </div>
+        />
+      ) : changes.map((change) => (
+        <GitChangeRow
+          change={change}
+          discardLabel={discardLabel}
+          key={`${group}:${change.path}`}
+          onDiscard={onDiscard}
+          onDiff={onDiff}
+          onPrimary={onPrimary}
+          primaryIcon={primaryIcon}
+          primaryLabel={primaryLabel}
+          statusColumn={statusColumn}
+        />
       ))}
     </section>
+  )
+}
+
+function GitChangeRow({
+  change,
+  discardLabel,
+  onDiscard,
+  onDiff,
+  onPrimary,
+  primaryIcon,
+  primaryLabel,
+  statusColumn,
+}: {
+  change: GitFileChange
+  discardLabel?: string
+  onDiscard?: (change: GitFileChange) => void
+  onDiff: (change: GitFileChange) => void
+  onPrimary?: (change: GitFileChange) => void
+  primaryIcon?: ReactNode
+  primaryLabel?: string
+  statusColumn: 'conflict' | 'index' | 'worktree'
+}) {
+  return (
+    <div className="kubecode-git-row">
+      <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
+        <span className="kubecode-git-path-name">
+          {change.original_path && (
+            <small className="kubecode-git-rename-source">
+              {change.original_path} →
+            </small>
+          )}
+          <span>{change.path}</span>
+        </span>
+        <code>{gitStatusColumn(change, statusColumn)}</code>
+      </Button>
+      {onDiscard && (
+        <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
+      )}
+      {onPrimary && (
+        <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
+      )}
+    </div>
   )
 }
 
