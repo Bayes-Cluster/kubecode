@@ -19,6 +19,7 @@ axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false, features = ["io", "sink", "std"] }
 hex = "0.4"
+notify = "=7.0.0"
 portable-pty = "0.9"
 rusqlite = { version = "0.39", features = ["bundled"] }
 rmcp = { version = "=1.8.0", features = ["transport-streamable-http-server"] }

@@ -30,6 +30,18 @@ Component，越过 Project Root 的请求会被拒绝。
 编辑器有意保持轻量。当需要 Language Server、Debug 或 Extension 生态时，
 请使用 Terminal 或其他 IDE。
 
+## 自动刷新
+
+Kubecode 会监听每个已注册 Project Directory，让 Explorer 和 Git Changes 在编辑器
+之外发生文件变化时保持最新。Terminal、Git、Agent 或 Server 上其他进程引起的
+变化会以失效事件的形式体现，而不需要手动刷新。
+
+监听是 best-effort 的，并且始终不作为权威数据来源。Server 会先合并 (Coalesce)
+一段时间内的活动，再通知浏览器；当它无法对变化分类或通知溢出时，会退化为刷新
+整个 Project。添加和移除 Project 会自动更新监听；监听失败不会隐藏 Project，
+Kubecode 会重试。Files 与 Git 视图始终可按需获得权威数据，Manual Refresh 也始终
+可用。每次重连都会为每个打开的 Project 请求一次全新的完整视图。
+
 ## Git Changes
 
 对于 Git Repository，Changes Tree 支持：

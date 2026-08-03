@@ -34,6 +34,22 @@ rejected.
 The editor is intentionally lightweight. Use a Terminal or another IDE when you
 need language-server features, debugging, or extension ecosystems.
 
+## Automatic refresh
+
+Kubecode watches each registered Project directory so the Explorer and Git
+Changes stay current when files change outside the editor. Changes made by a
+Terminal, Git, an Agent, or another process on the server are surfaced as
+invalidation events instead of requiring a manual refresh.
+
+Watching is best-effort and intentionally never a source of authoritative data.
+The server coalesces a burst of activity before notifying the browser, and it
+falls back to refreshing the whole Project when it cannot classify a change or
+its notifications overflow. Adding and removing a Project updates the watch
+automatically; a failed watch never hides the Project, and Kubecode retries it.
+The Files and Git views remain authoritative on demand, and the manual refresh
+control is always available. Reconnecting always requests a fresh full view for
+every Project you have open.
+
 ## Git Changes
 
 For Git repositories, the Changes tree supports:
