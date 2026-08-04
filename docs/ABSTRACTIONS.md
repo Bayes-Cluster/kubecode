@@ -29,15 +29,27 @@ model.
 A Project is an application ID mapped to an absolute canonical server path.
 `WorkspaceService` is the only layer allowed to translate the ID and a
 browser-supplied relative path into a filesystem path. It rejects traversal,
-escaping symlinks, and the private Kubecode state directory. Project entry
-listings do not follow symbolic-link children; this keeps lazy Explorer reads
-inside the registered root and prevents inaccessible or remote link targets
-from expanding the access boundary. Directory enumeration runs on Tokio's
-blocking pool so an unavailable mount or an operating-system authorization
-prompt cannot consume the asynchronous HTTP executor.
+escaping symlinks, and Kubecode's private top-level `.state` directory and
+every descendant. Project entry listings do not follow symbolic-link children;
+this keeps lazy Explorer reads inside the registered root and prevents
+inaccessible or remote link targets from expanding the access boundary.
+Directory enumeration runs on Tokio's blocking pool so an unavailable mount or
+an operating-system authorization prompt cannot consume the asynchronous HTTP
+executor.
 
 Registering or importing a Project adds metadata to SQLite. Unregistering it
 removes that metadata only; it never removes the Project directory or files.
+`WorkspaceService` also owns one recursive native watch registration per Project
+and one bounded process-wide callback/coalescing worker. Watches start for
+persisted Projects before request serving and follow successful Project
+register/unregister. Registration, callback, and unregister commands share that
+single worker: a synchronous durable append already in progress finishes before
+queued unregister is processed, after which unregister fences the generation
+and discards only not-yet-flushed pending batch state. A registration generation
+therefore fences late callbacks. Watch failure does not fail Project access:
+explicit invalidations and manual refresh remain available, retry continues at a
+capped interval, and recovery publishes a full Project invalidation after the
+watch is installed.
 Native local clients may submit a user-selected absolute path to the
 Project-scoped authorization endpoint. `WorkspaceService` canonicalizes it and
 accepts it only when it exactly matches that Project's registered root; the
@@ -608,6 +620,34 @@ A workspace event is a durable, globally ordered metadata notification. One SSE
 connection carries Project, Session, run, file, Git, and terminal changes. The
 client retains a bounded ordered window rather than only the newest event.
 
+`file_changed` is an invalidation hint with the sole payload
+`{ paths: string[], full?: boolean }`. A scoped event has 1 through 256 distinct,
+sorted, normalized Project-relative entry paths and omits `full`; a full event is
+exactly `{ paths: [], full: true }`. Create, write, and delete name the affected
+entry, while rename names both old and new entries. Invalid or malformed payloads
+fail closed to full reconciliation. In particular, `{ paths: [] }` is malformed;
+only `{ paths: [], full: true }` is the canonical empty-path form. The path is
+never absolute and never carries content or mutation instructions. Browser and
+server producers do not retain the former singular `path` or `from`/`to`
+variants.
+
+An ordinary `file_changed` marks both its loaded Files scopes and Git status
+dirty. Native activity entirely below the exact `.git` component emits a
+Git-only `git_changed` with no metadata path. A mixed native batch emits only the
+Files event because it already dirties Git. Full invalidation, manual refresh,
+and every initial or reconnected SSE open mark all loaded Project directories
+stale and Git dirty; they re-read authoritative disk and Git projections rather
+than treating the event as state.
+
+Native watcher callbacks are process-local and non-durable. They use non-blocking
+delivery to a 1,024-record queue, with no more than 256 paths per callback and no
+more than 256 accumulated paths per Project. `WorkspaceService` coalesces after
+about 250 milliseconds quiet and always within 2 seconds. Queue saturation,
+backend error, invalid containment, private top-level `.state` boundary
+violation, incomplete rename, root change, or path overflow sets the Project
+batch to full. Only the resulting coalesced event is committed to SQLite; its
+commit then wakes the ordinary `WorkspaceEventBus`.
+
 `WorkspaceEventBus` is the process-local wakeup boundary for that durable log.
 The shared `AgentStore` initializes its latest-value watch cursor from the
 non-empty SQLite log and advances it monotonically only after the transaction
@@ -634,6 +674,12 @@ The default Explorer has three independently collapsible sections:
 
 Opening a file changes context without replacing the Agent Session. File writes
 use a revision token and return HTTP 409 on stale content.
+Files caches state per loaded directory. A scoped invalidation refreshes each
+listed entry's loaded parent and evicts stale cached state at or below that
+entry; unrelated expanded directories are not reloaded. Full and manual refresh
+mark every loaded directory stale. Per-directory and Project request generations
+discard responses made obsolete by invalidation, eviction, Project change,
+collapse, or unmount.
 
 ## Workspace attention
 

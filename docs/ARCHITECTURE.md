@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161–0203.
+active production boundary is defined by ADRs 0161 through 0208.
 
 ## Runtime topology
 
@@ -30,7 +30,8 @@ locations, Project paths, or arbitrary server paths.
 
 The Axum server composes eight services:
 
-- `WorkspaceService` registers Project roots and contains filesystem access.
+- `WorkspaceService` registers Project roots, contains filesystem access, and
+  owns bounded native Project watchers and their lifecycle.
 - `AgentStore` persists Sessions, runs, normalized events, and workspace events.
   It also owns the process-wide `WorkspaceEventBus`, whose latest-value cursor
   wakes live consumers after durable workspace-event commits.
@@ -128,6 +129,11 @@ flags so browser and native clients do not maintain divergent path rules.
 Filesystem enumeration is isolated from the asynchronous request executor;
 slow mounts and host permission mediation may delay the Files projection but
 must not block health checks, Sessions, Teams, or terminals.
+Each loaded directory has independent stale, loading, error, and request-generation
+state. A path-scoped `file_changed` invalidates only listed entries' loaded
+parents and cached subtrees, while a full invalidation, manual refresh, or SSE
+open/reconnect marks every loaded directory stale. Late reads cannot cross a
+newer request, cache eviction, Project switch, or unmount.
 For local native clients, the Project authorization route verifies a
 user-selected canonical path against one registered Project and returns no
 filesystem path. This allows platform-native access grants without widening
@@ -562,6 +568,33 @@ durable row if its wake publication is missed. The response holds only a weak
 store reference while idle; dropping the shared store during Runtime shutdown
 closes the bus and releases waiting consumers. The bus owns no payload queue or
 shutdown task.
+
+`WorkspaceService` uses the Rust `notify` crate to recursively watch each
+registered Project. Native callbacks place at most 256 paths into a non-blocking
+1,024-record process queue. One owned worker normalizes and validates paths,
+coalesces independently per Project after about 250 milliseconds quiet or at a
+2-second maximum interval, and persists at most 256 sorted relative paths.
+Queue, backend, path, or accumulation overflow becomes
+`file_changed {"paths":[],"full":true}`. A scoped event uses
+`{"paths":[...]}` and includes both sides of a rename. An empty scoped
+`{"paths":[]}` payload is malformed and consumers fail closed to full
+reconciliation; `{"paths":[],"full":true}` is the only canonical empty-path
+form. Absolute, escaping, invalid, top-level `.state` paths and descendants,
+and `.git` metadata paths never enter that payload.
+
+Ordinary paths produce `file_changed`, which invalidates the affected Files
+scopes and marks Git dirty. A batch containing only `.git` metadata produces a
+Git-only `git_changed`; a full Files invalidation reconciles both projections.
+Explicit API invalidations remain immediate even when watching is unavailable.
+Watch registrations start with persisted Projects, follow register/unregister,
+and use generations to reject late callbacks. Registration, callback, and
+unregister commands share one worker: a synchronous durable append already in
+progress finishes before queued unregister is processed, after which it fences
+the generation and discards only not-yet-flushed pending batch state. Failed
+watches retry with bounded backoff and publish a full invalidation after
+recovery. Manual refresh always reads disk and Git directly. Every SSE open or
+reconnect also schedules a full client reconciliation, covering a missed
+process-local hint without changing durable cursor replay.
 ACP text and thinking fragments are combined by a connection-scoped journal
 for a fixed window of up to 33 milliseconds anchored at its first fragment.
 Semantic and lifecycle events force an immediate flush, and one SQLite
