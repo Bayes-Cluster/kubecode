@@ -9,6 +9,7 @@ pub mod config;
 pub mod database;
 pub mod doctor;
 pub mod git;
+pub mod project_watcher;
 pub mod team_api;
 pub mod team_coordinator;
 pub mod team_mcp;

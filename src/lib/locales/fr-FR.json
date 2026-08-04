@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Ce diff dépasse la limite de blocs. Sélectionnez plutôt un fichier modifié plus petit.",
   "kubecode.gitDiffTooManyFiles": "Sélectionnez des fichiers individuels, car le diff complet contient trop de fichiers.",
   "kubecode.gitDiffContainsUnsupported": "Sélectionnez un fichier admissible, car le diff complet contient du contenu non pris en charge.",
+  "kubecode.gitDiffFailed": "Ce diff n’a pas pu être chargé.",
+  "kubecode.gitDiffLoading": "Chargement du diff…",
   "kubecode.gitDiffUnavailable": "Ce diff Git est indisponible.",
   "kubecode.searchContext": "Rechercher des compétences, commandes et fichiers",
   "kubecode.noContextFound": "Aucun fichier ou dossier correspondant",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

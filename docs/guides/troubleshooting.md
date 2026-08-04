@@ -80,10 +80,29 @@ contents.
 Confirm the selected path is relative to the Project root and still exists in
 the repository. Refresh Git status before reopening a diff. Binary, oversized,
 and unsupported diffs are recoverable states; select a smaller text change when
-appropriate. The status list is also bounded to 10,000 complete records or
+appropriate. A failed diff load can be retried from the diff view. The status
+list is also bounded to 10,000 complete records or
 1 MiB; when its response is marked truncated, only a prefix is shown. For
 submodules, renames, or unusual worktree states, inspect the same path with
 local Git before reporting a Kubecode bug.
+
+## Files or Git are stale
+
+The watcher is a best-effort invalidation source. Allow a short coalescing
+window after an Agent, Terminal, Git, or external process change, then use the
+Explorer refresh button if the change is not visible. Watch installation and
+backend failures do not disable the Project: Kubecode retries the watch, and a
+successful retry performs a full Files and Git reconciliation. Queue overflow,
+an unclassifiable path, or a missed native notification has the same full
+recovery behavior.
+
+When the Runtime connection shows **Reconnecting** or
+**Resynchronizing**, the browser reopens the durable SSE stream and refreshes
+all loaded Files directories and Git status after it opens. This reconciliation
+uses the Project ID and validated relative paths only; it does not replay an
+absolute server path or file content. A directory error leaves its old rows
+marked stale until a manual refresh succeeds. A Git status error, truncated
+status warning, or unavailable diff can be recovered with refresh or diff retry.
 
 ## Notifications do not appear
 

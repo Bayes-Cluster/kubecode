@@ -7,11 +7,11 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::IntoResponse;
 use serde::Deserialize;
-use serde_json::json;
 
 use super::AppState;
 use super::emit_project_event;
 use super::error::ApiError;
+use super::file_changed_payload;
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerContextKind, ComposerContextSelector, ComposerContextSummary,
     ComposerGitDiffScope, ComposerPreflightContext, ComposerSessionTurnRole,
@@ -506,7 +506,7 @@ pub(super) async fn create_entry(
         &state,
         "file_changed",
         &project_id,
-        json!({"path":request.path}),
+        file_changed_payload(&[request.path]),
     );
     Ok(StatusCode::CREATED)
 }
@@ -529,7 +529,7 @@ pub(super) async fn rename_entry(
         &state,
         "file_changed",
         &project_id,
-        json!({"from":request.from, "to":request.to}),
+        file_changed_payload(&[request.from, request.to]),
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -544,7 +544,7 @@ pub(super) async fn delete_entry(
         &state,
         "file_changed",
         &project_id,
-        json!({"path":query.path}),
+        file_changed_payload(&[query.path]),
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -615,7 +615,7 @@ pub(super) async fn write_file(
         &state,
         "file_changed",
         &project_id,
-        json!({"path":query.path}),
+        file_changed_payload(&[query.path]),
     );
     Ok(Json(document))
 }

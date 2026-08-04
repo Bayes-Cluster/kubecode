@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Этот diff превышает лимит блоков. Вместо него выберите изменённый файл меньшего размера.",
   "kubecode.gitDiffTooManyFiles": "Выберите отдельные файлы: полный diff содержит слишком много файлов.",
   "kubecode.gitDiffContainsUnsupported": "Выберите допустимый файл: полный diff содержит неподдерживаемые данные.",
+  "kubecode.gitDiffFailed": "Не удалось загрузить этот diff.",
+  "kubecode.gitDiffLoading": "Загрузка diff…",
   "kubecode.gitDiffUnavailable": "Этот diff Git недоступен.",
   "kubecode.searchContext": "Поиск навыков, команд и файлов",
   "kubecode.noContextFound": "Подходящие файлы или папки не найдены",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

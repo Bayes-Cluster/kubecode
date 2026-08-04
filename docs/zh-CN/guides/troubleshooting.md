@@ -67,11 +67,28 @@ Blocked Task 和 Provider Limit。解决根因后再 Resume Team。
 Child Process。完成的 PTY 应从 Terminal List 消失。Server Log 应包含 Process
 Exit Event，但不能记录 Terminal Content。
 
-## Git Diff 返回错误
+## Git Diff 不可用
 
 确认选择的 Path 相对于 Project Root，并且仍存在于 Repository 中。重新打开
-Diff 前先刷新 Git Status。对于 Submodule、Rename、Binary File 或特殊
-Worktree State，报告 Kubecode Bug 前先用本地 Git 检查相同路径。
+Diff 前先刷新 Git Status。Binary、超大或不支持的 Diff 是可恢复状态；适当
+情况下选择更小的文本变更。Diff 加载失败可以从 Diff 视图重试。对于
+Submodule、Rename 或特殊 Worktree State，报告 Kubecode Bug 前先用本地 Git
+检查相同路径。
+
+## Files 或 Git 过期
+
+Watcher 是 best-effort 的 Invalidation 来源。Agent、Terminal、Git 或外部进程修改
+文件后请等待短暂的 Coalescing Window；如果仍未出现，请使用 Explorer 的
+Refresh Button。Watcher 安装或 Backend 失败不会禁用 Project：Kubecode 会重试，
+成功后会执行一次完整的 Files 与 Git Reconciliation。Queue Overflow、无法分类的
+Path 或漏掉的 Native Notification 也会走相同的 Full Recovery 流程。
+
+Runtime Connection 显示 **Reconnecting** 或 **Resynchronizing** 时，浏览器会重新
+打开 Durable SSE Stream，并在打开后刷新所有已加载的 Files Directory 和 Git Status。
+此流程只使用 Project ID 与经过验证的 Relative Path，不会重放绝对 Server Path 或
+File Content。Directory Error 会保留旧 Row 并标记为 Stale，直到 Manual Refresh
+成功；Git Status Error、Status Truncated Warning 和 Unavailable Diff 都可以通过
+Refresh 或 Diff Retry 恢复。
 
 ## Notification 没有出现
 

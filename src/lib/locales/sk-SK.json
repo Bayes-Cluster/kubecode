@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Tento diff prekračuje limit blokov. Namiesto neho vyberte menší zmenený súbor.",
   "kubecode.gitDiffTooManyFiles": "Vyberte jednotlivé súbory, pretože úplný diff obsahuje príliš veľa súborov.",
   "kubecode.gitDiffContainsUnsupported": "Vyberte podporovaný súbor, pretože úplný diff obsahuje nepodporovaný obsah.",
+  "kubecode.gitDiffFailed": "Tento diff sa nepodarilo načítať.",
+  "kubecode.gitDiffLoading": "Načítavanie diff…",
   "kubecode.gitDiffUnavailable": "Tento diff Git nie je dostupný.",
   "kubecode.searchContext": "Hľadať zručnosti, príkazy a súbory",
   "kubecode.noContextFound": "Nenašli sa žiadne zodpovedajúce súbory ani priečinky",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

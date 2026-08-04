@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Denna diff överskrider blockgränsen. Välj en mindre ändrad fil i stället.",
   "kubecode.gitDiffTooManyFiles": "Välj enskilda filer eftersom hela diffen innehåller för många filer.",
   "kubecode.gitDiffContainsUnsupported": "Välj en giltig fil eftersom hela diffen innehåller innehåll som inte stöds.",
+  "kubecode.gitDiffFailed": "Det gick inte att läsa in denna diff.",
+  "kubecode.gitDiffLoading": "Läser in diff…",
   "kubecode.gitDiffUnavailable": "Denna Git-diff är inte tillgänglig.",
   "kubecode.searchContext": "Sök färdigheter, kommandon och filer",
   "kubecode.noContextFound": "Inga matchande filer eller mappar",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

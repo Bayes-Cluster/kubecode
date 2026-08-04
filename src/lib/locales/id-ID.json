@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "Diff ini melebihi batas jumlah bagian. Pilih file lain yang diubah dengan ukuran lebih kecil.",
   "kubecode.gitDiffTooManyFiles": "Pilih file satu per satu karena diff lengkap berisi terlalu banyak file.",
   "kubecode.gitDiffContainsUnsupported": "Pilih file yang didukung karena diff lengkap berisi konten yang tidak didukung.",
+  "kubecode.gitDiffFailed": "Diff ini tidak dapat dimuat.",
+  "kubecode.gitDiffLoading": "Memuat diff…",
   "kubecode.gitDiffUnavailable": "Diff Git ini tidak tersedia.",
   "kubecode.searchContext": "Cari skill, perintah, dan file",
   "kubecode.noContextFound": "Tidak ada file atau folder yang cocok",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

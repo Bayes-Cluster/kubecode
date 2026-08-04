@@ -1182,6 +1182,8 @@
   "kubecode.gitDiffTooManyHunks": "この差分はハンク数の上限を超えています。代わりに、より小さい変更済みファイルを選択してください。",
   "kubecode.gitDiffTooManyFiles": "完全な差分のファイル数が多すぎるため、個別のファイルを選択してください。",
   "kubecode.gitDiffContainsUnsupported": "完全な差分に未対応の内容が含まれるため、利用可能なファイルを選択してください。",
+  "kubecode.gitDiffFailed": "この Diff を読み込めませんでした。",
+  "kubecode.gitDiffLoading": "Diff を読み込み中…",
   "kubecode.gitDiffUnavailable": "この Git 差分は利用できません。",
   "kubecode.searchContext": "スキル、コマンド、ファイルを検索",
   "kubecode.noContextFound": "一致するファイルまたはフォルダーがありません",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

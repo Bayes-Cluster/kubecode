@@ -157,17 +157,23 @@ export class KubecodeApi {
     })
   }
 
-  gitStatus(projectId: string): Promise<GitStatus> {
-    return this.request(`${this.projectPath(projectId)}/git/status`)
+  gitStatus(projectId: string, signal?: AbortSignal): Promise<GitStatus> {
+    return this.request(`${this.projectPath(projectId)}/git/status`, { signal })
   }
 
   initializeGit(projectId: string): Promise<GitStatus> {
     return this.request(`${this.projectPath(projectId)}/git/init`, { method: 'POST' })
   }
 
-  gitDiff(projectId: string, path: string, staged: boolean): Promise<GitDiffResult> {
+  gitDiff(
+    projectId: string,
+    path: string,
+    staged: boolean,
+    signal?: AbortSignal,
+  ): Promise<GitDiffResult> {
     return this.request<GitDiffResult>(
       `${this.projectPath(projectId)}/git/diff?${query({ path, staged: String(staged) })}`,
+      { signal },
     )
   }
 

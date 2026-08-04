@@ -1131,6 +1131,8 @@
   "kubecode.gitDiffTooManyHunks": "此差异超过区块数量限制，请改选更小的已更改文件。",
   "kubecode.gitDiffTooManyFiles": "完整差异包含过多文件，请选择单个文件。",
   "kubecode.gitDiffContainsUnsupported": "完整差异包含不支持的内容，请选择可用文件。",
+  "kubecode.gitDiffFailed": "无法加载此差异。",
+  "kubecode.gitDiffLoading": "正在加载差异…",
   "kubecode.gitDiffUnavailable": "此 Git 差异不可用。",
   "kubecode.searchContext": "搜索技能、命令和文件",
   "kubecode.noContextFound": "没有匹配的文件或文件夹",
@@ -1512,5 +1514,8 @@
   "kubecode.attachPriorAgentResponse": "Attach prior Agent response: {preview}",
   "kubecode.sessionTurnContextSummary": "{role} · {lines} lines · {bytes} bytes",
   "kubecode.diagnosticsUnavailable": "Diagnostics unavailable",
-  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available."
+  "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
+  "kubecode.conflicts": "Conflicts",
+  "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
 }

@@ -136,6 +136,14 @@ state. A path-scoped `file_changed` invalidates only listed entries' loaded
 parents and cached subtrees, while a full invalidation, manual refresh, or SSE
 open/reconnect marks every loaded directory stale. Late reads cannot cross a
 newer request, cache eviction, Project switch, or unmount.
+The browser derives stable visible tree rows from those directory caches. It uses
+the simple DOM renderer through 200 visible rows and `react-virtuoso` above that
+threshold; virtualization changes mounted rows, not path identity, expansion, or
+the `tree`/`treeitem` accessibility contract. Each row retains its level,
+position, expansion, selection, and keyboard focus semantics, and focus scrolls
+the requested row into the mounted window. Git Conflict, Staged, and Changes
+groups use the same 200-row cutoff with fixed-height keyed rows, so a large
+status projection is bounded without losing status-column semantics.
 For local native clients, the Project authorization route verifies a
 user-selected canonical path against one registered Project and returns no
 filesystem path. This allows platform-native access grants without widening
@@ -152,12 +160,23 @@ diff remains contextual. `GitService` reads porcelain-v2 status into a projectio
 of at most 1 MiB and 10,000 complete records, including rename/copy source,
 conflict, and truncation identity. Browser staged, unstaged, and server-generated
 untracked patches are capped at 2 MiB and return a complete text patch or the
-stable `binary`, `oversized`, or `unsupported` reason. Git reads suppress optional
+stable `binary`, `oversized`, or `unsupported` reason. A focused `useGitDiff`
+hook requests the selected Project, path, and staged target, fences each response
+by request generation, aborts in-flight diffs on selection change, Project change,
+or unmount, and drives localized loading, unavailable, and retryable failure
+states. Git reads suppress optional
 locks, every Git subprocess disables terminal prompts, and patch reads disable
 external diff drivers and text conversion. The Agent timeline and Composer use
 one bounded content width; their scroll containers retain wheel, touch, keyboard,
 and auto-follow behavior without drawing scrollbar chrome. The Composer shows
 only a Plan progress summary and opens the full checklist in Explorer.
+Filesystem invalidations schedule Git status through a Project-scoped controller:
+the 250 millisecond debounce applies only to event-driven reads, one request may
+run at a time, and activity during that request creates one follow-up. Manual
+refresh and mutation responses bypass the debounce, while Project/request
+generations and abort signals discard stale results. A truncated status exposes a
+localized warning; loading, binary, oversized, unsupported, and failed diffs are
+recoverable states with retry or refresh rather than partial patches.
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,

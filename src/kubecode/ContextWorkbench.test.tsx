@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import { ContextWorkbench } from './ContextWorkbench'
-import type { KubecodeApi } from './api'
+import type { GitDiffResult, KubecodeApi } from './api'
 
 vi.mock('./CodeEditor', () => ({
   CodeEditor: ({ content, onChange }: { content: string; onChange: (value: string) => void }) => (
@@ -117,11 +117,275 @@ describe('ContextWorkbench', () => {
     fireEvent.click((await screen.findByText('new file.txt')).closest('button') as HTMLButtonElement)
     expect(await screen.findByText('+server patch')).toBeInTheDocument()
     expect(api.readFile).not.toHaveBeenCalled()
-    expect(gitDiff).toHaveBeenCalledWith('project-1', 'new file.txt', false)
+    expect(gitDiff).toHaveBeenCalledWith(
+      'project-1',
+      'new file.txt',
+      false,
+      expect.any(AbortSignal),
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
     fireEvent.click(screen.getByText('binary.dat').closest('button') as HTMLButtonElement)
     expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+  })
+
+  it('does not display a stale diff when the selection changes quickly', async () => {
+    let resolveFirst!: (value: GitDiffResult) => void
+    let resolveSecond!: (value: GitDiffResult) => void
+    const gitDiff = vi.fn()
+      .mockImplementationOnce(() => (
+        new Promise<GitDiffResult>((resolve) => { resolveFirst = resolve })
+      ))
+      .mockImplementationOnce(() => (
+        new Promise<GitDiffResult>((resolve) => { resolveSecond = resolve })
+      ))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'b.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    fireEvent.click(screen.getByText('b.txt').closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+
+    await act(async () => { resolveSecond({ diff: 'b diff', unavailable_reason: null }) })
+    expect(await screen.findByText('b diff')).toBeInTheDocument()
+
+    await act(async () => { resolveFirst({ diff: 'a diff', unavailable_reason: null }) })
+    expect(screen.queryByText('a diff')).not.toBeInTheDocument()
+    expect(screen.getByText('b diff')).toBeInTheDocument()
+  })
+
+  it('switches between staged and worktree diffs for a partially staged path', async () => {
+    const gitDiff = vi.fn().mockImplementation(
+      async (_projectId: string, _path: string, staged: boolean) => ({
+        diff: `staged=${String(staged)} diff`,
+        unavailable_reason: null,
+      }),
+    )
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{
+          path: 'partial.txt',
+          original_path: null,
+          index_status: 'M',
+          worktree_status: 'M',
+          conflict: false,
+        }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const rows = (await screen.findAllByText('partial.txt'))
+      .filter((element) => element.closest('.kubecode-git-path'))
+    expect(rows).toHaveLength(2)
+    fireEvent.click(rows[0].closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('staged=true diff')).toBeInTheDocument()
+    expect(gitDiff).toHaveBeenLastCalledWith(
+      'project-1',
+      'partial.txt',
+      true,
+      expect.any(AbortSignal),
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    const worktreeRows = screen.getAllByText('partial.txt')
+      .filter((element) => element.closest('.kubecode-git-path'))
+    fireEvent.click(worktreeRows[1].closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('staged=false diff')).toBeInTheDocument()
+    expect(gitDiff).toHaveBeenLastCalledWith(
+      'project-1',
+      'partial.txt',
+      false,
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('aborts an in-flight diff and resets the view when the Project changes', async () => {
+    const signals: AbortSignal[] = []
+    let resolveDiff!: (value: GitDiffResult) => void
+    const gitDiff = vi.fn().mockImplementation(
+      (_projectId: string, _path: string, _staged: boolean, signal?: AbortSignal) => {
+        signals.push(signal as AbortSignal)
+        return new Promise<GitDiffResult>((resolve) => { resolveDiff = resolve })
+      },
+    )
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+    const props = {
+      api,
+      t: createTranslator('en'),
+      width: 440,
+      workspaceEvents: [],
+    }
+    const { rerender } = render(<ContextWorkbench {...props} projectId="project-a" />)
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
+    expect(signals[0].aborted).toBe(false)
+
+    rerender(<ContextWorkbench {...props} projectId="project-b" />)
+    await waitFor(() => expect(signals[0].aborted).toBe(true))
+    await act(async () => { resolveDiff({ diff: 'stale diff', unavailable_reason: null }) })
+    expect(screen.queryByText('stale diff')).not.toBeInTheDocument()
+  })
+
+  it('renders a localized recoverable state for every bounded diff reason', async () => {
+    const gitDiff = vi.fn().mockImplementation(async (_projectId: string, path: string) => {
+      if (path === 'binary.dat') return { diff: null, unavailable_reason: 'binary' }
+      if (path === 'large.txt') return { diff: null, unavailable_reason: 'oversized' }
+      if (path === 'unsupported.txt') return { diff: null, unavailable_reason: 'unsupported' }
+      return { diff: null, unavailable_reason: null }
+    })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'binary.dat', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'large.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'unsupported.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'empty.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false },
+        ],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const clickRow = async (path: string) => {
+      fireEvent.click((await screen.findByText(path)).closest('button') as HTMLButtonElement)
+    }
+
+    await clickRow('binary.dat')
+    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('large.txt')
+    expect(await screen.findByText('This diff exceeds the context byte limit. Select a smaller changed file instead.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('unsupported.txt')
+    expect(await screen.findByText('This Git diff is unavailable.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
+    await clickRow('empty.txt')
+    expect(await screen.findByText('No textual diff is available for this file.')).toBeInTheDocument()
+  })
+
+  it('shows a localized recoverable failed state and retries', async () => {
+    const gitDiff = vi.fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ diff: 'recovered diff', unavailable_reason: null })
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff,
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('This diff could not be loaded.')
+    expect(screen.getByText('boom')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('recovered diff')).toBeInTheDocument()
+  })
+
+  it('closes the diff view back to the Explorer surface', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      gitDiff: vi.fn().mockResolvedValue({ diff: 'a diff', unavailable_reason: null }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
+    expect(await screen.findByText('a diff')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'a.txt' })).toHaveAttribute('data-state', 'active')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close diff' }))
+    expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByText('a diff')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'a.txt' })).not.toBeInTheDocument()
   })
 
   it('initializes Git from an untracked project', async () => {
@@ -174,7 +438,7 @@ describe('ContextWorkbench', () => {
         project_id: 'project-1',
         conversation_id: null,
         run_id: null,
-        payload: { path: 'new-file.ts' },
+        payload: { paths: ['new-file.ts'] },
         created_at: 'now',
       },
       {
@@ -191,6 +455,105 @@ describe('ContextWorkbench', () => {
     await waitFor(() => expect(api.listEntries).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('new-file.ts')).toBeInTheDocument()
     expect(screen.getByText('new-folder')).toBeInTheDocument()
+  })
+
+  it('refreshes only the affected parent when a scoped file_changed arrives', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'a.ts', path: 'src/a.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      if (path !== '') return Promise.resolve([])
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const api = {
+      listEntries,
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+    } as unknown as KubecodeApi
+    const props = {
+      api,
+      projectId: 'project-1',
+      t: createTranslator('en'),
+      width: 440,
+    }
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'src'))
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('project-1', 'docs'))
+    const srcCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      fileChangedEvent(20, 'project-1', { paths: ['src/a.ts'] }),
+    ]} />)
+
+    await waitFor(() => {
+      expect(
+        listEntries.mock.calls.filter(([, path]) => path === 'src').length,
+      ).toBeGreaterThan(srcCallsBefore)
+    })
+    expect(
+      listEntries.mock.calls.filter(([, path]) => path === 'docs').length,
+    ).toBe(docsCallsBefore)
+  })
+
+  it('reconciles all loaded Files parents and Git after an SSE reconnect without paths', async () => {
+    const listEntries = vi.fn().mockImplementation((_projectId: string, path: string) => {
+      if (path === 'src') {
+        return Promise.resolve([{ name: 'main.ts', path: 'src/main.ts', kind: 'file' }])
+      }
+      if (path === 'docs') {
+        return Promise.resolve([{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' }])
+      }
+      return Promise.resolve([
+        { name: 'src', path: 'src', kind: 'directory' },
+        { name: 'docs', path: 'docs', kind: 'directory' },
+      ])
+    })
+    const gitStatus = vi.fn().mockResolvedValue({
+      is_repository: true,
+      branch: 'main',
+      files: [],
+      truncated: false,
+    })
+    const api = { listEntries, gitStatus } as unknown as KubecodeApi
+    const props = {
+      api,
+      projectId: 'reconnect-project',
+      t: createTranslator('en'),
+      width: 440,
+      workspaceEvents: [],
+    }
+    const { rerender } = render(<ContextWorkbench {...props} connectionState="connecting" />)
+    fireEvent.click(await screen.findByRole('treeitem', { name: /src/ }))
+    fireEvent.click(await screen.findByRole('treeitem', { name: /docs/ }))
+    await waitFor(() => {
+      expect(listEntries).toHaveBeenCalledWith('reconnect-project', 'src')
+      expect(listEntries).toHaveBeenCalledWith('reconnect-project', 'docs')
+    })
+    const srcCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'src').length
+    const docsCallsBefore = listEntries.mock.calls.filter(([, path]) => path === 'docs').length
+    const statusCallsBefore = gitStatus.mock.calls.length
+
+    await act(async () => {
+      rerender(<ContextWorkbench {...props} connectionState="reconnecting" />)
+      await Promise.resolve()
+    })
+    rerender(<ContextWorkbench {...props} connectionState="live" />)
+
+    await waitFor(() => {
+      expect(listEntries.mock.calls.filter(([, path]) => path === 'src').length)
+        .toBeGreaterThan(srcCallsBefore)
+      expect(listEntries.mock.calls.filter(([, path]) => path === 'docs').length)
+        .toBeGreaterThan(docsCallsBefore)
+      expect(gitStatus.mock.calls.length).toBeGreaterThan(statusCallsBefore)
+    })
   })
 
   it('collapses Explorer sections without changing the active surface', async () => {
@@ -404,4 +767,211 @@ describe('ContextWorkbench', () => {
     })
     expect(api.readFile).toHaveBeenCalledWith('project-1', 'notes/idea.md')
   })
+
+  it('projects Conflict, Staged, and Changes groups with their status columns', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [
+          { path: 'both.txt', index_status: 'A', worktree_status: 'M', conflict: false },
+          { path: 'staged.txt', index_status: 'M', worktree_status: null, conflict: false },
+          { path: 'changed.txt', index_status: null, worktree_status: 'M', conflict: false },
+          { path: 'untracked.txt', index_status: '?', worktree_status: '?', conflict: false },
+          { path: 'conflict.txt', index_status: 'U', worktree_status: 'U', conflict: true },
+          {
+            path: 'renamed.txt',
+            original_path: 'old.txt',
+            index_status: 'R',
+            worktree_status: null,
+            conflict: false,
+          },
+        ],
+        truncated: true,
+      }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    expect(await screen.findByText('Conflicts')).toBeInTheDocument()
+    const staged = document.querySelector('[data-group="staged"]') as HTMLElement
+    const worktree = document.querySelector('[data-group="worktree"]') as HTMLElement
+    const conflict = document.querySelector('[data-group="conflict"]') as HTMLElement
+    expect(staged).not.toBeNull()
+    expect(worktree).not.toBeNull()
+    expect(conflict).not.toBeNull()
+
+    expect(within(staged).getByText('staged.txt')).toBeInTheDocument()
+    expect(within(staged).getByText('both.txt')).toBeInTheDocument()
+    expect(within(staged).getByText('renamed.txt')).toBeInTheDocument()
+    expect(within(staged).getByText(/old\.txt\s*→/)).toBeInTheDocument()
+    expect(within(worktree).queryByText('staged.txt')).not.toBeInTheDocument()
+
+    const stagedPartialRow = within(staged).getByText('both.txt').closest('.kubecode-git-row')
+    expect(within(stagedPartialRow as HTMLElement).getByText('A')).toBeInTheDocument()
+
+    expect(within(worktree).getByText('changed.txt')).toBeInTheDocument()
+    expect(within(worktree).getByText('untracked.txt')).toBeInTheDocument()
+    expect(within(worktree).getByText('both.txt')).toBeInTheDocument()
+    const worktreePartialRow = within(worktree).getByText('both.txt').closest('.kubecode-git-row')
+    expect(within(worktreePartialRow as HTMLElement).getByText('M')).toBeInTheDocument()
+    expect(within(worktree).queryByText('conflict.txt')).not.toBeInTheDocument()
+
+    expect(within(conflict).getByText('conflict.txt')).toBeInTheDocument()
+    expect(within(conflict).getByText('UU')).toBeInTheDocument()
+
+    const notices = screen.getAllByRole('status')
+    expect(notices.some((notice) => notice.textContent?.includes('first 6 changes'))).toBe(true)
+    expect(notices.some((notice) => notice.textContent?.includes('Resolve these conflicts'))).toBe(true)
+  })
+
+  it('applies mutation responses immediately and coalesces the echoed SSE invalidation', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+      mutateGit: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: 'M', worktree_status: null, conflict: false }],
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+    const props = { api, projectId: 'project-1', t: createTranslator('en'), width: 440 }
+
+    vi.useFakeTimers()
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('README.md')).toBeInTheDocument()
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage: README.md' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(api.mutateGit).toHaveBeenCalledWith('project-1', 'stage', ['README.md'])
+    expect(screen.getByText('Staged changes')).toBeInTheDocument()
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      {
+        id: 10,
+        kind: 'git_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { action: 'stage' },
+        created_at: 'now',
+      },
+    ]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes Git status after a debounced invalidation', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [],
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+    const props = { api, projectId: 'project-1', t: createTranslator('en'), width: 440 }
+
+    vi.useFakeTimers()
+    const { rerender } = render(<ContextWorkbench {...props} workspaceEvents={[]} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+
+    rerender(<ContextWorkbench {...props} workspaceEvents={[
+      {
+        id: 10,
+        kind: 'file_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { path: 'src/a.ts' },
+        created_at: 'now',
+      },
+      {
+        id: 11,
+        kind: 'git_changed',
+        project_id: 'project-1',
+        conversation_id: null,
+        run_id: null,
+        payload: { action: 'commit' },
+        created_at: 'now',
+      },
+    ]} />)
+    expect(api.gitStatus).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+    expect(api.gitStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds mounted rows independently for large Conflict, Staged, and Changes groups', async () => {
+    const files = [
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `conflict-${index}.txt`, index_status: 'U', worktree_status: 'U', conflict: true,
+      })),
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `staged-${index}.txt`, index_status: 'M', worktree_status: null, conflict: false,
+      })),
+      ...Array.from({ length: 210 }, (_value, index) => ({
+        path: `changed-${index}.txt`, index_status: null, worktree_status: 'M', conflict: false,
+      })),
+    ]
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files,
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    for (const group of ['conflict', 'staged', 'worktree']) {
+      const list = await screen.findByTestId(`git-change-virtual-list-${group}`)
+      expect(list.querySelectorAll('.kubecode-git-row').length).toBeLessThan(210)
+    }
+  })
 })
+
+function fileChangedEvent(
+  id: number,
+  projectId: string,
+  payload: { paths: string[]; full?: boolean },
+): Parameters<typeof ContextWorkbench>[0]['workspaceEvents'][number] {
+  return {
+    id,
+    kind: 'file_changed',
+    project_id: projectId,
+    conversation_id: null,
+    run_id: null,
+    payload,
+    created_at: 'now',
+  }
+}

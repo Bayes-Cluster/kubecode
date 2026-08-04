@@ -11,6 +11,7 @@ use kubecode_server::api::{AppState, app_router_api_only, app_router_with_static
 use kubecode_server::config::ServerOptions;
 use kubecode_server::database::Database;
 use kubecode_server::doctor::DoctorReport;
+use kubecode_server::project_watcher::{WatcherError, WorkspaceEventSink};
 use kubecode_server::teams::TeamStore;
 use kubecode_server::workspace::WorkspaceService;
 
@@ -92,9 +93,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let database_path = config.state_directory.join("kubecode.sqlite3");
     let database = Arc::new(Database::open_owned(&database_path)?);
-    let workspace = WorkspaceService::from_database(&config.workspace_root, Arc::clone(&database))?;
-    let agent_store = AgentStore::from_database(Arc::clone(&database))?;
-    let teams = TeamStore::from_database(database)?;
+    let workspace = Arc::new(WorkspaceService::from_database(
+        &config.workspace_root,
+        Arc::clone(&database),
+    )?);
+    let agent_store = Arc::new(AgentStore::from_database(Arc::clone(&database))?);
+    let teams = Arc::new(TeamStore::from_database(database)?);
     let agents = AgentCatalog::discover().await;
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     let internal_origin = env::var("KUBECODE_INTERNAL_ORIGIN").unwrap_or_else(|_| {
@@ -107,10 +111,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             config.base_path
         )
     });
-    let state = AppState::new(Arc::new(workspace), Arc::new(agent_store), Arc::new(teams))
-        .with_agent_catalog(agents)
-        .with_team_mcp_http_origin(internal_origin);
+    let state = AppState::new(
+        Arc::clone(&workspace),
+        Arc::clone(&agent_store),
+        Arc::clone(&teams),
+    )
+    .with_agent_catalog(agents)
+    .with_team_mcp_http_origin(internal_origin);
     state.start_team_supervisor();
+    workspace.start_watching(workspace_event_sink(Arc::clone(&agent_store)));
     let app = match access_token {
         Some(access_token) => app_router_api_only(state, &config.base_path, access_token),
         None => app_router_with_static(state, &config.base_path, &config.static_directory),
@@ -134,8 +143,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             display_path
         );
     }
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    // Orderly Runtime shutdown prevents new Project lifecycle operations, drops
+    // native watch registrations, and joins the coalescing worker.
+    workspace.stop_watching();
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install ctrl-c handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install terminate handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
 }
 
 fn read_access_token(mut reader: impl BufRead) -> io::Result<String> {
@@ -150,6 +185,15 @@ fn read_access_token(mut reader: impl BufRead) -> io::Result<String> {
     } else {
         Ok(token)
     }
+}
+
+fn workspace_event_sink(agent_store: Arc<AgentStore>) -> WorkspaceEventSink {
+    Arc::new(move |kind, project_id, payload| {
+        agent_store
+            .append_workspace_event(kind, Some(project_id), None, None, payload)
+            .map(|_| ())
+            .map_err(|error| WatcherError::Persist(error.to_string()))
+    })
 }
 
 fn ready_document(host: &str, address: SocketAddr, base_path: &str) -> String {

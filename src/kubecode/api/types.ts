@@ -492,6 +492,10 @@ export type WorkspaceEvent = {
   payload: Record<string, unknown>
   created_at: string
 }
+export type FileChangedPayload = {
+  paths: string[]
+  full?: boolean
+}
 export type GitFileChange = {
   path: string
   original_path?: string

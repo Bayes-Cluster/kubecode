@@ -20,7 +20,7 @@
     "test:packages": "node --test scripts/standalone.test.mjs scripts/debian-package.test.mjs scripts/claude-adapter.test.mjs scripts/codex-adapter.test.mjs",
     "test:standalone": "node --test scripts/standalone.test.mjs",
     "test:watch": "vitest",
-    "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke/kubecode-workspace.spec.ts",
+    "playwright:smoke": "playwright test --config playwright.smoke.config.ts tests/smoke",
     "test:coverage": "node scripts/run-vitest-coverage.mjs",
     "prepare": "husky"
   },

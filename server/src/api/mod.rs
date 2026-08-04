@@ -361,6 +361,54 @@ fn emit_project_event(state: &AppState, kind: &str, project_id: &str, payload: s
     );
 }
 
+/// Builds the canonical path-scoped `file_changed` payload from ADR 0208.
+///
+/// The payload is either a scoped `{"paths": [...]}` with between 1 and 256
+/// distinct, sorted Project-relative paths, or a full invalidation
+/// `{"paths": [], "full": true}` when the entry list exceeds the event cap.
+/// An empty input yields a full invalidation because an explicit producer must
+/// never publish an empty scoped event.
+fn file_changed_payload(paths: &[String]) -> serde_json::Value {
+    let mut paths = paths.to_vec();
+    paths.sort();
+    paths.dedup();
+    if paths.is_empty() || paths.len() > 256 {
+        json!({"paths": [], "full": true})
+    } else {
+        json!({"paths": paths})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::file_changed_payload;
+
+    #[test]
+    fn file_changed_payload_follows_the_canonical_contract() {
+        assert_eq!(
+            file_changed_payload(&["b.txt".into(), "a.txt".into(), "a.txt".into()]),
+            json!({"paths": ["a.txt", "b.txt"]})
+        );
+        assert_eq!(
+            file_changed_payload(&["only.txt".into()]),
+            json!({"paths": ["only.txt"]})
+        );
+        assert_eq!(
+            file_changed_payload(&[]),
+            json!({"paths": [], "full": true})
+        );
+        let overflow = (0..=256)
+            .map(|index| format!("f{index}.txt"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            file_changed_payload(&overflow),
+            json!({"paths": [], "full": true})
+        );
+    }
+}
+
 fn root_router(application: Router, base_path: &str) -> Router {
     let base_path = normalize_base_path(base_path);
 

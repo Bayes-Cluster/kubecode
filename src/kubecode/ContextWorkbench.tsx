@@ -14,6 +14,7 @@ import {
   Trash,
   X,
 } from '@phosphor-icons/react'
+import { Virtuoso } from 'react-virtuoso'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -32,17 +33,24 @@ import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
 import type { SessionPlanEntry } from './AgentSessionWorkspace'
+import type { WorkspaceConnectionState } from './useWorkspaceEventStream'
 import { PathPicker, type PathPickerRow } from './PathPicker'
 import { ProjectFilePicker } from './ProjectFilePicker'
 import { ProjectFileTree } from './ProjectFileTree'
+import {
+  EMPTY_FILE_TREE_INVALIDATIONS,
+  aggregateFileChangedEvents,
+  type FileTreeInvalidation,
+} from './fileTreeInvalidation'
 import { searchProjectEntries } from './projectPathSearch'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
+import { useGitStatusController } from './useGitStatusController'
+import { GitDiffView } from './GitDiffView'
+import { useGitDiff, type GitDiffTarget } from './useGitDiff'
 import type {
   Entry,
-  GitDiffUnavailableReason,
   GitFileChange,
-  GitStatus,
   KubecodeApi,
   TextDocument,
   WorkspaceEvent,
@@ -55,9 +63,12 @@ type OpenDocument = {
   projectId: string
 }
 
+const GIT_GROUP_VIRTUALIZATION_THRESHOLD = 200
+
 type ContextWorkbenchProps = {
   api: KubecodeApi
   autoSave?: boolean
+  connectionState?: WorkspaceConnectionState
   planEntries?: SessionPlanEntry[]
   planRevealVersion?: number
   projectName?: string
@@ -70,6 +81,7 @@ type ContextWorkbenchProps = {
 export function ContextWorkbench({
   api,
   autoSave = false,
+  connectionState = 'live',
   planEntries = [],
   planRevealVersion = 0,
   projectName,
@@ -93,17 +105,35 @@ export function ContextWorkbench({
   const [entryDialog, setEntryDialog] = useState<EntryDialogState>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
-  const [diff, setDiff] = useState<{
-    path: string
-    content: string | null
-    unavailableReason: GitDiffUnavailableReason | null
-  } | null>(null)
+  const { state: diffState, open: requestDiff, close: closeDiff } = useGitDiff(api)
   const [commitMessage, setCommitMessage] = useState('')
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
+  const lastForwardedFileEventIdRef = useRef(0)
+  const previousConnectionStateRef = useRef(connectionState)
   const savingDocumentsRef = useRef(new Set<string>())
+  const [fileTreeInvalidation, setFileTreeInvalidation] = useState<FileTreeInvalidation | null>(null)
+  const reportError = useCallback((cause: unknown) => {
+    const message = errorMessage(cause, t('kubecode.error'))
+    if (systemMessages) {
+      systemMessages.publish({ level: 'error', message, source: t('kubecode.changes') })
+    } else {
+      setError(message)
+    }
+  }, [systemMessages, t])
+  const {
+    applyMutationResult,
+    beginMutation,
+    cancelMutation,
+    gitStatus,
+    refresh: refreshGitStatus,
+  } = useGitStatusController({
+    api,
+    onError: reportError,
+    projectId,
+    workspaceEvents,
+  })
   const projectDocuments = useMemo(
     () => documents.filter((item) => item.projectId === projectId),
     [documents, projectId],
@@ -114,34 +144,13 @@ export function ContextWorkbench({
   const dirty = Boolean(
     activeDocument && activeDocument.document.content !== activeDocument.draft,
   )
-  const reportError = useCallback((cause: unknown) => {
-    const message = errorMessage(cause, t('kubecode.error'))
-    if (systemMessages) {
-      systemMessages.publish({ level: 'error', message, source: t('kubecode.changes') })
-    } else {
-      setError(message)
-    }
-  }, [systemMessages, t])
-
-  useEffect(() => {
-    if (!projectId) {
-      return
-    }
-    let current = true
-    void api.gitStatus(projectId).then((status) => {
-      if (current) setGitStatus(status)
-    }).catch((cause: unknown) => {
-      if (current) reportError(cause)
-    })
-    return () => { current = false }
-  }, [api, projectId, reportError])
 
   useEffect(() => {
     setTab('explorer')
     setActiveDocumentKey(null)
-    setDiff(null)
+    closeDiff()
     setSelectedDirectory('')
-  }, [projectId])
+  }, [closeDiff, projectId])
 
   useEffect(() => {
     if (!projectId) return
@@ -150,13 +159,27 @@ export function ContextWorkbench({
     ))
     processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
       ?? processedWorkspaceEventRef.current
-    const filesChanged = nextEvents.some((event) => event.kind === 'file_changed')
-    const gitChanged = nextEvents.some((event) => event.kind === 'git_changed')
-    if (filesChanged) queueMicrotask(() => setFileTreeRevision((current) => current + 1))
-    if (filesChanged || gitChanged) {
-      void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
+    const unforwardedFileEvents = nextEvents.filter(
+      (event) => event.kind === 'file_changed'
+        && event.id > lastForwardedFileEventIdRef.current,
+    )
+    if (unforwardedFileEvents.length > 0) {
+      lastForwardedFileEventIdRef.current = unforwardedFileEvents.at(-1)?.id
+        ?? lastForwardedFileEventIdRef.current
+      setFileTreeInvalidation({
+        id: lastForwardedFileEventIdRef.current,
+        payload: aggregateFileChangedEvents(unforwardedFileEvents),
+      })
     }
-  }, [api, projectId, reportError, workspaceEvents])
+  }, [projectId, workspaceEvents])
+
+  useEffect(() => {
+    const opened = connectionState === 'live' && previousConnectionStateRef.current !== 'live'
+    previousConnectionStateRef.current = connectionState
+    if (!opened || !projectId) return
+    setFileTreeRevision((current) => current + 1)
+    refreshGitStatus()
+  }, [connectionState, projectId, refreshGitStatus])
 
   useEffect(() => {
     const openQuickFile = (event: KeyboardEvent) => {
@@ -264,58 +287,60 @@ export function ContextWorkbench({
     }
   }
 
-  const openDiff = async (change: GitFileChange, staged: boolean) => {
+  const openDiff = (change: GitFileChange, staged: boolean) => {
     if (!projectId) return
-    try {
-      const result = await api.gitDiff(projectId, change.path, staged)
-      setDiff({
-        path: change.path,
-        content: result.diff,
-        unavailableReason: result.unavailable_reason,
-      })
-      setTab('diff')
-    } catch (cause) {
-      reportError(cause)
-    }
+    requestDiff({ projectId, path: change.path, staged })
+    setTab('diff')
+  }
+
+  const retryDiff = (target: GitDiffTarget) => {
+    requestDiff(target)
   }
 
   const mutateGit = async (action: 'stage' | 'unstage' | 'discard', path: string) => {
     if (!projectId) return
+    beginMutation(action)
     try {
-      setGitStatus(await api.mutateGit(projectId, action, [path]))
+      applyMutationResult(await api.mutateGit(projectId, action, [path]))
       trackEvent('kubecode_git_action_used', { action })
     } catch (cause) {
+      cancelMutation(action)
       reportError(cause)
     }
   }
 
   const commit = async () => {
     if (!projectId || !commitMessage.trim()) return
+    beginMutation('commit')
     try {
-      setGitStatus(await api.commitGit(projectId, commitMessage))
+      applyMutationResult(await api.commitGit(projectId, commitMessage))
       setCommitMessage('')
       trackEvent('kubecode_git_action_used', { action: 'commit' })
     } catch (cause) {
+      cancelMutation('commit')
       reportError(cause)
     }
   }
 
   const initializeGit = async () => {
     if (!projectId) return
+    beginMutation('init')
     try {
-      setGitStatus(await api.initializeGit(projectId))
+      applyMutationResult(await api.initializeGit(projectId))
       trackEvent('kubecode_git_action_used', { action: 'init' })
     } catch (cause) {
+      cancelMutation('init')
       reportError(cause)
     }
   }
 
+  const conflictChanges = gitStatus?.files.filter(isConflict) ?? []
   const stagedChanges = gitStatus?.files.filter(isStaged) ?? []
   const worktreeChanges = gitStatus?.files.filter(isWorktreeChanged) ?? []
 
   const refreshContext = () => {
     setFileTreeRevision((current) => current + 1)
-    if (projectId) void api.gitStatus(projectId).then(setGitStatus).catch(reportError)
+    refreshGitStatus()
   }
 
   return (
@@ -351,9 +376,9 @@ export function ContextWorkbench({
                 </TabsTrigger>
               )
             })}
-            {diff && (
+            {diffState.kind !== 'idle' && (
               <TabsTrigger value="diff" onClick={() => setTab('diff')}>
-                <GitDiff /> {diff.path.split('/').at(-1)}
+                <GitDiff /> {diffState.target.path.split('/').at(-1)}
               </TabsTrigger>
             )}
           </TabsList>
@@ -391,19 +416,41 @@ export function ContextWorkbench({
               </div>
             ) : (
               <div className="kubecode-review-body">
+                {gitStatus.truncated && (
+                  <div className="kubecode-git-notice" role="status">
+                    {t('kubecode.gitStatusTruncated', { count: gitStatus.files.length })}
+                  </div>
+                )}
+                {conflictChanges.length > 0 && (
+                  <GitChangeGroup
+                    changes={conflictChanges}
+                    group="conflict"
+                    label={t('kubecode.conflicts')}
+                    onDiff={(change) => void openDiff(change, false)}
+                    statusColumn="conflict"
+                  />
+                )}
+                {conflictChanges.length > 0 && (
+                  <div className="kubecode-git-notice" role="status">
+                    {t('kubecode.conflictHint')}
+                  </div>
+                )}
                 {stagedChanges.length > 0 && (
                   <GitChangeGroup
                     changes={stagedChanges}
+                    group="staged"
                     label={t('kubecode.stagedChanges')}
                     onDiff={(change) => void openDiff(change, true)}
                     onPrimary={(change) => void mutateGit('unstage', change.path)}
                     primaryLabel={t('kubecode.unstage')}
                     primaryIcon={<Minus />}
+                    statusColumn="index"
                   />
                 )}
                 {worktreeChanges.length > 0 && (
                   <GitChangeGroup
                     changes={worktreeChanges}
+                    group="worktree"
                     label={t('kubecode.changes')}
                     onDiff={(change) => void openDiff(change, false)}
                     onDiscard={(change) => setDiscardPath(change.path)}
@@ -411,6 +458,7 @@ export function ContextWorkbench({
                     primaryLabel={t('kubecode.stage')}
                     primaryIcon={<Plus />}
                     discardLabel={t('kubecode.discard')}
+                    statusColumn="worktree"
                   />
                 )}
                 {stagedChanges.length > 0 && (
@@ -462,6 +510,9 @@ export function ContextWorkbench({
             {projectId && (
               <ProjectFileTree
                 api={api}
+                invalidations={fileTreeInvalidation
+                  ? [fileTreeInvalidation]
+                  : EMPTY_FILE_TREE_INVALIDATIONS}
                 key={projectId}
                 onDirectoryChange={setSelectedDirectory}
                 onOpenFile={(entry) => void openEntry(entry)}
@@ -505,13 +556,17 @@ export function ContextWorkbench({
             />
           </TabsContent>
         )}
-        {diff && (
+        {diffState.kind !== 'idle' && (
           <TabsContent className="kubecode-context-content kubecode-diff-view" value="diff">
-            <div className="kubecode-editor-toolbar">
-              <span>{diff.path}</span>
-              <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={() => { setDiff(null); setTab('explorer') }}><X /></Button>
-            </div>
-            <pre>{diff.content || gitDiffUnavailableMessage(diff.unavailableReason, t)}</pre>
+            <GitDiffView
+              state={diffState}
+              onClose={() => {
+                closeDiff()
+                setTab('explorer')
+              }}
+              onRetry={retryDiff}
+              t={t}
+            />
           </TabsContent>
         )}
       </Tabs>
@@ -532,7 +587,6 @@ export function ContextWorkbench({
         state={entryDialog}
         onOpenChange={(open) => { if (!open) setEntryDialog(null) }}
         onCreated={(entry) => {
-          setFileTreeRevision((current) => current + 1)
           if (entry.kind === 'file') void openEntry(entry)
         }}
         t={t}
@@ -647,58 +701,134 @@ function ExplorerSection({
 
 function GitChangeGroup({
   changes,
+  group,
   label,
   onDiff,
   onDiscard,
   onPrimary,
   primaryIcon,
   primaryLabel,
+  statusColumn,
   discardLabel,
 }: {
   changes: GitFileChange[]
+  group: 'conflict' | 'staged' | 'worktree'
   label: string
   onDiff: (change: GitFileChange) => void
   onDiscard?: (change: GitFileChange) => void
-  onPrimary: (change: GitFileChange) => void
-  primaryIcon: ReactNode
-  primaryLabel: string
+  onPrimary?: (change: GitFileChange) => void
+  primaryIcon?: ReactNode
+  primaryLabel?: string
+  statusColumn: 'conflict' | 'index' | 'worktree'
   discardLabel?: string
 }) {
+  const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
+
   return (
-    <section className="kubecode-git-group">
+    <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
       <header><strong>{label}</strong><span>{changes.length}</span></header>
-      {changes.map((change) => (
-        <div className="kubecode-git-row" key={`${label}:${change.path}`}>
-          <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
-            <span>{change.path}</span>
-            <code>{change.worktree_status ?? change.index_status}</code>
-          </Button>
-          {onDiscard && (
-            <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
+      {isVirtualized ? (
+        <Virtuoso
+          className="kubecode-git-virtual-list"
+          computeItemKey={(_index, change) => `${group}:${change.path}`}
+          data={changes}
+          data-testid={`git-change-virtual-list-${group}`}
+          defaultItemHeight={36}
+          fixedItemHeight={36}
+          increaseViewportBy={{ bottom: 216, top: 216 }}
+          itemContent={(_index, change) => (
+            <GitChangeRow
+              change={change}
+              discardLabel={discardLabel}
+              onDiscard={onDiscard}
+              onDiff={onDiff}
+              onPrimary={onPrimary}
+              primaryIcon={primaryIcon}
+              primaryLabel={primaryLabel}
+              statusColumn={statusColumn}
+            />
           )}
-          <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
-        </div>
+        />
+      ) : changes.map((change) => (
+        <GitChangeRow
+          change={change}
+          discardLabel={discardLabel}
+          key={`${group}:${change.path}`}
+          onDiscard={onDiscard}
+          onDiff={onDiff}
+          onPrimary={onPrimary}
+          primaryIcon={primaryIcon}
+          primaryLabel={primaryLabel}
+          statusColumn={statusColumn}
+        />
       ))}
     </section>
   )
 }
 
+function GitChangeRow({
+  change,
+  discardLabel,
+  onDiscard,
+  onDiff,
+  onPrimary,
+  primaryIcon,
+  primaryLabel,
+  statusColumn,
+}: {
+  change: GitFileChange
+  discardLabel?: string
+  onDiscard?: (change: GitFileChange) => void
+  onDiff: (change: GitFileChange) => void
+  onPrimary?: (change: GitFileChange) => void
+  primaryIcon?: ReactNode
+  primaryLabel?: string
+  statusColumn: 'conflict' | 'index' | 'worktree'
+}) {
+  return (
+    <div className="kubecode-git-row">
+      <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
+        <span className="kubecode-git-path-name">
+          {change.original_path && (
+            <small className="kubecode-git-rename-source">
+              {change.original_path} →
+            </small>
+          )}
+          <span>{change.path}</span>
+        </span>
+        <code>{gitStatusColumn(change, statusColumn)}</code>
+      </Button>
+      {onDiscard && (
+        <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
+      )}
+      {onPrimary && (
+        <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
+      )}
+    </div>
+  )
+}
+
+function isConflict(change: GitFileChange): boolean {
+  return change.conflict === true
+}
+
 function isStaged(change: GitFileChange): boolean {
   return Boolean(change.index_status && change.index_status !== '?')
+    && !isConflict(change)
 }
 
 function isWorktreeChanged(change: GitFileChange): boolean {
   return Boolean(change.worktree_status || change.index_status === '?')
+    && !isConflict(change)
 }
 
-function gitDiffUnavailableMessage(
-  reason: GitDiffUnavailableReason | null,
-  t: Translator,
+function gitStatusColumn(
+  change: GitFileChange,
+  column: 'conflict' | 'index' | 'worktree',
 ): string {
-  if (reason === 'binary') return t('kubecode.gitDiffBinary')
-  if (reason === 'oversized') return t('kubecode.gitDiffTooLarge')
-  if (reason === 'unsupported') return t('kubecode.gitDiffUnavailable')
-  return t('kubecode.emptyDiff')
+  if (column === 'index') return change.index_status ?? ''
+  if (column === 'worktree') return change.worktree_status ?? ''
+  return `${change.index_status ?? ''}${change.worktree_status ?? ''}` || '?'
 }
 
 function EntryDialog({
