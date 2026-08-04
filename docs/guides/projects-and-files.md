@@ -49,6 +49,12 @@ Click a changed file to open its diff. Git paths are validated relative to the
 Project, and Git operations are executed without interpolating paths into a
 shell command.
 
+Status is bounded to the first 10,000 complete records or 1 MiB. The response
+marks a truncated list as a prefix; reduce the repository changes and refresh
+to inspect the remainder. Individual staged, unstaged, and untracked diffs are
+bounded to 2 MiB. Binary, oversized, and unsupported diffs remain explicitly
+unavailable instead of being silently truncated.
+
 Discarding changes is destructive and cannot be undone by Kubecode. Review the
 diff and confirm that the path belongs to the intended Project.
 

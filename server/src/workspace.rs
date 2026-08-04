@@ -159,6 +159,41 @@ impl WorkspaceService {
         self.project_root(project_id)
     }
 
+    pub fn validate_project_relative_path(
+        &self,
+        project_id: &str,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        self.project_root(project_id)?;
+        normalize_relative(relative, false).map(|path| path_string(&path))
+    }
+
+    pub fn project_relative_path_contains_symlink(
+        &self,
+        project_id: &str,
+        relative: &str,
+    ) -> Result<bool, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        let root = self.project_root(project_id)?;
+        let relative = normalize_relative(relative, false)?;
+        let mut candidate = root;
+        for component in relative.components() {
+            candidate.push(component.as_os_str());
+            match fs::symlink_metadata(&candidate) {
+                Ok(metadata) if metadata.file_type().is_symlink() => return Ok(true),
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(false)
+    }
+
     pub fn project(&self, project_id: &str) -> Result<Project, WorkspaceError> {
         let database = self
             .database
@@ -305,6 +340,7 @@ impl WorkspaceService {
         let mut child = Command::new("git")
             .args(["apply", "--whitespace=nowarn", "-"])
             .current_dir(cwd)
+            .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1058,6 +1094,7 @@ fn git_command_with_index(
     Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_INDEX_FILE", index)
         .output()
         .map_err(WorkspaceError::from)
@@ -1075,6 +1112,7 @@ fn git_command(cwd: &Path, args: &[&str]) -> Result<std::process::Output, Worksp
     Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .map_err(WorkspaceError::from)
 }
@@ -1087,6 +1125,7 @@ fn git_ignored_paths<'a>(
     command
         .args(["check-ignore", "--stdin", "-z"])
         .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -1273,8 +1312,14 @@ fn revision(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+#[cfg(windows)]
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(not(windows))]
+fn path_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 fn entry_kind_rank(kind: &EntryKind) -> u8 {

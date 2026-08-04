@@ -681,6 +681,20 @@ mark every loaded directory stale. Per-directory and Project request generations
 discard responses made obsolete by invalidation, eviction, Project change,
 collapse, or unmount.
 
+The Changes section consumes a bounded `GitStatus` projection rather than Git
+porcelain. A change has a stable current path, optional rename/copy source path,
+independent index and worktree status, and conflict identity. Partially staged
+files can therefore participate in both staged and worktree projections. Status
+is a complete-record prefix of at most 10,000 records and 1 MiB; `truncated`
+explicitly signals that more changes exist.
+
+One selected browser diff is resolved by `GitService` at a time. The request
+chooses the staged or worktree target but never supplies file content. Untracked
+patches are generated on the server, and the 2 MiB response is either a complete
+UTF-8 patch or a stable binary, oversized, or unsupported state. These browser
+limits do not replace the smaller file/hunk/byte bounds and content-addressed
+identity used by Composer Git context.
+
 ## Workspace attention
 
 Global Session summaries project durable state needed by navigation: Project,

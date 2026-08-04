@@ -17,8 +17,10 @@ pub const MAX_GIT_DIFF_CONTEXT_HUNKS: usize = 128;
 pub const MAX_GIT_DIFF_CONTEXT_BYTES: usize = 64 * 1024;
 pub const MAX_GIT_DIFF_FILE_CONTEXT_HUNKS: usize = 64;
 pub const MAX_GIT_DIFF_FILE_CONTEXT_BYTES: usize = 32 * 1024;
+pub const MAX_GIT_STATUS_BYTES: usize = 1024 * 1024;
+pub const MAX_GIT_STATUS_RECORDS: usize = 10_000;
+pub const MAX_GIT_UI_DIFF_BYTES: usize = 2 * 1024 * 1024;
 const MAX_GIT_DIFF_CANDIDATES: usize = 128;
-const MAX_GIT_STATUS_BYTES: usize = 1024 * 1024;
 const MAX_GIT_ERROR_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Error)]
@@ -38,8 +40,11 @@ pub enum GitError {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GitFileChange {
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_path: Option<String>,
     pub index_status: Option<char>,
     pub worktree_status: Option<char>,
+    pub conflict: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,6 +52,21 @@ pub struct GitStatus {
     pub is_repository: bool,
     pub branch: Option<String>,
     pub files: Vec<GitFileChange>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitDiffUnavailableReason {
+    Binary,
+    Oversized,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct GitDiff {
+    pub diff: Option<String>,
+    pub unavailable_reason: Option<GitDiffUnavailableReason>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -96,20 +116,9 @@ impl GitService {
 
     pub async fn status(&self, project_id: &str) -> Result<GitStatus, GitError> {
         let cwd = self.workspace.project_path(project_id)?;
-        let repository = TokioCommand::new("git")
-            .args(["rev-parse", "--is-inside-work-tree"])
-            .current_dir(&cwd)
-            .output()
-            .await?;
-        if !repository.status.success() {
-            return Ok(GitStatus {
-                is_repository: false,
-                branch: None,
-                files: Vec::new(),
-            });
-        }
-        let output = git_output(&cwd, &["status", "--porcelain=v1", "-z", "--branch"]).await?;
-        parse_status(&output)
+        tokio::task::spawn_blocking(move || status_blocking(&cwd, true))
+            .await
+            .map_err(|error| GitError::Command(format!("Git status task failed: {error}")))?
     }
 
     pub async fn initialize(&self, project_id: &str) -> Result<GitStatus, GitError> {
@@ -123,15 +132,18 @@ impl GitService {
         project_id: &str,
         path: &str,
         staged: bool,
-    ) -> Result<String, GitError> {
-        validate_path(path)?;
+    ) -> Result<GitDiff, GitError> {
+        let path = self
+            .workspace
+            .validate_project_relative_path(project_id, path)?;
         let cwd = self.workspace.project_path(project_id)?;
-        let mut arguments = vec!["diff"];
-        if staged {
-            arguments.push("--cached");
-        }
-        arguments.extend(["--", path]);
-        Ok(String::from_utf8_lossy(&git_output(&cwd, &arguments).await?).into_owned())
+        let workspace = Arc::clone(&self.workspace);
+        let project_id = project_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            ui_diff_blocking(&workspace, &project_id, &cwd, &path, staged)
+        })
+        .await
+        .map_err(|error| GitError::Command(format!("Git diff task failed: {error}")))?
     }
 
     pub async fn mutate(
@@ -145,20 +157,24 @@ impl GitService {
                 "at least one path is required".into(),
             ));
         }
-        for path in paths {
-            validate_path(path)?;
-        }
+        let paths = paths
+            .iter()
+            .map(|path| {
+                self.workspace
+                    .validate_project_relative_path(project_id, path)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let cwd = self.workspace.project_path(project_id)?;
         match mutation {
-            GitMutation::Stage => git_paths(&cwd, &["add"], paths).await?,
+            GitMutation::Stage => git_paths(&cwd, &["add"], &paths).await?,
             GitMutation::Unstage => {
                 if git_succeeds(&cwd, &["rev-parse", "--verify", "HEAD"]).await? {
-                    git_paths(&cwd, &["restore", "--staged"], paths).await?;
+                    git_paths(&cwd, &["restore", "--staged"], &paths).await?;
                 } else {
-                    git_paths(&cwd, &["rm", "--cached", "-r"], paths).await?;
+                    git_paths(&cwd, &["rm", "--cached", "-r"], &paths).await?;
                 }
             }
-            GitMutation::Discard => self.discard_paths(project_id, &cwd, paths).await?,
+            GitMutation::Discard => self.discard_paths(project_id, &cwd, &paths).await?,
         }
         self.status(project_id).await
     }
@@ -236,7 +252,7 @@ impl GitService {
             execution_mode,
             workspace_path,
         )?;
-        let status = status_blocking(&cwd)?;
+        let status = status_blocking(&cwd, false)?;
         if !status.is_repository {
             return Err(GitError::Command("not a Git repository".into()));
         }
@@ -266,7 +282,7 @@ impl GitService {
             execution_mode,
             workspace_path,
         )?;
-        let status = status_blocking(&cwd)?;
+        let status = status_blocking(&cwd, false)?;
         if !status.is_repository {
             return Ok(GitDiffContextList {
                 is_repository: false,
@@ -318,13 +334,16 @@ where
 }
 
 async fn git_succeeds(cwd: &Path, arguments: &[&str]) -> Result<bool, GitError> {
-    let output = TokioCommand::new("git")
+    let status = TokioCommand::new("git")
+        .arg("--no-optional-locks")
         .args(arguments)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
         .await?;
-    Ok(output.status.success())
+    Ok(status.success())
 }
 
 async fn git_output(cwd: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitError> {
@@ -345,35 +364,78 @@ async fn git_output(cwd: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitError>
     }))
 }
 
-fn status_blocking(cwd: &Path) -> Result<GitStatus, GitError> {
-    let repository = BlockingCommand::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(cwd)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()?;
-    if !repository.status.success() {
+fn status_blocking(cwd: &Path, allow_truncated: bool) -> Result<GitStatus, GitError> {
+    if !blocking_git_succeeds(cwd, &["rev-parse", "--is-inside-work-tree"])? {
         return Ok(GitStatus {
             is_repository: false,
             branch: None,
             files: Vec::new(),
+            truncated: false,
         });
     }
-    match blocking_git_output(
-        cwd,
-        &[
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--branch",
-            "--untracked-files=all",
-        ],
-        MAX_GIT_STATUS_BYTES,
-        false,
-    )? {
-        BoundedGitOutput::Complete(output) => parse_status(&output),
+    let (output, truncated) = blocking_status_output(cwd)?;
+    if truncated && !allow_truncated {
+        return Err(GitError::Command("git status exceeds its bound".into()));
+    }
+    parse_status(&output, truncated)
+}
+
+fn ui_diff_blocking(
+    workspace: &WorkspaceService,
+    project_id: &str,
+    cwd: &Path,
+    path: &str,
+    staged: bool,
+) -> Result<GitDiff, GitError> {
+    let status = status_blocking(cwd, true)?;
+    let Some(change) = status.files.iter().find(|change| change.path == path) else {
+        return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
+    };
+    let untracked = change.index_status == Some('?') && change.worktree_status == Some('?');
+    if (staged && (change.index_status.is_none() || untracked))
+        || (!staged && change.worktree_status.is_none())
+    {
+        return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
+    }
+    if untracked && workspace.project_relative_path_contains_symlink(project_id, path)? {
+        return Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported));
+    }
+
+    let mut arguments = vec!["diff"];
+    if untracked {
+        arguments.push("--no-index");
+    } else if staged {
+        arguments.push("--cached");
+    }
+    arguments.extend(["--no-ext-diff", "--no-textconv", "--unified=3", "--"]);
+    if untracked {
+        arguments.push("/dev/null");
+    } else if let Some(original_path) = change.original_path.as_deref() {
+        arguments.push(original_path);
+    }
+    arguments.push(path);
+
+    match blocking_git_output(cwd, &arguments, MAX_GIT_UI_DIFF_BYTES, untracked)? {
         BoundedGitOutput::OverLimit(_) => {
-            Err(GitError::Command("git status exceeds its bound".into()))
+            Ok(unavailable_ui_diff(GitDiffUnavailableReason::Oversized))
         }
+        BoundedGitOutput::Complete(content) if contains_binary_marker(&content) => {
+            Ok(unavailable_ui_diff(GitDiffUnavailableReason::Binary))
+        }
+        BoundedGitOutput::Complete(content) => match String::from_utf8(content) {
+            Ok(diff) => Ok(GitDiff {
+                diff: Some(diff),
+                unavailable_reason: None,
+            }),
+            Err(_) => Ok(unavailable_ui_diff(GitDiffUnavailableReason::Unsupported)),
+        },
+    }
+}
+
+fn unavailable_ui_diff(reason: GitDiffUnavailableReason) -> GitDiff {
+    GitDiff {
+        diff: None,
+        unavailable_reason: Some(reason),
     }
 }
 
@@ -672,9 +734,11 @@ fn status_identity(changes: &[GitFileChange]) -> String {
         .iter()
         .map(|change| {
             format!(
-                "{}:{}:{}",
+                "{}:{}:{}:{}:{}",
                 change.index_status.unwrap_or(' '),
                 change.worktree_status.unwrap_or(' '),
+                change.conflict,
+                change.original_path.as_deref().unwrap_or(""),
                 change.path,
             )
         })
@@ -690,17 +754,142 @@ fn hunk_count(content: &[u8]) -> usize {
 }
 
 fn contains_binary_marker(content: &[u8]) -> bool {
-    content
-        .windows(b"Binary files ".len())
-        .any(|window| window == b"Binary files ")
-        || content
-            .windows(b"GIT binary patch".len())
-            .any(|window| window == b"GIT binary patch")
+    content.split(|byte| *byte == b'\n').any(|line| {
+        line == b"GIT binary patch"
+            || (line.starts_with(b"Binary files ") && line.ends_with(b" differ"))
+    })
 }
 
 enum BoundedGitOutput {
     Complete(Vec<u8>),
     OverLimit(Vec<u8>),
+}
+
+fn blocking_git_succeeds(cwd: &Path, arguments: &[&str]) -> Result<bool, GitError> {
+    Ok(BlockingCommand::new("git")
+        .arg("--no-optional-locks")
+        .args(arguments)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?
+        .success())
+}
+
+fn blocking_status_output(cwd: &Path) -> Result<(Vec<u8>, bool), GitError> {
+    let arguments = [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--branch",
+        "--untracked-files=all",
+    ];
+    let mut child = BlockingCommand::new("git")
+        .arg("--no-optional-locks")
+        .args(arguments)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr_pipe = child.stderr.take().expect("piped stderr");
+    let stderr_reader = std::thread::spawn(move || {
+        let mut stderr = Vec::with_capacity(MAX_GIT_ERROR_BYTES);
+        {
+            let mut bounded = (&mut stderr_pipe).take((MAX_GIT_ERROR_BYTES + 1) as u64);
+            let _ = bounded.read_to_end(&mut stderr);
+        }
+        let _ = std::io::copy(&mut stderr_pipe, &mut std::io::sink());
+        stderr.truncate(MAX_GIT_ERROR_BYTES);
+        stderr
+    });
+
+    let mut collector = StatusOutputCollector::new(MAX_GIT_STATUS_BYTES, MAX_GIT_STATUS_RECORDS);
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = stdout.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        if !collector.push(&chunk[..read]) {
+            let _ = child.kill();
+            break;
+        }
+    }
+    let (output, truncated) = collector.finish();
+    let status = child.wait()?;
+    let stderr = stderr_reader.join().unwrap_or_default();
+    if !truncated && !status.success() {
+        let message = String::from_utf8_lossy(&stderr).trim().to_owned();
+        return Err(GitError::Command(if message.is_empty() {
+            format!("git {} exited with {status}", arguments.join(" "))
+        } else {
+            message
+        }));
+    }
+    Ok((output, truncated))
+}
+
+struct StatusOutputCollector {
+    output: Vec<u8>,
+    pending: Vec<u8>,
+    file_records: usize,
+    max_bytes: usize,
+    max_records: usize,
+    awaiting_original_path: bool,
+    truncated: bool,
+}
+
+impl StatusOutputCollector {
+    fn new(max_bytes: usize, max_records: usize) -> Self {
+        Self {
+            output: Vec::with_capacity(max_bytes.min(64 * 1024)),
+            pending: Vec::new(),
+            file_records: 0,
+            max_bytes,
+            max_records,
+            awaiting_original_path: false,
+            truncated: false,
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) -> bool {
+        for byte in bytes {
+            if self.file_records >= self.max_records
+                || self.output.len().saturating_add(self.pending.len()) >= self.max_bytes
+            {
+                self.truncated = true;
+                return false;
+            }
+            self.pending.push(*byte);
+            if *byte != 0 {
+                continue;
+            }
+            if !self.awaiting_original_path && self.pending.starts_with(b"2 ") {
+                self.awaiting_original_path = true;
+                continue;
+            }
+            if self
+                .pending
+                .first()
+                .is_some_and(|kind| matches!(kind, b'1' | b'2' | b'u' | b'?'))
+            {
+                self.file_records += 1;
+            }
+            self.output.append(&mut self.pending);
+            self.awaiting_original_path = false;
+        }
+        true
+    }
+
+    fn finish(mut self) -> (Vec<u8>, bool) {
+        if !self.pending.is_empty() {
+            self.truncated = true;
+        }
+        (self.output, self.truncated)
+    }
 }
 
 fn blocking_git_output(
@@ -710,6 +899,7 @@ fn blocking_git_output(
     accept_difference_exit: bool,
 ) -> Result<BoundedGitOutput, GitError> {
     let mut child = BlockingCommand::new("git")
+        .arg("--no-optional-locks")
         .args(arguments)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -762,45 +952,95 @@ fn blocking_git_output(
     Ok(BoundedGitOutput::Complete(bytes))
 }
 
-fn parse_status(output: &[u8]) -> Result<GitStatus, GitError> {
+fn parse_status(output: &[u8], truncated: bool) -> Result<GitStatus, GitError> {
     let mut records = output
         .split(|byte| *byte == 0)
         .filter(|record| !record.is_empty());
     let mut branch = None;
     let mut files = Vec::new();
     while let Some(record) = records.next() {
-        let text = String::from_utf8_lossy(record);
-        if let Some(value) = text.strip_prefix("## ") {
-            branch = Some(value.split("...").next().unwrap_or(value).to_owned());
+        if let Some(value) = record.strip_prefix(b"# branch.head ") {
+            let value = String::from_utf8_lossy(value);
+            branch = (!value.starts_with('(')).then(|| value.into_owned());
             continue;
         }
-        if record.len() < 4 || record[2] != b' ' {
-            return Err(GitError::Command(
-                "git returned an invalid status record".into(),
-            ));
+        if record.starts_with(b"# ") || record.starts_with(b"! ") {
+            continue;
         }
-        let index_status = status_character(record[0]);
-        let worktree_status = status_character(record[1]);
-        let path = String::from_utf8_lossy(&record[3..]).into_owned();
-        let renamed = matches!(index_status, Some('R' | 'C'));
-        files.push(GitFileChange {
-            path,
-            index_status,
-            worktree_status,
-        });
-        if renamed {
-            let _ = records.next();
-        }
+        files.push(parse_file_status(record, &mut records)?);
     }
     Ok(GitStatus {
         is_repository: true,
         branch,
         files,
+        truncated,
+    })
+}
+
+fn parse_file_status<'a>(
+    record: &[u8],
+    records: &mut impl Iterator<Item = &'a [u8]>,
+) -> Result<GitFileChange, GitError> {
+    let invalid = || GitError::Command("git returned an invalid status record".into());
+    let (xy, submodule, path, original_path, conflict) = match record.first() {
+        Some(b'1') => {
+            let fields = record.splitn(9, |byte| *byte == b' ').collect::<Vec<_>>();
+            if fields.len() != 9 || fields[0] != b"1" {
+                return Err(invalid());
+            }
+            (fields[1], fields[2], fields[8], None, false)
+        }
+        Some(b'2') => {
+            let fields = record.splitn(10, |byte| *byte == b' ').collect::<Vec<_>>();
+            if fields.len() != 10 || fields[0] != b"2" {
+                return Err(invalid());
+            }
+            let original = records.next().ok_or_else(invalid)?;
+            (fields[1], fields[2], fields[9], Some(original), false)
+        }
+        Some(b'u') => {
+            let fields = record.splitn(11, |byte| *byte == b' ').collect::<Vec<_>>();
+            if fields.len() != 11 || fields[0] != b"u" {
+                return Err(invalid());
+            }
+            (fields[1], fields[2], fields[10], None, true)
+        }
+        Some(b'?') if record.get(1) == Some(&b' ') => (
+            b"??".as_slice(),
+            b"N...".as_slice(),
+            &record[2..],
+            None,
+            false,
+        ),
+        _ => return Err(invalid()),
+    };
+    if xy.len() != 2 || path.is_empty() {
+        return Err(invalid());
+    }
+    let index_status = status_character(xy[0]);
+    let mut worktree_status = status_character(xy[1]);
+    if worktree_status.is_none()
+        && submodule.len() == 4
+        && submodule[0] == b'S'
+        && submodule[1..].iter().any(|value| *value != b'.')
+    {
+        worktree_status = Some('M');
+    }
+    let path = String::from_utf8(path.to_vec()).map_err(|_| invalid())?;
+    let original_path = original_path
+        .map(|path| String::from_utf8(path.to_vec()).map_err(|_| invalid()))
+        .transpose()?;
+    Ok(GitFileChange {
+        path,
+        original_path,
+        index_status,
+        worktree_status,
+        conflict,
     })
 }
 
 fn status_character(value: u8) -> Option<char> {
-    (value != b' ').then_some(value as char)
+    (!matches!(value, b'.' | b' ')).then_some(value as char)
 }
 
 fn validate_path(path: &str) -> Result<(), GitError> {
@@ -822,14 +1062,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_porcelain_status_without_shell_interpolation() {
-        let status =
-            parse_status(b"## main\0 M src/main.rs\0A  README.md\0?? notes.txt\0").expect("status");
+    fn parses_porcelain_v2_records_without_losing_identity() {
+        let output = b"# branch.oid abc\0# branch.head main\0\
+1 .M N... 100644 100644 100644 abc def src/main.rs\0\
+2 R. N... 100644 100644 100644 abc def R100 renamed name.rs\0old name.rs\0\
+2 C. N... 100644 100644 100644 abc def C100 copied.rs\0source.rs\0\
+u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
+1 .. S.MU 160000 160000 160000 abc def vendor/sub\0\
+? white space.txt\0? na\xc3\xafve.txt\0";
+        let status = parse_status(output, false).expect("status");
         assert_eq!(status.branch.as_deref(), Some("main"));
-        assert_eq!(status.files.len(), 3);
+        assert_eq!(status.files.len(), 7);
+        assert!(!status.truncated);
         assert_eq!(status.files[0].worktree_status, Some('M'));
-        assert_eq!(status.files[1].index_status, Some('A'));
-        assert_eq!(status.files[2].index_status, Some('?'));
+        assert_eq!(status.files[1].index_status, Some('R'));
+        assert_eq!(status.files[1].path, "renamed name.rs");
+        assert_eq!(
+            status.files[1].original_path.as_deref(),
+            Some("old name.rs")
+        );
+        assert_eq!(status.files[2].index_status, Some('C'));
+        assert_eq!(status.files[2].original_path.as_deref(), Some("source.rs"));
+        assert!(status.files[3].conflict);
+        assert_eq!(status.files[3].index_status, Some('U'));
+        assert_eq!(status.files[3].worktree_status, Some('U'));
+        assert_eq!(status.files[4].worktree_status, Some('M'));
+        assert_eq!(status.files[5].path, "white space.txt");
+        assert_eq!(status.files[6].path, "na\u{00ef}ve.txt");
+    }
+
+    #[test]
+    fn bounds_status_by_complete_file_records() {
+        let mut input = b"# branch.head main\0".to_vec();
+        for index in 0..=MAX_GIT_STATUS_RECORDS {
+            input.extend_from_slice(format!("? file-{index}\0").as_bytes());
+        }
+        let mut collector =
+            StatusOutputCollector::new(MAX_GIT_STATUS_BYTES, MAX_GIT_STATUS_RECORDS);
+        assert!(!collector.push(&input));
+        let (output, truncated) = collector.finish();
+        let status = parse_status(&output, truncated).expect("bounded status");
+        assert_eq!(status.files.len(), MAX_GIT_STATUS_RECORDS);
+        assert!(status.truncated);
+        assert!(output.len() <= MAX_GIT_STATUS_BYTES);
+        assert_eq!(output.last(), Some(&0));
+    }
+
+    #[test]
+    fn drops_partial_byte_limited_and_rename_records() {
+        let oversized = format!("? {}\0", "x".repeat(MAX_GIT_STATUS_BYTES));
+        let mut collector =
+            StatusOutputCollector::new(MAX_GIT_STATUS_BYTES, MAX_GIT_STATUS_RECORDS);
+        assert!(!collector.push(oversized.as_bytes()));
+        let (output, truncated) = collector.finish();
+        assert!(output.is_empty());
+        assert!(truncated);
+
+        let rename = b"2 R. N... 100644 100644 100644 a b R100 new.txt\0old.txt\0";
+        let mut collector = StatusOutputCollector::new(rename.len() - 1, 10);
+        assert!(!collector.push(rename));
+        let (output, truncated) = collector.finish();
+        assert!(output.is_empty());
+        assert!(truncated);
     }
 
     #[test]
@@ -837,5 +1131,34 @@ mod tests {
         assert!(validate_path("src/main.rs").is_ok());
         assert!(validate_path("../secret").is_err());
         assert!(validate_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_in_porcelain_path_records() {
+        assert!(parse_status(b"? invalid-\xff-name.txt\0", false).is_err());
+        assert!(
+            parse_status(
+                b"2 R. N... 100644 100644 100644 abc def R100 new.txt\0old-\xff-name.txt\0",
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn recognizes_only_git_binary_marker_lines() {
+        assert!(contains_binary_marker(b"GIT binary patch\n"));
+        assert!(contains_binary_marker(
+            b"Binary files a/file and b/file differ\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"+Binary files a/file and b/file differ\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"text mentioning GIT binary patch\n"
+        ));
+        assert!(!contains_binary_marker(
+            b"not Binary files a and b differ\n"
+        ));
     }
 }

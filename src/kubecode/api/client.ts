@@ -15,6 +15,7 @@ import type {
   Entry,
   ExecutionMode,
   GitDiffContextList,
+  GitDiffResult,
   GitMutation,
   GitStatus,
   Project,
@@ -164,10 +165,10 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/git/init`, { method: 'POST' })
   }
 
-  gitDiff(projectId: string, path: string, staged: boolean): Promise<string> {
-    return this.request<{ diff: string }>(
+  gitDiff(projectId: string, path: string, staged: boolean): Promise<GitDiffResult> {
+    return this.request<GitDiffResult>(
       `${this.projectPath(projectId)}/git/diff?${query({ path, staged: String(staged) })}`,
-    ).then((result) => result.diff)
+    )
   }
 
   mutateGit(projectId: string, action: GitMutation, paths: string[]): Promise<GitStatus> {

@@ -494,13 +494,21 @@ export type WorkspaceEvent = {
 }
 export type GitFileChange = {
   path: string
+  original_path?: string
   index_status: string | null
   worktree_status: string | null
+  conflict: boolean
 }
 export type GitStatus = {
   is_repository: boolean
   branch: string | null
   files: GitFileChange[]
+  truncated: boolean
+}
+export type GitDiffUnavailableReason = 'binary' | 'oversized' | 'unsupported'
+export type GitDiffResult = {
+  diff: string | null
+  unavailable_reason: GitDiffUnavailableReason | null
 }
 export type GitMutation = 'stage' | 'unstage' | 'discard'
 export type TerminalInfo = {

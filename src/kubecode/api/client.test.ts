@@ -578,11 +578,12 @@ describe('Kubecode API client', () => {
   })
 
   it('serializes Git diff booleans for Axum query parsing', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ diff: '' })))
+    const result = { diff: null, unavailable_reason: 'binary' as const }
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(result)))
     vi.stubGlobal('fetch', fetch)
     const api = new KubecodeApi('')
 
-    await api.gitDiff('project-1', 'README.md', false)
+    await expect(api.gitDiff('project-1', 'README.md', false)).resolves.toEqual(result)
 
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/projects/project-1/git/diff?path=README.md&staged=false',
