@@ -670,23 +670,58 @@ mod tests {
         journal.flush().await.expect("flush");
 
         let events = store.events_after(&run.id, 1).expect("run events");
-        assert_eq!(events.len(), 2);
-        assert_eq!(events[0].kind, AgentEventKind::TextDelta);
+        assert!(events.len() >= 2);
         assert_eq!(
-            events[0].payload["text"].as_str().map(str::len),
-            Some(1_000)
+            events
+                .iter()
+                .filter(|event| event.kind == AgentEventKind::ToolStarted)
+                .count(),
+            1
         );
-        assert_eq!(events[1].kind, AgentEventKind::ToolStarted);
+        let text_events = &events[..events.len() - 1];
+        assert!(!text_events.is_empty());
+        assert!(
+            text_events
+                .iter()
+                .all(|event| event.kind == AgentEventKind::TextDelta)
+        );
+        assert_eq!(
+            events.last().expect("final run event").kind,
+            AgentEventKind::ToolStarted
+        );
+        let text = text_events
+            .iter()
+            .map(|event| event.payload["text"].as_str().expect("text delta payload"))
+            .collect::<Vec<_>>()
+            .concat();
+        assert_eq!(text.as_bytes(), vec![b'x'; 1_000].as_slice());
+
         let session_events = store
             .session_events_after(&conversation.id, 1)
             .expect("session events");
-        assert_eq!(session_events.len(), 2);
-        assert_eq!(session_events[0].kind, "text_delta");
-        assert_eq!(session_events[1].kind, "tool_started");
+        assert_eq!(session_events.len(), events.len());
+        for (session_event, run_event) in session_events.iter().zip(&events) {
+            assert_eq!(session_event.kind, run_event.kind.as_str());
+        }
+
         let workspace_events = store
             .workspace_events_after(workspace_cursor)
             .expect("workspace events");
-        assert_eq!(workspace_events.len(), 2);
+        assert_eq!(workspace_events.len(), events.len());
+        assert!(
+            workspace_events
+                .iter()
+                .all(|event| event.id > workspace_cursor)
+        );
+        assert!(
+            workspace_events
+                .windows(2)
+                .all(|events| events[0].id < events[1].id)
+        );
+        for (workspace_event, run_event) in workspace_events.iter().zip(&events) {
+            assert_eq!(workspace_event.kind, run_event.kind.as_str());
+            assert_eq!(workspace_event.payload, run_event.payload);
+        }
         assert_eq!(
             workspace_event_bus.latest_committed_cursor(),
             workspace_events.last().expect("latest workspace event").id
