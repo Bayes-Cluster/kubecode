@@ -10,7 +10,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-import { ProjectEntryIcon } from './fileIcons'
+import { MaterialDirectoryIcon } from './icons/material/materialIcons'
+import { MaterialFileIcon } from './icons/material/materialIcons'
+import { resolveFileIcon } from './icons/resolveFileIcon'
 
 export type PathPickerRow = {
   description?: string
@@ -124,7 +126,9 @@ export function PathPicker({
               {row.icon ?? (
                 row.kind === 'action'
                   ? <Plus />
-                  : <ProjectEntryIcon kind={row.kind} name={row.label} />
+                  : row.kind === 'directory'
+                    ? <MaterialDirectoryIcon name={row.label} />
+                    : <MaterialFileIcon id={resolveFileIcon(row.label)} />
               )}
               <span className="kubecode-path-picker-row-copy">
                 <strong>{row.label}</strong>

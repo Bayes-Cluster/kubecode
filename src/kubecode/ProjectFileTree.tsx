@@ -15,7 +15,9 @@ import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
 import type { Entry, FileChangedPayload, KubecodeApi } from './api'
-import { ProjectEntryIcon } from './fileIcons'
+import { MaterialDirectoryIcon } from './icons/material/materialIcons'
+import { MaterialFileIcon } from './icons/material/materialIcons'
+import { resolveFileIcon } from './icons/resolveFileIcon'
 import {
   EMPTY_FILE_TREE_INVALIDATIONS,
   parentDirectoryPath,
@@ -432,7 +434,9 @@ function TreeRow({
     >
       {row.kind === 'directory' && (row.isExpanded ? <CaretDown /> : <CaretRight />)}
       {row.kind === 'file' && <span className="kubecode-file-tree-spacer" />}
-      <ProjectEntryIcon expanded={row.isExpanded} kind={row.kind} name={row.name} />
+      {row.kind === 'directory'
+        ? <MaterialDirectoryIcon expanded={row.isExpanded} name={row.name} />
+        : <MaterialFileIcon id={resolveFileIcon(row.name)} />}
       <span>{row.name}</span>
     </Button>
   )

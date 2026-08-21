@@ -3,7 +3,6 @@ import {
   ArrowClockwise,
   CaretDown,
   File,
-  FileCode,
   Folder,
   GitCommit,
   GitDiff,
@@ -33,6 +32,9 @@ import { trackEvent } from '@/lib/telemetry'
 import { CodeEditor } from './CodeEditor'
 import { Icon } from './icons'
 import { PLAN_STATUS_ICONS } from './icons/statusIcons'
+import { MaterialFileIcon } from './icons/material/materialIcons'
+import { resolveFileIcon } from './icons/resolveFileIcon'
+import { GIT_STATE_ICONS, type GitState } from './icons/statusIcons'
 import type { SessionPlanEntry } from './AgentSessionWorkspace'
 import type { WorkspaceConnectionState } from './useWorkspaceEventStream'
 import { PathPicker, type PathPickerRow } from './PathPicker'
@@ -372,14 +374,14 @@ export function ContextWorkbench({
                     setTab(`editor:${key}`)
                   }}
                 >
-                  <FileCode /> {item.document.path.split('/').at(-1)}
+                  <MaterialFileIcon id={resolveFileIcon(item.document.path)} /> {item.document.path.split('/').at(-1)}
                   {itemDirty && <span className="kubecode-dirty-dot" />}
                 </TabsTrigger>
               )
             })}
             {diffState.kind !== 'idle' && (
               <TabsTrigger value="diff" onClick={() => setTab('diff')}>
-                <GitDiff /> {diffState.target.path.split('/').at(-1)}
+                <MaterialFileIcon id={resolveFileIcon(diffState.target.path)} /> {diffState.target.path.split('/').at(-1)}
               </TabsTrigger>
             )}
           </TabsList>
@@ -429,6 +431,7 @@ export function ContextWorkbench({
                     label={t('kubecode.conflicts')}
                     onDiff={(change) => void openDiff(change, false)}
                     statusColumn="conflict"
+                    t={t}
                   />
                 )}
                 {conflictChanges.length > 0 && (
@@ -446,6 +449,7 @@ export function ContextWorkbench({
                     primaryLabel={t('kubecode.unstage')}
                     primaryIcon={<Minus />}
                     statusColumn="index"
+                    t={t}
                   />
                 )}
                 {worktreeChanges.length > 0 && (
@@ -460,6 +464,7 @@ export function ContextWorkbench({
                     primaryIcon={<Plus />}
                     discardLabel={t('kubecode.discard')}
                     statusColumn="worktree"
+                    t={t}
                   />
                 )}
                 {stagedChanges.length > 0 && (
@@ -711,6 +716,7 @@ function GitChangeGroup({
   primaryLabel,
   statusColumn,
   discardLabel,
+  t,
 }: {
   changes: GitFileChange[]
   group: 'conflict' | 'staged' | 'worktree'
@@ -722,6 +728,7 @@ function GitChangeGroup({
   primaryLabel?: string
   statusColumn: 'conflict' | 'index' | 'worktree'
   discardLabel?: string
+  t: Translator
 }) {
   const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
 
@@ -747,6 +754,7 @@ function GitChangeGroup({
               primaryIcon={primaryIcon}
               primaryLabel={primaryLabel}
               statusColumn={statusColumn}
+              t={t}
             />
           )}
         />
@@ -761,6 +769,7 @@ function GitChangeGroup({
           primaryIcon={primaryIcon}
           primaryLabel={primaryLabel}
           statusColumn={statusColumn}
+          t={t}
         />
       ))}
     </section>
@@ -776,6 +785,7 @@ function GitChangeRow({
   primaryIcon,
   primaryLabel,
   statusColumn,
+  t,
 }: {
   change: GitFileChange
   discardLabel?: string
@@ -785,10 +795,14 @@ function GitChangeRow({
   primaryIcon?: ReactNode
   primaryLabel?: string
   statusColumn: 'conflict' | 'index' | 'worktree'
+  t: Translator
 }) {
+  const state = gitStateKey(change, statusColumn)
+  const stateEntry = GIT_STATE_ICONS[state]
   return (
     <div className="kubecode-git-row">
       <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
+        <MaterialFileIcon id={resolveFileIcon(change.path)} />
         <span className="kubecode-git-path-name">
           {change.original_path && (
             <small className="kubecode-git-rename-source">
@@ -797,7 +811,15 @@ function GitChangeRow({
           )}
           <span>{change.path}</span>
         </span>
-        <code>{gitStatusColumn(change, statusColumn)}</code>
+        <span
+          aria-label={t(stateEntry.labelKey)}
+          className="kubecode-git-state"
+          data-state={state}
+          role="img"
+        >
+          <Icon role="status" size="status" source={stateEntry.Icon} />
+          <code aria-hidden="true">{gitStatusColumn(change, statusColumn)}</code>
+        </span>
       </Button>
       {onDiscard && (
         <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
@@ -821,6 +843,19 @@ function isStaged(change: GitFileChange): boolean {
 function isWorktreeChanged(change: GitFileChange): boolean {
   return Boolean(change.worktree_status || change.index_status === '?')
     && !isConflict(change)
+}
+
+function gitStateKey(
+  change: GitFileChange,
+  column: 'conflict' | 'index' | 'worktree',
+): GitState {
+  const code = gitStatusColumn(change, column)
+  const char = code.replace(/\?/g, '').charAt(0) || code.charAt(0)
+  if (char === 'A' || char === 'C') return 'added'
+  if (char === 'D') return 'deleted'
+  if (char === 'R') return 'renamed'
+  if (char === '?') return 'untracked'
+  return 'modified'
 }
 
 function gitStatusColumn(

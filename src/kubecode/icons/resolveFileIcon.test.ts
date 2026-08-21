@@ -41,6 +41,13 @@ describe('resolveFileIcon', () => {
     expect(resolveFileIcon('.env.local')).toBe('tune')
   })
 
+  it('resolves relative paths against their basename', () => {
+    expect(resolveFileIcon('src/package.json')).toBe('npm')
+    expect(resolveFileIcon('docs\\README.md')).toBe('readme') // backslash separator
+    expect(resolveFileIcon('server/src/main.rs')).toBe('rust')
+    expect(resolveFileIcon('a/b/c/')).toBe('file')
+  })
+
   it('falls back to the generic file for unknown names', () => {
     expect(resolveFileIcon('unknown.zzz')).toBe('file')
     expect(resolveFileIcon('no-extension')).toBe('file')

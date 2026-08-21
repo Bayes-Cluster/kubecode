@@ -1842,6 +1842,15 @@
   padding: 8px 6px 4px;
   text-transform: uppercase;
 }
+.kubecode-git-state { align-items: center; display: inline-flex; flex: 0 0 auto; gap: 3px; }
+.kubecode-git-state svg { height: 12px; width: 12px; }
+.kubecode-git-state code { font-size: 11px; }
+.kubecode-git-state[data-state='modified'] { color: var(--feedback-warning-text); }
+.kubecode-git-state[data-state='added'] { color: var(--feedback-success-text); }
+.kubecode-git-state[data-state='deleted'] { color: var(--feedback-error-text); }
+.kubecode-git-state[data-state='renamed'] { color: var(--accent-blue); }
+.kubecode-git-state[data-state='untracked'] { color: var(--text-secondary); }
+
 .kubecode-git-row {
   align-items: center;
   display: flex;
@@ -1978,11 +1987,6 @@
 }
 .kubecode-file-tree-row[aria-expanded] { font-weight: 550; }
 .kubecode-file-tree-row svg { color: var(--text-muted); flex: 0 0 auto; height: 16px; width: 16px; }
-.kubecode-file-tree-row .kubecode-file-icon[data-kind='directory'] { color: var(--text-secondary); }
-.kubecode-file-tree-row .kubecode-file-icon[data-kind='code'] { color: var(--accent-blue); }
-.kubecode-file-tree-row .kubecode-file-icon[data-kind='config'] { color: var(--accent-yellow); }
-.kubecode-file-tree-row .kubecode-file-icon[data-kind='document'] { color: var(--accent-teal); }
-.kubecode-file-tree-row .kubecode-file-icon[data-kind='image'] { color: var(--accent-purple); }
 .kubecode-file-tree-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-file-tree-spacer { flex: 0 0 16px; }
 
@@ -3183,7 +3187,6 @@
   opacity: 0.48;
 }
 .kubecode-path-picker-row > svg {
-  color: var(--text-muted);
   flex: 0 0 auto;
   height: 18px;
   width: 18px;
