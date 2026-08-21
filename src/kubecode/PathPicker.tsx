@@ -1,4 +1,4 @@
-import { ArrowRight, Plus } from '@phosphor-icons/react'
+import { ArrowRight, Plus } from 'lucide-react'
 import {
   useId,
   useMemo,
@@ -125,7 +125,7 @@ export function PathPicker({
             >
               {row.icon ?? (
                 row.kind === 'action'
-                  ? <Plus />
+                  ? <Plus  size={16}/>
                   : row.kind === 'directory'
                     ? <MaterialDirectoryIcon name={row.label} />
                     : <MaterialFileIcon id={resolveFileIcon(row.label)} />
@@ -134,7 +134,7 @@ export function PathPicker({
                 <strong>{row.label}</strong>
                 {row.description && <small>{row.description}</small>}
               </span>
-              {row.kind === 'directory' && <ArrowRight className="kubecode-path-picker-row-action" />}
+              {row.kind === 'directory' && <ArrowRight className="kubecode-path-picker-row-action"  size={16}/>}
             </button>
           )
         })}

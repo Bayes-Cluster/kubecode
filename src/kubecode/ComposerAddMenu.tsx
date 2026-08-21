@@ -1,6 +1,13 @@
 import {
-  CaretLeft, ChatCircleDots, File, GitDiff, Plus, Sparkle, TerminalWindow, WarningCircle,
-} from '@phosphor-icons/react'
+  ChevronLeft,
+  CircleAlert,
+  File,
+  GitCompare,
+  MessageSquareMore,
+  Plus,
+  Sparkle,
+  SquareTerminal
+} from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -197,7 +204,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <CaretLeft />
+                  <ChevronLeft  size={16}/>
                   <span className="truncate">{t('kubecode.referenceFile')}</span>
                 </Button>
               </div>
@@ -227,7 +234,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <CaretLeft />
+                  <ChevronLeft  size={16}/>
                   <span className="truncate">{t('kubecode.referenceGitDiff')}</span>
                 </Button>
               </div>
@@ -253,7 +260,7 @@ export function ComposerAddMenu({
                   >
                     {candidate.path
                       ? <MaterialFileIcon className="shrink-0" id={resolveFileIcon(candidate.path)} size={20} />
-                      : <GitDiff className="shrink-0" size={20} />}
+                      : <GitCompare className="shrink-0" size={20} />}
                     <span className="min-w-0 flex-1">
                       <strong className="block truncate font-medium">
                         {candidate.path?.split('/').at(-1) ?? gitDiffLabels.all}
@@ -278,7 +285,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <CaretLeft />
+                  <ChevronLeft  size={16}/>
                   <span className="truncate">{t('kubecode.referenceSessionTurns')}</span>
                 </Button>
               </div>
@@ -299,7 +306,7 @@ export function ComposerAddMenu({
                       type="button"
                       variant="ghost"
                     >
-                      <ChatCircleDots className="shrink-0" size={18} />
+                      <MessageSquareMore className="shrink-0" size={18} />
                       <span className="min-w-0">
                         <strong className="block font-medium">{t('kubecode.priorUserTurn')}</strong>
                         <small className="block truncate text-sm font-normal text-muted-foreground">
@@ -327,7 +334,7 @@ export function ComposerAddMenu({
                       type="button"
                       variant="ghost"
                     >
-                      <ChatCircleDots className="shrink-0" size={18} />
+                      <MessageSquareMore className="shrink-0" size={18} />
                       <span className="min-w-0">
                         <strong className="block font-medium">{t('kubecode.priorAgentResponse')}</strong>
                         <small className="block truncate text-sm font-normal text-muted-foreground">
@@ -349,7 +356,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <CaretLeft />
+                  <ChevronLeft  size={16}/>
                   <span className="truncate">{t('kubecode.referenceTerminalOutput')}</span>
                 </Button>
               </div>
@@ -359,7 +366,7 @@ export function ComposerAddMenu({
                   return (
                     <div className="border-b border-border py-1 last:border-b-0" key={source.terminalId}>
                       <div className="flex min-w-0 items-center gap-2 px-3 py-1 text-sm font-medium">
-                        <TerminalWindow className="shrink-0" size={18} />
+                        <SquareTerminal className="shrink-0" size={18} />
                         <span className="truncate">{pane}</span>
                       </div>
                       <Button
@@ -438,7 +445,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <GitDiff className="shrink-0" size={20} />
+                  <GitCompare className="shrink-0" size={20} />
                   <span className="min-w-0">
                     <strong className="block truncate font-medium">{t('kubecode.referenceGitDiff')}</strong>
                     <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
@@ -452,7 +459,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <TerminalWindow className="shrink-0" size={20} />
+                  <SquareTerminal className="shrink-0" size={20} />
                   <span className="min-w-0">
                     <strong className="block truncate font-medium">
                       {t('kubecode.referenceTerminalOutput')}
@@ -468,7 +475,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <ChatCircleDots className="shrink-0" size={20} />
+                  <MessageSquareMore className="shrink-0" size={20} />
                   <span className="min-w-0">
                     <strong className="block truncate font-medium">
                       {t('kubecode.referenceSessionTurns')}
@@ -484,7 +491,7 @@ export function ComposerAddMenu({
                   type="button"
                   variant="ghost"
                 >
-                  <WarningCircle className="shrink-0" size={20} />
+                  <CircleAlert className="shrink-0" size={20} />
                   <span className="min-w-0">
                     <strong className="block truncate font-medium">
                       {t('kubecode.diagnosticsUnavailable')}

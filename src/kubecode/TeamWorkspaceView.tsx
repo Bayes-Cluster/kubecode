@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pause } from '@phosphor-icons/react'
+import { Pause } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -127,7 +127,7 @@ export function TeamWorkspaceView({
               {t('kubecode.cancel')}
             </Button>
             <Button onClick={() => void pause()}>
-              <Pause weight="fill" /> {t('kubecode.teamPauseConfirm')}
+              <Pause fill="currentColor"  size={16}/> {t('kubecode.teamPauseConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

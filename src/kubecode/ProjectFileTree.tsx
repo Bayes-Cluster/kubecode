@@ -8,7 +8,12 @@ import {
   type HTMLAttributes,
   type KeyboardEvent,
 } from 'react'
-import { CaretDown, CaretRight, Eye, EyeSlash } from '@phosphor-icons/react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff
+} from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { Button } from '@/components/ui/button'
@@ -363,7 +368,7 @@ export function ProjectFileTree({
           variant="ghost"
           onClick={() => setShowExcluded((current) => !current)}
         >
-          {showExcluded ? <Eye /> : <EyeSlash />}
+          {showExcluded ? <Eye  size={16}/> : <EyeOff  size={16}/>}
         </Button>
       </div>
       <div
@@ -432,7 +437,7 @@ function TreeRow({
       variant="ghost"
       onClick={() => onActivate(row)}
     >
-      {row.kind === 'directory' && (row.isExpanded ? <CaretDown /> : <CaretRight />)}
+      {row.kind === 'directory' && (row.isExpanded ? <ChevronDown  size={16}/> : <ChevronRight  size={16}/>)}
       {row.kind === 'file' && <span className="kubecode-file-tree-spacer" />}
       {row.kind === 'directory'
         ? <MaterialDirectoryIcon expanded={row.isExpanded} name={row.name} />

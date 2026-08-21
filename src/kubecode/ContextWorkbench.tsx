@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowClockwise,
-  CaretDown,
+  ChevronDown,
   File,
   Folder,
-  GitCommit,
-  GitDiff,
-  MagnifyingGlass,
+  GitCommitHorizontal,
+  GitCompare,
   Minus,
   Plus,
-  Trash,
-  X,
-} from '@phosphor-icons/react'
+  RotateCw,
+  Search,
+  Trash2,
+  X
+} from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 
 import { Button } from '@/components/ui/button'
@@ -388,12 +388,12 @@ export function ContextWorkbench({
           <div className="kubecode-context-tab-actions">
             {tab === 'explorer' && (
               <>
-                <Button aria-label={t('kubecode.searchFiles')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setQuickOpen(true)}><MagnifyingGlass /></Button>
-                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File /></Button>
-                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder /></Button>
+                <Button aria-label={t('kubecode.searchFiles')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setQuickOpen(true)}><Search  size={16}/></Button>
+                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File  size={16}/></Button>
+                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder  size={16}/></Button>
               </>
             )}
-            <Button aria-label={t('kubecode.refresh')} size="icon-xs" variant="ghost" onClick={refreshContext}><ArrowClockwise /></Button>
+            <Button aria-label={t('kubecode.refresh')} size="icon-xs" variant="ghost" onClick={refreshContext}><RotateCw  size={16}/></Button>
           </div>
         </div>
 
@@ -407,7 +407,7 @@ export function ContextWorkbench({
           >
             {!gitStatus?.is_repository ? (
               <div className="kubecode-review-empty">
-                <GitDiff size={24} />
+                <GitCompare size={24} />
                 <strong>{t('kubecode.createGitRepository')}</strong>
                 <span>{t('kubecode.createGitRepositoryDescription')}</span>
                 <Button disabled={!projectId} size="sm" onClick={() => void initializeGit()}>{t('kubecode.createGitRepository')}</Button>
@@ -447,7 +447,7 @@ export function ContextWorkbench({
                     onDiff={(change) => void openDiff(change, true)}
                     onPrimary={(change) => void mutateGit('unstage', change.path)}
                     primaryLabel={t('kubecode.unstage')}
-                    primaryIcon={<Minus />}
+                    primaryIcon={<Minus  size={16}/>}
                     statusColumn="index"
                     t={t}
                   />
@@ -461,7 +461,7 @@ export function ContextWorkbench({
                     onDiscard={(change) => setDiscardPath(change.path)}
                     onPrimary={(change) => void mutateGit('stage', change.path)}
                     primaryLabel={t('kubecode.stage')}
-                    primaryIcon={<Plus />}
+                    primaryIcon={<Plus  size={16}/>}
                     discardLabel={t('kubecode.discard')}
                     statusColumn="worktree"
                     t={t}
@@ -470,7 +470,7 @@ export function ContextWorkbench({
                 {stagedChanges.length > 0 && (
                   <div className="kubecode-commit-box">
                     <Input aria-label={t('kubecode.commitMessage')} placeholder={t('kubecode.commitMessage')} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} />
-                    <Button disabled={!commitMessage.trim()} size="sm" onClick={() => void commit()}><GitCommit /> {t('kubecode.commit')}</Button>
+                    <Button disabled={!commitMessage.trim()} size="sm" onClick={() => void commit()}><GitCommitHorizontal  size={16}/> {t('kubecode.commit')}</Button>
                   </div>
                 )}
               </div>
@@ -547,7 +547,7 @@ export function ContextWorkbench({
                   variant="ghost"
                   onClick={() => closeEditor(activeDocumentKey as string)}
                 >
-                  <X />
+                  <X  size={16}/>
                 </Button>
               </div>
             </div>
@@ -634,7 +634,7 @@ export function ContextWorkbench({
             <Button variant="destructive" onClick={() => {
               if (discardPath) void mutateGit('discard', discardPath)
               setDiscardPath(null)
-            }}><Trash /> {t('kubecode.discard')}</Button>
+            }}><Trash2  size={16}/> {t('kubecode.discard')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -696,7 +696,7 @@ function ExplorerSection({
           if (nextExpanded) trackEvent('kubecode_context_section_opened', { section })
         }}
       >
-        <CaretDown data-expanded={expanded} />
+        <ChevronDown data-expanded={expanded}  size={16}/>
         <span>{label}</span>
         {typeof count === 'number' && count > 0 && <small>{count}</small>}
       </Button>
@@ -822,7 +822,7 @@ function GitChangeRow({
         </span>
       </Button>
       {onDiscard && (
-        <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash /></Button>
+        <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash2  size={16}/></Button>
       )}
       {onPrimary && (
         <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>

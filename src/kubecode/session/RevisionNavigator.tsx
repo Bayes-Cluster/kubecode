@@ -1,4 +1,4 @@
-import { CaretLeft, CaretRight } from '@phosphor-icons/react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -25,7 +25,7 @@ export function RevisionNavigator({
         variant="ghost"
         onClick={() => onSelect(activeIndex - 1)}
       >
-        <CaretLeft />
+        <ChevronLeft  size={16}/>
       </Button>
       <span>{t('kubecode.revisionPosition', {
         current: activeIndex + 1,
@@ -38,7 +38,7 @@ export function RevisionNavigator({
         variant="ghost"
         onClick={() => onSelect(activeIndex + 1)}
       >
-        <CaretRight />
+        <ChevronRight  size={16}/>
       </Button>
     </div>
   )

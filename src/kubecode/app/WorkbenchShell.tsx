@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IconContext } from '@phosphor-icons/react'
 import { RiNotification3Fill } from '@remixicon/react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -343,301 +342,299 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }
 
   return (
-    <IconContext.Provider value={{ size: 16, weight: 'regular' }}>
-      <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
-      <main className="kubecode-app">
-        <WorkbenchTitlebar
-          attentionSessions={attentionSessions}
-          connectionState={reconciliation.connectionState}
-          contextOpen={contextOpen}
-          conversation={conversation}
-          error={error}
-          lastSuccessfulSyncAt={reconciliation.lastSuccessfulSyncAt}
-          locale={locale}
-          narrowLayout={narrowLayout}
-          navigatorQuery={navigatorQuery}
-          navigatorSearchRef={navigatorSearchRef}
-          onContextOpenChange={setContextOpen}
-          onNavigatorQueryChange={setNavigatorQuery}
-          onOpenSession={selection.openSession}
-          onRetryConnection={reconciliation.retry}
-          onSessionSidebarOpenChange={setSessionSidebarOpen}
-          onTerminalOpenChange={setTerminalOpen}
-          project={project}
-          projects={projects}
-          sessionSidebarOpen={sessionSidebarOpen}
-          t={t}
-          terminalOpen={terminalOpen}
-          titlebarTargetRef={setTitlebarTarget}
-        />
+    <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
+    <main className="kubecode-app">
+      <WorkbenchTitlebar
+        attentionSessions={attentionSessions}
+        connectionState={reconciliation.connectionState}
+        contextOpen={contextOpen}
+        conversation={conversation}
+        error={error}
+        lastSuccessfulSyncAt={reconciliation.lastSuccessfulSyncAt}
+        locale={locale}
+        narrowLayout={narrowLayout}
+        navigatorQuery={navigatorQuery}
+        navigatorSearchRef={navigatorSearchRef}
+        onContextOpenChange={setContextOpen}
+        onNavigatorQueryChange={setNavigatorQuery}
+        onOpenSession={selection.openSession}
+        onRetryConnection={reconciliation.retry}
+        onSessionSidebarOpenChange={setSessionSidebarOpen}
+        onTerminalOpenChange={setTerminalOpen}
+        project={project}
+        projects={projects}
+        sessionSidebarOpen={sessionSidebarOpen}
+        t={t}
+        terminalOpen={terminalOpen}
+        titlebarTargetRef={setTitlebarTarget}
+      />
 
-        <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
-          {(sessionSidebarOpen || contextOpen) && (
-            <button
-              aria-label={t('kubecode.closeSidePanels')}
-              className="kubecode-panel-backdrop"
-              type="button"
-              onClick={() => {
-                setSessionSidebarOpen(false)
-                setContextOpen(false)
-              }}
-            />
-          )}
-          {sessionSidebarOpen && (
-            <ProjectNavigator
-              activeConversationId={conversationId}
-              activeProjectId={projectId}
-              api={api}
-              conversations={sessionCatalog}
-              expandedProjectIds={expandedProjectIds}
-              navigatorWidth={sessionSidebarWidth}
-              onAddProject={() => setProjectDialog(true)}
-              onConversationCreated={handleConversationCreated}
-              onConversationRemoved={handleConversationRemoved}
-              onConversationUpdated={handleConversationUpdated}
-              onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
-              onNewSession={(nextProjectId) => {
-                if (nextProjectId !== projectId) selection.selectProject(nextProjectId)
-                setSessionDialog(true)
-              }}
-              onOpenSettings={() => {
-                setSettingsSection('general')
-                setSettingsOpen(true)
-              }}
-              onProjectDelete={(nextProjectId) => void selection.deleteProject(
-                projects.find((candidate) => candidate.id === nextProjectId),
-              )}
-              onProjectSelect={selection.selectProject}
-              onProjectToggle={selection.toggleProjectExpanded}
-              onProjectWorkspacesToggle={(nextProjectId) => {
-                const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
-                if (selectedProject) {
-                  void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
-                }
-              }}
-              onResize={resizeSessionSidebar}
-              onSelect={selection.openSession}
-              projects={projects}
-              projectRuns={reconciliation.projectRuns}
-              query={navigatorQuery}
-              t={t}
-              teams={teams}
-            />
-          )}
-
-          <div className="kubecode-main-stack" ref={mainStackRef}>
-            <div className="kubecode-session-context-row">
-              <AgentSessionWorkspace
-                agents={agents}
-                agentsRefreshing={agentsRefreshing}
-                allowTeammateChat={agentPreferences.allowTeammateChat}
-                api={api}
-                conversation={conversation}
-                locale={locale}
-                onConversationCreated={handleConversationCreated}
-                projectId={projectId}
-                onConversationRemoved={handleConversationRemoved}
-                onConversationUpdated={handleConversationUpdated}
-                onAddProject={() => setProjectDialog(true)}
-                onCommandPaletteSessionChange={setCommandPaletteSession}
-                onNewSession={() => setSessionDialog(true)}
-                onOpenAgentSettings={() => {
-                  setSettingsSection('agents')
-                  setSettingsOpen(true)
-                }}
-                onOpenPlan={() => {
-                  setContextOpen(true)
-                  if (narrowLayout) setSessionSidebarOpen(false)
-                  setPlanRevealVersion((current) => current + 1)
-                  trackEvent('kubecode_context_section_opened', { section: 'plan' })
-                }}
-                onPlanChange={setActiveSessionPlan}
-                onRefreshAgents={refreshAgents}
-                onTeamCreated={(team) => setTeams((current) => [
-                  ...current.filter((item) => item.team.id !== team.team.id),
-                  team,
-                ])}
-                onTeamUpdated={(team) => setTeams((current) => [
-                  ...current.filter((item) => item.team.id !== team.team.id),
-                  team,
-                ])}
-                t={t}
-                team={activeTeam}
-                terminalContextSources={terminalContextSources}
-                titlebarTarget={titlebarTarget}
-                onSelectTeamMember={setConversationId}
-                workspaceEvents={reconciliation.workspaceEvents}
-                key={conversationId ?? projectId ?? 'no-project'}
-              />
-              {contextOpen && (
-                <>
-                  <ResizeHandle onResize={resizeContext} />
-                  <ContextWorkbench
-                    api={api}
-                    autoSave={editorPreferences.autoSave}
-                    connectionState={reconciliation.connectionState}
-                    planEntries={activeSessionPlan}
-                    planRevealVersion={planRevealVersion}
-                    projectName={project?.name ?? undefined}
-                    projectId={projectId}
-                    t={t}
-                    width={contextWidth}
-                    workspaceEvents={reconciliation.workspaceEvents}
-                  />
-                </>
-              )}
-            </div>
-            {terminalOpen && <ResizeHandle direction="vertical" onResize={resizeTerminal} />}
-            <div
-              aria-hidden={!terminalOpen}
-              className="kubecode-terminal-pane"
-              data-open={terminalOpen}
-              inert={!terminalOpen ? true : undefined}
-              style={{ height: terminalOpen ? terminalHeight : 0 }}
-            >
-              {projectId ? (
-                <TerminalWorkspace
-                  agents={agents}
-                  api={api}
-                  autoCreateOnOpen={terminalsLoadedForProjectId === projectId && terminals.length === 0}
-                  conversationId={conversation?.id ?? null}
-                  initialTerminals={terminals}
-                  key={projectId}
-                  onCollapse={() => setTerminalOpen(false)}
-                  onContextSourcesChange={setTerminalContextSources}
-                  open={terminalOpen}
-                  projectId={projectId}
-                  t={t}
-                  terminalFont={terminalFontStack(appearance.terminalFont)}
-                />
-              ) : terminalOpen ? (
-                <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <WorkspaceNotificationBridge
-          conversations={sessionCatalog}
-          copy={{
-            body: (category, projectName) => notificationBody(t, category, projectName),
-            untitledSession: t('kubecode.untitledSession'),
-          }}
-          events={reconciliation.workspaceEvents}
-          onOpenSession={selection.openSession}
-          preferences={notifications}
-          projects={projects}
-        />
-        {notificationOnboardingOpen && (
-          <aside className="kubecode-notification-onboarding" role="status">
-            <Icon role="identity" source={RiNotification3Fill} />
-            <div>
-              <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
-              <span>{t('kubecode.notificationOnboardingDescription')}</span>
-            </div>
-            <Button size="sm" onClick={() => void requestNotificationPermission()}>
-              {t('kubecode.enableNotifications')}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
-              {t('kubecode.notNow')}
-            </Button>
-          </aside>
-        )}
-
-        <GlobalCommandPalette
-          catalog={commandPaletteSession?.catalog ?? null}
-          catalogStatus={commandPaletteSession?.catalogStatus ?? 'ready'}
-          hostActions={commandPaletteHostActions}
-          onCatalogItem={runCommandPaletteCatalogItem}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault()
-            const skipRestore = commandPaletteSkipRestoreRef.current
-            commandPaletteSkipRestoreRef.current = false
-            if (!skipRestore) {
-              window.requestAnimationFrame(() => commandPaletteReturnFocusRef.current?.focus())
-            }
-          }}
-          onHostAction={runCommandPaletteHostAction}
-          onOpenChange={setCommandPaletteOpen}
-          open={commandPaletteOpen}
-          sessionDisabledReason={commandPaletteSession?.writable
-            ? null
-            : t('kubecode.commandPaletteNoWritableSession')}
-          sessionWritable={commandPaletteSession?.writable ?? false}
-          t={t}
-        />
-
-        <ProjectDialog
-          api={api}
-          open={projectDialog}
-          onOpenChange={setProjectDialog}
-          onProject={(created) => {
-            setProjects((current) => [...current, created])
-            selection.selectProject(created.id)
-          }}
-          t={t}
-        />
-        {project && (
-          <DisableWorkspacesDialog
-            api={api}
-            onMigrated={(updated) => {
-              setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
-              void api.listConversations(updated.id).then((next) => {
-                setConversations(next)
-                setAllConversations((current) => mergeConversations(current, next))
-              })
+      <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
+        {(sessionSidebarOpen || contextOpen) && (
+          <button
+            aria-label={t('kubecode.closeSidePanels')}
+            className="kubecode-panel-backdrop"
+            type="button"
+            onClick={() => {
+              setSessionSidebarOpen(false)
+              setContextOpen(false)
             }}
-            onOpenChange={setDisableWorkspacesOpen}
-            open={disableWorkspacesOpen}
-            project={project}
-            t={t}
           />
         )}
-        <NewSessionDialog
-          agents={agents}
+        {sessionSidebarOpen && (
+          <ProjectNavigator
+            activeConversationId={conversationId}
+            activeProjectId={projectId}
+            api={api}
+            conversations={sessionCatalog}
+            expandedProjectIds={expandedProjectIds}
+            navigatorWidth={sessionSidebarWidth}
+            onAddProject={() => setProjectDialog(true)}
+            onConversationCreated={handleConversationCreated}
+            onConversationRemoved={handleConversationRemoved}
+            onConversationUpdated={handleConversationUpdated}
+            onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
+            onNewSession={(nextProjectId) => {
+              if (nextProjectId !== projectId) selection.selectProject(nextProjectId)
+              setSessionDialog(true)
+            }}
+            onOpenSettings={() => {
+              setSettingsSection('general')
+              setSettingsOpen(true)
+            }}
+            onProjectDelete={(nextProjectId) => void selection.deleteProject(
+              projects.find((candidate) => candidate.id === nextProjectId),
+            )}
+            onProjectSelect={selection.selectProject}
+            onProjectToggle={selection.toggleProjectExpanded}
+            onProjectWorkspacesToggle={(nextProjectId) => {
+              const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
+              if (selectedProject) {
+                void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
+              }
+            }}
+            onResize={resizeSessionSidebar}
+            onSelect={selection.openSession}
+            projects={projects}
+            projectRuns={reconciliation.projectRuns}
+            query={navigatorQuery}
+            t={t}
+            teams={teams}
+          />
+        )}
+
+        <div className="kubecode-main-stack" ref={mainStackRef}>
+          <div className="kubecode-session-context-row">
+            <AgentSessionWorkspace
+              agents={agents}
+              agentsRefreshing={agentsRefreshing}
+              allowTeammateChat={agentPreferences.allowTeammateChat}
+              api={api}
+              conversation={conversation}
+              locale={locale}
+              onConversationCreated={handleConversationCreated}
+              projectId={projectId}
+              onConversationRemoved={handleConversationRemoved}
+              onConversationUpdated={handleConversationUpdated}
+              onAddProject={() => setProjectDialog(true)}
+              onCommandPaletteSessionChange={setCommandPaletteSession}
+              onNewSession={() => setSessionDialog(true)}
+              onOpenAgentSettings={() => {
+                setSettingsSection('agents')
+                setSettingsOpen(true)
+              }}
+              onOpenPlan={() => {
+                setContextOpen(true)
+                if (narrowLayout) setSessionSidebarOpen(false)
+                setPlanRevealVersion((current) => current + 1)
+                trackEvent('kubecode_context_section_opened', { section: 'plan' })
+              }}
+              onPlanChange={setActiveSessionPlan}
+              onRefreshAgents={refreshAgents}
+              onTeamCreated={(team) => setTeams((current) => [
+                ...current.filter((item) => item.team.id !== team.team.id),
+                team,
+              ])}
+              onTeamUpdated={(team) => setTeams((current) => [
+                ...current.filter((item) => item.team.id !== team.team.id),
+                team,
+              ])}
+              t={t}
+              team={activeTeam}
+              terminalContextSources={terminalContextSources}
+              titlebarTarget={titlebarTarget}
+              onSelectTeamMember={setConversationId}
+              workspaceEvents={reconciliation.workspaceEvents}
+              key={conversationId ?? projectId ?? 'no-project'}
+            />
+            {contextOpen && (
+              <>
+                <ResizeHandle onResize={resizeContext} />
+                <ContextWorkbench
+                  api={api}
+                  autoSave={editorPreferences.autoSave}
+                  connectionState={reconciliation.connectionState}
+                  planEntries={activeSessionPlan}
+                  planRevealVersion={planRevealVersion}
+                  projectName={project?.name ?? undefined}
+                  projectId={projectId}
+                  t={t}
+                  width={contextWidth}
+                  workspaceEvents={reconciliation.workspaceEvents}
+                />
+              </>
+            )}
+          </div>
+          {terminalOpen && <ResizeHandle direction="vertical" onResize={resizeTerminal} />}
+          <div
+            aria-hidden={!terminalOpen}
+            className="kubecode-terminal-pane"
+            data-open={terminalOpen}
+            inert={!terminalOpen ? true : undefined}
+            style={{ height: terminalOpen ? terminalHeight : 0 }}
+          >
+            {projectId ? (
+              <TerminalWorkspace
+                agents={agents}
+                api={api}
+                autoCreateOnOpen={terminalsLoadedForProjectId === projectId && terminals.length === 0}
+                conversationId={conversation?.id ?? null}
+                initialTerminals={terminals}
+                key={projectId}
+                onCollapse={() => setTerminalOpen(false)}
+                onContextSourcesChange={setTerminalContextSources}
+                open={terminalOpen}
+                projectId={projectId}
+                t={t}
+                terminalFont={terminalFontStack(appearance.terminalFont)}
+              />
+            ) : terminalOpen ? (
+              <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <WorkspaceNotificationBridge
+        conversations={sessionCatalog}
+        copy={{
+          body: (category, projectName) => notificationBody(t, category, projectName),
+          untitledSession: t('kubecode.untitledSession'),
+        }}
+        events={reconciliation.workspaceEvents}
+        onOpenSession={selection.openSession}
+        preferences={notifications}
+        projects={projects}
+      />
+      {notificationOnboardingOpen && (
+        <aside className="kubecode-notification-onboarding" role="status">
+          <Icon role="identity" source={RiNotification3Fill} />
+          <div>
+            <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
+            <span>{t('kubecode.notificationOnboardingDescription')}</span>
+          </div>
+          <Button size="sm" onClick={() => void requestNotificationPermission()}>
+            {t('kubecode.enableNotifications')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
+            {t('kubecode.notNow')}
+          </Button>
+        </aside>
+      )}
+
+      <GlobalCommandPalette
+        catalog={commandPaletteSession?.catalog ?? null}
+        catalogStatus={commandPaletteSession?.catalogStatus ?? 'ready'}
+        hostActions={commandPaletteHostActions}
+        onCatalogItem={runCommandPaletteCatalogItem}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const skipRestore = commandPaletteSkipRestoreRef.current
+          commandPaletteSkipRestoreRef.current = false
+          if (!skipRestore) {
+            window.requestAnimationFrame(() => commandPaletteReturnFocusRef.current?.focus())
+          }
+        }}
+        onHostAction={runCommandPaletteHostAction}
+        onOpenChange={setCommandPaletteOpen}
+        open={commandPaletteOpen}
+        sessionDisabledReason={commandPaletteSession?.writable
+          ? null
+          : t('kubecode.commandPaletteNoWritableSession')}
+        sessionWritable={commandPaletteSession?.writable ?? false}
+        t={t}
+      />
+
+      <ProjectDialog
+        api={api}
+        open={projectDialog}
+        onOpenChange={setProjectDialog}
+        onProject={(created) => {
+          setProjects((current) => [...current, created])
+          selection.selectProject(created.id)
+        }}
+        t={t}
+      />
+      {project && (
+        <DisableWorkspacesDialog
           api={api}
-          open={sessionDialog}
+          onMigrated={(updated) => {
+            setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
+            void api.listConversations(updated.id).then((next) => {
+              setConversations(next)
+              setAllConversations((current) => mergeConversations(current, next))
+            })
+          }}
+          onOpenChange={setDisableWorkspacesOpen}
+          open={disableWorkspacesOpen}
           project={project}
-          projectId={projectId}
-          onOpenChange={setSessionDialog}
-          onOpenAgentSettings={() => {
-            setSettingsSection('agents')
-            setSettingsOpen(true)
-          }}
-          onRefreshAgents={refreshAgents}
-          onSession={handleConversationCreated}
-          onTeam={(team) => {
-            setTeams((current) => [...current.filter((item) => item.team.id !== team.team.id), team])
-            handleConversationCreated(team.leader_conversation)
-          }}
           t={t}
         />
-        <SettingsDialog
-          api={api}
-          agentPreferences={agentPreferences}
-          agents={agents}
-          agentsRefreshing={agentsRefreshing}
-          appearance={appearance}
-          editorPreferences={editorPreferences}
-          notifications={notifications}
-          notificationPermission={browserPermission}
-          notificationTestStatus={preferences.notificationTestStatus}
-          key={settingsSection}
-          open={settingsOpen}
-          requestedSection={settingsSection}
-          onAppearanceChange={preferences.setAppearance}
-          onAgentPreferencesChange={preferences.setAgentPreferences}
-          onEditorPreferencesChange={preferences.setEditorPreferences}
-          onNotificationsChange={preferences.setNotifications}
-          onOpenChange={setSettingsOpen}
-          onRequestNotificationPermission={requestNotificationPermission}
-          onRefreshAgents={refreshAgents}
-          onTestNotification={preferences.sendTestNotification}
-          t={t}
-        />
-      </main>
-      </SystemMessageProvider>
-    </IconContext.Provider>
+      )}
+      <NewSessionDialog
+        agents={agents}
+        api={api}
+        open={sessionDialog}
+        project={project}
+        projectId={projectId}
+        onOpenChange={setSessionDialog}
+        onOpenAgentSettings={() => {
+          setSettingsSection('agents')
+          setSettingsOpen(true)
+        }}
+        onRefreshAgents={refreshAgents}
+        onSession={handleConversationCreated}
+        onTeam={(team) => {
+          setTeams((current) => [...current.filter((item) => item.team.id !== team.team.id), team])
+          handleConversationCreated(team.leader_conversation)
+        }}
+        t={t}
+      />
+      <SettingsDialog
+        api={api}
+        agentPreferences={agentPreferences}
+        agents={agents}
+        agentsRefreshing={agentsRefreshing}
+        appearance={appearance}
+        editorPreferences={editorPreferences}
+        notifications={notifications}
+        notificationPermission={browserPermission}
+        notificationTestStatus={preferences.notificationTestStatus}
+        key={settingsSection}
+        open={settingsOpen}
+        requestedSection={settingsSection}
+        onAppearanceChange={preferences.setAppearance}
+        onAgentPreferencesChange={preferences.setAgentPreferences}
+        onEditorPreferencesChange={preferences.setEditorPreferences}
+        onNotificationsChange={preferences.setNotifications}
+        onOpenChange={setSettingsOpen}
+        onRequestNotificationPermission={requestNotificationPermission}
+        onRefreshAgents={refreshAgents}
+        onTestNotification={preferences.sendTestNotification}
+        t={t}
+      />
+    </main>
+    </SystemMessageProvider>
   )
 }
 

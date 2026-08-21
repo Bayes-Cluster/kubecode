@@ -1,13 +1,13 @@
 import {
-  Gear,
-  Lightning,
-  MagnifyingGlass,
+  PanelLeft,
   Plus,
-  PuzzlePiece,
-  SidebarSimple,
+  Puzzle,
+  Search,
+  Settings,
   Sparkle,
-  TerminalWindow,
-} from '@phosphor-icons/react'
+  SquareTerminal,
+  Zap
+} from 'lucide-react'
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -50,17 +50,17 @@ type PaletteRow =
     }
 
 function HostActionIcon({ id }: { id: RegisteredHostAction['id'] }) {
-  if (id === 'add-project' || id === 'new-session') return <Plus aria-hidden />
-  if (id === 'open-settings') return <Gear aria-hidden />
-  if (id === 'focus-session-search') return <MagnifyingGlass aria-hidden />
-  if (id === 'toggle-terminal') return <TerminalWindow aria-hidden />
-  return <SidebarSimple aria-hidden />
+  if (id === 'add-project' || id === 'new-session') return <Plus aria-hidden  size={16}/>
+  if (id === 'open-settings') return <Settings aria-hidden  size={16}/>
+  if (id === 'focus-session-search') return <Search aria-hidden  size={16}/>
+  if (id === 'toggle-terminal') return <SquareTerminal aria-hidden  size={16}/>
+  return <PanelLeft aria-hidden  size={16}/>
 }
 
 function CatalogItemIcon({ item }: { item: RankedCommandPaletteItem }) {
-  if (item.kind === 'command') return <Sparkle aria-hidden />
-  if (item.kind === 'plugin_action') return <PuzzlePiece aria-hidden />
-  return <Lightning aria-hidden />
+  if (item.kind === 'command') return <Sparkle aria-hidden  size={16}/>
+  if (item.kind === 'plugin_action') return <Puzzle aria-hidden  size={16}/>
+  return <Zap aria-hidden  size={16}/>
 }
 
 function catalogDisabledReason(item: RankedCommandPaletteItem, t: Translator): string {
@@ -308,7 +308,7 @@ export function GlobalCommandPalette({
           <DialogDescription>{t('command.palettePlaceholder')}</DialogDescription>
         </DialogHeader>
         <div className="flex min-w-0 items-center gap-2 border-b border-border px-3">
-          <MagnifyingGlass aria-hidden className="shrink-0 text-muted-foreground" />
+          <Search aria-hidden className="shrink-0 text-muted-foreground"  size={16}/>
           <Input
             aria-activedescendant={selectedRow ? `${listboxId}-${selectedRow.key}` : undefined}
             aria-autocomplete="list"

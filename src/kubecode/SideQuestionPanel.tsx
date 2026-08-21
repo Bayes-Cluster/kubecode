@@ -1,4 +1,10 @@
-import { CaretDown, CaretUp, ChatCircleDots, CircleNotch, Copy } from '@phosphor-icons/react'
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Loader,
+  MessageSquareMore
+} from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -33,11 +39,11 @@ export function SideQuestionPanel({
         variant="ghost"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <ChatCircleDots className="shrink-0" />
+          <MessageSquareMore className="shrink-0"  size={16}/>
           <span className="truncate">{t('kubecode.sideQuestions')}</span>
           <span className="text-xs tabular-nums">{items.length}</span>
         </span>
-        {collapsed ? <CaretUp /> : <CaretDown />}
+        {collapsed ? <ChevronUp  size={16}/> : <ChevronDown  size={16}/>}
       </Button>
       {!collapsed && (
         <div className="max-h-[40vh] space-y-4 overflow-y-auto border-t border-border px-4 py-3">
@@ -46,7 +52,7 @@ export function SideQuestionPanel({
               <p className="select-text font-medium leading-5 text-foreground">{item.question}</p>
               {item.status === 'pending' && (
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CircleNotch className="animate-spin" />
+                  <Loader className="animate-spin"  size={16}/>
                   {t('kubecode.sideQuestionPending')}
                 </span>
               )}
@@ -64,7 +70,7 @@ export function SideQuestionPanel({
                     type="button"
                     variant="ghost"
                   >
-                    <Copy />
+                    <Copy  size={16}/>
                   </Button>
                 </div>
               )}

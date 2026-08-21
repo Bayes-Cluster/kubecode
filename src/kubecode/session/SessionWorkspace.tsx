@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowClockwise, Gear, Plus } from '@phosphor-icons/react'
+import { Plus, RotateCw, Settings } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -474,12 +474,12 @@ export function AgentSessionWorkspace({
               disabled={readyAgents.length === 0}
               onClick={onNewSession}
             >
-              <Plus />
+              <Plus  size={16}/>
               {t('kubecode.newSession')}
             </Button>
           ) : (
             <Button aria-label={t('kubecode.firstRunTitle')} onClick={onAddProject}>
-              <Plus />
+              <Plus  size={16}/>
               {t('kubecode.addProject')}
             </Button>
           )}
@@ -488,11 +488,11 @@ export function AgentSessionWorkspace({
             variant="outline"
             onClick={() => void onRefreshAgents?.()}
           >
-            <ArrowClockwise className={agentsRefreshing ? 'animate-spin' : undefined} />
+            <RotateCw className={agentsRefreshing ? 'animate-spin' : undefined}  size={16}/>
             {t('kubecode.checkAgain')}
           </Button>
           <Button variant="ghost" onClick={onOpenAgentSettings}>
-            <Gear />
+            <Settings  size={16}/>
             {t('kubecode.agentSettings')}
           </Button>
         </div>

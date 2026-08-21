@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import {
   ArrowRight,
-  ArrowsClockwise,
   Clock,
   GitBranch,
   ListChecks,
-  Trash,
-} from '@phosphor-icons/react'
+  RefreshCw,
+  Trash2
+} from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -70,13 +70,13 @@ export function TeamTasksView({
         >
           <TabsList>
             <TabsTrigger value="tasks" onClick={() => setDetailTab('tasks')}>
-              <ListChecks /> {t('kubecode.teamTasks')}
+              <ListChecks  size={16}/> {t('kubecode.teamTasks')}
             </TabsTrigger>
             <TabsTrigger value="activity" onClick={() => setDetailTab('activity')}>
-              <Clock /> {t('kubecode.teamActivity')}
+              <Clock  size={16}/> {t('kubecode.teamActivity')}
             </TabsTrigger>
             <TabsTrigger value="dependencies" onClick={() => setDetailTab('dependencies')}>
-              <GitBranch /> {t('kubecode.teamDependencies')}
+              <GitBranch  size={16}/> {t('kubecode.teamDependencies')}
             </TabsTrigger>
           </TabsList>
           <TabsContent value="tasks">
@@ -126,7 +126,7 @@ export function TeamTasksView({
                   {task.dependencies.length > 0
                     ? task.dependencies.map((dependency) => {
                       const parent = tasks.find((candidate) => candidate.id === dependency)
-                      return <span key={dependency}><ArrowRight /> {parent?.title || dependency}</span>
+                      return <span key={dependency}><ArrowRight  size={16}/> {parent?.title || dependency}</span>
                     })
                     : <span>{t('kubecode.teamNoDependencies')}</span>}
                 </div>
@@ -273,7 +273,7 @@ function TaskInspector({
                       variant="ghost"
                       onClick={() => setConfirmation('remove')}
                     >
-                      <Trash /> {t('kubecode.teamRemoveMember')}
+                      <Trash2  size={16}/> {t('kubecode.teamRemoveMember')}
                     </Button>
                   )}
                 </>
@@ -287,7 +287,7 @@ function TaskInspector({
                     () => api.retryTeamTask(snapshot.team.id, task.id),
                   )}
                 >
-                  <ArrowsClockwise /> {t('kubecode.teamTaskRetry')}
+                  <RefreshCw  size={16}/> {t('kubecode.teamTaskRetry')}
                 </Button>
               )}
               {!['accepted', 'cancelled'].includes(task.status) && (

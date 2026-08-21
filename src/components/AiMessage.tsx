@@ -1,5 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { CaretRight, CaretDown, Brain, ArrowsClockwise, Copy, GitBranch, PencilSimple, Terminal } from '@phosphor-icons/react'
+import {
+  Brain,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  GitBranch,
+  Pencil,
+  RefreshCw,
+  Terminal,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { AiActionCard, type AiActionStatus } from './AiActionCard'
@@ -186,7 +195,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
             setEditing(true)
           }}
         >
-          <PencilSimple size={15} />
+          <Pencil size={15} />
         </Button>
       </div>
     </div>
@@ -216,7 +225,7 @@ function ReasoningBlock({ locale, text, expanded, onToggle }: {
       >
         <Brain size={14} />
         <span>{translate(locale, 'ai.message.reasoning')}</span>
-        {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </Button>
       {expanded && (
         <div
@@ -304,7 +313,7 @@ function ToolUseBlock({
         >
           {actions.length}
         </span>
-        {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </Button>
       {expanded && (
         <div data-testid="tool-use-content" style={{ marginTop: 4 }}>
@@ -352,7 +361,7 @@ function ResponseActions({
         onClick={() => messageId && onRegenerate?.(messageId)}
         data-testid="ai-message-regenerate"
       >
-        <ArrowsClockwise size={14} />
+        <RefreshCw size={14} />
       </Button>
       <Button
         type="button"
