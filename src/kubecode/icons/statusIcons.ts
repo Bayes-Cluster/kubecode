@@ -151,7 +151,7 @@ export const PLAN_STATUS_ICONS: Record<SessionPlanEntry['status'], StatusIconEnt
   pending: { Icon: CircleDashed, labelKey: 'kubecode.status.plan.pending', cue: 'circle-dashed' },
 }
 
-export const CONNECTION_STATUS_ICONS: Record<AgentDescriptor['readiness'], StatusIconEntry> = {
+export const CONNECTION_STATUS_ICONS: Record<NonNullable<AgentDescriptor['readiness']>, StatusIconEntry> = {
   ready: { Icon: CircleCheck, labelKey: 'kubecode.status.connection.ready', cue: 'check' },
   degraded: { Icon: TriangleAlert, labelKey: 'kubecode.status.connection.degraded', cue: 'warning' },
   unavailable: { Icon: Unplug, labelKey: 'kubecode.status.connection.unavailable', cue: 'unplug' },
