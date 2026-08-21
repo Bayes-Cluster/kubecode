@@ -1,7 +1,7 @@
 import { resolveDirectoryIcon } from '../resolveFileIcon'
 
 import { MATERIAL_ICONS } from './manifest'
-import type { MaterialIconId } from './manifest'
+import type { MaterialIconBody, MaterialIconId } from './manifest'
 
 export interface MaterialFileIconProps {
   id: MaterialIconId
@@ -19,7 +19,7 @@ export interface MaterialFileIconProps {
  * purely via CSS — there is no React theme context to subscribe to.
  */
 export function MaterialFileIcon({ id, size = 16, label, className }: MaterialFileIconProps) {
-  const icon = MATERIAL_ICONS[id]
+  const icon: MaterialIconBody = MATERIAL_ICONS[id]
   return (
     <svg
       className={className ? `kubecode-material-icon ${className}` : 'kubecode-material-icon'}
