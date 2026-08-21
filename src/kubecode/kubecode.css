@@ -1987,6 +1987,19 @@
 .kubecode-file-tree-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-file-tree-spacer { flex: 0 0 16px; }
 
+/* Emoji identity box (ADR 0209): fixed 24x24 container, 20px glyph. */
+.kubecode-emoji-identity {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 20px;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  width: 24px;
+}
+.kubecode-emoji-identity > svg { height: 20px; width: 20px; }
+
 .kubecode-context-editor { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
 .kubecode-dirty-dot {
   background: var(--accent-orange);
