@@ -28,6 +28,9 @@ import {
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
+import { Icon } from './icons'
+import { RUN_STATUS_ICONS } from './icons/statusIcons'
+
 import type { Conversation, KubecodeApi, Project, RunStatus, TeamRole, TeamSnapshot } from './api'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
 import {
@@ -464,6 +467,13 @@ function SessionRow({
         <span className="kubecode-session-row-copy">
           <span>{conversation.title || t('kubecode.untitledSession')}</span>
         </span>
+        {conversation.latest_run_status && (
+          <Icon
+            role="status"
+            size="secondary"
+            source={RUN_STATUS_ICONS[conversation.latest_run_status].Icon}
+          />
+        )}
         <span
           aria-label={conversation.latest_run_status
             ? runStatusLabel(conversation.latest_run_status, t)

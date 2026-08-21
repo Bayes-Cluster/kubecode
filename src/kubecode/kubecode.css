@@ -583,6 +583,12 @@
   background: var(--accent);
 }
 
+.kubecode-team-member-status-group {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
+
 .kubecode-team-member-status {
   background: var(--muted-foreground);
   border-radius: 999px;
@@ -1459,13 +1465,6 @@
   color: var(--accent-blue);
 }
 
-.kubecode-session-plan-entry[data-status='in_progress'] .kubecode-session-plan-state::after {
-  background: var(--accent-blue);
-  border-radius: 50%;
-  content: '';
-  height: 5px;
-  width: 5px;
-}
 
 .kubecode-command-suggestions {
   background: var(--surface-sidebar);
