@@ -120,8 +120,15 @@ Logo 四周至少保留图形宽度的 **25%**。横向组合的安全留白以�
 
 ### 图标
 
-- 推荐 Phosphor Regular 或同等 2 px 圆角线性图标。
-- 常用尺寸：16、18、20、24 px。
+- 默认线性图标使用 lucide（2 px 圆角描边风格）；仅实心角色使用 Remix
+  Icon 实心字形；笔记身份使用原生 emoji；文件与目录身份使用 vendored
+  Material Icon Theme 审计子集（ADR 0209）。
+- 尺寸阶梯按角色取值：12（状态）、14（次级行内）、16（默认）、20（工具栏）、
+  24（身份容器）、28（最小点击目标）px。
+- 状态图标必须带非颜色区分符（形状或字形），不得只靠颜色区分状态；
+  状态圆点仍是主通道，图标为辅助线索。
+- Material 文件图标使用独立的 `--material-*` 色彩 token，不随工作台主题
+  变体重染。
 - Logo 不是普通功能图标；不要在侧栏中重复大量使用。
 
 ### 图形语言
@@ -164,7 +171,9 @@ Logo 四周至少保留图形宽度的 **25%**。横向组合的安全留白以�
 - 顶栏可使用 20 px 图形标志。
 - Primary Button 使用 Workspace Blue。
 - Running / Connected 状态使用 Agent Mint。
-- Project、Session、Agent Team、Terminal 使用统一的圆角线性图标。
+- Project、Session、Agent Team、Terminal 使用统一的 lucide 圆角线性图标
+  （实心角色使用 Remix）；文件与目录身份统一经语义解析器渲染 Material
+  文件图标。
 - Terminal 保持 Kube Ink 底色，不使用 Warm Surface。
 
 ### README 与文档

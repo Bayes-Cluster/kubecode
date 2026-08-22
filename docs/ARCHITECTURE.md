@@ -1,7 +1,7 @@
 # Architecture
 
 Kubecode is a browser application backed by a standalone Rust server. The
-active production boundary is defined by ADRs 0161 through 0208.
+active production boundary is defined by ADRs 0161 through 0209.
 
 ## Runtime topology
 
@@ -188,6 +188,16 @@ interactive login mode so the same user-owned environment configuration is
 available without putting provider-specific launch behavior in a client.
 Browser refresh can restore serialized xterm output and replay newer bytes from
 the server cursor.
+
+Iconography follows ADR 0209. The `src/kubecode/icons/` module owns the size
+ladder (12/14/16/20/24/28 pixels by role), the `<Icon>` wrapper that hides
+decorative instances and labels icon-only controls, the `<EmojiIcon>` identity
+container, and the shared workflow status definitions in `statusIcons.tsx`.
+File and directory identity resolves through the vendored Material Icon Theme
+subset in `icons/material/` (`resolveFileIcon`), colored by `--material-*`
+tokens that are independent of the workbench theme. Icon renderers emit the
+icon as the root `<svg>` element because workbench CSS sizes icons through
+descendant `svg` selectors.
 
 ## Agent sessions
 

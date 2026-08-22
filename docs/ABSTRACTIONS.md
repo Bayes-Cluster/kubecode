@@ -749,3 +749,34 @@ integer from 12 through 20 pixels and defaults to 14 when an older preference
 record has no value. It scales workbench chrome, Agent messages, and the
 Composer without changing CodeMirror or xterm metrics. Semantic CSS tokens feed
 the workspace, CodeMirror, and xterm so theme changes do not reconnect a PTY.
+
+### Icon contract
+
+`src/kubecode/icons/index.ts` exports the typed size ladder `ICON_SIZES` —
+`status: 12`, `secondary: 14`, `default: 16`, `toolbar: 20`, `identity: 24`,
+`hitTarget: 28` — and the `IconRole` union (`navigation`, `command`, `control`,
+`status`, `identity`, `file`). Call sites choose a size by role, not by number.
+
+`Icon` wraps a lucide or Remix source with `source`, `role`, `size`, and
+`label`. Without `label` the icon is decorative and rendered `aria-hidden`;
+with `label` it becomes `role="img"` with `aria-label` and a tooltip, and the
+label copy is a localized key. `EmojiIcon` renders note identity in a fixed
+24-pixel container, validates its value against `unicode-emoji-json`, and
+renders its `fallback` identity icon when the value is absent or unsupported.
+
+`statusIcons.tsx` is the single definition of workflow status and identity
+iconography: Agent/Session run states, Team states, plan states, Git file
+states, connection and notification states, and Project/Team/provider
+identity. Every entry carries a non-color cue so no family distinguishes
+states by color alone; the `data-status` CSS dot stays the primary state
+channel and icons are supplementary.
+
+`resolveFileIcon` is a pure function mapping a name to a vendored Material
+icon id: exact file name, then compound suffix (longest match), then
+extension, then semantic fallback, then the generic file glyph;
+`resolveDirectoryIcon` maps a name and expanded flag to a named folder, its
+open variant, or the generic folder glyphs. Material fills use `--material-*`
+tokens defined per color scheme; they never alias `--accent-*`, so workbench
+theme variants cannot retint file icons. Icon renderers emit the icon as the
+root `<svg>` element because workbench CSS sizes icons through descendant
+`svg` selectors.
