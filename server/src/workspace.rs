@@ -1371,8 +1371,16 @@ fn revision(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+#[cfg(windows)]
 pub(crate) fn path_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// On Unix a backslash is an ordinary filename character, not a separator,
+/// so the string must round-trip losslessly (`preserves_unix_backslashes_as_distinct_git_paths`).
+#[cfg(not(windows))]
+pub(crate) fn path_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 /// How a native watch event path is exposed across the Project-relative
