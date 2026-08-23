@@ -1,4 +1,4 @@
-import { AppWindow, Lightning, PuzzlePiece } from '@phosphor-icons/react'
+import { AppWindow, Puzzle, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -16,9 +16,9 @@ export type ComposerCapabilityPickerLabels = {
 }
 
 function CapabilityIcon({ kind }: { kind: RankedComposerCapability['kind'] }) {
-  if (kind === 'plugin_action') return <PuzzlePiece aria-hidden className="shrink-0" size={17} />
+  if (kind === 'plugin_action') return <Puzzle aria-hidden className="shrink-0" size={17} />
   if (kind === 'provider_app') return <AppWindow aria-hidden className="shrink-0" size={17} />
-  return <Lightning aria-hidden className="shrink-0" size={17} />
+  return <Zap aria-hidden className="shrink-0" size={17} />
 }
 
 export function ComposerCapabilityPicker({

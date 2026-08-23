@@ -1,11 +1,11 @@
 import { type RefObject } from 'react'
 import {
-  ArrowClockwise,
   Bell,
   Circle,
-  MagnifyingGlass,
-  WarningCircle,
-} from '@phosphor-icons/react'
+  CircleAlert,
+  RotateCw,
+  Search
+} from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -99,7 +99,7 @@ export function WorkbenchTitlebar({
         </div>
       </div>
       <div className="kubecode-search">
-        <MagnifyingGlass />
+        <Search  size={16}/>
         <Input
           aria-label={t('kubecode.searchSessions')}
           placeholder={t('kubecode.searchSessions')}
@@ -125,7 +125,7 @@ export function WorkbenchTitlebar({
             role="status"
             title={error}
           >
-            <WarningCircle weight="fill" />
+            <CircleAlert fill="currentColor"  size={16}/>
           </span>
         )}
         {attentionSessions.length > 0 && (
@@ -137,7 +137,7 @@ export function WorkbenchTitlebar({
                 size="sm"
                 variant="ghost"
               >
-                <Bell weight="fill" />
+                <Bell fill="currentColor"  size={16}/>
                 <span>{attentionSessions.length}</span>
               </Button>
             </DropdownMenuTrigger>
@@ -200,7 +200,7 @@ function RuntimeConnectionMenu({
           size="icon-xs"
           variant="ghost"
         >
-          <Circle aria-hidden="true" weight="fill" />
+          <Circle aria-hidden="true" fill="currentColor"  size={16}/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="kubecode-connection-menu">
@@ -218,7 +218,7 @@ function RuntimeConnectionMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onRetry}>
-              <ArrowClockwise />
+              <RotateCw  size={16}/>
               {t('kubecode.retry')}
             </DropdownMenuItem>
           </>

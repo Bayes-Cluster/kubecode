@@ -1,4 +1,4 @@
-import { Eye, EyeSlash } from '@phosphor-icons/react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -134,7 +134,7 @@ export function ProjectFilePicker({
             variant="ghost"
             onClick={() => setIncludeExcluded((current) => !current)}
           >
-            {includeExcluded ? <Eye /> : <EyeSlash />}
+            {includeExcluded ? <Eye  size={16}/> : <EyeOff  size={16}/>}
             {includeExcluded
               ? t('kubecode.hideExcludedFiles')
               : t('kubecode.showExcludedFiles')}

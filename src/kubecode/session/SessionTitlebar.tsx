@@ -1,4 +1,4 @@
-import { DotsThree } from '@phosphor-icons/react'
+import { Ellipsis } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -95,7 +95,7 @@ export function SessionTitlebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
-              <DotsThree />
+              <Ellipsis  size={16}/>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

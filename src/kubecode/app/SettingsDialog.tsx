@@ -1,5 +1,10 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { ArrowClockwise, Check, Copy, WarningCircle } from '@phosphor-icons/react'
+import {
+  Check,
+  CircleAlert,
+  Copy,
+  RotateCw
+} from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -378,11 +383,11 @@ export function SettingsDialog({
                     variant="outline"
                     onClick={() => void onRefreshAgents()}
                   >
-                    <ArrowClockwise className={agentsRefreshing ? 'animate-spin' : undefined} />
+                    <RotateCw className={agentsRefreshing ? 'animate-spin' : undefined}  size={16}/>
                     {t('kubecode.checkAgain')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void copyDiagnostics()}>
-                    {diagnosticsCopied ? <Check /> : <Copy />}
+                    {diagnosticsCopied ? <Check  size={16}/> : <Copy  size={16}/>}
                     {diagnosticsCopied ? t('kubecode.copied') : t('kubecode.copyDiagnostics')}
                   </Button>
                 </div>
@@ -528,7 +533,7 @@ function RuntimeStatusPanel({ api, t }: { api: KubecodeApi; t: Translator }) {
             setRequest((value) => value + 1)
           }}
         >
-          <ArrowClockwise className={busy ? 'animate-spin' : undefined} />
+          <RotateCw className={busy ? 'animate-spin' : undefined}  size={16}/>
           {t('kubecode.refresh')}
         </Button>
       </div>
@@ -558,7 +563,7 @@ function AgentDiagnosticRow({
 }) {
   return (
     <div className="kubecode-agent-diagnostic-row">
-      <span data-status={status}>{status === 'ready' ? <Check /> : <WarningCircle />}</span>
+      <span data-status={status}>{status === 'ready' ? <Check  size={16}/> : <CircleAlert  size={16}/>}</span>
       <div>
         <strong>{label}</strong>
         <small>{value || (status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable'))}</small>

@@ -1,9 +1,17 @@
 import { type ReactNode, useCallback } from 'react'
 import {
-  PencilSimple, MagnifyingGlass,
-  CircleNotch, CheckCircle, XCircle, CaretRight, CaretDown,
-  Terminal, File, FolderOpen, NotePencil,
-} from '@phosphor-icons/react'
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
+  CircleX,
+  File,
+  FolderOpen,
+  Loader,
+  NotebookPen,
+  Pencil,
+  Search,
+  Terminal,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export type AiActionStatus = 'pending' | 'done' | 'error'
@@ -27,24 +35,24 @@ type IconRenderer = (size: number) => ReactNode
 const TOOL_ICON_MAP: Record<string, IconRenderer> = {
   // Native Claude Code tools
   Bash: (s) => <Terminal size={s} />,
-  Write: (s) => <PencilSimple size={s} />,
-  Edit: (s) => <NotePencil size={s} />,
+  Write: (s) => <Pencil size={s} />,
+  Edit: (s) => <NotebookPen size={s} />,
   Read: (s) => <File size={s} />,
   Glob: (s) => <FolderOpen size={s} />,
-  Grep: (s) => <MagnifyingGlass size={s} />,
+  Grep: (s) => <Search size={s} />,
 }
 const TOOL_ICON_BY_NAME = new Map(Object.entries(TOOL_ICON_MAP))
 
-const DEFAULT_ICON: IconRenderer = (s) => <PencilSimple size={s} />
+const DEFAULT_ICON: IconRenderer = (s) => <Pencil size={s} />
 
 function StatusIndicator({ status }: { status: AiActionStatus }) {
   if (status === 'pending') {
-    return <CircleNotch size={14} className="ai-spin text-muted-foreground" data-testid="status-pending" />
+    return <Loader size={14} className="ai-spin text-muted-foreground" data-testid="status-pending" />
   }
   if (status === 'done') {
-    return <CheckCircle size={14} weight="fill" style={{ color: 'var(--accent-green)' }} data-testid="status-done" />
+    return <CircleCheck size={14} fill="currentColor" style={{ color: 'var(--accent-green)' }} data-testid="status-done" />
   }
-  return <XCircle size={14} weight="fill" style={{ color: 'var(--destructive)' }} data-testid="status-error" />
+  return <CircleX size={14} fill="currentColor" style={{ color: 'var(--destructive)' }} data-testid="status-error" />
 }
 
 function truncateText(text: string): { text: string; truncated: boolean } {
@@ -113,7 +121,7 @@ function ActionCardHeader({
       <StatusIndicator status={status} />
       {hasDetails && (
         <span className="ai-action-card-caret" aria-hidden="true">
-          {expanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
       )}
     </Button>

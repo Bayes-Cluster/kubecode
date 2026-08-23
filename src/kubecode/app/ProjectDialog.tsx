@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowUp, Eye, EyeSlash } from '@phosphor-icons/react'
+import { ArrowUp, Eye, EyeOff } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { Button } from '@/components/ui/button'
@@ -120,7 +120,7 @@ export function ProjectDialog({
     }] : []
     if (listing?.parent) {
       nextRows.push({
-        icon: <ArrowUp />,
+        icon: <ArrowUp  size={16}/>,
         id: 'parent-directory',
         kind: 'directory',
         label: '..',
@@ -173,7 +173,7 @@ export function ProjectDialog({
                   variant="ghost"
                   onClick={() => setShowHidden((current) => !current)}
                 >
-                  {showHidden ? <Eye /> : <EyeSlash />}
+                  {showHidden ? <Eye  size={16}/> : <EyeOff  size={16}/>}
                   {t('kubecode.showHiddenDirectories')}
                 </Button>
               </div>

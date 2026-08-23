@@ -1,4 +1,4 @@
-import { Gear, Plus, Question } from '@phosphor-icons/react'
+import { CircleHelp, Plus, Settings } from 'lucide-react'
 
 import { ResizeHandle } from '@/components/ResizeHandle'
 import { Button } from '@/components/ui/button'
@@ -75,9 +75,9 @@ export function ProjectNavigator({
         <div className="kubecode-navigator-heading">
           <strong>{t('kubecode.projects')}</strong>
           <div>
-            <Button aria-label={t('kubecode.addProject')} size="icon-xs" variant="ghost" onClick={onAddProject}><Plus /></Button>
-            <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={onOpenSettings}><Gear /></Button>
-            <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><Question /></Button>
+            <Button aria-label={t('kubecode.addProject')} size="icon-xs" variant="ghost" onClick={onAddProject}><Plus  size={16}/></Button>
+            <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={onOpenSettings}><Settings  size={16}/></Button>
+            <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><CircleHelp  size={16}/></Button>
           </div>
         </div>
         <SessionSidebarList

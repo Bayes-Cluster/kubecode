@@ -1,34 +1,34 @@
 import type { ComponentType, SVGAttributes } from 'react'
 import {
-  ArrowsClockwise,
-  CalendarBlank,
+  Calendar,
   FileText,
-  Flask,
-  StackSimple,
+  FlaskConical,
+  Layers,
+  RefreshCw,
   Tag,
   Target,
   Users,
   Wrench,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import { resolveIcon } from '../../utils/iconRegistry'
 
 const TYPE_ICON_MAP: Record<string, ComponentType<SVGAttributes<SVGSVGElement>>> = {
   Project: Wrench,
   project: Wrench,
-  Experiment: Flask,
-  experiment: Flask,
+  Experiment: FlaskConical,
+  experiment: FlaskConical,
   Responsibility: Target,
   responsibility: Target,
-  Procedure: ArrowsClockwise,
-  procedure: ArrowsClockwise,
+  Procedure: RefreshCw,
+  procedure: RefreshCw,
   Person: Users,
   person: Users,
-  Event: CalendarBlank,
-  event: CalendarBlank,
+  Event: Calendar,
+  event: Calendar,
   Topic: Tag,
   topic: Tag,
-  Type: StackSimple,
-  type: StackSimple,
+  Type: Layers,
+  type: Layers,
 }
 
 export function getTypeIcon(isA: string | null, customIcon?: string | null): ComponentType<SVGAttributes<SVGSVGElement>> {

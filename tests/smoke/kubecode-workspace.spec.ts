@@ -151,7 +151,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await sendButton.click()
   await expect(page.getByText('Smoke Agent is ready', { exact: true })).toBeVisible()
   const projectButton = page.getByRole('button', { name: projectName, exact: true })
-  await expect(projectButton).toHaveAttribute('data-session-status', 'running')
+  await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout: 20_000 })
   await expect(page.getByRole('button', { name: 'Runtime connection: Live' })).toBeVisible()
 
   await page.evaluate(() => {
@@ -166,8 +166,10 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
     expect(response.ok()).toBeTruthy()
     const runs = await response.json() as Array<{ status: string }>
     return runs[0]?.status
-  }).toBe('completed')
-  await expect(projectButton).toHaveAttribute('data-session-status', 'running')
+    // The fake agent holds each prompt open for ~20s so the running status
+    // stays observable; the completion poll must outlive that window.
+  }, { timeout: 30_000 }).toBe('completed')
+  await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout: 20_000 })
   await page.evaluate(() => {
     (window as unknown as { __reconnectWorkspaceEvents: () => void })
       .__reconnectWorkspaceEvents()

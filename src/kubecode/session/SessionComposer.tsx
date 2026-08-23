@@ -1,4 +1,4 @@
-import { LockKey, ShieldWarning } from '@phosphor-icons/react'
+import { LockKeyhole, ShieldAlert } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
 import { Button } from '@/components/ui/button'
@@ -152,7 +152,7 @@ export function SessionComposer({
       {pendingPermission && (
         <div aria-live="polite" className="kubecode-permission-dock">
           <div className="kubecode-permission-heading">
-            <ShieldWarning size={17} />
+            <ShieldAlert size={17} />
             <strong>{t('kubecode.permissionRequired')}</strong>
           </div>
           <code className="kubecode-permission-command">{pendingPermission.tool}</code>
@@ -174,7 +174,7 @@ export function SessionComposer({
       {leaderReviewPending && (
         <div aria-live="polite" className="kubecode-permission-dock kubecode-permission-leader-review">
           <div className="kubecode-permission-heading">
-            <ShieldWarning size={17} />
+            <ShieldAlert size={17} />
             <strong>{t('kubecode.waitingForLeaderPermission')}</strong>
           </div>
         </div>
@@ -244,7 +244,7 @@ export function SessionComposer({
       <div className="kubecode-session-composer">
         {hardReadOnly || viewRevisionId ? (
           <div className="kubecode-read-only-session">
-            <LockKey />
+            <LockKeyhole  size={16}/>
             <span>{viewRevisionId
               ? t('kubecode.revisionReadOnly')
               : t('kubecode.readOnlySubagent')}</span>

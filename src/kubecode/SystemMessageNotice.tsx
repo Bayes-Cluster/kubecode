@@ -7,13 +7,13 @@ import {
 } from 'react'
 import {
   Bug,
-  CaretDown,
-  CheckCircle,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
   Info,
-  Warning,
-  WarningCircle,
-  X,
-} from '@phosphor-icons/react'
+  TriangleAlert,
+  X
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -83,9 +83,9 @@ type SystemMessageNoticeProps = SystemMessage & {
 const LEVEL_ICONS = {
   debug: Bug,
   info: Info,
-  success: CheckCircle,
-  warning: Warning,
-  error: WarningCircle,
+  success: CircleCheck,
+  warning: TriangleAlert,
+  error: CircleAlert,
 } as const
 
 export function SystemMessageNotice({
@@ -109,7 +109,7 @@ export function SystemMessageNotice({
       role={role}
       title={message}
     >
-      <Icon className="kubecode-system-message-icon" weight="fill" />
+      <Icon className="kubecode-system-message-icon" fill="currentColor" />
       <div
         className="kubecode-system-message-content"
         title={message}
@@ -126,7 +126,7 @@ export function SystemMessageNotice({
         variant="ghost"
         onClick={() => setExpanded((current) => !current)}
       >
-        <CaretDown />
+        <ChevronDown  size={16}/>
       </Button>
       {onDismiss && (
         <Button
@@ -136,7 +136,7 @@ export function SystemMessageNotice({
           variant="ghost"
           onClick={onDismiss}
         >
-          <X />
+          <X  size={16}/>
         </Button>
       )}
     </div>

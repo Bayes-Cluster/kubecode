@@ -1,4 +1,11 @@
-import { CaretDown, CaretRight, Check, LockSimple, ToggleLeft, ToggleRight } from '@phosphor-icons/react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  ToggleLeft,
+  ToggleRight
+} from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -108,7 +115,7 @@ export function AgentControlMenu({
       >
         <AiAgentIcon agent={agent} size={14} />
         <span className="min-w-0 truncate">{modeName}</span>
-        <CaretDown className="shrink-0" />
+        <ChevronDown className="shrink-0"  size={16}/>
       </Button>
       {open && createPortal(
         <div
@@ -135,7 +142,7 @@ export function AgentControlMenu({
                   <strong className="block truncate font-normal">{selectedOption(mode)}</strong>
                   <small className="block truncate text-xs text-muted-foreground">{t('kubecode.agentMode')}</small>
                 </span>
-                {modeDisabled ? <LockSimple className="shrink-0" /> : <CaretRight className="shrink-0" />}
+                {modeDisabled ? <Lock className="shrink-0"  size={16}/> : <ChevronRight className="shrink-0"  size={16}/>}
               </Button>
             )}
             {mode && configs.length > 0 && <div className="my-1 h-px bg-border" />}
@@ -150,7 +157,7 @@ export function AgentControlMenu({
               >
                 <span className="truncate">{config.name}</span>
                 {config.currentValue
-                  ? <ToggleRight className="shrink-0 text-primary" size={22} weight="fill" />
+                  ? <ToggleRight className="shrink-0 text-primary" size={22} fill="currentColor" />
                   : <ToggleLeft className="shrink-0 text-muted-foreground" size={22} />}
               </Button>
             ) : (
@@ -165,7 +172,7 @@ export function AgentControlMenu({
                   <strong className="block truncate font-normal">{selectedOption(config)}</strong>
                   <small className="block truncate text-xs text-muted-foreground">{config.name}</small>
                 </span>
-                <CaretRight className="shrink-0" />
+                <ChevronRight className="shrink-0"  size={16}/>
               </Button>
             ))}
           </section>
@@ -195,7 +202,7 @@ export function AgentControlMenu({
                       </small>
                     )}
                   </span>
-                  {activeGroup.currentValue === option.id && <Check className="shrink-0" weight="bold" />}
+                  {activeGroup.currentValue === option.id && <Check className="shrink-0"  size={16}/>}
                 </Button>
               ))}
             </section>

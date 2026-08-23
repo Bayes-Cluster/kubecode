@@ -2,14 +2,14 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   ArrowRight,
-  CheckCircle,
+  CircleAlert,
+  CircleCheck,
   Clock,
+  LoaderCircle,
   Pause,
   Play,
-  SpinnerGap,
-  UsersThree,
-  WarningCircle,
-} from '@phosphor-icons/react'
+  Users
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -73,7 +73,7 @@ export function TeamStatusView({
     <>
       <header className="kubecode-team-control-header">
         <div>
-          <UsersThree weight="fill" />
+          <Users fill="currentColor"  size={16}/>
           <div>
             <strong>{snapshot.team.title || snapshot.leader_conversation.title}</strong>
             <span>{t('kubecode.teamControlCenter')}</span>
@@ -103,7 +103,7 @@ export function TeamStatusView({
               variant="outline"
               onClick={onResume}
             >
-              <Play weight="fill" /> {t('kubecode.teamResume')}
+              <Play fill="currentColor"  size={16}/> {t('kubecode.teamResume')}
             </Button>
           ) : ['active', 'verifying', 'needs_attention'].includes(snapshot.team.status) ? (
             <Button
@@ -112,7 +112,7 @@ export function TeamStatusView({
               variant="outline"
               onClick={onPause}
             >
-              <Pause weight="fill" /> {t('kubecode.teamPause')}
+              <Pause fill="currentColor"  size={16}/> {t('kubecode.teamPause')}
             </Button>
           ) : null}
         </div>
@@ -137,15 +137,15 @@ export function TeamStatusView({
       )}
 
       <div className="kubecode-team-metrics">
-        <Metric icon={<SpinnerGap />} label={t('kubecode.teamRunning')} name="running" value={summary.running} />
+        <Metric icon={<LoaderCircle />} label={t('kubecode.teamRunning')} name="running" value={summary.running} />
         <Metric icon={<Clock />} label={t('kubecode.teamQueued')} name="queued" value={summary.queued} />
-        <Metric icon={<WarningCircle />} label={t('kubecode.teamNeedsAttention')} name="attention" value={summary.needs_attention} />
-        <Metric icon={<CheckCircle />} label={t('kubecode.teamDone')} name="done" value={summary.done} />
+        <Metric icon={<CircleAlert />} label={t('kubecode.teamNeedsAttention')} name="attention" value={summary.needs_attention} />
+        <Metric icon={<CircleCheck />} label={t('kubecode.teamDone')} name="done" value={summary.done} />
       </div>
 
       {attention.length > 0 && (
         <section className="kubecode-team-attention">
-          <header><WarningCircle weight="fill" /> {t('kubecode.teamNeedsAttention')}</header>
+          <header><CircleAlert fill="currentColor"  size={16}/> {t('kubecode.teamNeedsAttention')}</header>
           <div>
             {attention.map((attentionItem) => {
               const userRequest = snapshot.user_input_requests?.find(
@@ -188,7 +188,7 @@ export function TeamStatusView({
                   }}
                 >
                   <span>{attentionItem.summary}</span>
-                  <ArrowRight />
+                  <ArrowRight  size={16}/>
                 </Button>
               )
             })}

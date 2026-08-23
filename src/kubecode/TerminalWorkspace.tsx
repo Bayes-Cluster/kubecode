@@ -17,15 +17,15 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  CaretDown,
+  ChevronDown,
+  PanelLeft,
   Plus,
-  SidebarSimple,
-  SplitHorizontal,
-  SplitVertical,
-  TerminalWindow,
-  Trash,
-  X,
-} from '@phosphor-icons/react'
+  SquareSplitHorizontal,
+  SquareSplitVertical,
+  SquareTerminal,
+  Trash2,
+  X
+} from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { ResizeHandle } from '@/components/ResizeHandle'
@@ -337,7 +337,7 @@ export function TerminalWorkspace({
             size="icon-xs"
             variant="ghost"
             onClick={() => void create('regular')}
-          ><Plus /></Button>
+          ><Plus  size={16}/></Button>
           <TerminalProfileMenu agents={agents} disabled={creating} onCreate={(kind) => void create(kind)} t={t} />
           <Button
             aria-label={t('kubecode.splitRight')}
@@ -350,7 +350,7 @@ export function TerminalWorkspace({
               'horizontal',
               activeTerminal?.conversation_id ?? null,
             )}
-          ><SplitHorizontal /></Button>
+          ><SquareSplitHorizontal  size={16}/></Button>
           <Button
             aria-label={t('kubecode.splitDown')}
             disabled={!activeTerminal || creating}
@@ -362,14 +362,14 @@ export function TerminalWorkspace({
               'vertical',
               activeTerminal?.conversation_id ?? null,
             )}
-          ><SplitVertical /></Button>
+          ><SquareSplitVertical  size={16}/></Button>
           <Button
             aria-label={t('kubecode.closeTerminal')}
             disabled={!activeTerminal}
             size="icon-xs"
             variant="ghost"
             onClick={() => activeTerminal && void closeLeaf(activeTerminal.id)}
-          ><Trash /></Button>
+          ><Trash2  size={16}/></Button>
           {navigatorVisible && (
             <Button
               aria-label={t('kubecode.collapse')}
@@ -377,7 +377,7 @@ export function TerminalWorkspace({
               size="icon-xs"
               variant="ghost"
               onClick={toggleNavigator}
-            ><SidebarSimple /></Button>
+            ><PanelLeft  size={16}/></Button>
           )}
         </div>
       </div>
@@ -581,7 +581,7 @@ function TerminalNavigatorLeaf({
           variant="ghost"
           onClick={(event) => { event.stopPropagation(); onClose() }}
           onPointerDown={(event) => event.stopPropagation()}
-        ><X /></Button>
+        ><X  size={16}/></Button>
       )}
     </div>
   )
@@ -640,13 +640,13 @@ function TerminalProfileMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} size="icon-xs" variant="ghost">
-          <CaretDown />
+          <ChevronDown  size={16}/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuLabel>{t('kubecode.terminal')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onCreate('regular')}>
-          <TerminalWindow /> {t('kubecode.terminal')}
+          <SquareTerminal  size={16}/> {t('kubecode.terminal')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t('kubecode.agentTui')}</DropdownMenuLabel>
@@ -772,7 +772,7 @@ function TerminalSplit(props: Parameters<typeof TerminalLayoutView>[0] & {
 
 function TerminalKindIcon({ kind }: { kind: TerminalKind }) {
   const profile = agentKinds.find((item) => item.kind === kind)
-  return profile ? <AiAgentIcon agent={profile.id} size={16} /> : <TerminalWindow />
+  return profile ? <AiAgentIcon agent={profile.id} size={16} /> : <SquareTerminal  size={16}/>
 }
 
 function replaceGroup(

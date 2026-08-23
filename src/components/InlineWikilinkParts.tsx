@@ -6,8 +6,15 @@ import {
   useRef,
 } from 'react'
 import {
-  ChatCircleDots, File, Folder, GitDiff, Lightning, TerminalWindow, WarningCircle, X,
-} from '@phosphor-icons/react'
+  CircleAlert,
+  File,
+  Folder,
+  GitCompare,
+  MessageSquareMore,
+  SquareTerminal,
+  X,
+  Zap,
+} from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { VaultEntry } from '../types'
 import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
@@ -50,14 +57,14 @@ export function InlineWikilinkChipView({
     const ContextIcon = contextReference.kind === 'directory'
       ? Folder
       : contextReference.kind === 'capability'
-        ? Lightning
+        ? Zap
         : contextReference.kind === 'git_diff'
-          ? GitDiff
+          ? GitCompare
           : contextReference.kind === 'terminal'
-            ? TerminalWindow
+            ? SquareTerminal
             : contextReference.kind === 'session_turn'
-              ? ChatCircleDots
-              : contextReference.kind === 'diagnostics' ? WarningCircle : File
+              ? MessageSquareMore
+              : contextReference.kind === 'diagnostics' ? CircleAlert : File
     const capabilityTitle = contextReference.kind === 'capability'
       ? [contextReference.name, contextReference.sourceLabel, contextReference.scopeLabel]
         .filter(Boolean).join(' · ')
@@ -84,7 +91,7 @@ export function InlineWikilinkChipView({
         style={{ lineHeight: 1.6 }}
         title={capabilityTitle}
       >
-        {stale ? <WarningCircle aria-hidden size={12} /> : <ContextIcon aria-hidden size={12} />}
+        {stale ? <CircleAlert aria-hidden size={12} /> : <ContextIcon aria-hidden size={12} />}
         <span className="max-w-48 truncate">{contextReference.name}</span>
         {contextReference.kind === 'capability' && contextReference.sourceLabel && (
           <span className="max-w-28 truncate border-l border-border pl-1 text-[10px] text-muted-foreground">
@@ -187,7 +194,7 @@ export function InlineContextSuggestionList({
       ) : suggestions.map((suggestion, index) => {
         const Icon = suggestion.kind === 'directory'
           ? Folder
-          : suggestion.kind === 'git_diff' ? GitDiff : File
+          : suggestion.kind === 'git_diff' ? GitCompare : File
         const enabled = suggestion.enabled !== false
         return (
           <button

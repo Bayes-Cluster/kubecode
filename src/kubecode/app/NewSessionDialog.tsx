@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { DownloadSimple, Plus, User, UsersThree } from '@phosphor-icons/react'
+import {
+  Download,
+  Plus,
+  User,
+  Users
+} from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -174,7 +179,7 @@ export function NewSessionDialog({
               variant="outline"
               onClick={() => setMode('new')}
             >
-              <Plus />
+              <Plus  size={16}/>
               <span>{t('kubecode.startNewSession')}</span>
             </Button>
             <Button
@@ -184,7 +189,7 @@ export function NewSessionDialog({
               variant="outline"
               onClick={() => setMode('import')}
             >
-              <DownloadSimple />
+              <Download  size={16}/>
               <span>{t('kubecode.importAgentSession')}</span>
             </Button>
           </div>
@@ -199,7 +204,7 @@ export function NewSessionDialog({
                   variant="outline"
                   onClick={() => setSessionKind('session')}
                 >
-                  <User />
+                  <User  size={16}/>
                   <span>{t('kubecode.session')}</span>
                 </Button>
                 <Button
@@ -209,7 +214,7 @@ export function NewSessionDialog({
                   variant="outline"
                   onClick={() => setSessionKind('team')}
                 >
-                  <UsersThree />
+                  <Users  size={16}/>
                   <span>{t('kubecode.teamSession')}</span>
                 </Button>
               </div>

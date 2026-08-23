@@ -1,5 +1,4 @@
-import { ListChecks } from '@phosphor-icons/react'
-import { CaretRight } from '@phosphor-icons/react'
+import { ChevronRight, ListChecks } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -28,10 +27,10 @@ export function SessionPlanSummary({
         variant="ghost"
         onClick={onOpenPlan}
       >
-        <ListChecks />
+        <ListChecks  size={16}/>
         <span>{t('kubecode.agentPlan')}</span>
         <span>{completedEntries} / {totalEntries}</span>
-        <CaretRight />
+        <ChevronRight  size={16}/>
       </Button>
     </div>
   )

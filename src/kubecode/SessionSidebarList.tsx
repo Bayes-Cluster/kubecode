@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
-  CaretDown,
-  CaretRight,
-  DotsThree,
+  ChevronDown,
+  ChevronRight,
+  Ellipsis,
+  Filter,
   Folder,
-  Funnel,
   GitFork,
   Plus,
-  Trash,
-  UsersThree,
-} from '@phosphor-icons/react'
+  Trash2,
+  Users
+} from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -276,7 +276,7 @@ export function SessionSidebarList({
                   variant="ghost"
                   onClick={() => onProjectToggle(project.id)}
                 >
-                  {expanded ? <CaretDown /> : <CaretRight />}
+                  {expanded ? <ChevronDown  size={16}/> : <ChevronRight  size={16}/>}
                 </Button>
                 <Button
                   className="kubecode-project-tree-main"
@@ -287,7 +287,7 @@ export function SessionSidebarList({
                   variant="ghost"
                   onClick={() => onProjectSelect(project.id)}
                 >
-                  <Folder />
+                  <Folder  size={16}/>
                   <span>{project.name}</span>
                 </Button>
                 <span
@@ -304,12 +304,12 @@ export function SessionSidebarList({
                       size="icon-xs"
                       variant="ghost"
                     >
-                      <DotsThree />
+                      <Ellipsis  size={16}/>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
-                      <Plus /> {t('kubecode.newSession')}
+                      <Plus  size={16}/> {t('kubecode.newSession')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
                       {project.workspaces_enabled
@@ -321,7 +321,7 @@ export function SessionSidebarList({
                       variant="destructive"
                       onSelect={() => onProjectDelete(project.id)}
                     >
-                      <Trash /> {t('kubecode.delete')}
+                      <Trash2  size={16}/> {t('kubecode.delete')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -333,12 +333,12 @@ export function SessionSidebarList({
                     variant="ghost"
                     onClick={() => onNewSession(project.id)}
                   >
-                    <Plus /> {t('kubecode.newSession')}
+                    <Plus  size={16}/> {t('kubecode.newSession')}
                   </Button>
                   {projectTeams.map((team) => (
                     <div aria-label={team.title} className="kubecode-session-team" key={team.id} role="group">
                       <div className="kubecode-session-team-header">
-                        <UsersThree />
+                        <Users  size={16}/>
                         <span>{team.title}</span>
                         <small>{team.members.length}</small>
                       </div>
@@ -493,24 +493,24 @@ function SessionRow({
             size="icon-xs"
             variant="ghost"
           >
-            <DotsThree />
+            <Ellipsis  size={16}/>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           <DropdownMenuItem onSelect={() => void archive(conversation)}>
-            <Archive />
+            <Archive  size={16}/>
             {conversation.archived ? t('kubecode.unarchiveSession') : t('kubecode.archiveSession')}
           </DropdownMenuItem>
           {conversation.provider_session_id && (
             <DropdownMenuItem onSelect={() => void fork(conversation)}>
-              <GitFork /> {t('kubecode.forkSession')}
+              <GitFork  size={16}/> {t('kubecode.forkSession')}
             </DropdownMenuItem>
           )}
           {(!teamRole || teamRole === 'leader') && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void remove(conversation)}>
-                <Trash /> {t('kubecode.delete')}
+                <Trash2  size={16}/> {t('kubecode.delete')}
               </DropdownMenuItem>
             </>
           )}
@@ -544,7 +544,7 @@ function SessionFilters({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button aria-label={t('kubecode.sessionFilters')} size="icon-xs" variant="ghost">
-          <Funnel />
+          <Filter  size={16}/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="kubecode-session-filter-menu">

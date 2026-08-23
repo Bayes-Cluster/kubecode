@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { UsersThree } from '@phosphor-icons/react'
+import { Users } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -113,7 +113,7 @@ export function TeamSetup({
   return (
     <section className="kubecode-team-workspace kubecode-team-setup" data-testid="team-setup">
       <header>
-        <UsersThree weight="fill" />
+        <Users fill="currentColor"  size={16}/>
         <div>
           <strong>{snapshot.team.title || snapshot.leader_conversation.title}</strong>
           <span>{t('kubecode.teamSetupDescription')}</span>

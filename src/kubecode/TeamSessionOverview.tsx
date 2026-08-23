@@ -1,4 +1,4 @@
-import { UsersThree } from '@phosphor-icons/react'
+import { Users } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ export function TeamSessionOverview({
     <TooltipProvider>
       <section className="kubecode-team-overview">
         <div className="kubecode-team-overview-title">
-          <UsersThree />
+          <Users  size={16}/>
           <strong>{snapshot.team.title || snapshot.leader_conversation.title}</strong>
         </div>
         <div className="kubecode-team-member-tree">

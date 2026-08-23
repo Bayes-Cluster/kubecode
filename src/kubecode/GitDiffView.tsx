@@ -1,4 +1,4 @@
-import { X } from '@phosphor-icons/react'
+import { X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -26,7 +26,7 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
           <MaterialFileIcon id={resolveFileIcon(target.path)} />
           {target.path}
         </span>
-        <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={onClose}><X /></Button>
+        <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={onClose}><X  size={16}/></Button>
       </div>
       {state.kind === 'loading' && (
         <div className="kubecode-diff-message" role="status">{t('kubecode.gitDiffLoading')}</div>

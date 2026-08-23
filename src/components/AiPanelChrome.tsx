@@ -1,5 +1,12 @@
 import { memo, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
-import { ArrowUp, Sparkle, X, Plus, Link, Stop } from '@phosphor-icons/react'
+import {
+  ArrowUp,
+  Link,
+  Plus,
+  Sparkle,
+  Square,
+  X,
+} from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
@@ -191,7 +198,7 @@ function ComposerSendButton({
       title={label}
       data-testid="agent-send"
     >
-      <ArrowUp size={17} weight="bold" />
+      <ArrowUp size={17} />
     </Button>
   )
 }
@@ -215,7 +222,7 @@ function ComposerStopButton({
       title={label}
       data-testid="agent-stop"
     >
-      <Stop size={16} weight="fill" />
+      <Square size={16} fill="currentColor" />
     </Button>
   )
 }
