@@ -32,9 +32,14 @@ function toIconId(icon: string): MaterialIconId {
   return icon as MaterialIconId
 }
 
-/** Resolves the audited Material icon id for a file name. */
+/**
+ * Resolves the audited Material icon id for a file name or relative path.
+ * Path separators are stripped first so exact-filename rules (package.json,
+ * README.md, ...) still hit when callers pass `src/package.json`.
+ */
 export function resolveFileIcon(name: string): MaterialIconId {
-  const lower = name.trim().toLowerCase()
+  const base = name.trim().toLowerCase().split(/[\\/]/).pop() ?? ''
+  const lower = base
   if (lower === '') return 'file'
 
   const exact = EXACT_BY_NAME.get(lower)

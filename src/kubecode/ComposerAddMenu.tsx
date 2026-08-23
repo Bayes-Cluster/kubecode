@@ -14,6 +14,8 @@ import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from '.
 import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
 import { ProjectFilePicker } from './ProjectFilePicker'
 import type { TerminalContextSource } from './TerminalWorkspace'
+import { MaterialFileIcon } from './icons/material/materialIcons'
+import { resolveFileIcon } from './icons/resolveFileIcon'
 
 export type ComposerAgentCommand = { name: string; description: string }
 export type TerminalContextRequest = {
@@ -249,7 +251,9 @@ export function ComposerAddMenu({
                     type="button"
                     variant="ghost"
                   >
-                    <GitDiff className="shrink-0" size={20} />
+                    {candidate.path
+                      ? <MaterialFileIcon className="shrink-0" id={resolveFileIcon(candidate.path)} size={20} />
+                      : <GitDiff className="shrink-0" size={20} />}
                     <span className="min-w-0 flex-1">
                       <strong className="block truncate font-medium">
                         {candidate.path?.split('/').at(-1) ?? gitDiffLabels.all}

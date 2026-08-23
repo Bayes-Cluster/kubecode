@@ -5,6 +5,8 @@ import type { Translator } from '@/lib/i18n'
 
 import type { GitDiffUnavailableReason } from './api'
 import type { GitDiffState, GitDiffTarget } from './useGitDiff'
+import { MaterialFileIcon } from './icons/material/materialIcons'
+import { resolveFileIcon } from './icons/resolveFileIcon'
 
 type GitDiffViewProps = {
   state: GitDiffState
@@ -20,7 +22,10 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
   return (
     <>
       <div className="kubecode-editor-toolbar">
-        <span title={target.path}>{target.path}</span>
+        <span title={target.path}>
+          <MaterialFileIcon id={resolveFileIcon(target.path)} />
+          {target.path}
+        </span>
         <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={onClose}><X /></Button>
       </div>
       {state.kind === 'loading' && (
