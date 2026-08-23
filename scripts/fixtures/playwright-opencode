@@ -17,7 +17,10 @@ while IFS= read -r line; do
       ;;
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"playwright-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Smoke Agent is ready"}}}}'
-      sleep 2
+      # Hold the run open so the UI's "running" session status is observable
+      # even when the browser renders the chunk slowly (loaded CI runners can
+      # take >2s from chunk emission to first paint).
+      sleep 20
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
       ;;
   esac

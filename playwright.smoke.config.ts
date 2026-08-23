@@ -12,10 +12,11 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { browserName: 'chromium', hasTouch: true } }],
   retries: 1,
   testDir: './tests',
-  // The workspace spec drives real PTY/reconnect flows and needs ~30s on
-  // constrained self-hosted hardware; keep generous headroom so slow
-  // runners do not flake at an arbitrary mid-test step.
-  timeout: 90_000,
+  // The workspace spec drives real PTY/reconnect flows and waits out the
+  // fake agent's ~20s prompt window on top; constrained self-hosted
+  // hardware needs well over 30s, so keep generous headroom to avoid
+  // flaking at an arbitrary mid-test step.
+  timeout: 120_000,
   use: {
     baseURL,
     headless: true,
