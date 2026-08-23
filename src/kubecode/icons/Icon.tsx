@@ -13,7 +13,7 @@ import type { IconRole, IconSizeKey } from './index'
  * not valid sources.
  */
 export type IconSource = ComponentType<
-  SVGAttributes<SVGSVGElement> & { size?: number | string }
+  SVGAttributes<SVGSVGElement> & { size?: number | string; children?: never }
 >
 
 export interface IconProps {

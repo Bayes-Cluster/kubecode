@@ -156,7 +156,7 @@ describe('AgentSessionWorkspace', () => {
       team: { id: 'team-1', status: 'active', title: 'Research team' },
       leader_conversation: leader,
       conversations: [leader],
-      members: [{ id: 'member-leader', conversation_id: leader.id, role: 'leader' }],
+      members: [{ id: 'member-leader', conversation_id: leader.id, role: 'leader', status: 'working' }],
       tasks: [],
     } as unknown as TeamSnapshot
 
@@ -194,12 +194,12 @@ describe('AgentSessionWorkspace', () => {
       deleteConversation,
     } as unknown as KubecodeApi
     const team = {
-      team: { id: 'team-1', title: 'Research team' },
+      team: { id: 'team-1', status: 'active', title: 'Research team' },
       leader_conversation: leader,
       conversations: [leader, teammate],
       members: [
-        { id: 'member-leader', conversation_id: leader.id, role: 'leader' },
-        { id: 'member-reviewer', conversation_id: teammate.id, role: 'teammate' },
+        { id: 'member-leader', conversation_id: leader.id, role: 'leader', status: 'working' },
+        { id: 'member-reviewer', conversation_id: teammate.id, role: 'teammate', status: 'idle' },
       ],
       tasks: [],
     } as unknown as TeamSnapshot

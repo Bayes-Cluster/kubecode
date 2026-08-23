@@ -1,8 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { createTranslator } from '@/lib/i18n'
+
 import { TeamSessionOverview } from './TeamSessionOverview'
 import type { TeamSnapshot } from './api'
+
+const t = createTranslator('en')
 
 const snapshot = {
   team: { id: 'team-1', title: 'Compiler team' },
@@ -25,11 +30,14 @@ describe('TeamSessionOverview', () => {
   it('shows live members without duplicating task progress and switches to a teammate chat', () => {
     const onSelectMember = vi.fn()
     render(
-      <TeamSessionOverview
-        activeConversationId="leader"
-        onSelectMember={onSelectMember}
-        snapshot={snapshot}
-      />,
+      <TooltipProvider>
+        <TeamSessionOverview
+          activeConversationId="leader"
+          onSelectMember={onSelectMember}
+          snapshot={snapshot}
+          t={t}
+        />
+      </TooltipProvider>,
     )
 
     expect(screen.getByText('Compiler team')).toBeInTheDocument()
@@ -38,5 +46,24 @@ describe('TeamSessionOverview', () => {
     expect(screen.queryByText('Review parser')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reviewer' }))
     expect(onSelectMember).toHaveBeenCalledWith('reviewer')
+  })
+
+  it('labels each member status icon next to the status dot', () => {
+    render(
+      <TooltipProvider>
+        <TeamSessionOverview
+          activeConversationId="leader"
+          onSelectMember={() => undefined}
+          snapshot={snapshot}
+          t={t}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByRole('img', { name: 'Working' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Idle' })).toBeInTheDocument()
+    expect(
+      document.querySelector('.kubecode-team-member-status[data-status="working"]'),
+    ).not.toBeNull()
   })
 })

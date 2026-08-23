@@ -16,6 +16,8 @@ import { Textarea } from '@/components/ui/textarea'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
+import { Icon } from '../icons'
+import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
 import { SystemMessageNotice } from '../SystemMessageNotice'
 
 export function TeamStatusView({
@@ -79,6 +81,11 @@ export function TeamStatusView({
         </div>
         <div className="kubecode-team-settings">
           <span className="kubecode-team-status" data-status={snapshot.team.status}>
+            <Icon
+              role="status"
+              size="secondary"
+              source={TEAM_STATUS_ICONS[snapshot.team.status].Icon}
+            />
             {teamStatusLabel(snapshot.team.status, t)}
           </span>
           <span className="kubecode-team-mode-badge" data-mode={snapshot.team.mode}>

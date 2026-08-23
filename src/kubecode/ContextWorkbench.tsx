@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   ArrowClockwise,
   CaretDown,
-  Check,
   File,
   FileCode,
   Folder,
@@ -32,6 +31,8 @@ import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { CodeEditor } from './CodeEditor'
+import { Icon } from './icons'
+import { PLAN_STATUS_ICONS } from './icons/statusIcons'
 import type { SessionPlanEntry } from './AgentSessionWorkspace'
 import type { WorkspaceConnectionState } from './useWorkspaceEventStream'
 import { PathPicker, type PathPickerRow } from './PathPicker'
@@ -492,7 +493,7 @@ export function ContextWorkbench({
                     key={`${index}-${entry.content}`}
                   >
                     <span className="kubecode-session-plan-state" aria-hidden="true">
-                      {entry.status === 'completed' && <Check weight="bold" />}
+                      <Icon role="status" size="secondary" source={PLAN_STATUS_ICONS[entry.status].Icon} />
                     </span>
                     <span>{entry.content}</span>
                   </li>

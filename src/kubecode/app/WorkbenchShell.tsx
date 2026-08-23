@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, IconContext } from '@phosphor-icons/react'
+import { IconContext } from '@phosphor-icons/react'
+import { RiNotification3Fill } from '@remixicon/react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -15,6 +16,7 @@ import {
   type RankedCommandPaletteItem,
 } from '../commandPalette'
 import { ContextWorkbench } from '../ContextWorkbench'
+import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
 import { KubecodeApi, type AgentRun, type Conversation, type Project, type TeamSnapshot, type TerminalInfo } from '../api'
@@ -528,7 +530,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         />
         {notificationOnboardingOpen && (
           <aside className="kubecode-notification-onboarding" role="status">
-            <Bell weight="fill" />
+            <Icon role="identity" source={RiNotification3Fill} />
             <div>
               <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
               <span>{t('kubecode.notificationOnboardingDescription')}</span>

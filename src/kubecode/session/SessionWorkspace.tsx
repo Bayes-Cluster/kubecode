@@ -603,6 +603,7 @@ export function AgentSessionWorkspace({
               activeConversationId={conversation.id}
               onSelectMember={onSelectTeamMember ?? (() => undefined)}
               snapshot={team}
+              t={t}
             />
           )}
           {teamView === 'team' && (
