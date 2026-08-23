@@ -2000,6 +2000,13 @@
 }
 .kubecode-emoji-identity > svg { height: 20px; width: 20px; }
 
+/* Vendored Material file icons (ADR 0209): theme swap without a React
+   context; :root default matches the light app theme. */
+.kubecode-material-icon { flex: 0 0 auto; }
+.kubecode-material-icon [data-variant='light'] { display: none; }
+[data-theme='light'] .kubecode-material-icon [data-variant='dark'] { display: none; }
+[data-theme='light'] .kubecode-material-icon [data-variant='light'] { display: inline; }
+
 .kubecode-context-editor { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
 .kubecode-dirty-dot {
   background: var(--accent-orange);
