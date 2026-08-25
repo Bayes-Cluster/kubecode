@@ -1,14 +1,13 @@
-# ADR 0210: Agent Interaction Model (queue, optimistic send, typed stops, boundary fork)
+---
+type: ADR
+id: "0210"
+title: "Agent interaction model (queue, optimistic send, typed stops, boundary fork)"
+status: accepted
+date: 2026-08-25
+supersedes: "0174 (revise/branch fork mechanisms only)"
+---
 
-## Status
-
-Accepted
-
-Shapes the contracts implemented by the #87 epic. Extends ADR 0164 (session
-actors and workspace events), ADR 0200 (single-owner SQLite), ADR 0203
-(batched agent runtime events), and ADR 0204 (bounded Tokio ACP session
-actors); supersedes ADR 0174's revise/branch fork mechanisms with one
-completed-turn boundary primitive.
+## Context
 
 ## Context
 
@@ -26,7 +25,9 @@ arms, terminal transcripts die with the process, the session-event table grows
 per notification, and streaming markdown re-parses the whole document per
 delta.
 
-Two upstream codebases were studied in 2026-08:
+Two upstream codebases were studied in 2026-08; this ADR extends ADR 0164,
+ADR 0200, ADR 0203, and ADR 0204, and supersedes ADR 0174's revise/branch
+fork mechanisms with one completed-turn boundary primitive:
 
 - **deepseek-ai/deepseek-harness** contributes the interaction *contracts*:
   a non-blocking inbox (follow-up / steer / inject), cooperative typed
@@ -102,8 +103,16 @@ so stop leaves no orphaned processes.
 
 Every run termination persists and emits a typed cause, drawn from
 `end_turn | cancelled | error | max_tokens | max_turn_requests | refusal | interrupted`.
-Mapped from ACP `stopReason` where present, from local state otherwise
-(cancel requested, actor/process death, timeout). Terminal events are the
+Mapped from ACP `stopReason` where present; local-state mapping is fixed:
+
+| cause | source |
+| --- | --- |
+| `end_turn`, `max_tokens`, `max_turn_requests`, `refusal` | ACP `stopReason` verbatim |
+| `cancelled` | a cancel request the runtime observes completing cooperatively |
+| `interrupted` | process/actor death or eviction mid-run without a cancel request |
+| `error` | runtime, protocol, or store failures (including cancel-time failures) |
+
+Terminal events are the
 convergence signal: the web client transitions run/conversation state from
 the terminal event alone, without refetching.
 
@@ -131,12 +140,18 @@ terminal run event. Semantics:
 session id and rebuilds context from the prefix (existing `context_prefix`
 mechanism) — the fallback, not the default.
 - The original conversation is immutable after the cut (ADR 0174's branch
-  semantics preserved); the fork records its parent for navigation.
+  semantics preserved); the fork records its parent for navigation. There is
+  no rewind-in-place: every boundary operation produces a new conversation;
+  "rewinding and continuing" is modeled as fork-plus-compose on the new
+  conversation.
 
 ### 8. Agent adapter seam
 
 Per-agent behavior lives in a registry of adapters, never in scattered
-`match agent_id` arms. An adapter provides:
+`match agent_id` arms. The registry is keyed by `AgentId` and holds one
+adapter per supported agent; it is a process-level singleton consulted by
+session actors, and an unknown id resolves to a pass-through default adapter
+(no rewrite, no drop, no ext translation). An adapter provides:
 
 - **Notification preprocessing**: `1:1` rewrite, `drop`, or `1:N` expansion of
   incoming ACP `SessionUpdate`s before journal enqueue.
@@ -161,7 +176,10 @@ journal.
   logged by the journal catch-all — never silently dropped.
 - **Usage**: `PromptResponse.usage` (and per-update deltas where agents
   provide them) flows into session-state frames with a context-window
-  indicator; it is never persisted into transcript events.
+  indicator; it is never persisted into transcript events. The ACP crate
+  gates this field behind its `unstable_end_turn_token_usage` cargo feature;
+  enabling that feature on `server/Cargo.toml` is part of this ADR's
+  dependency surface (no new crate).
 - **Always-allow memory**: `agent_permission_rules` and
   `AgentStore::allow_always`/`is_allowed` become the runtime's permission
   authority. Matchers are keyed by (project, agent, tool **kind**) — kind
@@ -191,6 +209,12 @@ cursor replay. It performs id-dedupe (events are applied at most once by id)
 and stuck-tool flush (on a terminal event, any tool calls still in a
 non-terminal state are finalized). Application is frame-budgeted: a batch of
 replayed events applies within a bounded number of render frames.
+
+### 13. Streaming markdown
+
+Streaming markdown renders block-wise: incoming text deltas extend a tail
+block and only the tail block re-renders per delta, so per-delta render cost
+is bounded by the block, not the document.
 
 ## Consequences
 
