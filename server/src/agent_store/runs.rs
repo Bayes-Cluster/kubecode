@@ -28,7 +28,32 @@ impl AgentStore {
         message: &str,
         permission_mode: PermissionMode,
     ) -> Result<AgentRun, StoreError> {
-        self.start_run_with_visibility(conversation_id, project_id, message, permission_mode, false)
+        self.start_run_with_visibility(
+            conversation_id,
+            project_id,
+            message,
+            permission_mode,
+            false,
+            None,
+        )
+    }
+
+    pub fn start_run_with_client_message_id(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        message: &str,
+        permission_mode: PermissionMode,
+        client_message_id: Option<&str>,
+    ) -> Result<AgentRun, StoreError> {
+        self.start_run_with_visibility(
+            conversation_id,
+            project_id,
+            message,
+            permission_mode,
+            false,
+            client_message_id,
+        )
     }
 
     pub fn start_internal_run(
@@ -38,7 +63,14 @@ impl AgentStore {
         message: &str,
         permission_mode: PermissionMode,
     ) -> Result<AgentRun, StoreError> {
-        self.start_run_with_visibility(conversation_id, project_id, message, permission_mode, true)
+        self.start_run_with_visibility(
+            conversation_id,
+            project_id,
+            message,
+            permission_mode,
+            true,
+            None,
+        )
     }
 
     fn start_run_with_visibility(
@@ -48,6 +80,7 @@ impl AgentStore {
         message: &str,
         permission_mode: PermissionMode,
         internal: bool,
+        client_message_id: Option<&str>,
     ) -> Result<AgentRun, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -84,11 +117,13 @@ impl AgentStore {
             permission_mode,
             error: None,
             internal,
+            client_message_id: client_message_id.map(str::to_owned),
         };
         transaction.execute(
             "INSERT INTO agent_runs
-             (id, conversation_id, project_id, message, status, permission_mode, internal)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             (id, conversation_id, project_id, message, status, permission_mode, internal,
+              client_message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 run.id,
                 run.conversation_id,
@@ -97,6 +132,7 @@ impl AgentStore {
                 run.status.as_str(),
                 run.permission_mode.as_str(),
                 run.internal,
+                run.client_message_id,
             ],
         )?;
         transaction.execute(
@@ -120,7 +156,7 @@ impl AgentStore {
         self.append_session_event(
             conversation_id,
             "user_message",
-            &json!({"run_id":run.id, "text":message, "internal":internal}),
+            &user_message_payload(&run, message, internal),
         )?;
         Ok(run)
     }
@@ -130,7 +166,7 @@ impl AgentStore {
             .lock()
             .expect("agent database mutex poisoned")
             .query_row(
-                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal
+                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
                  FROM agent_runs WHERE id = ?1",
                 [run_id],
                 run_from_row,
@@ -185,7 +221,7 @@ impl AgentStore {
         self.get_conversation(conversation_id)?;
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
              FROM agent_runs WHERE conversation_id = ?1 ORDER BY rowid",
         )?;
         let rows = statement.query_map([conversation_id], run_from_row)?;
@@ -218,7 +254,7 @@ impl AgentStore {
             StoreError::InvalidStoredValue("run page size exceeds SQLite range".into())
         })?;
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
              FROM agent_runs
              WHERE conversation_id = ?1 AND rowid < ?2
              ORDER BY rowid DESC LIMIT ?3",
@@ -240,7 +276,7 @@ impl AgentStore {
     pub fn list_project_runs(&self, project_id: &str) -> Result<Vec<AgentRun>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
              FROM agent_runs WHERE project_id = ?1 ORDER BY rowid",
         )?;
         let rows = statement.query_map([project_id], run_from_row)?;
@@ -504,6 +540,7 @@ pub(super) fn insert_run_transaction(
     message: &str,
     permission_mode: PermissionMode,
     internal: bool,
+    client_message_id: Option<&str>,
 ) -> Result<AgentRun, StoreError> {
     let run = AgentRun {
         id: Uuid::new_v4().to_string(),
@@ -514,11 +551,13 @@ pub(super) fn insert_run_transaction(
         permission_mode,
         error: None,
         internal,
+        client_message_id: client_message_id.map(str::to_owned),
     };
     transaction.execute(
         "INSERT INTO agent_runs
-         (id, conversation_id, project_id, message, status, permission_mode, internal)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         (id, conversation_id, project_id, message, status, permission_mode, internal,
+          client_message_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             run.id,
             run.conversation_id,
@@ -527,6 +566,7 @@ pub(super) fn insert_run_transaction(
             run.status.as_str(),
             run.permission_mode.as_str(),
             run.internal,
+            run.client_message_id,
         ],
     )?;
     transaction.execute(
@@ -557,5 +597,14 @@ fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
             .map_err(to_sql_conversion_error)?,
         error: row.get(6)?,
         internal: row.get(7)?,
+        client_message_id: row.get(8)?,
     })
+}
+
+pub(super) fn user_message_payload(run: &AgentRun, text: &str, internal: bool) -> Value {
+    let mut payload = json!({"run_id":run.id, "text":text, "internal":internal});
+    if let Some(client_message_id) = &run.client_message_id {
+        payload["client_message_id"] = json!(client_message_id);
+    }
+    payload
 }

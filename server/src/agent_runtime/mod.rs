@@ -619,6 +619,7 @@ impl AgentRuntime {
                 },
                 team.title,
             ),
+            client_message_id: None,
         }) {
             Ok(run) => run,
             Err(RuntimeError::Store(StoreError::ActiveRun(_))) => return Ok(None),

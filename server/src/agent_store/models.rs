@@ -135,6 +135,8 @@ pub struct AgentRun {
     pub permission_mode: PermissionMode,
     pub error: Option<String>,
     pub internal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_message_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -192,6 +192,7 @@ impl AgentStore {
             "read_only",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        ensure_column(&connection, "agent_runs", "client_message_id", "TEXT")?;
         connection.execute(
             "UPDATE conversations SET manual_title = title
              WHERE manual_title IS NULL AND agent_title IS NULL

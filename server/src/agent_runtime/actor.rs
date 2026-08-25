@@ -1207,6 +1207,7 @@ mod tests {
                 permission_mode: PermissionMode::Safe,
                 error: None,
                 internal: true,
+                client_message_id: None,
             },
             message: "focus on tests".into(),
             provider_input: Some(Box::new(ComposerInvocation::ProviderStructuredInput {
