@@ -1,5 +1,12 @@
 # Abstractions
 
+Session conversation interaction — the prompt queue, client message ids and
+optimistic send reconciliation, typed terminal causes, whole-snapshot frames,
+the completed-turn boundary fork, the per-agent ACP adapter seam, subagent
+visibility, permission memory, persistence hygiene, terminal durability, and
+the web event reducer — follows the contracts in
+[ADR 0210](adr/0210-agent-interaction-model.md).
+
 ## Runtime client
 
 A Runtime client observes and controls the same Project, Session, Team, file,
