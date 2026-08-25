@@ -65,7 +65,10 @@ The server source tree follows the service boundaries. `server/src/api/`
 contains Axum route composition and request handlers. `server/src/agent_runtime/`
 contains the actor pool, ACP adapter launch, dispatch, event journal, and
 interactive request handling; `AgentRuntime` is the sole owner of ACP actors and
-their provider subprocess lifecycle. `server/src/agent_store/` and
+their provider subprocess lifecycle. Conversation interaction contracts —
+prompt queue, optimistic send with client message ids, typed terminal causes,
+boundary fork, and the per-agent adapter seam — are defined in
+[ADR 0210](adr/0210-agent-interaction-model.md). `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing
