@@ -155,6 +155,7 @@ done"#,
             conversation_id: conversation.id.clone(),
             project_id: project.id.clone(),
             message: "Ordinary prompt still works".into(),
+            client_message_id: None,
         })
         .expect("start ordinary prompt");
     let completed = tokio::time::timeout(Duration::from_secs(5), async {
@@ -307,6 +308,7 @@ done"#,
             conversation_id: active.id.clone(),
             project_id: project.id.clone(),
             message: "Keep running".into(),
+            client_message_id: None,
         })
         .expect("start active run");
 
@@ -892,6 +894,7 @@ done"#,
             conversation_id: conversation.id.clone(),
             project_id: project.id,
             message: "Keep working".into(),
+            client_message_id: None,
         })
         .expect("start prompt");
 
@@ -1012,6 +1015,7 @@ done"#,
             conversation_id: conversation.id.clone(),
             project_id: project.id.clone(),
             message: "Do the work".into(),
+            client_message_id: None,
         })
         .expect("start run");
 
@@ -1057,6 +1061,7 @@ done"#,
             conversation_id: conversation.id,
             project_id: project.id,
             message: "Continue in the same ACP session".into(),
+            client_message_id: None,
         })
         .expect("start second run");
     let second_completed = tokio::time::timeout(Duration::from_secs(10), async {
@@ -1125,6 +1130,7 @@ done"#,
             conversation_id: conversation.id,
             project_id: project.id,
             message: "Request interactive input".into(),
+            client_message_id: None,
         })
         .expect("start run");
 
@@ -1261,6 +1267,7 @@ done"#,
             conversation_id: conversation.id,
             project_id: project.id,
             message: "Fail after output".into(),
+            client_message_id: None,
         })
         .expect("start run");
 

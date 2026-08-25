@@ -20,6 +20,8 @@ use crate::composer_catalog::{
 #[serde(deny_unknown_fields)]
 struct LegacyStartRunRequest {
     message: String,
+    #[serde(default)]
+    client_message_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +31,8 @@ struct StructuredStartRunRequest {
     item_id: Option<String>,
     catalog_revision: u64,
     segments: Vec<ComposerDraftSegment>,
+    #[serde(default)]
+    client_message_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,13 +61,16 @@ pub(super) async fn start_agent_run(
             if request.message.trim().is_empty() {
                 return Err(ApiError::InvalidRequest("message must not be empty".into()));
             }
+            let client_message_id = validate_client_message_id(request.client_message_id)?;
             state.agent_runtime.start(StartAgentRun {
                 conversation_id,
                 project_id,
                 message: request.message,
+                client_message_id,
             })?
         }
         StartRunRequest::Structured(request) => {
+            let client_message_id = validate_client_message_id(request.client_message_id)?;
             state
                 .agent_runtime
                 .start_structured_composer(StartStructuredComposerRun {
@@ -72,6 +79,7 @@ pub(super) async fn start_agent_run(
                     item_id: request.item_id,
                     catalog_revision: request.catalog_revision,
                     segments: request.segments,
+                    client_message_id,
                 })?
         }
     };
@@ -128,6 +136,7 @@ pub(super) async fn dispatch_acp_command(
                 conversation_id,
                 project_id,
                 message,
+                client_message_id: None,
             })?
         }
         DispatchAcpCommandSelector::Typed(request) => {
@@ -330,6 +339,17 @@ pub(super) async fn resolve_elicitation(
         return Err(ApiError::ElicitationNotFound(request_id));
     }
     Ok(StatusCode::ACCEPTED)
+}
+
+fn validate_client_message_id(
+    client_message_id: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    let Some(client_message_id) = client_message_id else {
+        return Ok(None);
+    };
+    uuid::Uuid::parse_str(&client_message_id)
+        .map(|parsed| Some(parsed.to_string()))
+        .map_err(|_| ApiError::InvalidRequest("client_message_id must be a uuid".into()))
 }
 
 fn latest_available_commands(

@@ -2519,6 +2519,7 @@ done"#,
             conversation_id: active.id.clone(),
             project_id: project.id.clone(),
             message: "Wait for release".into(),
+            client_message_id: None,
         })
         .expect("active run");
     wait_for_runtime_counts(&app, AgentRuntimeSessionCounts { active: 1, idle: 0 }).await;
@@ -2718,6 +2719,172 @@ done"#,
     let (status, error) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "run_not_active");
+}
+
+#[tokio::test]
+async fn run_start_round_trips_client_message_ids() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database = state_dir.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-client-id\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/run-client-id")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let client_message_id = "7f9c24e5-71b1-4a3e-9f0d-6b2f13a4c8de";
+
+    let (status, run) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"With an id", "client_message_id":client_message_id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(run["client_message_id"], json!(client_message_id));
+    let run_id = run["id"].as_str().expect("run id").to_owned();
+
+    let (status, fetched) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/runs/{run_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fetched["client_message_id"], json!(client_message_id));
+
+    let (status, history) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/history"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_message = history["session_events"]
+        .as_array()
+        .expect("history session events")
+        .iter()
+        .find(|event| event["kind"] == "user_message")
+        .expect("user message event")
+        .clone();
+    assert_eq!(
+        user_message["payload"]["client_message_id"],
+        json!(client_message_id)
+    );
+    assert_eq!(user_message["payload"]["run_id"], json!(run_id));
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"Malformed", "client_message_id":"not-a-uuid"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_request");
+
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"Malformed", "catalog_revision":0, "segments":[{"type":"text","text":"hi"}], "client_message_id":"not-a-uuid"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_request");
+
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{run_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] != "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+
+    let (status, run_without_id) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"Without an id"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(run_without_id["client_message_id"], Value::Null);
+    let history_without_id = {
+        let (_, history) = json_request(
+            &app,
+            Method::GET,
+            &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/history"),
+            Value::Null,
+        )
+        .await;
+        history
+    };
+    let second_message = history_without_id["session_events"]
+        .as_array()
+        .expect("history session events")
+        .iter()
+        .rfind(|event| event["kind"] == "user_message")
+        .expect("second user message")
+        .clone();
+    assert!(second_message["payload"].get("client_message_id").is_none());
 }
 
 async fn session_entries(app: &Router, conversation_id: &str, path: &str) -> (StatusCode, Value) {

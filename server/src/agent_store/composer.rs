@@ -24,7 +24,7 @@ use super::events::{
     deserialize_stored_session_event, latest_workspace_event_id, stored_session_event_row,
 };
 use super::models::{AgentId, AgentRun, ComposerRunDispatch, PermissionMode, StoreError};
-use super::runs::insert_run_transaction;
+use super::runs::{insert_run_transaction, user_message_payload};
 
 impl AgentStore {
     pub fn start_typed_composer_command(
@@ -111,6 +111,7 @@ impl AgentStore {
             &dispatch.display_message,
             permission_mode,
             true,
+            None,
         )?;
         let workspace_cursor = latest_workspace_event_id(&transaction)?;
         transaction.commit()?;
@@ -119,7 +120,7 @@ impl AgentStore {
         self.append_session_event(
             conversation_id,
             "user_message",
-            &json!({"run_id":run.id, "text":dispatch.display_message, "internal":true}),
+            &user_message_payload(&run, &dispatch.display_message, true),
         )?;
         Ok(ComposerRunDispatch {
             run,
@@ -508,6 +509,7 @@ impl AgentStore {
             segments,
             preflight,
             permission_mode,
+            None,
         )
         .map(|dispatch| dispatch.run)
     }
@@ -522,6 +524,7 @@ impl AgentStore {
         segments: &[ComposerDraftSegment],
         preflight: &[ComposerPreflightContext],
         permission_mode: PermissionMode,
+        client_message_id: Option<&str>,
     ) -> Result<ComposerRunDispatch, StoreError> {
         validate_structured_composer_segments(segments)?;
         let preflight = preflight
@@ -710,12 +713,13 @@ impl AgentStore {
             &dispatch.display_message,
             permission_mode,
             internal,
+            client_message_id,
         )?;
         append_session_event_transaction(
             &transaction,
             conversation_id,
             "user_message",
-            &json!({"run_id":run.id, "text":dispatch.display_message, "internal":internal}),
+            &user_message_payload(&run, &dispatch.display_message, internal),
         )?;
         let workspace_cursor = latest_workspace_event_id(&transaction)?;
         transaction.commit()?;

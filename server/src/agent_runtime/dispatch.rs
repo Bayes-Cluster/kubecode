@@ -15,6 +15,7 @@ pub struct StartAgentRun {
     pub conversation_id: String,
     pub project_id: String,
     pub message: String,
+    pub client_message_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -33,6 +34,7 @@ pub struct StartStructuredComposerRun {
     pub item_id: Option<String>,
     pub catalog_revision: u64,
     pub segments: Vec<ComposerDraftSegment>,
+    pub client_message_id: Option<String>,
 }
 
 impl AgentRuntime {
@@ -253,6 +255,7 @@ impl AgentRuntime {
             &request.segments,
             &preflight,
             PermissionMode::Safe,
+            request.client_message_id.as_deref(),
         )?;
         let run = dispatch.run;
         if let Ok(Some(tree)) = self
@@ -324,11 +327,12 @@ impl AgentRuntime {
                 PermissionMode::Safe,
             )?
         } else {
-            self.store.start_run(
+            self.store.start_run_with_client_message_id(
                 &request.conversation_id,
                 &request.project_id,
                 &request.message,
                 PermissionMode::Safe,
+                request.client_message_id.as_deref(),
             )?
         };
         if let Ok(Some(tree)) = self
@@ -439,6 +443,7 @@ mod tests {
                         catalog_revision: registration.catalog.revision,
                         context_kind: crate::composer_catalog::ComposerContextKind::File,
                     }],
+                    client_message_id: None,
                 },
                 move || {
                     update_store
@@ -561,6 +566,7 @@ mod tests {
                     catalog_revision: registration.catalog.revision,
                     context_kind: crate::composer_catalog::ComposerContextKind::File,
                 }],
+                client_message_id: None,
             })
             .expect("shared Agent Session context should resolve in its worktree");
 
