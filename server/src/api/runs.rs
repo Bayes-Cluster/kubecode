@@ -348,7 +348,7 @@ fn validate_client_message_id(
         return Ok(None);
     };
     uuid::Uuid::parse_str(&client_message_id)
-        .map(|_| Some(client_message_id))
+        .map(|parsed| Some(parsed.to_string()))
         .map_err(|_| ApiError::InvalidRequest("client_message_id must be a uuid".into()))
 }
 

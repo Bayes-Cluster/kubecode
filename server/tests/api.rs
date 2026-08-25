@@ -2830,7 +2830,17 @@ done"#,
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error["code"], "invalid_request");
 
-    let _ = tokio::time::timeout(Duration::from_secs(3), async {
+    let (status, error) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"Malformed", "catalog_revision":0, "segments":[{"type":"text","text":"hi"}], "client_message_id":"not-a-uuid"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "invalid_request");
+
+    tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let (_, current) = json_request(
                 &app,
@@ -2871,8 +2881,7 @@ done"#,
         .as_array()
         .expect("history session events")
         .iter()
-        .filter(|event| event["kind"] == "user_message")
-        .last()
+        .rfind(|event| event["kind"] == "user_message")
         .expect("second user message")
         .clone();
     assert!(second_message["payload"].get("client_message_id").is_none());
