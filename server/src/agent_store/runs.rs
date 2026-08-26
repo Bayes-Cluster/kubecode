@@ -95,6 +95,12 @@ impl AgentStore {
         if conversation_project != project_id {
             return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
         }
+        if let Some(run) = existing_run_by_client_message_id(&transaction, client_message_id)? {
+            // Exactly-once send: a retried request with the same client
+            // message id returns the run it already created instead of
+            // starting a second turn.
+            return Ok(run);
+        }
         let active = transaction
             .query_row(
                 "SELECT id FROM agent_runs
@@ -159,6 +165,23 @@ impl AgentStore {
             &user_message_payload(&run, message, internal),
         )?;
         Ok(run)
+    }
+
+    pub fn run_by_client_message_id(
+        &self,
+        client_message_id: &str,
+    ) -> Result<Option<AgentRun>, StoreError> {
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .query_row(
+                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+                 FROM agent_runs WHERE client_message_id = ?1 LIMIT 1",
+                [client_message_id],
+                run_from_row,
+            )
+            .optional()
+            .map_err(StoreError::from)
     }
 
     pub fn get_run(&self, run_id: &str) -> Result<AgentRun, StoreError> {
@@ -531,6 +554,24 @@ pub(super) fn append_event_transaction(
         },
         workspace_cursor,
     ))
+}
+
+pub(super) fn existing_run_by_client_message_id(
+    transaction: &Transaction<'_>,
+    client_message_id: Option<&str>,
+) -> Result<Option<AgentRun>, StoreError> {
+    let Some(client_message_id) = client_message_id else {
+        return Ok(None);
+    };
+    let run = transaction
+        .query_row(
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+             FROM agent_runs WHERE client_message_id = ?1 LIMIT 1",
+            [client_message_id],
+            run_from_row,
+        )
+        .optional()?;
+    Ok(run)
 }
 
 pub(super) fn insert_run_transaction(

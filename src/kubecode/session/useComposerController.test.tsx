@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import type { AgentRun, KubecodeApi } from '../api'
+import { ApiError, type AgentRun, type KubecodeApi } from '../api'
 import { useComposerController } from './useComposerController'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { attachRunMessage } from './sessionModel'
@@ -14,10 +14,16 @@ type Harness = {
   messages: AiAgentMessage[]
 }
 
-function makeApi(): KubecodeApi & { startRun: ReturnType<typeof vi.fn> } {
+type ApiMock = KubecodeApi & {
+  listRuns: ReturnType<typeof vi.fn>
+  startRun: ReturnType<typeof vi.fn>
+}
+
+function makeApi(): ApiMock {
   return {
+    listRuns: vi.fn().mockResolvedValue([]),
     startRun: vi.fn(),
-  } as unknown as KubecodeApi & { startRun: ReturnType<typeof vi.fn> }
+  } as unknown as ApiMock
 }
 
 function renderController(api: KubecodeApi) {
@@ -27,6 +33,13 @@ function renderController(api: KubecodeApi) {
   }
   const removeOptimisticMessage = (clientMessageId: string) => {
     harness.messages = harness.messages.filter((message) => message.id !== clientMessageId)
+  }
+  const failOptimisticMessage = (clientMessageId: string) => {
+    harness.messages = harness.messages.map((message) => (
+      message.id === clientMessageId && message.isStreaming
+        ? { ...message, isStreaming: false }
+        : message
+    ))
   }
   const hook = renderHook(() => useComposerController({
     active: false,
@@ -44,6 +57,7 @@ function renderController(api: KubecodeApi) {
     } as never,
     conversationId: 'conversation-1',
     directTeammateChatDisabled: false,
+    failOptimisticMessage,
     hardReadOnly: false,
     messages: [] as never,
     onApplyComposerCatalog: vi.fn(),
@@ -105,9 +119,61 @@ describe('useComposerController optimistic send', () => {
     expect(harness.messages[0]?.id).toBe('run-1')
   })
 
+  it('keeps the bubble as a failed turn when the server rejects the request', async () => {
+    const api = makeApi()
+    api.startRun.mockRejectedValue(new ApiError('invalid_request', 'Bad draft', 400))
+    const { result, harness } = renderController(api)
+
+    await act(async () => {
+      await result.current.updatePrompt('Rejected')
+    })
+    await act(async () => {
+      await result.current.send('Rejected')
+    })
+
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]?.isStreaming).toBe(false)
+    expect(result.current.prompt).toBe('')
+    expect(api.listRuns).not.toHaveBeenCalled()
+  })
+
+  it('reconciles instead of rolling back when the run actually started', async () => {
+    const clientMessageId = '11111111-2222-4333-8444-555555555555'
+    vi.stubGlobal('crypto', {
+      ...globalThis.crypto,
+      randomUUID: vi.fn(() => clientMessageId),
+    })
+    const api = makeApi()
+    api.startRun.mockRejectedValue(new TypeError('network blip'))
+    api.listRuns.mockResolvedValue([{
+      id: 'run-remote',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      message: 'Ambiguous',
+      status: 'running',
+      permission_mode: 'safe',
+      error: null,
+      client_message_id: clientMessageId,
+    }])
+    const { result, harness } = renderController(api)
+
+    await act(async () => {
+      await result.current.updatePrompt('Ambiguous')
+    })
+    await act(async () => {
+      await result.current.send('Ambiguous')
+    })
+
+    expect(api.listRuns).toHaveBeenCalledWith('conversation-1')
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]?.id).toBe('run-remote')
+    expect(result.current.prompt).toBe('')
+    vi.unstubAllGlobals()
+  })
+
   it('rolls the bubble back and restores the draft on transport failure', async () => {
     const api = makeApi()
-    api.startRun.mockRejectedValue(new Error('network down'))
+    api.startRun.mockRejectedValue(new TypeError('network down'))
     const { result, harness } = renderController(api)
 
     await act(async () => {

@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 
 import {
   attachRunMessage,
+  failOptimisticMessage,
   messageFromRun,
+  newClientMessageId,
   optimisticUserMessage,
   rollbackOptimisticMessage,
 } from './sessionModel'
@@ -69,5 +71,32 @@ describe('rollbackOptimisticMessage', () => {
     const next = rollbackOptimisticMessage([earlier, optimistic], 'client-1')
     expect(next).toHaveLength(1)
     expect(next[0]?.id).toBe('run-0')
+  })
+})
+
+describe('failOptimisticMessage', () => {
+  it('stops streaming the matching bubble and leaves other messages intact', () => {
+    const earlier = messageFromRun(run({ id: 'run-0' }))
+    const optimistic = optimisticUserMessage('client-1', 'Hello')
+    const next = failOptimisticMessage([earlier, optimistic], 'client-1')
+    expect(next).toHaveLength(2)
+    expect(next[1]?.isStreaming).toBe(false)
+    expect(next[0]?.id).toBe('run-0')
+  })
+})
+
+describe('newClientMessageId', () => {
+  it('produces server-acceptable uuids without crypto.randomUUID', () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    expect(newClientMessageId()).toMatch(uuid)
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => {
+      bytes.fill(0xab)
+      return bytes
+    } })
+    try {
+      expect(newClientMessageId()).toMatch(uuid)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

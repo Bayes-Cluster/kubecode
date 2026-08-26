@@ -227,6 +227,7 @@ export function AgentSessionWorkspace({
     conversation,
     conversationId,
     directTeammateChatDisabled,
+    failOptimisticMessage: transcript.failOptimisticMessage,
     hardReadOnly,
     messages,
     onApplyComposerCatalog: sessionState.applyComposerCatalog,

@@ -24,7 +24,9 @@ use super::events::{
     deserialize_stored_session_event, latest_workspace_event_id, stored_session_event_row,
 };
 use super::models::{AgentId, AgentRun, ComposerRunDispatch, PermissionMode, StoreError};
-use super::runs::{insert_run_transaction, user_message_payload};
+use super::runs::{
+    existing_run_by_client_message_id, insert_run_transaction, user_message_payload,
+};
 
 impl AgentStore {
     pub fn start_typed_composer_command(
@@ -694,6 +696,15 @@ impl AgentStore {
                 false,
             )
         };
+        if let Some(run) = existing_run_by_client_message_id(&transaction, client_message_id)? {
+            // Exactly-once send: a retried structured request with the same
+            // client message id returns the run it already created.
+            return Ok(ComposerRunDispatch {
+                run,
+                prompt_message: dispatch.prompt_message,
+                provider_input: dispatch.provider_input,
+            });
+        }
         let active = transaction
             .query_row(
                 "SELECT id FROM agent_runs

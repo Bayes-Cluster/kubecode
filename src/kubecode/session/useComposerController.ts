@@ -13,6 +13,7 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
+import { ApiError } from '../api'
 import type { ComposerCapabilityPickerLabels } from '../ComposerCapabilityPicker'
 import type {
   SessionTurnContextRequest,
@@ -60,6 +61,7 @@ import {
   capabilityDisabledReason,
   gitDiffDisabledReason,
   MAX_SESSION_TURN_PICKER_SOURCES,
+  newClientMessageId,
   optimisticUserMessage,
   sessionTurnPreview,
   sideQuestionText,
@@ -139,6 +141,7 @@ type UseComposerControllerOptions = {
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
+  failOptimisticMessage: (clientMessageId: string) => void
   hardReadOnly: boolean
   messages: AiAgentMessage[]
   onApplyComposerCatalog: (catalog: import('../api').ComposerCatalogSnapshot) => void
@@ -163,6 +166,7 @@ export function useComposerController({
   conversation,
   conversationId,
   directTeammateChatDisabled,
+  failOptimisticMessage,
   hardReadOnly,
   messages,
   onApplyComposerCatalog,
@@ -187,9 +191,11 @@ export function useComposerController({
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>())
   const menuContextRequestRef = useRef(0)
   const activeConversationIdRef = useRef(conversationId)
+  const pendingRetryClientIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     activeConversationIdRef.current = conversationId
+    pendingRetryClientIdRef.current = null
   }, [conversationId])
 
   const [previousConversationId, setPreviousConversationId] = useState(conversationId)
@@ -644,7 +650,8 @@ export function useComposerController({
       : []
     if (command && commandItems.length !== 1) return
     const draftSnapshot = composerDraft
-    const clientMessageId = globalThis.crypto?.randomUUID?.() ?? `optimistic-${Date.now()}`
+    const clientMessageId = pendingRetryClientIdRef.current ?? newClientMessageId()
+    pendingRetryClientIdRef.current = null
     appendOptimisticMessage(optimisticUserMessage(
       clientMessageId,
       composerDraftPlainText(composerDraft) || message,
@@ -668,8 +675,31 @@ export function useComposerController({
         agent_id: conversation.agent_id,
       })
     } catch (cause) {
+      if (cause instanceof ApiError) {
+        // The server saw and rejected the request: keep the bubble as a failed
+        // turn (ADR 0210 §1 generation failure) instead of silently undoing it.
+        failOptimisticMessage(clientMessageId)
+        reportError(cause)
+        return
+      }
+      // Ambiguous transport failure: the server may still have started the
+      // run. Probe for the run by client message id before rolling back so a
+      // late-arriving run is never double-executed by a manual resend.
+      try {
+        const runs = await api.listRuns(conversation.id)
+        const started = runs.find((candidate) => candidate.client_message_id === clientMessageId)
+        if (started) {
+          attachRun(started)
+          return
+        }
+      } catch {
+        // The probe itself failed; fall through to the rollback below.
+      }
+      pendingRetryClientIdRef.current = clientMessageId
       removeOptimisticMessage(clientMessageId)
-      updateComposerDraft(draftSnapshot)
+      updateComposerDraft((current) => (
+        composerDraftPlainText(current) ? current : draftSnapshot
+      ))
       reportError(cause)
     }
   }

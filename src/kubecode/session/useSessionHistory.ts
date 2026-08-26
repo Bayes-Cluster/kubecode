@@ -17,6 +17,7 @@ import {
   ACTIVE_RUN_STATUSES,
   applyAgentEvent,
   attachRunMessage,
+  failOptimisticMessage as failOptimisticMessageReducer,
   hydrateConversation,
   initialElicitationAnswers,
   messagesFromHistoryPage,
@@ -31,6 +32,7 @@ export type SessionTranscript = {
   appendOptimisticMessage: (message: AiAgentMessage) => void
   attachRun: (nextRun: AgentRun) => void
   elicitationAnswers: Record<string, ElicitationAnswer>
+  failOptimisticMessage: (clientMessageId: string) => void
   knownRunIdsRef: { current: Set<string> }
   latestWorkspaceEventIdRef: { current: number }
   loadRun: (runId: string) => Promise<AgentRun>
@@ -140,6 +142,10 @@ export function useSessionHistory({
 
   const removeOptimisticMessage = useCallback((clientMessageId: string) => {
     setMessages((current) => rollbackOptimisticMessage(current, clientMessageId))
+  }, [])
+
+  const failOptimisticMessage = useCallback((clientMessageId: string) => {
+    setMessages((current) => failOptimisticMessageReducer(current, clientMessageId))
   }, [])
 
   const loadRun = useCallback((runId: string) => {
@@ -301,6 +307,7 @@ export function useSessionHistory({
       appendOptimisticMessage,
       attachRun,
       elicitationAnswers,
+      failOptimisticMessage,
       knownRunIdsRef,
       latestWorkspaceEventIdRef,
       loadRun,
