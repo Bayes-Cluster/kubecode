@@ -308,26 +308,37 @@ impl AgentStore {
     }
 
     pub fn set_run_status(&self, run_id: &str, status: RunStatus) -> Result<(), StoreError> {
-        let changed = self
-            .database
-            .lock()
-            .expect("agent database mutex poisoned")
-            .execute(
-                "UPDATE agent_runs SET status = ?2 WHERE id = ?1",
-                params![run_id, status.as_str()],
-            )?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let changed = database.execute(
+            // Only non-terminal runs move: a resolved permission must never
+            // resurrect a run that already reached a terminal state.
+            "UPDATE agent_runs SET status = ?2
+             WHERE id = ?1 AND status IN ('running', 'waiting_permission')",
+            params![run_id, status.as_str()],
+        )?;
         if changed == 0 {
+            let exists = database
+                .query_row("SELECT 1 FROM agent_runs WHERE id = ?1", [run_id], |_| {
+                    Ok(())
+                })
+                .optional()?;
+            if exists.is_some() {
+                return Ok(());
+            }
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
         Ok(())
     }
 
+    /// Records a run's terminal transition. Returns `true` when this call
+    /// performed the transition and `false` when the run was already
+    /// terminal (idempotent no-op), so callers can gate exactly-once events.
     pub fn finish_run(
         &self,
         run_id: &str,
         status: RunStatus,
         error: Option<&str>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
@@ -346,7 +357,7 @@ impl AgentStore {
                 })
                 .optional()?;
             if exists.is_some() {
-                return Ok(());
+                return Ok(false);
             }
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
@@ -358,7 +369,7 @@ impl AgentStore {
         )?;
         transaction.commit()?;
         self.workspace_event_bus.publish_committed(workspace_cursor);
-        Ok(())
+        Ok(true)
     }
 
     pub fn append_event(

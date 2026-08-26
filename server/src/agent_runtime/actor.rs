@@ -765,18 +765,20 @@ async fn run_acp_session(
                     AcpRunOutcome::Completed => RunStatus::Completed,
                     AcpRunOutcome::Cancelled => RunStatus::Cancelled,
                 };
-                runtime
+                let transitioned = runtime
                     .store
                     .finish_run(&command.run.id, status, None)
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
                 runtime.capture_after_checkpoint(&command.run.id);
-                let _ = runtime.store.append_session_event(
-                    &conversation_id,
-                    "run_completed",
-                    &json!({"run_id":command.run.id, "status":status}),
-                );
+                if transitioned {
+                    let _ = runtime.store.append_session_event(
+                        &conversation_id,
+                        "run_completed",
+                        &json!({"run_id":command.run.id, "status":status}),
+                    );
+                }
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
                 actor_active.store(false, Ordering::Release);
                 last_activity.store(runtime.next_session_activity(), Ordering::Release);
@@ -1083,11 +1085,12 @@ impl AgentRuntime {
         let _ =
             self.store
                 .append_event(run_id, AgentEventKind::Error, &json!({"message": message}));
-        let _ = self
+        let transitioned = self
             .store
-            .finish_run(run_id, RunStatus::Failed, Some(&message));
+            .finish_run(run_id, RunStatus::Failed, Some(&message))
+            .unwrap_or(false);
         self.capture_after_checkpoint(run_id);
-        if let Some(run) = run {
+        if transitioned && let Some(run) = run {
             let _ = self.store.append_session_event(
                 &run.conversation_id,
                 "run_completed",

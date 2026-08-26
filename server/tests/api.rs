@@ -4511,26 +4511,31 @@ done"#,
     let terminal_status = |terminal_id: String| {
         let app = app.clone();
         async move {
-            loop {
-                let (_, terminals) = json_request(
-                    &app,
-                    Method::GET,
-                    &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
-                    Value::Null,
-                )
-                .await;
-                let terminal = terminals
-                    .as_array()
-                    .expect("terminals")
-                    .iter()
-                    .find(|terminal| terminal["id"] == json!(terminal_id))
-                    .expect("terminal")
-                    .clone();
-                if terminal["status"] != "running" {
-                    return terminal;
+            // Poll with a deadline so a kill regression fails instead of hanging.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let (_, terminals) = json_request(
+                        &app,
+                        Method::GET,
+                        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+                        Value::Null,
+                    )
+                    .await;
+                    let terminal = terminals
+                        .as_array()
+                        .expect("terminals")
+                        .iter()
+                        .find(|terminal| terminal["id"] == json!(terminal_id))
+                        .expect("terminal")
+                        .clone();
+                    if terminal["status"] != "running" {
+                        return terminal;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
                 }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
+            })
+            .await
+            .expect("terminal status poll timed out")
         }
     };
     let killed = terminal_status(scoped_terminal_id.clone()).await;

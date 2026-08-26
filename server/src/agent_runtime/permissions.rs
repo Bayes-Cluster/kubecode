@@ -117,9 +117,15 @@ impl AgentRuntime {
     pub fn cancel(&self, run_id: &str) -> bool {
         // Kill the conversation's agent terminals before the ACP cancel:
         // local kills are synchronous and immediate while the provider's
-        // cancel may lag, so nothing the run spawned outlives the stop.
+        // cancel may lag, so nothing the run spawned outlives the stop. Only
+        // an active run kills — a late or duplicate stop for a finished run
+        // must never take down terminals the user opened afterwards.
         if let Some(terminals) = self.terminals.as_ref()
             && let Ok(run) = self.store.get_run(run_id)
+            && matches!(
+                run.status,
+                RunStatus::Running | RunStatus::WaitingPermission
+            )
         {
             terminals.kill_by_session(&run.conversation_id);
         }
