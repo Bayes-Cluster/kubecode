@@ -333,10 +333,21 @@ impl AgentStore {
         let changed = transaction.execute(
             "UPDATE agent_runs
              SET status = ?2, error = ?3, completed_at = CURRENT_TIMESTAMP
-             WHERE id = ?1",
+             WHERE id = ?1 AND status IN ('running', 'waiting_permission')",
             params![run_id, status.as_str(), error],
         )?;
         if changed == 0 {
+            // Exactly-once terminal transition: a run that is already
+            // terminal (e.g. a double cancel firing) records no second
+            // completion; only a missing run is an error.
+            let exists = transaction
+                .query_row("SELECT 1 FROM agent_runs WHERE id = ?1", [run_id], |_| {
+                    Ok(())
+                })
+                .optional()?;
+            if exists.is_some() {
+                return Ok(());
+            }
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
         let (_, workspace_cursor) = append_event_transaction(

@@ -190,7 +190,10 @@ directly. Agent TUI profiles execute the discovered CLI through that shell in
 interactive login mode so the same user-owned environment configuration is
 available without putting provider-specific launch behavior in a client.
 Browser refresh can restore serialized xterm output and replay newer bytes from
-the server cursor.
+the server cursor. Stopping a run kills every terminal scoped to its Session
+(`TerminalManager::kill_by_session`) before the ACP cancel fires, so local
+child processes die immediately while provider-side cancellation catches up;
+run cancellation itself is idempotent (ADR 0210).
 
 Iconography follows ADR 0209. The `src/kubecode/icons/` module owns the size
 ladder (12/14/16/20/24/28 pixels by role), the `<Icon>` wrapper that hides

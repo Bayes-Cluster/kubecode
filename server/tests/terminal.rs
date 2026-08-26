@@ -232,6 +232,59 @@ fn renames_a_terminal_with_a_sanitized_bounded_title() {
 }
 
 #[test]
+fn kills_only_running_terminals_scoped_to_a_conversation() {
+    let (_temp, project_id, manager) = manager(8);
+    let scoped = manager
+        .create(
+            &project_id,
+            Some("conversation-1"),
+            None,
+            TerminalKind::Regular,
+            80,
+            24,
+        )
+        .expect("scoped terminal");
+    let other_conversation = manager
+        .create(
+            &project_id,
+            Some("conversation-2"),
+            None,
+            TerminalKind::Regular,
+            80,
+            24,
+        )
+        .expect("other conversation terminal");
+    let unscoped = manager
+        .create(&project_id, None, None, TerminalKind::Regular, 80, 24)
+        .expect("unscoped terminal");
+
+    assert_eq!(manager.kill_by_session("conversation-1"), 1);
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let killed = manager.get(&scoped.id).expect("scoped terminal");
+        if killed.status != TerminalStatus::Running {
+            break;
+        }
+        assert!(Instant::now() < deadline, "scoped terminal was not killed");
+        thread::sleep(Duration::from_millis(20));
+    }
+    // A repeated kill is a no-op: the scoped terminal already exited.
+    assert_eq!(manager.kill_by_session("conversation-1"), 0);
+    assert_eq!(
+        manager
+            .get(&other_conversation.id)
+            .expect("other conversation terminal")
+            .status,
+        TerminalStatus::Running
+    );
+    assert_eq!(
+        manager.get(&unscoped.id).expect("unscoped terminal").status,
+        TerminalStatus::Running
+    );
+}
+
+#[test]
 fn runs_a_session_terminal_in_its_isolated_workspace() {
     let (_temp, project_id, manager) = manager(8);
     let workspace = manager.workspace();

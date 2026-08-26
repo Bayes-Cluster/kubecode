@@ -35,7 +35,6 @@ pub(super) enum ApiError {
     AgentStore(StoreError),
     AgentRuntime(RuntimeError),
     InvalidRequest(String),
-    RunNotActive(String),
     Git(GitError),
     PermissionNotFound(String),
     ElicitationNotFound(String),
@@ -196,11 +195,6 @@ impl IntoResponse for ApiError {
             ApiError::InvalidRequest(message) => {
                 (StatusCode::BAD_REQUEST, "invalid_request", message)
             }
-            ApiError::RunNotActive(run_id) => (
-                StatusCode::CONFLICT,
-                "run_not_active",
-                format!("run is not active: {run_id}"),
-            ),
             ApiError::Git(error) => {
                 let (status, code) = match &error {
                     GitError::InvalidPath(_) | GitError::EmptyMessage => {
