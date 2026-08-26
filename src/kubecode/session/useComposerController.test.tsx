@@ -186,4 +186,38 @@ describe('useComposerController optimistic send', () => {
     expect(harness.messages).toHaveLength(0)
     expect(result.current.prompt).toBe('Never sent')
   })
+
+  it('reuses the pending client id only for an identical resend', async () => {
+    const api = makeApi()
+    api.startRun.mockRejectedValue(new TypeError('network down'))
+    const { result } = renderController(api)
+
+    await act(async () => {
+      await result.current.updatePrompt('Original')
+    })
+    await act(async () => {
+      await result.current.send('Original')
+    })
+    const firstId = vi.mocked(api.startRun).mock.calls[0][3]
+
+    await act(async () => {
+      await result.current.updatePrompt('Original, edited')
+    })
+    api.startRun.mockResolvedValue({
+      id: 'run-2',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      message: 'Original, edited',
+      status: 'running',
+      permission_mode: 'safe',
+      error: null,
+    })
+    await act(async () => {
+      await result.current.send('Original, edited')
+    })
+
+    const secondId = vi.mocked(api.startRun).mock.calls[1][3]
+    expect(secondId).not.toBe(firstId)
+    expect(secondId).toMatch(/^[0-9a-f-]{36}$/)
+  })
 })

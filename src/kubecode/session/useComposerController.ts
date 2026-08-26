@@ -191,11 +191,11 @@ export function useComposerController({
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>())
   const menuContextRequestRef = useRef(0)
   const activeConversationIdRef = useRef(conversationId)
-  const pendingRetryClientIdRef = useRef<string | null>(null)
+  const pendingRetryRef = useRef<{ clientMessageId: string; message: string } | null>(null)
 
   useEffect(() => {
     activeConversationIdRef.current = conversationId
-    pendingRetryClientIdRef.current = null
+    pendingRetryRef.current = null
   }, [conversationId])
 
   const [previousConversationId, setPreviousConversationId] = useState(conversationId)
@@ -650,8 +650,14 @@ export function useComposerController({
       : []
     if (command && commandItems.length !== 1) return
     const draftSnapshot = composerDraft
-    const clientMessageId = pendingRetryClientIdRef.current ?? newClientMessageId()
-    pendingRetryClientIdRef.current = null
+    // Reuse the pending client message id only when retrying the identical
+    // message, so the server's exactly-once dedupe can never swallow an
+    // edited resend.
+    const retried = pendingRetryRef.current?.message === message
+      ? pendingRetryRef.current
+      : null
+    const clientMessageId = retried?.clientMessageId ?? newClientMessageId()
+    pendingRetryRef.current = null
     appendOptimisticMessage(optimisticUserMessage(
       clientMessageId,
       composerDraftPlainText(composerDraft) || message,
@@ -695,7 +701,7 @@ export function useComposerController({
       } catch {
         // The probe itself failed; fall through to the rollback below.
       }
-      pendingRetryClientIdRef.current = clientMessageId
+      pendingRetryRef.current = { clientMessageId, message }
       removeOptimisticMessage(clientMessageId)
       updateComposerDraft((current) => (
         composerDraftPlainText(current) ? current : draftSnapshot
