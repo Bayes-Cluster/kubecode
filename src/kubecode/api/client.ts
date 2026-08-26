@@ -429,12 +429,16 @@ export class KubecodeApi {
     projectId: string,
     conversationId: string,
     message: string,
+    clientMessageId?: string,
   ): Promise<AgentRun> {
     return this.request(
       `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/runs`,
       {
         method: 'POST',
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          ...(clientMessageId ? { client_message_id: clientMessageId } : {}),
+        }),
       },
     )
   }

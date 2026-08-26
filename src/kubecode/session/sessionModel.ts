@@ -143,6 +143,34 @@ export function messageFromRun(run: AgentRun): AiAgentMessage {
   }
 }
 
+export function optimisticUserMessage(clientMessageId: string, text: string): AiAgentMessage {
+  return {
+    actions: [],
+    id: clientMessageId,
+    isStreaming: true,
+    reasoningDone: false,
+    userMessage: text,
+  }
+}
+
+export function attachRunMessage(
+  current: AiAgentMessage[],
+  run: AgentRun,
+): AiAgentMessage[] {
+  if (current.some((message) => message.id === run.id)) return current
+  const withoutOptimistic = run.client_message_id
+    ? current.filter((message) => message.id !== run.client_message_id)
+    : current
+  return [...withoutOptimistic, messageFromRun(run)]
+}
+
+export function rollbackOptimisticMessage(
+  current: AiAgentMessage[],
+  clientMessageId: string,
+): AiAgentMessage[] {
+  return current.filter((message) => message.id !== clientMessageId)
+}
+
 export function agentResponseText(message: AiAgentMessage): string {
   return message.responseBlocks?.map((block) => block.text).join('') ?? message.response ?? ''
 }

@@ -60,6 +60,7 @@ import {
   capabilityDisabledReason,
   gitDiffDisabledReason,
   MAX_SESSION_TURN_PICKER_SOURCES,
+  optimisticUserMessage,
   sessionTurnPreview,
   sideQuestionText,
 } from './sessionModel'
@@ -132,6 +133,7 @@ type UseComposerControllerOptions = {
   active: boolean
   agent: AgentDescriptor | undefined
   api: KubecodeApi
+  appendOptimisticMessage: (message: AiAgentMessage) => void
   attachRun: (nextRun: AgentRun) => void
   commands: AcpCommand[]
   conversation: Conversation | null
@@ -142,6 +144,7 @@ type UseComposerControllerOptions = {
   onApplyComposerCatalog: (catalog: import('../api').ComposerCatalogSnapshot) => void
   onClearError: () => void
   projectId: string | null
+  removeOptimisticMessage: (clientMessageId: string) => void
   reportError: (cause: unknown) => void
   run: AgentRun | null
   sessionState: AgentSessionState | null
@@ -154,6 +157,7 @@ export function useComposerController({
   active,
   agent,
   api,
+  appendOptimisticMessage,
   attachRun,
   commands,
   conversation,
@@ -164,6 +168,7 @@ export function useComposerController({
   onApplyComposerCatalog,
   onClearError,
   projectId,
+  removeOptimisticMessage,
   reportError,
   run,
   sessionState,
@@ -625,31 +630,46 @@ export function useComposerController({
       || composerSubmitDisabled
       || directTeammateChatDisabled
       || hardReadOnly) return
+    const catalog = sessionState?.composer?.catalog
+    if (composerHasTypedReferences && (!catalog || catalog.conversation_id !== conversation.id)) {
+      return
+    }
+    const command = composerHasTypedReferences
+      ? activeAcpCommand(composerDraftPlainText(composerDraft))
+      : null
+    const commandItems = command && catalog
+      ? catalog.items.filter((item) => (
+        item.kind === 'command' && item.enabled && item.name === command.name
+      ))
+      : []
+    if (command && commandItems.length !== 1) return
+    const draftSnapshot = composerDraft
+    const clientMessageId = globalThis.crypto?.randomUUID?.() ?? `optimistic-${Date.now()}`
+    appendOptimisticMessage(optimisticUserMessage(
+      clientMessageId,
+      composerDraftPlainText(composerDraft) || message,
+    ))
+    updatePrompt('')
     onClearError()
     try {
       let nextRun: AgentRun
-      if (composerHasTypedReferences) {
-        const catalog = sessionState?.composer?.catalog
-        if (!catalog || catalog.conversation_id !== conversation.id) return
-        const command = activeAcpCommand(composerDraftPlainText(composerDraft))
-        const commandItems = command ? catalog.items.filter((item) => (
-          item.kind === 'command' && item.enabled && item.name === command.name
-        )) : []
-        if (command && commandItems.length !== 1) return
+      if (composerHasTypedReferences && catalog) {
         nextRun = await api.startStructuredRun(projectId, conversation.id, {
           ...(command ? { item_id: commandItems[0].id } : {}),
           catalog_revision: catalog.revision,
           segments: composerDraftToStructuredSegments(composerDraft, command?.name),
+          client_message_id: clientMessageId,
         })
       } else {
-        nextRun = await api.startRun(projectId, conversation.id, message)
+        nextRun = await api.startRun(projectId, conversation.id, message, clientMessageId)
       }
       attachRun(nextRun)
-      updatePrompt('')
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
       })
     } catch (cause) {
+      removeOptimisticMessage(clientMessageId)
+      updateComposerDraft(draftSnapshot)
       reportError(cause)
     }
   }

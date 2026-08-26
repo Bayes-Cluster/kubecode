@@ -340,6 +340,7 @@ export type AgentRun = {
   permission_mode: 'safe' | 'power'
   error: string | null
   internal?: boolean
+  client_message_id?: string
 }
 export type ConversationHistoryPage = {
   runs: AgentRun[]
@@ -466,6 +467,7 @@ export type StructuredComposerRunRequest = {
   item_id?: string
   catalog_revision: number
   segments: StructuredComposerSegment[]
+  client_message_id?: string
 }
 export type SideQuestionAccepted = {
   id: string
