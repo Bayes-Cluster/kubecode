@@ -143,6 +143,62 @@ export function messageFromRun(run: AgentRun): AiAgentMessage {
   }
 }
 
+export function optimisticUserMessage(clientMessageId: string, text: string): AiAgentMessage {
+  return {
+    actions: [],
+    id: clientMessageId,
+    isStreaming: true,
+    reasoningDone: false,
+    userMessage: text,
+  }
+}
+
+export function attachRunMessage(
+  current: AiAgentMessage[],
+  run: AgentRun,
+): AiAgentMessage[] {
+  if (current.some((message) => message.id === run.id)) return current
+  const withoutOptimistic = run.client_message_id
+    ? current.filter((message) => message.id !== run.client_message_id)
+    : current
+  return [...withoutOptimistic, messageFromRun(run)]
+}
+
+export function rollbackOptimisticMessage(
+  current: AiAgentMessage[],
+  clientMessageId: string,
+): AiAgentMessage[] {
+  return current.filter((message) => message.id !== clientMessageId)
+}
+
+export function failOptimisticMessage(
+  current: AiAgentMessage[],
+  clientMessageId: string,
+): AiAgentMessage[] {
+  return current.map((message) => (
+    message.id === clientMessageId && message.isStreaming
+      ? { ...message, isStreaming: false }
+      : message
+  ))
+}
+
+export function newClientMessageId(): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi?.randomUUID) return cryptoApi.randomUUID()
+  const bytes = new Uint8Array(16)
+  if (cryptoApi?.getRandomValues) {
+    cryptoApi.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 export function agentResponseText(message: AiAgentMessage): string {
   return message.responseBlocks?.map((block) => block.text).join('') ?? message.response ?? ''
 }

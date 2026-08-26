@@ -336,6 +336,7 @@ describe('AgentSessionWorkspace', () => {
       'session-1',
       {
         catalog_revision: 6,
+        client_message_id: expect.any(String),
         segments: [
           { kind: 'capability_ref', id: 'cap:project:review', catalog_revision: 6, item_kind: 'skill' },
           { kind: 'text', text: ' ' },
@@ -415,6 +416,7 @@ describe('AgentSessionWorkspace', () => {
       'session-1',
       {
         catalog_revision: 7,
+        client_message_id: expect.any(String),
         segments: [
           {
             kind: 'context_ref', id: 'ctx:git:revision', catalog_revision: 7,
@@ -502,6 +504,7 @@ describe('AgentSessionWorkspace', () => {
       'session-1',
       {
         catalog_revision: 8,
+        client_message_id: expect.any(String),
         segments: [
           {
             kind: 'context_ref', id: 'ctx:terminal:opaque', catalog_revision: 8,
@@ -983,6 +986,7 @@ describe('AgentSessionWorkspace', () => {
       {
         item_id: 'cmd:review',
         catalog_revision: 8,
+        client_message_id: expect.any(String),
         segments: [
           { kind: 'text', text: 'focus ' },
           {
@@ -999,7 +1003,14 @@ describe('AgentSessionWorkspace', () => {
 
   it('keeps unknown slash text on the ordinary visible prompt path', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/unknown')
-    const startRun = vi.fn().mockResolvedValue({ ...run, id: 'ordinary-run', message: '/unknown' })
+    const startRun = vi.fn().mockImplementation((
+      _projectId: string,
+      _conversationId: string,
+      message: string,
+      clientMessageId?: string,
+    ) => Promise.resolve({
+      ...run, id: 'ordinary-run', message, client_message_id: clientMessageId,
+    }))
     const dispatchAcpCommand = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
@@ -1032,7 +1043,7 @@ describe('AgentSessionWorkspace', () => {
     fireEvent.keyDown(await screen.findByTestId('agent-input'), { key: 'Enter' })
 
     await waitFor(() => expect(startRun).toHaveBeenCalledWith(
-      'project-1', 'session-1', '/unknown',
+      'project-1', 'session-1', '/unknown', expect.any(String),
     ))
     expect(dispatchAcpCommand).not.toHaveBeenCalled()
     expect(await screen.findByText('/unknown')).toBeInTheDocument()

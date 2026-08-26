@@ -16,10 +16,12 @@ import type {
 import {
   ACTIVE_RUN_STATUSES,
   applyAgentEvent,
+  attachRunMessage,
+  failOptimisticMessage as failOptimisticMessageReducer,
   hydrateConversation,
   initialElicitationAnswers,
-  messageFromRun,
   messagesFromHistoryPage,
+  rollbackOptimisticMessage,
   type ElicitationAnswer,
   type PendingElicitation,
   type PendingPermission,
@@ -27,8 +29,10 @@ import {
 
 export type SessionTranscript = {
   active: boolean
+  appendOptimisticMessage: (message: AiAgentMessage) => void
   attachRun: (nextRun: AgentRun) => void
   elicitationAnswers: Record<string, ElicitationAnswer>
+  failOptimisticMessage: (clientMessageId: string) => void
   knownRunIdsRef: { current: Set<string> }
   latestWorkspaceEventIdRef: { current: number }
   loadRun: (runId: string) => Promise<AgentRun>
@@ -37,6 +41,7 @@ export type SessionTranscript = {
   pendingPermission: PendingPermission | null
   pendingRunEventsRef: { current: Map<string, AgentEvent[]> }
   processedWorkspaceEventRef: { current: number }
+  removeOptimisticMessage: (clientMessageId: string) => void
   run: AgentRun | null
   setElicitationAnswers: Dispatch<SetStateAction<Record<string, ElicitationAnswer>>>
   setMessages: Dispatch<SetStateAction<AiAgentMessage[]>>
@@ -112,9 +117,7 @@ export function useSessionHistory({
     const pending = pendingRunEventsRef.current.get(nextRun.id) ?? []
     pendingRunEventsRef.current.delete(nextRun.id)
     setMessages((current) => {
-      const initial = current.some((message) => message.id === nextRun.id)
-        ? current
-        : [...current, messageFromRun(nextRun)]
+      const initial = attachRunMessage(current, nextRun)
       return pending.reduce(
         (history, event) => applyAgentEvent(history, nextRun.id, event),
         initial,
@@ -127,6 +130,22 @@ export function useSessionHistory({
         ? current
         : nextRun
     ))
+  }, [])
+
+  const appendOptimisticMessage = useCallback((message: AiAgentMessage) => {
+    setMessages((current) => (
+      current.some((existing) => existing.id === message.id)
+        ? current
+        : [...current, message]
+    ))
+  }, [])
+
+  const removeOptimisticMessage = useCallback((clientMessageId: string) => {
+    setMessages((current) => rollbackOptimisticMessage(current, clientMessageId))
+  }, [])
+
+  const failOptimisticMessage = useCallback((clientMessageId: string) => {
+    setMessages((current) => failOptimisticMessageReducer(current, clientMessageId))
   }, [])
 
   const loadRun = useCallback((runId: string) => {
@@ -285,8 +304,10 @@ export function useSessionHistory({
     selectRevision,
     transcript: {
       active: activeRun,
+      appendOptimisticMessage,
       attachRun,
       elicitationAnswers,
+      failOptimisticMessage,
       knownRunIdsRef,
       latestWorkspaceEventIdRef,
       loadRun,
@@ -295,6 +316,7 @@ export function useSessionHistory({
       pendingPermission,
       pendingRunEventsRef,
       processedWorkspaceEventRef,
+      removeOptimisticMessage,
       run,
       setElicitationAnswers,
       setMessages,

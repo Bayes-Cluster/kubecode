@@ -128,6 +128,13 @@ impl AgentRuntime {
             return Err(StoreError::ConversationNotFound(request.conversation_id).into());
         }
         validate_structured_composer_segments(&request.segments).map_err(StoreError::Composer)?;
+        if let Some(client_message_id) = request.client_message_id.as_deref()
+            && let Some(existing) = self.store.run_by_client_message_id(client_message_id)?
+        {
+            // Exactly-once send: never re-prompt the provider for a
+            // client message id that already started a run.
+            return Ok(existing);
+        }
         let descriptor = self
             .agents
             .descriptor(conversation.agent_id)
@@ -319,6 +326,13 @@ impl AgentRuntime {
         let cwd = self
             .workspace
             .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
+        if let Some(client_message_id) = request.client_message_id.as_deref()
+            && let Some(existing) = self.store.run_by_client_message_id(client_message_id)?
+        {
+            // Exactly-once send: never re-prompt the provider for a
+            // client message id that already started a run.
+            return Ok(existing);
+        }
         let run = if internal {
             self.store.start_internal_run(
                 &request.conversation_id,

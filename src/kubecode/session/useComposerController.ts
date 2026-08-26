@@ -13,6 +13,7 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
+import { ApiError } from '../api'
 import type { ComposerCapabilityPickerLabels } from '../ComposerCapabilityPicker'
 import type {
   SessionTurnContextRequest,
@@ -60,6 +61,8 @@ import {
   capabilityDisabledReason,
   gitDiffDisabledReason,
   MAX_SESSION_TURN_PICKER_SOURCES,
+  newClientMessageId,
+  optimisticUserMessage,
   sessionTurnPreview,
   sideQuestionText,
 } from './sessionModel'
@@ -132,16 +135,19 @@ type UseComposerControllerOptions = {
   active: boolean
   agent: AgentDescriptor | undefined
   api: KubecodeApi
+  appendOptimisticMessage: (message: AiAgentMessage) => void
   attachRun: (nextRun: AgentRun) => void
   commands: AcpCommand[]
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
+  failOptimisticMessage: (clientMessageId: string) => void
   hardReadOnly: boolean
   messages: AiAgentMessage[]
   onApplyComposerCatalog: (catalog: import('../api').ComposerCatalogSnapshot) => void
   onClearError: () => void
   projectId: string | null
+  removeOptimisticMessage: (clientMessageId: string) => void
   reportError: (cause: unknown) => void
   run: AgentRun | null
   sessionState: AgentSessionState | null
@@ -154,16 +160,19 @@ export function useComposerController({
   active,
   agent,
   api,
+  appendOptimisticMessage,
   attachRun,
   commands,
   conversation,
   conversationId,
   directTeammateChatDisabled,
+  failOptimisticMessage,
   hardReadOnly,
   messages,
   onApplyComposerCatalog,
   onClearError,
   projectId,
+  removeOptimisticMessage,
   reportError,
   run,
   sessionState,
@@ -182,9 +191,11 @@ export function useComposerController({
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>())
   const menuContextRequestRef = useRef(0)
   const activeConversationIdRef = useRef(conversationId)
+  const pendingRetryRef = useRef<{ clientMessageId: string; message: string } | null>(null)
 
   useEffect(() => {
     activeConversationIdRef.current = conversationId
+    pendingRetryRef.current = null
   }, [conversationId])
 
   const [previousConversationId, setPreviousConversationId] = useState(conversationId)
@@ -625,31 +636,76 @@ export function useComposerController({
       || composerSubmitDisabled
       || directTeammateChatDisabled
       || hardReadOnly) return
+    const catalog = sessionState?.composer?.catalog
+    if (composerHasTypedReferences && (!catalog || catalog.conversation_id !== conversation.id)) {
+      return
+    }
+    const command = composerHasTypedReferences
+      ? activeAcpCommand(composerDraftPlainText(composerDraft))
+      : null
+    const commandItems = command && catalog
+      ? catalog.items.filter((item) => (
+        item.kind === 'command' && item.enabled && item.name === command.name
+      ))
+      : []
+    if (command && commandItems.length !== 1) return
+    const draftSnapshot = composerDraft
+    // Reuse the pending client message id only when retrying the identical
+    // message, so the server's exactly-once dedupe can never swallow an
+    // edited resend.
+    const retried = pendingRetryRef.current?.message === message
+      ? pendingRetryRef.current
+      : null
+    const clientMessageId = retried?.clientMessageId ?? newClientMessageId()
+    pendingRetryRef.current = null
+    appendOptimisticMessage(optimisticUserMessage(
+      clientMessageId,
+      composerDraftPlainText(composerDraft) || message,
+    ))
+    updatePrompt('')
     onClearError()
     try {
       let nextRun: AgentRun
-      if (composerHasTypedReferences) {
-        const catalog = sessionState?.composer?.catalog
-        if (!catalog || catalog.conversation_id !== conversation.id) return
-        const command = activeAcpCommand(composerDraftPlainText(composerDraft))
-        const commandItems = command ? catalog.items.filter((item) => (
-          item.kind === 'command' && item.enabled && item.name === command.name
-        )) : []
-        if (command && commandItems.length !== 1) return
+      if (composerHasTypedReferences && catalog) {
         nextRun = await api.startStructuredRun(projectId, conversation.id, {
           ...(command ? { item_id: commandItems[0].id } : {}),
           catalog_revision: catalog.revision,
           segments: composerDraftToStructuredSegments(composerDraft, command?.name),
+          client_message_id: clientMessageId,
         })
       } else {
-        nextRun = await api.startRun(projectId, conversation.id, message)
+        nextRun = await api.startRun(projectId, conversation.id, message, clientMessageId)
       }
       attachRun(nextRun)
-      updatePrompt('')
       trackEvent('kubecode_agent_run_started', {
         agent_id: conversation.agent_id,
       })
     } catch (cause) {
+      if (cause instanceof ApiError) {
+        // The server saw and rejected the request: keep the bubble as a failed
+        // turn (ADR 0210 §1 generation failure) instead of silently undoing it.
+        failOptimisticMessage(clientMessageId)
+        reportError(cause)
+        return
+      }
+      // Ambiguous transport failure: the server may still have started the
+      // run. Probe for the run by client message id before rolling back so a
+      // late-arriving run is never double-executed by a manual resend.
+      try {
+        const runs = await api.listRuns(conversation.id)
+        const started = runs.find((candidate) => candidate.client_message_id === clientMessageId)
+        if (started) {
+          attachRun(started)
+          return
+        }
+      } catch {
+        // The probe itself failed; fall through to the rollback below.
+      }
+      pendingRetryRef.current = { clientMessageId, message }
+      removeOptimisticMessage(clientMessageId)
+      updateComposerDraft((current) => (
+        composerDraftPlainText(current) ? current : draftSnapshot
+      ))
       reportError(cause)
     }
   }

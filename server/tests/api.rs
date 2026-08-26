@@ -2858,6 +2858,33 @@ done"#,
     .await
     .expect("run completion");
 
+    // Retrying the same client message id is exactly-once: the retried
+    // request returns the existing run instead of starting a second turn.
+    let (status, replayed) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"With an id", "client_message_id":client_message_id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(replayed["id"], json!(run_id));
+    let (runs_status, runs) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/conversations/{conversation_id}/runs"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(runs_status, StatusCode::OK, "list runs body: {runs}");
+    let matching_runs = runs
+        .as_array()
+        .expect("runs list")
+        .iter()
+        .filter(|candidate| candidate["client_message_id"] == json!(client_message_id))
+        .count();
+    assert_eq!(matching_runs, 1);
+
     let (status, run_without_id) = json_request(
         &app,
         Method::POST,
