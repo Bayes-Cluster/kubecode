@@ -312,6 +312,50 @@ fn opencode_catalog_reopens_and_removes_undifferentiated_commands_without_capabi
 }
 
 #[test]
+fn set_run_status_cannot_resurrect_a_terminal_run() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Cancel me",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    assert!(
+        store
+            .finish_run(&run.id, RunStatus::Cancelled, None)
+            .expect("cancel run")
+    );
+
+    // A permission resolution racing the cancel must not flip the run back
+    // to a non-terminal status: the late update is a no-op, not an error.
+    store
+        .set_run_status(&run.id, RunStatus::Running)
+        .expect("late status update");
+    assert_eq!(
+        store.get_run(&run.id).expect("reloaded run").status,
+        RunStatus::Cancelled
+    );
+
+    // The terminal transition stays exactly-once.
+    assert!(
+        !store
+            .finish_run(&run.id, RunStatus::Completed, None)
+            .expect("second finish")
+    );
+    assert_eq!(
+        store.get_run(&run.id).expect("reloaded run").status,
+        RunStatus::Cancelled
+    );
+}
+
+#[test]
 fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
     let temp = TempDir::new().expect("tempdir");
     let database = temp.path().join("kubecode.sqlite3");

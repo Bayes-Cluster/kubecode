@@ -4554,4 +4554,34 @@ done"#,
         .find(|terminal| terminal["id"] == json!(other_terminal_id))
         .expect("other terminal");
     assert_eq!(surviving["status"], "running");
+
+    // A terminal opened in the same conversation after the run ended
+    // survives a late duplicate stop: only an active run kills terminals.
+    let (_, late_terminal) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        json!({"conversation_id": conversation_id}),
+    )
+    .await;
+    let late_terminal_id = late_terminal["id"]
+        .as_str()
+        .expect("terminal id")
+        .to_owned();
+    let (status, _) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, terminals) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        Value::Null,
+    )
+    .await;
+    let late = terminals
+        .as_array()
+        .expect("terminals")
+        .iter()
+        .find(|terminal| terminal["id"] == json!(late_terminal_id))
+        .expect("late terminal");
+    assert_eq!(late["status"], "running");
 }
