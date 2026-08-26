@@ -644,6 +644,40 @@ impl TerminalManager {
         Ok(capture)
     }
 
+    /// Kill every running terminal scoped to the conversation. Local kills are
+    /// synchronous and immediate, so callers use this to cut a run's local
+    /// child processes before slower provider-side cancellation catches up.
+    pub fn kill_by_session(&self, conversation_id: &str) -> usize {
+        let matching = {
+            let sessions = self
+                .sessions
+                .lock()
+                .expect("terminal sessions mutex poisoned");
+            sessions
+                .values()
+                .filter(|session| {
+                    let info = session.info.lock().expect("terminal info mutex poisoned");
+                    info.conversation_id.as_deref() == Some(conversation_id)
+                        && info.status == TerminalStatus::Running
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let mut killed = 0;
+        for session in matching {
+            if session
+                .killer
+                .lock()
+                .expect("terminal killer mutex poisoned")
+                .kill()
+                .is_ok()
+            {
+                killed += 1;
+            }
+        }
+        killed
+    }
+
     pub fn close(&self, terminal_id: &str) -> Result<(), TerminalError> {
         let session = self
             .sessions

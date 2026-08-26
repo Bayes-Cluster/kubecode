@@ -2717,8 +2717,7 @@ done"#,
     assert!(String::from_utf8_lossy(&body).contains("Finished through API"));
 
     let (status, error) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(error["code"], "run_not_active");
+    assert_eq!(status, StatusCode::NO_CONTENT, "body: {error}");
 }
 
 #[tokio::test]
@@ -4372,4 +4371,217 @@ async fn session_entries_return_404_after_the_project_is_unregistered() {
     let (status, error) = session_entries(&app, &conversation.id, "").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error["code"], "not_found");
+}
+
+#[tokio::test]
+async fn run_cancellation_is_idempotent_and_kills_conversation_terminals() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_dir = root.join(".state/kubecode");
+    fs::create_dir_all(&state_dir).expect("state directory");
+    let database = state_dir.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    // The prompt sleeps before ending so the cancel races a live run.
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-idempotent\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      sleep 2
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/run-idempotent-cancel")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+
+    // A terminal scoped to the conversation is killed by the stop, while an
+    // unrelated terminal keeps running.
+    let (_, scoped_terminal) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        json!({"conversation_id": conversation_id}),
+    )
+    .await;
+    let scoped_terminal_id = scoped_terminal["id"]
+        .as_str()
+        .expect("terminal id")
+        .to_owned();
+    let other_conversation = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await
+    .1;
+    let (_, other_terminal) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        json!({"conversation_id": other_conversation["id"].as_str().expect("other conversation id")}),
+    )
+    .await;
+    let other_terminal_id = other_terminal["id"]
+        .as_str()
+        .expect("terminal id")
+        .to_owned();
+
+    let (_, run) = json_request(
+        &app,
+        Method::POST,
+        &format!("{conversations_uri}/{conversation_id}/runs"),
+        json!({"message":"Cancel me"}),
+    )
+    .await;
+    let run_id = run["id"].as_str().expect("run id").to_owned();
+    let run_uri = format!("{BASE_PATH}/api/v1/runs/{run_id}");
+
+    // First stop cancels the live run.
+    let (status, _) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    // A duplicate stop is a success, not a conflict.
+    let (status, _) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let (_, current) = json_request(&app, Method::GET, &run_uri, Value::Null).await;
+            if current["status"] == "cancelled" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run cancellation");
+
+    // The stop after the run is terminal is still a success.
+    let (status, _) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Exactly one terminal transition and one completion event per run.
+    let (_, events) =
+        json_request(&app, Method::GET, &format!("{run_uri}/events"), Value::Null).await;
+    let completions = events
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "run_completed")
+        .count();
+    assert_eq!(completions, 1);
+
+    // The conversation's terminal died with the run; the unrelated one lives.
+    let terminal_status = |terminal_id: String| {
+        let app = app.clone();
+        async move {
+            // Poll with a deadline so a kill regression fails instead of hanging.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let (_, terminals) = json_request(
+                        &app,
+                        Method::GET,
+                        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+                        Value::Null,
+                    )
+                    .await;
+                    let terminal = terminals
+                        .as_array()
+                        .expect("terminals")
+                        .iter()
+                        .find(|terminal| terminal["id"] == json!(terminal_id))
+                        .expect("terminal")
+                        .clone();
+                    if terminal["status"] != "running" {
+                        return terminal;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("terminal status poll timed out")
+        }
+    };
+    let killed = terminal_status(scoped_terminal_id.clone()).await;
+    assert_eq!(killed["status"], "exited");
+    let (_, terminals) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        Value::Null,
+    )
+    .await;
+    let surviving = terminals
+        .as_array()
+        .expect("terminals")
+        .iter()
+        .find(|terminal| terminal["id"] == json!(other_terminal_id))
+        .expect("other terminal");
+    assert_eq!(surviving["status"], "running");
+
+    // A terminal opened in the same conversation after the run ended
+    // survives a late duplicate stop: only an active run kills terminals.
+    let (_, late_terminal) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        json!({"conversation_id": conversation_id}),
+    )
+    .await;
+    let late_terminal_id = late_terminal["id"]
+        .as_str()
+        .expect("terminal id")
+        .to_owned();
+    let (status, _) = json_request(&app, Method::DELETE, &run_uri, Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, terminals) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/projects/{project_id}/terminals"),
+        Value::Null,
+    )
+    .await;
+    let late = terminals
+        .as_array()
+        .expect("terminals")
+        .iter()
+        .find(|terminal| terminal["id"] == json!(late_terminal_id))
+        .expect("late terminal");
+    assert_eq!(late["status"], "running");
 }

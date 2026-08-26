@@ -260,11 +260,13 @@ pub(super) async fn cancel_agent_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    // Only a missing run is an error. Cancelling a run that is already
+    // terminal, or whose cancellation raced with completion, succeeds so a
+    // late or duplicate Stop never surfaces an error (ADR 0210 exactly-once
+    // cancellation).
     state.agent_runtime.store().get_run(&run_id)?;
-    if !state.agent_runtime.cancel(&run_id) {
-        return Err(ApiError::RunNotActive(run_id));
-    }
-    Ok(StatusCode::ACCEPTED)
+    let _ = state.agent_runtime.cancel(&run_id);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Debug, Deserialize)]

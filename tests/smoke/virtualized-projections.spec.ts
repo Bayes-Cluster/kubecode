@@ -120,10 +120,15 @@ test('@smoke virtualized projections stay bounded and contained on desktop and m
 
     await assertContained()
     await page.setViewportSize({ width: 390, height: 844 })
+    // Wait for the narrow layout to settle before touching the toggle: the
+    // matchMedia flip lands asynchronously, and the navigator-precedence
+    // effect closes the context panel one commit later. Reading aria-pressed
+    // before that settle races the click against the forced close.
+    await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
     const mobileContextToggle = page.getByRole('button', { name: 'Toggle context panel' })
-    if (await mobileContextToggle.getAttribute('aria-pressed') !== 'true') {
-      await mobileContextToggle.click()
-    }
+    // Both overlays were open on desktop, so narrow entry settles the panel closed.
+    await expect(mobileContextToggle).toHaveAttribute('aria-pressed', 'false')
+    await mobileContextToggle.click()
     await expect(mobileContextToggle).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('context-workbench')).toBeVisible()
     await assertContained()
