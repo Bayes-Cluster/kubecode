@@ -671,6 +671,32 @@ bus has no worker or buffered event queue; SSE waits retain only a weak store
 reference, so dropping the owning store closes the channel and releases
 subscribers during Runtime shutdown.
 
+## Conversation reducer
+
+One pure reducer applies Agent Chat conversation events regardless of their
+source: live SSE delivery, history hydration, and reconnect replay all feed
+`reduceConversation`, so every path produces identical transcript state from an
+identical sequence. Events carry a namespaced `source:seq` key; folding is
+idempotent per key across channels without letting one channel's sequence space
+shadow the other's.
+
+Transcript events that arrive before their run row are buffered per run and
+replay in order the moment the row attaches, so a live stream racing its own
+history fetch loses nothing. Run rows reach the reducer in one of two modes:
+`attach` surfaces the row's bubble for live paths, while `lookup` only
+registers it so recorded replays resolve run-scoped facts while bubbles remain
+shaped solely by the recorded events. `user_message` reconciles a composer's
+optimistic bubble by echoed client message id instead of appending a duplicate
+turn.
+
+Replay closes with a forced flush: an in-progress tool call or still-streaming
+bubble whose run is already terminal renders terminated rather than pending,
+while runs active server-side keep streaming. Live ingestion enqueues into a
+frame-budgeted queue that applies bounded batches per animation frame, so a
+heavy stream never blocks the main thread as one long task. Composer-originated
+bubble states (optimistic append, rollback, failure) are inputs to the same
+reducer; no other code path mutates messages.
+
 ## Explorer workbench
 
 The default Explorer has three independently collapsible sections:

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { Translator } from '@/lib/i18n'
@@ -6,7 +14,6 @@ import { trackEvent } from '@/lib/telemetry'
 
 import type { SideQuestionItem } from '../SideQuestionPanel'
 import type {
-  AgentEvent,
   AgentRun,
   AgentSessionState,
   Conversation,
@@ -15,36 +22,39 @@ import type {
 } from '../api'
 import {
   ACTIVE_RUN_STATUSES,
-  applyAgentEvent,
-  attachRunMessage,
-  failOptimisticMessage as failOptimisticMessageReducer,
-  hydrateConversation,
-  initialElicitationAnswers,
-  messagesFromHistoryPage,
-  rollbackOptimisticMessage,
-  type ElicitationAnswer,
-  type PendingElicitation,
-  type PendingPermission,
-} from './sessionModel'
+  createConversationPump,
+  initialConversationState,
+  reduceAll,
+  reduceConversation,
+  textValue,
+} from './conversationReducer'
+import type {
+  ConversationInput,
+  ConversationState,
+  ElicitationAnswer,
+  PendingElicitation,
+  PendingPermission,
+  TimelineEvent,
+} from './conversationReducer'
+import { hydrateConversation, initialElicitationAnswers, messagesFromHistoryPage } from './sessionModel'
 
 export type SessionTranscript = {
   active: boolean
   appendOptimisticMessage: (message: AiAgentMessage) => void
   attachRun: (nextRun: AgentRun) => void
+  /**
+   * Live conversation events enter here: one frame-budgeted queue feeding the
+   * same reducer history hydration replays through (#103).
+   */
+  enqueueConversationEvents: (events: readonly TimelineEvent[]) => void
   elicitationAnswers: Record<string, ElicitationAnswer>
   failOptimisticMessage: (clientMessageId: string) => void
-  knownRunIdsRef: { current: Set<string> }
-  latestWorkspaceEventIdRef: { current: number }
-  loadRun: (runId: string) => Promise<AgentRun>
   messages: AiAgentMessage[]
   pendingElicitation: PendingElicitation | null
   pendingPermission: PendingPermission | null
-  pendingRunEventsRef: { current: Map<string, AgentEvent[]> }
-  processedWorkspaceEventRef: { current: number }
   removeOptimisticMessage: (clientMessageId: string) => void
   run: AgentRun | null
   setElicitationAnswers: Dispatch<SetStateAction<Record<string, ElicitationAnswer>>>
-  setMessages: Dispatch<SetStateAction<AiAgentMessage[]>>
   setPendingElicitation: Dispatch<SetStateAction<PendingElicitation | null>>
   setPendingPermission: Dispatch<SetStateAction<PendingPermission | null>>
   setRun: Dispatch<SetStateAction<AgentRun | null>>
@@ -103,26 +113,54 @@ export function useSessionHistory({
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const knownRunIdsRef = useRef(new Set<string>())
-  const loadingRunsRef = useRef(new Map<string, Promise<AgentRun>>())
-  const pendingRunEventsRef = useRef(new Map<string, AgentEvent[]>())
-  const processedWorkspaceEventRef = useRef(0)
-  const latestWorkspaceEventIdRef = useRef(0)
+
+  /**
+   * Single source of truth for transcript state (#103): React mirrors commit
+   * from this kernel, so every mutation lives in exactly one reducer.
+   */
+  const kernelRef = useRef<ConversationState>(initialConversationState())
+  /** Inputs folded while an in-flight hydration merges on top afterwards. */
+  const bufferedInputsRef = useRef<ConversationInput[]>([])
+  const hydratingRef = useRef(false)
+  const inflightRunsRef = useRef(new Map<string, Promise<AgentRun>>())
 
   const activeRun = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
 
+  /** Commits kernel state to its React mirrors with reference guards. */
+  const commit = useCallback((previous: ConversationState, next: ConversationState) => {
+    kernelRef.current = next
+    if (next.messages !== previous.messages) setMessages(next.messages)
+    if (next.pendingPermission !== previous.pendingPermission) {
+      setPendingPermission(next.pendingPermission)
+    }
+    if (next.pendingElicitation !== previous.pendingElicitation) {
+      setPendingElicitation(next.pendingElicitation)
+      if (next.pendingElicitation && previous.pendingElicitation?.requestId
+        !== next.pendingElicitation.requestId) {
+        setElicitationAnswers(initialElicitationAnswers(next.pendingElicitation))
+      }
+    }
+    if (next.sideQuestions !== previous.sideQuestions) setSideQuestions(next.sideQuestions)
+  }, [])
+
+  const commitKernelState = useCallback((next: ConversationState) => {
+    commit(kernelRef.current, next)
+  }, [commit])
+
+  const dispatch = useCallback((input: ConversationInput) => {
+    if (hydratingRef.current) {
+      bufferedInputsRef.current.push(input)
+      return
+    }
+    const previous = kernelRef.current
+    commit(previous, reduceConversation(previous, input))
+  }, [commit])
+
   const attachRun = useCallback((nextRun: AgentRun) => {
-    knownRunIdsRef.current.add(nextRun.id)
-    const pending = pendingRunEventsRef.current.get(nextRun.id) ?? []
-    pendingRunEventsRef.current.delete(nextRun.id)
-    setMessages((current) => {
-      const initial = attachRunMessage(current, nextRun)
-      return pending.reduce(
-        (history, event) => applyAgentEvent(history, nextRun.id, event),
-        initial,
-      )
-    })
+    dispatch({ type: 'run', run: nextRun })
+    // Terminal statuses stay sticky once observed (a late "running" row for a
+    // finished run never flips the header back to active).
     setRun((current) => (
       current?.id === nextRun.id
         && !ACTIVE_RUN_STATUSES.has(current.status)
@@ -130,32 +168,62 @@ export function useSessionHistory({
         ? current
         : nextRun
     ))
-  }, [])
-
-  const appendOptimisticMessage = useCallback((message: AiAgentMessage) => {
-    setMessages((current) => (
-      current.some((existing) => existing.id === message.id)
-        ? current
-        : [...current, message]
-    ))
-  }, [])
-
-  const removeOptimisticMessage = useCallback((clientMessageId: string) => {
-    setMessages((current) => rollbackOptimisticMessage(current, clientMessageId))
-  }, [])
-
-  const failOptimisticMessage = useCallback((clientMessageId: string) => {
-    setMessages((current) => failOptimisticMessageReducer(current, clientMessageId))
-  }, [])
+  }, [dispatch])
 
   const loadRun = useCallback((runId: string) => {
-    const loading = loadingRunsRef.current.get(runId)
+    const loading = inflightRunsRef.current.get(runId)
     if (loading) return loading
-    const request = api.getRun(runId)
-    loadingRunsRef.current.set(runId, request)
-    void request.then(attachRun).finally(() => loadingRunsRef.current.delete(runId))
+    const request = api.getRun(runId).then((loaded) => {
+      attachRun(loaded)
+      return loaded
+    }).finally(() => inflightRunsRef.current.delete(runId))
+    inflightRunsRef.current.set(runId, request)
     return request
   }, [api, attachRun])
+
+  /**
+   * Fello-style pump (#103): bounded batches under an 8ms frame budget so a
+   * heavy stream never renders as one long task. Missing run rows discovered
+   * while draining trigger exactly one fetch whose arrival drains the
+   * kernel's own per-run buffers.
+   */
+  const drainBatchRef = useRef<(batch: readonly TimelineEvent[]) => void>(() => {})
+  const pump = useMemo(() => createConversationPump<TimelineEvent>({
+    budgetMs: 8,
+    onDrain: (batch) => drainBatchRef.current(batch),
+  }), [])
+  useEffect(() => () => pump.dispose(), [pump])
+
+  drainBatchRef.current = (batch) => {
+    let next = kernelRef.current
+    const unknownRuns = new Set<string>()
+    for (const event of batch) {
+      const previous = next
+      next = hydratingRef.current ? next : reduceConversation(next, { type: 'event', event })
+      if (!hydratingRef.current && next === previous) continue
+      const runId = textValue(event.payload.run_id) || event.runId
+      if (runId && !next.runs[runId] && !inflightRunsRef.current.has(runId)) {
+        unknownRuns.add(runId)
+      }
+    }
+    if (hydratingRef.current) {
+      for (const event of batch) {
+        bufferedInputsRef.current.push({ type: 'event', event })
+      }
+      return
+    }
+    commitKernelState(next)
+    for (const runId of unknownRuns) {
+      void loadRun(runId).catch(() => {
+        // The kernel keeps the events buffered; transport-level retries are
+        // the reconnect story (#102), not this path.
+      })
+    }
+  }
+
+  const enqueueConversationEvents = useCallback((events: readonly TimelineEvent[]) => {
+    for (const event of events) pump.push(event)
+  }, [pump])
 
   useEffect(() => {
     setViewRevisionId(null)
@@ -167,45 +235,47 @@ export function useSessionHistory({
 
   useEffect(() => {
     if (!conversation || !historyConversationId) return
-    knownRunIdsRef.current.clear()
-    loadingRunsRef.current.clear()
-    pendingRunEventsRef.current.clear()
-    processedWorkspaceEventRef.current = latestWorkspaceEventIdRef.current
-    let current = true
+    let cancelled = false
+    hydratingRef.current = true
+    bufferedInputsRef.current = []
     const applySessionState = beginSessionStateRequest(conversation.id)
-    void hydrateConversation(api, historyConversationId).then(({
-      messages: history,
-      activeRun: hydratedRun,
-      pendingPermission: restoredPermission,
-      pendingElicitation: restoredElicitation,
-      sessionState: restoredState,
-      sideQuestions: restoredSideQuestions,
-      historyCursor: restoredCursor,
-    }) => {
-      if (!current) return
-      setMessages(history)
-      knownRunIdsRef.current = new Set(
-        history.flatMap((message) => message.id ? [message.id] : []),
-      )
-      setRun(hydratedRun)
-      setPendingPermission(restoredPermission)
-      setPendingElicitation(restoredElicitation)
-      setElicitationAnswers(initialElicitationAnswers(restoredElicitation))
-      applySessionState(restoredState)
-      setSideQuestions(restoredSideQuestions)
-      setHistoryCursor(restoredCursor)
+    hydrateConversation(api, historyConversationId).then((result) => {
+      if (cancelled) return
+      hydratingRef.current = false
+      const buffered = bufferedInputsRef.current
+      bufferedInputsRef.current = []
+      const merged = buffered.length > 0 ? reduceAll(result.state, buffered) : result.state
+      kernelRef.current = merged
+      setMessages(merged.messages)
+      setPendingPermission(merged.pendingPermission)
+      setPendingElicitation(merged.pendingElicitation)
+      if (merged.pendingElicitation) {
+        setElicitationAnswers(initialElicitationAnswers(merged.pendingElicitation))
+      }
+      setSideQuestions(merged.sideQuestions)
+      setRun(result.activeRun)
+      applySessionState(result.sessionState)
+      setHistoryCursor(result.historyCursor)
+      for (const runId of collectMissingRunIds(buffered, merged)) {
+        void loadRun(runId).catch(() => {})
+      }
     }).catch((cause: unknown) => {
-      if (current) {
+      hydratingRef.current = false
+      if (!cancelled) {
         setComposerCatalogLoadFailed(true)
         reportError(cause)
       }
     })
-    return () => { current = false }
+    return () => {
+      cancelled = true
+      hydratingRef.current = false
+    }
   }, [
     api,
     beginSessionStateRequest,
     conversation,
     historyConversationId,
+    loadRun,
     reportError,
     setComposerCatalogLoadFailed,
   ])
@@ -222,18 +292,21 @@ export function useSessionHistory({
       if (revision.workspace_restore === 'kept') {
         setWorkspaceWarning(t('kubecode.revisionFilesKept'))
       }
-      const applySessionState = beginSessionStateRequest(conversation.id)
       const hydrated = await hydrateConversation(api, conversation.id)
-      knownRunIdsRef.current = new Set(
-        hydrated.messages.flatMap((message) => message.id ? [message.id] : []),
-      )
-      setMessages(hydrated.messages)
+      const buffered = bufferedInputsRef.current
+      bufferedInputsRef.current = []
+      const merged = buffered.length > 0 ? reduceAll(hydrated.state, buffered) : hydrated.state
+      kernelRef.current = merged
+      setMessages(merged.messages)
+      setPendingPermission(merged.pendingPermission)
+      setPendingElicitation(merged.pendingElicitation)
+      if (merged.pendingElicitation) {
+        setElicitationAnswers(initialElicitationAnswers(merged.pendingElicitation))
+      }
+      setSideQuestions(merged.sideQuestions)
       setRun(hydrated.activeRun)
-      setPendingPermission(hydrated.pendingPermission)
-      setPendingElicitation(hydrated.pendingElicitation)
-      setElicitationAnswers(initialElicitationAnswers(hydrated.pendingElicitation))
+      const applySessionState = beginSessionStateRequest(conversation.id)
       applySessionState(hydrated.sessionState)
-      setSideQuestions(hydrated.sideQuestions)
       setHistoryCursor(hydrated.historyCursor)
       setViewRevisionId(null)
       setRevisions(await api.listConversationRevisions(conversation.id))
@@ -262,9 +335,9 @@ export function useSessionHistory({
     viewRevisionId,
   ])
 
-  const regenerate = useCallback(async (runId: string) => {
-    const message = messages.find((candidate) => candidate.id === runId)?.userMessage
-    if (message) await reviseAtRun(runId, message)
+  const regenerate = useCallback(async (targetRunId: string) => {
+    const message = messages.find((candidate) => candidate.id === targetRunId)?.userMessage
+    if (message) await reviseAtRun(targetRunId, message)
   }, [messages, reviseAtRun])
 
   const loadEarlierHistory = useCallback(async () => {
@@ -294,6 +367,16 @@ export function useSessionHistory({
       : revisions[index]?.snapshot_conversation_id ?? null)
   }, [revisions])
 
+  const appendOptimisticMessage = useCallback((message: AiAgentMessage) => {
+    dispatch({ type: 'optimistic', message })
+  }, [dispatch])
+  const removeOptimisticMessage = useCallback((clientMessageId: string) => {
+    dispatch({ type: 'rollback_optimistic', clientMessageId })
+  }, [dispatch])
+  const failOptimisticMessage = useCallback((clientMessageId: string) => {
+    dispatch({ type: 'fail_optimistic', clientMessageId })
+  }, [dispatch])
+
   return {
     historyCursor,
     loadEarlierHistory,
@@ -306,20 +389,15 @@ export function useSessionHistory({
       active: activeRun,
       appendOptimisticMessage,
       attachRun,
+      enqueueConversationEvents,
       elicitationAnswers,
       failOptimisticMessage,
-      knownRunIdsRef,
-      latestWorkspaceEventIdRef,
-      loadRun,
       messages,
       pendingElicitation,
       pendingPermission,
-      pendingRunEventsRef,
-      processedWorkspaceEventRef,
       removeOptimisticMessage,
       run,
       setElicitationAnswers,
-      setMessages,
       setPendingElicitation,
       setPendingPermission,
       setRun,
@@ -328,4 +406,18 @@ export function useSessionHistory({
     },
     viewRevisionId,
   }
+}
+
+/** Run ids referenced by inputs but absent from the merged kernel state. */
+function collectMissingRunIds(
+  inputs: readonly ConversationInput[],
+  state: ConversationState,
+): Set<string> {
+  const missing = new Set<string>()
+  for (const input of inputs) {
+    if (input.type !== 'event') continue
+    const runId = input.event.runId
+    if (runId && !state.runs[runId]) missing.add(runId)
+  }
+  return missing
 }
