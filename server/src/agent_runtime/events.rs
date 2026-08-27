@@ -1,9 +1,25 @@
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ContentChunk, ToolCall, ToolCallStatus, ToolCallUpdate,
+    ContentBlock, ContentChunk, StopReason, ToolCall, ToolCallStatus, ToolCallUpdate,
 };
 use serde_json::{Value, json};
 
-use crate::agents::AgentEventKind;
+use crate::agents::{AgentEventKind, RunStatus, TerminalCause};
+
+/// Maps an ACP prompt stop reason onto the local terminal status and the
+/// typed cause carried on completion events. An agent-reported cancel keeps
+/// the cancelled status; every other reported reason is a completed turn
+/// whose cause says why it ended. Unknown future reasons default to
+/// `end_turn`, matching the protocol's "turn ended" baseline.
+pub(super) fn terminal_outcome(stop_reason: StopReason) -> (RunStatus, TerminalCause) {
+    match stop_reason {
+        StopReason::EndTurn => (RunStatus::Completed, TerminalCause::EndTurn),
+        StopReason::Cancelled => (RunStatus::Cancelled, TerminalCause::Cancelled),
+        StopReason::MaxTokens => (RunStatus::Completed, TerminalCause::MaxTokens),
+        StopReason::MaxTurnRequests => (RunStatus::Completed, TerminalCause::MaxTurnRequests),
+        StopReason::Refusal => (RunStatus::Completed, TerminalCause::Refusal),
+        _ => (RunStatus::Completed, TerminalCause::EndTurn),
+    }
+}
 
 pub(super) fn text_event(
     kind: AgentEventKind,
@@ -96,5 +112,24 @@ mod tests {
             started.1["content"][0]["content"]["text"],
             "connection refused"
         );
+    }
+
+    #[test]
+    fn maps_every_reported_stop_reason_to_a_typed_terminal_cause() {
+        for (reason, status, cause) in [
+            (StopReason::EndTurn, RunStatus::Completed, "end_turn"),
+            (StopReason::Cancelled, RunStatus::Cancelled, "cancelled"),
+            (StopReason::MaxTokens, RunStatus::Completed, "max_tokens"),
+            (
+                StopReason::MaxTurnRequests,
+                RunStatus::Completed,
+                "max_turn_requests",
+            ),
+            (StopReason::Refusal, RunStatus::Completed, "refusal"),
+        ] {
+            let (mapped_status, mapped_cause) = terminal_outcome(reason);
+            assert_eq!(mapped_status, status, "{reason:?}");
+            assert_eq!(mapped_cause.as_str(), cause, "{reason:?}");
+        }
     }
 }

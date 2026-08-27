@@ -57,6 +57,18 @@ pub enum RunStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum TerminalCause {
+    EndTurn,
+    Cancelled,
+    Error,
+    MaxTokens,
+    MaxTurnRequests,
+    Refusal,
+    Interrupted,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ConversationRelationship {
     Fork,
     Subagent,
@@ -137,6 +149,8 @@ pub struct AgentRun {
     pub internal: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_cause: Option<TerminalCause>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -224,6 +238,16 @@ string_enum!(RunStatus, {
     RunStatus::Cancelled => "cancelled",
     RunStatus::TimedOut => "timed_out",
     RunStatus::Interrupted => "interrupted",
+});
+
+string_enum!(TerminalCause, {
+    TerminalCause::EndTurn => "end_turn",
+    TerminalCause::Cancelled => "cancelled",
+    TerminalCause::Error => "error",
+    TerminalCause::MaxTokens => "max_tokens",
+    TerminalCause::MaxTurnRequests => "max_turn_requests",
+    TerminalCause::Refusal => "refusal",
+    TerminalCause::Interrupted => "interrupted",
 });
 
 string_enum!(ConversationRelationship, {

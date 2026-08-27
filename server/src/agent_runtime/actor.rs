@@ -12,7 +12,7 @@ use agent_client_protocol::schema::v1::{
     LoadSessionRequest, McpServer, NewSessionRequest, NewSessionResponse, PromptRequest,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionId,
-    SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest,
+    SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
 };
 use agent_client_protocol::{ActiveSession, Agent, ConnectionTo, LineDirection};
 use serde::Deserialize;
@@ -20,11 +20,12 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::agents::{AgentEventKind, AgentRun, AgentStore, RunStatus};
+use crate::agents::{AgentEventKind, AgentRun, AgentStore, RunStatus, TerminalCause};
 use crate::composer_catalog::ComposerInvocation;
 use crate::teams::TeamMemberStatus;
 
 use super::adapter::acp_agent;
+use super::events::terminal_outcome;
 use super::journal::{
     SessionUpdateJournal, SessionUpdateSink, finish_journal, journal_protocol_error,
     persist_serialized_session_event, persist_serialized_session_state_checkpoint,
@@ -181,7 +182,7 @@ async fn process_session_control(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcpRunOutcome {
-    Completed,
+    Completed { stop_reason: StopReason },
     Cancelled,
 }
 
@@ -703,8 +704,10 @@ async fn run_acp_session(
                 let outcome = loop {
                     tokio::select! {
                         response = &mut prompt => {
-                            response?;
-                            break AcpRunOutcome::Completed;
+                            let response = response?;
+                            break AcpRunOutcome::Completed {
+                                stop_reason: response.stop_reason,
+                            };
                         }
                         _ = &mut cancelled => {
                             connection.send_notification(CancelNotification::new(session_id.clone()))?;
@@ -761,13 +764,13 @@ async fn run_acp_session(
                     .await
                     .map_err(journal_protocol_error)?;
                 runtime.remove_cancellation(&command.run.id);
-                let status = match outcome {
-                    AcpRunOutcome::Completed => RunStatus::Completed,
-                    AcpRunOutcome::Cancelled => RunStatus::Cancelled,
+                let (status, cause) = match outcome {
+                    AcpRunOutcome::Completed { stop_reason } => terminal_outcome(stop_reason),
+                    AcpRunOutcome::Cancelled => (RunStatus::Cancelled, TerminalCause::Cancelled),
                 };
                 let transitioned = runtime
                     .store
-                    .finish_run(&command.run.id, status, None)
+                    .finish_run(&command.run.id, status, None, cause)
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
@@ -776,7 +779,7 @@ async fn run_acp_session(
                     let _ = runtime.store.append_session_event(
                         &conversation_id,
                         "run_completed",
-                        &json!({"run_id":command.run.id, "status":status}),
+                        &json!({"run_id":command.run.id, "status":status, "cause":cause}),
                     );
                 }
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
@@ -1087,14 +1090,24 @@ impl AgentRuntime {
                 .append_event(run_id, AgentEventKind::Error, &json!({"message": message}));
         let transitioned = self
             .store
-            .finish_run(run_id, RunStatus::Failed, Some(&message))
+            .finish_run(
+                run_id,
+                RunStatus::Failed,
+                Some(&message),
+                TerminalCause::Error,
+            )
             .unwrap_or(false);
         self.capture_after_checkpoint(run_id);
         if transitioned && let Some(run) = run {
             let _ = self.store.append_session_event(
                 &run.conversation_id,
                 "run_completed",
-                &json!({"run_id":run_id, "status":"failed", "error":message}),
+                &json!({
+                    "run_id":run_id,
+                    "status":"failed",
+                    "error":message,
+                    "cause":"error",
+                }),
             );
         }
     }
@@ -1211,6 +1224,7 @@ mod tests {
                 error: None,
                 internal: true,
                 client_message_id: None,
+                terminal_cause: None,
             },
             message: "focus on tests".into(),
             provider_input: Some(Box::new(ComposerInvocation::ProviderStructuredInput {
