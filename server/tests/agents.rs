@@ -2512,7 +2512,18 @@ fn idle_session_state_updates_publish_one_atomic_conversation_invalidation() {
         Some(conversation.id.as_str())
     );
     assert_eq!(workspace_events[1].run_id, None);
-    assert_eq!(workspace_events[1].payload, serde_json::json!({}));
+    // The session-state notification names the checkpoint kinds it carries so
+    // live consumers can route them (usage meters) without a refetch, in
+    // browser-safe projections only.
+    assert_eq!(
+        workspace_events[1].payload,
+        serde_json::json!({"updates":[
+            {"kind":"available_commands","payload":{"availableCommands":[
+                {"name":"review", "description":"Review", "input":null}
+            ]}},
+            {"kind":"current_mode","payload":{"currentModeId":"build"}},
+        ]})
+    );
     assert_eq!(bus.latest_committed_cursor(), workspace_events[1].id);
     assert!(receiver.has_changed().expect("event bus remains open"));
 }
@@ -2557,7 +2568,19 @@ fn session_state_checkpoint_is_atomic_private_and_browser_safe() {
         Some(conversation.id.as_str())
     );
     assert_eq!(workspace_events[0].run_id, None);
-    assert_eq!(workspace_events[0].payload, serde_json::json!({}));
+    // The workspace mirror is browser-safe: it drops the private _meta while
+    // the stored session event keeps it verbatim.
+    let mut public_checkpoint = checkpoint.clone();
+    public_checkpoint
+        .as_object_mut()
+        .expect("object")
+        .remove("_meta");
+    assert_eq!(
+        workspace_events[0].payload,
+        serde_json::json!({"updates":[
+            {"kind":"session_created_state","payload":public_checkpoint}
+        ]})
+    );
     assert_eq!(bus.latest_committed_cursor(), workspace_events[0].id);
     assert!(receiver.has_changed().expect("event bus remains open"));
 

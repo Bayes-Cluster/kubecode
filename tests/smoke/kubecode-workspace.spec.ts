@@ -8,6 +8,7 @@ test.afterEach(async ({ page }) => {
 })
 
 test('@smoke project, reconnect recovery, editor, terminal, and project removal', async ({ page, request }, testInfo) => {
+
   await page.addInitScript(() => {
     const NativeEventSource = window.EventSource
     class ControlledEventSource extends EventTarget {
@@ -149,7 +150,22 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await assertSendReachable()
   await page.screenshot({ path: testInfo.outputPath('runtime-connection-narrow.png') })
   await sendButton.click()
-  await expect(page.getByText('Smoke Agent is ready', { exact: true })).toBeVisible()
+  // Loaded self-hosted runners can take well over the default 5s from chunk
+  // emission to first paint; match the generous windows used elsewhere here.
+  await expect(page.getByText('Smoke Agent is ready', { exact: true })).toBeVisible({ timeout: 20_000 })
+  // The live usage checkpoint (#106) feeds the header meter without a
+  // refetch: the popover opens with the pushed context-window numbers.
+  const usageTrigger = page.getByTestId('usage-meter-trigger')
+  await expect(usageTrigger).toBeVisible()
+  await expect(usageTrigger).toContainText('15%')
+  await usageTrigger.click()
+  const usagePopover = page.getByTestId('usage-meter-popover')
+  await expect(usagePopover).toBeVisible()
+  await expect(usagePopover).toContainText(/1[,.]?234 of 8[,.]?000 tokens \(15%\)/)
+  // Toggle the popover closed via its trigger: a global Escape would ripple
+  // into other narrow-layout panel handlers.
+  await usageTrigger.click()
+  await expect(usagePopover).toBeHidden()
   const projectButton = page.getByRole('button', { name: projectName, exact: true })
   await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout: 20_000 })
   await expect(page.getByRole('button', { name: 'Runtime connection: Live' })).toBeVisible()

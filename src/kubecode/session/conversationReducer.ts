@@ -717,7 +717,7 @@ function propertyOptions(property: Record<string, unknown>): ElicitationOption[]
       return [{ id, name: textValue(option?.title) || id }]
     })
   }
-  return arrayValue(property.enum)
+  return Array.isArray(property.enum)
     ? property.enum.filter(isString).map((id) => ({ id, name: id }))
     : []
 }

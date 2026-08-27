@@ -184,7 +184,7 @@ export function useSessionHistory({
         }
       }
     }
-    for (const [cause, observed] of observations) onRunTerminalRef.current(cause, observed)
+    for (const [cause, observed] of observations) onRunTerminalRef.current?.(cause, observed)
   }, [conversation])
 
   const commitKernelState = useCallback((next: ConversationState) => {

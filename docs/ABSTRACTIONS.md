@@ -655,6 +655,13 @@ violation, incomplete rename, root change, or path overflow sets the Project
 batch to full. Only the resulting coalesced event is committed to SQLite; its
 commit then wakes the ordinary `WorkspaceEventBus`.
 
+Session-state checkpoints publish a `session_state` workspace event whose
+payload names the checkpoint kinds it carries (`updates: [{ kind, payload }]`)
+in browser-safe projections: private `_meta` markers are stripped and
+available-commands payloads use their sanitized projection. Consumers route
+known kinds (usage, mode) locally without a refetch and fall back to a full
+session-state read for anything they do not recognize.
+
 `WorkspaceEventBus` is the process-local wakeup boundary for that durable log.
 The shared `AgentStore` initializes its latest-value watch cursor from the
 non-empty SQLite log and advances it monotonically only after the transaction

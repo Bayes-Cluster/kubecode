@@ -594,11 +594,20 @@ done"#,
             .and_then(|event| event.conversation_id.as_deref()),
         Some(conversation.id.as_str())
     );
-    assert!(
-        state_events
-            .iter()
-            .all(|event| event.payload == serde_json::json!({}))
-    );
+    // Session-state notifications name their checkpoint kinds in browser-safe
+    // projections (#106): never a bare empty payload, never a private _meta.
+    let offenders: Vec<serde_json::Value> = state_events
+        .iter()
+        .filter(|event| {
+            !event.payload["updates"].as_array().is_some_and(|entries| {
+                entries.iter().all(|entry| {
+                    entry["kind"].is_string() && entry["payload"].get("_meta").is_none()
+                })
+            })
+        })
+        .map(|event| event.payload.clone())
+        .collect();
+    assert!(offenders.is_empty(), "offenders: {offenders:?}");
 }
 
 #[tokio::test]
@@ -827,7 +836,10 @@ done"#,
         state_event.conversation_id.as_deref(),
         Some(conversation.id.as_str())
     );
-    assert_eq!(state_event.payload, serde_json::json!({}));
+    assert_eq!(
+        state_event.payload["updates"][0]["kind"],
+        serde_json::json!("session_loaded")
+    );
     assert_eq!(
         store
             .get_conversation(&conversation.id)

@@ -173,6 +173,7 @@ export function AgentSessionWorkspace({
     t,
   })
   useSessionEvents({
+    applySessionStatePayload: sessionState.applySessionStatePayload,
     conversation,
     reportError,
     requestSessionState: sessionState.requestSessionState,
@@ -585,6 +586,7 @@ export function AgentSessionWorkspace({
       canFork={canFork}
       conversation={conversation}
       leaderReviewPending={leaderReviewPending}
+      locale={locale}
       onForkSession={() => void forkSession()}
       onPromoteToTeam={() => void promoteToTeam()}
       onRename={() => {
@@ -598,6 +600,7 @@ export function AgentSessionWorkspace({
       t={t}
       team={team ?? null}
       teamView={teamView}
+      usage={sessionState.sessionState?.usage ?? null}
       waitingForInput={waitingForInput}
     />
   )

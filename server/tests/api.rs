@@ -2136,7 +2136,14 @@ done"#,
         state_event.conversation_id.as_deref(),
         Some(conversation_id)
     );
-    assert_eq!(state_event.payload, json!({}));
+    // Browser-safe projection only: the private _meta never reaches the wire.
+    assert_eq!(
+        state_event.payload,
+        json!({"updates":[{"kind":"available_commands","payload":{"availableCommands":[
+            {"name":"review", "description":"Review changes",
+             "input":{"kind":"text","hint":"focus"}}
+        ]}}]})
+    );
     assert_eq!(state["composer"]["catalog"]["revision"], 1);
     assert_eq!(
         state["composer"]["catalog"]["conversation_id"],
@@ -2372,7 +2379,9 @@ done"#,
         .workspace_events_after(command_workspace_cursor)
         .expect("command workspace events");
     assert!(command_workspace_events.iter().any(|event| {
-        event.kind == "session_state" && event.run_id.is_none() && event.payload == json!({})
+        event.kind == "session_state"
+            && event.run_id.is_none()
+            && event.payload["updates"][0]["kind"] == json!("available_commands")
     }));
     assert!(command_workspace_events.iter().all(|event| {
         !serde_json::to_string(&event.payload)

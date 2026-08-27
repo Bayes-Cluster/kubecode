@@ -20,6 +20,20 @@ use super::models::{
     StoreError, TerminalCause, to_sql_conversion_error,
 };
 
+/// Projects a session-state checkpoint into its browser-safe form: the
+/// workspace mirror drops private `_meta` markers and available-commands
+/// payloads use their sanitized projection (AGENTS.md analytics boundary).
+fn browser_safe_state_payload(kind: &str, payload: &Value) -> Value {
+    if kind == "available_commands" {
+        return crate::composer_catalog::project_available_commands(payload);
+    }
+    let mut value = payload.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("_meta");
+    }
+    value
+}
+
 impl AgentStore {
     pub fn start_run(
         &self,
@@ -434,7 +448,14 @@ impl AgentStore {
         let agent_id = AgentId::from_str(&conversation.1)?;
         let mut latest_workspace_cursor = None;
         let mut publish_session_state = false;
+        let mut published_updates: Vec<(&str, Value)> = Vec::new();
         for update in updates {
+            if update.publish_session_state {
+                published_updates.push((
+                    update.session_kind.as_str(),
+                    browser_safe_state_payload(&update.session_kind, &update.session_payload),
+                ));
+            }
             append_session_event_transaction(
                 &transaction,
                 conversation_id,
@@ -487,10 +508,15 @@ impl AgentStore {
             }
         }
         if publish_session_state {
+            let projected = published_updates
+                .iter()
+                .map(|(kind, value)| (&kind[..], value))
+                .collect::<Vec<_>>();
             latest_workspace_cursor = Some(append_session_state_workspace_event_transaction(
                 &transaction,
                 &project_id,
                 conversation_id,
+                &projected,
             )?);
         }
         transaction.commit()?;
@@ -518,10 +544,12 @@ impl AgentStore {
                 .optional()?
                 .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
             append_session_event_transaction(&transaction, conversation_id, kind, payload)?;
+            let projected = browser_safe_state_payload(kind, payload);
             let workspace_cursor = append_session_state_workspace_event_transaction(
                 &transaction,
                 &project_id,
                 conversation_id,
+                &[(kind, &projected)],
             )?;
             transaction.commit()?;
             workspace_cursor

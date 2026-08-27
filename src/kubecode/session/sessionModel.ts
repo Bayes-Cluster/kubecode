@@ -187,6 +187,40 @@ export function newClientMessageId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
+export type UsageSnapshot = {
+  used: number | null
+  size: number | null
+  cost: string | null
+}
+
+/** Leniently parses an ACP usage checkpoint ({ used, size, cost? }). */
+export function parseUsage(value: unknown): UsageSnapshot | null {
+  const usage = objectValue(value)
+  if (!usage) return null
+  const number = (input: unknown): number | null => (
+    typeof input === 'number' && Number.isFinite(input) && input >= 0 ? input : null
+  )
+  const costObject = objectValue(usage.cost)
+  const amount = number(costObject?.amount)
+  const currency = textValue(costObject?.currency)
+  return {
+    used: number(usage.used),
+    size: number(usage.size),
+    cost: amount != null && currency ? `${currency} ${amount.toFixed(2)}` : null,
+  }
+}
+
+export type UsageLevel = 'ok' | 'warning' | 'danger'
+
+/** Thresholds (#106): amber above 75%, red above 90% of the context window. */
+export function usageLevel(used: number, size: number): UsageLevel {
+  if (size <= 0) return 'ok'
+  const fraction = used / size
+  if (fraction > 0.9) return 'danger'
+  if (fraction > 0.75) return 'warning'
+  return 'ok'
+}
+
 export function sessionTurnPreview(value: string): string | null {
   const preview = value.replace(/\s+/g, ' ').trim()
   if (!preview) return null

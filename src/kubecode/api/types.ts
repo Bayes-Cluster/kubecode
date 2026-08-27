@@ -341,6 +341,15 @@ export type AgentRun = {
   error: string | null
   internal?: boolean
   client_message_id?: string
+  /** Typed terminal cause carried by run completion events (#92). */
+  terminal_cause?:
+    | 'end_turn'
+    | 'cancelled'
+    | 'error'
+    | 'max_tokens'
+    | 'max_turn_requests'
+    | 'refusal'
+    | 'interrupted'
 }
 export type ConversationHistoryPage = {
   runs: AgentRun[]
