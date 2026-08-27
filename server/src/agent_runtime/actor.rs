@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -603,7 +603,7 @@ async fn run_acp_session(
                             Err(_) => {
                                 create_provider_session(
                                     &connection,
-                                    cwd,
+                                    cwd.clone(),
                                     ProviderSessionCreation {
                                         runtime: &runtime,
                                         conversation_id: &conversation_id,
@@ -622,7 +622,7 @@ async fn run_acp_session(
             } else {
                 create_provider_session(
                     &connection,
-                    cwd,
+                    cwd.clone(),
                     ProviderSessionCreation {
                         runtime: &runtime,
                         conversation_id: &conversation_id,
@@ -695,6 +695,9 @@ async fn run_acp_session(
                 actor_active.store(true, Ordering::Release);
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
+                runtime
+                    .capture_before_checkpoint(&command.run.id, &cwd)
+                    .await;
                 let prompt_request = prompt_request_for_command(&session_id, &command);
                 let mut cancelled = command.cancelled;
                 let prompt = connection.send_request(prompt_request).block_task();
@@ -1109,6 +1112,29 @@ impl AgentRuntime {
                     "cause":"error",
                 }),
             );
+        }
+    }
+
+    /// Captures the before-turn checkpoint once the run has been admitted and
+    /// dispatched to this actor. The git subprocess runs on the blocking pool
+    /// so run admission (and its HTTP handler) never waits for it, while
+    /// awaiting here keeps the snapshot strictly ahead of the turn's first
+    /// tool effect.
+    async fn capture_before_checkpoint(&self, run_id: &str, cwd: &Path) {
+        let workspace = Arc::clone(&self.workspace);
+        let store = Arc::clone(&self.store);
+        let checkpoint_id = format!("{run_id}-before");
+        let run_id = run_id.to_owned();
+        let cwd = cwd.to_path_buf();
+        let captured = tokio::task::spawn_blocking(move || {
+            workspace
+                .capture_git_tree(&cwd, &checkpoint_id)
+                .ok()
+                .flatten()
+        })
+        .await;
+        if let Ok(Some(tree)) = captured {
+            let _ = store.set_run_checkpoint(&run_id, Some(&tree), None);
         }
     }
 

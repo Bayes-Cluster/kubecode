@@ -1301,3 +1301,117 @@ done"#,
         .expect("failed completion");
     assert!(tail < error && error < completed);
 }
+
+fn run_git(cwd: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .status()
+        .expect("git command");
+    assert!(status.success(), "git {args:?}");
+}
+
+#[tokio::test]
+async fn captures_the_before_checkpoint_in_the_actor_ahead_of_the_provider_turn() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path();
+    let database = root.join("kubecode.sqlite3");
+    let project_root = temp.path().join("checkpoint-project");
+    fs::create_dir_all(&project_root).expect("project directory");
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+
+    let workspace = Arc::new(WorkspaceService::open(root, &database).expect("workspace service"));
+    run_git(&project_root, &["init"]);
+    run_git(&project_root, &["config", "user.email", "test@example.com"]);
+    run_git(&project_root, &["config", "user.name", "Kubecode Test"]);
+    run_git(&project_root, &["add", "README.md"]);
+    run_git(&project_root, &["commit", "-m", "initial"]);
+    let project = workspace.import_project_at(&project_root).expect("project");
+    // The reference snapshot is what a pristine before-checkpoint must look
+    // like: identical content state to the actor's capture, marker excluded.
+    let expected_before = workspace
+        .capture_git_tree(&project_root, "expected-before")
+        .expect("reference capture")
+        .expect("git repository");
+
+    // The provider turn mutates the worktree as its first effect. A racy or
+    // handler-inline capture would fold the marker into the stored tree.
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-checkpoint\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf 'marker\n' >> ./marker.txt
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Mutate the worktree".into(),
+            client_message_id: None,
+        })
+        .expect("start run");
+
+    let completed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+    assert_eq!(completed.status, RunStatus::Completed);
+    assert!(
+        project_root.join("marker.txt").exists(),
+        "turn must have run"
+    );
+
+    let checkpoint = store
+        .run_checkpoint(&run.id)
+        .expect("checkpoint lookup")
+        .expect("before checkpoint recorded by the actor");
+    assert_eq!(
+        checkpoint.before_tree,
+        Some(expected_before),
+        "checkpoint reflects the pre-turn worktree"
+    );
+    let after_marker = workspace
+        .capture_git_tree(&project_root, "after-marker")
+        .expect("post-turn capture")
+        .expect("post-turn tree");
+    assert_ne!(
+        checkpoint.before_tree,
+        Some(after_marker),
+        "the marker mutation postdates the captured checkpoint"
+    );
+}
