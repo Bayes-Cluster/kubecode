@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react'
 
-import type { Conversation, KubecodeApi, WorkspaceEvent } from '../api'
+import type { Conversation, WorkspaceEvent } from '../api'
 import type { TimelineEvent } from './conversationReducer'
 import { SESSION_STATE_EVENT_KINDS } from './sessionModel'
 import type { SessionTranscript } from './useSessionHistory'
 
 type UseSessionEventsOptions = {
-  api: KubecodeApi
   conversation: Conversation | null
   reportError: (cause: unknown) => void
   requestSessionState: (targetConversationId: string) => Promise<void>

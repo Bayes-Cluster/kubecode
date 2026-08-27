@@ -19,6 +19,7 @@ import type {
   ElicitationAnswer,
   PendingElicitation,
   PendingPermission,
+  TerminalCause,
 } from './conversationReducer'
 import {
   applySideQuestionEvent,
@@ -93,11 +94,42 @@ export const SESSION_STATE_EVENT_KINDS = new Set([
   'config_options',
   'current_mode',
   'plan',
-  'run_completed',
   'session_state',
   'session_info',
   'usage',
 ])
+/**
+ * Run completion converges from the terminal event itself (#92/#93); it never
+ * triggers a session-state refetch.
+ */
+export const RUN_TERMINAL_EVENT_KINDS = new Set(['run_completed'])
+
+export type TerminalNotice = {
+  level: 'info' | 'warning' | 'error'
+  messageKey: TranslationKey
+}
+
+/**
+ * Maps a typed terminal cause onto user-facing surfacing (#93): cancellations
+ * stay quiet; resource/refusal failures surface as errors. A plain end of
+ * turn warrants nothing.
+ */
+export function terminalCauseNotice(
+  cause: TerminalCause,
+  t: Translator,
+): { level: TerminalNotice['level']; message: string } | null {
+  const notices: Partial<Record<TerminalCause, [TerminalNotice['level'], TranslationKey]>> = {
+    cancelled: ['info', 'kubecode.runEndedCancelled'],
+    interrupted: ['info', 'kubecode.runEndedInterrupted'],
+    max_tokens: ['error', 'kubecode.runEndedMaxTokens'],
+    max_turn_requests: ['error', 'kubecode.runEndedMaxTurnRequests'],
+    refusal: ['error', 'kubecode.runEndedRefusal'],
+    error: ['error', 'kubecode.runEndedError'],
+  }
+  const notice = notices[cause]
+  if (!notice) return null
+  return { level: notice[0], message: t(notice[1]) }
+}
 export const MAX_SESSION_TURN_PICKER_SOURCES = 20
 export const MAX_SESSION_TURN_PREVIEW_CHARACTERS = 120
 

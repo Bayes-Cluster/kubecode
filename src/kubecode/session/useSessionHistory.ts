@@ -23,6 +23,7 @@ import type {
 import {
   ACTIVE_RUN_STATUSES,
   createConversationPump,
+  TERMINAL_RUN_STATUSES,
   initialConversationState,
   reduceAll,
   reduceConversation,
@@ -34,6 +35,7 @@ import type {
   ElicitationAnswer,
   PendingElicitation,
   PendingPermission,
+  TerminalCause,
   TimelineEvent,
 } from './conversationReducer'
 import { hydrateConversation, initialElicitationAnswers, messagesFromHistoryPage } from './sessionModel'
@@ -79,6 +81,8 @@ type UseSessionHistoryOptions = {
   beginSessionStateRequest: (
     targetConversationId: string,
   ) => (state: AgentSessionState | null) => void
+  /** Fired when a watched run turns terminal with a typed cause (#93). */
+  onRunTerminal?: (cause: TerminalCause, run: AgentRun) => void
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
@@ -93,6 +97,7 @@ type UseSessionHistoryOptions = {
 export function useSessionHistory({
   api,
   beginSessionStateRequest,
+  onRunTerminal,
   conversation,
   conversationId,
   directTeammateChatDisabled,
@@ -123,11 +128,20 @@ export function useSessionHistory({
   const bufferedInputsRef = useRef<ConversationInput[]>([])
   const hydratingRef = useRef(false)
   const inflightRunsRef = useRef(new Map<string, Promise<AgentRun>>())
+  /** Terminal causes already surfaced, keyed conversation:run:cause. */
+  const notifiedTerminalRef = useRef(new Set<string>())
+  const onRunTerminalRef = useRef(onRunTerminal)
+  onRunTerminalRef.current = onRunTerminal
 
   const activeRun = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
 
-  /** Commits kernel state to its React mirrors with reference guards. */
+  /**
+   * Commits kernel state to its React mirrors with reference guards. Run-row
+   * changes mirror into the header's watched run here — including terminal
+   * convergence from the typed cause (#92/#93) — so nothing depends on a
+   * refetch, while the terminal-stickiness rule stays authoritative.
+   */
   const commit = useCallback((previous: ConversationState, next: ConversationState) => {
     kernelRef.current = next
     if (next.messages !== previous.messages) setMessages(next.messages)
@@ -142,7 +156,36 @@ export function useSessionHistory({
       }
     }
     if (next.sideQuestions !== previous.sideQuestions) setSideQuestions(next.sideQuestions)
-  }, [])
+
+    const observations: Array<[TerminalCause, AgentRun]> = []
+    const conversationKey = conversation?.id ?? ''
+    for (const [runId, nextRun] of Object.entries(next.runs)) {
+      if (previous.runs[runId] === nextRun) continue
+      // Header run stays sticky: once terminal, a later stale "running" row
+      // for the same id never flips it back to active.
+      setRun((current) => (
+        current?.id === nextRun.id
+          && !ACTIVE_RUN_STATUSES.has(current.status)
+          && ACTIVE_RUN_STATUSES.has(nextRun.status)
+          ? current
+          : current?.id === nextRun.id
+            ? { ...current, ...nextRun }
+            : nextRun
+      ))
+      if (hydratingRef.current || !onRunTerminalRef.current) continue
+      const wasActiveOrNew = !previous.runs[runId]
+        || ACTIVE_RUN_STATUSES.has(previous.runs[runId].status)
+      const cause = nextRun.terminal_cause
+      if (cause && wasActiveOrNew && TERMINAL_RUN_STATUSES.has(nextRun.status)) {
+        const key = `${conversationKey}:${runId}:${cause}`
+        if (!notifiedTerminalRef.current.has(key)) {
+          notifiedTerminalRef.current.add(key)
+          observations.push([cause, nextRun])
+        }
+      }
+    }
+    for (const [cause, observed] of observations) onRunTerminalRef.current(cause, observed)
+  }, [conversation])
 
   const commitKernelState = useCallback((next: ConversationState) => {
     commit(kernelRef.current, next)
@@ -158,16 +201,8 @@ export function useSessionHistory({
   }, [commit])
 
   const attachRun = useCallback((nextRun: AgentRun) => {
+    // The header's watched run mirrors this through the central commit.
     dispatch({ type: 'run', run: nextRun })
-    // Terminal statuses stay sticky once observed (a late "running" row for a
-    // finished run never flips the header back to active).
-    setRun((current) => (
-      current?.id === nextRun.id
-        && !ACTIVE_RUN_STATUSES.has(current.status)
-        && ACTIVE_RUN_STATUSES.has(nextRun.status)
-        ? current
-        : nextRun
-    ))
   }, [dispatch])
 
   const loadRun = useCallback((runId: string) => {

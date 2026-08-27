@@ -689,6 +689,15 @@ shaped solely by the recorded events. `user_message` reconciles a composer's
 optimistic bubble by echoed client message id instead of appending a duplicate
 turn.
 
+Run completion is an event-only convergence: the terminal event carries a
+typed cause (`end_turn`, `cancelled`, `error`, `max_tokens`,
+`max_turn_requests`, `refusal`, `interrupted`), and the reducer finalizes the
+run's status, cause, and bubble from it. No `run_completed` triggers a
+session-state or run refetch; the watched run mirrors reducer transitions
+under a stickiness rule that never flips a terminal run back to active.
+Cancellations surface quietly while resource and refusal failures surface as
+errors, all through localized copy that names no prompt content or paths.
+
 Replay closes with a forced flush: an in-progress tool call or still-streaming
 bubble whose run is already terminal renders terminated rather than pending,
 while runs active server-side keep streaming. Live ingestion enqueues into a
