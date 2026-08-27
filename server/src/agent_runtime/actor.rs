@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -9,8 +9,8 @@ use agent_client_protocol::schema::v1::{
     BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
     ClientSessionCapabilities, CreateElicitationRequest, CreateElicitationResponse,
     ElicitationAction, ElicitationCapabilities, ElicitationFormCapabilities, InitializeRequest,
-    LoadSessionRequest, McpServer, NewSessionRequest, NewSessionResponse, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    LoadSessionRequest, McpServer, NewSessionRequest, NewSessionResponse, PermissionOptionKind,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionId,
     SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
 };
@@ -31,7 +31,8 @@ use super::journal::{
     persist_serialized_session_event, persist_serialized_session_state_checkpoint,
 };
 use super::permissions::{
-    PendingElicitation, PendingPermission, SideQuestionAccepted, apply_native_permission_profile,
+    AlwaysAllowContext, PendingElicitation, PendingPermission, SideQuestionAccepted,
+    always_allow_matcher, apply_native_permission_profile, remembered_permission_outcome,
     start_side_question,
 };
 use super::{
@@ -298,6 +299,17 @@ async fn run_acp_session(
                 });
                 let outcome = if discriminator_request {
                     RequestPermissionOutcome::Cancelled
+                } else if let Some(run_id) = run_id.as_deref()
+                    && let Some(outcome) = remembered_permission_outcome(
+                        &permission_runtime,
+                        run_id,
+                        request.tool_call.fields.kind,
+                        &request.options,
+                    )
+                {
+                    // Always-allow memory: this class of tool was granted for
+                    // the project before; answer without surfacing it.
+                    outcome
                 } else if let Some(run_id) = run_id {
                     let _ = permission_store
                         .set_run_status(&run_id, RunStatus::WaitingPermission);
@@ -315,6 +327,30 @@ async fn run_acp_session(
                             &request_payload,
                         );
                     }
+                    // Always-allow persistence context: scope comes from the
+                    // run's project and the conversation's agent; the matcher
+                    // is kind-granular only. Without both scopes the request
+                    // still surfaces, it just cannot be remembered.
+                    let always_allow = permission_store
+                        .get_conversation(&permission_conversation_id)
+                        .ok()
+                        .zip(permission_store.get_run(&run_id).ok())
+                        .map(|(conversation, run)| {
+                            let option_ids = request
+                                .options
+                                .iter()
+                                .filter(|option| option.kind == PermissionOptionKind::AllowAlways)
+                                .map(|option| option.option_id.to_string())
+                                .collect::<HashSet<_>>();
+                            (
+                                AlwaysAllowContext {
+                                    project_id: run.project_id.clone(),
+                                    agent_id: conversation.agent_id,
+                                    matcher: always_allow_matcher(request.tool_call.fields.kind),
+                                },
+                                option_ids,
+                            )
+                        });
                     let (sender, receiver) = oneshot::channel();
                     pending_permissions
                         .lock()
@@ -330,6 +366,7 @@ async fn run_acp_session(
                                 request_payload: request_payload.clone(),
                                 run_id: run_id.clone(),
                                 sender,
+                                always_allow,
                             },
                         );
                     let mut routed_to_leader = false;

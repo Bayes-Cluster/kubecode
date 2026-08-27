@@ -1415,3 +1415,147 @@ done"#,
         "the marker mutation postdates the captured checkpoint"
     );
 }
+
+#[tokio::test]
+async fn remembers_an_allow_always_choice_and_suppresses_same_kind_requests() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "allow-always-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let observed = temp.path().join("observed-outcome");
+    let observed_path = observed.display().to_string();
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"session-allow\"}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{{"jsonrpc":"2.0","id":"provider-permission","method":"session/request_permission","params":{{"sessionId":"session-allow","toolCall":{{"toolCallId":"tool-exec","title":"Shell","kind":"execute","rawInput":{{"command":"pwd"}}}},"options":[{{"optionId":"allow_once","name":"Allow once","kind":"allow_once"}},{{"optionId":"allow_always","name":"Always allow","kind":"allow_always"}}]}}}}'
+      IFS= read -r permission_response
+      case "$permission_response" in
+        *'"allow_always"'*) printf 'allow_always\n' >> '{observed_path}' ;;
+      esac
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;
+  esac
+done"#,
+        ),
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let matcher = serde_json::json!({"tool_kind": "execute"});
+    assert!(
+        !store
+            .is_allowed(&project.id, AgentId::OpenCode, &matcher)
+            .expect("initial rule lookup"),
+        "no memory before any grant"
+    );
+
+    let first = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "Run the command once".into(),
+            client_message_id: None,
+        })
+        .expect("start first run");
+    let permission_request_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(request_id) = store
+                .events_after(&first.id, 0)
+                .expect("first run events")
+                .into_iter()
+                .find(|event| event.kind == AgentEventKind::PermissionRequested)
+                .and_then(|event| event.payload["request_id"].as_str().map(str::to_owned))
+            {
+                break request_id;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first permission surfaces to the user");
+    assert!(runtime.resolve_permission(&permission_request_id, "allow_always"));
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&first.id).expect("first run");
+            if current.status != RunStatus::Running
+                && current.status != RunStatus::WaitingPermission
+            {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first run completion");
+    assert_eq!(
+        fs::read_to_string(&observed).expect("observed first outcome"),
+        "allow_always\n"
+    );
+
+    // The grant was remembered exactly as advertised: kind-granular only.
+    assert_eq!(
+        store
+            .permission_matchers(&project.id, AgentId::OpenCode)
+            .expect("stored rules"),
+        vec![matcher]
+    );
+
+    let second = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Run the command again".into(),
+            client_message_id: None,
+        })
+        .expect("start second run");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&second.id).expect("second run");
+            if current.status != RunStatus::Running
+                && current.status != RunStatus::WaitingPermission
+            {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("second run completes without user review");
+
+    let surfaced = store
+        .events_after(&second.id, 0)
+        .expect("second run events")
+        .iter()
+        .any(|event| event.kind == AgentEventKind::PermissionRequested);
+    assert!(!surfaced, "the second same-kind request never surfaces");
+    let remembered = fs::read_to_string(&observed).expect("observed agent outcome");
+    assert_eq!(
+        remembered, "allow_always\nallow_always\n",
+        "second turn answered from memory, first from the user"
+    );
+}
