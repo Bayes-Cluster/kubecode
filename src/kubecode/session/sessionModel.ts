@@ -245,6 +245,11 @@ export type HydrationResult = {
   runs: AgentRun[]
   /** The kernel state the transcript replay produced. */
   state: ConversationState
+  /**
+   * Global workspace cursor at snapshot time; live events at or below it are
+   * already represented in the replayed state (#103 hydration dedupe).
+   */
+  workspaceCursor: number | null
 }
 
 /**
@@ -342,6 +347,7 @@ export async function hydrateConversation(
       historyCursor: page.next_cursor,
       fallbackActiveRun: page.runs.at(-1) ?? null,
       seedMessages: page.session_events.length === 0,
+      workspaceCursor: page.workspace_cursor ?? null,
     })
   }
   const [runs, sessionEvents, sessionState] = await Promise.all([
@@ -366,6 +372,7 @@ export async function hydrateConversation(
     // exists; with one present, events alone shape bubbles exactly as the
     // modern renderer did.
     seedMessages: sessionEvents.length === 0,
+    workspaceCursor: null,
   })
 }
 
@@ -377,6 +384,7 @@ async function settledHydration({
   historyCursor,
   fallbackActiveRun,
   seedMessages,
+  workspaceCursor,
 }: {
   runs: AgentRun[]
   streamFor: (run: AgentRun) => Iterable<AgentEvent>
@@ -385,6 +393,7 @@ async function settledHydration({
   historyCursor: string | null
   fallbackActiveRun: AgentRun | null
   seedMessages: boolean
+  workspaceCursor: number | null
 }): Promise<HydrationResult> {
   const state = replayRecordedConversation(runs, streamFor, { seedMessages })
   return {
@@ -397,6 +406,7 @@ async function settledHydration({
     historyCursor,
     runs,
     state,
+    workspaceCursor,
   }
 }
 

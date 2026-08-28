@@ -182,6 +182,10 @@ struct ConversationHistoryPage {
     events: BTreeMap<String, Vec<AgentEvent>>,
     session_events: Vec<SessionEvent>,
     next_cursor: Option<String>,
+    /// Global workspace cursor at snapshot time. Live events at or below it
+    /// are already represented in this page, letting the client drop buffered
+    /// duplicates during hydration instead of folding them twice (#103).
+    workspace_cursor: u64,
 }
 
 pub(super) async fn list_conversation_history(
@@ -243,6 +247,7 @@ pub(super) async fn list_conversation_history(
         events,
         session_events,
         next_cursor,
+        workspace_cursor: store.latest_workspace_event_id()?,
     }))
 }
 

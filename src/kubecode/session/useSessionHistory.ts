@@ -25,7 +25,7 @@ import {
   createConversationPump,
   TERMINAL_RUN_STATUSES,
   initialConversationState,
-  reduceAll,
+  mergeLiveOverHistory,
   reduceConversation,
   textValue,
 } from './conversationReducer'
@@ -279,7 +279,7 @@ export function useSessionHistory({
       hydratingRef.current = false
       const buffered = bufferedInputsRef.current
       bufferedInputsRef.current = []
-      const merged = buffered.length > 0 ? reduceAll(result.state, buffered) : result.state
+      const merged = mergeLiveOverHistory(result.state, buffered, result.workspaceCursor)
       kernelRef.current = merged
       setMessages(merged.messages)
       setPendingPermission(merged.pendingPermission)
@@ -330,7 +330,7 @@ export function useSessionHistory({
       const hydrated = await hydrateConversation(api, conversation.id)
       const buffered = bufferedInputsRef.current
       bufferedInputsRef.current = []
-      const merged = buffered.length > 0 ? reduceAll(hydrated.state, buffered) : hydrated.state
+      const merged = mergeLiveOverHistory(hydrated.state, buffered, hydrated.workspaceCursor)
       kernelRef.current = merged
       setMessages(merged.messages)
       setPendingPermission(merged.pendingPermission)

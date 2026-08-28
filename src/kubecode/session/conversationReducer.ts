@@ -210,6 +210,27 @@ export function reduceAll(
   return current
 }
 
+/**
+ * Fello-style hydration merge (#103): live inputs buffered while a history
+ * fetch was in flight fold on top of the fetched state, dropping events at or
+ * below the fetch-time workspace cursor — the page already contains them, so
+ * folding both copies would double every overlapping chunk. Inputs without a
+ * workspace sequence (optimistic bubbles, run rows, replay markers) always
+ * fold, and a missing cursor degrades to a plain fold.
+ */
+export function mergeLiveOverHistory(
+  state: ConversationState,
+  inputs: readonly ConversationInput[],
+  workspaceCursor: number | null,
+): ConversationState {
+  if (workspaceCursor == null) return reduceAll(state, inputs)
+  const kept = inputs.filter((input) => (
+    input.type !== 'event' || input.event.source !== 'live'
+      || input.event.seq > workspaceCursor
+  ))
+  return reduceAll(state, kept)
+}
+
 // ---------------------------------------------------------------------------
 // Event routing
 // ---------------------------------------------------------------------------

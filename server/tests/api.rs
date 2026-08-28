@@ -2926,6 +2926,12 @@ done"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    // The snapshot cursor lets clients drop buffered live duplicates during
+    // hydration (#103): live events at or below it are already on the page.
+    let workspace_cursor = history["workspace_cursor"]
+        .as_u64()
+        .expect("history workspace cursor");
+    assert!(workspace_cursor > 0);
     let user_message = history["session_events"]
         .as_array()
         .expect("history session events")

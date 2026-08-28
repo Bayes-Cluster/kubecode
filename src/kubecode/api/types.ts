@@ -356,6 +356,8 @@ export type ConversationHistoryPage = {
   events: Record<string, AgentEvent[]>
   session_events: SessionEvent[]
   next_cursor: string | null
+  /** Global workspace cursor at snapshot time (see #103 hydration dedupe). */
+  workspace_cursor?: number
 }
 export type AgentEvent = {
   run_id: string

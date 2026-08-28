@@ -7,6 +7,7 @@ import {
   ACTIVE_RUN_STATUSES,
   createConversationPump,
   initialConversationState,
+  mergeLiveOverHistory,
   messageFromRun,
   optimisticUserMessage,
   reduceAll,
@@ -333,3 +334,45 @@ function structuredCloneForTest(value: unknown): unknown {
 
 type UnusedTypeGuard = AiAgentMessage extends AiAgentMessage ? true : false
 export type { UnusedTypeGuard }
+
+describe('mergeLiveOverHistory', () => {
+  it('drops buffered live events the fetched page already contains and folds only the rest', () => {
+    const historyState = reduceAll(initialConversationState(), [
+      { type: 'run', run: run() },
+      {
+        type: 'event',
+        event: event(40, 'text_delta', { text: 'ready', message_id: 'm1' }, { source: 'history' }),
+      },
+    ])
+    const merged = mergeLiveOverHistory(
+      historyState,
+      [
+        // Same chunk re-delivered live within the snapshot cursor: dropped.
+        {
+          type: 'event',
+          event: event(40, 'text_delta', { text: 'ready', message_id: 'm1' }),
+        },
+        // A genuinely new chunk past the cursor: folded exactly once.
+        {
+          type: 'event',
+          event: event(60, 'text_delta', { text: ' now', message_id: 'm1' }),
+        },
+        { type: 'optimistic', message: optimisticUserMessage('c-9', 'typed') },
+      ],
+      50,
+    )
+    expect(merged.messages.map((message) => message.id)).toEqual(['run-1', 'c-9'])
+    expect(merged.messages[0]?.responseBlocks?.map((block) => block.text).join('')).toBe(
+      'ready now',
+    )
+  })
+
+  it('degrades to a plain fold when the page carries no workspace cursor', () => {
+    const merged = mergeLiveOverHistory(
+      initialConversationState(),
+      [{ type: 'event', event: event(5, 'user_message_delta', { text: 'A' }, { runId: null }) }],
+      null,
+    )
+    expect(merged.messages).toHaveLength(1)
+  })
+})
