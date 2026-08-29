@@ -15,11 +15,13 @@ export function PromptQueueDock({
   items,
   onEdit,
   onRemove,
+  onSendNow,
   t,
 }: {
   items: PromptQueueItem[]
   onEdit: (itemId: string, content: string) => void
   onRemove: (itemId: string) => void
+  onSendNow: (itemId: string) => void
   t: Translator
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -100,6 +102,15 @@ export function PromptQueueDock({
                 >
                   {item.content}
                 </span>
+                <Button
+                  aria-label={t('kubecode.queueSendNow')}
+                  data-testid="prompt-queue-send-now"
+                  onClick={() => onSendNow(item.id)}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  ⚡
+                </Button>
                 <Button
                   aria-label={t('kubecode.queueEdit')}
                   data-testid="prompt-queue-edit"

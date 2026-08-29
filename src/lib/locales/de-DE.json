@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Warteschlangeneintrag bearbeiten",
   "kubecode.queueRemove": "Aus der Warteschlange entfernen",
   "kubecode.queueSave": "Speichern",
-  "kubecode.queueCancelEditing": "Bearbeiten abbrechen"
+  "kubecode.queueCancelEditing": "Bearbeiten abbrechen",
+  "kubecode.queueSendNow": "Jetzt senden"
 }

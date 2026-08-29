@@ -1,6 +1,6 @@
 use tokio::sync::oneshot;
 
-use crate::agents::{AgentRun, PermissionMode, StoreError};
+use crate::agents::{AgentRun, PermissionMode, RunStatus, StoreError};
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerContextSelector, ComposerDraftSegment, ComposerPreflightContext,
     opaque_git_diff_context_id, validate_structured_composer_segments,
@@ -153,6 +153,46 @@ impl AgentRuntime {
     /// Claims the next queued prompt and converts it into the session
     /// actor's next command (#95). Called at the actor's turn boundary and
     /// on session boot so restart-resumed queues drain.
+    /// Steer-now (#98): moves a queued prompt to the head and, when a run is
+    /// active, cancels it (terminals killed via cancel) so the turn boundary
+    /// drains the target prompt next. With an idle actor the prompt starts
+    /// immediately. Cancel failure never blocks the new prompt.
+    pub fn send_queued_prompt_now(
+        &self,
+        conversation_id: &str,
+        item_id: &str,
+    ) -> Result<crate::agents::PromptQueueItem, RuntimeError> {
+        let item = self
+            .store
+            .move_queued_prompt_to_head(item_id)
+            .map_err(RuntimeError::Store)?;
+        let _ = self.store.publish_prompt_queue_snapshot(conversation_id);
+        let active = self
+            .store
+            .list_runs(conversation_id)
+            .map_err(RuntimeError::Store)?
+            .into_iter()
+            .find(|run| {
+                matches!(
+                    run.status,
+                    RunStatus::Running | RunStatus::WaitingPermission
+                )
+            });
+        if let Some(run) = active {
+            let _ = self.cancel(&run.id);
+            return Ok(item);
+        }
+        // Idle actor: claim the head (this item) and dispatch it now.
+        if let Some(command) = self.claim_next_queued_prompt(conversation_id) {
+            let conversation = self.store.get_conversation(conversation_id)?;
+            let cwd = self
+                .workspace
+                .execution_path(&item.project_id, conversation.workspace_path.as_deref())?;
+            self.dispatch_started_run(&command.run, &conversation, cwd, Some(command.message));
+        }
+        Ok(item)
+    }
+
     pub(super) fn claim_next_queued_prompt(&self, conversation_id: &str) -> Option<AgentCommand> {
         let item = self
             .store

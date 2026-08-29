@@ -277,6 +277,33 @@ describe('useComposerController optimistic send', () => {
     expect(result.current.prompt).toBe('')
   })
 
+  it('steers a queued prompt now when the accelerated gesture is used', async () => {
+    const api = makeApi()
+    api.startPrompt.mockResolvedValue(queued({ content: 'Steer me' }))
+    api.sendPromptQueueNow = api.sendPromptQueueNow ?? vi.fn()
+    const sendPromptQueueNow = vi.fn().mockResolvedValue({
+      id: 'queue-1',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      content: 'Steer me',
+      status: 'claimed',
+      position: 0,
+      internal: false,
+      created_at: 'now',
+    })
+    api.sendPromptQueueNow = sendPromptQueueNow
+    const { result } = renderController(api, { active: true })
+
+    await act(async () => {
+      await result.current.updatePrompt('Steer me')
+    })
+    await act(async () => {
+      await result.current.send('Steer me', { sendNow: true })
+    })
+
+    expect(sendPromptQueueNow).toHaveBeenCalledWith('conversation-1', 'queue-1')
+  })
+
   it('still starts a run immediately when the conversation is idle', async () => {
     const clientMessageId = 'aaaa1111-2222-4333-8444-555555555555'
     vi.stubGlobal('crypto', {

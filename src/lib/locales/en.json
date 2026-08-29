@@ -1587,5 +1587,6 @@
   "kubecode.queueEdit": "Edit queued prompt",
   "kubecode.queueRemove": "Remove from queue",
   "kubecode.queueSave": "Save",
-  "kubecode.queueCancelEditing": "Cancel editing"
+  "kubecode.queueCancelEditing": "Cancel editing",
+  "kubecode.queueSendNow": "Send now"
 }

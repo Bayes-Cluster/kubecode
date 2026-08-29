@@ -431,6 +431,16 @@ pub(super) async fn edit_conversation_queue_item(
     Ok(Json(item))
 }
 
+pub(super) async fn send_conversation_queue_item_now(
+    State(state): State<AppState>,
+    Path((conversation_id, item_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let item = state
+        .agent_runtime
+        .send_queued_prompt_now(&conversation_id, &item_id)?;
+    Ok((StatusCode::ACCEPTED, Json(item)))
+}
+
 pub(super) async fn remove_conversation_queue_item(
     State(state): State<AppState>,
     Path((conversation_id, item_id)): Path<(String, String)>,

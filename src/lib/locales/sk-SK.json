@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Upraviť správu v poradí",
   "kubecode.queueRemove": "Odstrániť z poradia",
   "kubecode.queueSave": "Uložiť",
-  "kubecode.queueCancelEditing": "Zrušiť úpravu"
+  "kubecode.queueCancelEditing": "Zrušiť úpravu",
+  "kubecode.queueSendNow": "Poslať teraz"
 }

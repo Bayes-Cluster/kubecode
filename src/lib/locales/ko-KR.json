@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "대기 메시지 편집",
   "kubecode.queueRemove": "대기열에서 제거",
   "kubecode.queueSave": "저장",
-  "kubecode.queueCancelEditing": "편집 취소"
+  "kubecode.queueCancelEditing": "편집 취소",
+  "kubecode.queueSendNow": "지금 보내기"
 }

@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "キュー内のメッセージを編集",
   "kubecode.queueRemove": "キューから削除",
   "kubecode.queueSave": "保存",
-  "kubecode.queueCancelEditing": "編集をキャンセル"
+  "kubecode.queueCancelEditing": "編集をキャンセル",
+  "kubecode.queueSendNow": "今すぐ送信"
 }

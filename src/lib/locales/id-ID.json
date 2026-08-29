@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Edit pesan dalam antrean",
   "kubecode.queueRemove": "Hapus dari antrean",
   "kubecode.queueSave": "Simpan",
-  "kubecode.queueCancelEditing": "Batal mengedit"
+  "kubecode.queueCancelEditing": "Batal mengedit",
+  "kubecode.queueSendNow": "Kirim sekarang"
 }

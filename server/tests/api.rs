@@ -2601,7 +2601,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -2660,7 +2660,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -2765,7 +2765,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -2901,7 +2901,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -3007,7 +3007,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -4671,7 +4671,7 @@ done"#,
     );
     let teams = Arc::new(TeamStore::open(&database).expect("team store"));
     let app = app_router(
-        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
@@ -4852,4 +4852,223 @@ done"#,
         .find(|terminal| terminal["id"] == json!(late_terminal_id))
         .expect("late terminal");
     assert_eq!(late["status"], "running");
+}
+
+#[tokio::test]
+async fn send_now_cancels_the_active_run_and_drains_the_queued_prompt() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-steer\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'hold'*) IFS= read -r held_discard ;;
+      esac
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/steer")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let queue_uri = format!("{BASE_PATH}/api/v1/conversations/{conversation_id}/queue");
+
+    let (_, held) = json_request(&app, Method::POST, &runs_uri, json!({"message":"hold"})).await;
+    let held_id = held["id"].as_str().expect("held run id");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{held_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("held run active");
+
+    let (_, queued) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"steer me", "client_message_id":"22222222-2222-4222-8222-222222222222"}),
+    )
+    .await;
+    assert_eq!(queued["status"], "pending");
+    let item_id = queued["id"].as_str().expect("queue item id");
+
+    // Steer-now: the active run cancels and the queued prompt drains next.
+    let (status, steered) = json_request(
+        &app,
+        Method::POST,
+        &format!("{queue_uri}/{item_id}/send-now"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "body: {steered}");
+
+    let drained = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let runs = store.list_runs(conversation_id).expect("runs");
+            if let Some(next) = runs.iter().find(|run| {
+                run.client_message_id.as_deref() == Some("22222222-2222-4222-8222-222222222222")
+            }) && next.status == kubecode_server::agents::RunStatus::Completed
+            {
+                break next.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("steered prompt drains and completes");
+    assert_eq!(drained.message, "steer me");
+
+    let held_final = store.get_run(held_id).expect("held final");
+    assert_eq!(
+        held_final.status,
+        kubecode_server::agents::RunStatus::Cancelled
+    );
+    assert_eq!(
+        held_final.terminal_cause,
+        Some(kubecode_server::agents::TerminalCause::Cancelled)
+    );
+    let (_, remaining) = json_request(&app, Method::GET, &queue_uri, Value::Null).await;
+    assert!(remaining.as_array().expect("queue").is_empty());
+}
+
+#[tokio::test]
+async fn send_now_with_an_idle_actor_starts_the_prompt_immediately() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-steer-idle\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/steer-idle")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let queue_uri = format!("{BASE_PATH}/api/v1/conversations/{conversation_id}/queue");
+
+    // Seed a pending item with no active run: a restart-resumed queue with
+    // an idle actor is exactly the send-now idle case.
+    let seeded = store
+        .enqueue_prompt(
+            conversation_id,
+            project_id,
+            "idle steer",
+            false,
+            Some("33333333-3333-4333-8333-333333333333"),
+        )
+        .expect("seed queue item");
+
+    let (status, steered) = json_request(
+        &app,
+        Method::POST,
+        &format!("{queue_uri}/{}/send-now", seeded.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "body: {steered}");
+
+    let completed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let runs = store.list_runs(conversation_id).expect("runs");
+            if let Some(next) = runs.iter().find(|run| {
+                run.client_message_id.as_deref() == Some("33333333-3333-4333-8333-333333333333")
+            }) && next.status == kubecode_server::agents::RunStatus::Completed
+            {
+                break next.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("idle steer completes");
+    assert_eq!(completed.message, "idle steer");
 }

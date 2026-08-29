@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Zmianić paviedamliennie ŭ čarzie",
   "kubecode.queueRemove": "Vydalić z čarhi",
   "kubecode.queueSave": "Zachavać",
-  "kubecode.queueCancelEditing": "Skasavać redahavanniie"
+  "kubecode.queueCancelEditing": "Skasavać redahavanniie",
+  "kubecode.queueSendNow": "Adpravić zaraz"
 }

@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Змяніць паведамленне ў чарзе",
   "kubecode.queueRemove": "Выдаліць з чаргі",
   "kubecode.queueSave": "Захаваць",
-  "kubecode.queueCancelEditing": "Скасаваць рэдагаванне"
+  "kubecode.queueCancelEditing": "Скасаваць рэдагаванне",
+  "kubecode.queueSendNow": "Адправіць зараз"
 }

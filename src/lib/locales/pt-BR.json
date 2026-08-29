@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Editar mensagem na fila",
   "kubecode.queueRemove": "Remover da fila",
   "kubecode.queueSave": "Salvar",
-  "kubecode.queueCancelEditing": "Cancelar edição"
+  "kubecode.queueCancelEditing": "Cancelar edição",
+  "kubecode.queueSendNow": "Enviar agora"
 }

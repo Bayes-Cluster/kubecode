@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Editar mensaje en cola",
   "kubecode.queueRemove": "Quitar de la cola",
   "kubecode.queueSave": "Guardar",
-  "kubecode.queueCancelEditing": "Cancelar edición"
+  "kubecode.queueCancelEditing": "Cancelar edición",
+  "kubecode.queueSendNow": "Enviar ahora"
 }

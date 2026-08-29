@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Sửa tin nhắn trong hàng đợi",
   "kubecode.queueRemove": "Xóa khỏi hàng đợi",
   "kubecode.queueSave": "Lưu",
-  "kubecode.queueCancelEditing": "Hủy chỉnh sửa"
+  "kubecode.queueCancelEditing": "Hủy chỉnh sửa",
+  "kubecode.queueSendNow": "Gửi ngay"
 }

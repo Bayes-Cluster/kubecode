@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "編輯佇列中的訊息",
   "kubecode.queueRemove": "從佇列中移除",
   "kubecode.queueSave": "儲存",
-  "kubecode.queueCancelEditing": "取消編輯"
+  "kubecode.queueCancelEditing": "取消編輯",
+  "kubecode.queueSendNow": "立即傳送"
 }

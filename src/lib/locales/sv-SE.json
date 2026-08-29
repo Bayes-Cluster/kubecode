@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Redigera köat meddelande",
   "kubecode.queueRemove": "Ta bort från kön",
   "kubecode.queueSave": "Spara",
-  "kubecode.queueCancelEditing": "Avbryt redigering"
+  "kubecode.queueCancelEditing": "Avbryt redigering",
+  "kubecode.queueSendNow": "Skicka nu"
 }

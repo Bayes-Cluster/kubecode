@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Modifier le message en file d’attente",
   "kubecode.queueRemove": "Retirer de la file d’attente",
   "kubecode.queueSave": "Enregistrer",
-  "kubecode.queueCancelEditing": "Annuler la modification"
+  "kubecode.queueCancelEditing": "Annuler la modification",
+  "kubecode.queueSendNow": "Envoyer maintenant"
 }

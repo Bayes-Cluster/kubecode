@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Modifica messaggio in coda",
   "kubecode.queueRemove": "Rimuovi dalla coda",
   "kubecode.queueSave": "Salva",
-  "kubecode.queueCancelEditing": "Annulla modifica"
+  "kubecode.queueCancelEditing": "Annulla modifica",
+  "kubecode.queueSendNow": "Invia ora"
 }

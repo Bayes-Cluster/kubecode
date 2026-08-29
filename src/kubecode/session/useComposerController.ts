@@ -120,7 +120,8 @@ export type ComposerController = {
   insertComposerTerminalContext: (terminalRequest: TerminalContextRequest) => void
   insertComposerText: (text: string, kind: 'command') => void
   prompt: string
-  send: (text: string) => Promise<void>
+  send: (text: string, options?: { sendNow?: boolean }) => Promise<void>
+  sendNow: (text: string) => Promise<void>
   sendSideQuestion: (text: string) => Promise<void>
   sessionTurnSources: SessionTurnContextSource[]
   setDismissedCommandPrompt: Dispatch<SetStateAction<string | null>>
@@ -630,7 +631,7 @@ export function useComposerController({
     }
   }
 
-  const send = async (text: string) => {
+  const send = async (text: string, options?: { sendNow?: boolean }) => {
     const message = text.trim()
     if (!message
       || !conversation
@@ -694,6 +695,14 @@ export function useComposerController({
           trackEvent('kubecode_agent_prompt_queued', {
             agent_id: conversation.agent_id,
           })
+          if (options?.sendNow) {
+            // Accelerated steer gesture: the just-queued prompt takes effect
+            // immediately via cancel-and-replace (#98).
+            trackEvent('kubecode_agent_prompt_steered', {
+              agent_id: conversation.agent_id,
+            })
+            await api.sendPromptQueueNow(conversation.id, admission.item.id)
+          }
           return
         }
         attachRun(admission.run)
@@ -731,6 +740,7 @@ export function useComposerController({
     }
   }
 
+  const sendNow = (text: string) => send(text, { sendNow: true })
   const sendSideQuestion = async (text: string) => {
     const question = sideQuestionText(text)
     if (!question
@@ -770,6 +780,7 @@ export function useComposerController({
     insertComposerText,
     prompt,
     send,
+    sendNow,
     sendSideQuestion,
     sessionTurnSources,
     setDismissedCommandPrompt,

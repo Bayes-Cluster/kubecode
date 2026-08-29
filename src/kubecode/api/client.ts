@@ -509,6 +509,14 @@ export class KubecodeApi {
     )
   }
 
+  /** Steer-now (#98): cancels the active run and drains this item next. */
+  sendPromptQueueNow(conversationId: string, itemId: string): Promise<PromptQueueItem> {
+    return this.request(
+      `/conversations/${encodeURIComponent(conversationId)}/queue/${encodeURIComponent(itemId)}/send-now`,
+      { method: 'POST' },
+    )
+  }
+
   registerComposerContext(
     conversationId: string,
     context: {

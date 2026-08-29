@@ -22,8 +22,21 @@ function item(overrides: Partial<PromptQueueItem> = {}): PromptQueueItem {
   }
 }
 
-function renderDock(items: PromptQueueItem[], onEdit = vi.fn(), onRemove = vi.fn()) {
-  return render(<PromptQueueDock items={items} onEdit={onEdit} onRemove={onRemove} t={t} />)
+function renderDock(
+  items: PromptQueueItem[],
+  onEdit = vi.fn(),
+  onRemove = vi.fn(),
+  onSendNow = vi.fn(),
+) {
+  return render(
+    <PromptQueueDock
+      items={items}
+      onEdit={onEdit}
+      onRemove={onRemove}
+      onSendNow={onSendNow}
+      t={t}
+    />,
+  )
 }
 
 describe('PromptQueueDock', () => {
@@ -59,6 +72,13 @@ describe('PromptQueueDock', () => {
     renderDock([item({ id: 'a' })], vi.fn(), onRemove)
     fireEvent.click(screen.getByTestId('prompt-queue-remove'))
     expect(onRemove).toHaveBeenCalledWith('a')
+  })
+
+  it('sends a queued item now', () => {
+    const onSendNow = vi.fn()
+    renderDock([item({ id: 'a' })], vi.fn(), vi.fn(), onSendNow)
+    fireEvent.click(screen.getByTestId('prompt-queue-send-now'))
+    expect(onSendNow).toHaveBeenCalledWith('a')
   })
 
   it('does not commit an empty edit and supports cancelling the editor', () => {

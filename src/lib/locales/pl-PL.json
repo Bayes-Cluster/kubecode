@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Edytuj wiadomość w kolejce",
   "kubecode.queueRemove": "Usuń z kolejki",
   "kubecode.queueSave": "Zapisz",
-  "kubecode.queueCancelEditing": "Anuluj edycję"
+  "kubecode.queueCancelEditing": "Anuluj edycję",
+  "kubecode.queueSendNow": "Wyślij teraz"
 }

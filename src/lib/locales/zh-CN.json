@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "编辑队列中的消息",
   "kubecode.queueRemove": "从队列中移除",
   "kubecode.queueSave": "保存",
-  "kubecode.queueCancelEditing": "取消编辑"
+  "kubecode.queueCancelEditing": "取消编辑",
+  "kubecode.queueSendNow": "立即发送"
 }

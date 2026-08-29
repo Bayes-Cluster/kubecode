@@ -672,6 +672,10 @@ export function AgentSessionWorkspace({
               void api.removePromptQueueItem(conversation.id, itemId)
                 .catch(reportError)
             }}
+            onSendNow={(itemId) => {
+              void api.sendPromptQueueNow(conversation.id, itemId)
+                .catch(reportError)
+            }}
             t={t}
           />
           <SessionComposer

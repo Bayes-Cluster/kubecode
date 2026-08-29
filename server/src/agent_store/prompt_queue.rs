@@ -104,6 +104,41 @@ impl AgentStore {
         Ok(StartPromptOutcome::Started(run))
     }
 
+    /// Inserts a queued prompt without the admission transaction: used by
+    /// tests and tooling that need a pending item with no active run.
+    pub fn enqueue_prompt(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        content: &str,
+        internal: bool,
+        client_message_id: Option<&str>,
+    ) -> Result<PromptQueueItem, StoreError> {
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let conversation_project = transaction
+            .query_row(
+                "SELECT project_id FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
+        if conversation_project != project_id {
+            return Err(StoreError::ConversationNotFound(conversation_id.to_owned()));
+        }
+        let item = insert_queue_item(
+            &transaction,
+            conversation_id,
+            project_id,
+            content,
+            internal,
+            client_message_id,
+        )?;
+        transaction.commit()?;
+        Ok(item)
+    }
+
     /// Lists the pending queue for a conversation in drain order.
     pub fn list_queued_prompts(
         &self,

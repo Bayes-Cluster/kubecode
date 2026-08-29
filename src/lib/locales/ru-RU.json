@@ -1586,5 +1586,6 @@
   "kubecode.queueEdit": "Изменить сообщение в очереди",
   "kubecode.queueRemove": "Убрать из очереди",
   "kubecode.queueSave": "Сохранить",
-  "kubecode.queueCancelEditing": "Отменить редактирование"
+  "kubecode.queueCancelEditing": "Отменить редактирование",
+  "kubecode.queueSendNow": "Отправить сейчас"
 }
