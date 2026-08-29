@@ -6,6 +6,13 @@ const baseURL = requestedURL.pathname === '/'
   ? `${requestedURL.origin}/user/local/kubecode`
   : requestedURL.href.replace(/\/$/, '')
 const port = requestedURL.port || '41741'
+// The webServer bootstrap runs a full client build before launching the
+// server binary; constrained self-hosted runners need more than the 120s
+// default, so the wait is tunable like BASE_URL above.
+const webServerTimeout = Number.parseInt(
+  process.env.PLAYWRIGHT_WEB_SERVER_TIMEOUT ?? '120000',
+  10,
+)
 
 export default defineConfig({
   grep: /@smoke/,
@@ -28,7 +35,7 @@ export default defineConfig({
       : process.env.CI !== 'true',
     stderr: 'pipe',
     stdout: 'pipe',
-    timeout: 120_000,
+    timeout: webServerTimeout,
     url: `${requestedURL.origin}/healthz`,
   },
   workers: 1,
