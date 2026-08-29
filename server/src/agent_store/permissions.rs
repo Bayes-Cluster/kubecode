@@ -6,6 +6,29 @@ use super::AgentStore;
 use super::models::{AgentId, StoreError};
 
 impl AgentStore {
+    /// Lists the persisted always-allow matchers for a project + agent.
+    pub fn permission_matchers(
+        &self,
+        project_id: &str,
+        agent_id: AgentId,
+    ) -> Result<Vec<Value>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database.prepare(
+            "SELECT matcher FROM agent_permission_rules
+             WHERE project_id = ?1 AND agent_id = ?2 ORDER BY matcher",
+        )?;
+        let rows = statement.query_map(params![project_id, agent_id.as_str()], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.map(|row| {
+            let matcher = row?;
+            let value: Value = serde_json::from_str(&matcher)
+                .map_err(|_| StoreError::InvalidStoredValue(matcher.clone()))?;
+            Ok(value)
+        })
+        .collect()
+    }
+
     pub fn allow_always(
         &self,
         project_id: &str,

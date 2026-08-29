@@ -1098,6 +1098,7 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
             &run.id,
             kubecode_server::agents::RunStatus::Interrupted,
             None,
+            kubecode_server::agents::TerminalCause::Interrupted,
         )
         .expect("interrupt run");
 
@@ -1130,6 +1131,7 @@ async fn branches_an_agent_chat_at_an_immutable_turn() {
             &incomplete_run.id,
             kubecode_server::agents::RunStatus::Interrupted,
             None,
+            kubecode_server::agents::TerminalCause::Interrupted,
         )
         .expect("interrupt incomplete run");
     store
@@ -1386,7 +1388,12 @@ async fn revises_chat_history_without_failing_when_file_restore_is_unsafe() {
         )
         .expect("run");
     store
-        .finish_run(&run.id, kubecode_server::agents::RunStatus::Completed, None)
+        .finish_run(
+            &run.id,
+            kubecode_server::agents::RunStatus::Completed,
+            None,
+            kubecode_server::agents::TerminalCause::EndTurn,
+        )
         .expect("complete run");
     store
         .set_run_checkpoint(&run.id, Some("before-tree"), None)
@@ -2129,7 +2136,14 @@ done"#,
         state_event.conversation_id.as_deref(),
         Some(conversation_id)
     );
-    assert_eq!(state_event.payload, json!({}));
+    // Browser-safe projection only: the private _meta never reaches the wire.
+    assert_eq!(
+        state_event.payload,
+        json!({"updates":[{"kind":"available_commands","payload":{"availableCommands":[
+            {"name":"review", "description":"Review changes",
+             "input":{"kind":"text","hint":"focus"}}
+        ]}}]})
+    );
     assert_eq!(state["composer"]["catalog"]["revision"], 1);
     assert_eq!(
         state["composer"]["catalog"]["conversation_id"],
@@ -2365,7 +2379,9 @@ done"#,
         .workspace_events_after(command_workspace_cursor)
         .expect("command workspace events");
     assert!(command_workspace_events.iter().any(|event| {
-        event.kind == "session_state" && event.run_id.is_none() && event.payload == json!({})
+        event.kind == "session_state"
+            && event.run_id.is_none()
+            && event.payload["updates"][0]["kind"] == json!("available_commands")
     }));
     assert!(command_workspace_events.iter().all(|event| {
         !serde_json::to_string(&event.payload)
@@ -2721,6 +2737,110 @@ done"#,
 }
 
 #[tokio::test]
+async fn run_completion_carries_the_reported_terminal_cause() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-terminal-cause\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"max_tokens\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/run-terminal-cause")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let (_, run) = json_request(
+        &app,
+        Method::POST,
+        &format!("{conversations_uri}/{conversation_id}/runs"),
+        json!({"message":"Generate until the limit"}),
+    )
+    .await;
+    let run_id = run["id"].as_str().expect("run id");
+    let run_uri = format!("{BASE_PATH}/api/v1/runs/{run_id}");
+
+    let completed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let (_, current) = json_request(&app, Method::GET, &run_uri, Value::Null).await;
+            if current["status"] != "running" {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+    // A reported max_tokens stop is a completed turn whose cause says why.
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["terminal_cause"], "max_tokens");
+
+    let (_, events) =
+        json_request(&app, Method::GET, &format!("{run_uri}/events"), Value::Null).await;
+    let completion = events
+        .as_array()
+        .expect("run events")
+        .iter()
+        .find(|event| event["kind"] == "run_completed")
+        .expect("run completion event");
+    assert_eq!(completion["payload"]["status"], "completed");
+    assert_eq!(completion["payload"]["cause"], "max_tokens");
+
+    let (_, session_events) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/events?after=0"),
+        Value::Null,
+    )
+    .await;
+    let session_completion = session_events
+        .as_array()
+        .expect("session events")
+        .iter()
+        .find(|event| event["kind"] == "run_completed")
+        .expect("session completion event");
+    assert_eq!(session_completion["payload"]["cause"], "max_tokens");
+}
+
+#[tokio::test]
 async fn run_start_round_trips_client_message_ids() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");
@@ -2806,6 +2926,12 @@ done"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    // The snapshot cursor lets clients drop buffered live duplicates during
+    // hydration (#103): live events at or below it are already on the page.
+    let workspace_cursor = history["workspace_cursor"]
+        .as_u64()
+        .expect("history workspace cursor");
+    assert!(workspace_cursor > 0);
     let user_message = history["session_events"]
         .as_array()
         .expect("history session events")
@@ -3448,7 +3574,7 @@ async fn terminal_context_is_session_authorized_sanitized_bounded_and_transient(
         .terminals
         .write(
             &terminal.id,
-            b"printf '\033[31mterminal-visible\033[0m\\n'\n",
+            b"printf '\x1b[31mterminal-visible\x1b[0m\\n'\n",
         )
         .expect("terminal input");
     tokio::time::timeout(Duration::from_secs(3), async {
@@ -3640,6 +3766,7 @@ async fn session_turn_context_is_private_bounded_and_current_branch_only() {
             &first.id,
             kubecode_server::agents::RunStatus::Completed,
             None,
+            kubecode_server::agents::TerminalCause::EndTurn,
         )
         .expect("finish first");
     let second = store
@@ -3667,6 +3794,7 @@ async fn session_turn_context_is_private_bounded_and_current_branch_only() {
             &second.id,
             kubecode_server::agents::RunStatus::Completed,
             None,
+            kubecode_server::agents::TerminalCause::EndTurn,
         )
         .expect("finish second");
     let teams = Arc::new(TeamStore::open(&database).expect("teams"));
@@ -3776,6 +3904,7 @@ async fn session_turn_context_is_private_bounded_and_current_branch_only() {
             &oversized.id,
             kubecode_server::agents::RunStatus::Completed,
             None,
+            kubecode_server::agents::TerminalCause::EndTurn,
         )
         .expect("finish oversized");
     let (status, error) = json_request(

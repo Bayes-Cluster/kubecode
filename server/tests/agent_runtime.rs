@@ -594,11 +594,20 @@ done"#,
             .and_then(|event| event.conversation_id.as_deref()),
         Some(conversation.id.as_str())
     );
-    assert!(
-        state_events
-            .iter()
-            .all(|event| event.payload == serde_json::json!({}))
-    );
+    // Session-state notifications name their checkpoint kinds in browser-safe
+    // projections (#106): never a bare empty payload, never a private _meta.
+    let offenders: Vec<serde_json::Value> = state_events
+        .iter()
+        .filter(|event| {
+            !event.payload["updates"].as_array().is_some_and(|entries| {
+                entries.iter().all(|entry| {
+                    entry["kind"].is_string() && entry["payload"].get("_meta").is_none()
+                })
+            })
+        })
+        .map(|event| event.payload.clone())
+        .collect();
+    assert!(offenders.is_empty(), "offenders: {offenders:?}");
 }
 
 #[tokio::test]
@@ -827,7 +836,10 @@ done"#,
         state_event.conversation_id.as_deref(),
         Some(conversation.id.as_str())
     );
-    assert_eq!(state_event.payload, serde_json::json!({}));
+    assert_eq!(
+        state_event.payload["updates"][0]["kind"],
+        serde_json::json!("session_loaded")
+    );
     assert_eq!(
         store
             .get_conversation(&conversation.id)
@@ -1300,4 +1312,262 @@ done"#,
         .position(|event| event.kind == AgentEventKind::RunCompleted)
         .expect("failed completion");
     assert!(tail < error && error < completed);
+}
+
+fn run_git(cwd: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .status()
+        .expect("git command");
+    assert!(status.success(), "git {args:?}");
+}
+
+#[tokio::test]
+async fn captures_the_before_checkpoint_in_the_actor_ahead_of_the_provider_turn() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path();
+    let database = root.join("kubecode.sqlite3");
+    let project_root = temp.path().join("checkpoint-project");
+    fs::create_dir_all(&project_root).expect("project directory");
+    fs::write(project_root.join("README.md"), "root\n").expect("fixture");
+
+    let workspace = Arc::new(WorkspaceService::open(root, &database).expect("workspace service"));
+    run_git(&project_root, &["init"]);
+    run_git(&project_root, &["config", "user.email", "test@example.com"]);
+    run_git(&project_root, &["config", "user.name", "Kubecode Test"]);
+    run_git(&project_root, &["add", "README.md"]);
+    run_git(&project_root, &["commit", "-m", "initial"]);
+    let project = workspace.import_project_at(&project_root).expect("project");
+    // The reference snapshot is what a pristine before-checkpoint must look
+    // like: identical content state to the actor's capture, marker excluded.
+    let expected_before = workspace
+        .capture_git_tree(&project_root, "expected-before")
+        .expect("reference capture")
+        .expect("git repository");
+
+    // The provider turn mutates the worktree as its first effect. A racy or
+    // handler-inline capture would fold the marker into the stored tree.
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-checkpoint\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf 'marker\n' >> ./marker.txt
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Mutate the worktree".into(),
+            client_message_id: None,
+        })
+        .expect("start run");
+
+    let completed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status != RunStatus::Running {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+    assert_eq!(completed.status, RunStatus::Completed);
+    assert!(
+        project_root.join("marker.txt").exists(),
+        "turn must have run"
+    );
+
+    let checkpoint = store
+        .run_checkpoint(&run.id)
+        .expect("checkpoint lookup")
+        .expect("before checkpoint recorded by the actor");
+    assert_eq!(
+        checkpoint.before_tree,
+        Some(expected_before),
+        "checkpoint reflects the pre-turn worktree"
+    );
+    let after_marker = workspace
+        .capture_git_tree(&project_root, "after-marker")
+        .expect("post-turn capture")
+        .expect("post-turn tree");
+    assert_ne!(
+        checkpoint.before_tree,
+        Some(after_marker),
+        "the marker mutation postdates the captured checkpoint"
+    );
+}
+
+#[tokio::test]
+async fn remembers_an_allow_always_choice_and_suppresses_same_kind_requests() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "allow-always-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let observed = temp.path().join("observed-outcome");
+    let observed_path = observed.display().to_string();
+    let binary = executable(
+        &temp,
+        &format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{{}},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"session-allow\"}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{{"jsonrpc":"2.0","id":"provider-permission","method":"session/request_permission","params":{{"sessionId":"session-allow","toolCall":{{"toolCallId":"tool-exec","title":"Shell","kind":"execute","rawInput":{{"command":"pwd"}}}},"options":[{{"optionId":"allow_once","name":"Allow once","kind":"allow_once"}},{{"optionId":"allow_always","name":"Always allow","kind":"allow_always"}}]}}}}'
+      IFS= read -r permission_response
+      case "$permission_response" in
+        *'"allow_always"'*) printf 'allow_always\n' >> '{observed_path}' ;;
+      esac
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;
+  esac
+done"#,
+        ),
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let matcher = serde_json::json!({"tool_kind": "execute"});
+    assert!(
+        !store
+            .is_allowed(&project.id, AgentId::OpenCode, &matcher)
+            .expect("initial rule lookup"),
+        "no memory before any grant"
+    );
+
+    let first = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "Run the command once".into(),
+            client_message_id: None,
+        })
+        .expect("start first run");
+    let permission_request_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(request_id) = store
+                .events_after(&first.id, 0)
+                .expect("first run events")
+                .into_iter()
+                .find(|event| event.kind == AgentEventKind::PermissionRequested)
+                .and_then(|event| event.payload["request_id"].as_str().map(str::to_owned))
+            {
+                break request_id;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first permission surfaces to the user");
+    assert!(runtime.resolve_permission(&permission_request_id, "allow_always"));
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&first.id).expect("first run");
+            if current.status != RunStatus::Running
+                && current.status != RunStatus::WaitingPermission
+            {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first run completion");
+    assert_eq!(
+        fs::read_to_string(&observed).expect("observed first outcome"),
+        "allow_always\n"
+    );
+
+    // The grant was remembered exactly as advertised: kind-granular only.
+    assert_eq!(
+        store
+            .permission_matchers(&project.id, AgentId::OpenCode)
+            .expect("stored rules"),
+        vec![matcher]
+    );
+
+    let second = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation.id,
+            project_id: project.id,
+            message: "Run the command again".into(),
+            client_message_id: None,
+        })
+        .expect("start second run");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&second.id).expect("second run");
+            if current.status != RunStatus::Running
+                && current.status != RunStatus::WaitingPermission
+            {
+                break current;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("second run completes without user review");
+
+    let surfaced = store
+        .events_after(&second.id, 0)
+        .expect("second run events")
+        .iter()
+        .any(|event| event.kind == AgentEventKind::PermissionRequested);
+    assert!(!surfaced, "the second same-kind request never surfaces");
+    let remembered = fs::read_to_string(&observed).expect("observed agent outcome");
+    assert_eq!(
+        remembered, "allow_always\nallow_always\n",
+        "second turn answered from memory, first from the user"
+    );
 }

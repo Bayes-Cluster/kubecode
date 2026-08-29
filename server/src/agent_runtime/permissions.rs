@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, HashSet};
 
 use agent_client_protocol::schema::v1::{
     ClientRequest, ElicitationAcceptAction, ElicitationAction, ElicitationContentValue, ExtRequest,
-    PermissionOptionId, RequestPermissionOutcome, SelectedPermissionOutcome,
-    SessionConfigOptionValue, SetSessionConfigOptionRequest, SetSessionModeRequest,
+    PermissionOption, PermissionOptionId, PermissionOptionKind, RequestPermissionOutcome,
+    SelectedPermissionOutcome, SessionConfigOptionValue, SetSessionConfigOptionRequest,
+    SetSessionModeRequest, ToolKind,
 };
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde::Serialize;
@@ -16,11 +17,81 @@ use crate::agents::{AgentEventKind, AgentId, AgentRun, AgentStore, RunStatus};
 use super::actor::SessionCommand;
 use super::{AgentPermissionProfile, AgentRuntime, RuntimeError};
 
+/// Everything needed to record an allow-always rule once the user picks an
+/// always-class option.
+#[derive(Clone, Debug)]
+pub(super) struct AlwaysAllowContext {
+    /// Rules are scoped per project and agent; the matcher itself stays
+    /// kind-granular (see [`always_allow_matcher`]).
+    pub(super) project_id: String,
+    pub(super) agent_id: AgentId,
+    pub(super) matcher: Value,
+}
+
 pub(super) struct PendingPermission {
     pub(super) allowed_options: HashSet<String>,
     pub(super) request_payload: Value,
     pub(super) run_id: String,
     pub(super) sender: oneshot::Sender<RequestPermissionOutcome>,
+    /// Present only when the store could establish project/agent scope for
+    /// the run; pairs with the always-class option ids that must persist it.
+    pub(super) always_allow: Option<(AlwaysAllowContext, HashSet<String>)>,
+}
+
+/// Builds the canonical kind-granular always-allow rule for a permission
+/// request. It carries the ACP tool kind and nothing else — never titles,
+/// paths, commands, or raw input.
+pub(super) fn always_allow_matcher(tool_kind: Option<ToolKind>) -> Value {
+    let kind = match tool_kind {
+        Some(ToolKind::Read) => "read",
+        Some(ToolKind::Edit) => "edit",
+        Some(ToolKind::Delete) => "delete",
+        Some(ToolKind::Move) => "move",
+        Some(ToolKind::Search) => "search",
+        Some(ToolKind::Execute) => "execute",
+        Some(ToolKind::Think) => "think",
+        Some(ToolKind::Fetch) => "fetch",
+        Some(ToolKind::SwitchMode) => "switch_mode",
+        // The kind enum is non-exhaustive across protocol versions and
+        // "other" is its declared default bucket.
+        Some(ToolKind::Other) | None | Some(_) => "other",
+    };
+    json!({"tool_kind": kind})
+}
+
+/// Answers a permission request from persisted always-allow memory without
+/// surfacing it. Returns `None` when no remembered rule matches (or when the
+/// agent offered no allow option to answer with).
+pub(super) fn remembered_permission_outcome(
+    runtime: &AgentRuntime,
+    run_id: &str,
+    tool_kind: Option<ToolKind>,
+    options: &[PermissionOption],
+) -> Option<RequestPermissionOutcome> {
+    let run = runtime.store.get_run(run_id).ok()?;
+    let conversation = runtime.store.get_conversation(&run.conversation_id).ok()?;
+    let matcher = always_allow_matcher(tool_kind);
+    let allowed = runtime
+        .store
+        .is_allowed(&run.project_id, conversation.agent_id, &matcher)
+        .ok()?;
+    if !allowed {
+        return None;
+    }
+    // Prefer answering with the same class of grant that was remembered;
+    // a bare allow-once fallback keeps the turn flowing when the agent did
+    // not offer an always option this time.
+    let granted = options
+        .iter()
+        .find(|option| option.kind == PermissionOptionKind::AllowAlways)
+        .or_else(|| {
+            options
+                .iter()
+                .find(|option| option.kind == PermissionOptionKind::AllowOnce)
+        })?;
+    Some(RequestPermissionOutcome::Selected(
+        SelectedPermissionOutcome::new(granted.option_id.clone()),
+    ))
 }
 
 pub(super) struct PendingElicitation {
@@ -60,14 +131,27 @@ impl AgentRuntime {
         {
             return false;
         }
-        permissions.remove(request_id).is_some_and(|pending| {
-            pending
-                .sender
-                .send(RequestPermissionOutcome::Selected(
-                    SelectedPermissionOutcome::new(PermissionOptionId::new(option_id.to_owned())),
-                ))
-                .is_ok()
-        })
+        let Some(pending) = permissions.remove(request_id) else {
+            return false;
+        };
+        drop(permissions);
+        let sent = pending
+            .sender
+            .send(RequestPermissionOutcome::Selected(
+                SelectedPermissionOutcome::new(PermissionOptionId::new(option_id.to_owned())),
+            ))
+            .is_ok();
+        // Remembering follows a successful delivery so an agent that never
+        // sees the answer does not gain silent standing grants.
+        if sent
+            && let Some((context, option_ids)) = &pending.always_allow
+            && option_ids.contains(option_id)
+        {
+            let _ =
+                self.store
+                    .allow_always(&context.project_id, context.agent_id, &context.matcher);
+        }
+        sent
     }
 
     pub fn escalate_team_permission(&self, request_id: &str) -> Result<(), RuntimeError> {
@@ -451,6 +535,111 @@ mod tests {
     use crate::workspace::WorkspaceService;
 
     #[test]
+    fn always_allow_matchers_carry_tool_kind_only() {
+        let cases = [
+            (Some(ToolKind::Read), "read"),
+            (Some(ToolKind::Edit), "edit"),
+            (Some(ToolKind::Delete), "delete"),
+            (Some(ToolKind::Move), "move"),
+            (Some(ToolKind::Search), "search"),
+            (Some(ToolKind::Execute), "execute"),
+            (Some(ToolKind::Think), "think"),
+            (Some(ToolKind::Fetch), "fetch"),
+            (Some(ToolKind::SwitchMode), "switch_mode"),
+            (Some(ToolKind::Other), "other"),
+            (None, "other"),
+        ];
+        for (kind, expected) in cases {
+            let matcher = always_allow_matcher(kind);
+            let object = matcher.as_object().expect("matcher object");
+            assert_eq!(object.len(), 1, "{kind:?}: matcher carries one key");
+            assert_eq!(
+                object.get("tool_kind").and_then(Value::as_str),
+                Some(expected),
+                "{kind:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resolving_an_always_option_persists_the_kind_granular_rule() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let project = workspace
+            .create_project_at(temp.path().join("remember-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::Codex, None)
+            .expect("conversation");
+        let run = store
+            .start_run(
+                &conversation.id,
+                &project.id,
+                "Grant me",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        let runtime = AgentRuntime::new(workspace, Arc::clone(&store), Vec::new());
+        let (sender, receiver) = oneshot::channel();
+        runtime
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex")
+            .insert(
+                "permission-1".to_owned(),
+                PendingPermission {
+                    allowed_options: HashSet::from([
+                        "allow_once".to_owned(),
+                        "allow_always".to_owned(),
+                    ]),
+                    request_payload: json!({"request_id":"permission-1"}),
+                    run_id: run.id.clone(),
+                    sender,
+                    always_allow: Some((
+                        AlwaysAllowContext {
+                            project_id: project.id.clone(),
+                            agent_id: AgentId::Codex,
+                            matcher: json!({"tool_kind": "execute"}),
+                        },
+                        HashSet::from(["allow_always".to_owned()]),
+                    )),
+                },
+            );
+
+        // The once option resolves but never persists a rule.
+        assert!(
+            !store
+                .is_allowed(
+                    &project.id,
+                    AgentId::Codex,
+                    &json!({"tool_kind": "execute"})
+                )
+                .expect("rule lookup")
+        );
+        assert!(runtime.resolve_permission("permission-1", "allow_always"));
+        let _ = receiver.await;
+        assert!(
+            store
+                .is_allowed(
+                    &project.id,
+                    AgentId::Codex,
+                    &json!({"tool_kind": "execute"})
+                )
+                .expect("rule lookup after allow-always"),
+            "the always option must persist its rule"
+        );
+        // The stored matcher is exactly the kind key: nothing path- or
+        // prompt-shaped can leak into the rules table.
+        let matchers = store
+            .permission_matchers(&project.id, AgentId::Codex)
+            .expect("stored matchers");
+        assert_eq!(matchers, vec![json!({"tool_kind": "execute"})]);
+    }
+
+    #[test]
     fn restores_provider_defaults_without_treating_opencode_agent_mode_as_permission() {
         assert_eq!(
             default_native_permission_mode(AgentId::ClaudeCode),
@@ -483,6 +672,7 @@ mod tests {
                     request_payload: json!({"request_id":"permission-1"}),
                     run_id: "run-1".to_owned(),
                     sender,
+                    always_allow: None,
                 },
             );
 
@@ -533,6 +723,7 @@ mod tests {
                     }),
                     run_id: run.id.clone(),
                     sender,
+                    always_allow: None,
                 },
             );
 

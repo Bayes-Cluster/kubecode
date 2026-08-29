@@ -50,6 +50,7 @@ import {
   sessionStateWithConfig,
   sessionStateWithMode,
 } from './sessionModel'
+import { terminalCauseNotice } from './sessionModel'
 import { useComposerController } from './useComposerController'
 import { useSessionEvents } from './useSessionEvents'
 import { useSessionHistory } from './useSessionHistory'
@@ -148,6 +149,16 @@ export function AgentSessionWorkspace({
   const history = useSessionHistory({
     api,
     beginSessionStateRequest: sessionState.beginSessionStateRequest,
+    onRunTerminal: (cause) => {
+      // Convergence surfacing (#93): quiet for cancellations, errors for
+      // resource/refusal failures. Copy is localized; payloads carry no
+      // prompt content or paths.
+      const notice = terminalCauseNotice(cause, t)
+      if (!notice) return
+      if (systemMessages) {
+        systemMessages.publish({ level: notice.level, message: notice.message, source: agentLabel })
+      }
+    },
     conversation,
     conversationId,
     directTeammateChatDisabled: conversation?.team_role === 'teammate'
@@ -162,7 +173,7 @@ export function AgentSessionWorkspace({
     t,
   })
   useSessionEvents({
-    api,
+    applySessionStatePayload: sessionState.applySessionStatePayload,
     conversation,
     reportError,
     requestSessionState: sessionState.requestSessionState,
@@ -575,6 +586,7 @@ export function AgentSessionWorkspace({
       canFork={canFork}
       conversation={conversation}
       leaderReviewPending={leaderReviewPending}
+      locale={locale}
       onForkSession={() => void forkSession()}
       onPromoteToTeam={() => void promoteToTeam()}
       onRename={() => {
@@ -588,6 +600,7 @@ export function AgentSessionWorkspace({
       t={t}
       team={team ?? null}
       teamView={teamView}
+      usage={sessionState.sessionState?.usage ?? null}
       waitingForInput={waitingForInput}
     />
   )

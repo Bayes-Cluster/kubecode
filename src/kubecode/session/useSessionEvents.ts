@@ -1,19 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
-import type { AgentEvent, Conversation, KubecodeApi, WorkspaceEvent } from '../api'
-import {
-  applyAgentEvent,
-  applySideQuestionEvent,
-  elicitationFromEvent,
-  initialElicitationAnswers,
-  permissionFromEvent,
-  SESSION_STATE_EVENT_KINDS,
-  SIDE_QUESTION_EVENT_KINDS,
-} from './sessionModel'
+import type { Conversation, WorkspaceEvent } from '../api'
+import { arrayValue, objectValue, textValue } from './conversationReducer'
+import type { TimelineEvent } from './conversationReducer'
+import { SESSION_STATE_EVENT_KINDS } from './sessionModel'
 import type { SessionTranscript } from './useSessionHistory'
 
 type UseSessionEventsOptions = {
-  api: KubecodeApi
+  applySessionStatePayload: (targetConversationId: string, kind: string, payload: unknown) => void
   conversation: Conversation | null
   reportError: (cause: unknown) => void
   requestSessionState: (targetConversationId: string) => Promise<void>
@@ -22,8 +16,14 @@ type UseSessionEventsOptions = {
   workspaceEvents: WorkspaceEvent[]
 }
 
+/**
+ * Live ingestion (#103): every workspace event becomes a TimelineEvent and
+ * enters the single frame-budgeted queue feeding the shared reducer.
+ * Terminal convergence needs no refetch — `run_completed` already carries
+ * its typed cause (#92); #93 surfaces it.
+ */
 export function useSessionEvents({
-  api,
+  applySessionStatePayload,
   conversation,
   reportError,
   requestSessionState,
@@ -31,89 +31,75 @@ export function useSessionEvents({
   viewRevisionId,
   workspaceEvents,
 }: UseSessionEventsOptions) {
-  const {
-    attachRun,
-    knownRunIdsRef,
-    latestWorkspaceEventIdRef,
-    loadRun,
-    pendingRunEventsRef,
-    processedWorkspaceEventRef,
-    setElicitationAnswers,
-    setMessages,
-    setPendingElicitation,
-    setPendingPermission,
-    setSideQuestions,
-  } = transcript
-  latestWorkspaceEventIdRef.current = workspaceEvents.at(-1)?.id ?? 0
+  const { enqueueConversationEvents } = transcript
+  const processedRef = useRef<number>(0)
+  const initializedForRef = useRef<string | null>(null)
+  const reportErrorRef = useRef(reportError)
+  reportErrorRef.current = reportError
 
   useEffect(() => {
     if (!conversation || viewRevisionId) return
-    const nextEvents = workspaceEvents.filter((event) => (
-      event.id > processedWorkspaceEventRef.current
-        && event.conversation_id === conversation.id
-    ))
-    processedWorkspaceEventRef.current = workspaceEvents.at(-1)?.id
-      ?? processedWorkspaceEventRef.current
-    let refreshState = false
-    for (const workspaceEvent of nextEvents) {
-      refreshState ||= SESSION_STATE_EVENT_KINDS.has(workspaceEvent.kind)
-      if (!workspaceEvent.run_id) continue
-      const event: AgentEvent = {
-        created_at: workspaceEvent.created_at,
+
+    const latestId = workspaceEvents.at(-1)?.id ?? 0
+    // First sight of a conversation swallows the pre-mount backlog: recorded
+    // history replays those through the same reducer during hydration.
+    if (initializedForRef.current !== conversation.id) {
+      initializedForRef.current = conversation.id
+      processedRef.current = latestId
+      return
+    }
+
+    const batch: TimelineEvent[] = []
+    let needsFullStateRefresh = false
+    for (const workspaceEvent of workspaceEvents) {
+      if (workspaceEvent.id <= processedRef.current) continue
+      processedRef.current = workspaceEvent.id
+      if (workspaceEvent.conversation_id
+        && workspaceEvent.conversation_id !== conversation.id) continue
+
+      // Session-state checkpoints name the kinds they carry (#106): locally
+      // routable ones apply directly with no refetch; anything else keeps the
+      // legacy full-state refresh.
+      if (workspaceEvent.kind === 'session_state') {
+        const updates = arrayValue(objectValue(workspaceEvent.payload)?.updates)
+        if (updates) {
+          const kinds = updates.map((entry) => textValue(objectValue(entry)?.kind))
+          for (const kind of kinds) {
+            if (kind === 'usage' || kind === 'current_mode') {
+              applySessionStatePayload(conversation.id, kind, objectValue(
+                updates.map((entry) => objectValue(entry)).find((entry) => textValue(entry?.kind) === kind)?.payload,
+              ))
+            }
+          }
+          if (kinds.some((kind) => kind !== 'usage' && kind !== 'current_mode')) {
+            needsFullStateRefresh = true
+          }
+        } else {
+          needsFullStateRefresh = true
+        }
+      } else {
+        needsFullStateRefresh ||= SESSION_STATE_EVENT_KINDS.has(workspaceEvent.kind)
+      }
+
+      batch.push({
+        seq: workspaceEvent.id,
         kind: workspaceEvent.kind,
         payload: workspaceEvent.payload,
-        run_id: workspaceEvent.run_id as string,
-        seq: workspaceEvent.id,
-      }
-      if (SIDE_QUESTION_EVENT_KINDS.has(event.kind)) {
-        setSideQuestions((current) => applySideQuestionEvent(current, event.kind, event.payload))
-        continue
-      }
-      if (event.kind === 'permission_requested') {
-        const permission = permissionFromEvent(event)
-        if (permission) setPendingPermission(permission)
-      }
-      if (event.kind === 'permission_resolved') setPendingPermission(null)
-      if (event.kind === 'elicitation_requested') {
-        const elicitation = elicitationFromEvent(event)
-        if (elicitation) {
-          setPendingElicitation(elicitation)
-          setElicitationAnswers(initialElicitationAnswers(elicitation))
-        }
-      }
-      if (event.kind === 'elicitation_resolved') setPendingElicitation(null)
-      if (event.kind === 'run_started') {
-        void loadRun(event.run_id)
-      } else if (knownRunIdsRef.current.has(event.run_id)) {
-        setMessages((current) => applyAgentEvent(current, event.run_id, event))
-      } else {
-        const pending = pendingRunEventsRef.current.get(event.run_id) ?? []
-        pendingRunEventsRef.current.set(event.run_id, [...pending, event])
-        void loadRun(event.run_id)
-      }
-      if (event.kind === 'run_completed') {
-        void api.getRun(event.run_id).then(attachRun)
-      }
+        runId: typeof workspaceEvent.run_id === 'string' ? workspaceEvent.run_id : null,
+        source: 'live',
+      })
     }
-    if (refreshState) {
-      const conversationId = conversation.id
-      void requestSessionState(conversationId).catch(reportError)
+    if (batch.length > 0) enqueueConversationEvents(batch)
+    if (needsFullStateRefresh && !viewRevisionId) {
+      void requestSessionState(conversation.id).catch((cause: unknown) => {
+        reportErrorRef.current(cause)
+      })
     }
   }, [
-    api,
-    attachRun,
+    applySessionStatePayload,
     conversation,
-    knownRunIdsRef,
-    loadRun,
-    pendingRunEventsRef,
-    processedWorkspaceEventRef,
-    reportError,
+    enqueueConversationEvents,
     requestSessionState,
-    setElicitationAnswers,
-    setMessages,
-    setPendingElicitation,
-    setPendingPermission,
-    setSideQuestions,
     viewRevisionId,
     workspaceEvents,
   ])

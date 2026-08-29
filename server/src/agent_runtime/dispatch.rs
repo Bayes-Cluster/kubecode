@@ -71,12 +71,6 @@ impl AgentRuntime {
             PermissionMode::Safe,
         )?;
         let run = dispatch.run;
-        if let Ok(Some(tree)) = self
-            .workspace
-            .capture_git_tree(&cwd, &format!("{}-before", run.id))
-        {
-            let _ = self.store.set_run_checkpoint(&run.id, Some(&tree), None);
-        }
         let (cancel, cancelled) = oneshot::channel();
         self.cancellations
             .lock()
@@ -265,12 +259,6 @@ impl AgentRuntime {
             request.client_message_id.as_deref(),
         )?;
         let run = dispatch.run;
-        if let Ok(Some(tree)) = self
-            .workspace
-            .capture_git_tree(&cwd, &format!("{}-before", run.id))
-        {
-            let _ = self.store.set_run_checkpoint(&run.id, Some(&tree), None);
-        }
         let (cancel, cancelled) = oneshot::channel();
         self.cancellations
             .lock()
@@ -349,12 +337,10 @@ impl AgentRuntime {
                 request.client_message_id.as_deref(),
             )?
         };
-        if let Ok(Some(tree)) = self
-            .workspace
-            .capture_git_tree(&cwd, &format!("{}-before", run.id))
-        {
-            let _ = self.store.set_run_checkpoint(&run.id, Some(&tree), None);
-        }
+        // The before-turn git checkpoint is captured inside the session actor
+        // (see AgentRuntime::capture_before_checkpoint): admission returns
+        // without paying for the subprocess, and the snapshot is still taken
+        // before the provider turn can have its first tool effect.
         let (cancel, cancelled) = oneshot::channel();
         self.cancellations
             .lock()

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -9,10 +9,10 @@ use agent_client_protocol::schema::v1::{
     BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
     ClientSessionCapabilities, CreateElicitationRequest, CreateElicitationResponse,
     ElicitationAction, ElicitationCapabilities, ElicitationFormCapabilities, InitializeRequest,
-    LoadSessionRequest, McpServer, NewSessionRequest, NewSessionResponse, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    LoadSessionRequest, McpServer, NewSessionRequest, NewSessionResponse, PermissionOptionKind,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionId,
-    SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest,
+    SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
 };
 use agent_client_protocol::{ActiveSession, Agent, ConnectionTo, LineDirection};
 use serde::Deserialize;
@@ -20,17 +20,19 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::agents::{AgentEventKind, AgentRun, AgentStore, RunStatus};
+use crate::agents::{AgentEventKind, AgentRun, AgentStore, RunStatus, TerminalCause};
 use crate::composer_catalog::ComposerInvocation;
 use crate::teams::TeamMemberStatus;
 
 use super::adapter::acp_agent;
+use super::events::terminal_outcome;
 use super::journal::{
     SessionUpdateJournal, SessionUpdateSink, finish_journal, journal_protocol_error,
     persist_serialized_session_event, persist_serialized_session_state_checkpoint,
 };
 use super::permissions::{
-    PendingElicitation, PendingPermission, SideQuestionAccepted, apply_native_permission_profile,
+    AlwaysAllowContext, PendingElicitation, PendingPermission, SideQuestionAccepted,
+    always_allow_matcher, apply_native_permission_profile, remembered_permission_outcome,
     start_side_question,
 };
 use super::{
@@ -181,7 +183,7 @@ async fn process_session_control(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcpRunOutcome {
-    Completed,
+    Completed { stop_reason: StopReason },
     Cancelled,
 }
 
@@ -297,6 +299,17 @@ async fn run_acp_session(
                 });
                 let outcome = if discriminator_request {
                     RequestPermissionOutcome::Cancelled
+                } else if let Some(run_id) = run_id.as_deref()
+                    && let Some(outcome) = remembered_permission_outcome(
+                        &permission_runtime,
+                        run_id,
+                        request.tool_call.fields.kind,
+                        &request.options,
+                    )
+                {
+                    // Always-allow memory: this class of tool was granted for
+                    // the project before; answer without surfacing it.
+                    outcome
                 } else if let Some(run_id) = run_id {
                     let _ = permission_store
                         .set_run_status(&run_id, RunStatus::WaitingPermission);
@@ -314,6 +327,30 @@ async fn run_acp_session(
                             &request_payload,
                         );
                     }
+                    // Always-allow persistence context: scope comes from the
+                    // run's project and the conversation's agent; the matcher
+                    // is kind-granular only. Without both scopes the request
+                    // still surfaces, it just cannot be remembered.
+                    let always_allow = permission_store
+                        .get_conversation(&permission_conversation_id)
+                        .ok()
+                        .zip(permission_store.get_run(&run_id).ok())
+                        .map(|(conversation, run)| {
+                            let option_ids = request
+                                .options
+                                .iter()
+                                .filter(|option| option.kind == PermissionOptionKind::AllowAlways)
+                                .map(|option| option.option_id.to_string())
+                                .collect::<HashSet<_>>();
+                            (
+                                AlwaysAllowContext {
+                                    project_id: run.project_id.clone(),
+                                    agent_id: conversation.agent_id,
+                                    matcher: always_allow_matcher(request.tool_call.fields.kind),
+                                },
+                                option_ids,
+                            )
+                        });
                     let (sender, receiver) = oneshot::channel();
                     pending_permissions
                         .lock()
@@ -329,6 +366,7 @@ async fn run_acp_session(
                                 request_payload: request_payload.clone(),
                                 run_id: run_id.clone(),
                                 sender,
+                                always_allow,
                             },
                         );
                     let mut routed_to_leader = false;
@@ -602,7 +640,7 @@ async fn run_acp_session(
                             Err(_) => {
                                 create_provider_session(
                                     &connection,
-                                    cwd,
+                                    cwd.clone(),
                                     ProviderSessionCreation {
                                         runtime: &runtime,
                                         conversation_id: &conversation_id,
@@ -621,7 +659,7 @@ async fn run_acp_session(
             } else {
                 create_provider_session(
                     &connection,
-                    cwd,
+                    cwd.clone(),
                     ProviderSessionCreation {
                         runtime: &runtime,
                         conversation_id: &conversation_id,
@@ -694,6 +732,9 @@ async fn run_acp_session(
                 actor_active.store(true, Ordering::Release);
                 *active_run_id.lock().expect("active run mutex poisoned") =
                     Some(command.run.id.clone());
+                runtime
+                    .capture_before_checkpoint(&command.run.id, &cwd)
+                    .await;
                 let prompt_request = prompt_request_for_command(&session_id, &command);
                 let mut cancelled = command.cancelled;
                 let prompt = connection.send_request(prompt_request).block_task();
@@ -703,8 +744,10 @@ async fn run_acp_session(
                 let outcome = loop {
                     tokio::select! {
                         response = &mut prompt => {
-                            response?;
-                            break AcpRunOutcome::Completed;
+                            let response = response?;
+                            break AcpRunOutcome::Completed {
+                                stop_reason: response.stop_reason,
+                            };
                         }
                         _ = &mut cancelled => {
                             connection.send_notification(CancelNotification::new(session_id.clone()))?;
@@ -761,13 +804,13 @@ async fn run_acp_session(
                     .await
                     .map_err(journal_protocol_error)?;
                 runtime.remove_cancellation(&command.run.id);
-                let status = match outcome {
-                    AcpRunOutcome::Completed => RunStatus::Completed,
-                    AcpRunOutcome::Cancelled => RunStatus::Cancelled,
+                let (status, cause) = match outcome {
+                    AcpRunOutcome::Completed { stop_reason } => terminal_outcome(stop_reason),
+                    AcpRunOutcome::Cancelled => (RunStatus::Cancelled, TerminalCause::Cancelled),
                 };
                 let transitioned = runtime
                     .store
-                    .finish_run(&command.run.id, status, None)
+                    .finish_run(&command.run.id, status, None, cause)
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?;
@@ -776,7 +819,7 @@ async fn run_acp_session(
                     let _ = runtime.store.append_session_event(
                         &conversation_id,
                         "run_completed",
-                        &json!({"run_id":command.run.id, "status":status}),
+                        &json!({"run_id":command.run.id, "status":status, "cause":cause}),
                     );
                 }
                 *active_run_id.lock().expect("active run mutex poisoned") = None;
@@ -1087,15 +1130,48 @@ impl AgentRuntime {
                 .append_event(run_id, AgentEventKind::Error, &json!({"message": message}));
         let transitioned = self
             .store
-            .finish_run(run_id, RunStatus::Failed, Some(&message))
+            .finish_run(
+                run_id,
+                RunStatus::Failed,
+                Some(&message),
+                TerminalCause::Error,
+            )
             .unwrap_or(false);
         self.capture_after_checkpoint(run_id);
         if transitioned && let Some(run) = run {
             let _ = self.store.append_session_event(
                 &run.conversation_id,
                 "run_completed",
-                &json!({"run_id":run_id, "status":"failed", "error":message}),
+                &json!({
+                    "run_id":run_id,
+                    "status":"failed",
+                    "error":message,
+                    "cause":"error",
+                }),
             );
+        }
+    }
+
+    /// Captures the before-turn checkpoint once the run has been admitted and
+    /// dispatched to this actor. The git subprocess runs on the blocking pool
+    /// so run admission (and its HTTP handler) never waits for it, while
+    /// awaiting here keeps the snapshot strictly ahead of the turn's first
+    /// tool effect.
+    async fn capture_before_checkpoint(&self, run_id: &str, cwd: &Path) {
+        let workspace = Arc::clone(&self.workspace);
+        let store = Arc::clone(&self.store);
+        let checkpoint_id = format!("{run_id}-before");
+        let run_id = run_id.to_owned();
+        let cwd = cwd.to_path_buf();
+        let captured = tokio::task::spawn_blocking(move || {
+            workspace
+                .capture_git_tree(&cwd, &checkpoint_id)
+                .ok()
+                .flatten()
+        })
+        .await;
+        if let Ok(Some(tree)) = captured {
+            let _ = store.set_run_checkpoint(&run_id, Some(&tree), None);
         }
     }
 
@@ -1211,6 +1287,7 @@ mod tests {
                 error: None,
                 internal: true,
                 client_message_id: None,
+                terminal_cause: None,
             },
             message: "focus on tests".into(),
             provider_input: Some(Box::new(ComposerInvocation::ProviderStructuredInput {

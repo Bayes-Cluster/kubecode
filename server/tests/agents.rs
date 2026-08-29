@@ -1,6 +1,7 @@
 use kubecode_server::agents::{
     AgentEventKind, AgentId, AgentStore, ConversationRelation, ConversationRelationship,
     ExecutionMode, PermissionMode, RunStatus, RuntimeRunEvent, RuntimeUpdate, StoreError,
+    TerminalCause,
 };
 use kubecode_server::composer_catalog::{
     ComposerCatalogError, ComposerContextKind, ComposerContextSelector, ComposerContextSummary,
@@ -94,7 +95,7 @@ fn composer_catalog_reopens_with_exact_snapshot_and_rejects_foreign_ids() {
         )
         .expect("typed run");
     store
-        .finish_run(&run.id, RunStatus::Completed, None)
+        .finish_run(&run.id, RunStatus::Completed, None, TerminalCause::EndTurn)
         .expect("finish typed run");
     let branch = store
         .branch_conversation_at_run(&first.id, &run.id)
@@ -246,8 +247,7 @@ fn codex_skill_catalog_reopens_with_private_structured_dispatch() {
         .session_events_after(&conversation.id, 0)
         .expect("session events")
         .into_iter()
-        .filter(|event| event.kind == "user_message")
-        .next_back()
+        .rfind(|event| event.kind == "user_message")
         .expect("safe user message");
     assert_eq!(user_message.payload["text"], "$review focus on tests");
     assert!(!user_message.payload.to_string().contains(path));
@@ -329,7 +329,12 @@ fn set_run_status_cannot_resurrect_a_terminal_run() {
         .expect("run");
     assert!(
         store
-            .finish_run(&run.id, RunStatus::Cancelled, None)
+            .finish_run(
+                &run.id,
+                RunStatus::Cancelled,
+                None,
+                TerminalCause::Cancelled
+            )
             .expect("cancel run")
     );
 
@@ -346,13 +351,107 @@ fn set_run_status_cannot_resurrect_a_terminal_run() {
     // The terminal transition stays exactly-once.
     assert!(
         !store
-            .finish_run(&run.id, RunStatus::Completed, None)
+            .finish_run(&run.id, RunStatus::Completed, None, TerminalCause::EndTurn)
             .expect("second finish")
     );
     assert_eq!(
         store.get_run(&run.id).expect("reloaded run").status,
         RunStatus::Cancelled
     );
+}
+
+#[test]
+fn finish_run_records_the_typed_cause_on_the_row_and_both_event_streams() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let cases = [
+        (RunStatus::Completed, TerminalCause::EndTurn, None),
+        (RunStatus::Cancelled, TerminalCause::Cancelled, None),
+        (RunStatus::Failed, TerminalCause::Error, Some("boom")),
+        (RunStatus::Completed, TerminalCause::MaxTokens, None),
+        (RunStatus::Completed, TerminalCause::MaxTurnRequests, None),
+        (RunStatus::Completed, TerminalCause::Refusal, None),
+        (RunStatus::Interrupted, TerminalCause::Interrupted, None),
+    ];
+    for (status, cause, error) in cases {
+        let run = store
+            .start_run(
+                &conversation.id,
+                "project",
+                "Typed cause",
+                PermissionMode::Safe,
+            )
+            .expect("run");
+        assert!(
+            store
+                .finish_run(&run.id, status, error, cause)
+                .expect("finish run")
+        );
+        let stored = store.get_run(&run.id).expect("reloaded run");
+        assert_eq!(stored.status, status, "{cause:?}");
+        assert_eq!(stored.terminal_cause, Some(cause), "{cause:?}");
+
+        let run_event = store
+            .events_after(&run.id, 0)
+            .expect("run events")
+            .into_iter()
+            .find(|event| event.kind == AgentEventKind::RunCompleted)
+            .expect("run completion event");
+        assert_eq!(run_event.payload["cause"], cause.as_str(), "{cause:?}");
+        assert_eq!(run_event.payload["status"], status.as_str(), "{cause:?}");
+
+        let workspace_event = store
+            .workspace_events_after(0)
+            .expect("workspace events")
+            .into_iter()
+            .find(|event| {
+                event.kind == "run_completed" && event.run_id.as_deref() == Some(run.id.as_str())
+            })
+            .expect("workspace completion event");
+        assert_eq!(
+            workspace_event.payload["cause"],
+            cause.as_str(),
+            "{cause:?}"
+        );
+    }
+}
+
+#[test]
+fn reopening_the_store_interrupts_inflight_runs_with_a_typed_cause() {
+    let temp = TempDir::new().expect("tempdir");
+    let database = temp.path().join("kubecode.sqlite3");
+    let store = AgentStore::open(&database).expect("agent store");
+    let conversation = store
+        .create_conversation("project", AgentId::Codex, None)
+        .expect("conversation");
+    let run = store
+        .start_run(
+            &conversation.id,
+            "project",
+            "Interrupted by restart",
+            PermissionMode::Safe,
+        )
+        .expect("run");
+    drop(store);
+
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let stored = reopened.get_run(&run.id).expect("reloaded run");
+    assert_eq!(stored.status, RunStatus::Interrupted);
+    assert_eq!(stored.terminal_cause, Some(TerminalCause::Interrupted));
+    let workspace_event = reopened
+        .workspace_events_after(0)
+        .expect("workspace events")
+        .into_iter()
+        .find(|event| {
+            event.kind == "run_completed" && event.run_id.as_deref() == Some(run.id.as_str())
+        })
+        .expect("interrupted completion event");
+    assert_eq!(workspace_event.payload["cause"], "interrupted");
+    assert_eq!(workspace_event.payload["status"], "interrupted");
 }
 
 #[test]
@@ -378,7 +477,12 @@ fn composer_catalog_revision_high_water_survives_rewind_and_reopen() {
         )
         .expect("first run");
     store
-        .finish_run(&first_run.id, RunStatus::Completed, None)
+        .finish_run(
+            &first_run.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish first run");
     let second_raw = json!({"availableCommands":[{
         "name":"second", "description":"Second"
@@ -479,7 +583,12 @@ fn rewind_reconciles_lifetime_contexts_with_a_new_non_reused_catalog() {
         )
         .expect("target run");
     store
-        .finish_run(&target.id, RunStatus::Completed, None)
+        .finish_run(
+            &target.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish target");
     let first = store
         .register_composer_context(
@@ -495,7 +604,12 @@ fn rewind_reconciles_lifetime_contexts_with_a_new_non_reused_catalog() {
         context_kind: ComposerContextKind::File,
     };
     let unavailable = store
-        .validate_composer_contexts(&conversation.id, "project", &[selector.clone()], &[None])
+        .validate_composer_contexts(
+            &conversation.id,
+            "project",
+            std::slice::from_ref(&selector),
+            &[None],
+        )
         .expect("change availability after target");
     let selected = store
         .register_composer_context(
@@ -807,7 +921,12 @@ fn session_turn_context_is_bounded_branch_local_and_revision_aware() {
         Err(StoreError::Composer(ComposerCatalogError::ContextStale))
     ));
     store
-        .finish_run(&first.id, RunStatus::Completed, None)
+        .finish_run(
+            &first.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish first");
 
     let user = store
@@ -845,7 +964,12 @@ fn session_turn_context_is_bounded_branch_local_and_revision_aware() {
         )
         .expect("second answer");
     store
-        .finish_run(&second.id, RunStatus::Completed, None)
+        .finish_run(
+            &second.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish second");
     let branch = store
         .branch_conversation_at_run(&conversation.id, &second.id)
@@ -887,7 +1011,12 @@ fn session_turn_context_is_bounded_branch_local_and_revision_aware() {
         )
         .expect("oversized run");
     store
-        .finish_run(&oversized.id, RunStatus::Completed, None)
+        .finish_run(
+            &oversized.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish oversized");
     assert!(matches!(
         store.resolve_composer_session_turn(
@@ -926,7 +1055,12 @@ fn structured_session_turn_dispatches_only_the_resolved_role_content() {
         )
         .expect("source answer");
     store
-        .finish_run(&source.id, RunStatus::Completed, None)
+        .finish_run(
+            &source.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish source");
     let snapshot = store
         .resolve_composer_session_turn(&conversation.id, &source.id, ComposerSessionTurnRole::Agent)
@@ -1311,7 +1445,12 @@ fn structured_run_enforces_segment_reference_and_text_bounds() {
         )
         .expect("exact segment limit");
     store
-        .finish_run(&exact_segment_run.id, RunStatus::Completed, None)
+        .finish_run(
+            &exact_segment_run.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish exact segments");
     let exact_references = (0..MAX_COMPOSER_REFERENCES)
         .map(|_| ComposerDraftSegment::ContextRef {
@@ -1332,7 +1471,12 @@ fn structured_run_enforces_segment_reference_and_text_bounds() {
         )
         .expect("exact reference limit");
     store
-        .finish_run(&exact_reference_run.id, RunStatus::Completed, None)
+        .finish_run(
+            &exact_reference_run.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish exact references");
     let exact_text_run = store
         .start_structured_composer_run(
@@ -1348,7 +1492,12 @@ fn structured_run_enforces_segment_reference_and_text_bounds() {
         )
         .expect("exact aggregate text limit");
     store
-        .finish_run(&exact_text_run.id, RunStatus::Completed, None)
+        .finish_run(
+            &exact_text_run.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish exact text");
 
     let rendered_reference_bytes = 1 + "src/main.rs".len();
@@ -1375,7 +1524,12 @@ fn structured_run_enforces_segment_reference_and_text_bounds() {
         .expect("exact rendered text limit");
     assert_eq!(exact_rendered_run.message.len(), MAX_COMPOSER_TEXT_BYTES);
     store
-        .finish_run(&exact_rendered_run.id, RunStatus::Completed, None)
+        .finish_run(
+            &exact_rendered_run.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish exact rendered text");
     let rendered_over = [
         ComposerDraftSegment::Text {
@@ -1678,7 +1832,12 @@ fn branches_chat_history_without_rewriting_the_source_session() {
         )
         .expect("first answer");
     store
-        .finish_run(&first.id, RunStatus::Completed, None)
+        .finish_run(
+            &first.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish first");
     let second = store
         .start_run(
@@ -1689,7 +1848,12 @@ fn branches_chat_history_without_rewriting_the_source_session() {
         )
         .expect("second run");
     store
-        .finish_run(&second.id, RunStatus::Interrupted, None)
+        .finish_run(
+            &second.id,
+            RunStatus::Interrupted,
+            None,
+            TerminalCause::Interrupted,
+        )
         .expect("interrupt second");
 
     let branch = store
@@ -1735,7 +1899,12 @@ fn revises_chat_history_without_creating_a_visible_session() {
         )
         .expect("first run");
     store
-        .finish_run(&first.id, RunStatus::Completed, None)
+        .finish_run(
+            &first.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish first");
     let second = store
         .start_run(
@@ -1753,7 +1922,12 @@ fn revises_chat_history_without_creating_a_visible_session() {
         )
         .expect("second answer");
     store
-        .finish_run(&second.id, RunStatus::Completed, None)
+        .finish_run(
+            &second.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish second");
 
     let revision = store
@@ -1809,7 +1983,7 @@ fn pages_conversation_runs_from_newest_to_oldest_without_reordering_turns() {
             )
             .expect("run");
         store
-            .finish_run(&run.id, RunStatus::Completed, None)
+            .finish_run(&run.id, RunStatus::Completed, None, TerminalCause::EndTurn)
             .expect("finish");
         run_ids.push(run.id);
     }
@@ -1957,7 +2131,12 @@ fn enforces_one_active_run_per_session_and_allows_parallel_sessions() {
         )
         .expect("different project may run");
     store
-        .finish_run(&first.id, RunStatus::Completed, None)
+        .finish_run(
+            &first.id,
+            RunStatus::Completed,
+            None,
+            TerminalCause::EndTurn,
+        )
         .expect("finish first run");
     store
         .start_run(
@@ -2333,7 +2512,18 @@ fn idle_session_state_updates_publish_one_atomic_conversation_invalidation() {
         Some(conversation.id.as_str())
     );
     assert_eq!(workspace_events[1].run_id, None);
-    assert_eq!(workspace_events[1].payload, serde_json::json!({}));
+    // The session-state notification names the checkpoint kinds it carries so
+    // live consumers can route them (usage meters) without a refetch, in
+    // browser-safe projections only.
+    assert_eq!(
+        workspace_events[1].payload,
+        serde_json::json!({"updates":[
+            {"kind":"available_commands","payload":{"availableCommands":[
+                {"name":"review", "description":"Review", "input":null}
+            ]}},
+            {"kind":"current_mode","payload":{"currentModeId":"build"}},
+        ]})
+    );
     assert_eq!(bus.latest_committed_cursor(), workspace_events[1].id);
     assert!(receiver.has_changed().expect("event bus remains open"));
 }
@@ -2378,7 +2568,19 @@ fn session_state_checkpoint_is_atomic_private_and_browser_safe() {
         Some(conversation.id.as_str())
     );
     assert_eq!(workspace_events[0].run_id, None);
-    assert_eq!(workspace_events[0].payload, serde_json::json!({}));
+    // The workspace mirror is browser-safe: it drops the private _meta while
+    // the stored session event keeps it verbatim.
+    let mut public_checkpoint = checkpoint.clone();
+    public_checkpoint
+        .as_object_mut()
+        .expect("object")
+        .remove("_meta");
+    assert_eq!(
+        workspace_events[0].payload,
+        serde_json::json!({"updates":[
+            {"kind":"session_created_state","payload":public_checkpoint}
+        ]})
+    );
     assert_eq!(bus.latest_committed_cursor(), workspace_events[0].id);
     assert!(receiver.has_changed().expect("event bus remains open"));
 

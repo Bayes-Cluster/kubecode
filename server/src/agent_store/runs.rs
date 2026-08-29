@@ -17,8 +17,22 @@ use super::events::{
 };
 use super::models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, PermissionMode, RunCheckpoint, RunStatus,
-    StoreError, to_sql_conversion_error,
+    StoreError, TerminalCause, to_sql_conversion_error,
 };
+
+/// Projects a session-state checkpoint into its browser-safe form: the
+/// workspace mirror drops private `_meta` markers and available-commands
+/// payloads use their sanitized projection (AGENTS.md analytics boundary).
+fn browser_safe_state_payload(kind: &str, payload: &Value) -> Value {
+    if kind == "available_commands" {
+        return crate::composer_catalog::project_available_commands(payload);
+    }
+    let mut value = payload.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("_meta");
+    }
+    value
+}
 
 impl AgentStore {
     pub fn start_run(
@@ -124,6 +138,7 @@ impl AgentStore {
             error: None,
             internal,
             client_message_id: client_message_id.map(str::to_owned),
+            terminal_cause: None,
         };
         transaction.execute(
             "INSERT INTO agent_runs
@@ -175,7 +190,7 @@ impl AgentStore {
             .lock()
             .expect("agent database mutex poisoned")
             .query_row(
-                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
                  FROM agent_runs WHERE client_message_id = ?1 LIMIT 1",
                 [client_message_id],
                 run_from_row,
@@ -189,7 +204,7 @@ impl AgentStore {
             .lock()
             .expect("agent database mutex poisoned")
             .query_row(
-                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+                "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
                  FROM agent_runs WHERE id = ?1",
                 [run_id],
                 run_from_row,
@@ -244,7 +259,7 @@ impl AgentStore {
         self.get_conversation(conversation_id)?;
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
              FROM agent_runs WHERE conversation_id = ?1 ORDER BY rowid",
         )?;
         let rows = statement.query_map([conversation_id], run_from_row)?;
@@ -277,7 +292,7 @@ impl AgentStore {
             StoreError::InvalidStoredValue("run page size exceeds SQLite range".into())
         })?;
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
              FROM agent_runs
              WHERE conversation_id = ?1 AND rowid < ?2
              ORDER BY rowid DESC LIMIT ?3",
@@ -299,7 +314,7 @@ impl AgentStore {
     pub fn list_project_runs(&self, project_id: &str) -> Result<Vec<AgentRun>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
              FROM agent_runs WHERE project_id = ?1 ORDER BY rowid",
         )?;
         let rows = statement.query_map([project_id], run_from_row)?;
@@ -333,19 +348,23 @@ impl AgentStore {
     /// Records a run's terminal transition. Returns `true` when this call
     /// performed the transition and `false` when the run was already
     /// terminal (idempotent no-op), so callers can gate exactly-once events.
+    /// The typed cause travels on the run row, the run event stream, and the
+    /// workspace event so consumers converge without refetching run state.
     pub fn finish_run(
         &self,
         run_id: &str,
         status: RunStatus,
         error: Option<&str>,
+        cause: TerminalCause,
     ) -> Result<bool, StoreError> {
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE agent_runs
-             SET status = ?2, error = ?3, completed_at = CURRENT_TIMESTAMP
+             SET status = ?2, error = ?3, terminal_cause = ?4,
+                 completed_at = CURRENT_TIMESTAMP
              WHERE id = ?1 AND status IN ('running', 'waiting_permission')",
-            params![run_id, status.as_str(), error],
+            params![run_id, status.as_str(), error, cause.as_str()],
         )?;
         if changed == 0 {
             // Exactly-once terminal transition: a run that is already
@@ -365,7 +384,7 @@ impl AgentStore {
             &transaction,
             run_id,
             AgentEventKind::RunCompleted,
-            &json!({"status": status, "error": error}),
+            &json!({"status": status, "error": error, "cause": cause}),
         )?;
         transaction.commit()?;
         self.workspace_event_bus.publish_committed(workspace_cursor);
@@ -429,7 +448,14 @@ impl AgentStore {
         let agent_id = AgentId::from_str(&conversation.1)?;
         let mut latest_workspace_cursor = None;
         let mut publish_session_state = false;
+        let mut published_updates: Vec<(&str, Value)> = Vec::new();
         for update in updates {
+            if update.publish_session_state {
+                published_updates.push((
+                    update.session_kind.as_str(),
+                    browser_safe_state_payload(&update.session_kind, &update.session_payload),
+                ));
+            }
             append_session_event_transaction(
                 &transaction,
                 conversation_id,
@@ -482,10 +508,15 @@ impl AgentStore {
             }
         }
         if publish_session_state {
+            let projected = published_updates
+                .iter()
+                .map(|(kind, value)| (&kind[..], value))
+                .collect::<Vec<_>>();
             latest_workspace_cursor = Some(append_session_state_workspace_event_transaction(
                 &transaction,
                 &project_id,
                 conversation_id,
+                &projected,
             )?);
         }
         transaction.commit()?;
@@ -513,10 +544,12 @@ impl AgentStore {
                 .optional()?
                 .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))?;
             append_session_event_transaction(&transaction, conversation_id, kind, payload)?;
+            let projected = browser_safe_state_payload(kind, payload);
             let workspace_cursor = append_session_state_workspace_event_transaction(
                 &transaction,
                 &project_id,
                 conversation_id,
+                &[(kind, &projected)],
             )?;
             transaction.commit()?;
             workspace_cursor
@@ -587,7 +620,7 @@ pub(super) fn existing_run_by_client_message_id(
     };
     let run = transaction
         .query_row(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id
+            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
              FROM agent_runs WHERE client_message_id = ?1 LIMIT 1",
             [client_message_id],
             run_from_row,
@@ -615,6 +648,7 @@ pub(super) fn insert_run_transaction(
         error: None,
         internal,
         client_message_id: client_message_id.map(str::to_owned),
+        terminal_cause: None,
     };
     transaction.execute(
         "INSERT INTO agent_runs
@@ -650,6 +684,7 @@ pub(super) fn insert_run_transaction(
 fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
     let status = row.get::<_, String>(4)?;
     let permission_mode = row.get::<_, String>(5)?;
+    let terminal_cause = row.get::<_, Option<String>>(9)?;
     Ok(AgentRun {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
@@ -661,6 +696,10 @@ fn run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
         error: row.get(6)?,
         internal: row.get(7)?,
         client_message_id: row.get(8)?,
+        terminal_cause: terminal_cause
+            .map(|cause| TerminalCause::from_str(&cause))
+            .transpose()
+            .map_err(to_sql_conversion_error)?,
     })
 }
 

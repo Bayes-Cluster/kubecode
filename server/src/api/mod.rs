@@ -379,6 +379,27 @@ fn file_changed_payload(paths: &[String]) -> serde_json::Value {
     }
 }
 
+fn root_router(application: Router, base_path: &str) -> Router {
+    let base_path = normalize_base_path(base_path);
+
+    let router = health_router();
+    if base_path.is_empty() {
+        router.merge(application)
+    } else {
+        router.nest(&base_path, application)
+    }
+}
+
+fn health_router() -> Router {
+    Router::new()
+        .route("/healthz", get(health))
+        .route("/readyz", get(health))
+}
+
+async fn health() -> &'static str {
+    "ok"
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -407,25 +428,4 @@ mod tests {
             json!({"paths": [], "full": true})
         );
     }
-}
-
-fn root_router(application: Router, base_path: &str) -> Router {
-    let base_path = normalize_base_path(base_path);
-
-    let router = health_router();
-    if base_path.is_empty() {
-        router.merge(application)
-    } else {
-        router.nest(&base_path, application)
-    }
-}
-
-fn health_router() -> Router {
-    Router::new()
-        .route("/healthz", get(health))
-        .route("/readyz", get(health))
-}
-
-async fn health() -> &'static str {
-    "ok"
 }

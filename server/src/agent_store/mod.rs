@@ -10,7 +10,7 @@ pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventB
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
     ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
-    PermissionMode, RunCheckpoint, RunStatus, SessionEvent, StoreError,
+    PermissionMode, RunCheckpoint, RunStatus, SessionEvent, StoreError, TerminalCause,
 };
 
 use std::path::Path;
@@ -193,6 +193,7 @@ impl AgentStore {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         ensure_column(&connection, "agent_runs", "client_message_id", "TEXT")?;
+        ensure_column(&connection, "agent_runs", "terminal_cause", "TEXT")?;
         connection.execute(
             "UPDATE conversations SET manual_title = title
              WHERE manual_title IS NULL AND agent_title IS NULL
@@ -230,6 +231,7 @@ impl AgentStore {
             transaction.execute(
                 "UPDATE agent_runs
                  SET status = 'interrupted', error = 'server restarted',
+                     terminal_cause = 'interrupted',
                      completed_at = CURRENT_TIMESTAMP
                  WHERE id = ?1",
                 [&run_id],
@@ -238,7 +240,11 @@ impl AgentStore {
                 &transaction,
                 &run_id,
                 AgentEventKind::RunCompleted,
-                &json!({"status":"interrupted", "error":"server restarted"}),
+                &json!({
+                    "status":"interrupted",
+                    "error":"server restarted",
+                    "cause":"interrupted",
+                }),
             )?;
             latest_workspace_cursor = Some(workspace_cursor);
         }

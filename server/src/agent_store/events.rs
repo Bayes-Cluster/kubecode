@@ -262,7 +262,17 @@ pub(super) fn append_session_state_workspace_event_transaction(
     transaction: &Transaction<'_>,
     project_id: &str,
     conversation_id: &str,
+    updates: &[(&str, &Value)],
 ) -> Result<u64, StoreError> {
+    // The payload names the checkpoint kinds it carries so live consumers can
+    // route individual updates (usage, mode, …) without a refetch while the
+    // wire stays additive.
+    let payload = json!({
+        "updates": updates.iter().map(|(kind, value)| json!({
+            "kind": kind,
+            "payload": value,
+        })).collect::<Vec<_>>(),
+    });
     transaction.execute(
         "INSERT INTO workspace_events
          (kind, project_id, conversation_id, run_id, payload)
@@ -270,7 +280,7 @@ pub(super) fn append_session_state_workspace_event_transaction(
         params![
             project_id,
             conversation_id,
-            serde_json::to_string(&json!({}))?
+            serde_json::to_string(&payload)?
         ],
     )?;
     u64::try_from(transaction.last_insert_rowid())

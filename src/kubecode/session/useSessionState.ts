@@ -11,6 +11,11 @@ type UseSessionStateOptions = {
 
 export type SessionStateController = {
   applyComposerCatalog: (catalog: ComposerCatalogSnapshot) => void
+  /**
+   * Applies one live session-state checkpoint payload (e.g. usage) for the
+   * conversation it belongs to, without a refetch (#106).
+   */
+  applySessionStatePayload: (targetConversationId: string, kind: string, payload: unknown) => void
   beginSessionStateRequest: (
     targetConversationId: string,
   ) => (state: AgentSessionState | null) => void
@@ -72,6 +77,25 @@ export function useSessionState({
     setSessionState((current) => current ? { ...current, composer: { catalog } } : current)
   }, [conversationId])
 
+  const applySessionStatePayload = useCallback((
+    targetConversationId: string,
+    kind: string,
+    payload: unknown,
+  ) => {
+    if (activeConversationIdRef.current !== targetConversationId) return
+    setSessionState((current) => {
+      if (!current) return current
+      switch (kind) {
+        case 'usage':
+          return { ...current, usage: (payload ?? null) as AgentSessionState['usage'] }
+        case 'current_mode':
+          return { ...current, current_mode: (payload ?? null) as AgentSessionState['current_mode'] }
+        default:
+          return current
+      }
+    })
+  }, [])
+
   const planEntries = useMemo(
     () => sessionPlanEntries(sessionState?.plan),
     [sessionState?.plan],
@@ -83,6 +107,7 @@ export function useSessionState({
 
   return {
     applyComposerCatalog,
+    applySessionStatePayload,
     beginSessionStateRequest,
     capabilityStatus,
     composerCatalogLoadFailed,

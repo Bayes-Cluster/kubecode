@@ -13,12 +13,14 @@ import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { Conversation, TeamSnapshot } from '../api'
+import { UsageMeter } from './UsageMeter'
 
 type SessionTitlebarProps = {
   active: boolean
   canFork: boolean
   conversation: Conversation
   leaderReviewPending: boolean
+  locale: string
   onForkSession: () => void
   onPromoteToTeam: () => void
   onRename: () => void
@@ -29,6 +31,7 @@ type SessionTitlebarProps = {
   t: Translator
   team: TeamSnapshot | null
   teamView: 'chat' | 'team'
+  usage: unknown
   waitingForInput: boolean
 }
 
@@ -37,6 +40,7 @@ export function SessionTitlebar({
   canFork,
   conversation,
   leaderReviewPending,
+  locale,
   onForkSession,
   onPromoteToTeam,
   onRename,
@@ -47,6 +51,7 @@ export function SessionTitlebar({
   t,
   team,
   teamView,
+  usage,
   waitingForInput,
 }: SessionTitlebarProps) {
   return (
@@ -55,6 +60,7 @@ export function SessionTitlebar({
         <AiAgentIcon agent={conversation.agent_id} size={18} />
         <strong>{conversation.title || t('kubecode.untitledSession')}</strong>
       </div>
+      <UsageMeter locale={locale} t={t} usage={usage} />
       {team && (
         <div className="kubecode-team-view-switch" role="tablist">
           <Button

@@ -341,12 +341,23 @@ export type AgentRun = {
   error: string | null
   internal?: boolean
   client_message_id?: string
+  /** Typed terminal cause carried by run completion events (#92). */
+  terminal_cause?:
+    | 'end_turn'
+    | 'cancelled'
+    | 'error'
+    | 'max_tokens'
+    | 'max_turn_requests'
+    | 'refusal'
+    | 'interrupted'
 }
 export type ConversationHistoryPage = {
   runs: AgentRun[]
   events: Record<string, AgentEvent[]>
   session_events: SessionEvent[]
   next_cursor: string | null
+  /** Global workspace cursor at snapshot time (see #103 hydration dedupe). */
+  workspace_cursor?: number
 }
 export type AgentEvent = {
   run_id: string
