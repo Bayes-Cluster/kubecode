@@ -18,6 +18,15 @@ pub struct StartAgentRun {
     pub client_message_id: Option<String>,
 }
 
+/// The result of admitting a plain prompt (#95): either a run started in the
+/// session actor, or a durable queue item that will drain FIFO after the
+/// active run finishes.
+#[derive(Clone, Debug)]
+pub enum PromptAdmission {
+    Started(AgentRun),
+    Queued(crate::agents::PromptQueueItem),
+}
+
 #[derive(Clone, Debug)]
 pub struct StartComposerCommand {
     pub conversation_id: String,
@@ -42,8 +51,141 @@ impl AgentRuntime {
         self.start_with_visibility(request, false)
     }
 
-    pub fn start_acp_command(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
-        self.start_with_visibility(request, true)
+    /// Admits a plain prompt through the durable queue: when a run is active
+    /// the prompt is stored and the caller receives the queue item (202 on
+    /// the wire) instead of a 409 (#95).
+    pub fn start_or_queue(&self, request: StartAgentRun) -> Result<PromptAdmission, RuntimeError> {
+        self.start_admitting(request, false)
+    }
+
+    pub fn start_acp_command(
+        &self,
+        request: StartAgentRun,
+    ) -> Result<PromptAdmission, RuntimeError> {
+        self.start_admitting(request, true)
+    }
+
+    fn start_admitting(
+        &self,
+        request: StartAgentRun,
+        internal: bool,
+    ) -> Result<PromptAdmission, RuntimeError> {
+        let conversation = self.store.get_conversation(&request.conversation_id)?;
+        if conversation.project_id != request.project_id {
+            return Err(StoreError::ConversationNotFound(request.conversation_id).into());
+        }
+        self.agents
+            .descriptor(conversation.agent_id)
+            .filter(|agent| agent.available)
+            .ok_or(RuntimeError::AgentUnavailable(conversation.agent_id))?;
+        let cwd = self
+            .workspace
+            .execution_path(&request.project_id, conversation.workspace_path.as_deref())?;
+        match self.store.start_prompt_or_enqueue(
+            &request.conversation_id,
+            &request.project_id,
+            &request.message,
+            PermissionMode::Safe,
+            internal,
+            request.client_message_id.as_deref(),
+        )? {
+            crate::agents::StartPromptOutcome::Started(run) => {
+                self.dispatch_started_run(&run, &conversation, cwd, None);
+                Ok(PromptAdmission::Started(run))
+            }
+            crate::agents::StartPromptOutcome::Queued(item) => {
+                let _ = self
+                    .store
+                    .publish_prompt_queue_snapshot(&request.conversation_id);
+                Ok(PromptAdmission::Queued(item))
+            }
+        }
+    }
+
+    /// Hands a freshly created run to its session actor and registers its
+    /// cancellation channel.
+    fn dispatch_started_run(
+        &self,
+        run: &AgentRun,
+        conversation: &crate::agents::Conversation,
+        cwd: std::path::PathBuf,
+        message_override: Option<String>,
+    ) {
+        let (cancel, cancelled) = oneshot::channel();
+        self.cancellations
+            .lock()
+            .expect("agent cancellation mutex poisoned")
+            .insert(run.id.clone(), cancel);
+        let agent_message = message_override.unwrap_or_else(|| {
+            conversation
+                .context_prefix
+                .as_deref()
+                .filter(|_| conversation.provider_session_id.is_none())
+                .map(|context| {
+                    format!(
+                        "{context}\n\nContinue with this user request:\n{}",
+                        run.message
+                    )
+                })
+                .unwrap_or_else(|| run.message.clone())
+        });
+        let descriptor = self
+            .agents
+            .descriptor(conversation.agent_id)
+            .filter(|agent| agent.available);
+        let command = AgentCommand {
+            run: run.clone(),
+            message: agent_message,
+            provider_input: None,
+            cancelled,
+        };
+        let config = AgentSessionConfig {
+            conversation_id: conversation.id.clone(),
+            agent_id: conversation.agent_id,
+            descriptor: descriptor.expect("descriptor presence checked by caller"),
+            provider_session_id: conversation.provider_session_id.clone(),
+            cwd,
+            permission_profile: self.permission_profile(&conversation.id),
+        };
+        self.dispatch(config, SessionCommand::Prompt(command));
+    }
+
+    /// Claims the next queued prompt and converts it into the session
+    /// actor's next command (#95). Called at the actor's turn boundary and
+    /// on session boot so restart-resumed queues drain.
+    pub(super) fn claim_next_queued_prompt(&self, conversation_id: &str) -> Option<AgentCommand> {
+        let item = self
+            .store
+            .claim_next_queued_prompt(conversation_id)
+            .ok()??;
+        let _ = self.store.publish_prompt_queue_snapshot(conversation_id);
+        let run = self
+            .store
+            .start_run_from_queue_item(&item, PermissionMode::Safe)
+            .ok()?;
+        let conversation = self.store.get_conversation(conversation_id).ok()?;
+        let (cancel, cancelled) = oneshot::channel();
+        self.cancellations
+            .lock()
+            .expect("agent cancellation mutex poisoned")
+            .insert(run.id.clone(), cancel);
+        let message = conversation
+            .context_prefix
+            .as_deref()
+            .filter(|_| conversation.provider_session_id.is_none())
+            .map(|context| {
+                format!(
+                    "{context}\n\nContinue with this user request:\n{}",
+                    item.content
+                )
+            })
+            .unwrap_or_else(|| item.content.clone());
+        Some(AgentCommand {
+            run,
+            message,
+            provider_input: None,
+            cancelled,
+        })
     }
 
     pub fn start_composer_command(
@@ -97,7 +239,7 @@ impl AgentRuntime {
             conversation_id: conversation.id,
             agent_id: conversation.agent_id,
             descriptor,
-            provider_session_id: conversation.provider_session_id,
+            provider_session_id: conversation.provider_session_id.clone(),
             cwd,
             permission_profile: self.permission_profile(&request.conversation_id),
         };
@@ -285,7 +427,7 @@ impl AgentRuntime {
             conversation_id: conversation.id,
             agent_id: conversation.agent_id,
             descriptor,
-            provider_session_id: conversation.provider_session_id,
+            provider_session_id: conversation.provider_session_id.clone(),
             cwd,
             permission_profile: self.permission_profile(&request.conversation_id),
         };
@@ -368,7 +510,7 @@ impl AgentRuntime {
             conversation_id: conversation.id,
             agent_id: conversation.agent_id,
             descriptor,
-            provider_session_id: conversation.provider_session_id,
+            provider_session_id: conversation.provider_session_id.clone(),
             cwd,
             permission_profile: self.permission_profile(&request.conversation_id),
         };

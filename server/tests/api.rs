@@ -2737,6 +2737,145 @@ done"#,
 }
 
 #[tokio::test]
+async fn prompt_queue_admits_edits_and_removes_over_http() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-http-queue\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'hold'*) IFS= read -r held_discard ;;
+      esac
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, store, teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/http-queue")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let queue_uri = format!("{BASE_PATH}/api/v1/conversations/{conversation_id}/queue");
+
+    let (_, held) = json_request(&app, Method::POST, &runs_uri, json!({"message":"hold"})).await;
+    let held_id = held["id"].as_str().expect("held run id");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{held_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("held run active");
+
+    // A plain prompt under an active run queues with 202 instead of 409.
+    let (status, queued) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"queued text", "client_message_id":"11111111-1111-4111-8111-111111111111"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "body: {queued}");
+    assert_eq!(queued["status"], "pending");
+    assert_eq!(queued["content"], "queued text");
+    let item_id = queued["id"].as_str().expect("queue item id");
+
+    // The queue listing mirrors it.
+    let (_, listed) = json_request(&app, Method::GET, &queue_uri, Value::Null).await;
+    assert_eq!(listed.as_array().expect("queue rows").len(), 1);
+
+    // Edit in place.
+    let (status, edited) = json_request(
+        &app,
+        Method::PATCH,
+        &format!("{queue_uri}/{item_id}"),
+        json!({"content":"edited text"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {edited}");
+    assert_eq!(edited["content"], "edited text");
+
+    // Removing the item empties the queue.
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{queue_uri}/{item_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, listed) = json_request(&app, Method::GET, &queue_uri, Value::Null).await;
+    assert!(listed.as_array().expect("queue rows").is_empty());
+
+    // A missing item is 404; editing it is not a conflict.
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{queue_uri}/{item_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Stop the held run so the test leaves nothing active behind.
+    let (status, _) = json_request(
+        &app,
+        Method::DELETE,
+        &format!("{BASE_PATH}/api/v1/runs/{held_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
 async fn run_completion_carries_the_reported_terminal_cause() {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().join("srv");

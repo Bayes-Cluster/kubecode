@@ -698,17 +698,35 @@ async fn run_acp_session(
             *connection_stage
                 .lock()
                 .expect("startup stage capture poisoned") = None;
+            // Queued prompts drain whenever the channel is otherwise idle —
+            // at boot (restart-resumed queues) and at every turn boundary —
+            // but never ahead of commands already accepted into the channel,
+            // which keep their FIFO seniority (#95).
+            let mut pending_drain: Option<AgentCommand> = None;
             loop {
-                let command =
-                    match tokio::time::timeout(
-                        runtime.session_actor_policy.idle_timeout,
-                        receiver.recv(),
-                    )
-                    .await
-                    {
-                        Ok(Some(command)) => command,
-                        Ok(None) | Err(_) => break,
-                    };
+                let command = match pending_drain.take() {
+                    Some(command) => SessionCommand::Prompt(command),
+                    None => {
+                        if receiver.is_empty() {
+                            pending_drain =
+                                runtime.claim_next_queued_prompt(&conversation_id);
+                        }
+                        match pending_drain.take() {
+                            Some(command) => SessionCommand::Prompt(command),
+                            None => {
+                                match tokio::time::timeout(
+                                    runtime.session_actor_policy.idle_timeout,
+                                    receiver.recv(),
+                                )
+                                .await
+                                {
+                                    Ok(Some(command)) => command,
+                                    Ok(None) | Err(_) => break,
+                                }
+                            }
+                        }
+                    }
+                };
                 last_activity.store(runtime.next_session_activity(), Ordering::Release);
                 let command = match command {
                     SessionCommand::Shutdown { response } => {
@@ -822,10 +840,23 @@ async fn run_acp_session(
                         &json!({"run_id":command.run.id, "status":status, "cause":cause}),
                     );
                 }
-                *active_run_id.lock().expect("active run mutex poisoned") = None;
-                actor_active.store(false, Ordering::Release);
-                last_activity.store(runtime.next_session_activity(), Ordering::Release);
-                runtime.enforce_warm_actor_limit(Some(&conversation_id));
+                match runtime.claim_next_queued_prompt(&conversation_id) {
+                    Some(next) => {
+                        // The queue continues straight into the next turn: the
+                        // actor stays active and the drained command seeds the
+                        // next loop iteration (#95).
+                        *active_run_id.lock().expect("active run mutex poisoned") =
+                            Some(next.run.id.clone());
+                        last_activity.store(runtime.next_session_activity(), Ordering::Release);
+                        pending_drain = Some(next);
+                    }
+                    None => {
+                        *active_run_id.lock().expect("active run mutex poisoned") = None;
+                        actor_active.store(false, Ordering::Release);
+                        last_activity.store(runtime.next_session_activity(), Ordering::Release);
+                        runtime.enforce_warm_actor_limit(Some(&conversation_id));
+                    }
+                }
                 runtime.wake_team_member_for_conversation(&conversation_id);
                 if let Some(response) = shutdown_response {
                     let _ = response.send(());

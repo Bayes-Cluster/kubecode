@@ -38,9 +38,9 @@ use self::projects::{
     list_projects, migrate_project_workspaces, unregister_project, update_project_workspaces,
 };
 use self::runs::{
-    cancel_agent_run, dispatch_acp_command, get_agent_run, list_conversation_history,
-    list_conversation_runs, list_project_runs, resolve_elicitation, resolve_permission,
-    start_agent_run,
+    cancel_agent_run, dispatch_acp_command, edit_conversation_queue_item, get_agent_run,
+    list_conversation_history, list_conversation_queue, list_conversation_runs, list_project_runs,
+    remove_conversation_queue_item, resolve_elicitation, resolve_permission, start_agent_run,
 };
 use self::runtime::{
     get_runtime_status, get_workspace_event_cursor, list_agent_events, list_session_events,
@@ -220,6 +220,15 @@ fn client_api_router(state: AppState) -> Router {
         .route(
             "/conversations/{conversation_id}/runs",
             get(list_conversation_runs),
+        )
+        .route(
+            "/conversations/{conversation_id}/queue",
+            get(list_conversation_queue),
+        )
+        .route(
+            "/conversations/{conversation_id}/queue/{item_id}",
+            axum::routing::patch(edit_conversation_queue_item)
+                .delete(remove_conversation_queue_item),
         )
         .route(
             "/sessions/{conversation_id}/runs",

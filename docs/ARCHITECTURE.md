@@ -215,6 +215,19 @@ upstream session lifecycle. Each
 Session actor stays connected across prompts and persists the provider Session
 ID for resume or load after restart.
 
+Plain prompts admitted while a run is active queue instead of failing: the
+store starts the run or enqueues the prompt in a single transaction
+(`conversation_prompt_queue`, ordered by position), and admission returns
+`202` with the queue item. The session actor drains the queue FIFO at every
+turn boundary and on session boot, so prompts queued before a restart resume
+after it (orphaned claims reset during interrupted-run recovery). The whole
+pending queue broadcasts as a `prompt_queue` snapshot event after every
+enqueue, mutation, claim, and drain; consumers replace their state wholesale.
+Queued items are editable and removable over HTTP while they stay pending, and
+cancelling the active run keeps the queue draining (ADR 0210). Structured
+composer drafts still reject with `409` while a run is active because their
+catalog revision must be evaluated at submission time.
+
 Discovery records CLI and adapter health separately and can be refreshed
 without restarting the server. Existing actors keep their connection; new and
 reconnecting actors read the new catalog. Passive readiness never creates a

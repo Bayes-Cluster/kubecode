@@ -17,6 +17,10 @@ pub enum StoreError {
     RunNotFound(String),
     #[error("invalid stored value: {0}")]
     InvalidStoredValue(String),
+    #[error("queued prompt is not actionable: {0}")]
+    QueueItemNotActionable(String),
+    #[error("queue item not found: {0}")]
+    QueueItemNotFound(String),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -153,6 +157,36 @@ pub struct AgentRun {
     pub terminal_cause: Option<TerminalCause>,
 }
 
+/// A prompt durably queued while another run is active (#95). Items drain
+/// FIFO by position; the whole pending set broadcasts as a snapshot event
+/// after every mutation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PromptQueueItem {
+    pub id: String,
+    pub conversation_id: String,
+    pub project_id: String,
+    pub content: String,
+    pub status: PromptQueueStatus,
+    pub position: i64,
+    pub internal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_message_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptQueueStatus {
+    Pending,
+    Claimed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StartPromptOutcome {
+    Started(AgentRun),
+    Queued(PromptQueueItem),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComposerRunDispatch {
     pub run: AgentRun,
@@ -260,6 +294,11 @@ string_enum!(ConversationRelationship, {
 string_enum!(ExecutionMode, {
     ExecutionMode::Shared => "shared",
     ExecutionMode::Worktree => "worktree",
+});
+
+string_enum!(PromptQueueStatus, {
+    PromptQueueStatus::Pending => "pending",
+    PromptQueueStatus::Claimed => "claimed",
 });
 
 string_enum!(AgentEventKind, {

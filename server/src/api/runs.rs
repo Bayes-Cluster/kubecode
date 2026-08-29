@@ -56,34 +56,47 @@ pub(super) async fn start_agent_run(
     }
     let request = serde_json::from_value::<StartRunRequest>(request)
         .map_err(|_| ApiError::InvalidRequest("invalid run request".into()))?;
-    let run = match request {
+    let admitted = match request {
         StartRunRequest::Legacy(request) => {
             if request.message.trim().is_empty() {
                 return Err(ApiError::InvalidRequest("message must not be empty".into()));
             }
             let client_message_id = validate_client_message_id(request.client_message_id)?;
-            state.agent_runtime.start(StartAgentRun {
-                conversation_id,
+            let admission = state.agent_runtime.start_or_queue(StartAgentRun {
+                conversation_id: conversation_id.clone(),
                 project_id,
                 message: request.message,
                 client_message_id,
-            })?
+            })?;
+            match admission {
+                crate::agent_runtime::PromptAdmission::Started(run) => {
+                    serde_json::to_value(&run)
+                        .map_err(|_| ApiError::InvalidRequest("run could not serialize".into()))?
+                }
+                crate::agent_runtime::PromptAdmission::Queued(item) => serde_json::to_value(&item)
+                    .map_err(|_| {
+                        ApiError::InvalidRequest("queue item could not serialize".into())
+                    })?,
+            }
         }
         StartRunRequest::Structured(request) => {
             let client_message_id = validate_client_message_id(request.client_message_id)?;
-            state
-                .agent_runtime
-                .start_structured_composer(StartStructuredComposerRun {
-                    conversation_id,
-                    project_id,
-                    item_id: request.item_id,
-                    catalog_revision: request.catalog_revision,
-                    segments: request.segments,
-                    client_message_id,
-                })?
+            let run =
+                state
+                    .agent_runtime
+                    .start_structured_composer(StartStructuredComposerRun {
+                        conversation_id,
+                        project_id,
+                        item_id: request.item_id,
+                        catalog_revision: request.catalog_revision,
+                        segments: request.segments,
+                        client_message_id,
+                    })?;
+            serde_json::to_value(&run)
+                .map_err(|_| ApiError::InvalidRequest("run could not serialize".into()))?
         }
     };
-    Ok((StatusCode::ACCEPTED, Json(run)))
+    Ok((StatusCode::ACCEPTED, Json(admitted)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,7 +137,7 @@ pub(super) async fn dispatch_acp_command(
     }
     let selector = serde_json::from_value::<DispatchAcpCommandSelector>(request)
         .map_err(|_| ApiError::InvalidRequest("invalid command selector".into()))?;
-    let run = match selector {
+    let admitted = match selector {
         DispatchAcpCommandSelector::Legacy(request) => {
             validate_legacy_acp_command(&request.name, &request.arguments)?;
             let raw =
@@ -132,15 +145,26 @@ pub(super) async fn dispatch_acp_command(
                     .ok_or(AcpCommandError::Unavailable)?;
             let message =
                 resolve_legacy_acp_command_message(&raw, &request.name, &request.arguments)?;
-            state.agent_runtime.start_acp_command(StartAgentRun {
-                conversation_id,
+            // Legacy slash commands are plain prompts at heart: under an
+            // active run they queue exactly like typed text (#95).
+            match state.agent_runtime.start_acp_command(StartAgentRun {
+                conversation_id: conversation_id.clone(),
                 project_id,
                 message,
                 client_message_id: None,
-            })?
+            })? {
+                crate::agent_runtime::PromptAdmission::Started(run) => {
+                    serde_json::to_value(&run)
+                        .map_err(|_| ApiError::InvalidRequest("run could not serialize".into()))?
+                }
+                crate::agent_runtime::PromptAdmission::Queued(item) => serde_json::to_value(&item)
+                    .map_err(|_| {
+                        ApiError::InvalidRequest("queue item could not serialize".into())
+                    })?,
+            }
         }
         DispatchAcpCommandSelector::Typed(request) => {
-            state
+            let run = state
                 .agent_runtime
                 .start_composer_command(StartComposerCommand {
                     conversation_id,
@@ -148,10 +172,12 @@ pub(super) async fn dispatch_acp_command(
                     item_id: request.item_id,
                     catalog_revision: request.catalog_revision,
                     arguments: request.arguments,
-                })?
+                })?;
+            serde_json::to_value(&run)
+                .map_err(|_| ApiError::InvalidRequest("run could not serialize".into()))?
         }
     };
-    Ok((StatusCode::ACCEPTED, Json(run)))
+    Ok((StatusCode::ACCEPTED, Json(admitted)))
 }
 
 pub(super) async fn get_agent_run(
@@ -369,4 +395,50 @@ fn latest_available_commands(
         .filter(|event| event.kind == "available_commands")
         .map(|event| event.payload)
         .next_back())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct EditQueueItemRequest {
+    pub(super) content: String,
+}
+
+pub(super) async fn list_conversation_queue(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(Json(
+        state
+            .agent_runtime
+            .store()
+            .list_queued_prompts(&conversation_id)?,
+    ))
+}
+
+pub(super) async fn edit_conversation_queue_item(
+    State(state): State<AppState>,
+    Path((conversation_id, item_id)): Path<(String, String)>,
+    Json(request): Json<EditQueueItemRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let item = state
+        .agent_runtime
+        .store()
+        .edit_queued_prompt(&item_id, request.content.trim())?;
+    let _ = state
+        .agent_runtime
+        .store()
+        .publish_prompt_queue_snapshot(&conversation_id);
+    Ok(Json(item))
+}
+
+pub(super) async fn remove_conversation_queue_item(
+    State(state): State<AppState>,
+    Path((conversation_id, item_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    state.agent_runtime.store().remove_queued_prompt(&item_id)?;
+    let _ = state
+        .agent_runtime
+        .store()
+        .publish_prompt_queue_snapshot(&conversation_id);
+    Ok(StatusCode::NO_CONTENT)
 }
