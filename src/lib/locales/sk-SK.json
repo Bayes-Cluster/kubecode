@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Znovu vygenerovať odpoveď",
   "ai.message.copy": "Kopírovať odpoveď",
   "ai.message.copyMessage": "Kopírovať správu",
-  "ai.message.fork": "Rozvetviť chat odtiaľto",
+  "ai.message.fork": "Vetva od tohto ťahu (kopíruje chat)",
   "ai.message.reasoning": "Odôvodnenie",
   "ai.message.toolUse": "Používanie nástroja",
   "ai.workspace.title": "Agenti",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Odstrániť z poradia",
   "kubecode.queueSave": "Uložiť",
   "kubecode.queueCancelEditing": "Zrušiť úpravu",
-  "kubecode.queueSendNow": "Poslať teraz"
+  "kubecode.queueSendNow": "Poslať teraz",
+  "kubecode.forkUnavailableRunning": "Počkajte na koniec ťahu pred vetvením"
 }

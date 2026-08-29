@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Wygeneruj odpowiedź ponownie",
   "ai.message.copy": "Skopiuj odpowiedź",
   "ai.message.copyMessage": "Skopiuj wiadomość",
-  "ai.message.fork": "Rozgałęź czat od tego miejsca",
+  "ai.message.fork": "Rozgałęź od tej tury (kopiuje czat)",
   "ai.message.reasoning": "Rozumowanie",
   "ai.message.toolUse": "Korzystanie z narzędzi",
   "ai.workspace.title": "Agenci",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Usuń z kolejki",
   "kubecode.queueSave": "Zapisz",
   "kubecode.queueCancelEditing": "Anuluj edycję",
-  "kubecode.queueSendNow": "Wyślij teraz"
+  "kubecode.queueSendNow": "Wyślij teraz",
+  "kubecode.forkUnavailableRunning": "Poczekaj na koniec tury przed rozgałęzieniem"
 }

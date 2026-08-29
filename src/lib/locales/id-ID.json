@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Buat ulang respons",
   "ai.message.copy": "Salin respons",
   "ai.message.copyMessage": "Salin pesan",
-  "ai.message.fork": "Cabangkan obrolan dari sini",
+  "ai.message.fork": "Fork dari giliran ini (menyalin chat)",
   "ai.message.reasoning": "Penalaran",
   "ai.message.toolUse": "Penggunaan alat",
   "ai.workspace.title": "Agen",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Hapus dari antrean",
   "kubecode.queueSave": "Simpan",
   "kubecode.queueCancelEditing": "Batal mengedit",
-  "kubecode.queueSendNow": "Kirim sekarang"
+  "kubecode.queueSendNow": "Kirim sekarang",
+  "kubecode.forkUnavailableRunning": "Tunggu giliran selesai se melakukan fork"
 }

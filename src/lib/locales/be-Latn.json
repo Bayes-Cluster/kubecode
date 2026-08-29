@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Stvaryć adkaz nanova",
   "ai.message.copy": "Skapijavać adkaz",
   "ai.message.copyMessage": "Skapijavać paviedamleńnie",
-  "ai.message.fork": "Adhalinavać čat adsiul",
+  "ai.message.fork": "Vietka z hetaha paviedamliennia (kopija čata)",
   "ai.message.reasoning": "Razvažannie",
   "ai.message.toolUse": "Vykarystannie instrumientaŭ",
   "ai.workspace.title": "ŠI prastora",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Vydalić z čarhi",
   "kubecode.queueSave": "Zachavać",
   "kubecode.queueCancelEditing": "Skasavać redahavanniie",
-  "kubecode.queueSendNow": "Adpravić zaraz"
+  "kubecode.queueSendNow": "Adpravić zaraz",
+  "kubecode.forkUnavailableRunning": "Dačiekajcie zakančennie chodu pierad stvarannienniem haliny"
 }

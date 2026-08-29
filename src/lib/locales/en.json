@@ -453,7 +453,7 @@
   "ai.message.edit": "Edit message",
   "ai.message.copy": "Copy response",
   "ai.message.copyMessage": "Copy message",
-  "ai.message.fork": "Fork chat from here",
+  "ai.message.fork": "Fork from this turn (copies the chat)",
   "ai.message.reasoning": "Reasoning",
   "ai.message.toolUse": "Tool use",
   "ai.workspace.title": "Agents",
@@ -1588,5 +1588,6 @@
   "kubecode.queueRemove": "Remove from queue",
   "kubecode.queueSave": "Save",
   "kubecode.queueCancelEditing": "Cancel editing",
-  "kubecode.queueSendNow": "Send now"
+  "kubecode.queueSendNow": "Send now",
+  "kubecode.forkUnavailableRunning": "Wait for the turn to finish before forking"
 }

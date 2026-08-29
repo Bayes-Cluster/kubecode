@@ -16,10 +16,12 @@ import {
 } from './api'
 
 vi.mock('@/components/AiPanelChrome', () => ({
-  AiPanelMessageHistory: ({ leadingContent, messages, onEditMessage, onRegenerateMessage }: {
+  AiPanelMessageHistory: ({ leadingContent, messages, onEditMessage, onForkMessage, forkUnavailableLabel, onRegenerateMessage }: {
     leadingContent?: ReactNode
     messages: AiAgentMessage[]
     onEditMessage?: (messageId: string, message: string) => void
+    onForkMessage?: (messageId: string) => void
+    forkUnavailableLabel?: string
     onRegenerateMessage?: (messageId: string) => void
   }) => (
     <div data-testid="message-history">{leadingContent}{messages.map((message) => (
@@ -33,6 +35,16 @@ vi.mock('@/components/AiPanelChrome', () => ({
         {message.actions.map((action) => (
           <span key={action.toolId}>{action.label}:{action.status}:{action.output}</span>
         ))}
+        {message.id && onForkMessage && (
+          <button
+            data-testid="ai-message-fork"
+            disabled={Boolean(message.isStreaming)}
+            title={message.isStreaming ? forkUnavailableLabel : 'Fork from this turn (copies the chat)'}
+            onClick={() => onForkMessage(message.id as string)}
+          >
+            Fork from this turn (copies the chat)
+          </button>
+        )}
         {message.id && onEditMessage && (
           <button onClick={() => onEditMessage(message.id as string, message.userMessage)}>Edit message</button>
         )}
@@ -999,6 +1011,137 @@ describe('AgentSessionWorkspace', () => {
       },
     ))
     expect(JSON.stringify(startStructuredRun.mock.calls[0]?.[2])).not.toContain('src/main.ts')
+  })
+
+  it('forks a completed turn and opens the child conversation', async () => {
+    const completedRun = { ...run, status: 'completed' as const }
+    const childConversation = {
+      ...conversation,
+      id: 'child-1',
+      parent_conversation_id: 'session-1',
+      relationship: 'fork' as const,
+      fork_path: 'provider_fork',
+      fork_boundary_run_id: completedRun.id,
+    }
+    const forkFromTurn = vi.fn().mockResolvedValue(childConversation)
+    const onConversationCreated = vi.fn()
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([completedRun]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      forkFromTurn,
+    } as unknown as KubecodeApi
+
+    // Hydration materializes the completed turn: run row + transcript.
+    const apiWithTranscript = {
+      ...api,
+      listRuns: vi.fn().mockResolvedValue([completedRun]),
+      listSessionEvents: vi.fn().mockResolvedValue([
+        {
+          conversation_id: 'session-1',
+          seq: 1,
+          kind: 'user_message',
+          payload: { run_id: completedRun.id, text: 'Turn one', internal: false },
+          created_at: 'now',
+        },
+        {
+          conversation_id: 'session-1',
+          seq: 2,
+          kind: 'text_delta',
+          payload: { run_id: completedRun.id, text: 'Done.' },
+          created_at: 'now',
+        },
+        {
+          conversation_id: 'session-1',
+          seq: 3,
+          kind: 'run_completed',
+          payload: { run_id: completedRun.id, status: 'completed', cause: 'end_turn' },
+          created_at: 'now',
+        },
+      ]),
+    }
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={apiWithTranscript}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={onConversationCreated}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await screen.findByTestId('agent-input')
+
+    const forkButton = await screen.findByTestId('ai-message-fork')
+    expect(forkButton).toBeEnabled()
+    fireEvent.click(forkButton)
+    await waitFor(() => {
+      expect(forkFromTurn).toHaveBeenCalledWith('session-1', completedRun.id)
+      expect(onConversationCreated).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'child-1',
+        fork_path: 'provider_fork',
+      }))
+    })
+  })
+
+  it('disables the fork affordance while the turn is still open', async () => {
+    const forkFromTurn = vi.fn()
+    const runningRun = { ...run, status: 'running' as const }
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([runningRun]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      forkFromTurn,
+    } as unknown as KubecodeApi
+
+    // Hydration materializes the open turn as a streaming bubble.
+    const apiWithTranscript = {
+      ...api,
+      listRuns: vi.fn().mockResolvedValue([runningRun]),
+      listSessionEvents: vi.fn().mockResolvedValue([
+        {
+          conversation_id: 'session-1',
+          seq: 1,
+          kind: 'user_message',
+          payload: { run_id: runningRun.id, text: 'Open turn', internal: false },
+          created_at: 'now',
+        },
+        {
+          conversation_id: 'session-1',
+          seq: 2,
+          kind: 'text_delta',
+          payload: { run_id: runningRun.id, text: 'Working', messageId: 'open-turn' },
+          created_at: 'now',
+        },
+      ]),
+    }
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={apiWithTranscript}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    await screen.findByTestId('agent-input')
+
+    const forkButton = await screen.findByTestId('ai-message-fork')
+    expect(forkButton).toBeDisabled()
+    expect(forkButton).toHaveAttribute('title', 'Wait for the turn to finish before forking')
+    fireEvent.click(forkButton)
+    expect(forkFromTurn).not.toHaveBeenCalled()
   })
 
   it('renders the prompt queue from snapshot events with edit and remove', async () => {

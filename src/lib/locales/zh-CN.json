@@ -451,7 +451,7 @@
   "ai.message.regenerate": "重新生成回复",
   "ai.message.copy": "复制回复",
   "ai.message.copyMessage": "复制消息",
-  "ai.message.fork": "从此处分叉聊天",
+  "ai.message.fork": "从此轮分叉（复制该对话）",
   "ai.message.reasoning": "推理",
   "ai.message.toolUse": "工具使用",
   "ai.workspace.title": "代理",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "从队列中移除",
   "kubecode.queueSave": "保存",
   "kubecode.queueCancelEditing": "取消编辑",
-  "kubecode.queueSendNow": "立即发送"
+  "kubecode.queueSendNow": "立即发送",
+  "kubecode.forkUnavailableRunning": "请等待本轮结束后再分叉"
 }

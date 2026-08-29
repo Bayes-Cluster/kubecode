@@ -53,6 +53,7 @@ interface AiPanelMessageHistoryProps {
   isActive: boolean
   leadingContent?: ReactNode
   onForkMessage?: (messageId: string) => void
+  forkUnavailableLabel?: string
   onEditMessage?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
   onNavigateWikilink?: (target: string) => void
@@ -477,6 +478,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   isActive,
   leadingContent,
   onForkMessage,
+  forkUnavailableLabel,
   onEditMessage,
   onOpenNote,
   onNavigateWikilink,
@@ -531,7 +533,8 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
             locale={locale}
             messageId={message.id}
             onEdit={onEditMessage}
-            onFork={onForkMessage}
+            onFork={message.isStreaming ? undefined : onForkMessage}
+            forkUnavailableLabel={forkUnavailableLabel}
             onOpenNote={onOpenNote}
             onNavigateWikilink={onNavigateWikilink}
             onRegenerate={onRegenerateMessage}

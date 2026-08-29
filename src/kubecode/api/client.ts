@@ -517,6 +517,14 @@ export class KubecodeApi {
     )
   }
 
+  /** Boundary fork (#100): opens a child conversation cut at the turn. */
+  forkFromTurn(conversationId: string, runId: string): Promise<Conversation> {
+    return this.request(
+      `/sessions/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/fork`,
+      { method: 'POST' },
+    )
+  }
+
   registerComposerContext(
     conversationId: string,
     context: {

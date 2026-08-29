@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Згенерувати відповідь повторно",
   "ai.message.copy": "Копіювати відповідь",
   "ai.message.copyMessage": "Копіювати повідомлення",
-  "ai.message.fork": "Відгалузити чат звідси",
+  "ai.message.fork": "Гілка з цього ходу (копія чату)",
   "ai.message.reasoning": "Міркування",
   "ai.message.toolUse": "Використання інструмента",
   "ai.workspace.title": "Агенти",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Вилучити з черги",
   "kubecode.queueSave": "Зберегти",
   "kubecode.queueCancelEditing": "Скасувати редагування",
-  "kubecode.queueSendNow": "Надіслати зараз"
+  "kubecode.queueSendNow": "Надіслати зараз",
+  "kubecode.forkUnavailableRunning": "Дочекайтеся завершення ходу перед створенням гілки"
 }

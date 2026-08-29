@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Generera svaret på nytt",
   "ai.message.copy": "Kopiera svar",
   "ai.message.copyMessage": "Kopiera meddelande",
-  "ai.message.fork": "Förgrena chatten härifrån",
+  "ai.message.fork": "Förgrena från detta varv (kopierar chatten)",
   "ai.message.reasoning": "Resonemang",
   "ai.message.toolUse": "Verktygsanvändning",
   "ai.workspace.title": "Agenter",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Ta bort från kön",
   "kubecode.queueSave": "Spara",
   "kubecode.queueCancelEditing": "Avbryt redigering",
-  "kubecode.queueSendNow": "Skicka nu"
+  "kubecode.queueSendNow": "Skicka nu",
+  "kubecode.forkUnavailableRunning": "Vänta tills varvet är klart innan du förgrenar"
 }

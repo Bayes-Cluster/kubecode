@@ -518,7 +518,7 @@
   "ai.message.regenerate": "응답 다시 생성",
   "ai.message.copy": "응답 복사",
   "ai.message.copyMessage": "메시지 복사",
-  "ai.message.fork": "여기서 채팅 분기",
+  "ai.message.fork": "이 턴에서 분기(채팅 복사)",
   "ai.message.reasoning": "추론",
   "ai.message.toolUse": "도구 사용",
   "ai.workspace.title": "에이전트",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "대기열에서 제거",
   "kubecode.queueSave": "저장",
   "kubecode.queueCancelEditing": "편집 취소",
-  "kubecode.queueSendNow": "지금 보내기"
+  "kubecode.queueSendNow": "지금 보내기",
+  "kubecode.forkUnavailableRunning": "분기하기 전에 턴이 끝나기를 기다리세요"
 }

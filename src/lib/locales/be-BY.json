@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Згенераваць адказ нанова",
   "ai.message.copy": "Скапіяваць адказ",
   "ai.message.copyMessage": "Скапіяваць паведамленне",
-  "ai.message.fork": "Адгалінаваць чат адсюль",
+  "ai.message.fork": "Ветка з гэтага паведамлення (копія чата)",
   "ai.message.reasoning": "Аргументацыя",
   "ai.message.toolUse": "Выкарыстанне інструментаў",
   "ai.workspace.title": "Агенты",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Выдаліць з чаргі",
   "kubecode.queueSave": "Захаваць",
   "kubecode.queueCancelEditing": "Скасаваць рэдагаванне",
-  "kubecode.queueSendNow": "Адправіць зараз"
+  "kubecode.queueSendNow": "Адправіць зараз",
+  "kubecode.forkUnavailableRunning": "Дачекайцеся заканчэння ходу перад стварэннем галіны"
 }

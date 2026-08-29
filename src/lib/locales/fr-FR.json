@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Régénérer la réponse",
   "ai.message.copy": "Copier la réponse",
   "ai.message.copyMessage": "Copier le message",
-  "ai.message.fork": "Créer une branche du chat ici",
+  "ai.message.fork": "Créer une branche à partir de ce tour (copie la conversation)",
   "ai.message.reasoning": "Raisonnement",
   "ai.message.toolUse": "Utilisation de l'outil",
   "ai.workspace.title": "Agents",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Retirer de la file d’attente",
   "kubecode.queueSave": "Enregistrer",
   "kubecode.queueCancelEditing": "Annuler la modification",
-  "kubecode.queueSendNow": "Envoyer maintenant"
+  "kubecode.queueSendNow": "Envoyer maintenant",
+  "kubecode.forkUnavailableRunning": "Attendez la fin du tour avant de créer une branche"
 }
