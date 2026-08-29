@@ -19,6 +19,7 @@ import type {
   Conversation,
   ConversationRevision,
   KubecodeApi,
+  PromptQueueItem,
 } from '../api'
 import {
   ACTIVE_RUN_STATUSES,
@@ -49,6 +50,8 @@ export type SessionTranscript = {
    * same reducer history hydration replays through (#103).
    */
   enqueueConversationEvents: (events: readonly TimelineEvent[]) => void
+  promptQueue: PromptQueueItem[]
+  setPromptQueue: Dispatch<SetStateAction<PromptQueueItem[]>>
   elicitationAnswers: Record<string, ElicitationAnswer>
   failOptimisticMessage: (clientMessageId: string) => void
   messages: AiAgentMessage[]
@@ -114,6 +117,7 @@ export function useSessionHistory({
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null)
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
+  const [promptQueue, setPromptQueue] = useState<PromptQueueItem[]>([])
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -291,6 +295,15 @@ export function useSessionHistory({
       setRun(result.activeRun)
       applySessionState(result.sessionState)
       setHistoryCursor(result.historyCursor)
+      // Seed the queue surface; live prompt_queue snapshots maintain it.
+      // The guard keeps older API surfaces (tests, runtimes) rendering.
+      if (typeof api.listPromptQueue === 'function') {
+        void api.listPromptQueue(historyConversationId).then((items) => {
+          if (!cancelled) setPromptQueue(items)
+        }).catch(() => {
+          if (!cancelled) setPromptQueue([])
+        })
+      }
       for (const runId of collectMissingRunIds(buffered, merged)) {
         void loadRun(runId).catch(() => {})
       }
@@ -436,6 +449,8 @@ export function useSessionHistory({
       setPendingElicitation,
       setPendingPermission,
       setRun,
+      setPromptQueue,
+      promptQueue,
       setSideQuestions,
       sideQuestions,
     },

@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "AI użyje aktywnej notatki jako kontekstu",
   "ai.panel.placeholder.checking": "Sprawdzanie dostępności agenta AI...",
   "ai.panel.placeholder.queued": "{agent} działa — Wyślij ustawi Twoją wiadomość w kolejce",  "ai.panel.placeholder.missing": "{agent} nie jest zainstalowany. Otwórz Agentów AI w Ustawieniach.",
-  "ai.panel.placeholder.ready": "Zapytaj {agent}",
+  "kubecode.queueTitle": "Wiadomości w kolejce ({count})",  "ai.panel.placeholder.ready": "Zapytaj {agent}",
   "ai.panel.send": "Wyślij wiadomość",
   "ai.panel.stop": "Zatrzymaj odpowiedź",
   "ai.panel.stoppedResponse": "Zatrzymano.",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Edytuj wiadomość w kolejce",
+  "kubecode.queueRemove": "Usuń z kolejki",
+  "kubecode.queueSave": "Zapisz",
+  "kubecode.queueCancelEditing": "Anuluj edycję"
 }

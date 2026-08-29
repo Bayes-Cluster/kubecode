@@ -487,6 +487,28 @@ export class KubecodeApi {
     )
   }
 
+  listPromptQueue(conversationId: string): Promise<PromptQueueItem[]> {
+    return this.request(`/conversations/${encodeURIComponent(conversationId)}/queue`)
+  }
+
+  editPromptQueueItem(
+    conversationId: string,
+    itemId: string,
+    content: string,
+  ): Promise<PromptQueueItem> {
+    return this.request(
+      `/conversations/${encodeURIComponent(conversationId)}/queue/${encodeURIComponent(itemId)}`,
+      { method: 'PATCH', body: JSON.stringify({ content }) },
+    )
+  }
+
+  async removePromptQueueItem(conversationId: string, itemId: string): Promise<void> {
+    await this.request(
+      `/conversations/${encodeURIComponent(conversationId)}/queue/${encodeURIComponent(itemId)}`,
+      { method: 'DELETE' },
+    )
+  }
+
   registerComposerContext(
     conversationId: string,
     context: {

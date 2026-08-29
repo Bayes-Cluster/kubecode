@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "人工智慧將使用目前啟用的筆記作為背景資訊",
   "ai.panel.placeholder.checking": "正在檢查 AI 代理程式的可用性……",
   "ai.panel.placeholder.queued": "{agent} 正在執行 —— 點擊傳送將把訊息加入佇列",  "ai.panel.placeholder.missing": "未安裝 {agent}。在「設定」中開啟 AI 代理程式。",
-  "ai.panel.placeholder.ready": "詢問 {agent}",
+  "kubecode.queueTitle": "佇列中的訊息（{count}）",  "ai.panel.placeholder.ready": "詢問 {agent}",
   "ai.panel.send": "傳送訊息",
   "ai.panel.stop": "停止回應",
   "ai.panel.stoppedResponse": "已停止。",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "編輯佇列中的訊息",
+  "kubecode.queueRemove": "從佇列中移除",
+  "kubecode.queueSave": "儲存",
+  "kubecode.queueCancelEditing": "取消編輯"
 }

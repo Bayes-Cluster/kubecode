@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "L'IA utilizzerà la nota attiva come contesto",
   "ai.panel.placeholder.checking": "Verifica della disponibilità dell'agente IA in corso...",
   "ai.panel.placeholder.queued": "{agent} è in esecuzione — Invio mette in coda il tuo messaggio",  "ai.panel.placeholder.missing": "{agent} non è installato. Apri Agenti IA in Impostazioni.",
-  "ai.panel.placeholder.ready": "Chiedi a {agent}",
+  "kubecode.queueTitle": "Messaggi in coda ({count})",  "ai.panel.placeholder.ready": "Chiedi a {agent}",
   "ai.panel.send": "Invia messaggio",
   "ai.panel.stop": "Interrompi risposta",
   "ai.panel.stoppedResponse": "Arrestato.",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Modifica messaggio in coda",
+  "kubecode.queueRemove": "Rimuovi dalla coda",
+  "kubecode.queueSave": "Salva",
+  "kubecode.queueCancelEditing": "Annulla modifica"
 }

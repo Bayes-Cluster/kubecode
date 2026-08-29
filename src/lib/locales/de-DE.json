@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "Die KI verwendet die aktive Notiz als Kontext",
   "ai.panel.placeholder.checking": "Verfügbarkeit des KI-Agents wird geprüft …",
   "ai.panel.placeholder.queued": "{agent} läuft — „Senden“ reiht Ihre Nachricht in die Warteschlange ein",  "ai.panel.placeholder.missing": "{agent} ist nicht installiert. Öffnen Sie „AI Agents“ in den Einstellungen.",
-  "ai.panel.placeholder.ready": "{agent} fragen",
+  "kubecode.queueTitle": "Warteschlange ({count})",  "ai.panel.placeholder.ready": "{agent} fragen",
   "ai.panel.send": "Nachricht senden",
   "ai.panel.stop": "Antwort stoppen",
   "ai.panel.stoppedResponse": "Gestoppt.",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Warteschlangeneintrag bearbeiten",
+  "kubecode.queueRemove": "Aus der Warteschlange entfernen",
+  "kubecode.queueSave": "Speichern",
+  "kubecode.queueCancelEditing": "Bearbeiten abbrechen"
 }

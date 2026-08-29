@@ -441,7 +441,7 @@
   "ai.panel.empty.noContextDescription": "人工智能将使用当前笔记作为上下文",
   "ai.panel.placeholder.checking": "正在检查 AI 代理的可用性……",
   "ai.panel.placeholder.queued": "{agent} 正在运行 —— 点击发送将把消息加入队列",  "ai.panel.placeholder.missing": "未安装 {agent}。在“设置”中打开 AI 代理。",
-  "ai.panel.placeholder.ready": "询问 {agent}",
+  "kubecode.queueTitle": "排队中的消息（{count}）",  "ai.panel.placeholder.ready": "询问 {agent}",
   "ai.panel.send": "发送消息",
   "ai.panel.stop": "停止响应",
   "ai.panel.stoppedResponse": "已停止。",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "编辑队列中的消息",
+  "kubecode.queueRemove": "从队列中移除",
+  "kubecode.queueSave": "保存",
+  "kubecode.queueCancelEditing": "取消编辑"
 }

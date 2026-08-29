@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "ШІ використовуватиме активну нотатку як контекст",
   "ai.panel.placeholder.checking": "Перевірка доступності агента ШІ...",
   "ai.panel.placeholder.queued": "{agent} виконується — «Надіслати» поставить ваше повідомлення в чергу",  "ai.panel.placeholder.missing": "{agent} не встановлено. Відкрийте «Агенти ШІ» в налаштуваннях.",
-  "ai.panel.placeholder.ready": "Запитайте {agent}",
+  "kubecode.queueTitle": "Повідомлення в черзі ({count})",  "ai.panel.placeholder.ready": "Запитайте {agent}",
   "ai.panel.send": "Надіслати повідомлення",
   "ai.panel.stop": "Зупинити відповідь",
   "ai.panel.stoppedResponse": "Зупинено.",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Редагувати повідомлення в черзі",
+  "kubecode.queueRemove": "Вилучити з черги",
+  "kubecode.queueSave": "Зберегти",
+  "kubecode.queueCancelEditing": "Скасувати редагування"
 }

@@ -35,6 +35,7 @@ import { TeamSessionOverview } from '../TeamSessionOverview'
 import { TeamWorkspaceView } from '../TeamWorkspaceView'
 import type { TerminalContextSource } from '../TerminalWorkspace'
 
+import { PromptQueueDock } from './PromptQueueDock'
 import { SessionComposer } from './SessionComposer'
 import { SessionTimeline } from './SessionTimeline'
 import { SessionTitlebar } from './SessionTitlebar'
@@ -660,6 +661,18 @@ export function AgentSessionWorkspace({
             revisions={history.revisions}
             t={t}
             viewRevisionId={history.viewRevisionId}
+          />
+          <PromptQueueDock
+            items={transcript.promptQueue}
+            onEdit={(itemId, content) => {
+              void api.editPromptQueueItem(conversation.id, itemId, content)
+                .catch(reportError)
+            }}
+            onRemove={(itemId) => {
+              void api.removePromptQueueItem(conversation.id, itemId)
+                .catch(reportError)
+            }}
+            t={t}
           />
           <SessionComposer
             agentLabel={agentLabel}

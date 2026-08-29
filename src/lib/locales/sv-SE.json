@@ -508,7 +508,7 @@
   "ai.panel.empty.noContextDescription": "AI:n använder den aktiva anteckningen som kontext",
   "ai.panel.placeholder.checking": "Kontrollerar AI-agentens tillgänglighet...",
   "ai.panel.placeholder.queued": "{agent} kör — Skicka köar ditt meddelande",  "ai.panel.placeholder.missing": "{agent} är inte installerad. Öppna AI-agenter i Inställningar.",
-  "ai.panel.placeholder.ready": "Fråga {agent}",
+  "kubecode.queueTitle": "Meddelanden i kö ({count})",  "ai.panel.placeholder.ready": "Fråga {agent}",
   "ai.panel.send": "Skicka meddelande",
   "ai.panel.stop": "Stoppa svar",
   "ai.panel.stoppedResponse": "Stoppad.",
@@ -1582,5 +1582,9 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Redigera köat meddelande",
+  "kubecode.queueRemove": "Ta bort från kön",
+  "kubecode.queueSave": "Spara",
+  "kubecode.queueCancelEditing": "Avbryt redigering"
 }
