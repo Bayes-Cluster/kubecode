@@ -351,6 +351,24 @@ export type AgentRun = {
     | 'refusal'
     | 'interrupted'
 }
+/** A prompt durably queued while another run is active (#95). */
+export type PromptQueueItem = {
+  id: string
+  conversation_id: string
+  project_id: string
+  content: string
+  status: 'pending' | 'claimed'
+  position: number
+  internal: boolean
+  client_message_id?: string
+  created_at: string
+}
+
+/** Admission result for a plain prompt: started now, or queued (#95/#97). */
+export type RunAdmission =
+  | { admission: 'started'; run: AgentRun }
+  | { admission: 'queued'; item: PromptQueueItem }
+
 export type ConversationHistoryPage = {
   runs: AgentRun[]
   events: Record<string, AgentEvent[]>

@@ -3,6 +3,7 @@ mod conversations;
 mod events;
 mod models;
 mod permissions;
+mod prompt_queue;
 mod revisions;
 mod runs;
 
@@ -10,7 +11,8 @@ pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventB
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
     ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
-    PermissionMode, RunCheckpoint, RunStatus, SessionEvent, StoreError, TerminalCause,
+    PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent,
+    StartPromptOutcome, StoreError, TerminalCause,
 };
 
 use std::path::Path;
@@ -87,6 +89,17 @@ impl AgentStore {
                matcher TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                UNIQUE(project_id, agent_id, matcher)
+             );
+             CREATE TABLE IF NOT EXISTS conversation_prompt_queue (
+               id TEXT PRIMARY KEY,
+               conversation_id TEXT NOT NULL,
+               project_id TEXT NOT NULL,
+               content TEXT NOT NULL,
+               status TEXT NOT NULL DEFAULT 'pending',
+               position INTEGER NOT NULL,
+               internal INTEGER NOT NULL DEFAULT 0,
+               client_message_id TEXT,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE TABLE IF NOT EXISTS workspace_events (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,6 +239,9 @@ impl AgentStore {
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
         };
+        // Interrupted runs leave claimed queue items behind; the drain must
+        // resume after restart, so claims reset below once the store lock is
+        // released (#95).
         let mut latest_workspace_cursor = None;
         for run_id in run_ids {
             transaction.execute(
@@ -251,6 +267,10 @@ impl AgentStore {
         transaction.commit()?;
         if let Some(cursor) = latest_workspace_cursor {
             self.workspace_event_bus.publish_committed(cursor);
+        }
+        drop(database);
+        for conversation_id in self.reset_orphaned_queue_claims()? {
+            let _ = self.publish_prompt_queue_snapshot(&conversation_id);
         }
         Ok(())
     }

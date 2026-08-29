@@ -4,8 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kubecode_server::agent_discovery::AgentDescriptor;
-use kubecode_server::agent_runtime::{AgentRuntime, SessionConfigInput, StartAgentRun};
-use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, RunStatus};
+use kubecode_server::agent_runtime::{
+    AgentRuntime, PromptAdmission, SessionConfigInput, StartAgentRun,
+};
+use kubecode_server::agents::{AgentEventKind, AgentId, AgentStore, RunStatus, TerminalCause};
 use kubecode_server::teams::{
     MemberWorkspaceMode, NewTeam, NewTeammate, StartTeam, TeamMode, TeamStore, TeamWorkspace,
 };
@@ -1569,5 +1571,272 @@ done"#,
     assert_eq!(
         remembered, "allow_always\nallow_always\n",
         "second turn answered from memory, first from the user"
+    );
+}
+
+#[tokio::test]
+async fn queued_prompts_drain_fifo_after_the_active_run_finishes() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "queue-drain-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-queue\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'first-hold'*) sleep 1 ;;
+      esac
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let first = runtime
+        .start_or_queue(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "first-hold".into(),
+            client_message_id: Some("client-first".into()),
+        })
+        .expect("start first");
+    let PromptAdmission::Started(first_run) = first else {
+        panic!("idle conversation starts immediately");
+    };
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let current = store.get_run(&first_run.id).expect("first run");
+            if current.status == RunStatus::Running {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first run goes active");
+
+    let second = runtime
+        .start_or_queue(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "second".into(),
+            client_message_id: Some("client-second".into()),
+        })
+        .expect("queue second");
+    let third = runtime
+        .start_or_queue(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "third".into(),
+            client_message_id: Some("client-third".into()),
+        })
+        .expect("queue third");
+    let PromptAdmission::Queued(second_item) = second else {
+        panic!("second prompt queues under an active run");
+    };
+    let PromptAdmission::Queued(third_item) = third else {
+        panic!("third prompt queues under an active run");
+    };
+    assert_eq!(second_item.content, "second");
+    assert_eq!(third_item.content, "third");
+
+    // A queue snapshot event broadcast the pending items on the wire.
+    let snapshots = store.workspace_events_after(0).expect("events");
+    let snapshot = snapshots
+        .iter()
+        .rev()
+        .find(|event| event.kind == "prompt_queue")
+        .expect("queue snapshot event");
+    let items = snapshot.payload["items"].as_array().expect("items");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["content"], "second");
+    assert_eq!(items[1]["content"], "third");
+
+    // The actor drains both items FIFO once the held run finishes.
+    let drained = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let runs = store.list_runs(&conversation.id).expect("runs");
+            let terminal = runs
+                .iter()
+                .filter(|run| run.id != first_run.id)
+                .filter(|run| matches!(run.status, RunStatus::Completed | RunStatus::Failed))
+                .count();
+            if runs.len() >= 3 && terminal == 2 {
+                break runs;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("queued prompts drain");
+    assert_eq!(drained.len(), 3);
+    let second_run = drained
+        .iter()
+        .find(|run| run.client_message_id.as_deref() == Some("client-second"))
+        .expect("second run");
+    let third_run = drained
+        .iter()
+        .find(|run| run.client_message_id.as_deref() == Some("client-third"))
+        .expect("third run");
+    assert_eq!(second_run.status, RunStatus::Completed);
+    assert_eq!(third_run.status, RunStatus::Completed);
+    assert_eq!(second_run.message, "second");
+    assert_eq!(third_run.message, "third");
+
+    // Drain order followed the queue: second's run_started lands before
+    // third's in the global workspace stream.
+    let events = store.workspace_events_after(0).expect("events");
+    let started_seq = |run_id: &str| {
+        events
+            .iter()
+            .position(|event| {
+                event.kind == "run_started" && event.run_id.as_deref() == Some(run_id)
+            })
+            .expect("run_started event")
+    };
+    assert!(started_seq(&second_run.id) < started_seq(&third_run.id));
+    // The queue itself is empty after the drain.
+    assert!(
+        store
+            .list_queued_prompts(&conversation.id)
+            .expect("queue")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn cancelling_the_active_run_keeps_the_queue_draining() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "queue-cancel-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-queue-cancel\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'hold-please'*) IFS= read -r held_discard ;;
+      esac
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let held = runtime
+        .start_or_queue(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "hold-please".into(),
+            client_message_id: Some("client-held".into()),
+        })
+        .expect("start held run");
+    let PromptAdmission::Started(held_run) = held else {
+        panic!("held run starts");
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if store.get_run(&held_run.id).expect("held").status == RunStatus::Running {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("held run active");
+
+    let queued = runtime
+        .start_or_queue(StartAgentRun {
+            conversation_id: conversation.id.clone(),
+            project_id: project.id.clone(),
+            message: "after cancel".into(),
+            client_message_id: Some("client-after".into()),
+        })
+        .expect("queue under held run");
+    let PromptAdmission::Queued(item) = queued else {
+        panic!("prompt queues under the held run");
+    };
+    assert_eq!(item.content, "after cancel");
+
+    // Cancel keeps the queue: the held run ends cancelled and the queued
+    // prompt drains as its own run.
+    assert!(runtime.cancel(&held_run.id));
+    let drained = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let runs = store.list_runs(&conversation.id).expect("runs");
+            if let Some(next) = runs
+                .iter()
+                .find(|run| run.client_message_id.as_deref() == Some("client-after"))
+                && next.status == RunStatus::Completed
+            {
+                break next.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("queued prompt drains after cancel");
+    assert_eq!(drained.message, "after cancel");
+
+    let held_final = store.get_run(&held_run.id).expect("held final");
+    assert_eq!(held_final.status, RunStatus::Cancelled);
+    assert_eq!(held_final.terminal_cause, Some(TerminalCause::Cancelled));
+    assert!(
+        store
+            .list_queued_prompts(&conversation.id)
+            .expect("queue")
+            .is_empty()
     );
 }

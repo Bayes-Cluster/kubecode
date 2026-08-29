@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "要約し、つながりを見つけ、アイデアを発展させる",
   "ai.panel.empty.noContextDescription": "AIはアクティブなノートをコンテキストとして使用します",
   "ai.panel.placeholder.checking": "AIエージェントの利用可能状況を確認しています...",
-  "ai.panel.placeholder.missing": "{agent}がインストールされていません。[設定] で [AI エージェント] を開きます。",
-  "ai.panel.placeholder.ready": "{agent}に尋ねる",
+  "ai.panel.placeholder.queued": "{agent}が実行中です — 送信するとメッセージがキューに入ります",  "ai.panel.placeholder.missing": "{agent}がインストールされていません。[設定] で [AI エージェント] を開きます。",
+  "kubecode.queueTitle": "キュー内のメッセージ（{count}）",  "ai.panel.placeholder.ready": "{agent}に尋ねる",
   "ai.panel.send": "メッセージを送信",
   "ai.panel.stop": "応答を停止",
   "ai.panel.stoppedResponse": "停止しました。",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "キュー内のメッセージを編集",
+  "kubecode.queueRemove": "キューから削除",
+  "kubecode.queueSave": "保存",
+  "kubecode.queueCancelEditing": "編集をキャンセル",
+  "kubecode.queueSendNow": "今すぐ送信"
 }

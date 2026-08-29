@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "Résumer, trouver des liens, développer des idées",
   "ai.panel.empty.noContextDescription": "L'IA utilisera la note active comme contexte",
   "ai.panel.placeholder.checking": "Vérification de la disponibilité de l'agent d'IA…",
-  "ai.panel.placeholder.missing": "{agent} n'est pas installé. Ouvrez Agents IA dans les Paramètres.",
-  "ai.panel.placeholder.ready": "Demander à {agent}",
+  "ai.panel.placeholder.queued": "{agent} est en cours d’exécution — Envoyer met votre message en file d’attente",  "ai.panel.placeholder.missing": "{agent} n'est pas installé. Ouvrez Agents IA dans les Paramètres.",
+  "kubecode.queueTitle": "Messages en file d’attente ({count})",  "ai.panel.placeholder.ready": "Demander à {agent}",
   "ai.panel.send": "Envoyer un message",
   "ai.panel.stop": "Arrêter la réponse",
   "ai.panel.stoppedResponse": "Arrêté.",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Modifier le message en file d’attente",
+  "kubecode.queueRemove": "Retirer de la file d’attente",
+  "kubecode.queueSave": "Enregistrer",
+  "kubecode.queueCancelEditing": "Annuler la modification",
+  "kubecode.queueSendNow": "Envoyer maintenant"
 }

@@ -16,17 +16,54 @@ type Harness = {
 
 type ApiMock = KubecodeApi & {
   listRuns: ReturnType<typeof vi.fn>
-  startRun: ReturnType<typeof vi.fn>
+  startPrompt: ReturnType<typeof vi.fn>
 }
 
 function makeApi(): ApiMock {
   return {
     listRuns: vi.fn().mockResolvedValue([]),
-    startRun: vi.fn(),
+    startPrompt: vi.fn(),
   } as unknown as ApiMock
 }
 
-function renderController(api: KubecodeApi) {
+function started(run: Partial<AgentRun> = {}): { admission: 'started'; run: AgentRun } {
+  return {
+    admission: 'started',
+    run: {
+      id: 'run-1',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      message: 'sent',
+      status: 'running',
+      permission_mode: 'safe',
+      error: null,
+      ...run,
+    },
+  }
+}
+
+function queued(item: Partial<import('../api').PromptQueueItem> = {}): {
+  admission: 'queued'
+  item: import('../api').PromptQueueItem
+} {
+  return {
+    admission: 'queued',
+    item: {
+      id: 'queue-1',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      content: 'sent',
+      status: 'pending',
+      position: 1,
+      internal: false,
+      created_at: 'now',
+      ...item,
+    },
+  }
+}
+
+function renderController(api: KubecodeApi, options: { active?: boolean; run?: AgentRun | null } = {}) {
+  const { active = false, run = null } = options
   const harness: Harness = { messages: [] }
   const appendOptimisticMessage = (message: AiAgentMessage) => {
     harness.messages = [...harness.messages, message]
@@ -42,7 +79,7 @@ function renderController(api: KubecodeApi) {
     ))
   }
   const hook = renderHook(() => useComposerController({
-    active: false,
+    active,
     agent: { id: 'opencode', available: true } as never,
     api,
     appendOptimisticMessage,
@@ -65,7 +102,7 @@ function renderController(api: KubecodeApi) {
     projectId: 'project-1',
     removeOptimisticMessage,
     reportError: vi.fn(),
-    run: null,
+    run,
     sessionState: null,
     setSideQuestions: vi.fn(),
     t,
@@ -82,7 +119,7 @@ describe('useComposerController optimistic send', () => {
   it('adds the user bubble before the POST resolves and reconciles by client id', async () => {
     let resolveStart: (value: unknown) => void = () => {}
     const api = makeApi()
-    api.startRun.mockImplementation(() => new Promise((resolve) => {
+    api.startPrompt.mockImplementation(() => new Promise((resolve) => {
       resolveStart = resolve
     }))
     const { result, harness } = renderController(api)
@@ -98,21 +135,16 @@ describe('useComposerController optimistic send', () => {
     expect(harness.messages).toHaveLength(1)
     expect(harness.messages[0]?.userMessage).toBe('Hello optimistically')
     expect(result.current.prompt).toBe('')
-    expect(api.startRun).toHaveBeenCalledTimes(1)
-    const [, , , clientMessageId] = vi.mocked(api.startRun).mock.calls[0]
+    expect(api.startPrompt).toHaveBeenCalledTimes(1)
+    const [, , , clientMessageId] = vi.mocked(api.startPrompt).mock.calls[0]
     expect(clientMessageId).toMatch(/^[0-9a-f-]{36}$/)
 
     await act(async () => {
-      resolveStart({
+      resolveStart(started({
         id: 'run-1',
-        conversation_id: 'conversation-1',
-        project_id: 'project-1',
         message: 'Hello optimistically',
-        status: 'running',
-        permission_mode: 'safe',
-        error: null,
         client_message_id: clientMessageId,
-      })
+      }))
       await sendPromise
     })
     expect(harness.messages).toHaveLength(1)
@@ -121,7 +153,7 @@ describe('useComposerController optimistic send', () => {
 
   it('keeps the bubble as a failed turn when the server rejects the request', async () => {
     const api = makeApi()
-    api.startRun.mockRejectedValue(new ApiError('invalid_request', 'Bad draft', 400))
+    api.startPrompt.mockRejectedValue(new ApiError('invalid_request', 'Bad draft', 400))
     const { result, harness } = renderController(api)
 
     await act(async () => {
@@ -144,7 +176,7 @@ describe('useComposerController optimistic send', () => {
       randomUUID: vi.fn(() => clientMessageId),
     })
     const api = makeApi()
-    api.startRun.mockRejectedValue(new TypeError('network blip'))
+    api.startPrompt.mockRejectedValue(new TypeError('network blip'))
     api.listRuns.mockResolvedValue([{
       id: 'run-remote',
       conversation_id: 'conversation-1',
@@ -173,7 +205,7 @@ describe('useComposerController optimistic send', () => {
 
   it('rolls the bubble back and restores the draft on transport failure', async () => {
     const api = makeApi()
-    api.startRun.mockRejectedValue(new TypeError('network down'))
+    api.startPrompt.mockRejectedValue(new TypeError('network down'))
     const { result, harness } = renderController(api)
 
     await act(async () => {
@@ -189,7 +221,7 @@ describe('useComposerController optimistic send', () => {
 
   it('reuses the pending client id only for an identical resend', async () => {
     const api = makeApi()
-    api.startRun.mockRejectedValue(new TypeError('network down'))
+    api.startPrompt.mockRejectedValue(new TypeError('network down'))
     const { result } = renderController(api)
 
     await act(async () => {
@@ -198,26 +230,102 @@ describe('useComposerController optimistic send', () => {
     await act(async () => {
       await result.current.send('Original')
     })
-    const firstId = vi.mocked(api.startRun).mock.calls[0][3]
+    const firstId = vi.mocked(api.startPrompt).mock.calls[0][3]
 
     await act(async () => {
       await result.current.updatePrompt('Original, edited')
     })
-    api.startRun.mockResolvedValue({
+    api.startPrompt.mockResolvedValue(started({
       id: 'run-2',
-      conversation_id: 'conversation-1',
-      project_id: 'project-1',
       message: 'Original, edited',
-      status: 'running',
-      permission_mode: 'safe',
-      error: null,
-    })
+    }))
     await act(async () => {
       await result.current.send('Original, edited')
     })
 
-    const secondId = vi.mocked(api.startRun).mock.calls[1][3]
+    const secondId = vi.mocked(api.startPrompt).mock.calls[1][3]
     expect(secondId).not.toBe(firstId)
     expect(secondId).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('queues while a run is active and keeps the optimistic bubble until drain', async () => {
+    const api = makeApi()
+    api.startPrompt.mockResolvedValue(queued({ content: 'While busy' }))
+    const attachRun = vi.fn()
+    const { result, harness } = renderController(api, { active: true })
+
+    await act(async () => {
+      await result.current.updatePrompt('While busy')
+    })
+    await act(async () => {
+      await result.current.send('While busy')
+    })
+
+    expect(api.startPrompt).toHaveBeenCalledTimes(1)
+    const [projectId, conversationId, message, clientMessageId] =
+      vi.mocked(api.startPrompt).mock.calls[0]
+    expect(projectId).toBe('project-1')
+    expect(conversationId).toBe('conversation-1')
+    expect(message).toBe('While busy')
+    expect(clientMessageId).toMatch(/^[0-9a-f-]{36}$/)
+    // The optimistic bubble stays keyed by the client id until the deferred
+    // run materializes and reconciles it.
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]?.id).toBe(clientMessageId)
+    expect(harness.messages[0]?.userMessage).toBe('While busy')
+    expect(attachRun).not.toHaveBeenCalled()
+    expect(result.current.prompt).toBe('')
+  })
+
+  it('steers a queued prompt now when the accelerated gesture is used', async () => {
+    const api = makeApi()
+    api.startPrompt.mockResolvedValue(queued({ content: 'Steer me' }))
+    api.sendPromptQueueNow = api.sendPromptQueueNow ?? vi.fn()
+    const sendPromptQueueNow = vi.fn().mockResolvedValue({
+      id: 'queue-1',
+      conversation_id: 'conversation-1',
+      project_id: 'project-1',
+      content: 'Steer me',
+      status: 'claimed',
+      position: 0,
+      internal: false,
+      created_at: 'now',
+    })
+    api.sendPromptQueueNow = sendPromptQueueNow
+    const { result } = renderController(api, { active: true })
+
+    await act(async () => {
+      await result.current.updatePrompt('Steer me')
+    })
+    await act(async () => {
+      await result.current.send('Steer me', { sendNow: true })
+    })
+
+    expect(sendPromptQueueNow).toHaveBeenCalledWith('conversation-1', 'queue-1')
+  })
+
+  it('still starts a run immediately when the conversation is idle', async () => {
+    const clientMessageId = 'aaaa1111-2222-4333-8444-555555555555'
+    vi.stubGlobal('crypto', {
+      ...globalThis.crypto,
+      randomUUID: vi.fn(() => clientMessageId),
+    })
+    const api = makeApi()
+    api.startPrompt.mockResolvedValue(started({
+      message: 'Now',
+      client_message_id: clientMessageId,
+    }))
+    const { result, harness } = renderController(api)
+
+    await act(async () => {
+      await result.current.updatePrompt('Now')
+    })
+    await act(async () => {
+      await result.current.send('Now')
+    })
+
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]?.id).toBe('run-1')
+    vi.unstubAllGlobals()
   })
 })

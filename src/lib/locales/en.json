@@ -440,7 +440,8 @@
   "ai.panel.empty.withContextDescription": "Summarize, find connections, expand ideas",
   "ai.panel.empty.noContextDescription": "The AI will use the active note as context",
   "ai.panel.placeholder.checking": "Checking AI agent availability...",
-  "ai.panel.placeholder.missing": "{agent} is not installed. Open AI Agents in Settings.",
+  "ai.panel.placeholder.queued": "{agent} is running — Send queues your message",
+  "kubecode.queueTitle": "Queued prompts ({count})",  "ai.panel.placeholder.missing": "{agent} is not installed. Open AI Agents in Settings.",
   "ai.panel.placeholder.ready": "Ask {agent}",
   "ai.panel.send": "Send message",
   "ai.panel.stop": "Stop response",
@@ -1582,5 +1583,10 @@
   "kubecode.agentError.sessionRestore": "The Agent could not restore its provider Session.",
   "kubecode.agentError.authentication": "The Agent CLI is not authenticated. Sign in with the CLI and retry.",
   "kubecode.agentError.directory": "The Agent could not open this project directory.",
-  "kubecode.agentError.unavailable": "This Agent is not ready. Check its CLI and ACP adapter."
+  "kubecode.agentError.unavailable": "This Agent is not ready. Check its CLI and ACP adapter.",
+  "kubecode.queueEdit": "Edit queued prompt",
+  "kubecode.queueRemove": "Remove from queue",
+  "kubecode.queueSave": "Save",
+  "kubecode.queueCancelEditing": "Cancel editing",
+  "kubecode.queueSendNow": "Send now"
 }

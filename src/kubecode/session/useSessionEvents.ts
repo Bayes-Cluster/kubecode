@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import type { Conversation, WorkspaceEvent } from '../api'
+import type { Conversation, PromptQueueItem, WorkspaceEvent } from '../api'
 import { arrayValue, objectValue, textValue } from './conversationReducer'
 import type { TimelineEvent } from './conversationReducer'
 import { SESSION_STATE_EVENT_KINDS } from './sessionModel'
@@ -31,7 +31,7 @@ export function useSessionEvents({
   viewRevisionId,
   workspaceEvents,
 }: UseSessionEventsOptions) {
-  const { enqueueConversationEvents } = transcript
+  const { enqueueConversationEvents, setPromptQueue } = transcript
   const processedRef = useRef<number>(0)
   const initializedForRef = useRef<string | null>(null)
   const reportErrorRef = useRef(reportError)
@@ -50,6 +50,7 @@ export function useSessionEvents({
     }
 
     const batch: TimelineEvent[] = []
+    let queueSnapshot: PromptQueueItem[] | null = null
     let needsFullStateRefresh = false
     for (const workspaceEvent of workspaceEvents) {
       if (workspaceEvent.id <= processedRef.current) continue
@@ -60,7 +61,19 @@ export function useSessionEvents({
       // Session-state checkpoints name the kinds they carry (#106): locally
       // routable ones apply directly with no refetch; anything else keeps the
       // legacy full-state refresh.
-      if (workspaceEvent.kind === 'session_state') {
+      // Whole-snapshot replacement (#96): a prompt_queue event always
+      // carries the complete pending queue, so it applies directly outside
+      // the transcript pump.
+      if (workspaceEvent.kind === 'prompt_queue') {
+        const items = arrayValue(objectValue(workspaceEvent.payload)?.items)
+        queueSnapshot = (items ?? []).flatMap((value) => {
+          const item = objectValue(value)
+          if (!item || typeof item.id !== 'string' || typeof item.content !== 'string') {
+            return []
+          }
+          return [item as unknown as PromptQueueItem]
+        })
+      } else if (workspaceEvent.kind === 'session_state') {
         const updates = arrayValue(objectValue(workspaceEvent.payload)?.updates)
         if (updates) {
           const kinds = updates.map((entry) => textValue(objectValue(entry)?.kind))
@@ -89,6 +102,7 @@ export function useSessionEvents({
         source: 'live',
       })
     }
+    if (queueSnapshot) setPromptQueue(queueSnapshot)
     if (batch.length > 0) enqueueConversationEvents(batch)
     if (needsFullStateRefresh && !viewRevisionId) {
       void requestSessionState(conversation.id).catch((cause: unknown) => {
@@ -100,6 +114,7 @@ export function useSessionEvents({
     conversation,
     enqueueConversationEvents,
     requestSessionState,
+    setPromptQueue,
     viewRevisionId,
     workspaceEvents,
   ])

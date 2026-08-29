@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "Rangkum, temukan koneksi, kembangkan ide",
   "ai.panel.empty.noContextDescription": "AI akan menggunakan catatan aktif sebagai konteks",
   "ai.panel.placeholder.checking": "Memeriksa ketersediaan agen AI...",
-  "ai.panel.placeholder.missing": "{agent} tidak terpasang. Buka Agen AI di Pengaturan.",
-  "ai.panel.placeholder.ready": "Tanyai {agent}",
+  "ai.panel.placeholder.queued": "{agent} sedang berjalan — Kirim akan mengantrekan pesan Anda",  "ai.panel.placeholder.missing": "{agent} tidak terpasang. Buka Agen AI di Pengaturan.",
+  "kubecode.queueTitle": "Pesan dalam antrean ({count})",  "ai.panel.placeholder.ready": "Tanyai {agent}",
   "ai.panel.send": "Kirim pesan",
   "ai.panel.stop": "Hentikan respons",
   "ai.panel.stoppedResponse": "Dihentikan.",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Edit pesan dalam antrean",
+  "kubecode.queueRemove": "Hapus dari antrean",
+  "kubecode.queueSave": "Simpan",
+  "kubecode.queueCancelEditing": "Batal mengedit",
+  "kubecode.queueSendNow": "Kirim sekarang"
 }

@@ -129,7 +129,19 @@ export function SessionComposer({
   const completedPlanEntries = planEntries.filter((entry) => entry.status === 'completed').length
 
   return (
-    <div className="kubecode-session-composer-dock">
+    <div
+      className="kubecode-session-composer-dock"
+      onKeyDownCapture={(event) => {
+        // Accelerated steer gesture (#98): Ctrl/Cmd+Enter while a run is
+        // active submits and sends the draft immediately (cancel-and-replace).
+        if (!isActive) return
+        if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return
+        if (composer.composerSubmitDisabled || !composer.prompt) return
+        event.preventDefault()
+        event.stopPropagation()
+        void composer.sendNow(composer.prompt)
+      }}
+    >
       <SideQuestionPanel items={sideQuestions} t={t} />
       {error && (
         <SystemMessageNotice
@@ -335,14 +347,16 @@ export function SessionComposer({
                   onRegistrationError={reportError}
                   onSubmit={(text) => {
                     if (composer.composerSubmitDisabled) return
-                    if (isActive) {
-                      if (!composer.composerHasTypedReferences
-                        && sideQuestionAvailable && sideQuestionText(text)) {
-                        void onSendSideQuestion(text)
-                      }
-                    } else {
-                      void onSend(text)
+                    if (isActive && !composer.composerHasTypedReferences
+                      && sideQuestionAvailable && sideQuestionText(text)) {
+                      void onSendSideQuestion(text)
+                      return
                     }
+                    // While a run is active plain text queues server-side
+                    // (#97); slash drafts stay untouched — the command menu
+                    // owns them until the run ends.
+                    if (isActive && text.startsWith('/')) return
+                    void onSend(text)
                   }}
                   placeholder={directTeammateChatDisabled
                     ? t('kubecode.teammateChatDisabled')

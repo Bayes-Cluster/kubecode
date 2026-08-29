@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "Рэзюмаваць, шукаць сувязі, генераваць ідэі",
   "ai.panel.empty.noContextDescription": "ШІ будзе выкарыстоўваць актыўную нататку як кантэкст",
   "ai.panel.placeholder.checking": "Праверка ШІ...",
-  "ai.panel.placeholder.missing": "{agent} не ўсталяваны. Адкрыйце Налады.",
-  "ai.panel.placeholder.ready": "Запытаць {agent}",
+  "ai.panel.placeholder.queued": "{agent} выконваецца — «Адправіць» паставіць ваша паведамленне ў чаргу",  "ai.panel.placeholder.missing": "{agent} не ўсталяваны. Адкрыйце Налады.",
+  "kubecode.queueTitle": "Паведамленні ў чарзе ({count})",  "ai.panel.placeholder.ready": "Запытаць {agent}",
   "ai.panel.send": "Адправіць паведамленне",
   "ai.panel.stop": "Спыніць адказ",
   "ai.panel.stoppedResponse": "Спынена.",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Змяніць паведамленне ў чарзе",
+  "kubecode.queueRemove": "Выдаліць з чаргі",
+  "kubecode.queueSave": "Захаваць",
+  "kubecode.queueCancelEditing": "Скасаваць рэдагаванне",
+  "kubecode.queueSendNow": "Адправіць зараз"
 }

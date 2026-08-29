@@ -7,7 +7,9 @@ mod permissions;
 mod pool;
 
 pub use self::actor::SessionConfigInput;
-pub use self::dispatch::{StartAgentRun, StartComposerCommand, StartStructuredComposerRun};
+pub use self::dispatch::{
+    PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
+};
 pub use self::permissions::SideQuestionAccepted;
 
 use std::collections::{HashMap, HashSet};

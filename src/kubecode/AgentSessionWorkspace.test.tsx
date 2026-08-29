@@ -1001,6 +1001,91 @@ describe('AgentSessionWorkspace', () => {
     expect(JSON.stringify(startStructuredRun.mock.calls[0]?.[2])).not.toContain('src/main.ts')
   })
 
+  it('renders the prompt queue from snapshot events with edit and remove', async () => {
+    const editPromptQueueItem = vi.fn().mockResolvedValue({
+      id: 'q-1',
+      conversation_id: 'session-1',
+      project_id: 'project-1',
+      content: 'Edited',
+      status: 'pending',
+      position: 1,
+      internal: false,
+      created_at: 'now',
+    })
+    const removePromptQueueItem = vi.fn().mockResolvedValue(undefined)
+    const api = {
+      listRuns: vi.fn().mockResolvedValue([]),
+      listEvents: vi.fn().mockResolvedValue([]),
+      listSessionEvents: vi.fn().mockResolvedValue([]),
+      listConversationRevisions: vi.fn().mockResolvedValue([]),
+      getSessionState: vi.fn().mockResolvedValue(emptySessionState),
+      editPromptQueueItem,
+      removePromptQueueItem,
+    } as unknown as KubecodeApi
+
+    const { rerender } = render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    // Empty queue: no dock.
+    await screen.findByTestId('agent-input')
+    expect(screen.queryByTestId('prompt-queue')).toBeNull()
+
+    // A queue snapshot event materializes the dock (whole-snapshot state).
+    rerender(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={api}
+      conversation={conversation}
+      locale="en"
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      projectId="project-1"
+      t={createTranslator('en')}
+      workspaceEvents={[{
+        id: 30,
+        kind: 'prompt_queue',
+        project_id: 'project-1',
+        conversation_id: conversation.id,
+        payload: { items: [{
+          id: 'q-1',
+          conversation_id: 'session-1',
+          project_id: 'project-1',
+          content: 'Queued while busy',
+          status: 'pending',
+          position: 1,
+          internal: false,
+          created_at: 'now',
+        }] },
+        created_at: 'now',
+      }]}
+    />)
+
+    expect(await screen.findByTestId('prompt-queue')).toBeInTheDocument()
+    expect(screen.getByText('Queued while busy')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('prompt-queue-edit'))
+    fireEvent.change(screen.getByTestId('prompt-queue-input'), { target: { value: 'Edited' } })
+    fireEvent.click(screen.getByTestId('prompt-queue-save'))
+    await waitFor(() => {
+      expect(editPromptQueueItem).toHaveBeenCalledWith('session-1', 'q-1', 'Edited')
+    })
+
+    fireEvent.click(screen.getByTestId('prompt-queue-remove'))
+    await waitFor(() => {
+      expect(removePromptQueueItem).toHaveBeenCalledWith('session-1', 'q-1')
+    })
+  })
+
   it('keeps unknown slash text on the ordinary visible prompt path', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/unknown')
     const startRun = vi.fn().mockImplementation((
@@ -1011,6 +1096,13 @@ describe('AgentSessionWorkspace', () => {
     ) => Promise.resolve({
       ...run, id: 'ordinary-run', message, client_message_id: clientMessageId,
     }))
+    const startPrompt = vi.fn().mockImplementation((
+      projectId: string,
+      conversationId: string,
+      message: string,
+      clientMessageId?: string,
+    ) => startRun(projectId, conversationId, message, clientMessageId)
+      .then((startedRun) => ({ admission: 'started' as const, run: startedRun })))
     const dispatchAcpCommand = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
@@ -1024,6 +1116,7 @@ describe('AgentSessionWorkspace', () => {
         },
       }),
       startRun,
+      startPrompt,
       dispatchAcpCommand,
     } as unknown as KubecodeApi
 
@@ -2376,10 +2469,24 @@ describe('AgentSessionWorkspace', () => {
     const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
     const askSideQuestion = vi.fn()
     const dispatchAcpCommand = vi.fn()
+    const startPrompt = vi.fn().mockResolvedValue({
+      admission: 'queued' as const,
+      item: {
+        id: 'queue-1',
+        conversation_id: claudeConversation.id,
+        project_id: 'project-1',
+        content: '',
+        status: 'pending',
+        position: 1,
+        internal: false,
+        created_at: 'now',
+      },
+    })
     const api = {
       askSideQuestion,
       cancelRun: vi.fn().mockResolvedValue(undefined),
       dispatchAcpCommand,
+      startPrompt,
       listRuns: vi.fn().mockResolvedValue([{ ...run, status: 'running' as const }]),
       listEvents: vi.fn().mockResolvedValue([]),
       listSessionEvents: vi.fn().mockResolvedValue([]),

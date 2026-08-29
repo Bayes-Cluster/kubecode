@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "Reziumavać, šukać suviazi, hienieravać idei",
   "ai.panel.empty.noContextDescription": "ŠI budzie vykarystoŭvać aktyŭnuju natatku jak kantekst",
   "ai.panel.placeholder.checking": "Pravierka ŠI...",
-  "ai.panel.placeholder.missing": "{agent} nie ŭstaliavany. Adkryjcie Nalady.",
-  "ai.panel.placeholder.ready": "Zapytać {agent}",
+  "ai.panel.placeholder.queued": "{agent} vykonvajecca — «Adpravić» pastavity vaše paviedamlienne ŭ čarhu",  "ai.panel.placeholder.missing": "{agent} nie ŭstaliavany. Adkryjcie Nalady.",
+  "kubecode.queueTitle": "Paviedamlienni ŭ čarzie ({count})",  "ai.panel.placeholder.ready": "Zapytać {agent}",
   "ai.panel.send": "Adpravić paviedamliennie",
   "ai.panel.stop": "Spynić adkaz",
   "ai.panel.stoppedResponse": "Spyniena.",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Zmianić paviedamliennie ŭ čarzie",
+  "kubecode.queueRemove": "Vydalić z čarhi",
+  "kubecode.queueSave": "Zachavać",
+  "kubecode.queueCancelEditing": "Skasavać redahavanniie",
+  "kubecode.queueSendNow": "Adpravić zaraz"
 }

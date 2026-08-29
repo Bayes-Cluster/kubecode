@@ -507,8 +507,8 @@
   "ai.panel.empty.withContextDescription": "Resuma, encontre conexões, desenvolva ideias",
   "ai.panel.empty.noContextDescription": "A IA usará a nota ativa como contexto",
   "ai.panel.placeholder.checking": "Verificando a disponibilidade do agente de IA...",
-  "ai.panel.placeholder.missing": "{agent} não está instalado. Abra Agentes de IA em Configurações.",
-  "ai.panel.placeholder.ready": "Perguntar ao {agent}",
+  "ai.panel.placeholder.queued": "{agent} está em execução — Enviar coloca sua mensagem na fila",  "ai.panel.placeholder.missing": "{agent} não está instalado. Abra Agentes de IA em Configurações.",
+  "kubecode.queueTitle": "Mensagens na fila ({count})",  "ai.panel.placeholder.ready": "Perguntar ao {agent}",
   "ai.panel.send": "Enviar mensagem",
   "ai.panel.stop": "Parar resposta",
   "ai.panel.stoppedResponse": "Interrompido.",
@@ -1582,5 +1582,10 @@
   "kubecode.diagnosticsUnavailableDescription": "No authoritative structured Project diagnostics source is available.",
   "kubecode.conflicts": "Conflicts",
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
-  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest."
+  "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
+  "kubecode.queueEdit": "Editar mensagem na fila",
+  "kubecode.queueRemove": "Remover da fila",
+  "kubecode.queueSave": "Salvar",
+  "kubecode.queueCancelEditing": "Cancelar edição",
+  "kubecode.queueSendNow": "Enviar agora"
 }
