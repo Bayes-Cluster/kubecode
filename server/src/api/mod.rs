@@ -49,9 +49,9 @@ use self::runtime::{
 };
 use self::sessions::{
     ask_side_question, branch_conversation_at_run, create_conversation, create_team_member,
-    delete_conversation, fork_conversation, get_session_state, list_all_conversations,
-    list_conversation_revisions, list_conversations, list_provider_sessions,
-    revise_conversation_at_run, update_conversation, update_session_option,
+    delete_conversation, fork_conversation, fork_conversation_at_turn, get_session_state,
+    list_all_conversations, list_conversation_revisions, list_conversations,
+    list_provider_sessions, revise_conversation_at_run, update_conversation, update_session_option,
 };
 use self::terminals::{
     attach_terminal, close_terminal, create_terminal, list_terminals, rename_terminal,
@@ -221,6 +221,10 @@ fn client_api_router(state: AppState) -> Router {
         .route(
             "/conversations/{conversation_id}/runs",
             get(list_conversation_runs),
+        )
+        .route(
+            "/sessions/{conversation_id}/runs/{run_id}/fork",
+            axum::routing::post(fork_conversation_at_turn),
         )
         .route(
             "/conversations/{conversation_id}/queue",

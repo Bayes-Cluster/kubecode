@@ -5072,3 +5072,305 @@ done"#,
     .expect("idle steer completes");
     assert_eq!(completed.message, "idle steer");
 }
+
+#[tokio::test]
+async fn boundary_fork_rejects_an_open_turn_with_fork_unavailable() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"sessionCapabilities\":{\"fork\":{}}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-bf-open\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'hold'*) IFS= read -r held_discard ;;
+      esac
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+    *'"method":"session/fork"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-bf-open-child\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/bf-open")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let (_, held) = json_request(&app, Method::POST, &runs_uri, json!({"message":"hold"})).await;
+    let held_id = held["id"].as_str().expect("held run id");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{held_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("held run active");
+
+    // The open turn is a typed rejection — never a silent clip.
+    let (status, body) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/runs/{held_id}/fork"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "body: {body}");
+    assert_eq!(body["code"], "fork_unavailable");
+}
+
+#[tokio::test]
+async fn boundary_fork_prefers_provider_fork_and_records_lineage() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"sessionCapabilities\":{\"fork\":{}}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-bf-parent\"}}"
+      ;;
+    *'"method":"session/fork"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-bf-child\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/bf-provider")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let (_, first) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"complete this turn", "client_message_id":"44444444-4444-4444-8444-444444444444"}),
+    )
+    .await;
+    let first_id = first["id"].as_str().expect("first run id");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{first_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "completed" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first turn completes");
+
+    // Fork at the completed-turn boundary: the child keeps a provider
+    // session (native history survives, no context flattening).
+    let (status, child) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/runs/{first_id}/fork"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {child}");
+    assert_eq!(child["provider_session_id"], "session-bf-child");
+    assert_eq!(child["parent_conversation_id"], conversation_id);
+    assert_eq!(child["relationship"], "fork");
+    assert_eq!(child["fork_path"], "provider_fork");
+    assert_eq!(child["fork_boundary_run_id"], first_id);
+    // The cut transcript is copied so the child renders the boundary.
+    let (_, child_events) = json_request(
+        &app,
+        Method::GET,
+        &format!(
+            "{BASE_PATH}/api/v1/sessions/{}/events",
+            child["id"].as_str().expect("child id")
+        ),
+        Value::Null,
+    )
+    .await;
+    let events = child_events.as_array().expect("child events");
+    assert!(
+        events.iter().any(|event| event["kind"] == "user_message"),
+        "child transcript carries the retained turn"
+    );
+
+    // Lineage survives a store reopen (restart recovery of forked children).
+    let reopened = AgentStore::open(&database).expect("reopened store");
+    let child_row = reopened
+        .get_conversation(child["id"].as_str().expect("child id"))
+        .expect("child conversation");
+    assert_eq!(child_row.fork_path.as_deref(), Some("provider_fork"));
+    assert_eq!(child_row.fork_boundary_run_id.as_deref(), Some(first_id));
+}
+
+#[tokio::test]
+async fn boundary_fork_falls_back_to_transcript_prefix_without_capability() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-bf-fallback\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/bf-fallback")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let (_, first) =
+        json_request(&app, Method::POST, &runs_uri, json!({"message":"turn one"})).await;
+    let first_id = first["id"].as_str().expect("first run id");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{first_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "completed" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first turn completes");
+
+    let (status, child) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/runs/{first_id}/fork"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {child}");
+    // Fallback: no provider session, prefix reconstruction, path recorded.
+    assert!(child["provider_session_id"].is_null());
+    assert_eq!(child["fork_path"], "transcript_prefix");
+    assert_eq!(child["fork_boundary_run_id"], first_id);
+}

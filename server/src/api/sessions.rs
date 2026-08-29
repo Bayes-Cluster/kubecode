@@ -248,15 +248,24 @@ pub(super) async fn fork_conversation(
     State(state): State<AppState>,
     Path(conversation_id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok((
-        StatusCode::CREATED,
-        Json(
-            state
-                .agent_runtime
-                .fork_provider_session(&conversation_id)
-                .await?,
-        ),
-    ))
+    let fork = state
+        .agent_runtime
+        .fork_provider_session(&conversation_id, None)
+        .await?;
+    Ok((StatusCode::CREATED, Json(fork)))
+}
+
+/// Boundary fork (#99): one action on any completed turn opens a child
+/// conversation cut at that boundary; an open turn is a typed 409.
+pub(super) async fn fork_conversation_at_turn(
+    State(state): State<AppState>,
+    Path((conversation_id, run_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let fork = state
+        .agent_runtime
+        .fork_provider_session(&conversation_id, Some(run_id.as_str()))
+        .await?;
+    Ok((StatusCode::CREATED, Json(fork)))
 }
 
 pub(super) async fn branch_conversation_at_run(

@@ -32,10 +32,13 @@ impl AgentStore {
         }) {
             return Err(StoreError::ActiveRun(source.project_id));
         }
+        // The boundary primitive owns the cut point (#99); the typed
+        // open-turn rejection complements the any-active guard above.
+        let boundary = self.resolve_turn_boundary(conversation_id, run_id)?;
         let source_events = self.session_events_after(conversation_id, 0)?;
         let retained_events = source_events
             .iter()
-            .take_while(|event| event.payload.get("run_id").and_then(Value::as_str) != Some(run_id))
+            .filter(|event| event.seq <= boundary.before_seq)
             .cloned()
             .collect::<Vec<_>>();
         let context_prefix = transcript_context(&retained_events);

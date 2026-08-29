@@ -68,7 +68,14 @@ interactive request handling; `AgentRuntime` is the sole owner of ACP actors and
 their provider subprocess lifecycle. Conversation interaction contracts —
 prompt queue, optimistic send with client message ids, typed terminal causes,
 boundary fork, and the per-agent adapter seam — are defined in
-[ADR 0210](adr/0210-agent-interaction-model.md). `server/src/agent_store/` and
+[ADR 0210](adr/0210-agent-interaction-model.md). Fork, branch, and revise share
+one boundary primitive (`AgentStore::resolve_turn_boundary`): it resolves the
+cut points around a target run and rejects an open turn with a typed 409
+(`fork_unavailable`) instead of clipping silently. Provider-native fork is
+preferred whenever the agent advertises the capability — the child keeps a
+linked provider session (no `context_prefix` round trip); otherwise the child
+rebuilds from the transcript prefix. The child records its lineage (boundary
+run and the path taken) for navigation and debugging. `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing
