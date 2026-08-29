@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Підсумовуйте, знаходьте зв'язки, розвивайте ідеї",
   "ai.panel.empty.noContextDescription": "ШІ використовуватиме активну нотатку як контекст",
   "ai.panel.placeholder.checking": "Перевірка доступності агента ШІ...",
-  "ai.panel.placeholder.missing": "{agent} не встановлено. Відкрийте «Агенти ШІ» в налаштуваннях.",
+  "ai.panel.placeholder.queued": "{agent} виконується — «Надіслати» поставить ваше повідомлення в чергу",  "ai.panel.placeholder.missing": "{agent} не встановлено. Відкрийте «Агенти ШІ» в налаштуваннях.",
   "ai.panel.placeholder.ready": "Запитайте {agent}",
   "ai.panel.send": "Надіслати повідомлення",
   "ai.panel.stop": "Зупинити відповідь",

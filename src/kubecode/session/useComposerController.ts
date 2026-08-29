@@ -213,6 +213,10 @@ export function useComposerController({
   const composerSubmitDisabled = composerContextPending
     || composerDraftHasStaleContext(composerDraft)
     || !composerCatalogReady
+    // Structured (typed-reference) drafts cannot queue: their catalog
+    // revision is evaluated at submission time, so an active run blocks
+    // them still (#97).
+    || (active && composerDraftHasTypedReferences(composerDraft))
 
   const sessionTurnSources = useMemo<SessionTurnContextSource[]>(() => {
     if (hardReadOnly || viewRevisionId) return []
@@ -632,7 +636,8 @@ export function useComposerController({
       || !conversation
       || !projectId
       || !agent?.available
-      || active
+      // The composer stays live while a run is active (#97): sending during a
+      // run enqueues durably (server-side) instead of failing with 409.
       || composerSubmitDisabled
       || directTeammateChatDisabled
       || hardReadOnly) return
@@ -665,21 +670,37 @@ export function useComposerController({
     updatePrompt('')
     onClearError()
     try {
-      let nextRun: AgentRun
       if (composerHasTypedReferences && catalog) {
-        nextRun = await api.startStructuredRun(projectId, conversation.id, {
+        const nextRun = await api.startStructuredRun(projectId, conversation.id, {
           ...(command ? { item_id: commandItems[0].id } : {}),
           catalog_revision: catalog.revision,
           segments: composerDraftToStructuredSegments(composerDraft, command?.name),
           client_message_id: clientMessageId,
         })
+        attachRun(nextRun)
+        trackEvent('kubecode_agent_run_started', {
+          agent_id: conversation.agent_id,
+        })
       } else {
-        nextRun = await api.startRun(projectId, conversation.id, message, clientMessageId)
+        const admission = await api.startPrompt(
+          projectId,
+          conversation.id,
+          message,
+          clientMessageId,
+        )
+        if (admission.admission === 'queued') {
+          // The optimistic bubble stays until the queue drains and the
+          // deferred run reconciles it by client message id (#97).
+          trackEvent('kubecode_agent_prompt_queued', {
+            agent_id: conversation.agent_id,
+          })
+          return
+        }
+        attachRun(admission.run)
+        trackEvent('kubecode_agent_run_started', {
+          agent_id: conversation.agent_id,
+        })
       }
-      attachRun(nextRun)
-      trackEvent('kubecode_agent_run_started', {
-        agent_id: conversation.agent_id,
-      })
     } catch (cause) {
       if (cause instanceof ApiError) {
         // The server saw and rejected the request: keep the bubble as a failed

@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Résumer, trouver des liens, développer des idées",
   "ai.panel.empty.noContextDescription": "L'IA utilisera la note active comme contexte",
   "ai.panel.placeholder.checking": "Vérification de la disponibilité de l'agent d'IA…",
-  "ai.panel.placeholder.missing": "{agent} n'est pas installé. Ouvrez Agents IA dans les Paramètres.",
+  "ai.panel.placeholder.queued": "{agent} est en cours d’exécution — Envoyer met votre message en file d’attente",  "ai.panel.placeholder.missing": "{agent} n'est pas installé. Ouvrez Agents IA dans les Paramètres.",
   "ai.panel.placeholder.ready": "Demander à {agent}",
   "ai.panel.send": "Envoyer un message",
   "ai.panel.stop": "Arrêter la réponse",

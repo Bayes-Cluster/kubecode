@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Zusammenfassen, Zusammenhänge finden, Ideen ausbauen",
   "ai.panel.empty.noContextDescription": "Die KI verwendet die aktive Notiz als Kontext",
   "ai.panel.placeholder.checking": "Verfügbarkeit des KI-Agents wird geprüft …",
-  "ai.panel.placeholder.missing": "{agent} ist nicht installiert. Öffnen Sie „AI Agents“ in den Einstellungen.",
+  "ai.panel.placeholder.queued": "{agent} läuft — „Senden“ reiht Ihre Nachricht in die Warteschlange ein",  "ai.panel.placeholder.missing": "{agent} ist nicht installiert. Öffnen Sie „AI Agents“ in den Einstellungen.",
   "ai.panel.placeholder.ready": "{agent} fragen",
   "ai.panel.send": "Nachricht senden",
   "ai.panel.stop": "Antwort stoppen",

@@ -603,15 +603,20 @@ export function AiPanelComposer({
 }: AiPanelComposerProps) {
   const t = createTranslator(locale)
   const inputDisabled = disabled || agentReadiness !== 'ready'
-  const canSend = !isActive && !inputDisabled && !sendDisabled && input.trim().length > 0
+  const hasDraft = input.trim().length > 0
+  // While a run is active the composer stays live (#97): a non-empty draft
+  // sends (queueing server-side) and Stop remains one click away.
+  const canSend = !inputDisabled && !sendDisabled && hasDraft
   const canActiveSend = isActive
     && !inputDisabled
     && !sendDisabled
     && Boolean(onActiveSend)
-    && input.trim().length > 0
+    && hasDraft
   const placeholder = disabled && disabledPlaceholder
     ? disabledPlaceholder
-    : getComposerPlaceholder(agentLabel, agentReadiness, t)
+    : isActive && hasDraft
+      ? t('ai.panel.placeholder.queued', { agent: agentLabel })
+      : getComposerPlaceholder(agentLabel, agentReadiness, t)
   const hasControls = (controls !== undefined && controls !== null)
     || (leadingControl !== undefined && leadingControl !== null)
   const sendButton = isActive
@@ -624,6 +629,15 @@ export function AiPanelComposer({
               input={input}
               label={activeSendLabel ?? t('ai.panel.send')}
               onSend={onActiveSend}
+            />
+          )}
+          {!onActiveSend && (
+            <ComposerSendButton
+              canSend={canSend}
+              entries={entries}
+              input={input}
+              label={t('ai.panel.send')}
+              onSend={onSend}
             />
           )}
           <ComposerStopButton label={t('ai.panel.stop')} onStop={onStop} />
@@ -674,8 +688,15 @@ export function AiPanelComposer({
             onChange={onChange}
             onSend={(text, references) => {
               if (inputDisabled) return
-              if (isActive) onActiveSend?.(text, references)
-              else onSend(text, references)
+              if (isActive) {
+                // A side question keeps its dedicated send; plain drafts queue
+                // for the next turn (#97). Slash drafts stay untouched while a
+                // run is active — the command menu owns them.
+                if (onActiveSend) onActiveSend(text, references)
+                else if (!text.startsWith('/')) onSend(text, references)
+              } else {
+                onSend(text, references)
+              }
             }}
             onUnsupportedAiPaste={onUnsupportedAiPaste}
             placeholder={placeholder}

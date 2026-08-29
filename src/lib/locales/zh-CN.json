@@ -440,7 +440,7 @@
   "ai.panel.empty.withContextDescription": "总结、发现关联、拓展想法",
   "ai.panel.empty.noContextDescription": "人工智能将使用当前笔记作为上下文",
   "ai.panel.placeholder.checking": "正在检查 AI 代理的可用性……",
-  "ai.panel.placeholder.missing": "未安装 {agent}。在“设置”中打开 AI 代理。",
+  "ai.panel.placeholder.queued": "{agent} 正在运行 —— 点击发送将把消息加入队列",  "ai.panel.placeholder.missing": "未安装 {agent}。在“设置”中打开 AI 代理。",
   "ai.panel.placeholder.ready": "询问 {agent}",
   "ai.panel.send": "发送消息",
   "ai.panel.stop": "停止响应",

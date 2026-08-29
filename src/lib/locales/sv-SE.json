@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Sammanfatta, hitta kopplingar, utveckla idéer",
   "ai.panel.empty.noContextDescription": "AI:n använder den aktiva anteckningen som kontext",
   "ai.panel.placeholder.checking": "Kontrollerar AI-agentens tillgänglighet...",
-  "ai.panel.placeholder.missing": "{agent} är inte installerad. Öppna AI-agenter i Inställningar.",
+  "ai.panel.placeholder.queued": "{agent} kör — Skicka köar ditt meddelande",  "ai.panel.placeholder.missing": "{agent} är inte installerad. Öppna AI-agenter i Inställningar.",
   "ai.panel.placeholder.ready": "Fråga {agent}",
   "ai.panel.send": "Skicka meddelande",
   "ai.panel.stop": "Stoppa svar",

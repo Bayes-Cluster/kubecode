@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Podsumuj, znajdź powiązania, rozwiń pomysły",
   "ai.panel.empty.noContextDescription": "AI użyje aktywnej notatki jako kontekstu",
   "ai.panel.placeholder.checking": "Sprawdzanie dostępności agenta AI...",
-  "ai.panel.placeholder.missing": "{agent} nie jest zainstalowany. Otwórz Agentów AI w Ustawieniach.",
+  "ai.panel.placeholder.queued": "{agent} działa — Wyślij ustawi Twoją wiadomość w kolejce",  "ai.panel.placeholder.missing": "{agent} nie jest zainstalowany. Otwórz Agentów AI w Ustawieniach.",
   "ai.panel.placeholder.ready": "Zapytaj {agent}",
   "ai.panel.send": "Wyślij wiadomość",
   "ai.panel.stop": "Zatrzymaj odpowiedź",

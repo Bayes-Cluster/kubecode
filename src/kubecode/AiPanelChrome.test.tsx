@@ -83,8 +83,9 @@ describe('AiPanelMessageHistory', () => {
 })
 
 describe('AiPanelComposer', () => {
-  it('keeps the editor writable while an Agent is running without submitting another prompt', () => {
+  it('queues a non-empty draft while a run is active and keeps Stop reachable', () => {
     const onSend = vi.fn()
+    const onStop = vi.fn()
     render(
       <AiPanelComposer
         agentLabel="Codex"
@@ -95,15 +96,59 @@ describe('AiPanelComposer', () => {
         isActive
         onChange={vi.fn()}
         onSend={onSend}
-        onStop={vi.fn()}
+        onStop={onStop}
       />,
     )
 
     const input = screen.getByTestId('agent-input')
     expect(input).toHaveAttribute('contenteditable', 'true')
+    // Enter submits into the queue (#97) instead of being swallowed.
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(onSend).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Stop response' })).toBeEnabled()
+    expect(onSend).toHaveBeenCalledWith('Prepare the follow-up', [])
+    expect(screen.getByTestId('agent-send')).toBeEnabled()
+    expect(screen.getByTestId('agent-stop')).toBeEnabled()
+  })
+
+  it('shows only Stop while a run is active and the draft is empty', () => {
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        entries={[]}
+        input=""
+        inputRef={createRef<HTMLDivElement>()}
+        isActive
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('agent-send')).toBeDisabled()
+    expect(screen.getByTestId('agent-stop')).toBeEnabled()
+  })
+
+  it('prefers the side-question send while a run is active when offered', () => {
+    const onActiveSend = vi.fn()
+    render(
+      <AiPanelComposer
+        activeSendLabel="Ask side question"
+        agentLabel="Codex"
+        agentReadiness="ready"
+        entries={[]}
+        input="/btw what changed"
+        inputRef={createRef<HTMLDivElement>()}
+        isActive
+        onChange={vi.fn()}
+        onActiveSend={onActiveSend}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Ask side question' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Send', exact: true })).toBeNull()
+    expect(screen.getByTestId('agent-stop')).toBeEnabled()
   })
 
   it('keeps add, Agent controls, and send visible in one compact row', () => {

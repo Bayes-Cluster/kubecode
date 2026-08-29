@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "要約し、つながりを見つけ、アイデアを発展させる",
   "ai.panel.empty.noContextDescription": "AIはアクティブなノートをコンテキストとして使用します",
   "ai.panel.placeholder.checking": "AIエージェントの利用可能状況を確認しています...",
-  "ai.panel.placeholder.missing": "{agent}がインストールされていません。[設定] で [AI エージェント] を開きます。",
+  "ai.panel.placeholder.queued": "{agent}が実行中です — 送信するとメッセージがキューに入ります",  "ai.panel.placeholder.missing": "{agent}がインストールされていません。[設定] で [AI エージェント] を開きます。",
   "ai.panel.placeholder.ready": "{agent}に尋ねる",
   "ai.panel.send": "メッセージを送信",
   "ai.panel.stop": "応答を停止",

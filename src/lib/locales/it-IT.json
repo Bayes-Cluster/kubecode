@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Riassumi, trova connessioni, sviluppa idee",
   "ai.panel.empty.noContextDescription": "L'IA utilizzerà la nota attiva come contesto",
   "ai.panel.placeholder.checking": "Verifica della disponibilità dell'agente IA in corso...",
-  "ai.panel.placeholder.missing": "{agent} non è installato. Apri Agenti IA in Impostazioni.",
+  "ai.panel.placeholder.queued": "{agent} è in esecuzione — Invio mette in coda il tuo messaggio",  "ai.panel.placeholder.missing": "{agent} non è installato. Apri Agenti IA in Impostazioni.",
   "ai.panel.placeholder.ready": "Chiedi a {agent}",
   "ai.panel.send": "Invia messaggio",
   "ai.panel.stop": "Interrompi risposta",

@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Делайте выводы, находите связи, развивайте идеи",
   "ai.panel.empty.noContextDescription": "ИИ будет использовать активную заметку в качестве контекста",
   "ai.panel.placeholder.checking": "Проверка доступности AI-агента...",
-  "ai.panel.placeholder.missing": "{agent} не установлен. Откройте «AI Agents» в настройках.",
+  "ai.panel.placeholder.queued": "{agent} выполняется — «Отправить» поставит ваше сообщение в очередь",  "ai.panel.placeholder.missing": "{agent} не установлен. Откройте «AI Agents» в настройках.",
   "ai.panel.placeholder.ready": "Спросить {agent}",
   "ai.panel.send": "Отправить сообщение",
   "ai.panel.stop": "Остановить ответ",

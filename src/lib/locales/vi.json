@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Summarize, find connections, expand ideas",
   "ai.panel.empty.noContextDescription": "The AI will use the active note as context",
   "ai.panel.placeholder.checking": "Checking AI agent availability...",
-  "ai.panel.placeholder.missing": "{agent} is not installed. Open AI Agents in Settings.",
+  "ai.panel.placeholder.queued": "{agent} đang chạy — Gửi sẽ đưa tin nhắn của bạn vào hàng đợi",  "ai.panel.placeholder.missing": "{agent} is not installed. Open AI Agents in Settings.",
   "ai.panel.placeholder.ready": "Ask {agent}",
   "ai.panel.send": "Send message",
   "ai.panel.stop": "Dừng phản hồi",

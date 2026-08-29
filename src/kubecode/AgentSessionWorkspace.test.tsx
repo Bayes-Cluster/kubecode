@@ -1011,6 +1011,13 @@ describe('AgentSessionWorkspace', () => {
     ) => Promise.resolve({
       ...run, id: 'ordinary-run', message, client_message_id: clientMessageId,
     }))
+    const startPrompt = vi.fn().mockImplementation((
+      projectId: string,
+      conversationId: string,
+      message: string,
+      clientMessageId?: string,
+    ) => startRun(projectId, conversationId, message, clientMessageId)
+      .then((startedRun) => ({ admission: 'started' as const, run: startedRun })))
     const dispatchAcpCommand = vi.fn()
     const api = {
       listRuns: vi.fn().mockResolvedValue([]),
@@ -1024,6 +1031,7 @@ describe('AgentSessionWorkspace', () => {
         },
       }),
       startRun,
+      startPrompt,
       dispatchAcpCommand,
     } as unknown as KubecodeApi
 
@@ -2376,10 +2384,24 @@ describe('AgentSessionWorkspace', () => {
     const claudeConversation = { ...conversation, agent_id: 'claude_code' as const }
     const askSideQuestion = vi.fn()
     const dispatchAcpCommand = vi.fn()
+    const startPrompt = vi.fn().mockResolvedValue({
+      admission: 'queued' as const,
+      item: {
+        id: 'queue-1',
+        conversation_id: claudeConversation.id,
+        project_id: 'project-1',
+        content: '',
+        status: 'pending',
+        position: 1,
+        internal: false,
+        created_at: 'now',
+      },
+    })
     const api = {
       askSideQuestion,
       cancelRun: vi.fn().mockResolvedValue(undefined),
       dispatchAcpCommand,
+      startPrompt,
       listRuns: vi.fn().mockResolvedValue([{ ...run, status: 'running' as const }]),
       listEvents: vi.fn().mockResolvedValue([]),
       listSessionEvents: vi.fn().mockResolvedValue([]),

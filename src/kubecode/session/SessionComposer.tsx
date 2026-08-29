@@ -335,14 +335,16 @@ export function SessionComposer({
                   onRegistrationError={reportError}
                   onSubmit={(text) => {
                     if (composer.composerSubmitDisabled) return
-                    if (isActive) {
-                      if (!composer.composerHasTypedReferences
-                        && sideQuestionAvailable && sideQuestionText(text)) {
-                        void onSendSideQuestion(text)
-                      }
-                    } else {
-                      void onSend(text)
+                    if (isActive && !composer.composerHasTypedReferences
+                      && sideQuestionAvailable && sideQuestionText(text)) {
+                      void onSendSideQuestion(text)
+                      return
                     }
+                    // While a run is active plain text queues server-side
+                    // (#97); slash drafts stay untouched — the command menu
+                    // owns them until the run ends.
+                    if (isActive && text.startsWith('/')) return
+                    void onSend(text)
                   }}
                   placeholder={directTeammateChatDisabled
                     ? t('kubecode.teammateChatDisabled')

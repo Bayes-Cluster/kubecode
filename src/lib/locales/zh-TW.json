@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "進行總結、找出關聯、拓展想法",
   "ai.panel.empty.noContextDescription": "人工智慧將使用目前啟用的筆記作為背景資訊",
   "ai.panel.placeholder.checking": "正在檢查 AI 代理程式的可用性……",
-  "ai.panel.placeholder.missing": "未安裝 {agent}。在「設定」中開啟 AI 代理程式。",
+  "ai.panel.placeholder.queued": "{agent} 正在執行 —— 點擊傳送將把訊息加入佇列",  "ai.panel.placeholder.missing": "未安裝 {agent}。在「設定」中開啟 AI 代理程式。",
   "ai.panel.placeholder.ready": "詢問 {agent}",
   "ai.panel.send": "傳送訊息",
   "ai.panel.stop": "停止回應",

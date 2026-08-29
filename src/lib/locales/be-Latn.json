@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Reziumavać, šukać suviazi, hienieravać idei",
   "ai.panel.empty.noContextDescription": "ŠI budzie vykarystoŭvać aktyŭnuju natatku jak kantekst",
   "ai.panel.placeholder.checking": "Pravierka ŠI...",
-  "ai.panel.placeholder.missing": "{agent} nie ŭstaliavany. Adkryjcie Nalady.",
+  "ai.panel.placeholder.queued": "{agent} vykonvajecca — «Adpravić» pastavity vaše paviedamlienne ŭ čarhu",  "ai.panel.placeholder.missing": "{agent} nie ŭstaliavany. Adkryjcie Nalady.",
   "ai.panel.placeholder.ready": "Zapytać {agent}",
   "ai.panel.send": "Adpravić paviedamliennie",
   "ai.panel.stop": "Spynić adkaz",

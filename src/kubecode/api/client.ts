@@ -19,6 +19,8 @@ import type {
   GitMutation,
   GitStatus,
   Project,
+  PromptQueueItem,
+  RunAdmission,
   ProviderSessionInfo,
   RuntimeStatus,
   SessionEvent,
@@ -425,13 +427,18 @@ export class KubecodeApi {
     })
   }
 
-  startRun(
+  /**
+   * Admits a plain prompt (#95/#97): the server starts it when the
+   * conversation is idle and otherwise queues it durably, so send never
+   * fails with 409 while a run is active.
+   */
+  async startPrompt(
     projectId: string,
     conversationId: string,
     message: string,
     clientMessageId?: string,
-  ): Promise<AgentRun> {
-    return this.request(
+  ): Promise<RunAdmission> {
+    const body = await this.request<Record<string, unknown>>(
       `${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}/runs`,
       {
         method: 'POST',
@@ -441,6 +448,29 @@ export class KubecodeApi {
         }),
       },
     )
+    if (
+      body.status === 'pending'
+      && typeof body.content === 'string'
+      && !('permission_mode' in body)
+    ) {
+      return { admission: 'queued', item: body as unknown as PromptQueueItem }
+    }
+    return { admission: 'started', run: body as unknown as AgentRun }
+  }
+
+  async startRun(
+    projectId: string,
+    conversationId: string,
+    message: string,
+    clientMessageId?: string,
+  ): Promise<AgentRun> {
+    const admission = await this.startPrompt(projectId, conversationId, message, clientMessageId)
+    if (admission.admission === 'queued') {
+      // Callers that require an immediately-started run are guarded upstream;
+      // reaching here means the guard was bypassed.
+      throw new ApiError('active_run', 'a run is already active', 409)
+    }
+    return admission.run
   }
 
   startStructuredRun(

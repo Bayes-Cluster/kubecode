@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Zhrňte, nájdite súvislosti, rozvíjajte nápady",
   "ai.panel.empty.noContextDescription": "Umelá inteligencia použije aktívnu poznámku ako kontext",
   "ai.panel.placeholder.checking": "Kontroluje sa dostupnosť agenta umelej inteligencie...",
-  "ai.panel.placeholder.missing": "{agent} nie je nainštalovaný. Otvorte AI agentov v Nastaveniach.",
+  "ai.panel.placeholder.queued": "{agent} beží — Odoslať zaradí vašu správu do poradia",  "ai.panel.placeholder.missing": "{agent} nie je nainštalovaný. Otvorte AI agentov v Nastaveniach.",
   "ai.panel.placeholder.ready": "Opýtajte sa {agent}",
   "ai.panel.send": "Odoslať správu",
   "ai.panel.stop": "Zastaviť odpoveď",

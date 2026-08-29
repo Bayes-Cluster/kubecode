@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "Rangkum, temukan koneksi, kembangkan ide",
   "ai.panel.empty.noContextDescription": "AI akan menggunakan catatan aktif sebagai konteks",
   "ai.panel.placeholder.checking": "Memeriksa ketersediaan agen AI...",
-  "ai.panel.placeholder.missing": "{agent} tidak terpasang. Buka Agen AI di Pengaturan.",
+  "ai.panel.placeholder.queued": "{agent} sedang berjalan — Kirim akan mengantrekan pesan Anda",  "ai.panel.placeholder.missing": "{agent} tidak terpasang. Buka Agen AI di Pengaturan.",
   "ai.panel.placeholder.ready": "Tanyai {agent}",
   "ai.panel.send": "Kirim pesan",
   "ai.panel.stop": "Hentikan respons",

@@ -507,7 +507,7 @@
   "ai.panel.empty.withContextDescription": "요약하고, 연결 고리를 찾고, 아이디어를 확장하세요",
   "ai.panel.empty.noContextDescription": "AI는 활성 노트를 배경 정보로 사용합니다.",
   "ai.panel.placeholder.checking": "AI 에이전트 사용 가능 여부 확인 중...",
-  "ai.panel.placeholder.missing": "{agent}이(가) 설치되어 있지 않습니다. 설정에서 AI Agents를 여세요.",
+  "ai.panel.placeholder.queued": "{agent} 실행 중 — 보내기하면 메시지가 대기열에 추가됩니다",  "ai.panel.placeholder.missing": "{agent}이(가) 설치되어 있지 않습니다. 설정에서 AI Agents를 여세요.",
   "ai.panel.placeholder.ready": "{agent}에게 물어보기",
   "ai.panel.send": "메시지 보내기",
   "ai.panel.stop": "응답 중지",
