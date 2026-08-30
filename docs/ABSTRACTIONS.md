@@ -3,9 +3,10 @@
 Session conversation interaction — the prompt queue, client message ids and
 optimistic send reconciliation, typed terminal causes, whole-snapshot frames,
 the completed-turn boundary fork, the per-agent ACP adapter seam, subagent
-visibility, permission memory, persistence hygiene, terminal durability, and
-the web event reducer — follows the contracts in
-[ADR 0210](adr/0210-agent-interaction-model.md).
+visibility (sub-conversations with `ConversationRelationship::Subagent` plus
+the agent-agnostic `subagent_update` envelope), permission memory, persistence
+hygiene, terminal durability, and the web event reducer — follows the
+contracts in [ADR 0210](adr/0210-agent-interaction-model.md).
 
 ## Runtime client
 

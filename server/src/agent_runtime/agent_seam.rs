@@ -105,6 +105,40 @@ pub trait AgentAdapter: Send + Sync {
     /// Turn-boundary hook: invoked at terminal events for adapter-local
     /// bookkeeping (e.g. flushing subagent transcripts).
     fn on_prompt_completed(&self, _context: &TurnBoundaryContext<'_>) {}
+
+    /// Maps agent-specific subagent activity onto the agent-agnostic fact
+    /// (#107): `Some(activity)` when this update represents a subagent
+    /// session event. The session id is the adapter's sub-session key;
+    /// the journal routes on it without any per-agent branching.
+    fn subagent_activity(&self, _update: &SessionUpdate) -> Option<SubagentActivity> {
+        None
+    }
+}
+
+/// Agent-agnostic subagent fact (#107, ADR 0210 §9): the shape every
+/// adapter translates its own subagent traffic into.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubagentActivity {
+    /// Adapter-owned sub-session key; deterministic across a run.
+    pub sub_session_id: String,
+    /// Display name (task description or subagent type).
+    pub name: String,
+    pub status: SubagentStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubagentStatus {
+    Running,
+    Completed,
+}
+
+impl SubagentStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+        }
+    }
 }
 
 /// Claude Code: side questions via the `_claude/side_question` ext method,
@@ -146,6 +180,36 @@ impl AgentAdapter for ClaudeCodeAdapter {
 
     fn native_permission_mode(&self) -> Option<&'static str> {
         Some("default")
+    }
+
+    fn subagent_activity(&self, update: &SessionUpdate) -> Option<SubagentActivity> {
+        let SessionUpdate::ToolCallUpdate(update) = update else {
+            return None;
+        };
+        // Claude Code surfaces subagents as Task tool calls; the adapter
+        // recognizes them by the marker in raw input or the title prefix —
+        // never by prompt/path content.
+        let raw = update.fields.raw_input.as_ref();
+        let is_task = raw.and_then(|input| input.get("subagent_type")).is_some();
+        let title = update.fields.title.as_deref().unwrap_or("Subagent");
+        let is_task = is_task || title == "Task";
+        if !is_task {
+            return None;
+        }
+        let status = match update.fields.status {
+            Some(agent_client_protocol::schema::v1::ToolCallStatus::Completed) => {
+                SubagentStatus::Completed
+            }
+            Some(agent_client_protocol::schema::v1::ToolCallStatus::Failed) => {
+                SubagentStatus::Completed
+            }
+            _ => SubagentStatus::Running,
+        };
+        Some(SubagentActivity {
+            sub_session_id: format!("claude-sub-{}", update.tool_call_id),
+            name: title.to_owned(),
+            status,
+        })
     }
 }
 
@@ -218,6 +282,42 @@ impl AgentAdapter for OpenCodeAdapter {
                 cwd.to_string_lossy().into_owned(),
             ],
         )
+    }
+
+    fn subagent_activity(&self, update: &SessionUpdate) -> Option<SubagentActivity> {
+        // OpenCode shares the Task-tool subagent convention: rawInput marked
+        // with subagent_type routes into the sub-session envelope.
+        let SessionUpdate::ToolCallUpdate(update) = update else {
+            return None;
+        };
+        let is_task = update
+            .fields
+            .raw_input
+            .as_ref()
+            .and_then(|input| input.get("subagent_type"))
+            .is_some();
+        if !is_task {
+            return None;
+        }
+        let status = match update.fields.status {
+            Some(agent_client_protocol::schema::v1::ToolCallStatus::Completed) => {
+                SubagentStatus::Completed
+            }
+            Some(agent_client_protocol::schema::v1::ToolCallStatus::Failed) => {
+                SubagentStatus::Completed
+            }
+            _ => SubagentStatus::Running,
+        };
+        Some(SubagentActivity {
+            sub_session_id: format!("opencode-sub-{}", update.tool_call_id),
+            name: update
+                .fields
+                .title
+                .as_deref()
+                .unwrap_or("Subagent")
+                .to_owned(),
+            status,
+        })
     }
 }
 
