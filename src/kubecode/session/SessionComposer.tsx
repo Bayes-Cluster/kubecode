@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { AppLocale, Translator } from '@/lib/i18n'
+import { createTranslator, type AppLocale, type Translator } from '@/lib/i18n'
 
 import { AcpCommandMenu } from '../AcpCommandMenu'
 import { completeAcpCommand, type AcpCommand } from '../acpCommands'
