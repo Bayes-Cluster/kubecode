@@ -2494,7 +2494,7 @@ describe('AgentSessionWorkspace', () => {
       created_at: 'now',
     }
     rerender(<AgentSessionWorkspace {...props} workspaceEvents={[permissionEvent]} />)
-    expect(await screen.findByRole('button', { name: 'Allow all' })).toHaveAttribute('title', 'Always Allow all Bash')
+    expect(await screen.findByRole('button', { name: 'Allow all' })).toHaveAttribute('title', '1 — Always Allow all Bash')
     fireEvent.click(await screen.findByRole('button', { name: 'Allow' }))
 
     await waitFor(() => {
