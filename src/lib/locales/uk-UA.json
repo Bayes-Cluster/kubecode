@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Субагент: {name}",
   "kubecode.subagentRunning": "виконується",
   "kubecode.subagentDone": "завершено",
-  "kubecode.subagentFallbackName": "Субагент"
+  "kubecode.subagentFallbackName": "Субагент",
+  "kubecode.permissionExpiresSeconds": "спливає через {count} с",
+  "kubecode.permissionExpiresMinutes": "спливає через {count} хв"
 }

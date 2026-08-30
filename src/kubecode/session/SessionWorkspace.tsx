@@ -732,6 +732,10 @@ export function AgentSessionWorkspace({
             openCodeCapabilityEmptyLabel={openCodeCapabilityEmptyLabel}
             pendingElicitation={pendingElicitation}
             pendingPermission={pendingPermission}
+            deadlineMs={pendingPermission
+              && transcript.pendingWait?.requestId === pendingPermission.requestId
+              ? transcript.pendingWait.deadlineMs
+              : null}
             planEntries={sessionState.planEntries}
             projectId={projectId}
             readiness={readiness}

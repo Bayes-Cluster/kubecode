@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Subagen: {name}",
   "kubecode.subagentRunning": "berjalan",
   "kubecode.subagentDone": "selesai",
-  "kubecode.subagentFallbackName": "Subagen"
+  "kubecode.subagentFallbackName": "Subagen",
+  "kubecode.permissionExpiresSeconds": "kedaluwarsa dalam {count}s",
+  "kubecode.permissionExpiresMinutes": "kedaluwarsa dalam {count} mnt"
 }

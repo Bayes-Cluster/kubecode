@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Tác tử phụ: {name}",
   "kubecode.subagentRunning": "đang chạy",
   "kubecode.subagentDone": "hoàn thành",
-  "kubecode.subagentFallbackName": "Tác tử phụ"
+  "kubecode.subagentFallbackName": "Tác tử phụ",
+  "kubecode.permissionExpiresSeconds": "hết hạn sau {count}s",
+  "kubecode.permissionExpiresMinutes": "hết hạn sau {count} phút"
 }

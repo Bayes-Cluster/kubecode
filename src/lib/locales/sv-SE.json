@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Underagent: {name}",
   "kubecode.subagentRunning": "kör",
   "kubecode.subagentDone": "klar",
-  "kubecode.subagentFallbackName": "Underagent"
+  "kubecode.subagentFallbackName": "Underagent",
+  "kubecode.permissionExpiresSeconds": "utgår om {count}s",
+  "kubecode.permissionExpiresMinutes": "utgår om {count} min"
 }

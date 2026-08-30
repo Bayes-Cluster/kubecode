@@ -31,7 +31,7 @@ export function useSessionEvents({
   viewRevisionId,
   workspaceEvents,
 }: UseSessionEventsOptions) {
-  const { enqueueConversationEvents, setPromptQueue } = transcript
+  const { enqueueConversationEvents, setPromptQueue, setPendingWait } = transcript
   const processedRef = useRef<number>(0)
   const initializedForRef = useRef<string | null>(null)
   const reportErrorRef = useRef(reportError)
@@ -64,6 +64,20 @@ export function useSessionEvents({
       // Whole-snapshot replacement (#96): a prompt_queue event always
       // carries the complete pending queue, so it applies directly outside
       // the transcript pump.
+      // Whole-snapshot state frames (#101): the pending wait deadline feeds
+      // the countdown chip; a null pending clears it (#111).
+      if (workspaceEvent.kind === 'conversation_state') {
+        const payloadState = objectValue(workspaceEvent.payload)
+        const pending = objectValue(payloadState?.pending)
+        const requestId = textValue(pending?.request_id)
+        const deadline = pending?.deadline_ms
+        if (requestId && typeof deadline === 'number') {
+          setPendingWait({ requestId, deadlineMs: deadline })
+        } else {
+          setPendingWait(null)
+        }
+        continue
+      }
       if (workspaceEvent.kind === 'prompt_queue') {
         const items = arrayValue(objectValue(workspaceEvent.payload)?.items)
         queueSnapshot = (items ?? []).flatMap((value) => {
@@ -114,6 +128,7 @@ export function useSessionEvents({
     conversation,
     enqueueConversationEvents,
     requestSessionState,
+    setPendingWait,
     setPromptQueue,
     viewRevisionId,
     workspaceEvents,

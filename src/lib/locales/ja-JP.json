@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "サブエージェント: {name}",
   "kubecode.subagentRunning": "実行中",
   "kubecode.subagentDone": "完了",
-  "kubecode.subagentFallbackName": "サブエージェント"
+  "kubecode.subagentFallbackName": "サブエージェント",
+  "kubecode.permissionExpiresSeconds": "{count}秒後に期限切れ",
+  "kubecode.permissionExpiresMinutes": "{count}分後に期限切れ"
 }

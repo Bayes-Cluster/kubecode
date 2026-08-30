@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Subagente: {name}",
   "kubecode.subagentRunning": "in esecuzione",
   "kubecode.subagentDone": "completato",
-  "kubecode.subagentFallbackName": "Subagente"
+  "kubecode.subagentFallbackName": "Subagente",
+  "kubecode.permissionExpiresSeconds": "scade tra {count}s",
+  "kubecode.permissionExpiresMinutes": "scade tra {count} min"
 }

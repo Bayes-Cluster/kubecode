@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "서브에이전트: {name}",
   "kubecode.subagentRunning": "실행 중",
   "kubecode.subagentDone": "완료",
-  "kubecode.subagentFallbackName": "서브에이전트"
+  "kubecode.subagentFallbackName": "서브에이전트",
+  "kubecode.permissionExpiresSeconds": "{count}초 후 만료",
+  "kubecode.permissionExpiresMinutes": "{count}분 후 만료"
 }
