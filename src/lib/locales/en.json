@@ -1589,5 +1589,9 @@
   "kubecode.queueSave": "Save",
   "kubecode.queueCancelEditing": "Cancel editing",
   "kubecode.queueSendNow": "Send now",
-  "kubecode.forkUnavailableRunning": "Wait for the turn to finish before forking"
+  "kubecode.forkUnavailableRunning": "Wait for the turn to finish before forking",
+  "kubecode.subagentBubbleTitle": "Subagent: {name}",
+  "kubecode.subagentRunning": "running",
+  "kubecode.subagentDone": "done",
+  "kubecode.subagentFallbackName": "Subagent"
 }

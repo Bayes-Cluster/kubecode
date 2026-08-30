@@ -335,6 +335,100 @@ function structuredCloneForTest(value: unknown): unknown {
 type UnusedTypeGuard = AiAgentMessage extends AiAgentMessage ? true : false
 export type { UnusedTypeGuard }
 
+describe('subagent bubbles (#107/#108)', () => {
+  function subUpdate(seq: number, overrides: Record<string, unknown> = {}): ConversationInput {
+    return {
+      type: 'event',
+      event: event(seq, 'subagent_update', {
+        sessionId: 'sub-1',
+        name: 'Reviewer',
+        prompt: 'review the diff',
+        status: 'running',
+        conversation_id: 'sub-conv-1',
+        ...overrides,
+      }, { runId: null }),
+    }
+  }
+
+  it('registration arriving after early chunks merges deterministically', () => {
+    // Mis-ordered: tagged tool event lands BEFORE the registration envelope.
+    const misOrdered = reduceAll(initialConversationState(), [
+      {
+        type: 'event',
+        event: event(1, 'tool_started', {
+          tool_id: 't-9',
+          tool: 'Read',
+          subagent_session_id: 'sub-1',
+        }),
+      },
+      subUpdate(2, { status: 'running' }),
+    ])
+    // Ordered: registration first, then the tagged tool event.
+    const ordered = reduceAll(initialConversationState(), [
+      subUpdate(1, { status: 'running' }),
+      {
+        type: 'event',
+        event: event(2, 'tool_started', {
+          tool_id: 't-9',
+          tool: 'Read',
+          subagent_session_id: 'sub-1',
+        }),
+      },
+    ])
+
+    for (const state of [misOrdered, ordered]) {
+      const sub = state.subagents['sub-1']
+      expect(sub).toBeDefined()
+      expect(sub.name).toBe('Reviewer')
+      expect(sub.status).toBe('running')
+      expect(sub.events.map((entry) => entry.kind)).toEqual(['tool_started'])
+      expect(sub.events[0]?.payload.tool_id).toBe('t-9')
+      // The tagged tool call never rendered as a main-context action.
+      expect(
+        state.messages.some((message) =>
+          message.actions.some((action) => action.toolId === 't-9'),
+        ),
+      ).toBe(false)
+    }
+  })
+
+  it('splices a mis-attributed tool call out of main on attribution', () => {
+    // The tool event arrives untagged and lands in a main bubble...
+    let state = reduceAll(initialConversationState(), [
+      { type: 'run', run: run() },
+      { type: 'event', event: event(1, 'tool_started', { tool_id: 't-x', tool: 'Bash' }) },
+    ])
+    expect(state.messages[0]?.actions).toHaveLength(1)
+    // ...then a tagged duplicate arrives (spliced back in on attribution).
+    state = reduceConversation(state, {
+      type: 'event',
+      event: event(2, 'tool_started', {
+        tool_id: 't-x',
+        tool: 'Bash',
+        subagent_session_id: 'sub-1',
+      }),
+    })
+    const sub = state.subagents['sub-1']
+    expect(sub.events.map((entry) => entry.payload.tool_id)).toEqual(['t-x'])
+    // main bubble keeps actions whose toolId differs; the tagged one is
+    // re-attributed to the sub entry (splice is by toolId on later events).
+    expect(
+      state.messages[0]?.actions.filter((action) => action.toolId === 't-x'),
+    ).toHaveLength(0)
+  })
+
+  it('tracks subagent status running to completed across envelopes', () => {
+    let state = reduceAll(initialConversationState(), [
+      subUpdate(1, { status: 'running' }),
+    ])
+    expect(state.subagents['sub-1']?.status).toBe('running')
+    state = reduceConversation(state, subUpdate(2, { status: 'completed' }))
+    expect(state.subagents['sub-1']?.status).toBe('completed')
+    expect(state.subagents['sub-1']?.name).toBe('Reviewer')
+    expect(state.subagents['sub-1']?.conversationId).toBe('sub-conv-1')
+  })
+})
+
 describe('mergeLiveOverHistory', () => {
   it('drops buffered live events the fetched page already contains and folds only the rest', () => {
     const historyState = reduceAll(initialConversationState(), [

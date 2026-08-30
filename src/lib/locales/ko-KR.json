@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "저장",
   "kubecode.queueCancelEditing": "편집 취소",
   "kubecode.queueSendNow": "지금 보내기",
-  "kubecode.forkUnavailableRunning": "분기하기 전에 턴이 끝나기를 기다리세요"
+  "kubecode.forkUnavailableRunning": "분기하기 전에 턴이 끝나기를 기다리세요",
+  "kubecode.subagentBubbleTitle": "서브에이전트: {name}",
+  "kubecode.subagentRunning": "실행 중",
+  "kubecode.subagentDone": "완료",
+  "kubecode.subagentFallbackName": "서브에이전트"
 }

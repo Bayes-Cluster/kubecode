@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Spara",
   "kubecode.queueCancelEditing": "Avbryt redigering",
   "kubecode.queueSendNow": "Skicka nu",
-  "kubecode.forkUnavailableRunning": "Vänta tills varvet är klart innan du förgrenar"
+  "kubecode.forkUnavailableRunning": "Vänta tills varvet är klart innan du förgrenar",
+  "kubecode.subagentBubbleTitle": "Underagent: {name}",
+  "kubecode.subagentRunning": "kör",
+  "kubecode.subagentDone": "klar",
+  "kubecode.subagentFallbackName": "Underagent"
 }

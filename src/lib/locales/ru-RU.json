@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Сохранить",
   "kubecode.queueCancelEditing": "Отменить редактирование",
   "kubecode.queueSendNow": "Отправить сейчас",
-  "kubecode.forkUnavailableRunning": "Дождитесь завершения хода перед созданием ветки"
+  "kubecode.forkUnavailableRunning": "Дождитесь завершения хода перед созданием ветки",
+  "kubecode.subagentBubbleTitle": "Субагент: {name}",
+  "kubecode.subagentRunning": "выполняется",
+  "kubecode.subagentDone": "завершено",
+  "kubecode.subagentFallbackName": "Субагент"
 }

@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Lưu",
   "kubecode.queueCancelEditing": "Hủy chỉnh sửa",
   "kubecode.queueSendNow": "Gửi ngay",
-  "kubecode.forkUnavailableRunning": "Chờ lượt kết thúc trước khi tách"
+  "kubecode.forkUnavailableRunning": "Chờ lượt kết thúc trước khi tách",
+  "kubecode.subagentBubbleTitle": "Tác tử phụ: {name}",
+  "kubecode.subagentRunning": "đang chạy",
+  "kubecode.subagentDone": "hoàn thành",
+  "kubecode.subagentFallbackName": "Tác tử phụ"
 }

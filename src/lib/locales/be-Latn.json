@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Zachavać",
   "kubecode.queueCancelEditing": "Skasavać redahavanniie",
   "kubecode.queueSendNow": "Adpravić zaraz",
-  "kubecode.forkUnavailableRunning": "Dačiekajcie zakančennie chodu pierad stvarannienniem haliny"
+  "kubecode.forkUnavailableRunning": "Dačiekajcie zakančennie chodu pierad stvarannienniem haliny",
+  "kubecode.subagentBubbleTitle": "Subahient: {name}",
+  "kubecode.subagentRunning": "vykonvajecca",
+  "kubecode.subagentDone": "zaviaršana",
+  "kubecode.subagentFallbackName": "Subahient"
 }

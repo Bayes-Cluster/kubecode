@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Uložiť",
   "kubecode.queueCancelEditing": "Zrušiť úpravu",
   "kubecode.queueSendNow": "Poslať teraz",
-  "kubecode.forkUnavailableRunning": "Počkajte na koniec ťahu pred vetvením"
+  "kubecode.forkUnavailableRunning": "Počkajte na koniec ťahu pred vetvením",
+  "kubecode.subagentBubbleTitle": "Subagent: {name}",
+  "kubecode.subagentRunning": "beží",
+  "kubecode.subagentDone": "dokončené",
+  "kubecode.subagentFallbackName": "Subagent"
 }

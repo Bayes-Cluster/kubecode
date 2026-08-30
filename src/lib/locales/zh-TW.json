@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "儲存",
   "kubecode.queueCancelEditing": "取消編輯",
   "kubecode.queueSendNow": "立即傳送",
-  "kubecode.forkUnavailableRunning": "請等待本輪結束後再分叉"
+  "kubecode.forkUnavailableRunning": "請等待本輪結束後再分叉",
+  "kubecode.subagentBubbleTitle": "子代理：{name}",
+  "kubecode.subagentRunning": "執行中",
+  "kubecode.subagentDone": "已完成",
+  "kubecode.subagentFallbackName": "子代理"
 }

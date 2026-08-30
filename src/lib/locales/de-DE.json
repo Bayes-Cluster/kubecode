@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Speichern",
   "kubecode.queueCancelEditing": "Bearbeiten abbrechen",
   "kubecode.queueSendNow": "Jetzt senden",
-  "kubecode.forkUnavailableRunning": "Warte das Ende des Zugs ab, bevor du abzweigst"
+  "kubecode.forkUnavailableRunning": "Warte das Ende des Zugs ab, bevor du abzweigst",
+  "kubecode.subagentBubbleTitle": "Subagent: {name}",
+  "kubecode.subagentRunning": "läuft",
+  "kubecode.subagentDone": "fertig",
+  "kubecode.subagentFallbackName": "Subagent"
 }
