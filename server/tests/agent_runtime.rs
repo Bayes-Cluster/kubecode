@@ -1060,10 +1060,12 @@ done"#,
         .collect::<Vec<_>>();
     assert_eq!(text.len(), 1);
     assert_eq!(text[0].payload["text"], "Finished");
+    // Tool-call coalescing (#110): the coalesced row carries the terminal
+    // kind (ToolCompleted), not the intermediate ToolStarted.
     assert!(
         events
             .iter()
-            .any(|event| event.kind == AgentEventKind::ToolStarted)
+            .any(|event| event.kind == AgentEventKind::ToolCompleted)
     );
     assert_eq!(
         events.last().expect("terminal event").kind,
@@ -1838,5 +1840,109 @@ done"#,
             .list_queued_prompts(&conversation.id)
             .expect("queue")
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn tool_call_updates_coalesce_into_one_persisted_row() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let project = workspace
+        .create_project(".", "coalesce-project")
+        .expect("project");
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-coalesce\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        printf '%s\n' "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"session-coalesce\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"tool-coalesce\",\"status\":\"in_progress\",\"title\":\"Bash\",\"rawInput\":{\"command\":\"ls\"}}}}"
+      done
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-coalesce","update":{"sessionUpdate":"tool_call_update","toolCallId":"tool-coalesce","status":"completed","title":"Bash","content":[{"type":"content","content":{"type":"text","text":"file list"}}]}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let runtime = AgentRuntime::new(
+        Arc::clone(&workspace),
+        Arc::clone(&store),
+        vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }],
+    );
+    let conversation = store
+        .create_conversation(&project.id, AgentId::OpenCode, None)
+        .expect("conversation");
+    let conversation_id = conversation.id.clone();
+    let run = runtime
+        .start(StartAgentRun {
+            conversation_id: conversation_id.clone(),
+            project_id: project.id,
+            message: "coalesce test".into(),
+            client_message_id: None,
+        })
+        .expect("start run");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let current = store.get_run(&run.id).expect("run");
+            if current.status == RunStatus::Completed {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("run completion");
+
+    // Session events: one tool row (coalesced), not 20+.
+    let events = store
+        .session_events_after(&conversation_id, 0)
+        .expect("session events");
+    let tool_rows = events
+        .iter()
+        .filter(|event| {
+            event
+                .payload
+                .get("tool_id")
+                .and_then(serde_json::Value::as_str)
+                == Some("tool-coalesce")
+        })
+        .count();
+    assert!(
+        tool_rows <= 3,
+        "tool call should coalesce to O(1) rows, got {tool_rows}"
+    );
+
+    // The persisted row carries structured content, not raw input.
+    let terminal_row = events
+        .iter()
+        .find(|event| {
+            event
+                .payload
+                .get("tool_id")
+                .and_then(serde_json::Value::as_str)
+                == Some("tool-coalesce")
+                && event.kind == "tool_completed"
+        })
+        .expect("terminal tool row");
+    assert!(
+        terminal_row.payload.get("input").is_none()
+            || terminal_row.payload["input"] == serde_json::Value::Null,
+        "raw_input stripped when structured content is present"
     );
 }

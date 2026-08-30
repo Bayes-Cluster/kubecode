@@ -155,7 +155,22 @@ impl SessionUpdateJournal {
                 };
                 match command {
                     Some(SessionJournalCommand::Update(update)) => {
-                        if update.event.is_streaming() {
+                        if update.event.is_bufferable_tool_call() {
+                            // Tool calls buffer and coalesce by tool_id
+                            // (#110). Terminal status flushes the coalesced
+                            // row immediately.
+                            let terminal = update.event.is_terminal_tool_call();
+                            push_streaming_update(&mut pending, update);
+                            if terminal {
+                                persist_pending_updates(
+                                    &store,
+                                    &worker_conversation_id,
+                                    &mut pending,
+                                    generation.as_ref(),
+                                )?;
+                                flush_deadline = None;
+                            }
+                        } else if update.event.is_streaming() {
                             if pending.is_empty() {
                                 flush_deadline = Some(
                                     tokio::time::Instant::now() + SESSION_UPDATE_FLUSH_INTERVAL,
@@ -391,7 +406,43 @@ impl PersistedSessionUpdate {
         )
     }
 
+    /// Tool calls buffer in the journal like streaming updates (#110):
+    /// coalesced by tool_id; terminal status triggers the flush.
+    fn is_bufferable_tool_call(&self) -> bool {
+        matches!(
+            self.session_kind,
+            "tool_started" | "tool_updated" | "tool_completed"
+        )
+    }
+
+    fn is_terminal_tool_call(&self) -> bool {
+        self.session_kind == "tool_completed"
+    }
+
     fn try_merge(&mut self, next: &Self) -> bool {
+        // Tool-call coalescing (#110): same tool_id → the later replaces the
+        // former (fields merge, session kind advances to the terminal kind).
+        if self.is_bufferable_tool_call() && next.is_bufferable_tool_call() {
+            let same_tool = self.payload.get("tool_id") == next.payload.get("tool_id");
+            if !same_tool {
+                return false;
+            }
+            self.session_kind = next.session_kind;
+            self.run_kind = next.run_kind;
+            if let Some(content) = next.payload.get("content") {
+                self.payload["content"] = content.clone();
+                // Raw IO yields to structured content (#110).
+                self.payload["input"] = Value::Null;
+                self.payload["output"] = Value::Null;
+            }
+            if let Some(title) = next.payload.get("tool") {
+                self.payload["tool"] = title.clone();
+            }
+            if let Some(status) = next.payload.get("status") {
+                self.payload["status"] = status.clone();
+            }
+            return true;
+        }
         if !self.is_streaming()
             || self.session_kind != next.session_kind
             || self.run_kind != next.run_kind
