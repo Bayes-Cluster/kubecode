@@ -81,7 +81,13 @@ subagent activity routes into sub-conversations that activate the dormant
 listings) and broadcast the agent-agnostic `subagent_update` envelope —
 `{sessionId, name, prompt, status}` — on the parent stream; attribution is by
 sub-session id, so early chunks land before a late registration and the name
-backfills. `server/src/agent_store/` and
+backfills. Transient conversation state (streaming flag, pending
+permission/elicitation wait with its deadline) broadcasts as whole-snapshot
+`conversation_state` frames on the same stream — at subscription-adjacent
+transitions, on boot recovery, and whenever a wait resolves — so any client
+converges from cursor + snapshots alone; a cleared wait publishes
+`"pending": null`. The pending-request timeout is tunable via
+`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes). `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing

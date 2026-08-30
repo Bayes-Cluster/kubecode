@@ -99,6 +99,23 @@ pub(super) struct PendingElicitation {
     pub(super) sender: oneshot::Sender<ElicitationAction>,
 }
 
+/// How long pending permission / elicitation requests wait before the
+/// server resolves them as declined (#111). Tunable via
+/// `KUBECODE_PENDING_REQUEST_TIMEOUT_MS`.
+pub(crate) fn pending_request_timeout() -> std::time::Duration {
+    std::env::var("KUBECODE_PENDING_REQUEST_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(std::time::Duration::from_millis)
+        .unwrap_or(std::time::Duration::from_secs(5 * 60))
+}
+
+pub(crate) fn deadline_remaining_ms(deadline: std::time::Instant) -> u64 {
+    deadline
+        .saturating_duration_since(std::time::Instant::now())
+        .as_millis() as u64
+}
+
 impl PendingPermission {
     fn accepts(&self, option_id: &str) -> bool {
         self.allowed_options.contains(option_id)
@@ -141,6 +158,20 @@ impl AgentRuntime {
                 SelectedPermissionOutcome::new(PermissionOptionId::new(option_id.to_owned())),
             ))
             .is_ok();
+        // The wait ended: broadcast the cleared snapshot (#101).
+        if let Ok(run) = self.store.get_run(&pending.run_id) {
+            let _ = self.store.append_workspace_event(
+                "conversation_state",
+                Some(&run.project_id),
+                Some(&run.conversation_id),
+                Some(&pending.run_id),
+                &json!({
+                    "conversation_id": run.conversation_id,
+                    "streaming": true,
+                    "pending": Value::Null,
+                }),
+            );
+        }
         // Remembering follows a successful delivery so an agent that never
         // sees the answer does not gain silent standing grants.
         if sent
@@ -194,7 +225,22 @@ impl AgentRuntime {
                 let action = content.map_or(ElicitationAction::Decline, |content| {
                     ElicitationAction::Accept(ElicitationAcceptAction::new().content(content))
                 });
-                pending.sender.send(action).is_ok()
+                let delivered = pending.sender.send(action).is_ok();
+                // The wait ended: broadcast the cleared snapshot (#101).
+                if let Ok(run) = self.store.get_run(&pending.run_id) {
+                    let _ = self.store.append_workspace_event(
+                        "conversation_state",
+                        Some(&run.project_id),
+                        Some(&run.conversation_id),
+                        Some(&pending.run_id),
+                        &json!({
+                            "conversation_id": run.conversation_id,
+                            "streaming": true,
+                            "pending": Value::Null,
+                        }),
+                    );
+                }
+                delivered
             })
     }
 
