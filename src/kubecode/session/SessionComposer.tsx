@@ -416,7 +416,6 @@ function PermissionCountdownChip({ deadlineMs }: { deadlineMs: number }) {
     return () => window.clearInterval(timer)
   }, [deadlineMs])
   const urgent = remaining < 30
-  void t
   return (
     <span
       className={urgent ? 'text-destructive font-semibold' : 'text-muted-foreground'}
