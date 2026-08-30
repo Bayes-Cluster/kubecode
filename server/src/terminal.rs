@@ -202,6 +202,16 @@ pub struct TerminalSnapshot {
     pub data: String,
     pub cursor: u64,
     pub truncated: bool,
+    /// Where the snapshot came from (#109): the live ring when the terminal
+    /// is resident, else the durable transcript.
+    pub source: TerminalSnapshotSource,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalSnapshotSource {
+    Live,
+    Durable,
 }
 
 pub struct TerminalManager {
@@ -378,10 +388,28 @@ impl TerminalManager {
         };
         let info = Arc::new(Mutex::new(info));
         let buffer = Arc::new(Mutex::new(TerminalBuffer::new(self.buffer_capacity)));
+        // Durable transcript (#109): opened before the session registers so
+        // every output chunk lands in the log from the first byte.
+        let transcript = self
+            .workspace
+            .terminal_log_path(&id)
+            .and_then(|path| {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .map_err(WorkspaceError::from)
+            })
+            .ok();
+        let transcript = Arc::new(Mutex::new(transcript));
         let reader_buffer = Arc::clone(&buffer);
+        let reader_transcript = Arc::clone(&transcript);
         thread::Builder::new()
             .name(format!("kubecode-pty-{id}"))
-            .spawn(move || copy_pty_output(&mut reader, &reader_buffer))?;
+            .spawn(move || copy_pty_output(&mut reader, &reader_buffer, &reader_transcript))?;
 
         let session = Arc::new(TerminalSession {
             info: Arc::clone(&info),
@@ -501,12 +529,27 @@ impl TerminalManager {
         terminal_id: &str,
         cursor: u64,
     ) -> Result<TerminalSnapshot, TerminalError> {
-        let session = self.session(terminal_id)?;
-        Ok(session
-            .buffer
-            .lock()
-            .expect("terminal buffer mutex poisoned")
-            .snapshot(cursor))
+        // Live ring first (#109).
+        if let Ok(session) = self.session(terminal_id) {
+            return Ok(session
+                .buffer
+                .lock()
+                .expect("terminal buffer mutex poisoned")
+                .snapshot(cursor));
+        }
+        // Durable transcript fallback: the terminal is gone or the server
+        // restarted. The log has no per-byte cursors, so serve the tail and
+        // report the durable source.
+        let bytes = self
+            .workspace
+            .read_terminal_transcript(terminal_id, self.buffer_capacity as u64)?;
+        let data = String::from_utf8_lossy(&bytes).into_owned();
+        Ok(TerminalSnapshot {
+            cursor: bytes.len() as u64,
+            data,
+            truncated: false,
+            source: TerminalSnapshotSource::Durable,
+        })
     }
 
     pub fn capture_context(
@@ -743,6 +786,7 @@ impl TerminalBuffer {
             data: String::from_utf8_lossy(&bytes).into_owned(),
             cursor: self.end_cursor,
             truncated,
+            source: TerminalSnapshotSource::Live,
         }
     }
 
@@ -898,15 +942,28 @@ fn terminal_context_revision(
     hex::encode(digest.finalize())
 }
 
-fn copy_pty_output(reader: &mut dyn Read, buffer: &Arc<Mutex<TerminalBuffer>>) {
+fn copy_pty_output(
+    reader: &mut dyn Read,
+    buffer: &Arc<Mutex<TerminalBuffer>>,
+    transcript: &Arc<Mutex<Option<std::fs::File>>>,
+) {
     let mut chunk = [0_u8; 8192];
     loop {
         match reader.read(&mut chunk) {
             Ok(0) | Err(_) => return,
-            Ok(read) => buffer
-                .lock()
-                .expect("terminal buffer mutex poisoned")
-                .push(&chunk[..read]),
+            Ok(read) => {
+                buffer
+                    .lock()
+                    .expect("terminal buffer mutex poisoned")
+                    .push(&chunk[..read]);
+                // Durable append (#109): every chunk lands in the log, ring
+                // truncation applies to the live buffer only.
+                if let Ok(mut file) = transcript.lock()
+                    && let Some(file) = file.as_mut()
+                {
+                    let _ = file.write_all(&chunk[..read]);
+                }
+            }
         }
     }
 }
@@ -960,5 +1017,64 @@ mod context_capture_tests {
                 .content
                 .ends_with(&format!("line-{}", MAX_TERMINAL_CONTEXT_LINES + 9))
         );
+    }
+}
+
+#[cfg(test)]
+mod transcript_tests {
+    use crate::workspace::WorkspaceService;
+
+    #[test]
+    fn terminal_log_path_rejects_traversal_and_bad_ids() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let workspace =
+            WorkspaceService::open(temp.path(), temp.path().join("db.sqlite3").as_path())
+                .expect("workspace");
+        assert!(workspace.terminal_log_path("../escape").is_err());
+        assert!(workspace.terminal_log_path("a/b").is_err());
+        assert!(workspace.terminal_log_path("has space").is_err());
+        assert!(workspace.terminal_log_path("").is_err());
+        let ok = workspace.terminal_log_path("Ab-_09").expect("valid id");
+        assert!(ok.to_string_lossy().contains("Ab-_09.log"));
+    }
+
+    #[test]
+    fn durable_transcript_appends_reads_and_truncates_gracefully() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let workspace =
+            WorkspaceService::open(temp.path(), temp.path().join("db.sqlite3").as_path())
+                .expect("workspace");
+        let id = "term-1";
+        workspace
+            .append_terminal_transcript(id, b"first\n")
+            .expect("append 1");
+        workspace
+            .append_terminal_transcript(id, b"second\n")
+            .expect("append 2");
+        let full = workspace
+            .read_terminal_transcript(id, 1_000)
+            .expect("read full");
+        assert_eq!(String::from_utf8_lossy(&full), "first\nsecond\n");
+
+        // Windowing: only the tail within max_bytes.
+        let tail = workspace
+            .read_terminal_transcript(id, 7)
+            .expect("read tail");
+        assert_eq!(String::from_utf8_lossy(&tail), "second\n");
+
+        // Missing transcripts read as empty (a fresh closed terminal).
+        let empty = workspace
+            .read_terminal_transcript("never-written", 1_000)
+            .expect("missing transcript reads empty");
+        assert!(empty.is_empty());
+
+        // Oversized/corrupt tails truncate at a UTF-8 boundary.
+        workspace
+            .append_terminal_transcript(id, &[0xF0, 0x9F, 0x8C, 0x8D])
+            .expect("append emoji");
+        let tail = workspace
+            .read_terminal_transcript(id, 3)
+            .expect("read corrupt tail");
+        assert!(String::from_utf8_lossy(&tail).is_char_boundary(0));
     }
 }

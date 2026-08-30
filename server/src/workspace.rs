@@ -154,6 +154,78 @@ impl WorkspaceService {
         })
     }
 
+    /// Durable terminal transcripts (#109): per-terminal append-only logs
+    /// under `<state>/terminal-logs/`, managed by WorkspaceService so no
+    /// other component touches the filesystem. The terminal id is strictly
+    /// validated before any path is derived (no traversal).
+    pub fn terminal_log_path(&self, terminal_id: &str) -> Result<PathBuf, WorkspaceError> {
+        let valid = !terminal_id.is_empty()
+            && terminal_id.len() <= 64
+            && terminal_id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '-' || character == '_'
+            });
+        if !valid {
+            return Err(WorkspaceError::InvalidPath(terminal_id.to_owned()));
+        }
+        Ok(self
+            .state_root
+            .join("terminal-logs")
+            .join(format!("{terminal_id}.log")))
+    }
+
+    pub fn append_terminal_transcript(
+        &self,
+        terminal_id: &str,
+        data: &[u8],
+    ) -> Result<(), WorkspaceError> {
+        use std::io::Write;
+        let path = self.terminal_log_path(terminal_id)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        log.write_all(data)?;
+        Ok(())
+    }
+
+    /// Reads a durable transcript tail: at most `max_bytes` from the end of
+    /// the log. Corrupt or oversized tails degrade to truncation from the
+    /// last valid UTF-8 boundary — graceful by construction (#109).
+    pub fn read_terminal_transcript(
+        &self,
+        terminal_id: &str,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, WorkspaceError> {
+        let path = self.terminal_log_path(terminal_id)?;
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let metadata = std::fs::metadata(&path)?;
+        let size = metadata.len();
+        let skip = size.saturating_sub(max_bytes);
+        let mut file = std::fs::File::open(&path)?;
+        use std::io::{Read as _, Seek as _, SeekFrom};
+        file.seek(SeekFrom::Start(skip))?;
+        let mut bytes = Vec::new();
+        file.take(max_bytes).read_to_end(&mut bytes)?;
+        // Trim to a UTF-8 boundary; corrupt tails truncate from the front.
+        while !bytes.is_empty() && std::str::from_utf8(&bytes).is_err() {
+            bytes.remove(0);
+        }
+        Ok(bytes)
+    }
+
+    pub fn delete_terminal_transcript(&self, terminal_id: &str) -> Result<(), WorkspaceError> {
+        let path = self.terminal_log_path(terminal_id)?;
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

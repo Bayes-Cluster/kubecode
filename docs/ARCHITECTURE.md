@@ -87,7 +87,12 @@ permission/elicitation wait with its deadline) broadcasts as whole-snapshot
 transitions, on boot recovery, and whenever a wait resolves — so any client
 converges from cursor + snapshots alone; a cleared wait publishes
 `"pending": null`. The pending-request timeout is tunable via
-`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes). `server/src/agent_store/` and
+`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes). Terminal output
+is additionally appended to durable per-terminal logs under
+`WorkspaceService`-managed state paths (strictly validated terminal ids, no
+path traversal); reads prefer the live ring and fall back to the durable
+transcript after restart, with graceful truncation of corrupt or oversized
+tails. `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing
