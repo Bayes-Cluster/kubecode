@@ -86,10 +86,24 @@ export type TimelineEvent = {
   source: 'live' | 'history'
 }
 
+/** One agent-agnostic subagent bubble (#108), keyed by sub-session id. */
+export type SubagentEntry = {
+  subSessionId: string
+  /** Synthetic transcript events attributed to this sub (spliced + routed). */
+  events: TimelineEvent[]
+  /** Latest envelope status: running until a completed envelope lands. */
+  status: 'running' | 'completed'
+  name: string
+  prompt: string
+  conversationId: string | null
+}
+
 export type ConversationState = {
   messages: AiAgentMessage[]
   /** Run rows revealed so far, keyed by run id. */
   runs: Record<string, AgentRun>
+  /** Subagent bubbles keyed by sub-session id (#107/#108). */
+  subagents: Record<string, SubagentEntry>
   pendingPermission: PendingPermission | null
   pendingElicitation: PendingElicitation | null
   sideQuestions: SideQuestionItem[]
@@ -125,6 +139,7 @@ export function initialConversationState(): ConversationState {
   return {
     messages: [],
     runs: {},
+    subagents: {},
     pendingPermission: null,
     pendingElicitation: null,
     sideQuestions: [],
@@ -260,6 +275,18 @@ function routeTimelineEvent(state: ConversationState, event: TimelineEvent): Con
   }
   if (ELICITATION_EVENT_KINDS.has(event.kind)) {
     return applyElicitationEvent(state, event)
+  }
+  if (event.kind === 'subagent_update') {
+    return applySubagentUpdate(state, event)
+  }
+  // Tagged tool events belong to a sub session (#108) — routed into the
+  // bubble whether they arrive before or after the registration envelope;
+  // a toolId already folded into main is spliced out on attribution.
+  if (
+    (event.kind === 'tool_started' || event.kind === 'tool_updated' || event.kind === 'tool_completed')
+    && textValue(event.payload.subagent_session_id)
+  ) {
+    return withSubSplice(applySubTaggedEvent(state, event), event)
   }
   if (event.kind === 'run_completed') {
     return applyRunCompleted(state, event)
@@ -438,6 +465,90 @@ function bufferForUnknownRun(state: ConversationState, event: TimelineEvent): Co
     ...state,
     bufferedByRun: { ...state.bufferedByRun, [runId]: [...buffered, event] },
   }
+}
+
+/**
+ * Mis-route repair (#108): tool calls tagged `subagent_session_id` that
+ * arrive before their registration envelope land in a provisional sub
+ * entry; the later envelope merges into it — so the ordered and
+ * mis-ordered replays of the same sequence render identically.
+ */
+function subEntryForEvent(state: ConversationState, event: TimelineEvent): SubagentEntry {
+  const sessionId = textValue(event.payload.subagent_session_id)
+  const existing = state.subagents[sessionId]
+  return {
+    subSessionId: sessionId,
+    events: existing?.events ?? [],
+    status: existing?.status ?? 'running',
+    name: existing?.name ?? '',
+    prompt: existing?.prompt ?? '',
+    conversationId: existing?.conversationId ?? null,
+  }
+}
+
+function applySubagentUpdate(state: ConversationState, event: TimelineEvent): ConversationState {
+  const sessionId = textValue(event.payload.sessionId)
+  if (!sessionId) return state
+  const name = textValue(event.payload.name)
+  const status = textValue(event.payload.status) === 'completed' ? 'completed' : 'running'
+  const conversationId = textValue(event.payload.conversation_id) || null
+  const prompt = textValue(event.payload.prompt)
+
+  const existing = state.subagents[sessionId]
+  const merged: SubagentEntry = {
+    ...(existing ?? {
+      subSessionId: sessionId,
+      events: [],
+      name: '',
+      prompt: '',
+      conversationId: null,
+    }),
+    // Registration backfills the name/prompt without clobbering state.
+    name: name || existing?.name || '',
+    prompt: prompt || existing?.prompt || '',
+    conversationId: conversationId ?? existing?.conversationId ?? null,
+    status,
+  }
+  const subagents = { ...state.subagents, [sessionId]: merged }
+  return { ...state, subagents }
+}
+
+/**
+ * Splice-out (#108): a tagged tool event whose toolId already landed in a
+ * main message (folded before the tag was recognized) is removed from main
+ * as it is attributed to the sub entry.
+ */
+function withSubSplice(
+  next: ConversationState,
+  event: TimelineEvent,
+): ConversationState {
+  const toolId = textValue(event.payload.tool_id)
+  if (!toolId) return next
+  const hadMain = next.messages.some((message) =>
+    message.actions.some((action) => action.toolId === toolId),
+  )
+  if (!hadMain) return next
+  return {
+    ...next,
+    messages: next.messages.map((message) => ({
+      ...message,
+      actions: message.actions.filter((action) => action.toolId !== toolId),
+    })),
+  }
+}
+
+/** Routes a tool event tagged for a sub session into its provisional entry. */
+function applySubTaggedEvent(state: ConversationState, event: TimelineEvent): ConversationState {
+  const entry = subEntryForEvent(state, event)
+  const subagents = {
+    ...state.subagents,
+    [entry.subSessionId]: {
+      ...entry,
+      events: [...entry.events, event],
+      status: event.kind === 'tool_completed' ? 'completed' as const : entry.status,
+    },
+  }
+  return { ...state, subagents }
 }
 
 // ---------------------------------------------------------------------------

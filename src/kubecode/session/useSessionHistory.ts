@@ -21,6 +21,7 @@ import type {
   KubecodeApi,
   PromptQueueItem,
 } from '../api'
+import type { SubagentEntry } from './conversationReducer'
 import {
   ACTIVE_RUN_STATUSES,
   createConversationPump,
@@ -52,6 +53,8 @@ export type SessionTranscript = {
   enqueueConversationEvents: (events: readonly TimelineEvent[]) => void
   promptQueue: PromptQueueItem[]
   setPromptQueue: Dispatch<SetStateAction<PromptQueueItem[]>>
+  subagents: SubagentEntry[]
+  setSubagents: Dispatch<SetStateAction<SubagentEntry[]>>
   elicitationAnswers: Record<string, ElicitationAnswer>
   failOptimisticMessage: (clientMessageId: string) => void
   messages: AiAgentMessage[]
@@ -118,6 +121,7 @@ export function useSessionHistory({
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [promptQueue, setPromptQueue] = useState<PromptQueueItem[]>([])
+  const [subagents, setSubagents] = useState<SubagentEntry[]>([])
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -160,6 +164,7 @@ export function useSessionHistory({
       }
     }
     if (next.sideQuestions !== previous.sideQuestions) setSideQuestions(next.sideQuestions)
+    if (next.subagents !== previous.subagents) setSubagents(Object.values(next.subagents))
 
     const observations: Array<[TerminalCause, AgentRun]> = []
     const conversationKey = conversation?.id ?? ''
@@ -292,6 +297,7 @@ export function useSessionHistory({
         setElicitationAnswers(initialElicitationAnswers(merged.pendingElicitation))
       }
       setSideQuestions(merged.sideQuestions)
+      setSubagents(Object.values(merged.subagents))
       setRun(result.activeRun)
       applySessionState(result.sessionState)
       setHistoryCursor(result.historyCursor)
@@ -452,7 +458,9 @@ export function useSessionHistory({
       setPromptQueue,
       promptQueue,
       setSideQuestions,
+      setSubagents,
       sideQuestions,
+      subagents,
     },
     viewRevisionId,
   }

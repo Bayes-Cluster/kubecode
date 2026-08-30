@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "保存",
   "kubecode.queueCancelEditing": "編集をキャンセル",
   "kubecode.queueSendNow": "今すぐ送信",
-  "kubecode.forkUnavailableRunning": "フォークの前にターンの終了を待ってください"
+  "kubecode.forkUnavailableRunning": "フォークの前にターンの終了を待ってください",
+  "kubecode.subagentBubbleTitle": "サブエージェント: {name}",
+  "kubecode.subagentRunning": "実行中",
+  "kubecode.subagentDone": "完了",
+  "kubecode.subagentFallbackName": "サブエージェント"
 }

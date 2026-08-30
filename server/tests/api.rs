@@ -5374,3 +5374,149 @@ done"#,
     assert_eq!(child["fork_path"], "transcript_prefix");
     assert_eq!(child["fork_boundary_run_id"], first_id);
 }
+
+#[tokio::test]
+async fn subagent_activity_persists_a_sub_conversation_and_broadcasts_envelopes() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database).expect("workspace"));
+    let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+    let binary = executable(
+        &temp,
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"sessionCapabilities\":{\"fork\":{}}},\"authMethods\":[]}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"session-sub-parent\"}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      # A subagent registration arrives AFTER an early chunk of its traffic:
+      # attribution is by sub-session id, name backfills on registration.
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-sub-parent","update":{"sessionUpdate":"tool_call_update","toolCallId":"task-1","status":"in_progress","title":"Task","rawInput":{"subagent_type":"reviewer","prompt":"review the diff"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-sub-parent","update":{"sessionUpdate":"tool_call_update","toolCallId":"task-1","status":"completed","title":"Task","rawInput":{"subagent_type":"reviewer","prompt":"review the diff"}}}}'
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
+      ;;
+  esac
+done"#,
+    );
+    let teams = Arc::new(TeamStore::open(&database).expect("team store"));
+    let app = app_router(
+        AppState::new(workspace, Arc::clone(&store), teams).with_agents(vec![AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: binary,
+            error: None,
+        }]),
+        BASE_PATH,
+    );
+    let (_, project) = json_request(
+        &app,
+        Method::POST,
+        &format!("{BASE_PATH}/api/v1/projects"),
+        json!({"kind":"create", "path":temp.path().join("srv/subagent")}),
+    )
+    .await;
+    let project_id = project["id"].as_str().expect("project id");
+    let conversations_uri = format!("{BASE_PATH}/api/v1/projects/{project_id}/conversations");
+    let (_, conversation) = json_request(
+        &app,
+        Method::POST,
+        &conversations_uri,
+        json!({"agent_id":"opencode"}),
+    )
+    .await;
+    let conversation_id = conversation["id"].as_str().expect("conversation id");
+    let runs_uri = format!("{conversations_uri}/{conversation_id}/runs");
+    let (_, run) = json_request(
+        &app,
+        Method::POST,
+        &runs_uri,
+        json!({"message":"spawn a sub"}),
+    )
+    .await;
+    let run_id = run["id"].as_str().expect("run id");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let (_, current) = json_request(
+                &app,
+                Method::GET,
+                &format!("{BASE_PATH}/api/v1/runs/{run_id}"),
+                Value::Null,
+            )
+            .await;
+            if current["status"] == "completed" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("run completes");
+
+    // The sub-conversation exists with the dormant Subagent relationship.
+    let subs = store
+        .list_subagent_conversations(conversation_id)
+        .expect("sub conversations");
+    assert_eq!(subs.len(), 1, "one sub conversation persisted");
+    let sub = &subs[0];
+    assert_eq!(
+        sub.relationship,
+        Some(kubecode_server::agents::ConversationRelationship::Subagent)
+    );
+    assert_eq!(
+        sub.provider_session_id.as_deref(),
+        Some("opencode-sub-task-1")
+    );
+
+    // The parent conversation carries the agent-agnostic envelopes.
+    let (_, parent_events) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{conversation_id}/events"),
+        Value::Null,
+    )
+    .await;
+    let envelopes: Vec<_> = parent_events
+        .as_array()
+        .expect("parent events")
+        .iter()
+        .filter(|event| event["kind"] == "subagent_update")
+        .collect();
+    assert_eq!(envelopes.len(), 2, "running + completed envelopes");
+    assert_eq!(envelopes[0]["payload"]["status"], "running");
+    assert_eq!(envelopes[1]["payload"]["status"], "completed");
+    assert_eq!(envelopes[0]["payload"]["conversation_id"], sub.id);
+    assert_eq!(envelopes[0]["payload"]["prompt"], "review the diff");
+
+    // Sub conversations stay out of the project listing (sidebar).
+    let sidebar = store.list_conversations(project_id).expect("sidebar list");
+    assert!(
+        !sidebar.iter().any(|candidate| candidate.id == sub.id),
+        "sub conversations are not sidebar entries"
+    );
+
+    // The sub transcript persists the routed updates.
+    let (_, sub_events) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/sessions/{}/events", sub.id),
+        Value::Null,
+    )
+    .await;
+    let sub_events = sub_events.as_array().expect("sub events");
+    assert!(
+        sub_events
+            .iter()
+            .any(|event| event["kind"] == "tool_started")
+    );
+    assert!(
+        sub_events
+            .iter()
+            .any(|event| event["kind"] == "tool_completed")
+    );
+}

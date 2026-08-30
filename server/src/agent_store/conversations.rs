@@ -182,6 +182,7 @@ impl AgentStore {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(&conversation_query(
             "WHERE c.project_id = ?1 AND c.internal_revision = 0
+             AND (c.relationship IS NULL OR c.relationship != 'subagent')
              ORDER BY c.created_at, c.id",
         ))?;
         let rows = statement.query_map([project_id], conversation_from_row)?;
@@ -192,7 +193,9 @@ impl AgentStore {
     pub fn list_all_conversations(&self) -> Result<Vec<Conversation>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(&conversation_query(
-            "WHERE c.internal_revision = 0 ORDER BY c.updated_at DESC, c.id",
+            "WHERE c.internal_revision = 0
+             AND (c.relationship IS NULL OR c.relationship != 'subagent')
+             ORDER BY c.updated_at DESC, c.id",
         ))?;
         let rows = statement.query_map([], conversation_from_row)?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -640,7 +643,7 @@ impl AgentStore {
         Ok(())
     }
 
-    fn find_provider_conversation(
+    pub(super) fn find_provider_conversation(
         &self,
         project_id: &str,
         agent_id: AgentId,
@@ -718,7 +721,7 @@ impl AgentStore {
     }
 }
 
-fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
+pub(super) fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
     let agent_id = row.get::<_, String>(2)?;
     let relationship = row
         .get::<_, Option<String>>(11)?
@@ -757,22 +760,26 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
     })
 }
 
+pub(super) fn conversation_columns() -> &'static str {
+    "c.id, c.project_id, c.agent_id, c.provider_session_id,
+     COALESCE(c.manual_title, c.agent_title, ''), c.manual_title, c.agent_title,
+     c.created_at, c.updated_at, c.archived, c.parent_conversation_id,
+     c.relationship, c.read_only,
+     (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
+      ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1),
+     COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path,
+     c.recreated_context, c.context_prefix,
+     c.fork_boundary_run_id, c.fork_path"
+}
+
 fn conversation_query(suffix: &str) -> String {
     format!(
-        "SELECT c.id, c.project_id, c.agent_id, c.provider_session_id,
-                COALESCE(c.manual_title, c.agent_title, ''), c.manual_title, c.agent_title,
-                c.created_at, c.updated_at, c.archived, c.parent_conversation_id,
-                c.relationship, c.read_only,
-                (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
-                 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1),
-                COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path,
-                c.recreated_context, c.context_prefix,
-                c.fork_boundary_run_id, c.fork_path
-         FROM conversations c {suffix}"
+        "SELECT {} FROM conversations c {suffix}",
+        conversation_columns()
     )
 }
 
-fn normalized_title(title: Option<&str>) -> Option<String> {
+pub(super) fn normalized_title(title: Option<&str>) -> Option<String> {
     title
         .map(str::trim)
         .filter(|value| !value.is_empty())

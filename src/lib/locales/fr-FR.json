@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Enregistrer",
   "kubecode.queueCancelEditing": "Annuler la modification",
   "kubecode.queueSendNow": "Envoyer maintenant",
-  "kubecode.forkUnavailableRunning": "Attendez la fin du tour avant de créer une branche"
+  "kubecode.forkUnavailableRunning": "Attendez la fin du tour avant de créer une branche",
+  "kubecode.subagentBubbleTitle": "Sous-agent : {name}",
+  "kubecode.subagentRunning": "en cours",
+  "kubecode.subagentDone": "terminé",
+  "kubecode.subagentFallbackName": "Sous-agent"
 }

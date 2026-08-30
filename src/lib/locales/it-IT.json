@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Salva",
   "kubecode.queueCancelEditing": "Annulla modifica",
   "kubecode.queueSendNow": "Invia ora",
-  "kubecode.forkUnavailableRunning": "Attendi il fine del turno prima di creare un fork"
+  "kubecode.forkUnavailableRunning": "Attendi il fine del turno prima di creare un fork",
+  "kubecode.subagentBubbleTitle": "Subagente: {name}",
+  "kubecode.subagentRunning": "in esecuzione",
+  "kubecode.subagentDone": "completato",
+  "kubecode.subagentFallbackName": "Subagente"
 }

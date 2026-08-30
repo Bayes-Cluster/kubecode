@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Guardar",
   "kubecode.queueCancelEditing": "Cancelar edición",
   "kubecode.queueSendNow": "Enviar ahora",
-  "kubecode.forkUnavailableRunning": "Espera a que termine el turno antes de bifurcar"
+  "kubecode.forkUnavailableRunning": "Espera a que termine el turno antes de bifurcar",
+  "kubecode.subagentBubbleTitle": "Subagente: {name}",
+  "kubecode.subagentRunning": "en ejecución",
+  "kubecode.subagentDone": "completado",
+  "kubecode.subagentFallbackName": "Subagente"
 }

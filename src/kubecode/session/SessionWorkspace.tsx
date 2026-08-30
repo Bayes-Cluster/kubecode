@@ -668,6 +668,7 @@ export function AgentSessionWorkspace({
               ? undefined
               : (runId) => void forkFromTurn(runId)}
             forkUnavailableLabel={t('kubecode.forkUnavailableRunning')}
+            subagents={transcript.subagents}
             onLoadEarlierHistory={() => void history.loadEarlierHistory()}
             onRegenerateMessage={history.viewRevisionId || directTeammateChatDisabled || hardReadOnly
               ? undefined

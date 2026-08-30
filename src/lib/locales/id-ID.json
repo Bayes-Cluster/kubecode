@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Simpan",
   "kubecode.queueCancelEditing": "Batal mengedit",
   "kubecode.queueSendNow": "Kirim sekarang",
-  "kubecode.forkUnavailableRunning": "Tunggu giliran selesai se melakukan fork"
+  "kubecode.forkUnavailableRunning": "Tunggu giliran selesai se melakukan fork",
+  "kubecode.subagentBubbleTitle": "Subagen: {name}",
+  "kubecode.subagentRunning": "berjalan",
+  "kubecode.subagentDone": "selesai",
+  "kubecode.subagentFallbackName": "Subagen"
 }

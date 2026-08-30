@@ -25,6 +25,7 @@ use crate::composer_catalog::ComposerInvocation;
 use crate::teams::TeamMemberStatus;
 
 use super::adapter::acp_agent;
+use super::agent_seam;
 use super::events::terminal_outcome;
 use super::journal::{
     SessionUpdateJournal, SessionUpdateSink, finish_journal, journal_protocol_error,
@@ -222,6 +223,9 @@ async fn run_acp_session(
     let elicitation_journal = update_journal.sink();
     let connection_journal = update_journal.sink();
     let update_run_id = Arc::clone(&active_run_id);
+    let runtime_for_adapters = runtime.clone();
+    let config_agent_id = config.agent_id;
+    let main_conversation_id = config.conversation_id.clone();
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
@@ -247,10 +251,33 @@ async fn run_acp_session(
                     .lock()
                     .expect("active run mutex poisoned")
                     .clone();
-                notification_journal
-                    .enqueue(run_id, notification.update)
-                    .await
-                    .map_err(journal_protocol_error)?;
+                // Per-agent translation seam (#104): 1:1 keep, drop, or 1:N
+                // synthetic — synthetic updates enter the unified journal
+                // path directly, never through preprocess again.
+                let adapter = runtime_for_adapters.adapter_for(config_agent_id);
+                // Subagent routing (#107): adapter-translated subagent
+                // activity lands in a sub-conversation and broadcasts the
+                // agent-agnostic subagent_update envelope on the parent.
+                if let Some(activity) = adapter.subagent_activity(&notification.update) {
+                    handle_subagent_activity(
+                        &runtime_for_adapters,
+                        main_conversation_id.as_str(),
+                        &notification,
+                        &activity,
+                    );
+                    return Ok(());
+                }
+                let updates = match adapter.preprocess_notification(&notification.update) {
+                    agent_seam::NotificationFlow::Keep(update) => vec![*update],
+                    agent_seam::NotificationFlow::Drop => Vec::new(),
+                    agent_seam::NotificationFlow::Synthesize(synthetic) => synthetic,
+                };
+                for update in updates {
+                    notification_journal
+                        .enqueue(run_id.clone(), update)
+                        .await
+                        .map_err(journal_protocol_error)?;
+                }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -881,6 +908,61 @@ async fn run_acp_session(
 }
 
 type SessionResponseCapture = Arc<Mutex<HashMap<String, NewSessionResponse>>>;
+
+/// Routes adapter-translated subagent activity (#107): ensures the
+/// sub-conversation (registration arriving after early chunks is fine —
+/// attribution is by sub-session id, and the name backfills on late
+/// registration), persists the update into the sub transcript, and emits
+/// the agent-agnostic `subagent_update` envelope on the parent stream.
+fn handle_subagent_activity(
+    runtime: &AgentRuntime,
+    parent_conversation_id: &str,
+    notification: &SessionNotification,
+    activity: &agent_seam::SubagentActivity,
+) {
+    let store = runtime.store.as_ref();
+    let prompt = serde_json::to_value(&notification.update)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("rawInput")
+                .or_else(|| value.get("raw_input"))
+                .and_then(|input| input.get("prompt"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    let sub = match store.ensure_subagent_conversation(
+        parent_conversation_id,
+        &activity.sub_session_id,
+        &activity.name,
+        &prompt,
+    ) {
+        Ok(sub) => sub,
+        Err(_) => return,
+    };
+    // Persist the update into the sub transcript (session events only —
+    // sub sessions have no Kubecode runs).
+    let _ = store.append_session_event(
+        &sub.id,
+        match activity.status {
+            agent_seam::SubagentStatus::Completed => "tool_completed",
+            agent_seam::SubagentStatus::Running => "tool_started",
+        },
+        &serde_json::json!({
+            "subagent_session_id": activity.sub_session_id,
+            "text": activity.name,
+        }),
+    );
+    let _ = store.emit_subagent_update(
+        parent_conversation_id,
+        &sub.id,
+        &activity.sub_session_id,
+        &activity.name,
+        &prompt,
+        activity.status.as_str(),
+    );
+}
 type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 
 struct ProviderSessionCreation<'a> {

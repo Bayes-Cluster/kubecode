@@ -1588,5 +1588,9 @@
   "kubecode.queueSave": "Захаваць",
   "kubecode.queueCancelEditing": "Скасаваць рэдагаванне",
   "kubecode.queueSendNow": "Адправіць зараз",
-  "kubecode.forkUnavailableRunning": "Дачекайцеся заканчэння ходу перад стварэннем галіны"
+  "kubecode.forkUnavailableRunning": "Дачекайцеся заканчэння ходу перад стварэннем галіны",
+  "kubecode.subagentBubbleTitle": "Субагент: {name}",
+  "kubecode.subagentRunning": "выконваецца",
+  "kubecode.subagentDone": "завершана",
+  "kubecode.subagentFallbackName": "Субагент"
 }

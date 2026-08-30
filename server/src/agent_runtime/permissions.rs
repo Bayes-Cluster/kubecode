@@ -112,11 +112,11 @@ pub struct SideQuestionAccepted {
 }
 
 pub(super) fn default_native_permission_mode(agent_id: AgentId) -> Option<&'static str> {
-    match agent_id {
-        AgentId::ClaudeCode => Some("default"),
-        AgentId::Codex => Some("agent"),
-        AgentId::OpenCode => None,
-    }
+    // Delegates to the per-agent adapter seam (#104); the fn name is kept
+    // for call-site stability.
+    super::agent_seam::AgentAdapterRegistry::new()
+        .for_agent(agent_id)
+        .native_permission_mode()
 }
 
 impl AgentRuntime {
@@ -264,7 +264,12 @@ impl AgentRuntime {
         question: String,
     ) -> Result<SideQuestionAccepted, RuntimeError> {
         let conversation = self.store.get_conversation(conversation_id)?;
-        if conversation.agent_id != AgentId::ClaudeCode
+        // The ext method — and thus the whole capability — lives in the
+        // per-agent adapter seam (#104); no agent_id match outside it.
+        let ext_method = self
+            .adapter_for(conversation.agent_id)
+            .side_question_ext_method();
+        if ext_method != Some("_claude/side_question")
             || !side_question_capability(&self.store, conversation_id)
         {
             return Err(RuntimeError::SideQuestionUnavailable);

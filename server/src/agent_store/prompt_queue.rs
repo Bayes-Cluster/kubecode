@@ -5,7 +5,11 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::AgentStore;
-use super::models::{AgentRun, PromptQueueItem, PromptQueueStatus, StartPromptOutcome, StoreError};
+use super::conversations::normalized_title;
+use super::models::{
+    AgentRun, Conversation, ConversationRelationship, PromptQueueItem, PromptQueueStatus,
+    StartPromptOutcome, StoreError,
+};
 use super::runs::{
     append_event_transaction, existing_run_by_client_message_id, insert_run_transaction,
 };
@@ -322,6 +326,170 @@ impl AgentStore {
             &payload,
         )?;
         Ok(())
+    }
+
+    /// Activates the dormant `ConversationRelationship::Subagent` (#107):
+    /// finds or creates the sub-conversation keyed by the adapter's
+    /// sub-session id, backfilling name/prompt on late registration.
+    pub fn ensure_subagent_conversation(
+        &self,
+        parent_conversation_id: &str,
+        sub_session_id: &str,
+        name: &str,
+        prompt: &str,
+    ) -> Result<Conversation, StoreError> {
+        let parent = self.get_conversation(parent_conversation_id)?;
+        if let Some(existing) =
+            self.find_provider_conversation(&parent.project_id, parent.agent_id, sub_session_id)?
+        {
+            // Late registration: backfill the display name/prompt if the
+            // existing row was created empty by an early chunk.
+            if !name.is_empty() && existing.title.is_empty() {
+                self.database
+                    .lock()
+                    .expect("agent database mutex poisoned")
+                    .execute(
+                        "UPDATE conversations SET title = ?1, agent_title = ?1 WHERE id = ?2",
+                        params![name, existing.id],
+                    )?;
+                let mut updated = existing;
+                updated.title = name.to_owned();
+                updated.agent_title = Some(name.to_owned());
+                return Ok(updated);
+            }
+            return Ok(existing);
+        }
+        let agent_title = normalized_title(Some(name)).filter(|value| !value.is_empty());
+        let title = agent_title.clone().unwrap_or_else(|| {
+            format!(
+                "Subagent {}",
+                &sub_session_id[..8.min(sub_session_id.len())]
+            )
+        });
+        let conversation = Conversation {
+            id: Uuid::new_v4().to_string(),
+            agent_session_id: String::new(),
+            project_id: parent.project_id.clone(),
+            agent_id: parent.agent_id,
+            provider_session_id: Some(sub_session_id.to_owned()),
+            title: title.clone(),
+            manual_title: None,
+            agent_title,
+            created_at: String::new(),
+            updated_at: String::new(),
+            archived: false,
+            parent_conversation_id: Some(parent.id.clone()),
+            relationship: Some(ConversationRelationship::Subagent),
+            read_only: false,
+            latest_run_status: None,
+            execution_mode: parent.execution_mode,
+            workspace_path: None,
+            recreated_context: false,
+            fork_boundary_run_id: None,
+            fork_path: None,
+            context_prefix: None,
+        };
+        let conversation = Conversation {
+            agent_session_id: conversation.id.clone(),
+            ..conversation
+        };
+        let prompt_json = json!(prompt);
+        let name_json = json!(name);
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "INSERT INTO conversations
+                 (id, agent_session_id, project_id, agent_id, provider_session_id, title,
+                  agent_title, parent_conversation_id, relationship, read_only,
+                  recreated_context, context_prefix)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11)",
+                params![
+                    conversation.id,
+                    conversation.agent_session_id,
+                    conversation.project_id,
+                    conversation.agent_id.as_str(),
+                    conversation.provider_session_id,
+                    conversation.title,
+                    conversation.agent_title,
+                    conversation.parent_conversation_id,
+                    conversation.relationship.map(|value| value.as_str()),
+                    conversation.read_only,
+                    prompt_json.to_string(),
+                ],
+            )?;
+        let _ = name_json;
+        self.append_workspace_event(
+            "session_imported",
+            Some(&parent.project_id),
+            Some(&conversation.id),
+            None,
+            &json!({
+                "agent_id": parent.agent_id,
+                "provider_session_id": sub_session_id,
+                "parent_conversation_id": parent.id,
+            }),
+        )?;
+        Ok(conversation)
+    }
+
+    /// Emits the agent-agnostic `subagent_update` envelope (#107) on the
+    /// parent conversation's session stream and the workspace bus.
+    pub fn emit_subagent_update(
+        &self,
+        parent_conversation_id: &str,
+        sub_conversation_id: &str,
+        sub_session_id: &str,
+        name: &str,
+        prompt: &str,
+        status: &str,
+    ) -> Result<(), StoreError> {
+        let parent = self.get_conversation(parent_conversation_id)?;
+        let payload = json!({
+            "sessionId": sub_session_id,
+            "name": name,
+            "prompt": prompt,
+            "status": status,
+            "conversation_id": sub_conversation_id,
+        });
+        self.append_session_event(parent_conversation_id, "subagent_update", &payload)?;
+        self.append_workspace_event(
+            "subagent_update",
+            Some(&parent.project_id),
+            Some(parent_conversation_id),
+            None,
+            &payload,
+        )?;
+        Ok(())
+    }
+
+    /// Lists the sub-agent conversations linked to a parent (#107).
+    pub fn list_subagent_conversations(
+        &self,
+        parent_conversation_id: &str,
+    ) -> Result<Vec<Conversation>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database
+            .prepare(&format!(
+                "SELECT {}
+                 FROM conversations c
+                 WHERE c.parent_conversation_id = ?1
+                   AND c.relationship = 'subagent'
+                 ORDER BY c.created_at, c.id",
+                super::conversations::conversation_columns()
+            ))
+            .map_err(StoreError::from)?;
+        let rows = statement
+            .query_map(
+                [parent_conversation_id],
+                super::conversations::conversation_from_row,
+            )
+            .map_err(StoreError::from)?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row?);
+        }
+        Ok(items)
     }
 
     /// Queued prompts for a conversation regardless of status (restart and

@@ -67,15 +67,21 @@ contains the actor pool, ACP adapter launch, dispatch, event journal, and
 interactive request handling; `AgentRuntime` is the sole owner of ACP actors and
 their provider subprocess lifecycle. Conversation interaction contracts —
 prompt queue, optimistic send with client message ids, typed terminal causes,
-boundary fork, and the per-agent adapter seam — are defined in
-[ADR 0210](adr/0210-agent-interaction-model.md). Fork, branch, and revise share
+boundary fork, subagent visibility, and the per-agent adapter seam — are
+defined in [ADR 0210](adr/0210-agent-interaction-model.md). Fork, branch, and revise share
 one boundary primitive (`AgentStore::resolve_turn_boundary`): it resolves the
 cut points around a target run and rejects an open turn with a typed 409
 (`fork_unavailable`) instead of clipping silently. Provider-native fork is
 preferred whenever the agent advertises the capability — the child keeps a
 linked provider session (no `context_prefix` round trip); otherwise the child
 rebuilds from the transcript prefix. The child records its lineage (boundary
-run and the path taken) for navigation and debugging. `server/src/agent_store/` and
+run and the path taken) for navigation and debugging. Adapter-translated
+subagent activity routes into sub-conversations that activate the dormant
+`ConversationRelationship::Subagent` (persisted, excluded from sidebar
+listings) and broadcast the agent-agnostic `subagent_update` envelope —
+`{sessionId, name, prompt, status}` — on the parent stream; attribution is by
+sub-session id, so early chunks land before a late registration and the name
+backfills. `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing

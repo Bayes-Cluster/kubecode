@@ -1,5 +1,40 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+/// Count of journal updates whose variant had no explicit handler (#104).
+pub(crate) static DROPPED_UPDATE_VARIANTS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Extracts the ACP `sessionUpdate` variant name from an update without
+/// retaining any payload content.
+fn update_variant_name(update: &SessionUpdate) -> String {
+    match serde_json::to_value(update) {
+        Ok(Value::Object(object)) => object
+            .get("sessionUpdate")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned(),
+        _ => "unknown".to_owned(),
+    }
+}
+
+/// Defense for crate upgrades that add SessionUpdate variants before this
+/// journal maps them (#104): the variant is counted and logged — never
+/// silently discarded. The marker carries the variant name only: no prompt,
+/// path, or file content.
+fn dropped_variant_marker(update: &SessionUpdate) -> PersistedSessionUpdate {
+    let variant = update_variant_name(update);
+    let count = DROPPED_UPDATE_VARIANTS.fetch_add(1, Ordering::Relaxed) + 1;
+    eprintln!("[journal] dropped_variant: {variant}");
+    PersistedSessionUpdate {
+        session_kind: "dropped_variant",
+        run_kind: None,
+        payload: json!({ "variant": variant, "count": count }),
+        publish_session_state: false,
+        title_update: None,
+    }
+}
 
 use agent_client_protocol::schema::MaybeUndefined;
 use agent_client_protocol::schema::v1::SessionUpdate;
@@ -422,7 +457,10 @@ fn session_update_event(update: SessionUpdate) -> Option<PersistedSessionUpdate>
             serialized_state_update("session_info", info)
         }
         SessionUpdate::UsageUpdate(usage) => serialized_state_update("usage", usage),
-        _ => None,
+        other => {
+            let marker = dropped_variant_marker(&other);
+            Some((marker.session_kind, marker.run_kind, marker.payload))
+        }
     };
     event.map(|(session_kind, run_kind, payload)| PersistedSessionUpdate {
         session_kind,
@@ -578,6 +616,33 @@ fn merge_run_id(mut payload: Value, run_id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_variants_are_counted_and_marked_not_silently_dropped() {
+        // The ACP crate rejects unknown sessionUpdate strings at
+        // deserialization, so the catch-all defends against crate upgrades
+        // adding variants ahead of this journal. The marker helper is the
+        // contract under test: variant name only, counted, never persisted
+        // as session state.
+        let update: SessionUpdate = serde_json::from_value(serde_json::json!({
+            "sessionUpdate": "plan",
+            "entries": [],
+        }))
+        .expect("variant parses");
+        let before = DROPPED_UPDATE_VARIANTS.load(Ordering::Relaxed);
+        // `plan` is translated above; verify the helper in isolation.
+        let marker = dropped_variant_marker(&update);
+        assert_eq!(marker.session_kind, "dropped_variant");
+        assert_eq!(marker.payload["variant"], "plan");
+        assert_eq!(
+            marker.payload["count"].as_u64(),
+            Some(before + 1),
+            "marker increments the counter"
+        );
+        assert!(marker.run_kind.is_none());
+        assert!(!marker.publish_session_state);
+    }
+
     use std::sync::RwLock;
 
     use agent_client_protocol::schema::v1::{

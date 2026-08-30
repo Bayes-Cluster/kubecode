@@ -5,6 +5,8 @@ import type { AppLocale, Translator } from '@/lib/i18n'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { ConversationRevision } from '../api'
 import { RevisionNavigator } from './RevisionNavigator'
+import { SubagentBubble } from './SubagentBubble'
+import type { SubagentEntry } from './conversationReducer'
 
 type SessionTimelineProps = {
   agentLabel: string
@@ -16,6 +18,7 @@ type SessionTimelineProps = {
   onEditMessage?: (messageId: string, message: string) => void
   onForkMessage?: (messageId: string) => void
   forkUnavailableLabel?: string
+  subagents: SubagentEntry[]
   onLoadEarlierHistory: () => void
   onRegenerateMessage?: (messageId: string) => void
   onSelectRevision: (index: number) => void
@@ -36,6 +39,7 @@ export function SessionTimeline({
   onEditMessage,
   onForkMessage,
   forkUnavailableLabel,
+  subagents,
   onLoadEarlierHistory,
   onRegenerateMessage,
   onSelectRevision,
@@ -47,6 +51,9 @@ export function SessionTimeline({
 }: SessionTimelineProps) {
   return (
     <div className="kubecode-session-timeline">
+      {subagents.map((entry) => (
+        <SubagentBubble key={entry.subSessionId} entry={entry} t={t} />
+      ))}
       <AiPanelMessageHistory
         agentLabel={agentLabel}
         agentReadiness={readiness}
