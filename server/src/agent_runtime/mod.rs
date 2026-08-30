@@ -1,5 +1,6 @@
 mod actor;
 mod adapter;
+mod agent_seam;
 mod dispatch;
 mod events;
 mod journal;
@@ -7,6 +8,7 @@ mod permissions;
 mod pool;
 
 pub use self::actor::SessionConfigInput;
+pub use self::agent_seam::AgentAdapterRegistry;
 pub use self::dispatch::{
     PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
 };
@@ -189,6 +191,7 @@ pub struct AgentRuntime {
     terminals: Option<Arc<TerminalManager>>,
     teams: Option<Arc<TeamStore>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
+    adapters: AgentAdapterRegistry,
 }
 
 #[derive(Clone)]
@@ -237,7 +240,7 @@ impl SessionActorGeneration {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum AgentPermissionProfile {
+pub enum AgentPermissionProfile {
     #[default]
     Default,
     Maximum,
@@ -310,6 +313,7 @@ impl AgentRuntime {
             terminals: None,
             teams: None,
             team_mcp_http: None,
+            adapters: AgentAdapterRegistry::new(),
         }
     }
 
@@ -321,6 +325,11 @@ impl AgentRuntime {
     pub fn with_terminal_manager(mut self, terminals: Arc<TerminalManager>) -> Self {
         self.terminals = Some(terminals);
         self
+    }
+
+    /// Per-agent adapter seam lookup (#104).
+    pub fn adapter_for(&self, agent_id: AgentId) -> &dyn agent_seam::AgentAdapter {
+        self.adapters.for_agent(agent_id)
     }
 
     pub fn team_store(&self) -> Option<Arc<TeamStore>> {

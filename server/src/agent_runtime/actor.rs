@@ -25,6 +25,7 @@ use crate::composer_catalog::ComposerInvocation;
 use crate::teams::TeamMemberStatus;
 
 use super::adapter::acp_agent;
+use super::agent_seam;
 use super::events::terminal_outcome;
 use super::journal::{
     SessionUpdateJournal, SessionUpdateSink, finish_journal, journal_protocol_error,
@@ -222,6 +223,8 @@ async fn run_acp_session(
     let elicitation_journal = update_journal.sink();
     let connection_journal = update_journal.sink();
     let update_run_id = Arc::clone(&active_run_id);
+    let runtime_for_adapters = runtime.clone();
+    let config_agent_id = config.agent_id;
     let permission_store = Arc::clone(&runtime.store);
     let permission_run_id = Arc::clone(&active_run_id);
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
@@ -247,10 +250,21 @@ async fn run_acp_session(
                     .lock()
                     .expect("active run mutex poisoned")
                     .clone();
-                notification_journal
-                    .enqueue(run_id, notification.update)
-                    .await
-                    .map_err(journal_protocol_error)?;
+                // Per-agent translation seam (#104): 1:1 keep, drop, or 1:N
+                // synthetic — synthetic updates enter the unified journal
+                // path directly, never through preprocess again.
+                let adapter = runtime_for_adapters.adapter_for(config_agent_id);
+                let updates = match adapter.preprocess_notification(&notification.update) {
+                    agent_seam::NotificationFlow::Keep(update) => vec![*update],
+                    agent_seam::NotificationFlow::Drop => Vec::new(),
+                    agent_seam::NotificationFlow::Synthesize(synthetic) => synthetic,
+                };
+                for update in updates {
+                    notification_journal
+                        .enqueue(run_id.clone(), update)
+                        .await
+                        .map_err(journal_protocol_error)?;
+                }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
