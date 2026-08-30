@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { KubecodeApi, WorkspaceEvent } from './api'
 import {
+  resolveRecoveryPlan,
   useWorkspaceEventStream,
   type WorkspaceEventBatch,
   type WorkspaceEventReconciliationRequest,
@@ -435,3 +436,28 @@ function deferred<T>() {
   })
   return { promise, reject, resolve }
 }
+
+describe('reconnect reconciliation decision (#102)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('resumes without refetch when the cursor gap closes', () => {
+    const resumed = resolveRecoveryPlan(500, 3)
+    expect(resumed.refreshGlobalSessions).toBe(false)
+    expect(resumed.refreshProjectRuns).toBe(false)
+    expect(resumed.refreshProjectSessions).toBe(false)
+    expect(resumed.refreshTeams).toBe(false)
+    expect(resumed.refreshTerminals).toBe(false)
+  })
+
+  it('falls back to one full list sync when the gap cannot close', () => {
+    const fallback = resolveRecoveryPlan(1, 3)
+    expect(fallback.refreshGlobalSessions).toBe(true)
+    expect(fallback.refreshProjectSessions).toBe(true)
+    expect(fallback.refreshTeams).toBe(true)
+    expect(fallback.refreshTerminals).toBe(true)
+  })
+
+  it('falls back when the probe fails (no cursor)', () => {
+    expect(resolveRecoveryPlan(null, 3).refreshGlobalSessions).toBe(true)
+  })
+})

@@ -245,7 +245,7 @@ impl AgentStore {
         // resume after restart, so claims reset below once the store lock is
         // released (#95).
         let mut latest_workspace_cursor = None;
-        for run_id in run_ids {
+        for run_id in &run_ids {
             transaction.execute(
                 "UPDATE agent_runs
                  SET status = 'interrupted', error = 'server restarted',
@@ -256,7 +256,7 @@ impl AgentStore {
             )?;
             let (_, workspace_cursor) = runs::append_event_transaction(
                 &transaction,
-                &run_id,
+                run_id,
                 AgentEventKind::RunCompleted,
                 &json!({
                     "status":"interrupted",
@@ -271,6 +271,25 @@ impl AgentStore {
             self.workspace_event_bus.publish_committed(cursor);
         }
         drop(database);
+        // Boot recovery broadcasts whole-snapshot state so clients never
+        // infer from absence (#101): every recovered conversation is not
+        // streaming and has nothing pending.
+        for run_id in &run_ids {
+            if let Ok(run) = self.get_run(run_id) {
+                let _ = self.append_workspace_event(
+                    "conversation_state",
+                    Some(&run.project_id),
+                    Some(&run.conversation_id),
+                    Some(run_id),
+                    &json!({
+                        "conversation_id": run.conversation_id,
+                        "streaming": false,
+                        "pending": null,
+                        "cause": "interrupted",
+                    }),
+                );
+            }
+        }
         for conversation_id in self.reset_orphaned_queue_claims()? {
             let _ = self.publish_prompt_queue_snapshot(&conversation_id);
         }

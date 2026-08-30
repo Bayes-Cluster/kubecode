@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
@@ -231,6 +230,7 @@ async fn run_acp_session(
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
     let permission_runtime = runtime.clone();
     let permission_conversation_id = config.conversation_id.clone();
+    let elicitation_conversation_id = config.conversation_id.clone();
     let elicitation_store = Arc::clone(&runtime.store);
     let elicitation_run_id = Arc::clone(&active_run_id);
     let pending_elicitations = Arc::clone(&runtime.pending_elicitations);
@@ -378,6 +378,8 @@ async fn run_acp_session(
                                 option_ids,
                             )
                         });
+                    let deadline = std::time::Instant::now()
+                        + super::permissions::pending_request_timeout();
                     let (sender, receiver) = oneshot::channel();
                     pending_permissions
                         .lock()
@@ -396,6 +398,22 @@ async fn run_acp_session(
                                 always_allow,
                             },
                         );
+                    let _ = permission_runtime.store.append_workspace_event(
+                        "conversation_state",
+                        Some(&permission_store.get_run(&run_id).map(|run| run.project_id).unwrap_or_default()),
+                        Some(&permission_conversation_id),
+                        Some(&run_id),
+                        &json!({
+                            "conversation_id": permission_conversation_id,
+                            "streaming": true,
+                            "pending": {
+                                "kind": "permission",
+                                "request_id": request_id,
+                                "deadline_ms": super::permissions::deadline_remaining_ms(deadline),
+                                "request": request_payload,
+                            },
+                        }),
+                    );
                     let mut routed_to_leader = false;
                     if let Some((teams, member)) = team_permission {
                         let team = teams.get_team(&member.team_id).ok();
@@ -512,6 +530,8 @@ async fn run_acp_session(
                         AgentEventKind::ElicitationRequested,
                         &payload,
                     );
+                    let timeout = super::permissions::pending_request_timeout();
+                    let deadline = std::time::Instant::now() + timeout;
                     let (sender, receiver) = oneshot::channel();
                     pending_elicitations
                         .lock()
@@ -523,7 +543,23 @@ async fn run_acp_session(
                                 sender,
                             },
                         );
-                    let action = tokio::time::timeout(Duration::from_secs(5 * 60), receiver)
+                    let _ = elicitation_store.append_workspace_event(
+                        "conversation_state",
+                        Some(&elicitation_store.get_run(&run_id).map(|run| run.project_id).unwrap_or_default()),
+                        Some(elicitation_conversation_id.as_str()),
+                        Some(&run_id),
+                        &json!({
+                            "conversation_id": elicitation_conversation_id,
+                            "streaming": true,
+                            "pending": {
+                                "kind": "elicitation",
+                                "request_id": request_id,
+                                "deadline_ms": super::permissions::deadline_remaining_ms(deadline),
+                                "timeout_ms": timeout.as_millis() as u64,
+                            },
+                        }),
+                    );
+                    let action = tokio::time::timeout(timeout, receiver)
                         .await
                         .ok()
                         .and_then(Result::ok)

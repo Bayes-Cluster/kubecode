@@ -55,6 +55,8 @@ export type SessionTranscript = {
   setPromptQueue: Dispatch<SetStateAction<PromptQueueItem[]>>
   subagents: SubagentEntry[]
   setSubagents: Dispatch<SetStateAction<SubagentEntry[]>>
+  pendingWait: { requestId: string; deadlineMs: number } | null
+  setPendingWait: Dispatch<SetStateAction<{ requestId: string; deadlineMs: number } | null>>
   elicitationAnswers: Record<string, ElicitationAnswer>
   failOptimisticMessage: (clientMessageId: string) => void
   messages: AiAgentMessage[]
@@ -122,6 +124,7 @@ export function useSessionHistory({
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [promptQueue, setPromptQueue] = useState<PromptQueueItem[]>([])
   const [subagents, setSubagents] = useState<SubagentEntry[]>([])
+  const [pendingWait, setPendingWait] = useState<{ requestId: string; deadlineMs: number } | null>(null)
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
   const [viewRevisionId, setViewRevisionId] = useState<string | null>(null)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -459,6 +462,8 @@ export function useSessionHistory({
       promptQueue,
       setSideQuestions,
       setSubagents,
+      setPendingWait,
+      pendingWait,
       sideQuestions,
       subagents,
     },

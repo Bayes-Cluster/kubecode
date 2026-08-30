@@ -76,6 +76,10 @@ export function useWorkspaceEventStream({
   const [events, setEvents] = useState<WorkspaceEvent[]>([])
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<number | null>(null)
   const activeProjectIdRef = useRef(activeProjectId)
+  const apiRef = useRef(api)
+  useLayoutEffect(() => {
+    apiRef.current = api
+  }, [api])
   const beginRecoveryRef = useRef<() => void>(() => undefined)
   const callbacksRef = useRef({ onBatch, onReconcile })
   const connectionGenerationRef = useRef(0)
@@ -142,8 +146,22 @@ export function useWorkspaceEventStream({
       let attemptedPlan: WorkspaceEventReconciliationPlan | null = null
       const completedCleanTerminalIds = new Set<string>()
       try {
+        // Cursor-gap probe (#102): when the server's cursor still covers our
+        // high-water mark, the resumed stream replays everything we missed —
+        // no full-list refetch storm. Only a shrunken server cursor (server
+        // restart beyond retention) falls back to one full list sync.
+        // Cursor-gap probe (#102): when the server's cursor still covers our
+        // high-water mark, the resumed stream replays everything we missed —
+        // no full-list refetch storm. Only a shrunken server cursor (server
+        // restart beyond retention) falls back to one full list sync.
+        let serverCursor: number | null = null
+        try {
+          serverCursor = await apiRef.current.workspaceEventCursor()
+        } catch {
+          // Probe failure: keep the conservative full plan.
+        }
         await callbacksRef.current.onReconcile?.(createRequest(
-          fullReconciliationPlan(), ownership, startId, true,
+          resolveRecoveryPlan(serverCursor, startId), ownership, startId, true,
         ))
         while (ownership.isCurrent() && attempt === recoveryAttemptRef.current
           && hasReconciliationWork(dirtyPlanRef.current)) {
@@ -373,6 +391,21 @@ function parseWorkspaceEvent(value: unknown): WorkspaceEvent | null {
     payload: value.payload,
     created_at: value.created_at,
   }
+}
+
+/**
+ * Recovery plan decision (#102): when the server's cursor still covers our
+ * high-water mark, the resumed stream replays everything we missed and no
+ * full-list refetch is needed. Only a shrunken server cursor (restart
+ * beyond retention, probe failure) falls back to one full list sync —
+ * data loss is impossible, but neither is a refetch storm.
+ */
+export function resolveRecoveryPlan(
+  serverCursor: number | null,
+  startId: number,
+): WorkspaceEventReconciliationPlan {
+  if (serverCursor === null || serverCursor < startId) return fullReconciliationPlan()
+  return emptyReconciliationPlan()
 }
 
 function createReconciliationPlan(

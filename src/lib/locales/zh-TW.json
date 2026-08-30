@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "子代理：{name}",
   "kubecode.subagentRunning": "執行中",
   "kubecode.subagentDone": "已完成",
-  "kubecode.subagentFallbackName": "子代理"
+  "kubecode.subagentFallbackName": "子代理",
+  "kubecode.permissionExpiresSeconds": "{count} 秒後逾時",
+  "kubecode.permissionExpiresMinutes": "{count} 分鐘後逾時"
 }

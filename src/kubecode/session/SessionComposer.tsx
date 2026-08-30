@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 import { LockKeyhole, ShieldAlert } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
@@ -11,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { AppLocale, Translator } from '@/lib/i18n'
+import { createTranslator, type AppLocale, type Translator } from '@/lib/i18n'
 
 import { AcpCommandMenu } from '../AcpCommandMenu'
 import { completeAcpCommand, type AcpCommand } from '../acpCommands'
@@ -68,6 +70,7 @@ type SessionComposerProps = {
   openCodeCapabilityEmptyLabel: string | undefined
   pendingElicitation: PendingElicitation | null
   pendingPermission: PendingPermission | null
+  deadlineMs: number | null
   planEntries: SessionPlanEntry[]
   projectId: string | null
   readiness: 'ready' | 'missing'
@@ -113,6 +116,7 @@ export function SessionComposer({
   openCodeCapabilityEmptyLabel,
   pendingElicitation,
   pendingPermission,
+  deadlineMs,
   planEntries,
   projectId,
   readiness,
@@ -162,18 +166,34 @@ export function SessionComposer({
         />
       )}
       {pendingPermission && (
-        <div aria-live="polite" className="kubecode-permission-dock">
+        <div
+          aria-live="polite"
+          className="kubecode-permission-dock"
+          data-testid="permission-queue-card"
+          onKeyDown={(event) => {
+            // 1–9 keyboard option select (#111).
+            const digit = Number.parseInt(event.key, 10)
+            if (!Number.isNaN(digit) && digit >= 1 && digit <= pendingPermission.options.length) {
+              const option = pendingPermission.options[digit - 1]
+              void onResolvePermission(pendingPermission.requestId, option.id)
+            }
+          }}
+          tabIndex={0}
+        >
           <div className="kubecode-permission-heading">
             <ShieldAlert size={17} />
             <strong>{t('kubecode.permissionRequired')}</strong>
+            {deadlineMs !== null && (
+              <PermissionCountdownChip deadlineMs={deadlineMs} />
+            )}
           </div>
           <code className="kubecode-permission-command">{pendingPermission.tool}</code>
           <div className="kubecode-permission-actions">
-            {pendingPermission.options.map((option) => (
+            {pendingPermission.options.map((option, index) => (
               <Button
                 key={option.id}
                 size="sm"
-                title={option.label}
+                title={`${index + 1} — ${option.label}`}
                 variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
                 onClick={() => void onResolvePermission(pendingPermission.requestId, option.id)}
               >
@@ -386,4 +406,34 @@ export function SessionComposer({
       </div>
     </div>
   )
+}
+
+
+function PermissionCountdownChip({ deadlineMs }: { deadlineMs: number }) {
+  const [remaining, setRemaining] = useState(() => computeRemaining(deadlineMs))
+  useEffect(() => {
+    const timer = window.setInterval(() => setRemaining(computeRemaining(deadlineMs)), 1000)
+    return () => window.clearInterval(timer)
+  }, [deadlineMs])
+  const urgent = remaining < 30
+  return (
+    <span
+      className={urgent ? 'text-destructive font-semibold' : 'text-muted-foreground'}
+      data-testid="permission-countdown"
+      data-urgent={urgent}
+    >
+      {formatRemaining(remaining, 'en')}
+    </span>
+  )
+}
+
+function computeRemaining(deadlineMs: number): number {
+  return Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000))
+}
+
+function formatRemaining(seconds: number, locale: AppLocale): string {
+  const translator = createTranslator(locale)
+  return seconds >= 60
+    ? translator('kubecode.permissionExpiresMinutes', { count: Math.ceil(seconds / 60) })
+    : translator('kubecode.permissionExpiresSeconds', { count: seconds })
 }

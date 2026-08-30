@@ -1593,5 +1593,7 @@
   "kubecode.subagentBubbleTitle": "Subagent: {name}",
   "kubecode.subagentRunning": "running",
   "kubecode.subagentDone": "done",
-  "kubecode.subagentFallbackName": "Subagent"
+  "kubecode.subagentFallbackName": "Subagent",
+  "kubecode.permissionExpiresSeconds": "{count}s expires",
+  "kubecode.permissionExpiresMinutes": "{count}m expires"
 }

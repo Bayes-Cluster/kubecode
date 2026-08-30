@@ -1592,5 +1592,7 @@
   "kubecode.subagentBubbleTitle": "Subahient: {name}",
   "kubecode.subagentRunning": "vykonvajecca",
   "kubecode.subagentDone": "zaviaršana",
-  "kubecode.subagentFallbackName": "Subahient"
+  "kubecode.subagentFallbackName": "Subahient",
+  "kubecode.permissionExpiresSeconds": "zavjaršajecca praz {count} s",
+  "kubecode.permissionExpiresMinutes": "zavjaršajecca praz {count} chv"
 }
