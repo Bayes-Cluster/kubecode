@@ -184,7 +184,7 @@ export function SessionComposer({
             <ShieldAlert size={17} />
             <strong>{t('kubecode.permissionRequired')}</strong>
             {deadlineMs !== null && (
-              <PermissionCountdownChip deadlineMs={deadlineMs} t={t} />
+              <PermissionCountdownChip deadlineMs={deadlineMs} />
             )}
           </div>
           <code className="kubecode-permission-command">{pendingPermission.tool}</code>
