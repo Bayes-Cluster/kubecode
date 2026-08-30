@@ -273,6 +273,13 @@ describe('Kubecode workspace', () => {
         StatusEventSource.instances.push(this)
       }
       addEventListener() {}
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent("workspace_event", { data: JSON.stringify(event) }))
+      }
       close() {}
     }
     vi.stubGlobal('EventSource', StatusEventSource)
@@ -590,7 +597,7 @@ describe('Kubecode workspace', () => {
       listTerminals,
       closeTerminal,
       listProjectRuns: vi.fn().mockResolvedValue([]),
-      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventCursor: vi.fn().mockRejectedValue(new Error("cursor probe unavailable")),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -693,7 +700,7 @@ describe('Kubecode workspace', () => {
       listTerminals: vi.fn().mockResolvedValue([]),
       listTeams: vi.fn().mockResolvedValue([]),
       listProjectRuns: vi.fn().mockResolvedValue([]),
-      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventCursor: vi.fn().mockRejectedValue(new Error("cursor probe unavailable")),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -734,6 +741,13 @@ describe('Kubecode workspace', () => {
 
       constructor() { ReconnectingEventSource.current = this }
       addEventListener() {}
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent("workspace_event", { data: JSON.stringify(event) }))
+      }
       close() {}
     }
     globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
@@ -768,6 +782,13 @@ describe('Kubecode workspace', () => {
 
       constructor() { ReconnectingEventSource.current = this }
       addEventListener() {}
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent("workspace_event", { data: JSON.stringify(event) }))
+      }
       close() {}
     }
     globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
@@ -791,7 +812,7 @@ describe('Kubecode workspace', () => {
       listSessions,
       listTeams,
       listProjectRuns,
-      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventCursor: vi.fn().mockRejectedValue(new Error("cursor probe unavailable")),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -840,6 +861,13 @@ describe('Kubecode workspace', () => {
 
       constructor() { ReconnectingEventSource.current = this }
       addEventListener() {}
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent("workspace_event", { data: JSON.stringify(event) }))
+      }
       close() {}
     }
     globalThis.EventSource = ReconnectingEventSource as unknown as typeof EventSource
@@ -879,7 +907,7 @@ describe('Kubecode workspace', () => {
       listSessions: vi.fn().mockResolvedValue([]),
       listTeams,
       listProjectRuns: vi.fn().mockResolvedValue([]),
-      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventCursor: vi.fn().mockRejectedValue(new Error("cursor probe unavailable")),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
@@ -1061,7 +1089,7 @@ describe('Kubecode workspace', () => {
       listSessions: vi.fn().mockResolvedValue([]),
       listTeams,
       listProjectRuns: vi.fn().mockResolvedValue([]),
-      workspaceEventCursor: vi.fn().mockResolvedValue(0),
+      workspaceEventCursor: vi.fn().mockRejectedValue(new Error("cursor probe unavailable")),
       workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
