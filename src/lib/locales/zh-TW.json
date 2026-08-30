@@ -518,7 +518,7 @@
   "ai.message.regenerate": "重新產生回覆",
   "ai.message.copy": "複製回覆",
   "ai.message.copyMessage": "複製訊息",
-  "ai.message.fork": "從此處分支聊天",
+  "ai.message.fork": "從此輪分叉（複製該對話）",
   "ai.message.reasoning": "推理",
   "ai.message.toolUse": "工具使用",
   "ai.workspace.title": "代理人",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "從佇列中移除",
   "kubecode.queueSave": "儲存",
   "kubecode.queueCancelEditing": "取消編輯",
-  "kubecode.queueSendNow": "立即傳送"
+  "kubecode.queueSendNow": "立即傳送",
+  "kubecode.forkUnavailableRunning": "請等待本輪結束後再分叉"
 }

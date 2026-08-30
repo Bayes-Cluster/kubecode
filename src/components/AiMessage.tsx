@@ -43,6 +43,7 @@ export interface AiMessageProps {
   isStreaming?: boolean
   internal?: boolean
   onFork?: (messageId: string) => void
+  forkUnavailableLabel?: string
   onEdit?: (messageId: string, userMessage: string) => void
   onOpenNote?: (path: string) => void
   onNavigateWikilink?: (target: string) => void
@@ -334,16 +335,21 @@ function ResponseActions({
   messageId,
   onCopy,
   onFork,
+  forkUnavailableLabel,
   onRegenerate,
 }: {
   locale: AppLocale
   messageId?: string
   onCopy: () => void
   onFork?: (messageId: string) => void
+  forkUnavailableLabel?: string
   onRegenerate?: (messageId: string) => void
 }) {
   const regenerateDisabled = !messageId || !onRegenerate
   const forkDisabled = !messageId || !onFork
+  const forkTitle = forkDisabled && forkUnavailableLabel
+    ? forkUnavailableLabel
+    : translate(locale, 'ai.message.fork')
 
   return (
     <div
@@ -381,8 +387,8 @@ function ResponseActions({
         size="icon-xs"
         className="h-6 w-6 rounded-md p-0 text-muted-foreground hover:text-foreground"
         disabled={forkDisabled}
-        aria-label={translate(locale, 'ai.message.fork')}
-        title={translate(locale, 'ai.message.fork')}
+        aria-label={forkTitle}
+        title={forkTitle}
         onClick={() => messageId && onFork?.(messageId)}
         data-testid="ai-message-fork"
       >
@@ -398,11 +404,13 @@ function ResponseBlock({
   onFork,
   onNavigateWikilink,
   onRegenerate,
+  forkUnavailableLabel,
   blocks,
 }: {
   locale: AppLocale
   messageId?: string
   onFork?: (messageId: string) => void
+  forkUnavailableLabel?: string
   onNavigateWikilink?: (target: string) => void
   onRegenerate?: (messageId: string) => void
   blocks: AiResponseBlock[]
@@ -432,6 +440,7 @@ function ResponseBlock({
         messageId={messageId}
         onCopy={handleCopy}
         onFork={onFork}
+        forkUnavailableLabel={forkUnavailableLabel}
         onRegenerate={onRegenerate}
       />
     </div>
@@ -458,7 +467,7 @@ export function AiMessage(props: AiMessageProps) {
   return <ConversationMessage {...props} />
 }
 
-function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, responseBlocks, isStreaming, internal = false, onEdit, onFork, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
+function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, responseBlocks, isStreaming, internal = false, onEdit, onFork, forkUnavailableLabel, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
   // Manual override: null = follow auto behavior, true/false = user forced
   const [userOverride, setUserOverride] = useState(false)
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set())
@@ -511,6 +520,7 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
           locale={locale}
           messageId={messageId}
           onFork={internal ? undefined : onFork}
+          forkUnavailableLabel={internal ? undefined : forkUnavailableLabel}
           onNavigateWikilink={onNavigateWikilink}
           onRegenerate={internal ? undefined : onRegenerate}
         />

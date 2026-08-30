@@ -14,6 +14,8 @@ type SessionTimelineProps = {
   locale: AppLocale
   messages: AiAgentMessage[]
   onEditMessage?: (messageId: string, message: string) => void
+  onForkMessage?: (messageId: string) => void
+  forkUnavailableLabel?: string
   onLoadEarlierHistory: () => void
   onRegenerateMessage?: (messageId: string) => void
   onSelectRevision: (index: number) => void
@@ -32,6 +34,8 @@ export function SessionTimeline({
   locale,
   messages,
   onEditMessage,
+  onForkMessage,
+  forkUnavailableLabel,
   onLoadEarlierHistory,
   onRegenerateMessage,
   onSelectRevision,
@@ -46,8 +50,10 @@ export function SessionTimeline({
       <AiPanelMessageHistory
         agentLabel={agentLabel}
         agentReadiness={readiness}
+        forkUnavailableLabel={forkUnavailableLabel}
         hasContext
         isActive={isActive}
+        onForkMessage={onForkMessage}
         leadingContent={(
           <>
             {historyCursor && (

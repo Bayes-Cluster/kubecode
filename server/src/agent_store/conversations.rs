@@ -36,6 +36,8 @@ impl AgentStore {
             execution_mode: ExecutionMode::Shared,
             workspace_path: None,
             recreated_context: false,
+            fork_boundary_run_id: None,
+            fork_path: None,
             context_prefix: None,
         };
         let conversation = Conversation {
@@ -125,6 +127,8 @@ impl AgentStore {
             execution_mode: ExecutionMode::Shared,
             workspace_path: None,
             recreated_context: false,
+            fork_boundary_run_id: None,
+            fork_path: None,
             context_prefix: None,
         };
         let conversation = Conversation {
@@ -261,6 +265,108 @@ impl AgentStore {
         Ok(conversation)
     }
 
+    /// Resolves the completed-turn boundaries around a target run (#99).
+    /// Forks cut after the turn (`after_seq`, ADR 0210 §7); branch/revise
+    /// redo the turn and cut before it (`before_seq`). An open target turn
+    /// is a typed rejection (HTTP 409 fork_unavailable) — never a silent
+    /// clip.
+    pub fn resolve_turn_boundary(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+    ) -> Result<super::models::TurnBoundary, StoreError> {
+        let source = self.get_conversation(conversation_id)?;
+        let run = self.get_run(run_id)?;
+        if run.conversation_id != source.id {
+            return Err(StoreError::RunNotFound(run_id.to_owned()));
+        }
+        if matches!(
+            run.status,
+            RunStatus::Running | RunStatus::WaitingPermission
+        ) {
+            return Err(StoreError::ForkUnavailable("the turn is still open".into()));
+        }
+        let events = self.session_events_after(conversation_id, 0)?;
+        let target_seqs = events
+            .iter()
+            .filter(|event| event.payload.get("run_id").and_then(Value::as_str) == Some(run_id))
+            .map(|event| event.seq)
+            .collect::<Vec<_>>();
+        let after_seq = target_seqs.iter().copied().max().ok_or_else(|| {
+            StoreError::ForkUnavailable("the turn has no transcript events".into())
+        })?;
+        let first_target_seq = target_seqs.iter().copied().min().unwrap_or(after_seq);
+        let before_seq = events
+            .iter()
+            .map(|event| event.seq)
+            .filter(|seq| *seq < first_target_seq)
+            .max()
+            .unwrap_or(0);
+        Ok(super::models::TurnBoundary {
+            before_seq,
+            after_seq,
+        })
+    }
+
+    /// Records lineage metadata (parent boundary + path taken) on a forked
+    /// child conversation for UI and debugging (#99).
+    pub fn set_fork_lineage(
+        &self,
+        conversation_id: &str,
+        boundary_run_id: Option<&str>,
+        path: &str,
+    ) -> Result<(), StoreError> {
+        self.database
+            .lock()
+            .expect("agent database mutex poisoned")
+            .execute(
+                "UPDATE conversations SET fork_boundary_run_id = ?1, fork_path = ?2
+                 WHERE id = ?3",
+                params![boundary_run_id, path, conversation_id],
+            )?;
+        Ok(())
+    }
+
+    /// Copies the source transcript (session events at or below the boundary
+    /// sequence) into a forked child so its timeline renders the cut point.
+    /// Events are renumbered child-locally and inserted in one transaction
+    /// without workspace broadcasts.
+    pub fn copy_transcript_to_conversation(
+        &self,
+        source_conversation_id: &str,
+        target_conversation_id: &str,
+        max_seq: u64,
+    ) -> Result<usize, StoreError> {
+        let events = self.session_events_after(source_conversation_id, 0)?;
+        let retained: Vec<_> = events
+            .into_iter()
+            .filter(|event| event.seq <= max_seq)
+            .collect();
+        if retained.is_empty() {
+            return Ok(0);
+        }
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut inserted = 0usize;
+        for (index, event) in retained.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO session_events
+                 (conversation_id, seq, kind, payload, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    target_conversation_id,
+                    (index + 1) as i64,
+                    event.kind,
+                    event.payload.to_string(),
+                    event.created_at,
+                ],
+            )?;
+            inserted += 1;
+        }
+        transaction.commit()?;
+        Ok(inserted)
+    }
+
     pub fn branch_conversation_at_run(
         &self,
         source_conversation_id: &str,
@@ -271,10 +377,14 @@ impl AgentStore {
         if run.conversation_id != source.id {
             return Err(StoreError::RunNotFound(run_id.to_owned()));
         }
+        // One boundary primitive decides where every rewind cuts (#99):
+        // after the target turn's terminal event, with a typed rejection
+        // when that turn is still open.
+        let boundary = self.resolve_turn_boundary(source_conversation_id, run_id)?;
         let source_events = self.session_events_after(source_conversation_id, 0)?;
         let retained_events = source_events
             .into_iter()
-            .take_while(|event| event.payload.get("run_id").and_then(Value::as_str) != Some(run_id))
+            .filter(|event| event.seq <= boundary.before_seq)
             .collect::<Vec<_>>();
         let context_prefix = transcript_context(&retained_events);
         let conversation = Conversation {
@@ -296,6 +406,8 @@ impl AgentStore {
             execution_mode: source.execution_mode,
             workspace_path: source.workspace_path,
             recreated_context: true,
+            fork_boundary_run_id: None,
+            fork_path: None,
             context_prefix: (!context_prefix.is_empty()).then_some(context_prefix),
         };
         let mut database = self.database.lock().expect("agent database mutex poisoned");
@@ -397,6 +509,8 @@ impl AgentStore {
                 parent.workspace_path
             },
             recreated_context: false,
+            fork_boundary_run_id: None,
+            fork_path: None,
             context_prefix: None,
         };
         self.database
@@ -638,6 +752,8 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         workspace_path: row.get(16)?,
         recreated_context: row.get(17)?,
         context_prefix: row.get(18)?,
+        fork_boundary_run_id: row.get(19)?,
+        fork_path: row.get(20)?,
     })
 }
 
@@ -650,7 +766,8 @@ fn conversation_query(suffix: &str) -> String {
                 (SELECT r.status FROM agent_runs r WHERE r.conversation_id = c.id
                  ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1),
                 COALESCE(c.agent_session_id, c.id), c.execution_mode, c.workspace_path,
-                c.recreated_context, c.context_prefix
+                c.recreated_context, c.context_prefix,
+                c.fork_boundary_run_id, c.fork_path
          FROM conversations c {suffix}"
     )
 }

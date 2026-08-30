@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Tạo lại phản hồi",
   "ai.message.copy": "Sao chép phản hồi",
   "ai.message.copyMessage": "Sao chép tin nhắn",
-  "ai.message.fork": "Tách nhánh cuộc trò chuyện từ đây",
+  "ai.message.fork": "Tách từ lượt này (sao chép cuộc trò chuyện)",
   "ai.message.reasoning": "Lập luận",
   "ai.message.toolUse": "Sử dụng công cụ",
   "ai.workspace.title": "Đại lý",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Xóa khỏi hàng đợi",
   "kubecode.queueSave": "Lưu",
   "kubecode.queueCancelEditing": "Hủy chỉnh sửa",
-  "kubecode.queueSendNow": "Gửi ngay"
+  "kubecode.queueSendNow": "Gửi ngay",
+  "kubecode.forkUnavailableRunning": "Chờ lượt kết thúc trước khi tách"
 }

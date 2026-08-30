@@ -21,6 +21,8 @@ pub enum StoreError {
     QueueItemNotActionable(String),
     #[error("queue item not found: {0}")]
     QueueItemNotFound(String),
+    #[error("fork unavailable: {0}")]
+    ForkUnavailable(String),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -137,6 +139,10 @@ pub struct Conversation {
     pub execution_mode: ExecutionMode,
     pub workspace_path: Option<String>,
     pub recreated_context: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_boundary_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_path: Option<String>,
     #[serde(skip)]
     pub context_prefix: Option<String>,
 }
@@ -179,6 +185,15 @@ pub struct PromptQueueItem {
 pub enum PromptQueueStatus {
     Pending,
     Claimed,
+}
+
+/// Completed-turn cut points around a target run (#99): `after_seq` is the
+/// ADR 0210 boundary (fork keeps the turn); `before_seq` is the redo point
+/// (branch/revise drop the turn).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TurnBoundary {
+    pub before_seq: u64,
+    pub after_seq: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

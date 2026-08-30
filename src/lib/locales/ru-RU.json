@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Сгенерировать ответ заново",
   "ai.message.copy": "Скопировать ответ",
   "ai.message.copyMessage": "Скопировать сообщение",
-  "ai.message.fork": "Разветвить чат отсюда",
+  "ai.message.fork": "Ветка с этого хода (копия чата)",
   "ai.message.reasoning": "Обоснование",
   "ai.message.toolUse": "Использование инструмента",
   "ai.workspace.title": "Агенты",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Убрать из очереди",
   "kubecode.queueSave": "Сохранить",
   "kubecode.queueCancelEditing": "Отменить редактирование",
-  "kubecode.queueSendNow": "Отправить сейчас"
+  "kubecode.queueSendNow": "Отправить сейчас",
+  "kubecode.forkUnavailableRunning": "Дождитесь завершения хода перед созданием ветки"
 }

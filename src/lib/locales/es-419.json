@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Regenerar respuesta",
   "ai.message.copy": "Copiar respuesta",
   "ai.message.copyMessage": "Copiar mensaje",
-  "ai.message.fork": "Bifurcar chat desde aquí",
+  "ai.message.fork": "Bifurcar desde este turno (copia el chat)",
   "ai.message.reasoning": "Razonamiento",
   "ai.message.toolUse": "Uso de herramientas",
   "ai.workspace.title": "Agentes",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Quitar de la cola",
   "kubecode.queueSave": "Guardar",
   "kubecode.queueCancelEditing": "Cancelar edición",
-  "kubecode.queueSendNow": "Enviar ahora"
+  "kubecode.queueSendNow": "Enviar ahora",
+  "kubecode.forkUnavailableRunning": "Espera a que termine el turno antes de bifurcar"
 }

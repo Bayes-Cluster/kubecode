@@ -442,6 +442,19 @@ export function AgentSessionWorkspace({
     trackEvent('kubecode_agent_session_forked', { agent_id: conversation.agent_id })
   }
 
+  // Per-turn fork (#100): one action on a completed turn opens a child cut
+  // at that boundary; the source conversation is never disturbed.
+  const forkFromTurn = async (runId: string) => {
+    if (!conversation) return
+    try {
+      const child = await api.forkFromTurn(conversation.id, runId)
+      onConversationCreated(child)
+      trackEvent('kubecode_agent_turn_forked', { agent_id: conversation.agent_id })
+    } catch (cause) {
+      reportError(cause)
+    }
+  }
+
   const promoteToTeam = async () => {
     if (!conversation) return
     try {
@@ -651,6 +664,10 @@ export function AgentSessionWorkspace({
             onEditMessage={history.viewRevisionId || directTeammateChatDisabled || hardReadOnly
               ? undefined
               : (runId, userMessage) => void history.reviseAtRun(runId, userMessage)}
+            onForkMessage={history.viewRevisionId || directTeammateChatDisabled
+              ? undefined
+              : (runId) => void forkFromTurn(runId)}
+            forkUnavailableLabel={t('kubecode.forkUnavailableRunning')}
             onLoadEarlierHistory={() => void history.loadEarlierHistory()}
             onRegenerateMessage={history.viewRevisionId || directTeammateChatDisabled || hardReadOnly
               ? undefined

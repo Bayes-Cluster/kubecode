@@ -1168,62 +1168,117 @@ impl AgentRuntime {
         Ok(())
     }
 
+    /// Boundary fork (#99): cuts the conversation at a completed-turn
+    /// boundary. When the agent advertises native fork capability and the
+    /// conversation has a provider session, the provider session is forked
+    /// and the child stays linked (provider history survives — no
+    /// `context_prefix` flattening). Otherwise the child rebuilds from the
+    /// transcript prefix. The path taken is recorded on the child's lineage.
     pub async fn fork_provider_session(
         &self,
         conversation_id: &str,
+        run_id: Option<&str>,
     ) -> Result<crate::agents::Conversation, RuntimeError> {
         let conversation = self.store.get_conversation(conversation_id)?;
-        let provider_session_id = conversation.provider_session_id.clone().ok_or_else(|| {
-            StoreError::InvalidStoredValue("conversation has no provider session".into())
-        })?;
-        let descriptor = self.available_descriptor(conversation.agent_id)?;
-        let cwd = self.workspace.execution_path(
-            &conversation.project_id,
-            conversation.workspace_path.as_deref(),
-        )?;
-        let agent = acp_agent(
-            conversation.agent_id,
-            &descriptor,
-            AgentPermissionProfile::Default,
-            &cwd,
-        )?;
-        let forked_session_id = agent_client_protocol::Client
-            .builder()
-            .name("Kubecode")
-            .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
-                let initialization = connection
-                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
-                    .block_task()
-                    .await?;
-                if initialization
-                    .agent_capabilities
-                    .session_capabilities
-                    .fork
-                    .is_none()
+        // A boundary fork cuts after a completed turn; an open turn is a
+        // typed 409 — never a silent clip.
+        let boundary = match run_id {
+            Some(run_id) => Some(
+                self.store
+                    .resolve_turn_boundary(conversation_id, run_id)
+                    .map_err(RuntimeError::Store)?,
+            ),
+            None => None,
+        };
+        let boundary_run_id = run_id.map(str::to_owned);
+
+        if let Some(provider_session_id) = conversation.provider_session_id.clone() {
+            let descriptor = self.available_descriptor(conversation.agent_id)?;
+            let cwd = self.workspace.execution_path(
+                &conversation.project_id,
+                conversation.workspace_path.as_deref(),
+            )?;
+            let agent = acp_agent(
+                conversation.agent_id,
+                &descriptor,
+                AgentPermissionProfile::Default,
+                &cwd,
+            )?;
+            let source_provider = provider_session_id.clone();
+            let forked = agent_client_protocol::Client
+                .builder()
+                .name("Kubecode")
+                .connect_with(agent, move |connection: ConnectionTo<Agent>| async move {
+                    let initialization = connection
+                        .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                        .block_task()
+                        .await?;
+                    if initialization
+                        .agent_capabilities
+                        .session_capabilities
+                        .fork
+                        .is_none()
+                    {
+                        return Err(agent_client_protocol::Error::method_not_found());
+                    }
+                    let response = connection
+                        .send_request(ForkSessionRequest::new(source_provider, cwd))
+                        .block_task()
+                        .await?;
+                    Ok(response.session_id.to_string())
+                })
+                .await;
+            if let Ok(forked_session_id) = forked {
+                let fork = self.store.create_related_imported_conversation(
+                    &conversation.project_id,
+                    conversation.agent_id,
+                    &forked_session_id,
+                    conversation.agent_title.as_deref(),
+                    Some(ConversationRelation {
+                        parent_conversation_id: conversation.id,
+                        relationship: ConversationRelationship::Fork,
+                        read_only: false,
+                    }),
+                )?;
+                if let (Some(boundary), Some(boundary_run_id)) =
+                    (boundary, boundary_run_id.as_deref())
                 {
-                    return Err(agent_client_protocol::Error::method_not_found());
+                    let _ = self.store.copy_transcript_to_conversation(
+                        conversation_id,
+                        &fork.id,
+                        boundary.after_seq,
+                    );
+                    let _ = self.store.set_fork_lineage(
+                        &fork.id,
+                        Some(boundary_run_id),
+                        "provider_fork",
+                    );
+                } else {
+                    let _ = self.store.set_fork_lineage(&fork.id, None, "provider_fork");
                 }
-                let response = connection
-                    .send_request(ForkSessionRequest::new(provider_session_id, cwd))
-                    .block_task()
-                    .await?;
-                Ok(response.session_id.to_string())
-            })
-            .await
-            .map_err(|error| RuntimeError::Acp(error.to_string()))?;
-        let fork = self.store.create_related_imported_conversation(
-            &conversation.project_id,
-            conversation.agent_id,
-            &forked_session_id,
-            conversation.agent_title.as_deref(),
-            Some(ConversationRelation {
-                parent_conversation_id: conversation.id,
-                relationship: ConversationRelationship::Fork,
-                read_only: false,
-            }),
-        )?;
-        self.hydrate_provider_session(&fork.id).await?;
-        Ok(fork)
+                self.hydrate_provider_session(&fork.id).await?;
+                // Re-read: lineage was written after the child row was
+                // created, so the caller gets the final metadata.
+                return Ok(self.store.get_conversation(&fork.id)?);
+            }
+            // Native fork unavailable: fall through to the transcript
+            // prefix reconstruction — the fallback, not the default.
+        }
+
+        // Fallback: flatten the transcript prefix into a fresh conversation
+        // with a null provider session id.
+        if let Some(run_id) = boundary_run_id.as_deref() {
+            let fork = self
+                .store
+                .branch_conversation_at_run(conversation_id, run_id)?;
+            let _ = self
+                .store
+                .set_fork_lineage(&fork.id, Some(run_id), "transcript_prefix");
+            return Ok(self.store.get_conversation(&fork.id)?);
+        }
+        Err(RuntimeError::Store(StoreError::InvalidStoredValue(
+            "conversation has no provider session and no boundary was given".into(),
+        )))
     }
 
     fn available_descriptor(&self, agent_id: AgentId) -> Result<AgentDescriptor, RuntimeError> {

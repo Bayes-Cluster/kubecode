@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Gerar novamente a resposta",
   "ai.message.copy": "Copiar resposta",
   "ai.message.copyMessage": "Copiar mensagem",
-  "ai.message.fork": "Criar ramificação da conversa a partir daqui",
+  "ai.message.fork": "Ramificar a partir deste turno (copia o chat)",
   "ai.message.reasoning": "Raciocínio",
   "ai.message.toolUse": "Utilização da ferramenta",
   "ai.workspace.title": "Agentes",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Remover da fila",
   "kubecode.queueSave": "Guardar",
   "kubecode.queueCancelEditing": "Cancelar edição",
-  "kubecode.queueSendNow": "Enviar agora"
+  "kubecode.queueSendNow": "Enviar agora",
+  "kubecode.forkUnavailableRunning": "Aguarde o fim do turno antes de ramificar"
 }

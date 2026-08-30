@@ -518,7 +518,7 @@
   "ai.message.regenerate": "応答を再生成",
   "ai.message.copy": "応答をコピー",
   "ai.message.copyMessage": "メッセージをコピー",
-  "ai.message.fork": "ここからチャットを分岐",
+  "ai.message.fork": "このターンからフォーク（チャットをコピー）",
   "ai.message.reasoning": "推論",
   "ai.message.toolUse": "ツールの使用",
   "ai.workspace.title": "エージェント",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "キューから削除",
   "kubecode.queueSave": "保存",
   "kubecode.queueCancelEditing": "編集をキャンセル",
-  "kubecode.queueSendNow": "今すぐ送信"
+  "kubecode.queueSendNow": "今すぐ送信",
+  "kubecode.forkUnavailableRunning": "フォークの前にターンの終了を待ってください"
 }

@@ -12,7 +12,7 @@ pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
     ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
     PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent,
-    StartPromptOutcome, StoreError, TerminalCause,
+    StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
 };
 
 use std::path::Path;
@@ -164,6 +164,8 @@ impl AgentStore {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         ensure_column(&connection, "conversations", "context_prefix", "TEXT")?;
+        ensure_column(&connection, "conversations", "fork_boundary_run_id", "TEXT")?;
+        ensure_column(&connection, "conversations", "fork_path", "TEXT")?;
         ensure_column(
             &connection,
             "conversations",

@@ -518,7 +518,7 @@
   "ai.message.regenerate": "Antwort erneut generieren",
   "ai.message.copy": "Antwort kopieren",
   "ai.message.copyMessage": "Nachricht kopieren",
-  "ai.message.fork": "Chat ab hier verzweigen",
+  "ai.message.fork": "Ab diesem Zug abzweigen (kopiert den Chat)",
   "ai.message.reasoning": "Begründung",
   "ai.message.toolUse": "Verwendung von Tools",
   "ai.workspace.title": "Agenten",
@@ -1587,5 +1587,6 @@
   "kubecode.queueRemove": "Aus der Warteschlange entfernen",
   "kubecode.queueSave": "Speichern",
   "kubecode.queueCancelEditing": "Bearbeiten abbrechen",
-  "kubecode.queueSendNow": "Jetzt senden"
+  "kubecode.queueSendNow": "Jetzt senden",
+  "kubecode.forkUnavailableRunning": "Warte das Ende des Zugs ab, bevor du abzweigst"
 }
