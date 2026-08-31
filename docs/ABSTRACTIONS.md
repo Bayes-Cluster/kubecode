@@ -6,7 +6,9 @@ the completed-turn boundary fork, the per-agent ACP adapter seam, subagent
 visibility (sub-conversations with `ConversationRelationship::Subagent` plus
 the agent-agnostic `subagent_update` envelope), permission memory, persistence
 hygiene, terminal durability, and the web event reducer — follows the
-contracts in [ADR 0210](adr/0210-agent-interaction-model.md).
+contracts in [ADR 0210](adr/0210-agent-interaction-model.md). The WeChat
+iLink channel (ADR 0211) is a transport adapter that routes messages through
+the same Session, run, and event model — never an alternate Agent runtime.
 
 ## Runtime client
 
