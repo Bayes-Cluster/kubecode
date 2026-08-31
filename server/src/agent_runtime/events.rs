@@ -45,15 +45,17 @@ pub(super) fn text_event(
 }
 
 pub(super) fn tool_started(tool_call: ToolCall) -> (AgentEventKind, Value) {
+    let content = tool_call.content;
+    let has_content = !content.is_empty();
     (
         AgentEventKind::ToolStarted,
         json!({
             "tool_id": tool_call.tool_call_id.to_string(),
             "tool": tool_call.title,
-            "input": tool_call.raw_input,
-            "output": tool_call.raw_output,
+            "input": if has_content { None } else { tool_call.raw_input },
+            "output": if has_content { None } else { tool_call.raw_output },
             "status": tool_call.status,
-            "content": tool_call.content,
+            "content": content,
         }),
     )
 }
@@ -63,15 +65,17 @@ pub(super) fn tool_updated(update: ToolCallUpdate) -> (AgentEventKind, Value) {
         Some(ToolCallStatus::Completed | ToolCallStatus::Failed) => AgentEventKind::ToolCompleted,
         _ => AgentEventKind::ToolUpdated,
     };
+    let content = update.fields.content;
+    let has_content = content.as_ref().is_some_and(|value| !value.is_empty());
     (
         kind,
         json!({
             "tool_id": update.tool_call_id.to_string(),
             "tool": update.fields.title,
-            "input": update.fields.raw_input,
-            "output": update.fields.raw_output,
+            "input": if has_content { None } else { update.fields.raw_input },
+            "output": if has_content { None } else { update.fields.raw_output },
             "status": update.fields.status,
-            "content": update.fields.content,
+            "content": content,
         }),
     )
 }

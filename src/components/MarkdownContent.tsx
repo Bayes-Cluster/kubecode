@@ -8,6 +8,7 @@ import { renderMathToHtml } from '../utils/mathMarkdown'
 import { supportsModernRegexFeatures } from '../utils/regexCapabilities'
 import { openExternalUrl } from '../utils/url'
 import { SafeHtmlSpan } from './SafeMarkup'
+import { splitMarkdownBlocks } from '../utils/markdownBlocks'
 
 const MODERN_REGEX_AVAILABLE = supportsModernRegexFeatures()
 const REMARK_PLUGINS = MODERN_REGEX_AVAILABLE ? [remarkGfm] : []
@@ -78,13 +79,30 @@ interface MarkdownContentProps {
   onWikilinkClick?: (target: string) => void
 }
 
-export const MarkdownContent = memo(function MarkdownContent({ content, onWikilinkClick }: MarkdownContentProps) {
+/** Renders a single markdown block — no outer wrapper. */
+const MarkdownBlock = memo(function MarkdownBlock({ content, onWikilinkClick }: {
+  content: string
+  onWikilinkClick?: (target: string) => void
+}) {
   const processedContent = useMemo(
     () => replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content),
     [content, onWikilinkClick],
   )
+  const components = useMarkdownComponents(onWikilinkClick)
+  return (
+    <Markdown
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={components}
+      urlTransform={chatUrlTransform}
+    >
+      {processedContent}
+    </Markdown>
+  )
+})
 
-  const components = useMemo(() => {
+function useMarkdownComponents(onWikilinkClick?: (target: string) => void) {
+  return useMemo(() => {
     return {
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const math = href ? mathMarkup(href) : null
@@ -116,17 +134,30 @@ export const MarkdownContent = memo(function MarkdownContent({ content, onWikili
       },
     }
   }, [onWikilinkClick])
+}
+
+/**
+ * Block-level streaming markdown (#112): the content is split into stable
+ * blocks by paragraph/code-fence structure; each block is independently
+ * memoized so only the tail block re-renders per streaming delta. Completed
+ * messages get the same sanitization, shiki, and mermaid treatment as
+ * before — just block-by-block instead of full-document.
+ */
+export const MarkdownContent = memo(function MarkdownContent({ content, onWikilinkClick }: MarkdownContentProps) {
+  const blocks = useMemo(
+    () => splitMarkdownBlocks(replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content)),
+    [content, onWikilinkClick],
+  )
 
   return (
     <div className="ai-markdown min-w-0 max-w-full overflow-hidden">
-      <Markdown
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={components}
-        urlTransform={chatUrlTransform}
-      >
-        {processedContent}
-      </Markdown>
+      {blocks.map((block, index) => (
+        <MarkdownBlock
+          content={block}
+          key={index}
+          onWikilinkClick={onWikilinkClick}
+        />
+      ))}
     </div>
   )
 })

@@ -81,7 +81,9 @@ subagent activity routes into sub-conversations that activate the dormant
 listings) and broadcast the agent-agnostic `subagent_update` envelope —
 `{sessionId, name, prompt, status}` — on the parent stream; attribution is by
 sub-session id, so early chunks land before a late registration and the name
-backfills. Transient conversation state (streaming flag, pending
+backfills. Tool-call persistence coalesces non-terminal updates by tool id into one
+row (flushed at terminal status), and raw input/output yield to structured
+content in persisted payloads. Transient conversation state (streaming flag, pending
 permission/elicitation wait with its deadline) broadcasts as whole-snapshot
 `conversation_state` frames on the same stream — at subscription-adjacent
 transitions, on boot recovery, and whenever a wait resolves — so any client
