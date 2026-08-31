@@ -1,0 +1,7 @@
+{
+  "status": "confirmed",
+  "bot_token": "synthetic-bot-token-000000000001",
+  "ilink_bot_id": "ilink_bot_synthetic_01",
+  "baseurl": "https://szchild.weixin.qq.com",
+  "ilink_user_id": "wxid_synthetic_scanner"
+}
