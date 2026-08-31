@@ -96,6 +96,10 @@ path traversal); reads prefer the live ring and fall back to the durable
 transcript after restart, with graceful truncation of corrupt or oversized
 tails. `server/src/agent_store/` and
 `server/src/team_store/` group persistence operations by feature while retaining
+a shared transaction pattern. The WeChat iLink channel (ADR 0211) is a
+transport adapter owned by `ILinkService` in `AppState`; it routes inbound
+WeChat messages through existing run admission and derives outbound replies
+from the same workspace event stream the browser consumes.
 one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing
 store implementations.
