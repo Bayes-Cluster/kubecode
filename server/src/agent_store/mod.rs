@@ -38,6 +38,16 @@ impl AgentStore {
         Self::from_database(database)
     }
 
+    /// The directory holding the state database — the parent of the
+    /// iLink secret state folder (ADR 0211 §3).
+    pub fn database_directory(&self) -> std::path::PathBuf {
+        self.database
+            .path()
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+    }
+
     pub fn from_database(database: Arc<Database>) -> Result<Self, StoreError> {
         let connection = database.lock().expect("agent database mutex poisoned");
         connection.execute_batch(
