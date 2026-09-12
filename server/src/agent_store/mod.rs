@@ -1,6 +1,7 @@
 mod composer;
 mod conversations;
 mod events;
+mod ilink;
 mod models;
 mod permissions;
 mod prompt_queue;
@@ -8,11 +9,14 @@ mod revisions;
 mod runs;
 
 pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventBus};
+pub use ilink::{
+    ILINK_DEDUPE_KEEP, ILINK_QUICK_PROMPT_SLOTS, IlinkAccount, IlinkCredentialRecord, IlinkPeer,
+};
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
     ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
-    PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent,
-    StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
+    IlinkAccountStatus, PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint,
+    RunStatus, SessionEvent, StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
 };
 
 use std::path::Path;
@@ -135,6 +139,53 @@ impl AgentStore {
                payload TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                PRIMARY KEY (conversation_id, revision)
+             );
+             CREATE TABLE IF NOT EXISTS ilink_accounts (
+               account_id   TEXT PRIMARY KEY,
+               display_name TEXT NOT NULL DEFAULT '',
+               status       TEXT NOT NULL DEFAULT 'disconnected',
+               created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             -- Secret material lives only in AES-256-GCM sealed blobs
+             -- (ADR 0211 §3); no plaintext token column is persisted.
+             CREATE TABLE IF NOT EXISTS ilink_credentials (
+               account_id       TEXT PRIMARY KEY REFERENCES ilink_accounts(account_id),
+               device_id        TEXT NOT NULL DEFAULT '',
+               committed_cursor INTEGER NOT NULL DEFAULT 0,
+               get_updates_buf  TEXT NOT NULL DEFAULT '',
+               api_origin       TEXT NOT NULL DEFAULT '',
+               cdn_origin       TEXT NOT NULL DEFAULT '',
+               sealed_blob      BLOB NOT NULL,
+               updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS ilink_peers (
+               id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+               account_id           TEXT NOT NULL REFERENCES ilink_accounts(account_id),
+               peer_id              TEXT NOT NULL,
+               display_name         TEXT NOT NULL DEFAULT '',
+               authorized           INTEGER NOT NULL DEFAULT 0,
+               sealed_context_token BLOB,
+               updated_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               UNIQUE(account_id, peer_id)
+             );
+             CREATE TABLE IF NOT EXISTS ilink_inbound_dedupe (
+               account_id  TEXT NOT NULL REFERENCES ilink_accounts(account_id),
+               message_key TEXT NOT NULL,
+               seen_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (account_id, message_key)
+             );
+             CREATE TABLE IF NOT EXISTS ilink_session_binding (
+               account_id      TEXT PRIMARY KEY REFERENCES ilink_accounts(account_id),
+               conversation_id TEXT NOT NULL REFERENCES conversations(id),
+               bound_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS ilink_quick_prompts (
+               account_id TEXT NOT NULL REFERENCES ilink_accounts(account_id),
+               slot       INTEGER NOT NULL,
+               content    TEXT NOT NULL,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY (account_id, slot)
              );",
         )?;
         ensure_column(

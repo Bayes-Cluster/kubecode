@@ -681,6 +681,46 @@ bus has no worker or buffered event queue; SSE waits retain only a weak store
 reference, so dropping the owning store closes the channel and releases
 subscribers during Runtime shutdown.
 
+## iLink channel state
+
+The WeChat iLink channel (ADR 0211) persists exactly one linked account per
+Runtime, keyed by a stable account id so a future multi-account decision needs
+no migration. The protocol primitives live in the server's `ilink` module:
+wire types mirroring the reviewed Tencent shapes, safe domain types whose
+credential fields are redacting `Secret` wrappers, the HTTP client with
+versioned iLink headers and per-operation timeouts, the encrypted CDN client,
+and the `.qq.com`/`.wechat.com` origin policy that every destination —
+including upstream-supplied redirect hosts and CDN URLs — passes before any
+request is issued. Long-poll timeout and cancellation are control flow, never
+errors; business `ret`/`errcode` failures (with `-14` as the session-expiry
+signal) are typed errors that carry only the operation name and code.
+
+Channel state lives in dedicated `ilink_*` tables, never in the Session event
+tables. All secret material — the bot token, session cookies, and per-peer
+context tokens — is stored only as AES-256-GCM sealed blobs keyed from a
+machine-local secret file (`<state>/ilink/secret.key`, 0600 in a 0700
+directory, deleted on logout, never transmitted); no plaintext credential
+column exists. Peer-scoped state is keyed by account plus peer even though the
+first release links one account; the first peer to message the account is
+authorized automatically and later peers need explicit Settings approval.
+
+Inbound delivery follows one crash-boundary order: dedupe check, run admission
+(idempotent via the message-key-derived `client_message_id`, so a transport or
+process retry reconciles to the original run or queue item), then one
+transaction that inserts the dedupe key and advances the committed sync cursor.
+A delivered message is therefore committed exactly once, retried safely, or
+dropped as duplicate — never skipped and never duplicated. Dedupe retention is
+bounded by count; cursor replay safety rests on the committed `get_updates_buf`,
+not on dedupe rows. Binding the account to a Session validates the target in
+the same transaction (existing, registered, writable, non-archived,
+non-sub-agent) and removing a Session clears only the binding. Logout deletes
+credentials, cursor, peer contexts, dedupe keys, quick prompts, and the binding
+while provider-native Session history and Project files remain untouched;
+an ordinary Runtime shutdown retains all reconnect state. The only public
+channel event is `ilink_status_changed`, carrying connection status, display
+name, and binding — never tokens, QR material, message bodies, filenames, or
+paths.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

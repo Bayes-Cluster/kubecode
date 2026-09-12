@@ -630,6 +630,13 @@ impl AgentStore {
         for snapshot_id in snapshot_ids {
             transaction.execute("DELETE FROM conversations WHERE id = ?1", [snapshot_id])?;
         }
+        // iLink bindings reference the Session only (#126): removal clears
+        // the binding and nothing else — provider-native history and
+        // Project files stay untouched.
+        transaction.execute(
+            "DELETE FROM ilink_session_binding WHERE conversation_id = ?1",
+            [conversation_id],
+        )?;
         transaction.execute("DELETE FROM conversations WHERE id = ?1", [conversation_id])?;
         transaction.commit()?;
         drop(database);

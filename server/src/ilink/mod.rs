@@ -28,6 +28,7 @@ pub mod crypto;
 pub mod domain;
 pub mod error;
 pub mod origins;
+pub mod seal;
 pub mod types;
 
 pub use cdn::{CdnClient, MAX_MEDIA_BYTES, UploadedMedia};
@@ -38,4 +39,5 @@ pub use client::{
 pub use domain::{InboundItem, InboundMessage, MediaRef, OutboundText};
 pub use error::{IlinkError, Secret};
 pub use origins::{OriginPolicy, QR_LOGIN_BASE_URL, TRUSTED_SUFFIXES};
+pub use seal::SecretKeyring;
 pub use types::LoginState;

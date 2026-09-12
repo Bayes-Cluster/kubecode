@@ -353,6 +353,7 @@ fn store_error_status(error: &StoreError) -> (StatusCode, &'static str) {
         }
         StoreError::QueueItemNotFound(_) => (StatusCode::NOT_FOUND, "queue_item_not_found"),
         StoreError::ForkUnavailable(_) => (StatusCode::CONFLICT, "fork_unavailable"),
+        StoreError::IlinkStateRejected(_) => (StatusCode::CONFLICT, "ilink_state_rejected"),
         StoreError::Composer(error) => composer_error_status(*error),
         StoreError::InvalidStoredValue(_)
         | StoreError::Json(_)

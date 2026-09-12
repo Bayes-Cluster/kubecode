@@ -23,6 +23,8 @@ pub enum StoreError {
     QueueItemNotFound(String),
     #[error("fork unavailable: {0}")]
     ForkUnavailable(String),
+    #[error("ilink state rejected: {0}")]
+    IlinkStateRejected(String),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -309,6 +311,23 @@ string_enum!(ConversationRelationship, {
 string_enum!(ExecutionMode, {
     ExecutionMode::Shared => "shared",
     ExecutionMode::Worktree => "worktree",
+});
+
+/// Connection lifecycle of the linked iLink account (ADR 0211 §4).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum IlinkAccountStatus {
+    Disconnected,
+    Connecting,
+    Connected,
+    /// Stored credentials were rejected; the QR scan must be repeated.
+    Expired,
+}
+
+string_enum!(IlinkAccountStatus, {
+    IlinkAccountStatus::Disconnected => "disconnected",
+    IlinkAccountStatus::Connecting => "connecting",
+    IlinkAccountStatus::Connected => "connected",
+    IlinkAccountStatus::Expired => "expired",
 });
 
 string_enum!(PromptQueueStatus, {
