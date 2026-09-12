@@ -2,6 +2,7 @@ mod agents;
 mod composer;
 mod error;
 mod git;
+mod ilink;
 mod projects;
 mod runs;
 mod runtime;
@@ -366,6 +367,7 @@ fn client_api_router(state: AppState) -> Router {
         )
         .route("/projects/{project_id}/asset", get(read_asset))
         .merge(crate::team_api::routes())
+        .merge(crate::api::ilink::routes())
         .with_state(state)
 }
 

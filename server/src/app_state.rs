@@ -7,6 +7,7 @@ use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
 use crate::git::GitService;
+use crate::ilink::{ILinkService, IlinkServiceConfig};
 use crate::teams::{Team, TeamRole, TeamStore};
 use crate::terminal::{TerminalEventSink, TerminalLifecycleEvent, TerminalManager};
 use crate::workspace::WorkspaceService;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub agent_runtime: Arc<AgentRuntime>,
     pub git: Arc<GitService>,
     pub teams: Arc<TeamStore>,
+    pub ilink: Arc<ILinkService>,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
             terminal_event_sink(Arc::clone(&agent_store)),
         ));
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
+        let ilink = ILinkService::new(Arc::clone(&agent_store), IlinkServiceConfig::default());
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
@@ -48,7 +51,19 @@ impl AppState {
             agent_runtime,
             git,
             teams,
+            ilink,
         }
+    }
+
+    /// Starts the iLink channel service supervisor: restores a persisted
+    /// linked account (if any) without blocking startup (issue #127).
+    pub fn start_ilink_service(&self) {
+        let ilink = Arc::clone(&self.ilink);
+        tokio::spawn(async move {
+            if let Err(error) = ilink.restore_on_startup().await {
+                eprintln!("WARN: iLink restore failed: {error}");
+            }
+        });
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {

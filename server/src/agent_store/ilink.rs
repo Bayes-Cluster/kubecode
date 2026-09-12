@@ -167,6 +167,33 @@ impl AgentStore {
         Ok(())
     }
 
+    /// The single stored credentials row, if any (one linked account
+    /// per instance, ADR 0211 §2).
+    pub fn first_ilink_credentials(&self) -> Option<IlinkCredentialRecord> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database
+            .query_row(
+                "SELECT account_id, device_id, committed_cursor, get_updates_buf,
+                        api_origin, cdn_origin, sealed_blob
+                 FROM ilink_credentials LIMIT 1",
+                [],
+                |row| {
+                    Ok(IlinkCredentialRecord {
+                        account_id: row.get(0)?,
+                        device_id: row.get(1)?,
+                        committed_cursor: row.get(2)?,
+                        get_updates_buf: row.get(3)?,
+                        api_origin: row.get(4)?,
+                        cdn_origin: row.get(5)?,
+                        sealed_blob: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
     pub fn ilink_credentials(
         &self,
         account_id: &str,

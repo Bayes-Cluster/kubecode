@@ -704,6 +704,20 @@ column exists. Peer-scoped state is keyed by account plus peer even though the
 first release links one account; the first peer to message the account is
 authorized automatically and later peers need explicit Settings approval.
 
+An `ILinkService` owned by `AppState` is the single lifecycle authority for
+the linked account: it supervises QR login (bounded TTL reuse and refresh),
+verification codes bound to the active attempt, validated redirects, startup
+restore from sealed credentials, the cancellable long-poll loop, reconnect
+with a stale-token cooldown, disconnect/logout, and graceful shutdown. At most
+one poll task exists per account; repeated start/stop/reconnect calls are
+idempotent; cancellation aborts an in-flight long poll immediately so shutdown
+never waits out the server-side timeout. The wire cursor (`get_updates_buf`)
+advances only in memory per delivered page — the durable cursor moves only
+with committed messages, so shutdown can never persist a cursor ahead of
+processed messages. Status transitions publish `ilink_status_changed` events;
+REST routes under `/api/v1/ilink/` sit behind the existing bearer boundary
+and return safe status only.
+
 Inbound delivery follows one crash-boundary order: dedupe check, run admission
 (idempotent via the message-key-derived `client_message_id`, so a transport or
 process retry reconciles to the original run or queue item), then one

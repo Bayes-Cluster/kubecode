@@ -119,6 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .with_agent_catalog(agents)
     .with_team_mcp_http_origin(internal_origin);
     state.start_team_supervisor();
+    state.start_ilink_service();
     workspace.start_watching(workspace_event_sink(Arc::clone(&agent_store)));
     let app = match access_token {
         Some(access_token) => app_router_api_only(state, &config.base_path, access_token),
