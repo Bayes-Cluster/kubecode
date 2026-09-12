@@ -1,0 +1,29 @@
+{
+  "ret": 0,
+  "msgs": [
+    {
+      "seq": 12,
+      "message_id": 9001,
+      "from_user_id": "wxid_synthetic_01",
+      "to_user_id": "ilink_bot_synthetic_01",
+      "create_time_ms": 1750000000000,
+      "message_type": 1,
+      "message_state": 2,
+      "item_list": [{ "type": 1, "text_item": { "text": "please fix the failing test" } }],
+      "context_token": "synthetic-context-token-01"
+    },
+    {
+      "seq": 13,
+      "message_id": 9002,
+      "from_user_id": "wxid_synthetic_01",
+      "to_user_id": "ilink_bot_synthetic_01",
+      "create_time_ms": 1750000001000,
+      "message_type": 1,
+      "message_state": 2,
+      "item_list": [{ "type": 3, "voice_item": { "playtime": 2300, "text": "voice transcription" } }],
+      "context_token": "synthetic-context-token-01"
+    }
+  ],
+  "get_updates_buf": "synthetic-cursor-blob-0002",
+  "longpolling_timeout_ms": 30000
+}
