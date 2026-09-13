@@ -28,6 +28,7 @@ pub mod crypto;
 pub mod domain;
 pub mod error;
 pub mod guard;
+pub mod inbound;
 pub mod origins;
 pub mod seal;
 pub mod service;
@@ -42,6 +43,10 @@ pub use domain::{InboundItem, InboundMessage, MediaRef, OutboundText};
 pub use error::{IlinkError, Secret};
 pub use guard::{
     AdvertisedOption, InboundLimits, InteractionRegistry, PeerGate, PendingInteraction, Rejection,
+};
+pub use inbound::{
+    BridgeImage, BridgePrompt, ChannelLanguage, ChannelReply, Disposition, ImageSource,
+    InboundBridge, InboundCounters, ReplyKind,
 };
 pub use origins::{OriginPolicy, QR_LOGIN_BASE_URL, TRUSTED_SUFFIXES};
 pub use seal::SecretKeyring;

@@ -6,8 +6,8 @@
 
 use super::error::Secret;
 use super::types::{
-    CdnMedia, FileItem, ITEM_TYPE_FILE, ITEM_TYPE_IMAGE, ITEM_TYPE_TEXT, ITEM_TYPE_VIDEO,
-    ITEM_TYPE_VOICE, ImageItem, MessageItem, VideoItem, WeixinMessage,
+    CdnMedia, ITEM_TYPE_FILE, ITEM_TYPE_IMAGE, ITEM_TYPE_TEXT, ITEM_TYPE_VIDEO, ITEM_TYPE_VOICE,
+    ImageItem, MessageItem, VideoItem, WeixinMessage,
 };
 
 /// Stable inbound identity: sender + timestamp + sequence/message id
@@ -46,6 +46,10 @@ pub enum InboundItem {
     Text {
         text: String,
     },
+    /// Upstream excerpt of the quoted message (`ref_msg.title`).
+    QuotedText {
+        text: String,
+    },
     /// Voice with Tencent-provided transcription; `None` means the channel
     /// must answer with an explicit unsupported message rather than guess.
     Voice {
@@ -53,6 +57,8 @@ pub enum InboundItem {
     },
     Image {
         media: MediaRef,
+        /// Thumbnail reference when upstream provides one.
+        thumb: Option<MediaRef>,
     },
     Video {
         media: MediaRef,
@@ -82,11 +88,23 @@ impl InboundItem {
                     .as_ref()
                     .and_then(|voice| voice.text.clone()),
             }),
-            ITEM_TYPE_IMAGE => item.image_item.as_ref().map(Self::media_ref),
-            ITEM_TYPE_VIDEO => item.video_item.as_ref().map(Self::media_from_video),
-            ITEM_TYPE_FILE => item.file_item.as_ref().map(|file: &FileItem| Self::File {
-                media: Self::media_from(file.media.as_ref()),
-                file_name: file.file_name.clone(),
+            // Media items always normalize so the bridge can answer with
+            // its localized unsupported/failed reply instead of silently
+            // dropping the record.
+            ITEM_TYPE_IMAGE => Some(Self::media_ref(
+                item.image_item.as_ref().unwrap_or(&ImageItem::default()),
+            )),
+            ITEM_TYPE_VIDEO => Some(Self::media_from_video(
+                item.video_item.as_ref().unwrap_or(&VideoItem::default()),
+            )),
+            ITEM_TYPE_FILE => Some(Self::File {
+                media: Self::media_from(
+                    item.file_item.as_ref().and_then(|file| file.media.as_ref()),
+                ),
+                file_name: item
+                    .file_item
+                    .as_ref()
+                    .and_then(|file| file.file_name.clone()),
             }),
             _ => Some(Self::Unsupported { item_type }),
         }
@@ -94,7 +112,14 @@ impl InboundItem {
 
     fn media_ref(media: &ImageItem) -> Self {
         let media_ref = Self::media_from(media.media.as_ref());
-        Self::Image { media: media_ref }
+        let thumb = media
+            .thumb_media
+            .as_ref()
+            .map(|thumb| Self::media_from(Some(thumb)));
+        Self::Image {
+            media: media_ref,
+            thumb,
+        }
     }
 
     fn media_from_video(media: &VideoItem) -> Self {
@@ -121,6 +146,10 @@ pub struct InboundMessage {
     /// ADR 0211 §7).
     pub context_token: Option<Secret>,
     pub items: Vec<InboundItem>,
+    /// Wire message type (1 = user, 2 = bot echo).
+    pub wire_type: Option<i64>,
+    /// Wire message state (1 = generating partial, 2 = finished).
+    pub wire_state: Option<i64>,
 }
 
 impl InboundMessage {
@@ -128,12 +157,22 @@ impl InboundMessage {
     /// usable sender or without items — those carry nothing actionable.
     pub fn from_wire(message: &WeixinMessage) -> Option<Self> {
         let message_key = inbound_message_key(message)?;
-        let items = message
-            .item_list
-            .as_ref()?
-            .iter()
-            .filter_map(InboundItem::from_wire)
-            .collect::<Vec<_>>();
+        let mut items = Vec::new();
+        for item in message.item_list.as_ref()?.iter() {
+            // A quoted excerpt rides on its item and normalizes as its
+            // own content so the prompt keeps reply-context order.
+            if let Some(quoted) = item
+                .ref_msg
+                .as_ref()
+                .and_then(|reference| reference.title.clone())
+                .filter(|title| !title.trim().is_empty())
+            {
+                items.push(InboundItem::QuotedText { text: quoted });
+            }
+            if let Some(item) = InboundItem::from_wire(item) {
+                items.push(item);
+            }
+        }
         if items.is_empty() {
             return None;
         }
@@ -142,6 +181,8 @@ impl InboundMessage {
             peer_id: message.from_user_id.clone()?.trim().to_owned(),
             context_token: message.context_token.clone().map(Secret::new),
             items,
+            wire_type: message.message_type,
+            wire_state: message.message_state,
         })
     }
 

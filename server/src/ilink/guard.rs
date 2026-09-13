@@ -339,6 +339,8 @@ mod tests {
             items: vec![InboundItem::Text {
                 text: text.to_owned(),
             }],
+            wire_type: None,
+            wire_state: None,
         }
     }
 
@@ -409,6 +411,8 @@ mod tests {
                 },
                 file_name: Some("../../etc/passwd".to_owned()),
             }],
+            wire_type: None,
+            wire_state: None,
         };
         assert_eq!(
             gate.limits.check_message(&traversal),

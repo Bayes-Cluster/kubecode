@@ -219,8 +219,19 @@ pub struct VideoItem {
     pub thumb_width: Option<i64>,
 }
 
+/// Quoted/reference message attached to an item (`ref_msg`): `title`
+/// carries the upstream-generated excerpt text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RefMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MessageItem {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ref_msg: Option<RefMessage>,
+
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub item_type: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
