@@ -718,6 +718,15 @@ processed messages. Status transitions publish `ilink_status_changed` events;
 REST routes under `/api/v1/ilink/` sit behind the existing bearer boundary
 and return safe status only.
 
+Inbound messages pass a trust gate before anything reaches run admission:
+senders must be authorized peers (the scanner is auto-authorized; everyone
+else fails closed), per-peer command/prompt rate limits apply, and payload
+bounds cover item counts, decoded text, media bytes, filenames, and MIME
+strings — filenames must be plain names, never paths. Interactive permission
+and elicitation answers resolve only for an exact current request id owned by
+the answering peer, with a currently advertised option, one-shot, and
+expiring; WeChat never widens a Session's permission profile.
+
 Inbound delivery follows one crash-boundary order: dedupe check, run admission
 (idempotent via the message-key-derived `client_message_id`, so a transport or
 process retry reconciles to the original run or queue item), then one
