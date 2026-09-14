@@ -261,6 +261,25 @@ impl InteractionRegistry {
         Ok(option)
     }
 
+    /// The advertised option ids of a pending request, in the order they
+    /// were registered — numeric WeChat replies select by position.
+    pub fn advertised_options(&self, request_id: &str) -> Option<Vec<String>> {
+        self.pending.get(request_id).map(|interaction| {
+            interaction
+                .options
+                .iter()
+                .map(|option| option.option_id.clone())
+                .collect()
+        })
+    }
+
+    /// The kind ("permission" / "elicitation") of a pending request.
+    pub fn kind_of(&self, request_id: &str) -> Option<&'static str> {
+        self.pending
+            .get(request_id)
+            .map(|interaction| interaction.kind)
+    }
+
     /// Drops expired entries; returns how many were reclaimed.
     pub fn reclaim_expired(&mut self) -> usize {
         let now = Instant::now();
