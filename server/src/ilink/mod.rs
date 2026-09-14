@@ -30,6 +30,7 @@ pub mod error;
 pub mod guard;
 pub mod inbound;
 pub mod origins;
+pub mod router;
 pub mod seal;
 pub mod service;
 pub mod types;
@@ -49,6 +50,7 @@ pub use inbound::{
     InboundBridge, InboundCounters, ReplyKind,
 };
 pub use origins::{OriginPolicy, QR_LOGIN_BASE_URL, TRUSTED_SUFFIXES};
+pub use router::{RouteOutcome, SessionRouter};
 pub use seal::SecretKeyring;
 pub use service::{
     ConnectionStatus, ILINK_CDN_BASE_URL, ILinkService, IlinkServiceConfig, PageSink, ServiceError,
