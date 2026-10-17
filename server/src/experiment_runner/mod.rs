@@ -14,7 +14,7 @@ mod process;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -30,9 +30,11 @@ use crate::teams::{TeamError, TeamStore};
 use crate::workspace::{WorkspaceError, WorkspaceService};
 
 const TERM_GRACE: Duration = Duration::from_secs(2);
-/// Per-file output cap enforced by the kernel through `ulimit -f` (512-byte
-/// blocks in POSIX sh): 16 MiB.
-const FILE_LIMIT_BLOCKS: u64 = 32_768;
+/// Recorded as the reason when the runtime cap triggers the stop, so the
+/// outcome is still `timed_out` after a Runtime restart.
+const TIMEOUT_REASON: &str = "stopping at the runtime limit";
+/// Cap on each captured log file (the program's other files are not limited).
+const LOG_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_LOG_TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Error)]
@@ -47,15 +49,12 @@ pub enum RunnerError {
     Spawn(String),
 }
 
-type Observer = Arc<dyn Fn(&Experiment) + Send + Sync>;
-
 pub struct ExperimentRunner {
     store: Arc<ExperimentStore>,
     workspace: Arc<WorkspaceService>,
     teams: Arc<TeamStore>,
-    monitored: Mutex<HashSet<String>>,
+    monitored: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     poll: Duration,
-    observer: Mutex<Option<Observer>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,7 +83,6 @@ impl ExperimentRunner {
             teams,
             monitored: Mutex::default(),
             poll: Duration::from_millis(200),
-            observer: Mutex::default(),
         })
     }
 
@@ -97,11 +95,6 @@ impl ExperimentRunner {
             }
             Err(shared) => shared,
         }
-    }
-
-    /// Called after a terminal observation is committed, to deliver it.
-    pub fn set_observer(&self, observer: impl Fn(&Experiment) + Send + Sync + 'static) {
-        *self.observer.lock().expect("observer mutex poisoned") = Some(Arc::new(observer));
     }
 
     pub fn store(&self) -> &Arc<ExperimentStore> {
@@ -157,10 +150,7 @@ impl ExperimentRunner {
                 .args(&experiment.argv)
                 .current_dir(&cwd)
                 .env("KUBECODE_EXPERIMENT_DIR", &dir)
-                .env(
-                    "KUBECODE_EXPERIMENT_FILE_BLOCKS",
-                    FILE_LIMIT_BLOCKS.to_string(),
-                )
+                .env("KUBECODE_EXPERIMENT_LOG_LIMIT", LOG_LIMIT_BYTES.to_string())
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -191,41 +181,40 @@ impl ExperimentRunner {
         let Some(identity) = identity else {
             // It already ended (or vanished) before its identity could be read;
             // the receipt, if any, tells the story.
-            self.finish_from_files(&experiment, false);
+            self.finish_from_files(&experiment);
             return Ok(self.store.get(&experiment.id)?);
         };
-        let running = self.store.mark_running(&experiment.id, &identity)?;
+        let running = match self.store.mark_running(&experiment.id, &identity) {
+            Ok(running) => running,
+            Err(error) => {
+                // The record is gone (its Team was removed) or changed under
+                // us: a process nobody supervises must not be left running.
+                process::signal_whole_group(&identity, process::SIGKILL);
+                return Err(error.into());
+            }
+        };
         self.watch(&experiment.id);
         Ok(running)
     }
 
     // -- Observation ----------------------------------------------------------
 
-    /// Starts the monitor for an experiment, once.
     fn watch(self: &Arc<Self>, experiment_id: &str) {
-        if !self
-            .monitored
-            .lock()
-            .expect("monitor set poisoned")
-            .insert(experiment_id.to_owned())
-        {
+        let mut monitored = self.monitored.lock().expect("monitor set poisoned");
+        monitored.retain(|_, handle| !handle.is_finished());
+        if monitored.contains_key(experiment_id) {
             return;
         }
         let runner = Arc::clone(self);
         let id = experiment_id.to_owned();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             runner.monitor(&id).await;
-            runner
-                .monitored
-                .lock()
-                .expect("monitor set poisoned")
-                .remove(&id);
         });
+        monitored.insert(experiment_id.to_owned(), handle);
     }
 
     async fn monitor(&self, id: &str) {
         let mut term_sent: Option<Instant> = None;
-        let mut timed_out = false;
         loop {
             tokio::time::sleep(self.poll).await;
             // The row is gone when its Team was removed: nothing to observe.
@@ -242,45 +231,53 @@ impl ExperimentRunner {
                 return;
             };
             if process::read_receipt(&dir).is_some() {
-                self.finish_from_files(&experiment, timed_out);
+                // The program ended; anything it left behind in the group is
+                // stopped rather than left unsupervised.
+                process::signal_whole_group(&identity, process::SIGKILL);
+                self.finish_from_files(&experiment);
                 return;
             }
-            if process::is_alive(&identity) {
+            // The wrapper dies on the first SIGTERM but the program may have
+            // trapped it, so the slot is held until the whole group is gone.
+            if process::group_alive(&identity) {
                 let elapsed = process::elapsed_secs(&identity).unwrap_or(0);
                 if term_sent.is_none()
                     && (experiment.state == ExperimentState::Cancelling
                         || elapsed >= u64::from(experiment.max_runtime_secs))
                 {
-                    timed_out = experiment.state != ExperimentState::Cancelling;
-                    process::signal_group(&identity, process::SIGTERM);
+                    if experiment.state != ExperimentState::Cancelling {
+                        let _ = self.store.set_reason(id, TIMEOUT_REASON);
+                    }
+                    process::signal_whole_group(&identity, process::SIGTERM);
                     term_sent = Some(Instant::now());
                 }
                 if term_sent.is_some_and(|at| at.elapsed() >= TERM_GRACE) {
-                    process::signal_group(&identity, process::SIGKILL);
+                    process::signal_whole_group(&identity, process::SIGKILL);
                 }
                 continue;
             }
             // Gone. Let an in-flight receipt rename land before deciding.
             tokio::time::sleep(Duration::from_millis(50)).await;
-            self.finish_from_files(&experiment, timed_out);
+            self.finish_from_files(&experiment);
             return;
         }
     }
 
-    /// Turns the receipt (or its absence) into a committed observation.
-    fn finish_from_files(&self, experiment: &Experiment, timed_out: bool) {
+    fn finish_from_files(&self, experiment: &Experiment) {
         let code = self
             .workspace
             .experiment_dir(&experiment.id)
             .ok()
             .and_then(|dir| process::read_receipt(&dir));
-        let over_time = timed_out
-            || experiment
-                .identity
-                .as_ref()
-                .and_then(process::elapsed_secs)
-                .is_some_and(|elapsed| elapsed >= u64::from(experiment.max_runtime_secs));
+        // Intent that we recorded ourselves; never inferred from elapsed time,
+        // which says nothing about how a lost process ended.
         let cancelled = experiment.cancel_requested;
+        let timed_out = self
+            .store
+            .get(&experiment.id)
+            .ok()
+            .and_then(|current| current.reason)
+            .is_some_and(|reason| reason == TIMEOUT_REASON);
         let outcome = match code {
             Some(code) if code > 128 && timed_out => Outcome {
                 state: Some(ExperimentState::TimedOut),
@@ -313,7 +310,7 @@ impl ExperimentRunner {
                 reason: Some("cancelled".into()),
                 ..Outcome::default()
             },
-            None if over_time => Outcome {
+            None if timed_out => Outcome {
                 state: Some(ExperimentState::TimedOut),
                 reason: Some("stopped at the runtime limit".into()),
                 ..Outcome::default()
@@ -328,6 +325,13 @@ impl ExperimentRunner {
     }
 
     fn finish(&self, experiment: &Experiment, mut outcome: Outcome) {
+        // Artifacts are resolved where the process ran: the Team's worktree
+        // when it has one, otherwise the Project.
+        let workspace_path = experiment
+            .team_id
+            .as_deref()
+            .and_then(|team_id| self.teams.get_team(team_id).ok())
+            .and_then(|team| team.workspace_path);
         outcome.artifact_revisions = experiment
             .artifacts
             .iter()
@@ -335,22 +339,16 @@ impl ExperimentRunner {
                 path: path.clone(),
                 revision: self
                     .workspace
-                    .file_revision(&experiment.project_id, path)
+                    .execution_file_revision(
+                        &experiment.project_id,
+                        workspace_path.as_deref(),
+                        path,
+                    )
                     .ok(),
             })
             .collect();
-        if matches!(self.store.observe(&experiment.id, outcome), Ok(true))
-            && let Ok(finished) = self.store.get(&experiment.id)
-        {
-            let observer = self
-                .observer
-                .lock()
-                .expect("observer mutex poisoned")
-                .clone();
-            if let Some(observer) = observer {
-                observer(&finished);
-            }
-        }
+        // The observation commits its own delivery to the responsible member.
+        let _ = self.store.observe(&experiment.id, outcome);
     }
 
     // -- Cancellation ---------------------------------------------------------
@@ -370,14 +368,6 @@ impl ExperimentRunner {
 
     fn after_cancel(self: &Arc<Self>, experiment: &Experiment) {
         if experiment.state == ExperimentState::Cancelled {
-            if let Some(observer) = self
-                .observer
-                .lock()
-                .expect("observer mutex poisoned")
-                .clone()
-            {
-                observer(experiment);
-            }
             return;
         }
         if let Some(identity) = &experiment.identity
@@ -406,28 +396,47 @@ impl ExperimentRunner {
         Ok(cancelled)
     }
 
-    /// Terminates a Team's running processes before its records are removed.
-    pub fn cancel_team(self: &Arc<Self>, team_id: &str) {
+    /// Terminates a Team's running processes before its records are removed,
+    /// and returns the experiment ids so their directories can be cleared once
+    /// the rows are gone.
+    pub fn cancel_team(self: &Arc<Self>, team_id: &str) -> Vec<String> {
         let Ok(active) = self.store.active_experiments() else {
-            return;
+            return Vec::new();
         };
+        let mut ids = Vec::new();
         for experiment in active
             .into_iter()
-            .filter(|e| e.team_id.as_deref() == Some(team_id))
+            .filter(|experiment| experiment.team_id.as_deref() == Some(team_id))
         {
             if let Some(identity) = &experiment.identity {
-                process::signal_group(identity, process::SIGKILL);
+                process::signal_whole_group(identity, process::SIGKILL);
             }
+            ids.push(experiment.id);
+        }
+        ids
+    }
+
+    /// Removes the pid file, logs, and receipt of experiments whose records
+    /// are gone.
+    pub fn forget(&self, experiment_ids: &[String]) {
+        for id in experiment_ids {
+            if let Ok(dir) = self.workspace.experiment_dir(id) {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+    }
+
+    /// Stops watching without touching any process (a Runtime stopping, or a
+    /// test simulating one). Experiments keep running and are adopted by the
+    /// next `recover`.
+    pub fn abandon_monitors(&self) {
+        for (_, handle) in self.monitored.lock().expect("monitor set poisoned").drain() {
+            handle.abort();
         }
     }
 
     // -- Recovery -------------------------------------------------------------
 
-    /// Reconciles what was in flight when the Runtime last stopped. Runs
-    /// before new work is admitted. Nothing is relaunched: a reservation that
-    /// never spawned is closed (and its launch given back), a finished
-    /// process is read from its receipt, a live one is adopted, and anything
-    /// else is `unknown` for a person to reconcile.
     pub fn recover(self: &Arc<Self>) -> Result<(), RunnerError> {
         for experiment in self.store.active_experiments()? {
             match experiment.state {
@@ -437,29 +446,12 @@ impl ExperimentRunner {
                         "the Runtime stopped before this launched",
                     )?;
                 }
-                ExperimentState::Launching => {
-                    let has_receipt = self
-                        .workspace
-                        .experiment_dir(&experiment.id)
-                        .ok()
-                        .and_then(|dir| process::read_receipt(&dir))
-                        .is_some();
-                    if has_receipt {
-                        self.finish_from_files(&experiment, false);
-                    } else {
-                        // The spawn may or may not have happened.
-                        self.finish(
-                            &experiment,
-                            Outcome {
-                                state: Some(ExperimentState::Unknown),
-                                reason: Some(
-                                    "the Runtime stopped while launching; the process may have started"
-                                        .into(),
-                                ),
-                                ..Outcome::default()
-                            },
-                        );
-                    }
+                // The identity was never recorded: the process may or may not
+                // have started.
+                ExperimentState::Launching | ExperimentState::Cancelling
+                    if experiment.identity.is_none() =>
+                {
+                    self.recover_unidentified(&experiment)?;
                 }
                 ExperimentState::Running | ExperimentState::Cancelling => {
                     self.watch(&experiment.id)
@@ -467,6 +459,47 @@ impl ExperimentRunner {
                 _ => {}
             }
         }
+        Ok(())
+    }
+
+    /// Establishes what became of a launch whose process identity was never
+    /// recorded. The exit receipt settles a finished process. A pid file is
+    /// evidence that the wrapper started; the process is adopted only if a
+    /// live process with that pid started when the file was written (a reused
+    /// pid would have started much later). Anything else is `unknown`.
+    fn recover_unidentified(self: &Arc<Self>, experiment: &Experiment) -> Result<(), RunnerError> {
+        let Ok(dir) = self.workspace.experiment_dir(&experiment.id) else {
+            return Ok(());
+        };
+        if process::read_receipt(&dir).is_some() {
+            self.finish_from_files(experiment);
+            return Ok(());
+        }
+        if let Some((pid, written)) = process::read_pid_file(&dir)
+            && let Some(identity) = process::identity(pid)
+            && process::is_alive(&identity)
+            && process::start_unix(&identity).is_some_and(|started| {
+                let written = written
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|elapsed| elapsed.as_secs() as i64)
+                    .unwrap_or(0);
+                (started - written).abs() <= 3
+            })
+        {
+            self.store.mark_running(&experiment.id, &identity)?;
+            self.watch(&experiment.id);
+            return Ok(());
+        }
+        self.finish(
+            experiment,
+            Outcome {
+                state: Some(ExperimentState::Unknown),
+                reason: Some(
+                    "the Runtime stopped while launching; the process may have started".into(),
+                ),
+                ..Outcome::default()
+            },
+        );
         Ok(())
     }
 

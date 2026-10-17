@@ -51,6 +51,16 @@ Team can never run a command the researcher did not name. This is explicit
 pre-authorization, not a bypass of provider-native permissions: provider tool
 calls inside an Agent turn keep their existing permission path unchanged.
 
+Matching is by argv *prefix*: arguments after the listed tokens are free, so an
+allowed `python3 train.py` also permits extra flags, and an allowed `sh -c`
+permits any script. The researcher should authorize only commands they are
+content to run with arbitrary trailing arguments. The envelope constrains the
+Team tools and the researcher routes; it is not a sandbox against a hostile
+local process, and the browser API has no per-caller identity (the server relies
+on its reverse proxy for authentication), so an Agent that can reach the API
+through its own shell or network tools is held only by that tool's
+provider-native permissions.
+
 An envelope has a monotonic `revision`; every revision is immutable and edits
 require `expected_revision`. An experiment records the revision it was admitted
 under (`policy_revision`) and keeps running under it: raising a limit later
@@ -153,10 +163,20 @@ reassigns its waits to the Leader; removing the Team terminates its processes
 before its rows are deleted. Local-only removal semantics are unchanged: no
 Project directory or provider history is touched.
 
-Logs live under the Runtime state directory, capped, and are served as bounded
-tails. Declared artifacts are Project-relative paths resolved through
-`WorkspaceService`, recorded with their content revision at exit; a missing or
-changed artifact is reported as such.
+Logs live under the Runtime state directory, each capped at 16 MiB by a
+bounded copy (the program is never killed by the cap and its own files are
+unlimited), and are served as bounded tails. Declared artifacts are paths
+under the execution root (the Project, or the Team's worktree) resolved through
+`WorkspaceService`, recorded with their content revision at exit (files too
+large to hash use their size and modification time); a missing or changed
+artifact is reported as such.
+
+The wrapper leads the process group and dies on the first SIGTERM, but a program
+may trap it, so a slot is held until the *whole group* is empty; the runtime
+escalates to SIGKILL after a grace period. When a program exits, anything left
+behind in its group is stopped. A runtime-limit stop is recorded before the
+signal, so its outcome is `timed_out` even across a restart; a process that is
+simply gone with no receipt is `unknown`, whatever time has passed.
 
 ### 7. Continuation
 

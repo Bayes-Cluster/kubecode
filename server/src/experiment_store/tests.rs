@@ -690,3 +690,109 @@ fn a_team_cannot_complete_while_experiments_or_analysis_are_outstanding() {
         .complete_team(&f.team.id, &f.leader.id, "Done", "fp")
         .expect("complete once nothing is owed");
 }
+
+// -- Review fixes (#163) ---------------------------------------------------------
+
+#[test]
+fn a_repeat_yield_on_a_finished_experiment_returns_the_same_wait_and_deadlines_are_bounded() {
+    let f = Fixture::new();
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    f.experiments.observe(&experiment.id, finished(0)).unwrap();
+    let first = f
+        .experiments
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.teammate.id,
+            &experiment.id,
+            None,
+            "",
+            None,
+        )
+        .unwrap();
+    let second = f
+        .experiments
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.teammate.id,
+            &experiment.id,
+            None,
+            "",
+            None,
+        )
+        .unwrap();
+    assert_eq!(first.id, second.id, "no unbounded growth of resolved waits");
+    assert_eq!(
+        f.experiments
+            .waits(&f.project_id, &f.research_id, &f.round_id)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let (open, _) = f.reserve("k2", &["echo", "y"]).unwrap();
+    let far = f
+        .experiments
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.leader.id,
+            &open.id,
+            None,
+            "",
+            Some(i64::MAX / 2),
+        )
+        .unwrap();
+    assert!(
+        far.deadline_at.unwrap() <= f.experiments.now() + 7 * 24 * 3600,
+        "{:?}",
+        far.deadline_at
+    );
+}
+
+#[test]
+fn launches_given_back_do_not_count_as_failed_attempts() {
+    let f = Fixture::new();
+    let mut wider = limits();
+    wider.max_launches = 10;
+    wider.max_concurrent = 1;
+    f.experiments
+        .set_envelope(
+            &f.project_id,
+            &f.research_id,
+            &f.round_id,
+            Some(1),
+            wider,
+            None,
+        )
+        .unwrap();
+    // Two reservations that never started are refunded, not failures.
+    for key in ["a", "b"] {
+        let (e, _) = f.reserve(key, &["echo", key]).unwrap();
+        f.experiments
+            .abandon_reserved(&e.id, "runtime stopped")
+            .unwrap();
+    }
+    f.reserve("c", &["echo", "c"])
+        .expect("refunded launches do not trip the no-progress stop");
+}
+
+#[test]
+fn launch_paths_are_bounded() {
+    let f = Fixture::new();
+    let mut long_cwd = launch(&f.round_id, &f.team, "p", &["echo", "x"]);
+    long_cwd.cwd = "a".repeat(600);
+    assert!(matches!(
+        f.experiments
+            .reserve(&f.project_id, &f.research_id, long_cwd),
+        Err(ExperimentError::Invalid(_))
+    ));
+    let mut empty_artifact = launch(&f.round_id, &f.team, "q", &["echo", "x"]);
+    empty_artifact.artifacts = vec![" ".into()];
+    assert!(matches!(
+        f.experiments
+            .reserve(&f.project_id, &f.research_id, empty_artifact),
+        Err(ExperimentError::Invalid(_))
+    ));
+}
