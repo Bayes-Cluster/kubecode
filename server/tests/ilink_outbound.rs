@@ -557,6 +557,77 @@ async fn unreachable_peer_receives_no_further_sends_and_shutdown_stops_typing() 
 }
 
 #[tokio::test]
+async fn a_restarted_bridge_delivers_what_happened_while_it_was_down() {
+    let env = environment("restart", &streaming_agent()).await;
+    route(&env, prompt("check the build", 1)).await;
+    wait_until(
+        || env.capture.snapshot().last() == Some(&Sent::Typing(false)),
+        "first run delivered",
+    )
+    .await;
+    // Give the delivery cursor a chance to persist, then stop the bridge.
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    env.bridge.shutdown().await;
+
+    // While the bridge is down, a WeChat-originated run is interrupted —
+    // exactly what the store records when the Runtime restarts mid-run.
+    let conversation = env
+        .store
+        .get_conversation(&env.conversation_id)
+        .expect("conversation");
+    let run = env
+        .store
+        .start_run_with_client_message_id(
+            &env.conversation_id,
+            &conversation.project_id,
+            "long job",
+            kubecode_server::agents::PermissionMode::Safe,
+            Some(&format!("ilink:{ACCOUNT}:{PEER}:1750000000000:9")),
+        )
+        .expect("run");
+    env.store
+        .finish_run(
+            &run.id,
+            RunStatus::Interrupted,
+            None,
+            kubecode_server::agents::TerminalCause::Interrupted,
+        )
+        .expect("interrupt");
+
+    let capture = Arc::new(Capture::default());
+    let bridge = ChannelBridge::start_with_transport(
+        Arc::clone(&env.service),
+        Arc::clone(&env.runtime),
+        Arc::clone(&capture) as Arc<dyn OutboundTransport>,
+        ChannelBridgeConfig {
+            language: ChannelLanguage::En,
+            outbound: OutboundConfig {
+                keepalive: Duration::from_secs(3600),
+                retry_delay: Duration::from_millis(10),
+                ..OutboundConfig::default()
+            },
+            ..ChannelBridgeConfig::default()
+        },
+    )
+    .await
+    .expect("restarted bridge");
+    wait_until(
+        || {
+            capture.texts().contains(
+                &"Run interrupted — the Runtime restarted or the Agent disconnected.".to_owned(),
+            )
+        },
+        "interrupted notice after restart",
+    )
+    .await;
+    assert!(
+        !capture.texts().iter().any(|text| text == "Build is green."),
+        "already-delivered output is not replayed"
+    );
+    bridge.shutdown().await;
+}
+
+#[tokio::test]
 async fn unbinding_mid_run_stops_typing_without_flushing() {
     let env = environment("unbind", &agent(CANCELLABLE_AGENT)).await;
     route(&env, prompt("long job", 1)).await;
