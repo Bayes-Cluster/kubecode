@@ -144,23 +144,100 @@ async fn failures_are_observations_not_verdicts() {
 }
 
 #[tokio::test]
-async fn runaway_output_is_bounded_on_disk_and_in_every_read() {
+async fn runaway_output_is_bounded_on_disk_and_never_breaks_the_program() {
     let rig = Rig::new();
+    // `yes` would write forever; the log is capped but the program is not
+    // killed by the cap, and its own files are not limited.
     let noisy = rig.launch("noisy", "yes").unwrap();
-    // The kernel file-size limit stops the process; no tight monitor loop is needed.
-    let done = rig.settle(&noisy.id).await;
-    assert!(!done.state.is_active(), "{done:?}");
     let path = rig
         .f
         .workspace
-        .experiment_dir(&done.id)
+        .experiment_dir(&noisy.id)
         .unwrap()
         .join("stdout.log");
-    let size = std::fs::metadata(&path).unwrap().len();
-    assert!(size <= 17 * 1024 * 1024, "the log grew to {size} bytes");
-    let tail = rig.log(&done.id, LogStream::Stdout);
+    let cap = 16 * 1024 * 1024;
+    for _ in 0..400 {
+        if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) >= cap {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        cap,
+        "the log fills to its cap"
+    );
+    assert_eq!(
+        rig.f.experiments.get(&noisy.id).unwrap().state,
+        ExperimentState::Running,
+        "hitting the cap does not kill the program"
+    );
+    let tail = rig.log(&noisy.id, LogStream::Stdout);
     assert!(tail.text.len() as u64 <= MAX_LOG_TAIL_BYTES);
-    assert!(tail.truncated && tail.total_bytes >= size.min(1024 * 1024));
+    assert!(tail.truncated);
+    rig.runner.cancel(&rig.f.project_id, &noisy.id).unwrap();
+    let done = tokio::time::timeout(Duration::from_secs(15), rig.settle(&noisy.id))
+        .await
+        .unwrap();
+    assert_eq!(done.state, ExperimentState::Cancelled);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        cap,
+        "never grows past the cap"
+    );
+}
+
+#[tokio::test]
+async fn a_program_may_write_files_larger_than_the_log_cap() {
+    let rig = Rig::new();
+    let big = rig
+        .launch("big", "head -c 20000000 /dev/zero > big.bin")
+        .unwrap();
+    let done = rig.settle(&big.id).await;
+    assert_eq!(
+        (done.state, done.exit_code),
+        (ExperimentState::Exited, Some(0))
+    );
+    assert_eq!(
+        std::fs::metadata(rig.root.join("big.bin")).unwrap().len(),
+        20_000_000
+    );
+}
+
+#[tokio::test]
+async fn a_program_that_ignores_sigterm_keeps_its_slot_until_it_is_killed() {
+    let rig = Rig::new();
+    // The wrapper dies on SIGTERM; the program traps it and carries on.
+    let stubborn = rig
+        .launch("stubborn", "trap '' TERM; echo ready > ready.txt; sleep 30")
+        .unwrap();
+    for _ in 0..200 {
+        if rig.root.join("ready.txt").exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let identity = stubborn.identity.clone().unwrap();
+    rig.runner.cancel(&rig.f.project_id, &stubborn.id).unwrap();
+    // After the wrapper is gone but before the escalation, work may still run,
+    // so the slot is not released and nothing is recorded as finished.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(
+        process::group_alive(&identity),
+        "the program survived SIGTERM"
+    );
+    assert_eq!(
+        rig.f.experiments.get(&stubborn.id).unwrap().state,
+        ExperimentState::Cancelling
+    );
+    let done = tokio::time::timeout(Duration::from_secs(15), rig.settle(&stubborn.id))
+        .await
+        .unwrap();
+    assert_eq!(done.state, ExperimentState::Cancelled);
+    assert!(
+        !process::group_alive(&identity),
+        "the escalation killed the whole group"
+    );
 }
 
 #[tokio::test]
@@ -408,9 +485,16 @@ async fn a_running_process_is_adopted_after_a_restart_and_observed_once() {
     let started = rig
         .launch("adopt", "sleep 1; echo finished > adopted.txt")
         .unwrap();
-    // A second Runtime instance (as after a restart) takes over monitoring.
-    let successor = restarted(&rig);
-    successor.recover().unwrap();
+    // The first Runtime stops watching (it is gone); the process keeps running.
+    rig.runner.abandon_monitors();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        rig.f.experiments.get(&started.id).unwrap().state,
+        ExperimentState::Running
+    );
+
+    // Only the successor can now observe it.
+    restarted(&rig).recover().unwrap();
     let done = tokio::time::timeout(Duration::from_secs(15), rig.settle(&started.id))
         .await
         .unwrap();
@@ -418,12 +502,122 @@ async fn a_running_process_is_adopted_after_a_restart_and_observed_once() {
         (done.state, done.exit_code),
         (ExperimentState::Exited, Some(0))
     );
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    let waits = rig.f.experiments.get(&started.id).unwrap();
+    assert!(rig.root.join("adopted.txt").exists());
     assert_eq!(
-        waits.analysis,
+        done.analysis,
         AnalysisState::Pending,
         "one observation, one obligation"
+    );
+}
+
+#[tokio::test]
+async fn a_launch_that_died_before_its_identity_was_recorded_is_adopted_from_its_pid_file() {
+    let rig = Rig::new();
+    let started = rig.launch("unrecorded", "sleep 30").unwrap();
+    let identity = started.identity.clone().unwrap();
+    rig.runner.abandon_monitors();
+    // Simulate the Runtime dying before `mark_running`: the row is only `launching`.
+    rig.f
+        .experiments
+        .force_state_for_test(&started.id, "launching");
+    restarted(&rig).recover().unwrap();
+    let adopted = rig.f.experiments.get(&started.id).unwrap();
+    assert_eq!(adopted.state, ExperimentState::Running);
+    assert_eq!(adopted.identity.as_ref().map(|i| i.pid), Some(identity.pid));
+    // And it is supervised again: cancelling stops it.
+    let successor = restarted(&rig);
+    successor.recover().unwrap();
+    successor.cancel(&rig.f.project_id, &started.id).unwrap();
+    let done = tokio::time::timeout(Duration::from_secs(15), rig.settle(&started.id))
+        .await
+        .unwrap();
+    assert_eq!(done.state, ExperimentState::Cancelled);
+}
+
+#[tokio::test]
+async fn a_cancel_requested_during_launch_is_not_stuck_after_a_restart() {
+    let rig = Rig::new();
+    let (reserved, _) = rig.f.reserve("cl", &["sh", "-c", "true"]).unwrap();
+    rig.f.experiments.mark_launching(&reserved.id).unwrap();
+    rig.f.experiments.request_cancel(&reserved.id).unwrap();
+    assert_eq!(
+        rig.f.experiments.get(&reserved.id).unwrap().state,
+        ExperimentState::Cancelling
+    );
+    restarted(&rig).recover().unwrap();
+    // Without an identity the fate is ambiguous: visible and reconcilable,
+    // never a slot that leaks forever.
+    let after = rig.f.experiments.get(&reserved.id).unwrap();
+    assert_eq!(after.state, ExperimentState::Unknown);
+    rig.f
+        .experiments
+        .reconcile(
+            &rig.f.project_id,
+            &reserved.id,
+            crate::experiment_store::ReconcileTruth::NotStarted,
+            None,
+            "test",
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_lost_process_that_outlived_its_cap_is_unknown_not_timed_out() {
+    let rig = Rig::new();
+    let mut request = rig.request("old", "sleep 30");
+    request.max_runtime_secs = Some(1);
+    let started = rig
+        .runner
+        .launch(&rig.f.project_id, &rig.f.research_id, request)
+        .unwrap();
+    // Cap the runtime so the monitor would time it out: replace the monitor
+    // with a successor that finds the process already gone, with no receipt.
+    rig.runner.abandon_monitors();
+    let identity = started.identity.clone().unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(process::signal_whole_group(&identity, process::SIGKILL));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    restarted(&rig).recover().unwrap();
+    let lost = tokio::time::timeout(Duration::from_secs(10), rig.settle(&started.id))
+        .await
+        .unwrap();
+    assert_eq!(
+        lost.state,
+        ExperimentState::Unknown,
+        "elapsed time alone proves nothing about how it ended"
+    );
+}
+
+#[test]
+fn artifact_revisions_resolve_under_the_execution_root_and_large_files_are_not_missing() {
+    let rig = Rig::new();
+    std::fs::write(rig.root.join("small.txt"), "x").unwrap();
+    let small = rig
+        .f
+        .workspace
+        .execution_file_revision(&rig.f.project_id, None, "small.txt")
+        .unwrap();
+    assert!(!small.starts_with("large:"));
+    let big = rig.root.join("big.bin");
+    let file = std::fs::File::create(&big).unwrap();
+    file.set_len(9 * 1024 * 1024).unwrap();
+    let revision = rig
+        .f
+        .workspace
+        .execution_file_revision(&rig.f.project_id, None, "big.bin")
+        .unwrap();
+    assert!(revision.starts_with("large:"), "{revision}");
+    assert!(
+        rig.f
+            .workspace
+            .execution_file_revision(&rig.f.project_id, None, "../escape")
+            .is_err()
+    );
+    assert!(
+        rig.f
+            .workspace
+            .execution_file_revision(&rig.f.project_id, None, "nope.txt")
+            .is_err()
     );
 }
 

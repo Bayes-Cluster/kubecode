@@ -1184,12 +1184,17 @@ impl AgentRuntime {
         }
         // Running experiments belong to the Team: stop their processes
         // before the records that identify them are removed.
-        if let Some(runner) = &self.experiment_runner {
-            runner.cancel_team(&team.id);
-        }
+        let stopped = self
+            .experiment_runner
+            .as_ref()
+            .map(|runner| runner.cancel_team(&team.id))
+            .unwrap_or_default();
         teams
             .delete_team(&team.id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if let Some(runner) = &self.experiment_runner {
+            runner.forget(&stopped);
+        }
         for member in &members {
             if self.store.get_conversation(&member.conversation_id).is_ok() {
                 self.store.delete_conversation(&member.conversation_id)?;
