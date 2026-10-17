@@ -118,6 +118,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .with_agent_catalog(agents)
     .with_team_mcp_http_origin(internal_origin);
+    // In-flight experiments are reconciled before new work is admitted:
+    // finished ones read from their receipts, live ones adopted, ambiguous
+    // ones left `unknown` — nothing is relaunched.
+    if let Err(error) = state.experiment_runner.recover() {
+        eprintln!("WARN: experiment recovery failed: {error}");
+    }
     state.start_team_supervisor();
     state.start_ilink_service();
     workspace.start_watching(workspace_event_sink(Arc::clone(&agent_store)));

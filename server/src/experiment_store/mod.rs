@@ -115,13 +115,20 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
            UNIQUE (experiment_id, kind)
          );",
+    )?;
+    crate::database::ensure_column(
+        connection,
+        "experiments",
+        "artifact_revisions_json",
+        "TEXT NOT NULL DEFAULT '[]'",
     )
 }
 
 const EXPERIMENT_SELECT: &str = "SELECT id, project_id, research_id, round_id, team_id, task_id,
         owner_member_id, launch_key, label, argv_json, cwd, artifacts_json, sources_json,
         policy_revision, max_runtime_secs, state, analysis, pid, start_ticks, boot_id,
-        exit_code, signal, reason, cancel_requested, created_at, launched_at, finished_at
+        exit_code, signal, reason, cancel_requested, created_at, launched_at, finished_at,
+        artifact_revisions_json
     FROM experiments";
 
 const WAIT_SELECT: &str = "SELECT id, experiment_id, team_id, task_id, attempt_id, owner_member_id,
@@ -437,6 +444,7 @@ impl ExperimentStore {
             tx.execute(
                 "UPDATE experiments
                  SET state = ?2, exit_code = ?3, signal = ?4, reason = ?5, analysis = 'pending',
+                     artifact_revisions_json = ?7,
                      finished_at = CASE WHEN ?6 THEN CURRENT_TIMESTAMP ELSE finished_at END
                  WHERE id = ?1",
                 params![
@@ -445,7 +453,8 @@ impl ExperimentStore {
                     outcome.exit_code,
                     outcome.signal,
                     reason,
-                    finished
+                    finished,
+                    serde_json::to_string(&outcome.artifact_revisions)?
                 ],
             )?;
             insert_event(tx, id, EventKind::Finished)?;
@@ -538,6 +547,40 @@ impl ExperimentStore {
             }
             resolve_open_waits(tx, id)?;
             Ok((load_experiment(tx, id)?, Some(scope_of(tx, id)?)))
+        })
+    }
+
+    /// Looks an experiment up by id alone (the runner's own bookkeeping; API
+    /// callers use the Project-scoped `experiment`).
+    pub fn get(&self, id: &str) -> Result<Experiment, ExperimentError> {
+        load_experiment(&self.connection(), id)
+    }
+
+    /// A reservation that never reached `launching` provably never spawned a
+    /// process. It is closed and its launch is given back; the Leader is told
+    /// through the usual observation so it can decide on an explicit retry.
+    pub fn abandon_reserved(&self, id: &str, reason: &str) -> Result<bool, ExperimentError> {
+        self.write(|tx| {
+            let experiment = load_experiment(tx, id)?;
+            if experiment.state != ExperimentState::Reserved {
+                return Ok((false, None));
+            }
+            tx.execute(
+                "UPDATE experiments
+                 SET state = 'failed_to_start', analysis = 'pending', reason = ?2,
+                     finished_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![id, reason],
+            )?;
+            tx.execute(
+                "UPDATE research_envelopes
+                 SET launches_reserved = MAX(launches_reserved - 1, 0)
+                 WHERE round_id = ?1",
+                [&experiment.round_id],
+            )?;
+            insert_event(tx, id, EventKind::Finished)?;
+            resolve_open_waits(tx, id)?;
+            Ok((true, Some(scope_of(tx, id)?)))
         })
     }
 
@@ -1113,6 +1156,7 @@ fn experiment_from_row(
         row.get::<_, Option<String>>(25)?,
         row.get::<_, Option<String>>(26)?,
     );
+    let artifact_revisions: String = row.get(27)?;
     Ok((|| {
         Ok(Experiment {
             id: base.0,
@@ -1144,6 +1188,7 @@ fn experiment_from_row(
             signal: tail.1,
             reason: tail.2,
             cancel_requested: tail.3,
+            artifact_revisions: serde_json::from_str(&artifact_revisions)?,
             created_at: tail.4,
             launched_at: tail.5,
             finished_at: tail.6,

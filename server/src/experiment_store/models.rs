@@ -314,9 +314,18 @@ pub struct Experiment {
     pub signal: Option<i32>,
     pub reason: Option<String>,
     pub cancel_requested: bool,
+    /// Content revision of each declared artifact when the process ended
+    /// (`None` when it was missing), so a later change is detectable.
+    pub artifact_revisions: Vec<ArtifactRevision>,
     pub created_at: String,
     pub launched_at: Option<String>,
     pub finished_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArtifactRevision {
+    pub path: String,
+    pub revision: Option<String>,
 }
 
 /// What a finished process looked like.
@@ -326,6 +335,7 @@ pub struct Outcome {
     pub exit_code: Option<i32>,
     pub signal: Option<i32>,
     pub reason: Option<String>,
+    pub artifact_revisions: Vec<ArtifactRevision>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

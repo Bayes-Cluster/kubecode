@@ -1186,6 +1186,10 @@ describe('Kubecode API client', () => {
       await api.setResearchEnvelope('p', 'r', 'round/1', limits, 2)
       await api.setResearchExecutionState('p', 'r', 'round/1', 'pause')
       await api.reconcileExperiment('p', 'r', 'e/1', 'finished', 0)
+      await api.launchExperiment('p', 'r', 'round/1', { launch_key: 'k', argv: ['echo', 'a b'] })
+      await api.cancelExperiment('p', 'r', 'e/1')
+      await api.cancelResearchExecution('p', 'r', 'round/1')
+      await api.getExperimentLog('p', 'r', 'e/1', 'stderr')
 
       const base = '/b/api/v1/projects/p/research/r'
       expect(fetch.mock.calls.map((call) => call[0])).toEqual([
@@ -1193,6 +1197,10 @@ describe('Kubecode API client', () => {
         `${base}/rounds/round%2F1/execution/envelope`,
         `${base}/rounds/round%2F1/execution/pause`,
         `${base}/experiments/e%2F1/reconcile`,
+        `${base}/rounds/round%2F1/execution/experiments`,
+        `${base}/experiments/e%2F1/cancel`,
+        `${base}/rounds/round%2F1/execution/cancel`,
+        `${base}/experiments/e%2F1/logs?stream=stderr`,
       ])
       expect(fetch.mock.calls[1][1].method).toBe('PUT')
       expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ limits, expected_revision: 2 })

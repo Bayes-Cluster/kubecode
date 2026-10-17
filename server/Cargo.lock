@@ -1370,6 +1370,7 @@ dependencies = [
  "clap",
  "futures-util",
  "hex",
+ "libc",
  "md-5",
  "notify",
  "portable-pty",
