@@ -7,7 +7,7 @@ use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
 use crate::git::GitService;
-use crate::ilink::{ILinkService, IlinkServiceConfig};
+use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
 use crate::teams::{Team, TeamRole, TeamStore};
 use crate::terminal::{TerminalEventSink, TerminalLifecycleEvent, TerminalManager};
 use crate::workspace::WorkspaceService;
@@ -21,6 +21,8 @@ pub struct AppState {
     pub git: Arc<GitService>,
     pub teams: Arc<TeamStore>,
     pub ilink: Arc<ILinkService>,
+    /// The running WeChat channel pipeline, once started.
+    pub ilink_bridge: Arc<tokio::sync::Mutex<Option<Arc<ChannelBridge>>>>,
 }
 
 impl AppState {
@@ -52,18 +54,38 @@ impl AppState {
             git,
             teams,
             ilink,
+            ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
-    /// Starts the iLink channel service supervisor: restores a persisted
-    /// linked account (if any) without blocking startup (issue #127).
+    /// Starts the iLink channel service supervisor: wires the inbound and
+    /// outbound bridge (issue #131), then restores a persisted linked
+    /// account (if any) without blocking startup (issue #127).
     pub fn start_ilink_service(&self) {
         let ilink = Arc::clone(&self.ilink);
+        let runtime = Arc::clone(&self.agent_runtime);
+        let slot = Arc::clone(&self.ilink_bridge);
         tokio::spawn(async move {
+            match ChannelBridge::start(Arc::clone(&ilink), runtime, ChannelBridgeConfig::default())
+                .await
+            {
+                Ok(bridge) => *slot.lock().await = Some(bridge),
+                Err(error) => eprintln!("WARN: iLink bridge failed to start: {error}"),
+            }
             if let Err(error) = ilink.restore_on_startup().await {
                 eprintln!("WARN: iLink restore failed: {error}");
             }
         });
+    }
+
+    /// Graceful channel shutdown: stop the bridge (typing cancelled while
+    /// credentials still work), then the service (polls aborted, cursor
+    /// and credentials kept for the next start).
+    pub async fn shutdown_ilink(&self) {
+        if let Some(bridge) = self.ilink_bridge.lock().await.take() {
+            bridge.shutdown().await;
+        }
+        self.ilink.shutdown().await;
     }
 
     pub fn with_agents(mut self, agents: Vec<AgentDescriptor>) -> Self {

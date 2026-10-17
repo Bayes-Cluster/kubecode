@@ -13,8 +13,9 @@
 //! shutdown therefore never persists a cursor ahead of processed
 //! messages.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -24,16 +25,24 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_store::{AgentStore, IlinkAccountStatus, IlinkCredentialRecord, StoreError};
 
+use super::cdn::CdnClient;
 use super::client::{IlinkClient, LongPollOutcome, UpdatesPage};
 use super::crypto::random_key_hex;
+use super::domain::OutboundText;
 use super::error::{IlinkError, Secret};
+use super::inbound::seal_peer_context;
 use super::origins::{OriginPolicy, QR_LOGIN_BASE_URL};
 use super::seal::SecretKeyring;
-use super::types::LoginState;
+use super::types::{LoginState, TYPING_STATUS_CANCEL, TYPING_STATUS_TYPING};
 
 /// Fixed production CDN base used for canonical URL fallbacks; every
 /// destination still passes the origin policy before any request.
 pub const ILINK_CDN_BASE_URL: &str = "https://szextshort.wechat.com";
+
+/// How long a fetched per-peer typing ticket is reused.
+const TYPING_TICKET_TTL: Duration = Duration::from_secs(10 * 60);
+/// Bounded typing-ticket cache size.
+const TYPING_TICKET_CACHE: usize = 64;
 
 /// Safe, externally visible connection state (ADR 0211 §4 statuses).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -243,6 +252,8 @@ pub struct QrLoginStart {
 pub struct ILinkService {
     store: Arc<AgentStore>,
     core: Arc<Mutex<ServiceCore>>,
+    /// peer → (typing ticket, fetched at); secrets never leave the service.
+    typing_tickets: Mutex<HashMap<String, (Secret, Instant)>>,
 }
 
 impl ILinkService {
@@ -280,6 +291,7 @@ impl ILinkService {
                 page_sink: None,
                 get_updates_buf: String::new(),
             })),
+            typing_tickets: Mutex::new(HashMap::new()),
         })
     }
 
@@ -319,6 +331,127 @@ impl ILinkService {
                     .as_millis() as u64
             }),
         }
+    }
+
+    /// The linked account id, if any.
+    pub async fn account_id(&self) -> Option<String> {
+        self.core.lock().await.account_id.clone()
+    }
+
+    /// A CDN client bound to the configured, policy-validated CDN origin.
+    pub async fn cdn_client(&self) -> Result<CdnClient, ServiceError> {
+        let config = self.config().await;
+        CdnClient::new(&config.cdn_base, config.origin_policy, config.api_timeout)
+            .map_err(ServiceError::Protocol)
+    }
+
+    // -- Outbound delivery (issue #131) -------------------------------------
+
+    /// Seals and stores the latest context token of an authorized peer
+    /// (ADR 0211 §7). Unauthorized peers never get a stored context.
+    pub fn remember_peer_context(
+        &self,
+        account_id: &str,
+        peer_id: &str,
+        context_token: &Secret,
+    ) -> Result<(), IlinkError> {
+        let keyring = SecretKeyring::open(self.state_dir())?;
+        seal_peer_context(&self.store, account_id, peer_id, context_token, |plain| {
+            keyring.seal(plain)
+        })
+    }
+
+    fn peer_context(&self, account_id: &str, peer_id: &str) -> Option<Secret> {
+        let sealed = self
+            .store
+            .ilink_peer_context_token(account_id, peer_id)
+            .ok()
+            .flatten()?;
+        let keyring = SecretKeyring::open(self.state_dir()).ok()?;
+        let plain = keyring.unseal(&sealed).ok()?;
+        String::from_utf8(plain).ok().map(Secret::new)
+    }
+
+    /// Client, bot token, and the peer's context token for one send.
+    async fn send_material(
+        &self,
+        peer_id: &str,
+    ) -> Result<(IlinkClient, Secret, Option<Secret>), IlinkError> {
+        let (client, account_id) = {
+            let core = self.core.lock().await;
+            (core.client.clone(), core.account_id.clone())
+        };
+        let (Some(client), Some(account_id)) = (client, account_id) else {
+            return Err(IlinkError::PeerContextUnavailable);
+        };
+        let token = self
+            .stored_token()
+            .await
+            .filter(|token| !token.is_empty())
+            .map(Secret::new)
+            .ok_or(IlinkError::PeerContextUnavailable)?;
+        Ok((client, token, self.peer_context(&account_id, peer_id)))
+    }
+
+    /// Sends one text message to a peer, echoing its stored context token.
+    /// Without a context the peer cannot be addressed (no proactive sends).
+    pub async fn send_text(
+        &self,
+        peer_id: &str,
+        text: &str,
+        client_id: &str,
+    ) -> Result<(), IlinkError> {
+        let (client, token, context) = self.send_material(peer_id).await?;
+        let context = context.ok_or(IlinkError::PeerContextUnavailable)?;
+        let outbound = OutboundText::new(peer_id, text, client_id.to_owned())
+            .with_context_token(Some(context));
+        client.send_message(&outbound, &token, None).await
+    }
+
+    /// Starts or cancels the typing indicator for a peer, fetching and
+    /// caching its typing ticket through `getconfig`.
+    pub async fn set_typing(&self, peer_id: &str, typing: bool) -> Result<(), IlinkError> {
+        let (client, token, context) = self.send_material(peer_id).await?;
+        let ticket = self
+            .typing_ticket(&client, &token, peer_id, context.as_ref())
+            .await?;
+        let status = if typing {
+            TYPING_STATUS_TYPING
+        } else {
+            TYPING_STATUS_CANCEL
+        };
+        client.send_typing(peer_id, &ticket, status, &token).await
+    }
+
+    async fn typing_ticket(
+        &self,
+        client: &IlinkClient,
+        token: &Secret,
+        peer_id: &str,
+        context: Option<&Secret>,
+    ) -> Result<Secret, IlinkError> {
+        if let Some((ticket, fetched)) = self.typing_tickets.lock().await.get(peer_id)
+            && fetched.elapsed() < TYPING_TICKET_TTL
+        {
+            return Ok(ticket.clone());
+        }
+        let config = client.get_config(peer_id, context, token).await?;
+        let ticket = config
+            .typing_ticket
+            .filter(|ticket| !ticket.trim().is_empty())
+            .map(Secret::new)
+            .ok_or(IlinkError::InvalidResponse {
+                operation: "getconfig",
+            })?;
+        let mut tickets = self.typing_tickets.lock().await;
+        if tickets.len() >= TYPING_TICKET_CACHE {
+            tickets.retain(|_, (_, fetched)| fetched.elapsed() < TYPING_TICKET_TTL);
+            if tickets.len() >= TYPING_TICKET_CACHE {
+                tickets.clear();
+            }
+        }
+        tickets.insert(peer_id.to_owned(), (ticket.clone(), Instant::now()));
+        Ok(ticket)
     }
 
     // -- Startup restore ---------------------------------------------------
@@ -529,6 +662,7 @@ impl ILinkService {
             core.status = ConnectionStatus::Disconnected;
             core.account_id.take()
         };
+        self.typing_tickets.lock().await.clear();
         let Some(account_id) = account_id else {
             return Err(ServiceError::NotAvailable);
         };

@@ -744,6 +744,32 @@ channel event is `ilink_status_changed`, carrying connection status, display
 name, and binding — never tokens, QR material, message bodies, filenames, or
 paths.
 
+Outbound replies are a projection, never a second transcript. A
+`ChannelBridge` started with the service wires long-poll pages through the
+inbound gate into the Session router, and tails the workspace event stream
+into a pure `ReplyProjector`. Only runs whose `client_message_id` carries the
+channel prefix for the linked account (`ilink:{account}:{peer}:…`) and whose
+conversation is the current binding are mirrored, to exactly the peer that
+admitted them; browser runs in the same Session stay in the browser. Text
+deltas buffer per run and flush at any tool event (tool persistence is
+coalesced, so a completed tool may be the only boundary), at a size threshold,
+before a permission/elicitation menu, and at completion. Flushed text passes a
+fence-aware Markdown filter and splits into chunks of at most 2,000 characters
+(paragraph, newline, CJK/ASCII sentence, clause, then space boundaries; a split
+inside a code fence closes and reopens it). Every chunk carries a stable
+`kubecode-{run}-{n}` client id; cursor replay and repeated terminal events are
+suppressed by event id, settled-run memory, and a bounded ledger of delivered
+ids. Completion sends a localized notice for every typed non-trivial cause
+(cancelled, error, max tokens, max turn requests, refusal, interrupted, timed
+out) after the final flush and never echoes raw error text. Per-run output is
+bounded (overflow stops sending and appends one truncation notice). Typing
+starts with the run, refreshes on a keepalive with a hard cap, and stops on
+completion, binding change, logout, Session removal, peer-context loss, and
+Runtime shutdown — in those cleanup paths buffers are dropped, not flushed.
+Delivery goes through `ILinkService`, which alone unseals the bot token and
+the peer's stored context token and caches per-peer typing tickets; a peer
+without a stored context cannot be addressed at all.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

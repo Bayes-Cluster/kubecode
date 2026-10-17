@@ -35,6 +35,16 @@ pub enum ChannelLanguage {
 }
 
 impl ChannelLanguage {
+    /// Parses a language tag (`zh`, `zh-CN`, `zh_CN` → Chinese; anything
+    /// else → English).
+    pub fn from_tag(tag: &str) -> Self {
+        if tag.trim().to_ascii_lowercase().starts_with("zh") {
+            Self::ZhCn
+        } else {
+            Self::En
+        }
+    }
+
     fn pick(self, en: &'static str, zh: &'static str) -> &'static str {
         match self {
             Self::En => en,

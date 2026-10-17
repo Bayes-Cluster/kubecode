@@ -18,10 +18,12 @@
 //!   before every request.
 //! - [`error`] — typed errors that never carry secrets or raw payloads.
 //!
-//! Persisted channel state, lifecycle, and the bridge live in later
-//! issues (#126, #127+); this module performs no I/O beyond the calls
-//! its methods make.
+//! - [`inbound`] / [`router`] — inbound normalization and Session routing.
+//! - [`outbound`] — event-stream projection into ordered replies, typing,
+//!   menus, and terminal notices.
+//! - [`bridge`] — the production pipeline wiring the halves together.
 
+pub mod bridge;
 pub mod cdn;
 pub mod client;
 pub mod crypto;
@@ -30,11 +32,13 @@ pub mod error;
 pub mod guard;
 pub mod inbound;
 pub mod origins;
+pub mod outbound;
 pub mod router;
 pub mod seal;
 pub mod service;
 pub mod types;
 
+pub use bridge::{ChannelBridge, ChannelBridgeConfig, ServiceTransport};
 pub use cdn::{CdnClient, MAX_MEDIA_BYTES, UploadedMedia};
 pub use client::{
     API_TIMEOUT, CONFIG_TIMEOUT, ILINK_APP_ID, ILINK_BOT_TYPE, IlinkClient, LONG_POLL_TIMEOUT,
@@ -50,6 +54,10 @@ pub use inbound::{
     InboundBridge, InboundCounters, ReplyKind,
 };
 pub use origins::{OriginPolicy, QR_LOGIN_BASE_URL, TRUSTED_SUFFIXES};
+pub use outbound::{
+    InteractionKind, MarkdownFilter, OutboundAction, OutboundBridge, OutboundConfig,
+    OutboundTransport, ReplyProjector, WECHAT_TEXT_LIMIT, split_text,
+};
 pub use router::{RouteOutcome, SessionRouter};
 pub use seal::SecretKeyring;
 pub use service::{

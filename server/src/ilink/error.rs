@@ -161,6 +161,10 @@ pub enum IlinkError {
     Crypto(String),
     #[error("payload exceeds the {limit} byte channel limit")]
     PayloadTooLarge { limit: usize },
+    /// No usable context token is stored for the peer: replies are
+    /// impossible until the peer writes again (ADR 0211 §7).
+    #[error("no reply context for the peer")]
+    PeerContextUnavailable,
 }
 
 impl IlinkError {

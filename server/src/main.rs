@@ -122,8 +122,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     state.start_ilink_service();
     workspace.start_watching(workspace_event_sink(Arc::clone(&agent_store)));
     let app = match access_token {
-        Some(access_token) => app_router_api_only(state, &config.base_path, access_token),
-        None => app_router_with_static(state, &config.base_path, &config.static_directory),
+        Some(access_token) => app_router_api_only(state.clone(), &config.base_path, access_token),
+        None => app_router_with_static(state.clone(), &config.base_path, &config.static_directory),
     };
     let local_address = listener.local_addr()?;
     let display_path = if config.base_path.is_empty() {
@@ -150,6 +150,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Orderly Runtime shutdown prevents new Project lifecycle operations, drops
     // native watch registrations, and joins the coalescing worker.
     workspace.stop_watching();
+    state.shutdown_ilink().await;
     Ok(())
 }
 
