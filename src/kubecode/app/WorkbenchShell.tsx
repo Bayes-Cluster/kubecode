@@ -15,6 +15,10 @@ import {
   type RankedCommandPaletteItem,
 } from '../commandPalette'
 import { ContextWorkbench } from '../ContextWorkbench'
+import { NewResearchDialog } from '../research/NewResearchDialog'
+import { ResearchNavigator } from '../research/ResearchNavigator'
+import { ResearchWorkspace } from '../research/ResearchWorkspace'
+import { useResearchList } from '../research/useResearch'
 import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
@@ -65,6 +69,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
+  const [researchDialog, setResearchDialog] = useState(false)
+  const [researchSelection, setResearchSelection] = useState<{ projectId: string; researchId: string } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
@@ -130,6 +136,17 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setError,
   })
   const wechatBinding = useWeChatBinding(api, reconciliation.workspaceEvents)
+  const research = useResearchList(
+    api,
+    projectId,
+    reconciliation.workspaceEvents,
+    reconciliation.connectionState,
+  )
+  // The selection belongs to a Project; choosing another Project clears it
+  // (and the Project check also covers selections made elsewhere).
+  const researchId = researchSelection && researchSelection.projectId === projectId
+    ? researchSelection.researchId
+    : null
 
   const selection = useProjectSelection(api, t, {
     projectId,
@@ -277,6 +294,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [])
 
   const handleConversationCreated = useCallback((created: Conversation) => {
+    setResearchSelection(null)
     setConversations((current) => upsertConversation(current, created))
     setAllConversations((current) => upsertConversation(current, created))
     setConversationId(created.id)
@@ -407,7 +425,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             onProjectDelete={(nextProjectId) => void selection.deleteProject(
               projects.find((candidate) => candidate.id === nextProjectId),
             )}
-            onProjectSelect={selection.selectProject}
+            onProjectSelect={(nextProjectId) => {
+              setResearchSelection(null)
+              selection.selectProject(nextProjectId)
+            }}
             onProjectToggle={selection.toggleProjectExpanded}
             onProjectWorkspacesToggle={(nextProjectId) => {
               const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
@@ -416,10 +437,24 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               }
             }}
             onResize={resizeSessionSidebar}
-            onSelect={selection.openSession}
+            onSelect={(nextProjectId, nextConversationId) => {
+              setResearchSelection(null)
+              selection.openSession(nextProjectId, nextConversationId)
+            }}
             projects={projects}
             projectRuns={reconciliation.projectRuns}
             query={navigatorQuery}
+            researchSection={projectId ? (
+              <ResearchNavigator
+                activeResearchId={researchId}
+                items={research.items}
+                onNew={() => setResearchDialog(true)}
+                onReload={research.reload}
+                onSelect={(nextResearchId) => setResearchSelection({ projectId, researchId: nextResearchId })}
+                status={research.status}
+                t={t}
+              />
+            ) : null}
             t={t}
             teams={teams}
             wechat={wechatBinding}
@@ -428,48 +463,69 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
         <div className="kubecode-main-stack" ref={mainStackRef}>
           <div className="kubecode-session-context-row">
-            <AgentSessionWorkspace
-              agents={agents}
-              agentsRefreshing={agentsRefreshing}
-              allowTeammateChat={agentPreferences.allowTeammateChat}
-              api={api}
-              conversation={conversation}
-              locale={locale}
-              onConversationCreated={handleConversationCreated}
-              projectId={projectId}
-              onConversationRemoved={handleConversationRemoved}
-              onConversationUpdated={handleConversationUpdated}
-              onAddProject={() => setProjectDialog(true)}
-              onCommandPaletteSessionChange={setCommandPaletteSession}
-              onNewSession={() => setSessionDialog(true)}
-              onOpenAgentSettings={() => {
-                setSettingsSection('agents')
-                setSettingsOpen(true)
-              }}
-              onOpenPlan={() => {
-                setContextOpen(true)
-                if (narrowLayout) setSessionSidebarOpen(false)
-                setPlanRevealVersion((current) => current + 1)
-                trackEvent('kubecode_context_section_opened', { section: 'plan' })
-              }}
-              onPlanChange={setActiveSessionPlan}
-              onRefreshAgents={refreshAgents}
-              onTeamCreated={(team) => setTeams((current) => [
-                ...current.filter((item) => item.team.id !== team.team.id),
-                team,
-              ])}
-              onTeamUpdated={(team) => setTeams((current) => [
-                ...current.filter((item) => item.team.id !== team.team.id),
-                team,
-              ])}
-              t={t}
-              team={activeTeam}
-              terminalContextSources={terminalContextSources}
-              titlebarTarget={titlebarTarget}
-              onSelectTeamMember={setConversationId}
-              workspaceEvents={reconciliation.workspaceEvents}
-              key={conversationId ?? projectId ?? 'no-project'}
-            />
+            {researchId && projectId ? (
+              <ResearchWorkspace
+                agents={agents}
+                api={api}
+                connectionState={reconciliation.connectionState}
+                conversations={sessionCatalog}
+                events={reconciliation.workspaceEvents}
+                key={researchId}
+                onClose={() => setResearchSelection(null)}
+                onConversationCreated={handleConversationCreated}
+                onOpenSession={(nextConversationId) => {
+                  setResearchSelection(null)
+                  selection.openSession(projectId, nextConversationId)
+                }}
+                projectId={projectId}
+                researchId={researchId}
+                t={t}
+                teams={teams}
+              />
+            ) : (
+              <AgentSessionWorkspace
+                agents={agents}
+                agentsRefreshing={agentsRefreshing}
+                allowTeammateChat={agentPreferences.allowTeammateChat}
+                api={api}
+                conversation={conversation}
+                locale={locale}
+                onConversationCreated={handleConversationCreated}
+                projectId={projectId}
+                onConversationRemoved={handleConversationRemoved}
+                onConversationUpdated={handleConversationUpdated}
+                onAddProject={() => setProjectDialog(true)}
+                onCommandPaletteSessionChange={setCommandPaletteSession}
+                onNewSession={() => setSessionDialog(true)}
+                onOpenAgentSettings={() => {
+                  setSettingsSection('agents')
+                  setSettingsOpen(true)
+                }}
+                onOpenPlan={() => {
+                  setContextOpen(true)
+                  if (narrowLayout) setSessionSidebarOpen(false)
+                  setPlanRevealVersion((current) => current + 1)
+                  trackEvent('kubecode_context_section_opened', { section: 'plan' })
+                }}
+                onPlanChange={setActiveSessionPlan}
+                onRefreshAgents={refreshAgents}
+                onTeamCreated={(team) => setTeams((current) => [
+                  ...current.filter((item) => item.team.id !== team.team.id),
+                  team,
+                ])}
+                onTeamUpdated={(team) => setTeams((current) => [
+                  ...current.filter((item) => item.team.id !== team.team.id),
+                  team,
+                ])}
+                t={t}
+                team={activeTeam}
+                terminalContextSources={terminalContextSources}
+                titlebarTarget={titlebarTarget}
+                onSelectTeamMember={setConversationId}
+                workspaceEvents={reconciliation.workspaceEvents}
+                key={conversationId ?? projectId ?? 'no-project'}
+              />
+            )}
             {contextOpen && (
               <>
                 <ResizeHandle onResize={resizeContext} />
@@ -594,6 +650,17 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           t={t}
         />
       )}
+      <NewResearchDialog
+        api={api}
+        open={researchDialog}
+        onCreated={(created) => {
+          research.reload()
+          if (projectId) setResearchSelection({ projectId, researchId: created.id })
+        }}
+        onOpenChange={setResearchDialog}
+        projectId={projectId}
+        t={t}
+      />
       <NewSessionDialog
         agents={agents}
         api={api}

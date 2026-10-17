@@ -908,6 +908,15 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   a deleted Session or edited file is reported, not trusted. Later rounds receive
   recent findings with that state in `team_get_context`. Neither publishing nor
   completing a Team resolves the RQ.
+- **Workbench.** The researcher follows one question through four views: the
+  brief (edited against the revision the edit began from; a moved brief is a
+  conflict that keeps the draft), discussion (notes, decisions, and linked
+  Sessions that open in the ordinary Session view), findings (evidence state,
+  proposals and pending Team results awaiting a decision), and work (rounds with
+  the brief revision they used, stale and unavailable-source flags, and the next
+  round). Saving, editing, or posting never starts an Agent; only the explicit
+  round action does. Carried-forward evidence excludes sources that are changed
+  or removed.
 
 ## Conversation reducer
 

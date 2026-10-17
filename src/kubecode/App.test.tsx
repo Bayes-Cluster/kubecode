@@ -726,7 +726,13 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
-      expect(await screen.findByRole('button', { name: 'First Project session' })).toBeInTheDocument()
+      // The sharded coverage run instruments and parallelizes heavily; the
+      // initial Project load can exceed the 1s default there.
+      expect(await screen.findByRole(
+        'button',
+        { name: 'First Project session' },
+        { timeout: 5_000 },
+      )).toBeInTheDocument()
       await waitFor(() => expect(ProjectEventSource.current).not.toBeNull())
 
       act(() => ProjectEventSource.current?.emit({
