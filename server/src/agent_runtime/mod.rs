@@ -7,7 +7,7 @@ mod journal;
 mod permissions;
 mod pool;
 
-pub use self::actor::SessionConfigInput;
+pub use self::actor::{PromptImage, SessionConfigInput};
 pub use self::agent_seam::AgentAdapterRegistry;
 pub use self::dispatch::{
     PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,

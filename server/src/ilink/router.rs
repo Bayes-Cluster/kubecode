@@ -12,8 +12,12 @@ use std::time::Duration;
 
 use tokio::sync::Mutex;
 
-use crate::agent_runtime::{AgentRuntime, PromptAdmission};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
+
+use crate::agent_runtime::{AgentRuntime, PromptAdmission, PromptImage, RuntimeError};
 use crate::agent_store::AgentStore;
+use crate::agent_store::StoreError;
 
 use super::guard::{AdvertisedOption, InteractionRegistry, PendingInteraction};
 use super::inbound::ResponseChannel;
@@ -37,6 +41,9 @@ pub enum RouteOutcome {
     /// Numeric input fell through as an ordinary prompt (no pending
     /// interaction) and was dispatched normally.
     PromptedAsText,
+    /// Nothing was admitted; the peer received an explanation (images for
+    /// a busy Session or an Agent without image support).
+    Declined,
 }
 
 /// Routes BridgePrompts into the bound Session.
@@ -271,6 +278,38 @@ impl SessionRouter {
         // Channel-generated client message id reconciles browser history
         // and WeChat admission to one user turn.
         let client_message_id = format!("ilink:{}:{}", account_id, prompt.message_key);
+        let mut prompt = prompt;
+        if !prompt.images.is_empty() {
+            match self
+                .admit_images(&prompt, &conversation, &client_message_id)
+                .await
+            {
+                ImageAdmission::Started => {
+                    self.origin_peers
+                        .lock()
+                        .await
+                        .insert(conversation_id, peer_id.clone());
+                    let _ = reply(self.ack(Outcome::Started));
+                    return RouteOutcome::Started;
+                }
+                ImageAdmission::Busy => {
+                    let _ = reply(self.ack(Outcome::ImagesBusy));
+                    return RouteOutcome::Declined;
+                }
+                ImageAdmission::Unsupported => {
+                    let _ = reply(self.ack(Outcome::ImagesUnsupported));
+                    if prompt.text.trim().is_empty() {
+                        return RouteOutcome::Declined;
+                    }
+                    // The text still goes through; only the images are refused.
+                    prompt.images.clear();
+                }
+                ImageAdmission::Failed => {
+                    let _ = reply(self.ack(Outcome::DispatchFailed));
+                    return RouteOutcome::Declined;
+                }
+            }
+        }
         let admission = self
             .runtime
             .start_or_queue(crate::agent_runtime::StartAgentRun {
@@ -307,6 +346,65 @@ impl SessionRouter {
                 }
                 RouteOutcome::Started
             }
+        }
+    }
+
+    /// Images ride only on a direct start of an Agent that advertises image
+    /// prompts (ACP `promptCapabilities.image`); the durable queue is
+    /// text-only, so a busy Session is reported instead of queueing.
+    async fn admit_images(
+        &self,
+        prompt: &BridgePrompt,
+        conversation: &crate::agent_store::Conversation,
+        client_message_id: &str,
+    ) -> ImageAdmission {
+        let supported = match self.runtime.image_prompts_supported(&conversation.id) {
+            Some(supported) => supported,
+            None => {
+                // Capabilities arrive with ACP initialization; an Agent that
+                // cannot even start is a dispatch failure, not "no images".
+                if self
+                    .runtime
+                    .initialize_conversation(&conversation.id)
+                    .await
+                    .is_err()
+                {
+                    return ImageAdmission::Failed;
+                }
+                self.runtime
+                    .image_prompts_supported(&conversation.id)
+                    .unwrap_or(false)
+            }
+        };
+        if !supported {
+            return ImageAdmission::Unsupported;
+        }
+        let markers = vec!["[image]"; prompt.images.len()].join("\n");
+        let message = if prompt.text.trim().is_empty() {
+            markers
+        } else {
+            format!("{}\n{markers}", prompt.text)
+        };
+        let images = prompt
+            .images
+            .iter()
+            .map(|image| PromptImage {
+                mime: image.mime.clone(),
+                base64: BASE64.encode(&image.bytes),
+            })
+            .collect();
+        match self.runtime.start_with_images(
+            crate::agent_runtime::StartAgentRun {
+                conversation_id: conversation.id.clone(),
+                project_id: conversation.project_id.clone(),
+                message,
+                client_message_id: Some(client_message_id.to_owned()),
+            },
+            images,
+        ) {
+            Ok(_) => ImageAdmission::Started,
+            Err(RuntimeError::Store(StoreError::ActiveRun(_))) => ImageAdmission::Busy,
+            Err(_) => ImageAdmission::Failed,
         }
     }
 
@@ -362,6 +460,14 @@ impl SessionRouter {
                 "The Session could not accept the message.",
                 "Session 无法接收该消息。",
             ),
+            Outcome::ImagesBusy => (
+                "The Session is busy, and images can't wait in the queue. Send the image again when it is idle.",
+                "Session 正忙，图片无法排队。请在空闲时重新发送。",
+            ),
+            Outcome::ImagesUnsupported => (
+                "This Session's Agent doesn't accept images, so they were not sent.",
+                "该 Session 的 Agent 不支持图片，图片未发送。",
+            ),
         };
         match self.language {
             ChannelLanguage::En => en.to_owned(),
@@ -382,4 +488,13 @@ enum Outcome {
     ReadOnlyBinding,
     TeamOwnedBinding,
     DispatchFailed,
+    ImagesBusy,
+    ImagesUnsupported,
+}
+
+enum ImageAdmission {
+    Started,
+    Busy,
+    Unsupported,
+    Failed,
 }

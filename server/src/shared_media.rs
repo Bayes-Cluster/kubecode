@@ -91,6 +91,21 @@ pub fn content_matches(mime: &str, bytes: &[u8]) -> bool {
     }
 }
 
+/// The MIME type of an image payload by signature (inbound channel images
+/// carry no trustworthy type), or `None` for anything that is not a
+/// supported raster image.
+pub fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+    ]
+    .into_iter()
+    .find(|mime| content_matches(mime, bytes))
+}
+
 fn is_executable(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x7FELF")
         || bytes.starts_with(b"MZ")
@@ -180,6 +195,24 @@ mod tests {
         assert!(!content_matches("text/plain", &[0xFF, 0xFE, 0x00]));
         assert!(content_matches("application/zip", b"PK\x03\x04data"));
         assert!(!content_matches("application/x-unknown", b"anything"));
+    }
+
+    #[test]
+    fn image_types_are_sniffed_from_content() {
+        assert_eq!(
+            sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            Some("image/jpeg")
+        );
+        assert_eq!(
+            sniff_image_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(
+            sniff_image_mime(b"RIFF\0\0\0\0WEBPVP8 "),
+            Some("image/webp")
+        );
+        assert_eq!(sniff_image_mime(b"plain text"), None);
+        assert_eq!(sniff_image_mime(b"MZ\x90\0"), None);
     }
 
     #[test]

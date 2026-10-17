@@ -50,12 +50,31 @@ pub enum SessionConfigInput {
 pub(super) struct AgentCommand {
     pub(super) run: AgentRun,
     pub(super) message: String,
+    /// Inline image blocks sent after the text (channel images, #136); only
+    /// admitted for Agents that advertise image prompt support.
+    pub(super) images: Vec<PromptImage>,
     pub(super) provider_input: Option<Box<ComposerInvocation>>,
     pub(super) cancelled: oneshot::Receiver<()>,
 }
 
+/// One inline prompt image: base64 data plus its MIME type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptImage {
+    pub mime: String,
+    pub base64: String,
+}
+
 fn prompt_request_for_command(session_id: &SessionId, command: &AgentCommand) -> PromptRequest {
-    let mut request = PromptRequest::new(session_id.clone(), vec![command.message.clone().into()]);
+    let mut blocks = vec![command.message.clone().into()];
+    blocks.extend(command.images.iter().map(|image| {
+        agent_client_protocol::schema::v1::ContentBlock::Image(
+            agent_client_protocol::schema::v1::ImageContent::new(
+                image.base64.clone(),
+                image.mime.clone(),
+            ),
+        )
+    }));
+    let mut request = PromptRequest::new(session_id.clone(), blocks);
     if let Some(ComposerInvocation::ProviderStructuredInput {
         adapter_kind,
         payload,
@@ -1423,9 +1442,45 @@ mod tests {
     use crate::workspace::WorkspaceService;
 
     #[test]
+    fn channel_images_follow_the_text_as_acp_image_blocks() {
+        let (_cancel, cancelled) = oneshot::channel();
+        let command = AgentCommand {
+            images: vec![PromptImage {
+                mime: "image/jpeg".into(),
+                base64: "/9j/4A==".into(),
+            }],
+            run: AgentRun {
+                id: "run".into(),
+                conversation_id: "conversation".into(),
+                project_id: "project".into(),
+                message: "what is this?\n[image]".into(),
+                status: RunStatus::Running,
+                permission_mode: PermissionMode::Safe,
+                error: None,
+                internal: false,
+                client_message_id: None,
+                terminal_cause: None,
+            },
+            message: "what is this?\n[image]".into(),
+            provider_input: None,
+            cancelled,
+        };
+        let request = serde_json::to_value(prompt_request_for_command(
+            &SessionId::from("provider-session"),
+            &command,
+        ))
+        .expect("prompt request JSON");
+        assert_eq!(request["prompt"][0]["type"], "text");
+        assert_eq!(request["prompt"][1]["type"], "image");
+        assert_eq!(request["prompt"][1]["mimeType"], "image/jpeg");
+        assert_eq!(request["prompt"][1]["data"], "/9j/4A==");
+    }
+
+    #[test]
     fn codex_skill_prompt_uses_private_structured_meta_without_text_injection() {
         let (_cancel, cancelled) = oneshot::channel();
         let command = AgentCommand {
+            images: Vec::new(),
             run: AgentRun {
                 id: "run".into(),
                 conversation_id: "conversation".into(),

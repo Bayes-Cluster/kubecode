@@ -16,6 +16,7 @@ take precedence over deprecated compatibility variables.
 | `--state-dir` | `KUBECODE_STATE_DIR` | `$XDG_DATA_HOME/kubecode` or `$HOME/.local/share/kubecode` | SQLite and private state |
 | — | `KUBECODE_STATIC_DIR` | `dist` | Built web assets; configured by the standalone launcher |
 | — | `KUBECODE_INTERNAL_ORIGIN` | Loopback server URL plus the base path | URL used by local Agents to reach Team MCP |
+| — | `KUBECODE_ILINK_LANGUAGE` | `en` | Language of WeChat channel replies (`en` or `zh-CN`); see [WeChat](wechat.md) |
 
 Only one Kubecode server may own a state directory at a time. SQLite uses a
 rollback journal for broad filesystem compatibility, but the storage must still

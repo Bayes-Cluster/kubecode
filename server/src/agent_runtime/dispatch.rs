@@ -7,7 +7,7 @@ use crate::composer_catalog::{
 };
 use crate::workspace::WorkspaceError;
 
-use super::actor::{AgentCommand, SessionCommand};
+use super::actor::{AgentCommand, PromptImage, SessionCommand};
 use super::{AgentRuntime, AgentSessionConfig, RuntimeError};
 
 #[derive(Clone, Debug)]
@@ -48,7 +48,38 @@ pub struct StartStructuredComposerRun {
 
 impl AgentRuntime {
     pub fn start(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
-        self.start_with_visibility(request, false)
+        self.start_with_visibility(request, false, Vec::new())
+    }
+
+    /// Starts a run whose prompt carries inline images (channel images,
+    /// #136). Never queues: the durable prompt queue stores text only, so a
+    /// busy Session reports `ActiveRun` and the caller explains it. Callers
+    /// check [`AgentRuntime::image_prompts_supported`] first.
+    pub fn start_with_images(
+        &self,
+        request: StartAgentRun,
+        images: Vec<PromptImage>,
+    ) -> Result<AgentRun, RuntimeError> {
+        self.start_with_visibility(request, false, images)
+    }
+
+    /// Whether the conversation's Agent advertised image prompt support in
+    /// its last ACP initialization; `None` until it has initialized.
+    pub fn image_prompts_supported(&self, conversation_id: &str) -> Option<bool> {
+        self.store
+            .session_events_after(conversation_id, 0)
+            .ok()?
+            .into_iter()
+            .rev()
+            .find(|event| event.kind == "capabilities")
+            .map(|event| {
+                event
+                    .payload
+                    .get("promptCapabilities")
+                    .and_then(|capabilities| capabilities.get("image"))
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+            })
     }
 
     /// Admits a plain prompt through the durable queue: when a run is active
@@ -134,6 +165,7 @@ impl AgentRuntime {
             .descriptor(conversation.agent_id)
             .filter(|agent| agent.available);
         let command = AgentCommand {
+            images: Vec::new(),
             run: run.clone(),
             message: agent_message,
             provider_input: None,
@@ -223,6 +255,8 @@ impl AgentRuntime {
         Some(AgentCommand {
             run,
             message,
+            // Queued prompts are text-only by construction.
+            images: Vec::new(),
             provider_input: None,
             cancelled,
         })
@@ -270,6 +304,7 @@ impl AgentRuntime {
             })
             .unwrap_or(dispatch.prompt_message);
         let command = AgentCommand {
+            images: Vec::new(),
             run: run.clone(),
             message: agent_message,
             provider_input: dispatch.provider_input.map(Box::new),
@@ -458,6 +493,7 @@ impl AgentRuntime {
             })
             .unwrap_or(dispatch.prompt_message);
         let command = AgentCommand {
+            images: Vec::new(),
             run: run.clone(),
             message: agent_message,
             provider_input: dispatch.provider_input.map(Box::new),
@@ -476,13 +512,14 @@ impl AgentRuntime {
     }
 
     pub(super) fn start_internal(&self, request: StartAgentRun) -> Result<AgentRun, RuntimeError> {
-        self.start_with_visibility(request, true)
+        self.start_with_visibility(request, true, Vec::new())
     }
 
     fn start_with_visibility(
         &self,
         request: StartAgentRun,
         internal: bool,
+        images: Vec<PromptImage>,
     ) -> Result<AgentRun, RuntimeError> {
         let conversation = self.store.get_conversation(&request.conversation_id)?;
         if conversation.project_id != request.project_id {
@@ -541,6 +578,7 @@ impl AgentRuntime {
             })
             .unwrap_or_else(|| request.message.clone());
         let command = AgentCommand {
+            images,
             run: run.clone(),
             message: agent_message,
             provider_input: None,

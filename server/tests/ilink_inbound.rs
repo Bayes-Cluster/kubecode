@@ -330,7 +330,8 @@ async fn voice_without_transcription_gets_the_localized_reply() {
 async fn image_downloads_through_cdn_preferring_the_thumbnail() {
     let (env, served) = environment("image").await;
     let key: [u8; 16] = core::array::from_fn(|index| index as u8);
-    let plaintext = b"thumb-bytes".to_vec();
+    // A JPEG signature: the bridge types images by content, not by claim.
+    let plaintext = b"\xFF\xD8\xFF\xE0thumb-bytes".to_vec();
     let ciphertext = aes_ecb_encrypt(&key, &plaintext).expect("encrypt");
     *served.lock().unwrap() = vec![ciphertext];
 
@@ -367,10 +368,8 @@ async fn image_downloads_through_cdn_preferring_the_thumbnail() {
     let prompts = run_page(&bridge, &env, test_page).await;
     assert_eq!(prompts.len(), 1);
     assert_eq!(prompts[0].images.len(), 1);
-    assert_eq!(
-        prompts[0].images[0].bytes.as_ref(),
-        &b"thumb-bytes".to_vec()[..]
-    );
+    assert_eq!(prompts[0].images[0].bytes.as_ref(), &plaintext[..]);
+    assert_eq!(prompts[0].images[0].mime, "image/jpeg");
     assert_eq!(
         prompts[0].images[0].source,
         kubecode_server::ilink::inbound::ImageSource::Thumb
@@ -395,9 +394,13 @@ async fn unauthorized_peers_fail_closed_with_a_localized_rejection() {
     let replies = responses.texts_to("wxid_stranger");
     assert_eq!(replies.len(), 1);
     assert!(replies[0].contains("not available"));
-    // No dedupe commit for strangers is fine (they stay rejected); no
-    // prompt ever existed.
     assert_eq!(bridge.counters.snapshot().2, 1);
+    // The rejected message is committed: a cursor replay (e.g. after a
+    // restart) is not answered a second time, and no prompt ever existed.
+    bridge
+        .process_page("acct", &test_page, &responses, &tx)
+        .await;
+    assert_eq!(responses.texts_to("wxid_stranger").len(), 1);
 }
 
 #[tokio::test]

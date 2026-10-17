@@ -116,3 +116,23 @@ test('installer dry-run performs no filesystem changes', () => {
   assert.match(result.stdout, /kubecode-0\.1\.0-linux-arm64\.tar\.gz/)
   assert.equal(existsSync(prefix), false)
 })
+
+test('the WeChat channel ships natively without OpenClaw or Node channel packages', () => {
+  const forbidden = /openclaw|weixin|wechat|ilink/i
+  for (const manifest of ['package.json', 'packaging/adapter-runtime/package.json']) {
+    const json = JSON.parse(readFileSync(join(repository, manifest), 'utf8'))
+    const dependencies = Object.keys({
+      ...json.dependencies,
+      ...json.devDependencies,
+      ...json.optionalDependencies,
+      ...json.peerDependencies,
+    })
+    assert.deepEqual(dependencies.filter((name) => forbidden.test(name)), [], manifest)
+  }
+  const lockfile = readFileSync(join(repository, 'pnpm-lock.yaml'), 'utf8')
+  assert.equal(/openclaw|@tencent-weixin/i.test(lockfile), false, 'pnpm-lock.yaml')
+  const cargo = readFileSync(join(repository, 'server/Cargo.toml'), 'utf8')
+  assert.equal(/openclaw/i.test(cargo), false, 'server/Cargo.toml')
+  const build = readFileSync(join(repository, 'scripts/build-standalone.sh'), 'utf8')
+  assert.equal(/openclaw|weixin/i.test(build), false, 'scripts/build-standalone.sh')
+})

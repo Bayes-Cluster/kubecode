@@ -48,6 +48,12 @@ pub const ILINK_CDN_BASE_URL: &str = "https://szextshort.wechat.com";
 const TYPING_TICKET_TTL: Duration = Duration::from_secs(10 * 60);
 /// Bounded typing-ticket cache size.
 const TYPING_TICKET_CACHE: usize = 64;
+/// Unauthorized senders' reply contexts live this long, in memory only.
+const TRANSIENT_CONTEXT_TTL: Duration = Duration::from_secs(120);
+/// Bounded transient-context map size.
+const TRANSIENT_CONTEXT_CACHE: usize = 32;
+/// An unauthorized sender is told "not available" at most once per window.
+const REJECTION_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 /// Safe, externally visible connection state (ADR 0211 §4 statuses).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +273,12 @@ pub struct ILinkService {
     core: Arc<Mutex<ServiceCore>>,
     /// peer → (typing ticket, fetched at); secrets never leave the service.
     typing_tickets: Mutex<HashMap<String, (Secret, Instant)>>,
+    /// peer → single-use reply context for senders whose context is never
+    /// stored (unauthorized peers): enough to deliver the localized
+    /// rejection ADR 0211 §7 promises, and nothing else.
+    transient_contexts: Mutex<HashMap<String, (Secret, Instant)>>,
+    /// peer → when its last rejection was delivered (rate limit).
+    rejected_at: Mutex<HashMap<String, Instant>>,
 }
 
 impl ILinkService {
@@ -306,6 +318,8 @@ impl ILinkService {
                 get_updates_buf: String::new(),
             })),
             typing_tickets: Mutex::new(HashMap::new()),
+            transient_contexts: Mutex::new(HashMap::new()),
+            rejected_at: Mutex::new(HashMap::new()),
         })
     }
 
@@ -381,6 +395,45 @@ impl ILinkService {
         })
     }
 
+    /// Keeps an unauthorized sender's context in memory for one reply —
+    /// unless that sender was already rejected within the window, in which
+    /// case nothing is kept and no further reply is possible.
+    pub async fn remember_transient_context(&self, peer_id: &str, context_token: &Secret) {
+        {
+            let mut rejected = self.rejected_at.lock().await;
+            rejected.retain(|_, at| at.elapsed() < REJECTION_WINDOW);
+            if rejected.contains_key(peer_id) {
+                return;
+            }
+        }
+        let mut contexts = self.transient_contexts.lock().await;
+        contexts.retain(|_, (_, seen)| seen.elapsed() < TRANSIENT_CONTEXT_TTL);
+        if contexts.len() >= TRANSIENT_CONTEXT_CACHE && !contexts.contains_key(peer_id) {
+            return;
+        }
+        contexts.insert(peer_id.to_owned(), (context_token.clone(), Instant::now()));
+    }
+
+    /// The unauthorized sender's context, if still fresh. It is consumed
+    /// only once a reply was actually delivered, so a transient send
+    /// failure can retry.
+    async fn transient_context(&self, peer_id: &str) -> Option<Secret> {
+        let contexts = self.transient_contexts.lock().await;
+        let (context, seen) = contexts.get(peer_id)?;
+        (seen.elapsed() < TRANSIENT_CONTEXT_TTL).then(|| context.clone())
+    }
+
+    async fn consume_transient_context(&self, peer_id: &str) {
+        self.transient_contexts.lock().await.remove(peer_id);
+        let mut rejected = self.rejected_at.lock().await;
+        if rejected.len() >= TRANSIENT_CONTEXT_CACHE {
+            rejected.retain(|_, at| at.elapsed() < REJECTION_WINDOW);
+        }
+        if rejected.len() < TRANSIENT_CONTEXT_CACHE {
+            rejected.insert(peer_id.to_owned(), Instant::now());
+        }
+    }
+
     fn peer_context(&self, account_id: &str, peer_id: &str) -> Option<Secret> {
         let sealed = self
             .store
@@ -422,10 +475,22 @@ impl ILinkService {
         client_id: &str,
     ) -> Result<(), IlinkError> {
         let (client, token, context) = self.send_material(peer_id).await?;
-        let context = context.ok_or(IlinkError::PeerContextUnavailable)?;
+        let (context, transient) = match context {
+            Some(context) => (context, false),
+            None => (
+                self.transient_context(peer_id)
+                    .await
+                    .ok_or(IlinkError::PeerContextUnavailable)?,
+                true,
+            ),
+        };
         let outbound = OutboundText::new(peer_id, text, client_id.to_owned())
             .with_context_token(Some(context));
-        client.send_message(&outbound, &token, None).await
+        client.send_message(&outbound, &token, None).await?;
+        if transient {
+            self.consume_transient_context(peer_id).await;
+        }
+        Ok(())
     }
 
     /// Uploads one shared file through the encrypted CDN and sends it to
@@ -778,6 +843,8 @@ impl ILinkService {
             })
         };
         self.typing_tickets.lock().await.clear();
+        self.transient_contexts.lock().await.clear();
+        self.rejected_at.lock().await.clear();
         let Some(account_id) = account_id else {
             return Err(ServiceError::NotAvailable);
         };

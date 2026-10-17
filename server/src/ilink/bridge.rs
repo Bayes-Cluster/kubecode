@@ -269,13 +269,19 @@ impl ChannelBridge {
                 continue;
             };
             // Remember each authorized peer's latest reply context before
-            // its message is dispatched (unauthorized peers are refused
-            // inside `remember_peer_context`).
+            // its message is dispatched. Unauthorized peers are refused
+            // inside `remember_peer_context`; their context is kept in
+            // memory for exactly one reply — the rejection (ADR 0211 §7).
             for message in &page.messages {
-                if let Some(context) = message.context_token.as_ref() {
-                    let _ =
-                        self.service
-                            .remember_peer_context(&account_id, &message.peer_id, context);
+                if let Some(context) = message.context_token.as_ref()
+                    && self
+                        .service
+                        .remember_peer_context(&account_id, &message.peer_id, context)
+                        .is_err()
+                {
+                    self.service
+                        .remember_transient_context(&message.peer_id, context)
+                        .await;
                 }
             }
             self.inbound
