@@ -39,6 +39,7 @@ import type {
   AgentId,
   KubecodeApi,
   RuntimeStatus,
+  WorkspaceEvent,
 } from '../api'
 import type {
   BrowserNotificationDelivery,
@@ -46,7 +47,9 @@ import type {
 } from '../workspaceNotifications'
 import type { Translator } from '@/lib/i18n'
 
-export type SettingsSection = 'general' | 'notifications' | 'agents' | 'terminal' | 'editor'
+import { WeChatSettingsPanel } from './WeChatSettingsPanel'
+
+export type SettingsSection = 'general' | 'notifications' | 'agents' | 'wechat' | 'terminal' | 'editor'
 
 export type SettingsDialogProps = {
   api: KubecodeApi
@@ -69,6 +72,7 @@ export type SettingsDialogProps = {
   onRefreshAgents: () => Promise<void>
   onTestNotification: () => Promise<void>
   t: Translator
+  workspaceEvents?: WorkspaceEvent[]
 }
 
 export function SettingsDialog({
@@ -92,6 +96,7 @@ export function SettingsDialog({
   onRefreshAgents,
   onTestNotification,
   t,
+  workspaceEvents = NO_EVENTS,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
@@ -157,7 +162,7 @@ export function SettingsDialog({
         </DialogHeader>
         <aside className="kubecode-settings-nav">
           <strong>{t('kubecode.settings')}</strong>
-          {(['general', 'notifications', 'agents', 'terminal', 'editor'] as const).map((item) => (
+          {(['general', 'notifications', 'agents', 'wechat', 'terminal', 'editor'] as const).map((item) => (
             <Button key={item} variant={section === item ? 'secondary' : 'ghost'} onClick={() => setSection(item)}>
               {t(`kubecode.settings.${item}`)}
             </Button>
@@ -438,6 +443,9 @@ export function SettingsDialog({
             <RuntimeStatusPanel api={api} t={t} />
             </>
           )}
+          {section === 'wechat' && (
+            <WeChatSettingsPanel api={api} t={t} workspaceEvents={workspaceEvents} />
+          )}
           {section === 'editor' && (
             <div className="kubecode-settings-group">
               <div className="kubecode-setting-row">
@@ -467,6 +475,8 @@ export function SettingsDialog({
     </Dialog>
   )
 }
+
+const NO_EVENTS: WorkspaceEvent[] = []
 
 type RuntimeStatusViewModel = {
   active_actor_count: number

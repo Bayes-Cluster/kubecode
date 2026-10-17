@@ -632,6 +632,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         onRefreshAgents={refreshAgents}
         onTestNotification={preferences.sendTestNotification}
         t={t}
+        workspaceEvents={reconciliation.workspaceEvents}
       />
     </main>
     </SystemMessageProvider>

@@ -2309,6 +2309,44 @@
 .kubecode-runtime-counts > div + div { border-left: 1px solid var(--border-subtle); }
 .kubecode-runtime-counts dt { color: var(--text-secondary); font-size: 12px; }
 .kubecode-runtime-counts dd { font-size: 20px; font-weight: 600; margin: 4px 0 0; }
+.kubecode-wechat-actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.kubecode-wechat-status[data-tone='ok'] strong { color: var(--accent-green); }
+.kubecode-wechat-status[data-tone='problem'] strong { color: var(--feedback-error-text); }
+.kubecode-wechat-error span { color: var(--feedback-error-text); font-size: 13px; }
+.kubecode-wechat-qr {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 16px;
+}
+.kubecode-wechat-qr img {
+  background: #fff;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  height: 200px;
+  padding: 8px;
+  width: 200px;
+}
+.kubecode-wechat-qr figcaption {
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 6px;
+  min-width: 0;
+}
+.kubecode-wechat-code { max-width: 160px; }
+.kubecode-wechat-quick-prompt { align-items: flex-start; gap: 12px; }
+.kubecode-wechat-quick-prompt textarea { flex: 1 1 auto; min-width: 0; }
 .kubecode-agent-doctor-actions {
   align-items: center;
   flex-direction: row !important;
@@ -2611,6 +2649,9 @@
   .kubecode-setting-row { align-items: stretch; flex-direction: column; gap: 12px; }
   .kubecode-runtime-counts { grid-template-columns: 1fr; }
   .kubecode-runtime-counts > div + div { border-left: 0; border-top: 1px solid var(--border-subtle); }
+  .kubecode-wechat-actions { justify-content: flex-start; }
+  .kubecode-wechat-qr { align-items: flex-start; flex-direction: column; }
+  .kubecode-wechat-code { max-width: none; width: 100%; }
   .kubecode-font-input,
   .kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }
 }

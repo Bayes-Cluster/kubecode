@@ -116,6 +116,9 @@ pub struct ServiceStatus {
     pub login_active: bool,
     /// Milliseconds left before the live QR expires.
     pub login_expires_in_ms: Option<u64>,
+    /// Generation of the live QR; a new QR (start or refresh) increments
+    /// it so the browser can fence stale verification submissions.
+    pub login_generation: Option<u64>,
 }
 
 /// Bounded outbound page sink; Phase 3's bridge registers a real one.
@@ -211,6 +214,7 @@ struct ActiveLogin {
     image_url: String,
     started_at: std::time::Instant,
     refreshes: u32,
+    generation: u64,
     /// Verification code awaiting the next poll.
     pending_code: Option<String>,
 }
@@ -227,6 +231,8 @@ struct ServiceCore {
     login_cancel: CancellationToken,
     poll_cancel: CancellationToken,
     poll_generation: u64,
+    /// Monotonic QR generation counter (issue #134).
+    login_generation: u64,
     consecutive_failures: u32,
     /// Set after an expired-token event; reconnects wait out the cooldown.
     stale_since: Option<std::time::Instant>,
@@ -248,9 +254,11 @@ impl ServiceCore {
 pub struct QrLoginStart {
     /// True when a still-fresh QR was reused instead of re-issued.
     pub reused: bool,
-    /// The QR image URL for the browser (upstream-provided; not a secret).
+    /// The upstream scan target; the REST layer renders it as an SVG and
+    /// never returns it as text.
     pub image_url: String,
     pub expires_in_ms: u64,
+    pub generation: u64,
 }
 
 /// The supervised iLink channel service handle.
@@ -291,6 +299,7 @@ impl ILinkService {
                 login_cancel: CancellationToken::new(),
                 poll_cancel: CancellationToken::new(),
                 poll_generation: 0,
+                login_generation: 0,
                 consecutive_failures: 0,
                 stale_since: None,
                 page_sink: None,
@@ -335,6 +344,7 @@ impl ILinkService {
                     .saturating_sub(login.started_at.elapsed())
                     .as_millis() as u64
             }),
+            login_generation: core.login.as_ref().map(|login| login.generation),
         }
     }
 
@@ -579,6 +589,7 @@ impl ILinkService {
                         reused: true,
                         image_url: login.image_url.clone(),
                         expires_in_ms: (core.config.qr_ttl - elapsed).as_millis() as u64,
+                        generation: login.generation,
                     });
                 }
             }
@@ -593,13 +604,16 @@ impl ILinkService {
                 return Err(ServiceError::Protocol(error));
             }
         };
-        {
+        let generation = {
             let mut core = self.core.lock().await;
+            core.login_generation += 1;
+            let generation = core.login_generation;
             core.login = Some(ActiveLogin {
                 qrcode: Secret::new(qr.qrcode.clone()),
                 image_url: qr.qrcode_img_content.clone(),
                 started_at: std::time::Instant::now(),
                 refreshes: 0,
+                generation,
                 pending_code: None,
             });
             core.status = ConnectionStatus::WaitingForScan;
@@ -610,11 +624,13 @@ impl ILinkService {
             core.login_task = Some(tokio::spawn(async move {
                 login_loop(store, core_shared, login_cancel, poll_qrcode).await;
             }));
-        }
+            generation
+        };
         Ok(QrLoginStart {
             reused: false,
             image_url: qr.qrcode_img_content,
             expires_in_ms: self.config().await.qr_ttl.as_millis() as u64,
+            generation,
         })
     }
 
@@ -644,7 +660,23 @@ impl ILinkService {
     /// Submits a verification code for the active login. Rejected unless
     /// a login is awaiting a code — codes never outlive their login.
     pub async fn submit_verification_code(&self, code: &str) -> Result<(), ServiceError> {
+        self.submit_verification_code_for(code, None).await
+    }
+
+    /// [`Self::submit_verification_code`] fenced to one QR generation: a
+    /// code typed against an older QR is rejected, never applied to the
+    /// current attempt.
+    pub async fn submit_verification_code_for(
+        &self,
+        code: &str,
+        generation: Option<u64>,
+    ) -> Result<(), ServiceError> {
         let mut core = self.core.lock().await;
+        if let Some(generation) = generation
+            && core.login.as_ref().map(|login| login.generation) != Some(generation)
+        {
+            return Err(ServiceError::InvalidState("stale login generation"));
+        }
         let code = code.trim();
         if code.is_empty() {
             return Err(ServiceError::InvalidState("empty verification code"));
@@ -886,11 +918,14 @@ async fn login_loop(
             };
             if refreshable && let Ok(fresh) = client.create_qr().await {
                 let mut core = core.lock().await;
+                core.login_generation += 1;
+                let generation = core.login_generation;
                 if let Some(login) = core.login.as_mut() {
                     login.qrcode = Secret::new(fresh.qrcode.clone());
                     login.image_url = fresh.qrcode_img_content.clone();
                     login.started_at = std::time::Instant::now();
                     login.refreshes += 1;
+                    login.generation = generation;
                     login.pending_code = None;
                 }
                 qrcode = Secret::new(fresh.qrcode);

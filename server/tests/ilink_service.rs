@@ -259,6 +259,46 @@ async fn verification_requires_an_active_login_and_a_matching_state() {
 }
 
 #[tokio::test]
+async fn verification_codes_are_fenced_to_the_live_qr_generation() {
+    let (env, base, mock) = environment("generation").await;
+    mock.set(
+        "POST /ilink/bot/get_bot_qrcode",
+        vec![MockState::fixture("qr.ok")],
+    );
+    mock.set(
+        "GET /ilink/bot/get_qrcode_status",
+        vec![MockState::fixture("status.need_verifycode")],
+    );
+    let service = ILinkService::new(Arc::clone(&env.store), fast_config(&base));
+    assert_eq!(service.status().await.login_generation, None);
+    let start = service.start_login().await.expect("start");
+    assert_eq!(
+        service.status().await.login_generation,
+        Some(start.generation)
+    );
+    let reused = service.start_login().await.expect("reuse");
+    assert_eq!(
+        reused.generation, start.generation,
+        "a reused QR keeps its generation"
+    );
+    assert!(wait_for_status(&service, ConnectionStatus::VerificationRequired, 200).await);
+    assert!(
+        service
+            .submit_verification_code_for("482913", Some(start.generation + 1))
+            .await
+            .is_err(),
+        "a code typed against another QR is rejected"
+    );
+    service
+        .submit_verification_code_for("482913", Some(start.generation))
+        .await
+        .expect("current generation accepted");
+    service.cancel_login().await;
+    assert_eq!(service.status().await.login_generation, None);
+    service.shutdown().await;
+}
+
+#[tokio::test]
 async fn confirmed_login_persists_credentials_before_connected_and_restores() {
     let (env, base, mock) = environment("confirm").await;
     mock.set(
