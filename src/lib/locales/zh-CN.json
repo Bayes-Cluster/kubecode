@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "标准输出",
   "kubecode.research.exec.stderr": "标准错误",
   "kubecode.research.exec.emptyOutput": "（无内容）",
-  "kubecode.research.exec.truncated": "显示 {bytes} 字节中的末尾部分。"
+  "kubecode.research.exec.truncated": "显示 {bytes} 字节中的末尾部分。",
+  "kubecode.research.exec.error.conflict": "执行范围在你编辑期间已发生变化。已重新加载；请检查后再次保存。",
+  "kubecode.research.exec.invalidExitCode": "请为退出码输入整数，或留空。"
 }

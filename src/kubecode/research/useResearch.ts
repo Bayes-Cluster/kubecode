@@ -13,6 +13,7 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { unixNow } from './executionEnvelope'
 
 export type ResearchLoadStatus = 'loading' | 'ready' | 'error'
 
@@ -201,6 +202,8 @@ export function useResearchBundle(
 
 export type ResearchExecutionState = {
   execution: ResearchExecution | null
+  /** Server time now, from the last fetch's clock offset (never a stale `now`). */
+  serverNow: () => number
   status: ResearchLoadStatus
   reload: () => void
 }
@@ -220,7 +223,7 @@ export function useResearchExecution(
   events: WorkspaceEvent[],
   connectionState: WorkspaceConnectionState,
 ): ResearchExecutionState {
-  const [loaded, setLoaded] = useState<{ key: string; execution: ResearchExecution } | null>(null)
+  const [loaded, setLoaded] = useState<{ key: string; execution: ResearchExecution; receivedAt: number } | null>(null)
   const [failedKey, setFailedKey] = useState<string | null>(null)
   const [manual, setManual] = useState(0)
   const matches = useCallback((event: WorkspaceEvent) => {
@@ -238,7 +241,7 @@ export function useResearchExecution(
     const mine = ++ticket.current
     api.getResearchExecution(projectId, researchId, roundId).then((execution) => {
       if (mine !== ticket.current) return
-      setLoaded({ key, execution })
+      setLoaded({ key, execution, receivedAt: unixNow() })
       setFailedKey(null)
     }).catch(() => {
       if (mine === ticket.current) setFailedKey(key)
@@ -247,8 +250,10 @@ export function useResearchExecution(
 
   const current = loaded && loaded.key === key ? loaded.execution : null
   const status: ResearchLoadStatus = failedKey === key ? 'error' : current ? 'ready' : 'loading'
+  const offset = current && loaded ? current.now - loaded.receivedAt : 0
   return {
     execution: current,
+    serverNow: () => unixNow() + offset,
     status,
     reload: useCallback(() => setManual((value) => value + 1), []),
   }

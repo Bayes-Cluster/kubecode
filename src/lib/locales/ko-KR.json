@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "표준 출력",
   "kubecode.research.exec.stderr": "표준 오류",
   "kubecode.research.exec.emptyOutput": "(없음)",
-  "kubecode.research.exec.truncated": "{bytes}바이트 중 끝부분을 표시합니다."
+  "kubecode.research.exec.truncated": "{bytes}바이트 중 끝부분을 표시합니다.",
+  "kubecode.research.exec.error.conflict": "편집하는 동안 실행 엔벨로프가 변경되었습니다. 다시 불러왔으니 내용을 검토한 후 다시 저장하세요.",
+  "kubecode.research.exec.invalidExitCode": "종료 코드에는 정수를 입력하거나 비워 두세요."
 }

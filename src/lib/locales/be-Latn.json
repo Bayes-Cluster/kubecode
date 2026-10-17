@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Standartny vyvad",
   "kubecode.research.exec.stderr": "Standartny vyvad pamylak",
   "kubecode.research.exec.emptyOutput": "(ničoha)",
-  "kubecode.research.exec.truncated": "Pakazany kaniec z {bytes} bajt."
+  "kubecode.research.exec.truncated": "Pakazany kaniec z {bytes} bajt.",
+  "kubecode.research.exec.error.conflict": "Ramki vykanannia źmianilisia, pakul vy ich redagavali. Ich pierazagružana; prahladzicie i zachavajcie jašče raz.",
+  "kubecode.research.exec.invalidExitCode": "Uviadzicie ceły lik dla koda zaviaršeńnia abo pakińcie pole pustym."
 }

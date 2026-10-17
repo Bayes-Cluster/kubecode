@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Standardowe wyjście",
   "kubecode.research.exec.stderr": "Standardowe wyjście błędów",
   "kubecode.research.exec.emptyOutput": "(pusto)",
-  "kubecode.research.exec.truncated": "Pokazano koniec z {bytes} bajtów."
+  "kubecode.research.exec.truncated": "Pokazano koniec z {bytes} bajtów.",
+  "kubecode.research.exec.error.conflict": "Koperta wykonania zmieniła się podczas edycji. Została wczytana ponownie; przejrzyj ją i zapisz jeszcze raz.",
+  "kubecode.research.exec.invalidExitCode": "Wpisz liczbę całkowitą jako kod wyjścia lub pozostaw pole puste."
 }

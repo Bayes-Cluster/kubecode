@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Стандартный вывод",
   "kubecode.research.exec.stderr": "Стандартный вывод ошибок",
   "kubecode.research.exec.emptyOutput": "(пусто)",
-  "kubecode.research.exec.truncated": "Показан конец из {bytes} байт."
+  "kubecode.research.exec.truncated": "Показан конец из {bytes} байт.",
+  "kubecode.research.exec.error.conflict": "Конверт выполнения изменился, пока вы его редактировали. Он перезагружен; проверьте его и сохраните снова.",
+  "kubecode.research.exec.invalidExitCode": "Введите целое число для кода завершения или оставьте поле пустым."
 }

@@ -461,6 +461,30 @@ describe('ResearchWorkspace', () => {
     })
   })
 
+  it('does not start a round when Enter is pressed in an envelope field', async () => {
+    const startResearchRound = vi.fn().mockResolvedValue(roundFixture)
+    mount({ api: fakeApi({ startResearchRound }) })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.work')
+    fireEvent.click(await panel().findByLabelText('kubecode.research.exec.allowExecution'))
+    const launches = panel().getByLabelText('kubecode.research.exec.maxLaunches')
+    // jsdom does not submit implicit forms on Enter, but the keydown must be cancelled.
+    const notCancelled = fireEvent.keyDown(launches, { key: 'Enter' })
+    expect(notCancelled).toBe(false)
+    expect(startResearchRound).not.toHaveBeenCalled()
+  })
+
+  it('lets the researcher hide and re-show the newest round\'s execution', async () => {
+    mount()
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.work')
+    const toggle = await panel().findByRole('button', { name: /kubecode\.research\.exec\.hide/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(toggle)
+    expect(panel().getByRole('button', { name: /kubecode\.research\.exec\.show/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(panel().queryByText('kubecode.research.exec.title')).not.toBeInTheDocument()
+  })
+
   it('refreshes link availability when a Session is removed', async () => {
     const getResearch = vi.fn().mockResolvedValue(detailFixture)
     const props: ResearchWorkspaceProps = {

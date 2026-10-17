@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Standardausgabe",
   "kubecode.research.exec.stderr": "Standardfehler",
   "kubecode.research.exec.emptyOutput": "(nichts)",
-  "kubecode.research.exec.truncated": "Zeigt das Ende von {bytes} Byte."
+  "kubecode.research.exec.truncated": "Zeigt das Ende von {bytes} Byte.",
+  "kubecode.research.exec.error.conflict": "Der Ausführungsrahmen wurde während der Bearbeitung geändert. Er wurde neu geladen; prüfen Sie ihn und speichern Sie erneut.",
+  "kubecode.research.exec.invalidExitCode": "Geben Sie eine ganze Zahl als Exit-Code ein oder lassen Sie das Feld leer."
 }

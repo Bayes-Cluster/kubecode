@@ -36,7 +36,13 @@ export function ExecutionEnvelopeFields({
     </label>
   )
   return (
-    <fieldset className="kubecode-research-envelope">
+    <fieldset
+      className="kubecode-research-envelope"
+      // Enter in a limit field must not submit a surrounding form (starting a round).
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault()
+      }}
+    >
       <legend>{t('kubecode.research.exec.envelope')}</legend>
       <p className="kubecode-research-muted">{t('kubecode.research.exec.envelopeHint')}</p>
       <div className="kubecode-research-envelope-grid">

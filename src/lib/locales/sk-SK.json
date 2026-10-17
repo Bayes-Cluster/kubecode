@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Štandardný výstup",
   "kubecode.research.exec.stderr": "Štandardný chybový výstup",
   "kubecode.research.exec.emptyOutput": "(nič)",
-  "kubecode.research.exec.truncated": "Zobrazuje sa koniec z {bytes} bajtov."
+  "kubecode.research.exec.truncated": "Zobrazuje sa koniec z {bytes} bajtov.",
+  "kubecode.research.exec.error.conflict": "Rámec spúšťania sa zmenil počas úprav. Bol znova načítaný; skontrolujte ho a uložte znova.",
+  "kubecode.research.exec.invalidExitCode": "Zadajte celé číslo pre návratový kód alebo nechajte pole prázdne."
 }

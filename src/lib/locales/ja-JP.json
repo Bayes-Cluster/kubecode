@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "標準出力",
   "kubecode.research.exec.stderr": "標準エラー",
   "kubecode.research.exec.emptyOutput": "（なし）",
-  "kubecode.research.exec.truncated": "{bytes} バイトのうち末尾を表示しています。"
+  "kubecode.research.exec.truncated": "{bytes} バイトのうち末尾を表示しています。",
+  "kubecode.research.exec.error.conflict": "編集中に実行エンベロープが変更されました。再読み込みしたので、内容を確認してもう一度保存してください。",
+  "kubecode.research.exec.invalidExitCode": "終了コードには整数を入力するか、空欄のままにしてください。"
 }

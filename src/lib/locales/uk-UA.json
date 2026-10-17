@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Стандартний вивід",
   "kubecode.research.exec.stderr": "Стандартний вивід помилок",
   "kubecode.research.exec.emptyOutput": "(нічого)",
-  "kubecode.research.exec.truncated": "Показано кінець із {bytes} байт."
+  "kubecode.research.exec.truncated": "Показано кінець із {bytes} байт.",
+  "kubecode.research.exec.error.conflict": "Рамка виконання змінилася, поки ви її редагували. Її перезавантажено; перегляньте та збережіть знову.",
+  "kubecode.research.exec.invalidExitCode": "Введіть ціле число для коду завершення або залиште поле порожнім."
 }

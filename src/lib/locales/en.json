@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Standard output",
   "kubecode.research.exec.stderr": "Standard error",
   "kubecode.research.exec.emptyOutput": "(nothing)",
-  "kubecode.research.exec.truncated": "Showing the end of {bytes} bytes."
+  "kubecode.research.exec.truncated": "Showing the end of {bytes} bytes.",
+  "kubecode.research.exec.error.conflict": "The envelope changed while you were editing. It has been reloaded; review it and save again.",
+  "kubecode.research.exec.invalidExitCode": "Enter a whole number for the exit code, or leave it blank."
 }

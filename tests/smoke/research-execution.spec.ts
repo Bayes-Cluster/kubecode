@@ -6,10 +6,11 @@ async function expectContained(page: Page) {
     return {
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
-      paneClient: pane?.clientWidth ?? 0,
+      paneClient: pane?.clientWidth ?? -1,
       paneScroll: pane?.scrollWidth ?? 0,
     }
   })
+  expect(sizes.paneClient, 'the research pane must exist').toBeGreaterThan(0)
   expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.clientWidth)
   expect(sizes.paneScroll).toBeLessThanOrEqual(sizes.paneClient + 1)
 }

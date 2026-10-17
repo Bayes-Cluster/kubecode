@@ -13,6 +13,12 @@ export type EnvelopeDraft = {
   /** The deadline the envelope already has, kept unless the field is edited. */
   existingDeadline: number | null
   deadlineEdited: boolean
+  /**
+   * The commands as they were when editing began, and their text. Unedited
+   * text keeps the exact original tokens, so quoting can never alter them.
+   */
+  existingCommands: string[][] | null
+  existingCommandsText: string
 }
 
 export function defaultEnvelopeDraft(): EnvelopeDraft {
@@ -25,10 +31,13 @@ export function defaultEnvelopeDraft(): EnvelopeDraft {
     commands: '',
     existingDeadline: null,
     deadlineEdited: false,
+    existingCommands: null,
+    existingCommandsText: '',
   }
 }
 
 export function draftFromLimits(limits: ExecutionEnvelopeLimits, now: number): EnvelopeDraft {
+  const commandsText = limits.allowed_commands.map(joinCommand).join('\n')
   const remaining = limits.deadline_at === null ? null : Math.max(0, limits.deadline_at - now)
   return {
     maxLaunches: String(limits.max_launches),
@@ -36,9 +45,11 @@ export function draftFromLimits(limits: ExecutionEnvelopeLimits, now: number): E
     maxRuntimeMinutes: String(Math.max(1, Math.ceil(limits.max_runtime_secs / 60))),
     deadlineHours: remaining === null ? '' : String(Math.round((remaining / 3600) * 100) / 100),
     maxNoProgress: String(limits.max_no_progress),
-    commands: limits.allowed_commands.map(joinCommand).join('\n'),
+    commands: commandsText,
     existingDeadline: limits.deadline_at,
     deadlineEdited: false,
+    existingCommands: limits.allowed_commands,
+    existingCommandsText: commandsText,
   }
 }
 
@@ -51,8 +62,14 @@ export function parseCommand(line: string): string[] {
   return tokens
 }
 
+/** Quotes a token with whichever quote it does not contain (best effort). */
 function joinCommand(tokens: string[]): string {
-  return tokens.map((token) => (/\s|^$/.test(token) ? `"${token}"` : token)).join(' ')
+  return tokens
+    .map((token) => {
+      if (!/[\s"']|^$/.test(token)) return token
+      return token.includes('"') ? `'${token}'` : `"${token}"`
+    })
+    .join(' ')
 }
 
 export type EnvelopeResult =
@@ -85,11 +102,21 @@ export function limitsFromDraft(draft: EnvelopeDraft, now: number): EnvelopeResu
       deadline = now + Math.round(hours * 3600)
     }
   }
-  const commands = draft.commands
-    .split('\n')
-    .map((line) => parseCommand(line.trim()))
-    .filter((tokens) => tokens.length > 0)
-  if (commands.length === 0 || commands.length > 20 || commands.some((tokens) => tokens.length > 32)) {
+  const commands = draft.existingCommands && draft.commands === draft.existingCommandsText
+    ? draft.existingCommands
+    : draft.commands
+      .split('\n')
+      .map((line) => parseCommand(line.trim()))
+      .filter((tokens) => tokens.length > 0)
+  if (
+    commands.length === 0
+    || commands.length > 20
+    || commands.some((tokens) => (
+      tokens.length > 32
+      || tokens[0].trim() === ''
+      || tokens.some((token) => token.length > 512)
+    ))
+  ) {
     return { ok: false, field: 'commands' }
   }
   return {

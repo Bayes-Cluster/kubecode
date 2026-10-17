@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Output standard",
   "kubecode.research.exec.stderr": "Errore standard",
   "kubecode.research.exec.emptyOutput": "(vuoto)",
-  "kubecode.research.exec.truncated": "Viene mostrata la parte finale di {bytes} byte."
+  "kubecode.research.exec.truncated": "Viene mostrata la parte finale di {bytes} byte.",
+  "kubecode.research.exec.error.conflict": "L’envelope di esecuzione è cambiato mentre lo modificavi. È stato ricaricato; controllalo e salva di nuovo.",
+  "kubecode.research.exec.invalidExitCode": "Inserisci un numero intero per il codice di uscita oppure lascia il campo vuoto."
 }

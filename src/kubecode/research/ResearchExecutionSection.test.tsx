@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../api'
 import type { WorkspaceEvent } from '../api'
 import {
   envelopeFixture,
@@ -75,7 +76,9 @@ describe('ResearchExecutionSection', () => {
     expect(within(card('running one')).getByText('kubecode.research.exec.notYetAnalyzable')).toBeInTheDocument()
     expect(within(card('finished one')).getByText('kubecode.research.exec.awaitingAnalysis')).toBeInTheDocument()
     expect(within(card('settled one')).getByText('kubecode.research.exec.analyzed')).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('"count":2') // two results still owed
+    // Only the finished, unanalyzed result is owed; the running process has none yet.
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('"count":1')
+    expect(within(card('settled one')).queryByText('kubecode.research.exec.awaitingAnalysis')).not.toBeInTheDocument()
   })
 
   it('shows artifact availability, the policy revision, and the Leader\'s decisions', async () => {
@@ -176,13 +179,20 @@ describe('ResearchExecutionSection', () => {
         })),
       }),
     })
-    const group = await screen.findByRole('group', { name: 'kubecode.research.exec.reconcile' })
+    const group = await screen.findByRole('group', { name: /kubecode\.research\.exec\.reconcile/ })
     expect(within(group).getByText('kubecode.research.exec.unknownHint')).toBeInTheDocument()
-    fireEvent.change(within(group).getByLabelText('kubecode.research.exec.exitCodeOptional'), { target: { value: '0' } })
-    fireEvent.click(within(group).getByRole('button', { name: 'kubecode.research.exec.didFinish' }))
+    const exit = within(group).getByLabelText('kubecode.research.exec.exitCodeOptional')
+    // A bad exit code is refused before anything is recorded.
+    fireEvent.change(exit, { target: { value: 'abc' } })
+    fireEvent.click(within(group).getByRole('button', { name: /kubecode\.research\.exec\.didFinish/ }))
+    expect(await within(group).findByText('kubecode.research.exec.invalidExitCode')).toBeInTheDocument()
+    expect(reconcileExperiment).not.toHaveBeenCalled()
+    fireEvent.change(exit, { target: { value: '0' } })
+    fireEvent.click(within(group).getByRole('button', { name: /kubecode\.research\.exec\.didFinish/ }))
     await waitFor(() => expect(reconcileExperiment).toHaveBeenCalledWith('p1', 'rq-1', 'x-1', 'finished', 0))
-    fireEvent.click(within(group).getByRole('button', { name: 'kubecode.research.exec.neverStarted' }))
-    await waitFor(() => expect(reconcileExperiment).toHaveBeenCalledWith('p1', 'rq-1', 'x-1', 'not_started', 0))
+    // "Never started" carries no exit code even if one was typed.
+    fireEvent.click(within(group).getByRole('button', { name: /kubecode\.research\.exec\.neverStarted/ }))
+    await waitFor(() => expect(reconcileExperiment).toHaveBeenCalledWith('p1', 'rq-1', 'x-1', 'not_started', undefined))
   })
 
   it('loads a bounded output tail on demand and says when it was cut', async () => {
@@ -192,7 +202,7 @@ describe('ResearchExecutionSection', () => {
         : { text: '', total_bytes: 0, truncated: false }
     ))
     mount({ api: fakeApi({ getExperimentLog }) })
-    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.exec.viewOutput' }))
+    fireEvent.click(await screen.findByRole('button', { name: /kubecode\.research\.exec\.viewOutput/ }))
     expect(await screen.findByText('epoch 9 loss 0.1')).toBeInTheDocument()
     expect(screen.getByText('kubecode.research.exec.emptyOutput')).toBeInTheDocument()
     expect(screen.getByText(/kubecode.research.exec.truncated/)).toHaveTextContent('900000')
@@ -302,5 +312,45 @@ describe('ResearchExecutionSection', () => {
       view.rerender(<ResearchExecutionSection {...props} connectionState="live" events={[event(2, 'research_updated', { research_id: 'rq-1' })]} />)
     })
     await waitFor(() => expect(screen.queryByText('kubecode.research.exec.stale')).not.toBeInTheDocument())
+  })
+
+  it('saves against the revision the edit began from and reloads when the envelope moved', async () => {
+    const setResearchEnvelope = vi.fn().mockRejectedValue(
+      new ApiError('envelope_revision_conflict', 'moved', 409),
+    )
+    const getResearchExecution = vi.fn()
+      .mockResolvedValueOnce(executionFixture())
+      .mockResolvedValue(executionFixture({ envelope: { ...envelopeFixture, revision: 3 } }))
+    mount({ api: fakeApi({ setResearchEnvelope, getResearchExecution }) })
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.exec.editEnvelope' }))
+    fireEvent.change(screen.getByLabelText('kubecode.research.exec.maxLaunches'), { target: { value: '9' } })
+    // Another tab saves revision 3 while this edit is open; the section refetches.
+    const before = getResearchExecution.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.exec.saveEnvelope' }))
+    await waitFor(() => expect(setResearchEnvelope).toHaveBeenCalledTimes(1))
+    // The save names the revision the draft was built from (2), so the server refuses it.
+    expect(setResearchEnvelope.mock.calls[0][4]).toBe(2)
+    expect(await screen.findByText('kubecode.research.exec.error.conflict')).toBeInTheDocument()
+    await waitFor(() => expect(getResearchExecution.mock.calls.length).toBeGreaterThan(before))
+  })
+
+  it('computes an edited deadline from the server clock, not from the page load', async () => {
+    const setResearchEnvelope = vi.fn().mockResolvedValue(envelopeFixture)
+    // The server said it was 1_800_000_000 five hours ago.
+    const fiveHoursAfterLoad = 1_800_000_000 * 1000 + 5 * 3600 * 1000
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000 * 1000)
+    mount({
+      api: fakeApi({
+        setResearchEnvelope,
+        getResearchExecution: vi.fn().mockResolvedValue(executionFixture({ now: 1_800_000_000 })),
+      }),
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.exec.editEnvelope' }))
+    clock.mockReturnValue(fiveHoursAfterLoad)
+    fireEvent.change(screen.getByLabelText('kubecode.research.exec.deadlineHours'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.exec.saveEnvelope' }))
+    await waitFor(() => expect(setResearchEnvelope).toHaveBeenCalledTimes(1))
+    expect(setResearchEnvelope.mock.calls[0][3].deadline_at).toBe(1_800_000_000 + 5 * 3600 + 3 * 3600)
+    clock.mockRestore()
   })
 })

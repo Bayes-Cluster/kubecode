@@ -3784,3 +3784,10 @@
   flex-direction: row !important;
   gap: 8px !important;
 }
+
+.kubecode-research-cards code,
+.kubecode-research-cards strong,
+.kubecode-research-decisions li,
+.kubecode-research-facts code {
+  overflow-wrap: anywhere;
+}

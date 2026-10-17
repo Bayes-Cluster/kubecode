@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Keluaran standar",
   "kubecode.research.exec.stderr": "Galat standar",
   "kubecode.research.exec.emptyOutput": "(kosong)",
-  "kubecode.research.exec.truncated": "Menampilkan bagian akhir dari {bytes} byte."
+  "kubecode.research.exec.truncated": "Menampilkan bagian akhir dari {bytes} byte.",
+  "kubecode.research.exec.error.conflict": "Envelope eksekusi berubah saat Anda mengeditnya. Envelope telah dimuat ulang; tinjau lalu simpan lagi.",
+  "kubecode.research.exec.invalidExitCode": "Masukkan bilangan bulat untuk kode keluar, atau biarkan kosong."
 }

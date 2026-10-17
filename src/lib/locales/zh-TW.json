@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "標準輸出",
   "kubecode.research.exec.stderr": "標準錯誤",
   "kubecode.research.exec.emptyOutput": "（無內容）",
-  "kubecode.research.exec.truncated": "顯示 {bytes} 位元組中的末尾部分。"
+  "kubecode.research.exec.truncated": "顯示 {bytes} 位元組中的末尾部分。",
+  "kubecode.research.exec.error.conflict": "執行範圍在你編輯期間已變更。已重新載入；請檢查後再次儲存。",
+  "kubecode.research.exec.invalidExitCode": "請為結束碼輸入整數，或留空。"
 }

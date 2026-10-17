@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Đầu ra chuẩn",
   "kubecode.research.exec.stderr": "Lỗi chuẩn",
   "kubecode.research.exec.emptyOutput": "(trống)",
-  "kubecode.research.exec.truncated": "Đang hiển thị phần cuối của {bytes} byte."
+  "kubecode.research.exec.truncated": "Đang hiển thị phần cuối của {bytes} byte.",
+  "kubecode.research.exec.error.conflict": "Phạm vi thực thi đã thay đổi trong lúc bạn chỉnh sửa. Phạm vi đã được tải lại; hãy xem lại và lưu lần nữa.",
+  "kubecode.research.exec.invalidExitCode": "Nhập một số nguyên cho mã thoát, hoặc để trống."
 }

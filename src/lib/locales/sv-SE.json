@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Standardutdata",
   "kubecode.research.exec.stderr": "Standardfel",
   "kubecode.research.exec.emptyOutput": "(ingenting)",
-  "kubecode.research.exec.truncated": "Visar slutet av {bytes} byte."
+  "kubecode.research.exec.truncated": "Visar slutet av {bytes} byte.",
+  "kubecode.research.exec.error.conflict": "Körningsramen ändrades medan du redigerade den. Den har lästs in igen; granska den och spara på nytt.",
+  "kubecode.research.exec.invalidExitCode": "Ange ett heltal för slutkoden eller lämna fältet tomt."
 }

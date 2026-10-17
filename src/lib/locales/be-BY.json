@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Стандартны вывад",
   "kubecode.research.exec.stderr": "Стандартны вывад памылак",
   "kubecode.research.exec.emptyOutput": "(нічога)",
-  "kubecode.research.exec.truncated": "Паказаны канец з {bytes} байт."
+  "kubecode.research.exec.truncated": "Паказаны канец з {bytes} байт.",
+  "kubecode.research.exec.error.conflict": "Рамкі выканання змяніліся, пакуль вы іх рэдагавалі. Іх перазагружана; праглядзіце і захавайце яшчэ раз.",
+  "kubecode.research.exec.invalidExitCode": "Увядзіце цэлы лік для кода завяршэння або пакіньце поле пустым."
 }

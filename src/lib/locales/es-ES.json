@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Salida estándar",
   "kubecode.research.exec.stderr": "Error estándar",
   "kubecode.research.exec.emptyOutput": "(nada)",
-  "kubecode.research.exec.truncated": "Se muestra el final de {bytes} bytes."
+  "kubecode.research.exec.truncated": "Se muestra el final de {bytes} bytes.",
+  "kubecode.research.exec.error.conflict": "El marco de ejecución cambió mientras lo editabas. Se ha vuelto a cargar; revísalo y guarda de nuevo.",
+  "kubecode.research.exec.invalidExitCode": "Introduce un número entero para el código de salida o deja el campo en blanco."
 }

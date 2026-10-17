@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Translator } from '@/lib/i18n'
 
+import { ApiError } from '../api'
 import type {
   ExecutionEnvelope,
   ExperimentDecision,
@@ -100,7 +101,7 @@ export function ResearchExecutionSection({
   t,
   teams,
 }: ResearchExecutionSectionProps) {
-  const { execution, reload, status } = useResearchExecution(
+  const { execution, reload, serverNow, status } = useResearchExecution(
     api,
     projectId,
     researchId,
@@ -108,7 +109,8 @@ export function ResearchExecutionSection({
     events,
     connectionState,
   )
-  const [editing, setEditing] = useState<EnvelopeDraft | null>(null)
+  // The draft and the revision it was built from, captured when editing began.
+  const [editing, setEditing] = useState<{ draft: EnvelopeDraft; revision: number } | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const control = useAction(t)
 
@@ -127,14 +129,17 @@ export function ResearchExecutionSection({
   }
 
   const { envelope } = execution
+  // Only finished results can await analysis; a running process has none yet.
   const owed = execution.experiments.filter(
-    (experiment) => isActive(experiment.state) || experiment.analysis === 'pending',
+    (experiment) => !isActive(experiment.state) && experiment.analysis === 'pending',
   )
   const active = execution.experiments.filter((experiment) => isActive(experiment.state))
   const memberName = (wait: ExperimentWait) => teams
     .find((snapshot) => snapshot.team.id === wait.team_id)
     ?.members.find((member) => member.id === wait.owner_member_id)?.name ?? wait.owner_member_id
-  const done = async () => { reload() }
+  const done = async () => {
+    reload()
+  }
 
   return (
     <div className="kubecode-research-execution">
@@ -176,8 +181,9 @@ export function ResearchExecutionSection({
           {!archived && (
             <EnvelopeEditor
               api={api}
-              existing={null}
-              now={execution.now}
+              baseRevision={null}
+              now={serverNow}
+              onConflict={reload}
               onSaved={done}
               projectId={projectId}
               researchId={researchId}
@@ -220,7 +226,10 @@ export function ResearchExecutionSection({
               <Button
                 size="xs"
                 variant="outline"
-                onClick={() => setEditing(draftFromLimits(envelope.limits, execution.now))}
+                onClick={() => setEditing({
+                  draft: draftFromLimits(envelope.limits, serverNow()),
+                  revision: envelope.revision,
+                })}
               >
                 {t('kubecode.research.exec.editEnvelope')}
               </Button>
@@ -231,11 +240,11 @@ export function ResearchExecutionSection({
               </Button>
             )}
           </div>
-          <p className="kubecode-research-muted">
-            {envelope.state === 'active' ? t('kubecode.research.exec.pauseHint') : null}
-          </p>
+          {envelope.state === 'active' && (
+            <p className="kubecode-research-muted">{t('kubecode.research.exec.pauseHint')}</p>
+          )}
           {confirmCancel && (
-            <div className="kubecode-research-confirm" role="alertdialog" aria-label={t('kubecode.research.exec.cancelAll')}>
+            <ConfirmCancel label={t('kubecode.research.exec.cancelAll')}>
               <p>{t('kubecode.research.exec.cancelAllConfirm', { count: active.length })}</p>
               <div className="kubecode-research-row">
                 <Button
@@ -253,14 +262,15 @@ export function ResearchExecutionSection({
                   {t('kubecode.research.exec.keepRunning')}
                 </Button>
               </div>
-            </div>
+            </ConfirmCancel>
           )}
           {editing && (
             <EnvelopeEditor
               api={api}
-              existing={envelope}
-              initial={editing}
-              now={execution.now}
+              baseRevision={editing.revision}
+              initial={editing.draft}
+              now={serverNow}
+              onConflict={reload}
               onCancel={() => setEditing(null)}
               onSaved={async () => {
                 setEditing(null)
@@ -351,10 +361,11 @@ function EnvelopeSummary({
 
 function EnvelopeEditor({
   api,
-  existing,
+  baseRevision,
   initial,
   now,
   onCancel,
+  onConflict,
   onSaved,
   projectId,
   researchId,
@@ -362,10 +373,13 @@ function EnvelopeEditor({
   t,
 }: {
   api: KubecodeApi
-  existing: ExecutionEnvelope | null
+  /** The envelope revision the draft was built from; null when creating. */
+  baseRevision: number | null
   initial?: EnvelopeDraft
-  now: number
+  /** Server time, read when saving so a long-open editor never uses a stale clock. */
+  now: () => number
   onCancel?: () => void
+  onConflict: () => void
   onSaved: () => Promise<void>
   projectId: string
   researchId: string
@@ -374,7 +388,14 @@ function EnvelopeEditor({
 }) {
   const [draft, setDraft] = useState<EnvelopeDraft | null>(initial ?? null)
   const [invalid, setInvalid] = useState<Parameters<typeof ExecutionEnvelopeFields>[0]['invalid']>(null)
-  const action = useAction(t)
+  const formRef = useRef<HTMLFormElement>(null)
+  const action = useAction(t, (cause) => {
+    if (cause instanceof ApiError && cause.code === 'envelope_revision_conflict') onConflict()
+  })
+  const open = draft !== null
+  useEffect(() => {
+    if (open) formRef.current?.querySelector('input')?.focus()
+  }, [open])
 
   if (!draft) {
     return (
@@ -384,6 +405,7 @@ function EnvelopeEditor({
         onClick={() => setDraft(initial ?? {
           maxLaunches: '5', maxConcurrent: '1', maxRuntimeMinutes: '30', deadlineHours: '',
           maxNoProgress: '3', commands: '', existingDeadline: null, deadlineEdited: false,
+          existingCommands: null, existingCommandsText: '',
         })}
       >
         {t('kubecode.research.exec.setUp')}
@@ -391,7 +413,7 @@ function EnvelopeEditor({
     )
   }
   const save = async () => {
-    const result = limitsFromDraft(draft, now)
+    const result = limitsFromDraft(draft, now())
     if (!result.ok) {
       setInvalid(result.field)
       return
@@ -402,23 +424,24 @@ function EnvelopeEditor({
       researchId,
       roundId,
       result.limits,
-      existing?.revision,
+      baseRevision ?? undefined,
     ))
     if (saved) await onSaved()
   }
   return (
     <form
       className="kubecode-research-form"
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault()
         void save()
       }}
     >
       <ExecutionEnvelopeFields draft={draft} invalid={invalid} onChange={setDraft} t={t} />
-      {existing && <p className="kubecode-research-muted">{t('kubecode.research.exec.runningKeepsRevision')}</p>}
+      {baseRevision !== null && <p className="kubecode-research-muted">{t('kubecode.research.exec.runningKeepsRevision')}</p>}
       {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
       <div className="kubecode-research-panel-actions">
-        {(onCancel || existing === null) && (
+        {(onCancel || baseRevision === null) && (
           <Button
             type="button"
             variant="ghost"
@@ -472,11 +495,24 @@ function ExperimentCard({
     ])
     setLogs({ stdout, stderr })
   })
-  const reconcile = (truth: 'not_started' | 'finished') => void action.run(async () => {
-    const parsed = exitCode.trim() === '' ? undefined : Number(exitCode)
-    await api.reconcileExperiment(projectId, researchId, experiment.id, truth, parsed)
-    onChanged()
-  })
+  const [exitCodeInvalid, setExitCodeInvalid] = useState(false)
+  const reconcile = (truth: 'not_started' | 'finished') => {
+    // An exit code only means something for a process that finished.
+    let parsed: number | undefined
+    if (truth === 'finished' && exitCode.trim() !== '') {
+      const value = Number(exitCode)
+      if (!/^-?\d+$/.test(exitCode.trim()) || !Number.isSafeInteger(value) || Math.abs(value) > 2_147_483_647) {
+        setExitCodeInvalid(true)
+        return
+      }
+      parsed = value
+    }
+    setExitCodeInvalid(false)
+    void action.run(async () => {
+      await api.reconcileExperiment(projectId, researchId, experiment.id, truth, parsed)
+      onChanged()
+    })
+  }
 
   return (
     <li data-state={experiment.state}>
@@ -488,13 +524,15 @@ function ExperimentCard({
         >
           {t(STATE_LABELS[experiment.state])}
         </span>
-        <span className="kubecode-research-badge" data-tone={experiment.analysis === 'pending' ? 'warn' : 'muted'}>
-          {experiment.analysis === 'pending'
-            ? t('kubecode.research.exec.awaitingAnalysis')
-            : experiment.analysis === 'analyzed'
-              ? t('kubecode.research.exec.analyzed')
-              : t('kubecode.research.exec.notYetAnalyzable')}
-        </span>
+        {(experiment.analysis !== 'none' || isActive(experiment.state)) && (
+          <span className="kubecode-research-badge" data-tone={experiment.analysis === 'pending' ? 'warn' : 'muted'}>
+            {experiment.analysis === 'pending'
+              ? t('kubecode.research.exec.awaitingAnalysis')
+              : experiment.analysis === 'analyzed'
+                ? t('kubecode.research.exec.analyzed')
+                : t('kubecode.research.exec.notYetAnalyzable')}
+          </span>
+        )}
         <span className="kubecode-research-muted">
           {t('kubecode.research.exec.policyRevision', { revision: experiment.policy_revision })}
         </span>
@@ -506,17 +544,37 @@ function ExperimentCard({
         {experiment.reason ? ` · ${experiment.reason}` : ''}
       </span>
       {experiment.state === 'unknown' && (
-        <div className="kubecode-research-confirm" role="group" aria-label={t('kubecode.research.exec.reconcile')}>
+        <div className="kubecode-research-confirm" role="group" aria-label={`${t('kubecode.research.exec.reconcile')}: ${title}`}>
           <p>{t('kubecode.research.exec.unknownHint')}</p>
           <label>
             <span>{t('kubecode.research.exec.exitCodeOptional')}</span>
-            <Input inputMode="numeric" value={exitCode} onChange={(event) => setExitCode(event.target.value)} />
+            <Input
+              aria-invalid={exitCodeInvalid}
+              inputMode="numeric"
+              value={exitCode}
+              onChange={(event) => setExitCode(event.target.value)}
+            />
           </label>
+          {exitCodeInvalid && (
+            <p className="kubecode-research-error" role="alert">{t('kubecode.research.exec.invalidExitCode')}</p>
+          )}
           <div className="kubecode-research-row">
-            <Button disabled={action.busy} size="xs" variant="outline" onClick={() => reconcile('not_started')}>
+            <Button
+              aria-label={`${t('kubecode.research.exec.neverStarted')}: ${title}`}
+              disabled={action.busy}
+              size="xs"
+              variant="outline"
+              onClick={() => reconcile('not_started')}
+            >
               {t('kubecode.research.exec.neverStarted')}
             </Button>
-            <Button disabled={action.busy} size="xs" variant="outline" onClick={() => reconcile('finished')}>
+            <Button
+              aria-label={`${t('kubecode.research.exec.didFinish')}: ${title}`}
+              disabled={action.busy}
+              size="xs"
+              variant="outline"
+              onClick={() => reconcile('finished')}
+            >
               {t('kubecode.research.exec.didFinish')}
             </Button>
           </div>
@@ -552,7 +610,13 @@ function ExperimentCard({
         </ul>
       )}
       <div className="kubecode-research-row">
-        <Button disabled={action.busy} size="xs" variant="outline" onClick={loadLogs}>
+        <Button
+          aria-label={`${logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}: ${title}`}
+          disabled={action.busy}
+          size="xs"
+          variant="outline"
+          onClick={loadLogs}
+        >
           {logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}
         </Button>
         {isActive(experiment.state) && experiment.state !== 'unknown' && !experiment.cancel_requested && (
@@ -587,5 +651,24 @@ function ExperimentCard({
       )}
       {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
     </li>
+  )
+}
+
+/** The destructive confirmation takes focus, so the keyboard lands on it. */
+function ConfirmCancel({ children, label }: { children: ReactNode; label: string }) {
+  const reference = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    reference.current?.focus()
+  }, [])
+  return (
+    <div
+      aria-label={label}
+      className="kubecode-research-confirm"
+      ref={reference}
+      role="alertdialog"
+      tabIndex={-1}
+    >
+      {children}
+    </div>
   )
 }

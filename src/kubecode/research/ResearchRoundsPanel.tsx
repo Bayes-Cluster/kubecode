@@ -89,8 +89,8 @@ export function ResearchRoundsPanel({
   const [allowExecution, setAllowExecution] = useState(false)
   const [envelope, setEnvelope] = useState<EnvelopeDraft>(defaultEnvelopeDraft)
   const [envelopeInvalid, setEnvelopeInvalid] = useState<Parameters<typeof ExecutionEnvelopeFields>[0]['invalid']>(null)
-  // Rounds whose execution view the researcher expanded; the newest starts open.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // The researcher's explicit choice per round; unset, only the newest is open.
+  const [choices, setChoices] = useState<Record<string, boolean>>({})
   const selectedAgent = agentId || available[0]?.id || ''
   // The key names one intended round; any change to what is asked starts a
   // new intent, so a retry never reuses a key for a different request.
@@ -261,6 +261,7 @@ export function ResearchRoundsPanel({
           {rounds.map((round) => {
             const session = round.session
             const sessionId = round.kind === 'team' ? leaderConversation(round.team) ?? session?.id ?? null : session?.id ?? null
+            const executionOpen = choices[round.id] ?? round.id === rounds[0]?.id
             const instructionText = typeof round.request.instruction === 'string' ? round.request.instruction : ''
             return (
               <li key={round.id}>
@@ -309,22 +310,16 @@ export function ResearchRoundsPanel({
                 </div>
                 <div className="kubecode-research-row">
                   <Button
-                    aria-expanded={expanded.has(round.id) || round.id === rounds[0]?.id}
+                    aria-expanded={executionOpen}
+                    aria-label={`${executionOpen ? t('kubecode.research.exec.hide') : t('kubecode.research.exec.show')}: ${t('kubecode.research.roundShort', { round: round.round })}`}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setExpanded((current) => {
-                      const next = new Set(current)
-                      if (next.has(round.id)) next.delete(round.id)
-                      else next.add(round.id)
-                      return next
-                    })}
+                    onClick={() => setChoices((current) => ({ ...current, [round.id]: !executionOpen }))}
                   >
-                    {expanded.has(round.id) || round.id === rounds[0]?.id
-                      ? t('kubecode.research.exec.hide')
-                      : t('kubecode.research.exec.show')}
+                    {executionOpen ? t('kubecode.research.exec.hide') : t('kubecode.research.exec.show')}
                   </Button>
                 </div>
-                {(expanded.has(round.id) || round.id === rounds[0]?.id) && (
+                {executionOpen && (
                   <ResearchExecutionSection
                     api={api}
                     archived={detail.archived}

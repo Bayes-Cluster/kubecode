@@ -1882,5 +1882,7 @@
   "kubecode.research.exec.stdout": "Sortie standard",
   "kubecode.research.exec.stderr": "Erreur standard",
   "kubecode.research.exec.emptyOutput": "(rien)",
-  "kubecode.research.exec.truncated": "Affichage de la fin de {bytes} octets."
+  "kubecode.research.exec.truncated": "Affichage de la fin de {bytes} octets.",
+  "kubecode.research.exec.error.conflict": "L’enveloppe d’exécution a changé pendant votre modification. Elle a été rechargée ; vérifiez-la et enregistrez à nouveau.",
+  "kubecode.research.exec.invalidExitCode": "Saisissez un nombre entier pour le code de sortie, ou laissez le champ vide."
 }
