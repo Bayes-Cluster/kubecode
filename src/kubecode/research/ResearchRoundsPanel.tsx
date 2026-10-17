@@ -14,6 +14,7 @@ import type { Translator } from '@/lib/i18n'
 import type {
   AgentDescriptor,
   AgentId,
+  ExecutionEnvelopeLimits,
   KubecodeApi,
   ResearchDetail,
   ResearchFinding,
@@ -23,8 +24,13 @@ import type {
   ResearchSourceRef,
   ResearchTargetView,
   TeamSnapshot,
+  WorkspaceEvent,
 } from '../api'
+import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { newClientMessageId } from '../session/sessionModel'
+import { ExecutionEnvelopeFields } from './ExecutionEnvelopeFields'
+import { defaultEnvelopeDraft, limitsFromDraft, unixNow, type EnvelopeDraft } from './executionEnvelope'
+import { ResearchExecutionSection } from './ResearchExecutionSection'
 import { agentLabel, phaseLabel, sourceKindLabel } from './researchLabels'
 import { AvailabilityBadge, StaleBadge } from './SourceBadge'
 import { useAction } from './useAction'
@@ -47,7 +53,9 @@ function carryOverCandidates(findings: ResearchFinding[]): CarryOver[] {
 export function ResearchRoundsPanel({
   agents,
   api,
+  connectionState,
   detail,
+  events,
   findings,
   onChanged,
   onOpenSession,
@@ -57,7 +65,9 @@ export function ResearchRoundsPanel({
 }: {
   agents: AgentDescriptor[]
   api: KubecodeApi
+  connectionState: WorkspaceConnectionState
   detail: ResearchDetail
+  events: WorkspaceEvent[]
   findings: ResearchFinding[]
   onChanged: () => void
   onOpenSession: (conversationId: string) => void
@@ -76,6 +86,11 @@ export function ResearchRoundsPanel({
   const requestKey = useRef(newClientMessageId())
   const start = useAction(t)
   const resume = useAction(t)
+  const [allowExecution, setAllowExecution] = useState(false)
+  const [envelope, setEnvelope] = useState<EnvelopeDraft>(defaultEnvelopeDraft)
+  const [envelopeInvalid, setEnvelopeInvalid] = useState<Parameters<typeof ExecutionEnvelopeFields>[0]['invalid']>(null)
+  // Rounds whose execution view the researcher expanded; the newest starts open.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const selectedAgent = agentId || available[0]?.id || ''
   // The key names one intended round; any change to what is asked starts a
   // new intent, so a retry never reuses a key for a different request.
@@ -95,6 +110,16 @@ export function ResearchRoundsPanel({
 
   const startRound = async () => {
     if (!selectedAgent) return
+    let limits: ExecutionEnvelopeLimits | undefined
+    if (allowExecution) {
+      const result = limitsFromDraft(envelope, unixNow())
+      if (!result.ok) {
+        setEnvelopeInvalid(result.field)
+        return
+      }
+      limits = result.limits
+    }
+    setEnvelopeInvalid(null)
     const started = await start.run(() => api.startResearchRound(detail.project_id, detail.id, {
       client_request_id: requestKey.current,
       expected_revision: detail.revision,
@@ -102,6 +127,7 @@ export function ResearchRoundsPanel({
       agent_id: selectedAgent,
       instruction: instruction.trim() || undefined,
       sources: carried.map((source) => ({ kind: source.kind, id: source.id })),
+      ...(limits ? { envelope: limits } : {}),
     }))
     if (started) {
       requestKey.current = newClientMessageId()
@@ -197,6 +223,28 @@ export function ResearchRoundsPanel({
               })}
             </fieldset>
           )}
+          <label className="kubecode-research-check">
+            <input
+              checked={allowExecution}
+              type="checkbox"
+              onChange={(event) => {
+                rekey()
+                setAllowExecution(event.target.checked)
+              }}
+            />
+            <span>{t('kubecode.research.exec.allowExecution')}</span>
+          </label>
+          {allowExecution && (
+            <ExecutionEnvelopeFields
+              draft={envelope}
+              invalid={envelopeInvalid}
+              onChange={(next) => {
+                rekey()
+                setEnvelope(next)
+              }}
+              t={t}
+            />
+          )}
           {start.error && <p className="kubecode-research-error" role="alert">{start.error}</p>}
           <div className="kubecode-research-panel-actions">
             <Button aria-busy={start.busy} disabled={!selectedAgent || start.busy} size="sm" type="submit">
@@ -259,6 +307,36 @@ export function ResearchRoundsPanel({
                     </Button>
                   )}
                 </div>
+                <div className="kubecode-research-row">
+                  <Button
+                    aria-expanded={expanded.has(round.id) || round.id === rounds[0]?.id}
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setExpanded((current) => {
+                      const next = new Set(current)
+                      if (next.has(round.id)) next.delete(round.id)
+                      else next.add(round.id)
+                      return next
+                    })}
+                  >
+                    {expanded.has(round.id) || round.id === rounds[0]?.id
+                      ? t('kubecode.research.exec.hide')
+                      : t('kubecode.research.exec.show')}
+                  </Button>
+                </div>
+                {(expanded.has(round.id) || round.id === rounds[0]?.id) && (
+                  <ResearchExecutionSection
+                    api={api}
+                    archived={detail.archived}
+                    connectionState={connectionState}
+                    events={events}
+                    projectId={detail.project_id}
+                    researchId={detail.id}
+                    round={round}
+                    t={t}
+                    teams={teams}
+                  />
+                )}
                 {round.sources.length > 0 && (
                   <ul className="kubecode-research-sources" aria-label={t('kubecode.research.sources')}>
                     {round.sources.map((source) => (

@@ -4,6 +4,7 @@ import type {
   KubecodeApi,
   ResearchDetail,
   ResearchEntry,
+  ResearchExecution,
   ResearchFinding,
   ResearchOutcome,
   ResearchProposal,
@@ -194,6 +195,61 @@ export function useResearchBundle(
     bundle: failed?.code === 'research_not_found' ? null : current,
     status,
     errorCode: failed?.code ?? null,
+    reload: useCallback(() => setManual((value) => value + 1), []),
+  }
+}
+
+export type ResearchExecutionState = {
+  execution: ResearchExecution | null
+  status: ResearchLoadStatus
+  reload: () => void
+}
+
+/**
+ * One round's envelope, experiments, waits, and decisions. It refetches on
+ * this question's durable events and on Team lifecycle events, and after a
+ * reconnect; a response older than the newest request is dropped, and the
+ * previous data stays visible (marked stale by `status`) while a refresh or a
+ * failure is pending.
+ */
+export function useResearchExecution(
+  api: KubecodeApi,
+  projectId: string | null,
+  researchId: string | null,
+  roundId: string | null,
+  events: WorkspaceEvent[],
+  connectionState: WorkspaceConnectionState,
+): ResearchExecutionState {
+  const [loaded, setLoaded] = useState<{ key: string; execution: ResearchExecution } | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  const [manual, setManual] = useState(0)
+  const matches = useCallback((event: WorkspaceEvent) => {
+    if (event.project_id !== projectId) return false
+    if (event.kind === 'research_updated') return event.payload.research_id === researchId
+    return LINK_EVENT_PREFIXES.some((prefix) => event.kind.startsWith(prefix))
+  }, [projectId, researchId])
+  const tick = useRefreshTick(events, connectionState, matches)
+  const ticket = useRef(0)
+  const key = projectId && researchId && roundId ? `${projectId}/${researchId}/${roundId}` : null
+
+  useEffect(() => {
+    if (!projectId || !researchId || !roundId || !key) return
+    if (typeof api.getResearchExecution !== 'function') return
+    const mine = ++ticket.current
+    api.getResearchExecution(projectId, researchId, roundId).then((execution) => {
+      if (mine !== ticket.current) return
+      setLoaded({ key, execution })
+      setFailedKey(null)
+    }).catch(() => {
+      if (mine === ticket.current) setFailedKey(key)
+    })
+  }, [api, key, projectId, researchId, roundId, tick, manual])
+
+  const current = loaded && loaded.key === key ? loaded.execution : null
+  const status: ResearchLoadStatus = failedKey === key ? 'error' : current ? 'ready' : 'loading'
+  return {
+    execution: current,
+    status,
     reload: useCallback(() => setManual((value) => value + 1), []),
   }
 }

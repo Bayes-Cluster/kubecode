@@ -135,7 +135,12 @@ above its Sessions. `useResearchList` and `useResearchBundle` converge on
 `research_updated` events, on Session and Team lifecycle events that change link
 availability, and on a return to a live stream after a drop, by refetching the
 authoritative records and dropping any response older than the newest request.
-Standalone Sessions, Teams, files, Git, and terminals are unchanged.
+Each round carries an execution section (`ResearchExecutionSection`) fed by
+`useResearchExecution`, which refetches on the question's durable events and
+reconnects and keeps the last known state visible, marked stale, if a refresh
+fails. Destructive controls (cancel the round's execution) ask for confirmation;
+pausing only stops future launches. Standalone Sessions, Teams, files, Git, and
+terminals are unchanged.
 
 The browser workspace follows the same composition pattern.
 `src/kubecode/app/` owns application bootstrap, navigation, dialogs, preferences,

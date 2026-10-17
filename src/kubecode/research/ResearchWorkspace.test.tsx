@@ -430,6 +430,37 @@ describe('ResearchWorkspace', () => {
     expect(getResearch.mock.calls.length).toBe(before)
   })
 
+  it('starts a round with an execution envelope only when it is valid, and without one by default', async () => {
+    const startResearchRound = vi.fn().mockResolvedValue(roundFixture)
+    mount({ api: fakeApi({ startResearchRound }) })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.work')
+    const start = await panel().findByRole('button', { name: /kubecode.research.startRound/ })
+
+    // No envelope unless the researcher opts in: nothing could run.
+    fireEvent.click(start)
+    await waitFor(() => expect(startResearchRound).toHaveBeenCalledTimes(1))
+    expect(startResearchRound.mock.calls[0][2].envelope).toBeUndefined()
+
+    fireEvent.click(panel().getByLabelText('kubecode.research.exec.allowExecution'))
+    expect(panel().getByText('kubecode.research.exec.envelopeHint')).toBeInTheDocument()
+    fireEvent.click(start)
+    expect(await panel().findByText('kubecode.research.exec.invalid')).toBeInTheDocument()
+    expect(startResearchRound).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(panel().getByLabelText('kubecode.research.exec.allowedCommands'), {
+      target: { value: 'python3 train.py' },
+    })
+    fireEvent.click(start)
+    await waitFor(() => expect(startResearchRound).toHaveBeenCalledTimes(2))
+    expect(startResearchRound.mock.calls[1][2].envelope).toMatchObject({
+      max_launches: 5,
+      max_concurrent: 1,
+      max_runtime_secs: 1800,
+      allowed_commands: [['python3', 'train.py']],
+    })
+  })
+
   it('refreshes link availability when a Session is removed', async () => {
     const getResearch = vi.fn().mockResolvedValue(detailFixture)
     const props: ResearchWorkspaceProps = {
