@@ -109,6 +109,10 @@ struct StartRoundRequest {
 /// of the same request compares equal.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct StoredRequest {
+    /// Digest of the request as the client sent it (before defaults are
+    /// resolved), so a replay is recognized even if a default has since moved.
+    #[serde(default)]
+    fingerprint: String,
     session_id: Option<String>,
     agent_id: Option<AgentId>,
     title: Option<String>,
@@ -150,6 +154,34 @@ fn validate_source(
                 invalid("a source reference could not be found in this Project")
             }
         })
+}
+
+/// A digest of the request as sent. `expected_revision` is excluded: it
+/// guards creation and says nothing about what the round does.
+fn fingerprint(request: &StartRoundRequest) -> String {
+    let canonical = serde_json::json!({
+        "mode": request.mode.as_str(),
+        "session_id": request.session_id,
+        "agent_id": request.agent_id,
+        "title": request.title,
+        "instruction": request.instruction,
+        "sources": request
+            .sources
+            .iter()
+            .map(|source| (source.kind.as_str(), &source.id))
+            .collect::<Vec<_>>(),
+        "leader_name": request.leader_name,
+        "workspace": request.workspace,
+        "acceptance_criteria": request.acceptance_criteria,
+        "allowed_agent_ids": request.allowed_agent_ids,
+        "team_mode": request.team_mode,
+        "max_teammates": request.max_teammates,
+        "max_parallel_runs": request.max_parallel_runs,
+        "max_review_rounds": request.max_review_rounds,
+    });
+    hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+        canonical.to_string().as_bytes(),
+    ))
 }
 
 // -- Pre-flight ---------------------------------------------------------------------------------------
@@ -225,6 +257,7 @@ fn preflight(
         .map(str::to_owned);
     let stored = match request.mode {
         RoundKind::Solo => StoredRequest {
+            fingerprint: fingerprint(request),
             session_id: request.session_id.clone(),
             agent_id: request.agent_id,
             title,
@@ -261,6 +294,12 @@ fn preflight(
             if allowed_agent_ids.is_empty() {
                 return Err(invalid("at least one allowed Agent is required"));
             }
+            if allowed_agent_ids
+                .iter()
+                .any(|agent_id| agent_id.parse::<AgentId>().is_err())
+            {
+                return Err(invalid("an allowed Agent is not a supported Agent"));
+            }
             check_allowed_agents(state, &allowed_agent_ids)?;
             let max_teammates = request.max_teammates.unwrap_or(3);
             let max_parallel_runs = request.max_parallel_runs.unwrap_or(max_teammates.min(3));
@@ -272,6 +311,7 @@ fn preflight(
                 return Err(invalid("the Team limits are out of range"));
             }
             StoredRequest {
+                fingerprint: fingerprint(request),
                 session_id: request.session_id.clone(),
                 agent_id: request.agent_id,
                 title,
@@ -285,7 +325,8 @@ fn preflight(
                         .unwrap_or(DEFAULT_LEADER_NAME)
                         .to_owned(),
                 ),
-                workspace: Some(request.workspace.unwrap_or_default()),
+                // Left to the promotion path, which follows the Session's own mode.
+                workspace: request.workspace,
                 acceptance_criteria,
                 allowed_agent_ids,
                 team_mode: request.team_mode.unwrap_or_default(),
@@ -364,8 +405,23 @@ async fn drive_round(
     if round.phase == RoundPhase::Started {
         return Ok(round);
     }
+    // Archiving freezes the question: an unfinished round does not start
+    // work on it until it is restored.
+    if state.research.get(project_id, research_id)?.archived {
+        return Err(ResearchError::Archived.into());
+    }
     let request: StoredRequest = serde_json::from_value(round.request.clone())
         .map_err(|_| invalid("the stored round request is unreadable"))?;
+    // Two rounds on one existing Session must not interleave their setup;
+    // the round lock alone is per round.
+    let session_lock = request
+        .session_id
+        .as_deref()
+        .map(|id| state.research_locks.lock_for(&format!("session:{id}")));
+    let _session_serialized = match &session_lock {
+        Some(lock) => Some(lock.lock().await),
+        None => None,
+    };
     let brief = state
         .research
         .revision(project_id, research_id, round.brief_revision)?;
@@ -426,13 +482,22 @@ async fn drive_round(
         RoundKind::Solo => {
             // Phase 2: admit the pinned context. The client message id makes
             // admission idempotent across retries and restarts.
-            let conversation = store.get_conversation(&session_id)?;
-            state.agent_runtime.start_or_queue(StartAgentRun {
-                conversation_id: conversation.id.clone(),
-                project_id: project_id.to_owned(),
-                message: render_context(&round, &brief, &request.instruction),
-                client_message_id: Some(format!("research:{round_id}")),
-            })?;
+            // A resume after a crash finds the run the first attempt
+            // created; handing it to the actor again could send the prompt
+            // twice, so only a missing run is admitted.
+            let client_message_id = format!("research:{round_id}");
+            if store
+                .run_by_client_message_id(&client_message_id)?
+                .is_none()
+            {
+                let conversation = store.get_conversation(&session_id)?;
+                state.agent_runtime.start_or_queue(StartAgentRun {
+                    conversation_id: conversation.id.clone(),
+                    project_id: project_id.to_owned(),
+                    message: render_context(&round, &brief, &request.instruction),
+                    client_message_id: Some(client_message_id),
+                })?;
+            }
         }
         RoundKind::Team => {
             // Phase 2: the Team. A Session belongs to at most one Team, so a
@@ -459,6 +524,16 @@ async fn drive_round(
                         .await?
                     }
                 };
+                // A Team serves one round; a Session already led by another
+                // round's Team cannot be reused for a second one.
+                if let Some((_, other)) = state.research.round_for_team(&team.id)?
+                    && other.id != round_id
+                {
+                    return Err(ResearchError::RoundState(
+                        "that Session already leads the Team of another round",
+                    )
+                    .into());
+                }
                 round = state.research.round_attach_team(
                     project_id,
                     research_id,
@@ -627,6 +702,28 @@ async fn start_round(
 ) -> Result<Response, ResearchApiError> {
     check_project(&state, &project_id)?;
     let question = state.research.get(&project_id, &research_id)?;
+    // A replay is answered from the stored round without re-validating: the
+    // request has already been authorized, and its Session may since have
+    // been promoted (which preflight would refuse) or its sources changed.
+    if let Some(existing) =
+        state
+            .research
+            .round_by_key(&project_id, &research_id, &request.client_request_id)?
+    {
+        let stored: Option<StoredRequest> = serde_json::from_value(existing.request.clone()).ok();
+        if existing.kind != request.mode
+            || stored.is_none_or(|stored| stored.fingerprint != fingerprint(&request))
+        {
+            return Err(ResearchError::KeyReuse.into());
+        }
+        let round = drive_round(&state, &project_id, &research_id, &existing.id).await?;
+        let current = question.revision;
+        return Ok((
+            StatusCode::OK,
+            Json(round_view(&state, &project_id, round, current)),
+        )
+            .into_response());
+    }
     let (stored, sources) = preflight(
         &state,
         &project_id,
