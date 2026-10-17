@@ -325,16 +325,21 @@ impl ILinkService {
     /// Current safe status snapshot.
     pub async fn status(&self) -> ServiceStatus {
         let core = self.core.lock().await;
-        let account = core
-            .account_id
+        // A linked-but-stopped account (credentials stored, no live task)
+        // still reports its identity and binding.
+        let account_id = core.account_id.clone().or_else(|| {
+            self.store
+                .first_ilink_credentials()
+                .map(|credentials| credentials.account_id)
+        });
+        let account = account_id
             .as_deref()
             .and_then(|account_id| self.store.ilink_account(account_id).ok().flatten());
         ServiceStatus {
             status: core.status,
-            account_id: core.account_id.clone(),
+            account_id: account_id.clone(),
             display_name: account.map(|account| account.display_name),
-            bound_conversation_id: core
-                .account_id
+            bound_conversation_id: account_id
                 .as_deref()
                 .and_then(|account_id| self.store.ilink_session_binding(account_id).ok().flatten()),
             login_active: core.login.is_some(),

@@ -2309,6 +2309,7 @@
 .kubecode-runtime-counts > div + div { border-left: 1px solid var(--border-subtle); }
 .kubecode-runtime-counts dt { color: var(--text-secondary); font-size: 12px; }
 .kubecode-runtime-counts dd { font-size: 20px; font-weight: 600; margin: 4px 0 0; }
+.kubecode-session-wechat-marker { color: var(--accent-green); flex-shrink: 0; }
 .kubecode-wechat-actions {
   align-items: center;
   display: flex;

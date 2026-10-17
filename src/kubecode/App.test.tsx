@@ -340,7 +340,8 @@ describe('Kubecode workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'WeChat' }))
     expect(await screen.findByTestId('wechat-settings-panel')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Connect WeChat' })).toBeInTheDocument()
-    expect(ilinkStatus).toHaveBeenCalledTimes(1)
+    // The Settings panel and the shell's binding view each load status once.
+    expect(ilinkStatus).toHaveBeenCalledTimes(2)
   })
 
   it('loads and refreshes only the public Runtime capacity fields', async () => {

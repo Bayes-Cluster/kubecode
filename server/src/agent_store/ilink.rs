@@ -126,7 +126,7 @@ impl AgentStore {
                 "unknown account {account_id}"
             )));
         }
-        publish_ilink_status_transaction(&transaction, account_id)?;
+        publish_ilink_status_transaction(&transaction, account_id, None)?;
         let cursor = u64::try_from(transaction.last_insert_rowid())
             .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
         transaction.commit()?;
@@ -487,7 +487,7 @@ impl AgentStore {
                conversation_id = ?2, bound_at = CURRENT_TIMESTAMP",
             params![account_id, conversation_id],
         )?;
-        publish_ilink_status_transaction(&transaction, account_id)?;
+        publish_ilink_status_transaction(&transaction, account_id, None)?;
         let cursor = u64::try_from(transaction.last_insert_rowid())
             .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
         transaction.commit()?;
@@ -503,7 +503,66 @@ impl AgentStore {
             "DELETE FROM ilink_session_binding WHERE account_id = ?1",
             [account_id],
         )?;
-        publish_ilink_status_transaction(&transaction, account_id)?;
+        publish_ilink_status_transaction(&transaction, account_id, None)?;
+        let cursor = u64::try_from(transaction.last_insert_rowid())
+            .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
+        transaction.commit()?;
+        drop(database);
+        self.workspace_event_bus.publish_committed(cursor);
+        Ok(())
+    }
+
+    /// Accounts whose binding points at `conversation_id`.
+    pub fn ilink_accounts_bound_to(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        let mut statement = database
+            .prepare("SELECT account_id FROM ilink_session_binding WHERE conversation_id = ?1")?;
+        let rows = statement.query_map([conversation_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    /// Clears every binding to `conversation_id` (the Session became
+    /// unbindable) and publishes the status change with `reason`. Never
+    /// selects a replacement.
+    pub fn clear_ilink_bindings_for(
+        &self,
+        conversation_id: &str,
+        reason: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        let accounts = self.ilink_accounts_bound_to(conversation_id)?;
+        for account_id in &accounts {
+            let mut database = self.database.lock().expect("agent database mutex poisoned");
+            let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute(
+                "DELETE FROM ilink_session_binding
+                 WHERE account_id = ?1 AND conversation_id = ?2",
+                params![account_id, conversation_id],
+            )?;
+            publish_ilink_status_transaction(&transaction, account_id, Some(reason))?;
+            let cursor = u64::try_from(transaction.last_insert_rowid()).map_err(|_| {
+                StoreError::InvalidStoredValue("negative workspace event id".into())
+            })?;
+            transaction.commit()?;
+            drop(database);
+            self.workspace_event_bus.publish_committed(cursor);
+        }
+        Ok(accounts)
+    }
+
+    /// Publishes the current status after a binding was removed outside
+    /// this module (Session deletion), naming `reason`.
+    pub(super) fn publish_ilink_binding_cleared(
+        &self,
+        account_id: &str,
+        reason: &str,
+    ) -> Result<(), StoreError> {
+        let mut database = self.database.lock().expect("agent database mutex poisoned");
+        let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        publish_ilink_status_transaction(&transaction, account_id, Some(reason))?;
         let cursor = u64::try_from(transaction.last_insert_rowid())
             .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
         transaction.commit()?;
@@ -606,7 +665,7 @@ impl AgentStore {
              WHERE account_id = ?1",
             [account_id],
         )?;
-        publish_ilink_status_transaction(&transaction, account_id)?;
+        publish_ilink_status_transaction(&transaction, account_id, None)?;
         let cursor = u64::try_from(transaction.last_insert_rowid())
             .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))?;
         transaction.commit()?;
@@ -630,9 +689,12 @@ impl AgentStore {
 
 /// Broadcasts the safe `ilink_status_changed` event inside a transaction:
 /// connection status, display name, and binding — never secrets or content.
+/// `reason` names why the binding changed when the server (not the user)
+/// cleared it, so browsers can explain the recoverable state.
 fn publish_ilink_status_transaction(
     transaction: &rusqlite::Transaction<'_>,
     account_id: &str,
+    reason: Option<&str>,
 ) -> Result<(), StoreError> {
     let payload = transaction
         .query_row(
@@ -659,6 +721,10 @@ fn publish_ilink_status_transaction(
                 "conversation_id": null,
             })
         });
+    let mut payload = payload;
+    if let Some(reason) = reason {
+        payload["binding_reason"] = serde_json::Value::String(reason.to_owned());
+    }
     append_workspace_event_transaction(
         transaction,
         "ilink_status_changed",

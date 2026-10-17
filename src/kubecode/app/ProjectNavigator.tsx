@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 
 import type { AgentRun, Conversation, KubecodeApi, Project, RunStatus, TeamSnapshot } from '../api'
 import { SessionSidebarList } from '../SessionSidebarList'
+import type { WeChatBinding } from './useWeChatBinding'
 import type { Translator } from '@/lib/i18n'
 
 export type ProjectNavigatorProps = {
@@ -32,6 +33,7 @@ export type ProjectNavigatorProps = {
   query: string
   t: Translator
   teams: TeamSnapshot[]
+  wechat?: WeChatBinding
 }
 
 export function ProjectNavigator({
@@ -59,6 +61,7 @@ export function ProjectNavigator({
   query,
   t,
   teams,
+  wechat,
 }: ProjectNavigatorProps) {
   const projectStatuses = Object.fromEntries(projects.map((item) => [
     item.id,
@@ -101,6 +104,7 @@ export function ProjectNavigator({
           query={query}
           t={t}
           teams={teams}
+          wechat={wechat}
         />
       </nav>
       <ResizeHandle onResize={onResize} />

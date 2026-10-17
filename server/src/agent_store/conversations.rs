@@ -227,6 +227,11 @@ impl AgentStore {
             None,
             &json!({"archived": archived}),
         )?;
+        if archived {
+            // An archived Session cannot stay the WeChat target (ADR 0211
+            // §13); the binding clears without a replacement.
+            self.clear_ilink_bindings_for(conversation_id, "session_archived")?;
+        }
         Ok(conversation)
     }
 
@@ -616,6 +621,7 @@ impl AgentStore {
         scope: &str,
     ) -> Result<(), StoreError> {
         let conversation = self.get_conversation(conversation_id)?;
+        let bound_accounts = self.ilink_accounts_bound_to(conversation_id)?;
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let snapshot_ids = {
@@ -647,6 +653,9 @@ impl AgentStore {
             None,
             &json!({"scope":scope}),
         )?;
+        for account_id in bound_accounts {
+            self.publish_ilink_binding_cleared(&account_id, "session_removed")?;
+        }
         Ok(())
     }
 
