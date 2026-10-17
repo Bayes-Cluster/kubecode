@@ -61,6 +61,7 @@ impl TeamMcpServer {
                 "team_propose_lineup",
             ],
             TeamRole::Teammate => &[
+                "team_record_experiment_decision",
                 "team_publish_research",
                 "team_list_available_agents",
                 "team_propose_lineup",
@@ -85,6 +86,7 @@ impl TeamMcpServer {
                 "team_launch_experiment",
                 "team_yield_for_experiment",
                 "team_cancel_experiment",
+                "team_record_experiment_decision",
                 "team_publish_research",
                 "team_list_available_agents",
                 "team_propose_lineup",
@@ -228,6 +230,38 @@ struct LaunchExperimentInput {
     task_id: Option<String>,
     /// Runtime cap in seconds; limited by the envelope.
     max_runtime_secs: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DecisionLaunchInput {
+    argv: Vec<String>,
+    cwd: Option<String>,
+    label: Option<String>,
+    #[serde(default)]
+    artifacts: Vec<String>,
+    max_runtime_secs: Option<u32>,
+    task_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ExperimentDecisionInput {
+    experiment_id: String,
+    /// One of: further_analysis, repair, retry, follow_up, external_wait,
+    /// researcher_input, conclude.
+    decision: String,
+    /// Distinguishes several decisions of one kind about one experiment (for
+    /// example two follow-ups). Repeating a call with the same key is the same
+    /// decision and starts nothing new.
+    decision_key: Option<String>,
+    /// Why, in terms of the evidence. Required.
+    rationale: String,
+    #[serde(default)]
+    evidence: Vec<EvidenceInput>,
+    /// The next experiment, required for retry and follow_up. It is admitted
+    /// against the same envelope as any launch.
+    launch: Option<DecisionLaunchInput>,
+    /// What you need from the researcher, required for researcher_input.
+    question: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1291,6 +1325,131 @@ impl TeamMcpServer {
     }
 
     #[tool(
+        description = "Leader only: record what you decide about a finished experiment, with your rationale and the evidence behind it. Kinds: further_analysis (more analysis first; the result stays owed), repair (a classified blocker to fix), retry or follow_up (start the next experiment from `launch`, inside the researcher's envelope), external_wait (waiting on something outside), researcher_input (ask the researcher; use for scope, extra budget, or direction), conclude (enough evidence or a stopping condition). All but further_analysis and external_wait settle the result's analysis; the Team cannot complete while one is owed. Repeating the call is idempotent. Limits are enforced by the runtime and cannot be overridden here; a negative scientific result is valid evidence, not a failure. Never conclude by exit code alone."
+    )]
+    async fn team_record_experiment_decision(
+        &self,
+        Parameters(input): Parameters<ExperimentDecisionInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::experiment_store::{DecisionKind, NewDecision, NewLaunch};
+        use crate::research_api::sources::SourceResolver;
+        self.require_leader()?;
+        let (research, runner) = self.execution()?;
+        let team_id = self.context.member.team_id.clone();
+        let (project_id, round) = research
+            .round_for_team(&team_id)
+            .map_err(mcp_error)?
+            .ok_or_else(|| mcp_error("this Team is not part of a research round"))?;
+        let kind = DecisionKind::parse(&input.decision)
+            .ok_or_else(|| mcp_error(format!("unknown decision: {}", input.decision)))?;
+        let store = runner.store();
+        let experiment = store
+            .experiment(&project_id, &input.experiment_id)
+            .map_err(mcp_error)?;
+        if experiment.team_id.as_deref() != Some(team_id.as_str()) {
+            return Err(mcp_error("experiment not found"));
+        }
+        if experiment.state.is_active() {
+            return Err(mcp_error(
+                "the experiment has not finished; wait for its result (or reconcile it if its outcome is unknown)",
+            ));
+        }
+        let key = input
+            .decision_key
+            .clone()
+            .filter(|key| !key.trim().is_empty())
+            .unwrap_or_else(|| kind.as_str().to_owned());
+        let workspace = self.context.runtime.workspace_service();
+        let resolver = SourceResolver {
+            agents: self.context.runtime.store_ref(),
+            teams: &self.context.teams,
+            workspace: &workspace,
+        };
+        let evidence = validate_evidence(&resolver, &project_id, &input.evidence, false)?;
+
+        // The next experiment is admitted first, under a key derived from the
+        // observation, so the same result can never fan out into duplicates;
+        // a refused launch records nothing and leaves the result owed.
+        let mut launched = None;
+        if kind.launches() {
+            let spec = input.launch.ok_or_else(|| {
+                mcp_error("retry and follow_up need `launch` describing the next experiment")
+            })?;
+            let started = runner
+                .launch(
+                    &project_id,
+                    &round.research_id,
+                    NewLaunch {
+                        round_id: round.id.clone(),
+                        launch_key: format!("decision:{}:{}:{key}", experiment.id, kind.as_str()),
+                        team_id: Some(team_id.clone()),
+                        task_id: spec.task_id,
+                        owner_member_id: experiment
+                            .owner_member_id
+                            .clone()
+                            .or_else(|| Some(self.context.member.id.clone())),
+                        label: spec.label.unwrap_or_default(),
+                        argv: spec.argv,
+                        cwd: spec.cwd.unwrap_or_default(),
+                        artifacts: spec.artifacts,
+                        sources: Vec::new(),
+                        max_runtime_secs: spec.max_runtime_secs,
+                    },
+                )
+                .map_err(launch_error)?;
+            launched = Some(started.id);
+        }
+        let question = input
+            .question
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty());
+        if kind == DecisionKind::ResearcherInput && question.is_none() {
+            return Err(mcp_error("researcher_input needs `question`"));
+        }
+        let (decision, created) = store
+            .record_decision(
+                &project_id,
+                NewDecision {
+                    experiment_id: experiment.id.clone(),
+                    member_id: self.context.member.id.clone(),
+                    kind,
+                    decision_key: Some(key),
+                    rationale: input.rationale,
+                    evidence,
+                    launched_experiment_id: launched.clone(),
+                },
+            )
+            .map_err(mcp_error)?;
+        // Scope, budget, and direction changes go to the researcher through
+        // the existing path; the answer takes effect only as an explicit
+        // envelope or brief revision, never by itself.
+        if created && let (DecisionKind::ResearcherInput, Some(question)) = (kind, question) {
+            self.context
+                .teams
+                .request_user_input(
+                    &team_id,
+                    &self.context.member.id,
+                    "Research decision needed",
+                    question,
+                )
+                .map_err(|error| {
+                    mcp_error(format!(
+                        "the decision was recorded but the researcher could not be asked: {error}"
+                    ))
+                })?;
+            publish_team_event(&self.context, "team_attention_updated", None);
+        }
+        json_output(&serde_json::json!({
+            "decision_id": decision.id,
+            "created": created,
+            "decision": decision.kind,
+            "launched_experiment_id": decision.launched_experiment_id,
+            "analysis": store.get(&experiment.id).map_err(mcp_error)?.analysis,
+        }))
+    }
+
+    #[tool(
         description = "Yield on a running experiment instead of keeping your turn open. Records that you are waiting, then end your turn: ending a turn with an open wait is not a missing report, and you are woken with the result (or with an expiry notice) as a mailbox message. An experiment stays pending analysis until you analyze it; a mailbox acknowledgement does not satisfy that."
     )]
     async fn team_yield_for_experiment(
@@ -1365,8 +1524,7 @@ impl TeamMcpServer {
     ) -> Result<CallToolResult, McpError> {
         use crate::research_api::sources::SourceResolver;
         use crate::research_store::{
-            AuthorKind, FindingKind, LinkKind, NewFinding, NewPublication, Producer, SourceKind,
-            SourceRef,
+            AuthorKind, FindingKind, LinkKind, NewFinding, NewPublication, Producer,
         };
         self.require_leader()?;
         let research = self
@@ -1414,31 +1572,8 @@ impl TeamMcpServer {
             .map(|finding| {
                 let kind = FindingKind::parse(&finding.kind)
                     .ok_or_else(|| mcp_error(format!("unknown finding kind: {}", finding.kind)))?;
-                let evidence = finding
-                    .evidence
-                    .iter()
-                    .map(|source| {
-                        let kind = SourceKind::parse(&source.kind).ok_or_else(|| {
-                            mcp_error(format!("unknown evidence kind: {}", source.kind))
-                        })?;
-                        let reference = SourceRef {
-                            kind,
-                            id: source.id.clone(),
-                            revision: None,
-                        };
-                        // A retry of a stored batch is answered from the
-                        // record even if its evidence is gone by now.
-                        if replay {
-                            return Ok(reference);
-                        }
-                        resolver.validate(&project_id, &reference).map_err(|_| {
-                            mcp_error(format!(
-                                "evidence {}:{} was not found in this Project",
-                                source.kind, source.id
-                            ))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, McpError>>()?;
+                let evidence =
+                    validate_evidence(&resolver, &project_id, &finding.evidence, replay)?;
                 Ok(NewFinding {
                     kind,
                     statement: finding.statement.clone(),
@@ -1972,7 +2107,189 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
         "sources": sources,
         "previous_rounds": previous,
         "findings": findings,
+        "execution": execution_context(context, &project_id, &round, &resolver),
     })
+}
+
+/// Validates cited evidence inside the Project. A replay of something already
+/// stored skips validation: its sources may be gone by now, and the record
+/// answers.
+fn validate_evidence(
+    resolver: &crate::research_api::sources::SourceResolver<'_>,
+    project_id: &str,
+    evidence: &[EvidenceInput],
+    replay: bool,
+) -> Result<Vec<crate::research_store::SourceRef>, McpError> {
+    use crate::research_store::{SourceKind, SourceRef};
+    evidence
+        .iter()
+        .map(|source| {
+            let kind = SourceKind::parse(&source.kind)
+                .ok_or_else(|| mcp_error(format!("unknown evidence kind: {}", source.kind)))?;
+            let reference = SourceRef {
+                kind,
+                id: source.id.clone(),
+                revision: None,
+            };
+            if replay {
+                return Ok(reference);
+            }
+            resolver.validate(project_id, &reference).map_err(|_| {
+                mcp_error(format!(
+                    "evidence {}:{} was not found in this Project",
+                    source.kind, source.id
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Longest decision rationale shown back in context.
+const CONTEXT_RATIONALE_CHARS: usize = 600;
+/// Attempts and decisions shown, newest first.
+const CONTEXT_ATTEMPTS: usize = 20;
+
+/// The round's execution facts for the Leader and members: the approved
+/// envelope and what is consumed, recent attempts, open waits, results still
+/// owed an analysis, recent decisions, and the conditions that stop or need
+/// attention. Everything is read from committed records, never from prompts.
+fn execution_context(
+    context: &ToolContext,
+    project_id: &str,
+    round: &crate::research_store::ResearchRound,
+    resolver: &crate::research_api::sources::SourceResolver<'_>,
+) -> serde_json::Value {
+    let Some(runner) = context.runner.as_ref() else {
+        return serde_json::Value::Null;
+    };
+    let store = runner.store();
+    let Ok(Some(envelope)) = store.envelope(project_id, &round.research_id, &round.id) else {
+        return serde_json::json!({ "envelope": null, "attention": ["no_envelope"] });
+    };
+    let experiments = store
+        .experiments(project_id, &round.research_id, &round.id)
+        .unwrap_or_default();
+    let waits = store
+        .waits(project_id, &round.research_id, &round.id)
+        .unwrap_or_default();
+    let decisions = store
+        .decisions(project_id, &round.research_id, &round.id)
+        .unwrap_or_default();
+    let blockers = store
+        .launch_blockers(project_id, &round.research_id, &round.id)
+        .unwrap_or_default();
+    let owed: Vec<_> = experiments
+        .iter()
+        .filter(|experiment| {
+            experiment.state.is_active()
+                || experiment.analysis == crate::experiment_store::AnalysisState::Pending
+        })
+        .map(|experiment| experiment.id.clone())
+        .collect();
+    let attempts: Vec<_> = experiments
+        .iter()
+        .take(CONTEXT_ATTEMPTS)
+        .map(|experiment| {
+            let artifacts: Vec<_> = experiment
+                .artifact_revisions
+                .iter()
+                .map(|artifact| {
+                    serde_json::json!({
+                        "path": artifact.path,
+                        "availability": resolver.resolve(
+                            project_id,
+                            &crate::research_store::SourceRef {
+                                kind: crate::research_store::SourceKind::File,
+                                id: artifact.path.clone(),
+                                revision: artifact.revision.clone(),
+                            },
+                        ),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "experiment_id": experiment.id,
+                "label": experiment.label,
+                "argv": experiment.argv,
+                "state": experiment.state,
+                "analysis": experiment.analysis,
+                "exit_code": experiment.exit_code,
+                "policy_revision": experiment.policy_revision,
+                "reason": experiment.reason,
+                "artifacts": artifacts,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "envelope": {
+            "revision": envelope.revision,
+            "state": envelope.state,
+            "max_launches": envelope.limits.max_launches,
+            "launches_reserved": envelope.launches_reserved,
+            "launches_remaining": envelope
+                .limits
+                .max_launches
+                .saturating_sub(envelope.launches_reserved),
+            "max_concurrent": envelope.limits.max_concurrent,
+            "deadline_at": envelope.limits.deadline_at,
+            "now": store.now(),
+            "max_runtime_secs": envelope.limits.max_runtime_secs,
+            "allowed_commands": envelope.limits.allowed_commands,
+        },
+        "attempts": attempts,
+        "open_waits": waits
+            .iter()
+            .filter(|wait| wait.state == crate::experiment_store::WaitState::Open)
+            .map(|wait| serde_json::json!({
+                "experiment_id": wait.experiment_id,
+                "owner_member_id": wait.owner_member_id,
+                "expected_follow_up": wait.expected_follow_up,
+                "deadline_at": wait.deadline_at,
+            }))
+            .collect::<Vec<_>>(),
+        "results_owed": owed,
+        "decisions": decisions
+            .iter()
+            .take(CONTEXT_ATTEMPTS)
+            .map(|decision| serde_json::json!({
+                "experiment_id": decision.experiment_id,
+                "decision": decision.kind,
+                "rationale": decision
+                    .rationale
+                    .chars()
+                    .take(CONTEXT_RATIONALE_CHARS)
+                    .collect::<String>(),
+                "launched_experiment_id": decision.launched_experiment_id,
+            }))
+            .collect::<Vec<_>>(),
+        // Why another launch would be refused right now. The runtime enforces
+        // these; a prompt cannot override them.
+        "launch_blockers": blockers.iter().map(|blocker| blocker.code()).collect::<Vec<_>>(),
+        "attention": attention_codes(&blockers, owed.len()),
+    })
+}
+
+fn attention_codes(
+    blockers: &[crate::experiment_store::LaunchDenial],
+    owed: usize,
+) -> Vec<&'static str> {
+    use crate::experiment_store::LaunchDenial;
+    let mut codes = Vec::new();
+    for blocker in blockers {
+        if matches!(
+            blocker,
+            LaunchDenial::LaunchBudgetExhausted
+                | LaunchDenial::DeadlinePassed
+                | LaunchDenial::NoProgress
+                | LaunchDenial::ConcurrencyLimit
+        ) {
+            codes.push(blocker.code());
+        }
+    }
+    if owed > 0 {
+        codes.push("results_owed");
+    }
+    codes
 }
 
 /// A refused launch names its stable reason code, so a Leader can tell a
@@ -2611,5 +2928,439 @@ mod experiment_tool_tests {
             }))
             .await;
         assert!(missing.is_err());
+    }
+
+    // -- Continuation (#165): a scripted Leader ---------------------------------
+
+    fn json_of(result: &CallToolResult) -> serde_json::Value {
+        let text = result
+            .content
+            .iter()
+            .find_map(|content| content.as_text().map(|text| text.text.clone()))
+            .expect("text content");
+        serde_json::from_str(&text).expect("JSON")
+    }
+
+    async fn settle(fixture: &Fixture, id: &str) {
+        for _ in 0..400 {
+            let experiment = fixture.experiments.get(id).expect("experiment");
+            if !experiment.state.is_active() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        panic!("experiment {id} did not finish");
+    }
+
+    fn decision(
+        experiment_id: &str,
+        kind: &str,
+        key: Option<&str>,
+        launch: Option<DecisionLaunchInput>,
+    ) -> ExperimentDecisionInput {
+        ExperimentDecisionInput {
+            experiment_id: experiment_id.into(),
+            decision: kind.into(),
+            decision_key: key.map(str::to_owned),
+            rationale: "Baseline reached 0.9; try a wider search".into(),
+            evidence: Vec::new(),
+            launch,
+            question: None,
+        }
+    }
+
+    fn next(script: &str) -> DecisionLaunchInput {
+        DecisionLaunchInput {
+            argv: vec!["sh".into(), "-c".into(), script.into()],
+            cwd: None,
+            label: Some("follow-up".into()),
+            artifacts: Vec::new(),
+            max_runtime_secs: None,
+            task_id: None,
+        }
+    }
+
+    fn execution(context: &serde_json::Value) -> &serde_json::Value {
+        &context["research"]["execution"]
+    }
+
+    #[tokio::test]
+    async fn a_baseline_result_leads_to_one_justified_follow_up_without_the_researcher() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let leader = server(&fixture, fixture.leader.clone());
+        let root = fixture
+            .workspace
+            .execution_path(&fixture.project_id, None)
+            .unwrap();
+
+        // The Leader launches the baseline and yields.
+        let baseline = json_of(
+            &leader
+                .team_launch_experiment(Parameters(input(
+                    "baseline",
+                    &["sh", "-c", "echo base >> runs.txt"],
+                )))
+                .await
+                .unwrap(),
+        )["experiment_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let waited = json_of(
+            &leader
+                .team_yield_for_experiment(Parameters(YieldInput {
+                    experiment_id: baseline.clone(),
+                    expected_follow_up: Some("compare with a wider search".into()),
+                    wait_secs: Some(60),
+                    task_id: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(waited["state"], "open");
+        settle(&fixture, &baseline).await;
+
+        // The result arrived as a message and is owed an analysis.
+        let inbox = fixture.teams.read_messages(&fixture.leader.id).unwrap();
+        assert!(
+            inbox
+                .iter()
+                .any(|m| m.body.contains("baseline") || m.body.contains("ended"))
+        );
+        let context = json_of(&leader.team_get_context().await.unwrap());
+        assert_eq!(
+            execution(&context)["results_owed"],
+            serde_json::json!([baseline])
+        );
+        assert_eq!(execution(&context)["attempts"][0]["state"], "exited");
+        assert!(
+            execution(&context)["attention"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c == "results_owed")
+        );
+
+        // One justified follow-up, started by a recorded decision.
+        let chosen = decision(
+            &baseline,
+            "follow_up",
+            None,
+            Some(next("echo wide >> runs.txt")),
+        );
+        let first = json_of(
+            &leader
+                .team_record_experiment_decision(Parameters(chosen))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            (first["created"].clone(), first["analysis"].clone()),
+            (serde_json::json!(true), serde_json::json!("analyzed"))
+        );
+        let follow_up = first["launched_experiment_id"].as_str().unwrap().to_owned();
+        // The same call again is the same decision: no second process.
+        let again = json_of(
+            &leader
+                .team_record_experiment_decision(Parameters(decision(
+                    &baseline,
+                    "follow_up",
+                    None,
+                    Some(next("echo wide >> runs.txt")),
+                )))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            (
+                again["created"].clone(),
+                again["launched_experiment_id"].clone()
+            ),
+            (serde_json::json!(false), serde_json::json!(follow_up))
+        );
+        settle(&fixture, &follow_up).await;
+        assert_eq!(
+            std::fs::read_to_string(root.join("runs.txt"))
+                .unwrap()
+                .lines()
+                .count(),
+            2,
+            "baseline + one follow-up"
+        );
+
+        // Conclude: the Team can then complete, and the RQ is not resolved.
+        leader
+            .team_record_experiment_decision(Parameters(decision(
+                &follow_up, "conclude", None, None,
+            )))
+            .await
+            .unwrap();
+        fixture
+            .teams
+            .submit_result(&fixture.task_id, &fixture.teammate.id, "done", "ran")
+            .unwrap();
+        fixture
+            .teams
+            .review_result(&fixture.task_id, &fixture.leader.id, true, None)
+            .unwrap();
+        fixture.teams.read_messages(&fixture.leader.id).unwrap();
+        fixture.teams.read_messages(&fixture.teammate.id).unwrap();
+        fixture
+            .teams
+            .complete_team(&fixture.team.id, &fixture.leader.id, "Done", "fp")
+            .expect("nothing is owed any more");
+        let question = fixture
+            .research
+            .get(&fixture.project_id, &fixture.research_id)
+            .unwrap();
+        assert_eq!(
+            question.status.as_str(),
+            "open",
+            "completion never resolves the RQ"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_process_is_a_classified_blocker_and_a_retry_is_a_new_attempt() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let leader = server(&fixture, fixture.leader.clone());
+        let failed = json_of(
+            &leader
+                .team_launch_experiment(Parameters(input("flaky", &["sh", "-c", "exit 7"])))
+                .await
+                .unwrap(),
+        )["experiment_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        settle(&fixture, &failed).await;
+        // The exit code is an observation; the Leader classifies it.
+        let repair = json_of(
+            &leader
+                .team_record_experiment_decision(Parameters(decision(
+                    &failed, "repair", None, None,
+                )))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(repair["analysis"], "analyzed");
+        let retried = json_of(
+            &leader
+                .team_record_experiment_decision(Parameters(decision(
+                    &failed,
+                    "retry",
+                    Some("after-fix"),
+                    Some(next("true")),
+                )))
+                .await
+                .unwrap(),
+        );
+        let retry_id = retried["launched_experiment_id"].as_str().unwrap();
+        assert_ne!(
+            retry_id, failed,
+            "a retry is a new attempt under the policy"
+        );
+        let attempt = fixture.experiments.get(retry_id).unwrap();
+        assert_eq!(
+            attempt.policy_revision,
+            fixture.experiments.get(&failed).unwrap().policy_revision
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_limits_refuse_the_follow_up_leave_the_result_owed_and_need_the_researcher() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let mut tight = fixture
+            .experiments
+            .envelope(&fixture.project_id, &fixture.research_id, &fixture.round_id)
+            .unwrap()
+            .unwrap()
+            .limits;
+        tight.max_launches = 1;
+        fixture
+            .experiments
+            .set_envelope(
+                &fixture.project_id,
+                &fixture.research_id,
+                &fixture.round_id,
+                Some(2),
+                tight,
+                None,
+            )
+            .unwrap();
+        let leader = server(&fixture, fixture.leader.clone());
+        let baseline = json_of(
+            &leader
+                .team_launch_experiment(Parameters(input("only", &["sh", "-c", "true"])))
+                .await
+                .unwrap(),
+        )["experiment_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        settle(&fixture, &baseline).await;
+
+        // The runtime, not the prompt, refuses; nothing is recorded.
+        let refused = leader
+            .team_record_experiment_decision(Parameters(decision(
+                &baseline,
+                "follow_up",
+                None,
+                Some(next("true")),
+            )))
+            .await
+            .expect_err("budget spent");
+        assert!(
+            refused.message.contains("launch_budget_exhausted"),
+            "{refused:?}"
+        );
+        assert_eq!(
+            fixture.experiments.get(&baseline).unwrap().analysis,
+            crate::experiment_store::AnalysisState::Pending
+        );
+        let context = json_of(&leader.team_get_context().await.unwrap());
+        assert!(
+            execution(&context)["launch_blockers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c == "launch_budget_exhausted")
+        );
+        assert!(
+            execution(&context)["attention"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c == "launch_budget_exhausted")
+        );
+
+        // Asking the researcher uses the existing user-input path.
+        let mut ask = decision(&baseline, "researcher_input", None, None);
+        ask.question = Some("May we spend two more launches on a wider search?".into());
+        let asked = json_of(
+            &leader
+                .team_record_experiment_decision(Parameters(ask))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(asked["created"], true);
+        assert_eq!(
+            fixture.teams.get_team(&fixture.team.id).unwrap().status,
+            crate::teams::TeamStatus::NeedsAttention
+        );
+
+        // A granted reply changes nothing by itself: more work is admitted
+        // only after the researcher records an explicit envelope revision.
+        let request = fixture
+            .teams
+            .pending_user_input_requests(&fixture.team.id)
+            .unwrap()
+            .remove(0);
+        fixture
+            .teams
+            .resolve_user_input(&fixture.team.id, &request.id, "Yes, two more")
+            .unwrap();
+        let still = fixture.reserve("later", &["sh", "-c", "true"]);
+        assert!(
+            matches!(
+                still,
+                Err(crate::experiment_store::ExperimentError::Denied(
+                    crate::experiment_store::LaunchDenial::LaunchBudgetExhausted
+                ))
+            ),
+            "{still:?}"
+        );
+        let mut granted = fixture
+            .experiments
+            .envelope(&fixture.project_id, &fixture.research_id, &fixture.round_id)
+            .unwrap()
+            .unwrap();
+        granted.limits.max_launches = 3;
+        fixture
+            .experiments
+            .set_envelope(
+                &fixture.project_id,
+                &fixture.research_id,
+                &fixture.round_id,
+                Some(granted.revision),
+                granted.limits,
+                Some("researcher"),
+            )
+            .unwrap();
+        let ok = fixture.experiments.reserve(
+            &fixture.project_id,
+            &fixture.research_id,
+            crate::experiment_store::testing::launch(
+                &fixture.round_id,
+                &fixture.team,
+                "later2",
+                &["sh", "-c", "true"],
+            ),
+        );
+        assert!(ok.is_ok());
+    }
+
+    #[tokio::test]
+    async fn only_the_leader_decides_and_only_about_finished_work_of_this_team() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let leader = server(&fixture, fixture.leader.clone());
+        let worker = server(&fixture, fixture.teammate.clone());
+        let started = json_of(
+            &worker
+                .team_launch_experiment(Parameters(input("w", &["sh", "-c", "sleep 0.3"])))
+                .await
+                .unwrap(),
+        )["experiment_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        // A teammate may launch inside the envelope but not decide.
+        assert!(
+            worker
+                .team_record_experiment_decision(Parameters(decision(
+                    &started, "conclude", None, None
+                )))
+                .await
+                .is_err()
+        );
+        // A running experiment cannot be concluded.
+        let early = leader
+            .team_record_experiment_decision(Parameters(decision(&started, "conclude", None, None)))
+            .await
+            .expect_err("not finished");
+        assert!(early.message.contains("has not finished"));
+        settle(&fixture, &started).await;
+        assert!(
+            leader
+                .team_record_experiment_decision(Parameters(decision(
+                    "not-an-experiment",
+                    "conclude",
+                    None,
+                    None
+                )))
+                .await
+                .is_err()
+        );
+        // A bare retry without a launch description is a malformed decision.
+        assert!(
+            leader
+                .team_record_experiment_decision(Parameters(decision(
+                    &started, "retry", None, None
+                )))
+                .await
+                .is_err()
+        );
+        assert!(
+            leader
+                .team_record_experiment_decision(Parameters(decision(
+                    &started, "conclude", None, None
+                )))
+                .await
+                .is_ok()
+        );
     }
 }

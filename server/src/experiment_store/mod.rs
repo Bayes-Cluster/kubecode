@@ -114,6 +114,19 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS experiment_waits_open ON experiment_waits(state, team_id);
          -- Committed observations: the trigger for delivery. One of each kind
          -- per experiment, so a duplicate observation converges.
+         -- The Leader's recorded reason for what happens after a result.
+         CREATE TABLE IF NOT EXISTS experiment_decisions (
+           id                     TEXT PRIMARY KEY,
+           experiment_id          TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+           member_id              TEXT NOT NULL,
+           kind                   TEXT NOT NULL,
+           decision_key           TEXT NOT NULL,
+           rationale              TEXT NOT NULL,
+           evidence_json          TEXT NOT NULL DEFAULT '[]',
+           launched_experiment_id TEXT,
+           created_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           UNIQUE (experiment_id, kind, decision_key)
+         );
          CREATE TABLE IF NOT EXISTS experiment_events (
            id            TEXT PRIMARY KEY,
            experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
@@ -146,6 +159,10 @@ const EXPERIMENT_SELECT: &str = "SELECT id, project_id, research_id, round_id, t
         exit_code, signal, reason, cancel_requested, created_at, launched_at, finished_at,
         artifact_revisions_json
     FROM experiments";
+
+const DECISION_SELECT: &str = "SELECT id, experiment_id, member_id, kind, decision_key, rationale,
+        evidence_json, launched_experiment_id, created_at
+    FROM experiment_decisions";
 
 const WAIT_SELECT: &str = "SELECT id, experiment_id, team_id, task_id, attempt_id, owner_member_id,
         expected_follow_up, deadline_at, state, created_at, resolved_at
@@ -834,6 +851,157 @@ impl ExperimentStore {
         })
     }
 
+    /// Records the Leader's decision about a finished experiment. Idempotent
+    /// per `(experiment, kind, key)`: a repeated call returns the first
+    /// decision and changes nothing. A decision that settles the analysis
+    /// obligation does so in the same transaction.
+    pub fn record_decision(
+        &self,
+        project_id: &str,
+        decision: NewDecision,
+    ) -> Result<(ExperimentDecision, bool), ExperimentError> {
+        let rationale = decision.rationale.trim().to_owned();
+        if rationale.is_empty() || rationale.chars().count() > MAX_RATIONALE_CHARS {
+            return Err(ExperimentError::Invalid(
+                "a rationale of 1 to 2000 characters is required",
+            ));
+        }
+        if decision.evidence.len() > MAX_DECISION_EVIDENCE {
+            return Err(ExperimentError::Invalid(
+                "too much evidence on one decision",
+            ));
+        }
+        let key = decision
+            .decision_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .unwrap_or(decision.kind.as_str())
+            .to_owned();
+        if key.chars().count() > MAX_KEY_CHARS {
+            return Err(ExperimentError::Invalid("the decision key is too long"));
+        }
+        self.write(|tx| {
+            let experiment = load_experiment(tx, &decision.experiment_id)?;
+            if experiment.project_id != project_id {
+                return Err(ExperimentError::NotFound);
+            }
+            if let Some(existing) = tx
+                .query_row(
+                    &format!(
+                        "{DECISION_SELECT} WHERE experiment_id = ?1 AND kind = ?2 AND decision_key = ?3"
+                    ),
+                    params![decision.experiment_id, decision.kind.as_str(), key],
+                    decision_from_row,
+                )
+                .optional()?
+                .transpose()?
+            {
+                return Ok(((existing, false), None));
+            }
+            if experiment.state.is_active() {
+                return Err(ExperimentError::State("the experiment has not finished"));
+            }
+            let id = Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO experiment_decisions
+                   (id, experiment_id, member_id, kind, decision_key, rationale, evidence_json,
+                    launched_experiment_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id,
+                    decision.experiment_id,
+                    decision.member_id,
+                    decision.kind.as_str(),
+                    key,
+                    rationale,
+                    serde_json::to_string(&decision.evidence)?,
+                    decision.launched_experiment_id,
+                ],
+            )?;
+            if decision.kind.resolves_analysis() {
+                tx.execute(
+                    "UPDATE experiments SET analysis = 'analyzed'
+                     WHERE id = ?1 AND analysis = 'pending'",
+                    [&decision.experiment_id],
+                )?;
+            }
+            let stored = tx
+                .query_row(
+                    &format!("{DECISION_SELECT} WHERE id = ?1"),
+                    [&id],
+                    decision_from_row,
+                )??;
+            Ok(((stored, true), Some(scope_of(tx, &decision.experiment_id)?)))
+        })
+    }
+
+    pub fn decisions(
+        &self,
+        project_id: &str,
+        research_id: &str,
+        round_id: &str,
+    ) -> Result<Vec<ExperimentDecision>, ExperimentError> {
+        let connection = self.connection();
+        require_round(&connection, project_id, research_id, round_id)?;
+        let mut statement = connection.prepare(&format!(
+            "{DECISION_SELECT}
+             WHERE experiment_id IN (SELECT id FROM experiments WHERE round_id = ?1)
+             ORDER BY created_at DESC, rowid DESC"
+        ))?;
+        statement
+            .query_map([round_id], decision_from_row)?
+            .map(|row| row?)
+            .collect()
+    }
+
+    /// Everything currently preventing another launch in this round, whatever
+    /// the command: used to surface stop and attention conditions. The runtime
+    /// enforces these at admission; this only reports them.
+    pub fn launch_blockers(
+        &self,
+        project_id: &str,
+        research_id: &str,
+        round_id: &str,
+    ) -> Result<Vec<LaunchDenial>, ExperimentError> {
+        let now = self.now();
+        let connection = self.connection();
+        require_round(&connection, project_id, research_id, round_id)?;
+        let Some(envelope) = load_envelope(&connection, round_id)? else {
+            return Ok(vec![LaunchDenial::NoEnvelope]);
+        };
+        let mut blockers = Vec::new();
+        match envelope.state {
+            EnvelopeState::Paused => blockers.push(LaunchDenial::EnvelopePaused),
+            EnvelopeState::Closed => blockers.push(LaunchDenial::EnvelopeClosed),
+            EnvelopeState::Active => {}
+        }
+        if envelope
+            .limits
+            .deadline_at
+            .is_some_and(|deadline| now >= deadline)
+        {
+            blockers.push(LaunchDenial::DeadlinePassed);
+        }
+        if envelope.launches_reserved >= envelope.limits.max_launches {
+            blockers.push(LaunchDenial::LaunchBudgetExhausted);
+        }
+        let running: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM experiments
+             WHERE round_id = ?1
+               AND state IN ('reserved', 'launching', 'running', 'cancelling', 'unknown')",
+            [round_id],
+            |row| row.get(0),
+        )?;
+        if running >= i64::from(envelope.limits.max_concurrent) {
+            blockers.push(LaunchDenial::ConcurrencyLimit);
+        }
+        if no_progress(&connection, round_id, envelope.limits.max_no_progress)? {
+            blockers.push(LaunchDenial::NoProgress);
+        }
+        Ok(blockers)
+    }
+
     /// A member that leaves the Team cannot keep an obligation: its open waits
     /// are marked reassigned (delivery then routes to the Leader).
     pub fn reassign_waits_of_member(
@@ -1404,6 +1572,35 @@ fn experiment_from_row(
             created_at: tail.4,
             launched_at: tail.5,
             finished_at: tail.6,
+        })
+    })())
+}
+
+fn decision_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<ExperimentDecision, ExperimentError>> {
+    let kind: String = row.get(3)?;
+    let evidence: String = row.get(6)?;
+    let base = (
+        row.get::<_, String>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, String>(2)?,
+        row.get::<_, String>(4)?,
+        row.get::<_, String>(5)?,
+        row.get::<_, Option<String>>(7)?,
+        row.get::<_, String>(8)?,
+    );
+    Ok((|| {
+        Ok(ExperimentDecision {
+            id: base.0,
+            experiment_id: base.1,
+            member_id: base.2,
+            kind: DecisionKind::parse(&kind).unwrap_or(DecisionKind::FurtherAnalysis),
+            decision_key: base.3,
+            rationale: base.4,
+            evidence: serde_json::from_str(&evidence)?,
+            launched_experiment_id: base.5,
+            created_at: base.6,
         })
     })())
 }

@@ -83,11 +83,36 @@ text_enum!(EventKind {
     Reconciled => "reconciled",
 });
 
+// What the Leader decided to do about a finished experiment (ADR 0213 section 7).
+text_enum!(DecisionKind {
+    FurtherAnalysis => "further_analysis",
+    Repair => "repair",
+    Retry => "retry",
+    FollowUp => "follow_up",
+    ExternalWait => "external_wait",
+    ResearcherInput => "researcher_input",
+    Conclude => "conclude",
+});
+
 // What the researcher says really happened to an `unknown` experiment.
 text_enum!(ReconcileTruth {
     NotStarted => "not_started",
     Finished => "finished",
 });
+
+impl DecisionKind {
+    /// Whether the decision settles the experiment's analysis obligation.
+    /// Further analysis and an external wait only promise more work, so the
+    /// result stays owed until a later decision.
+    pub fn resolves_analysis(self) -> bool {
+        !matches!(self, Self::FurtherAnalysis | Self::ExternalWait)
+    }
+
+    /// Whether the decision starts another experiment.
+    pub fn launches(self) -> bool {
+        matches!(self, Self::Retry | Self::FollowUp)
+    }
+}
 
 impl ExperimentState {
     /// States whose process may still be running (or whose fate is
@@ -369,4 +394,34 @@ pub struct ReminderOutcome {
     pub reminded: Vec<String>,
     /// `(team_id, experiment_id)` pairs that used up their reminders.
     pub exhausted: Vec<(String, String)>,
+}
+
+pub const MAX_RATIONALE_CHARS: usize = 2_000;
+pub const MAX_DECISION_EVIDENCE: usize = 10;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExperimentDecision {
+    pub id: String,
+    pub experiment_id: String,
+    pub member_id: String,
+    pub kind: DecisionKind,
+    pub decision_key: String,
+    pub rationale: String,
+    pub evidence: Vec<SourceRef>,
+    /// The attempt this decision started, for `retry` and `follow_up`.
+    pub launched_experiment_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewDecision {
+    pub experiment_id: String,
+    pub member_id: String,
+    pub kind: DecisionKind,
+    /// Distinguishes several decisions of one kind about one experiment;
+    /// defaults to the kind, so a repeated call is the same decision.
+    pub decision_key: Option<String>,
+    pub rationale: String,
+    pub evidence: Vec<SourceRef>,
+    pub launched_experiment_id: Option<String>,
 }
