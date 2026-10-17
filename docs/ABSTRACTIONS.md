@@ -782,6 +782,25 @@ content signature, at most 10 MiB, and stable across the read — and uploads it
 through the encrypted CDN with an optional caption sent first. Any rejection
 becomes one localized notice; the buffer lives only for that delivery.
 
+WeChat control commands are a server-authoritative state machine in front of
+the Session router. Only a message that starts with `!` or `！` is a command:
+`!` reports safe status (Session title, Project display name, Agent, current
+mode/model, run and queue state, command count — never paths or content), `!s`
+switches the binding, `!n` creates a Session (Project, then a supported and
+available Agent, default safe permission profile) and binds it after
+initialization succeeds, `!m` changes an advertised mode or select option of
+the idle, writable bound Session through the typed Session option API, `!q`
+sends a configured quick prompt through ordinary router admission, and
+anything else answers with help plus status. Every command first requests
+idempotent cancellation of the bound Session's active run. Menus are keyed by
+account and peer, numbered in pages of nine, expire, and are fenced by the
+timestamp of the command that opened them, so a reply sent before the menu
+existed is stale; every selection is revalidated against current server state
+(bindable Session, registered Project, available Agent, still-advertised
+option, existing quick prompt). Quick prompts are numbered slots per linked
+account, managed through `/api/v1/ilink/quick-prompts`; their content never
+enters workspace events.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their
