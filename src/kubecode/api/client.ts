@@ -22,6 +22,11 @@ import type {
   PromptQueueItem,
   RunAdmission,
   ProviderSessionInfo,
+  IlinkLoginPoll,
+  IlinkLoginStart,
+  IlinkQuickPrompt,
+  IlinkQuickPrompts,
+  IlinkStatus,
   RuntimeStatus,
   SessionEvent,
   SideQuestionAccepted,
@@ -203,6 +208,52 @@ export class KubecodeApi {
 
   runtimeStatus(): Promise<RuntimeStatus> {
     return this.request('/runtime/status')
+  }
+
+  ilinkStatus(): Promise<IlinkStatus> {
+    return this.request('/ilink/status')
+  }
+
+  ilinkStartLogin(): Promise<IlinkLoginStart> {
+    return this.request('/ilink/login/qr', { method: 'POST' })
+  }
+
+  ilinkPollLogin(): Promise<IlinkLoginPoll> {
+    return this.request('/ilink/login/qr/poll')
+  }
+
+  ilinkVerify(code: string, generation: number | null): Promise<void> {
+    return this.request('/ilink/login/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code, generation }),
+    })
+  }
+
+  ilinkCancelLogin(): Promise<void> {
+    return this.request('/ilink/login/cancel', { method: 'POST' })
+  }
+
+  ilinkReconnect(): Promise<void> {
+    return this.request('/ilink/reconnect', { method: 'POST' })
+  }
+
+  ilinkDisconnect(): Promise<void> {
+    return this.request('/ilink/disconnect', { method: 'POST' })
+  }
+
+  ilinkQuickPrompts(): Promise<IlinkQuickPrompts> {
+    return this.request('/ilink/quick-prompts')
+  }
+
+  ilinkSetQuickPrompt(slot: number, content: string): Promise<IlinkQuickPrompt> {
+    return this.request(`/ilink/quick-prompts/${slot}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    })
+  }
+
+  ilinkRemoveQuickPrompt(slot: number): Promise<void> {
+    return this.request(`/ilink/quick-prompts/${slot}`, { method: 'DELETE' })
   }
 
   listConversations(projectId: string): Promise<Conversation[]> {

@@ -325,6 +325,24 @@ describe('Kubecode workspace', () => {
     expect(screen.queryByRole('menuitem', { name: 'Retry' })).not.toBeInTheDocument()
   })
 
+  it('opens the WeChat settings section from the Settings navigation', async () => {
+    const ilinkStatus = vi.fn().mockResolvedValue({
+      status: 'disconnected',
+      account_id: null,
+      display_name: null,
+      bound_conversation_id: null,
+      login_active: false,
+      login_expires_in_ms: null,
+      login_generation: null,
+    })
+    render(<KubecodeApp api={settingsApi({ ilinkStatus })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WeChat' }))
+    expect(await screen.findByTestId('wechat-settings-panel')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Connect WeChat' })).toBeInTheDocument()
+    expect(ilinkStatus).toHaveBeenCalledTimes(1)
+  })
+
   it('loads and refreshes only the public Runtime capacity fields', async () => {
     let finishInitial: ((value: unknown) => void) | undefined
     let finishRefresh: ((value: unknown) => void) | undefined

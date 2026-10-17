@@ -801,6 +801,15 @@ option, existing quick prompt). Quick prompts are numbered slots per linked
 account, managed through `/api/v1/ilink/quick-prompts`; their content never
 enters workspace events.
 
+The browser's WeChat Settings section is a thin client of the REST surface
+([settings addendum](adr/0211-settings-2026-10-17.md)). QR images are rendered
+on the server as SVG data URIs, so the scan target never reaches the browser as
+text, and each issued QR carries a login generation that fences verification
+codes. The section keeps a safe projection of status, converges on
+`ilink_status_changed` events, polls only the login endpoint while a login is in
+progress, requires confirmation before logout removes channel credentials, and
+edits quick prompts.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

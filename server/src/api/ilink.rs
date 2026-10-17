@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 use crate::agent_store::ILINK_QUICK_PROMPT_SLOTS;
 use crate::ilink::commands::QUICK_PROMPT_MAX_CHARS;
+use crate::ilink::qr::qr_svg_data_uri;
 use crate::ilink::service::{ConnectionStatus, ServiceError};
 
 use super::AppState;
@@ -57,6 +58,7 @@ fn status_payload(status: crate::ilink::service::ServiceStatus) -> Value {
         "bound_conversation_id": status.bound_conversation_id,
         "login_active": status.login_active,
         "login_expires_in_ms": status.login_expires_in_ms,
+        "login_generation": status.login_generation,
     })
 }
 
@@ -69,10 +71,13 @@ async fn ilink_login_start(State(state): State<AppState>) -> Response {
     match state.ilink.start_login().await {
         Ok(start) => {
             let status = state.ilink.status().await;
+            // Only a rendered image leaves the server — never the scan
+            // target as text.
             Json(json!({
                 "reused": start.reused,
-                "image_url": start.image_url,
+                "qr_svg": qr_svg_data_uri(&start.image_url),
                 "expires_in_ms": start.expires_in_ms,
+                "generation": start.generation,
                 "status": status.status.as_str(),
             }))
             .into_response()
@@ -85,10 +90,11 @@ async fn ilink_login_poll(State(state): State<AppState>) -> Response {
     let status = state.ilink.status().await;
     let mut payload = status_payload(status);
     // The QR image rides along only while the login is still live.
-    payload["image_url"] = state
+    payload["qr_svg"] = state
         .ilink
         .active_login_image()
         .await
+        .and_then(|target| qr_svg_data_uri(&target))
         .map(Value::String)
         .unwrap_or(Value::Null);
     Json(payload).into_response()
@@ -98,7 +104,11 @@ async fn ilink_login_verify(
     State(state): State<AppState>,
     Json(body): Json<VerifyCodeBody>,
 ) -> Response {
-    match state.ilink.submit_verification_code(&body.code).await {
+    match state
+        .ilink
+        .submit_verification_code_for(&body.code, body.generation)
+        .await
+    {
         Ok(()) => {
             let status = state.ilink.status().await;
             Json(json!({ "accepted": true, "status": status.status.as_str() })).into_response()
@@ -110,6 +120,9 @@ async fn ilink_login_verify(
 #[derive(Deserialize)]
 struct VerifyCodeBody {
     code: String,
+    /// The QR generation the code was typed against.
+    #[serde(default)]
+    generation: Option<u64>,
 }
 
 async fn ilink_login_cancel(State(state): State<AppState>) -> Response {

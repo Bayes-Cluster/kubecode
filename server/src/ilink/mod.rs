@@ -34,6 +34,7 @@ pub mod guard;
 pub mod inbound;
 pub mod origins;
 pub mod outbound;
+pub mod qr;
 pub mod router;
 pub mod seal;
 pub mod service;

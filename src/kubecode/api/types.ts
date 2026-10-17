@@ -79,6 +79,39 @@ export type RuntimeStatus = {
   latest_workspace_event_cursor: number
   workspace_event_delivery_available: boolean
 }
+/** Safe WeChat iLink connection states (ADR 0211 §4). */
+export type IlinkConnectionStatus =
+  | 'disconnected'
+  | 'requesting_qr'
+  | 'waiting_for_scan'
+  | 'scanned'
+  | 'verification_required'
+  | 'verification_blocked'
+  | 'redirecting'
+  | 'connected'
+  | 'backing_off'
+  | 'expired'
+  | 'error'
+export type IlinkStatus = {
+  status: IlinkConnectionStatus
+  account_id: string | null
+  display_name: string | null
+  bound_conversation_id: string | null
+  login_active: boolean
+  login_expires_in_ms: number | null
+  login_generation: number | null
+}
+/** `qr_svg` is a server-rendered image; the scan target never reaches the browser as text. */
+export type IlinkLoginPoll = IlinkStatus & { qr_svg: string | null }
+export type IlinkLoginStart = {
+  reused: boolean
+  qr_svg: string | null
+  expires_in_ms: number
+  generation: number
+  status: IlinkConnectionStatus
+}
+export type IlinkQuickPrompt = { slot: number; content: string }
+export type IlinkQuickPrompts = { slots: number; max_chars: number; prompts: IlinkQuickPrompt[] }
 export type Conversation = {
   id: string
   agent_session_id: string
