@@ -279,3 +279,29 @@ describe('WeChatSettingsPanel', () => {
     expect(trackEvent).toHaveBeenCalledWith('kubecode_wechat_quick_prompt_changed', { action: 'remove' })
   })
 })
+
+describe('WeChat quick prompt editing failures', () => {
+  it('keeps the draft and the error when a save fails', async () => {
+    const api = wechatApi({
+      ilinkStatus: vi.fn().mockResolvedValue(linked('connected')),
+      ilinkQuickPrompts: vi.fn().mockResolvedValue({
+        slots: 9,
+        max_chars: 2000,
+        prompts: [{ slot: 1, content: 'Run tests' }],
+      }),
+      ilinkSetQuickPrompt: vi.fn().mockRejectedValue(new Error('offline')),
+      ilinkRemoveQuickPrompt: vi.fn().mockRejectedValue(new Error('offline')),
+    })
+    renderPanel(api)
+    const field = await screen.findByLabelText('Quick prompt 1')
+    fireEvent.change(field, { target: { value: 'Run all tests' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The WeChat request failed.')
+    expect(screen.getByLabelText('Quick prompt 1')).toHaveValue('Run all tests')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove quick prompt 1' }))
+    await waitFor(() => expect(api.ilinkRemoveQuickPrompt).toHaveBeenCalledWith(1))
+    expect(screen.getByLabelText('Quick prompt 1')).toHaveValue('Run all tests')
+    expect(api.ilinkQuickPrompts).toHaveBeenCalledTimes(1)
+    expect(trackEvent).not.toHaveBeenCalledWith('kubecode_wechat_quick_prompt_changed', expect.anything())
+  })
+})

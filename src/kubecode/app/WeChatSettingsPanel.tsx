@@ -505,10 +505,12 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
     try {
       if (content) await api.ilinkSetQuickPrompt(slot, content)
       else await api.ilinkRemoveQuickPrompt(slot)
-      trackEvent('kubecode_wechat_quick_prompt_changed', { action: content ? 'save' : 'remove' })
     } catch {
+      // Keep the typed draft and the error until the user acts again.
       setFailed(true)
+      return
     }
+    trackEvent('kubecode_wechat_quick_prompt_changed', { action: content ? 'save' : 'remove' })
     load()
   }
 
@@ -550,10 +552,10 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setDrafts((current) => ({ ...current, [slot]: '' }))
                     void api.ilinkRemoveQuickPrompt(slot).then(() => {
                       trackEvent('kubecode_wechat_quick_prompt_changed', { action: 'remove' })
-                    }).catch(() => setFailed(true)).finally(load)
+                      load()
+                    }).catch(() => setFailed(true))
                   }}
                 >
                   {t('common.remove')}

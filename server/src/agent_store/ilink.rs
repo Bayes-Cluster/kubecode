@@ -245,6 +245,37 @@ impl AgentStore {
         Ok(())
     }
 
+    /// The outbound bridge's persisted delivery cursor, if any.
+    pub fn ilink_outbound_cursor(&self, account_id: &str) -> Result<Option<u64>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database
+            .query_row(
+                "SELECT outbound_cursor FROM ilink_credentials WHERE account_id = ?1",
+                [account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map(|cursor| cursor.and_then(|cursor| u64::try_from(cursor).ok()))
+            .map_err(StoreError::from)
+    }
+
+    /// Records how far the outbound bridge has delivered.
+    pub fn set_ilink_outbound_cursor(
+        &self,
+        account_id: &str,
+        cursor: u64,
+    ) -> Result<(), StoreError> {
+        let cursor = i64::try_from(cursor).map_err(|_| {
+            StoreError::InvalidStoredValue("outbound cursor exceeds SQLite range".into())
+        })?;
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database.execute(
+            "UPDATE ilink_credentials SET outbound_cursor = ?2 WHERE account_id = ?1",
+            params![account_id, cursor],
+        )?;
+        Ok(())
+    }
+
     /// Removes the credential row only (logout deletes the secret file and
     /// channel state around it; ordinary shutdown never calls this).
     pub fn clear_ilink_credentials(&self, account_id: &str) -> Result<(), StoreError> {
