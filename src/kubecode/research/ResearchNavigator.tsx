@@ -66,6 +66,11 @@ export function ResearchNavigator({
               >
                 <FlaskConical aria-hidden size={14} />
                 <span className="kubecode-research-nav-title">{item.title}</span>
+                {item.archived && (
+                  <span className="kubecode-research-badge" data-tone="muted">
+                    {t('kubecode.research.status.archived')}
+                  </span>
+                )}
                 {item.status === 'resolved' && (
                   <span className="kubecode-research-badge" data-tone="muted">
                     {t('kubecode.research.status.resolved')}

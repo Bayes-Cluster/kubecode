@@ -139,10 +139,10 @@ export function ResearchWorkspace({
           </TabsTrigger>
           <TabsTrigger value="work">{t('kubecode.research.tab.work')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="brief">
+        <TabsContent forceMount value="brief" hidden={tab !== 'brief'}>
           <ResearchBriefPanel api={api} detail={detail} onChanged={reload} t={t} />
         </TabsContent>
-        <TabsContent value="discussion">
+        <TabsContent forceMount value="discussion" hidden={tab !== 'discussion'}>
           <ResearchDiscussionPanel
             agents={agents}
             api={api}
@@ -155,7 +155,7 @@ export function ResearchWorkspace({
             t={t}
           />
         </TabsContent>
-        <TabsContent value="findings">
+        <TabsContent forceMount value="findings" hidden={tab !== 'findings'}>
           <ResearchFindingsPanel
             api={api}
             detail={detail}
@@ -167,7 +167,7 @@ export function ResearchWorkspace({
             t={t}
           />
         </TabsContent>
-        <TabsContent value="work">
+        <TabsContent forceMount value="work" hidden={tab !== 'work'}>
           <ResearchRoundsPanel
             agents={agents}
             api={api}

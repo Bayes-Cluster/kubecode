@@ -3,11 +3,18 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 async function expectContained(page: Page) {
-  const viewport = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }))
+  const viewport = await page.evaluate(() => {
+    const workspace = document.querySelector('.kubecode-research-workspace')
+    return {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      // The research pane scrolls internally, so check it separately.
+      paneClientWidth: workspace?.clientWidth ?? 0,
+      paneScrollWidth: workspace?.scrollWidth ?? 0,
+    }
+  })
   expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  expect(viewport.paneScrollWidth).toBeLessThanOrEqual(viewport.paneClientWidth + 1)
 }
 
 /**
@@ -49,7 +56,6 @@ test('@smoke research question carries context from discussion through a round t
     await page.getByLabel('Note or decision').fill('Start with the late layers')
     await page.getByRole('button', { name: 'Add', exact: true }).click()
     await expect(page.getByText('Start with the late layers')).toBeVisible()
-    await expect(page.getByText('No round has run yet.')).toHaveCount(0)
 
     // A linked discussion Session opens in the ordinary Session view, and the
     // question is one click away.

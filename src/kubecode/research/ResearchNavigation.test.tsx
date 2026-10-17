@@ -116,6 +116,17 @@ describe('useResearchList', () => {
     await waitFor(() => expect(listResearch.mock.calls.length).toBe(initial + 2))
   })
 
+  it('lists archived questions so they can be restored, and tolerates a host without research', async () => {
+    const listResearch = vi.fn().mockResolvedValue([{ ...summary('a', 'Old'), archived: true }])
+    render(<ListProbe api={fakeApi({ listResearch })} events={[]} connection="live" />)
+    expect(await screen.findByText('ready:Old')).toBeInTheDocument()
+    expect(listResearch).toHaveBeenCalledWith('p1', true)
+
+    const bare = { ...fakeApi(), listResearch: undefined } as unknown as ReturnType<typeof fakeApi>
+    render(<ListProbe api={bare} events={[]} connection="live" />)
+    expect(await screen.findByText('ready:')).toBeInTheDocument()
+  })
+
   it('reports a failed load', async () => {
     const api = fakeApi({ listResearch: vi.fn().mockRejectedValue(new Error('down')) })
     render(<ListProbe api={api} events={[]} connection="live" />)

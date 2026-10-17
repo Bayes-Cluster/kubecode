@@ -77,6 +77,11 @@ export function ResearchRoundsPanel({
   const start = useAction(t)
   const resume = useAction(t)
   const selectedAgent = agentId || available[0]?.id || ''
+  // The key names one intended round; any change to what is asked starts a
+  // new intent, so a retry never reuses a key for a different request.
+  const rekey = () => {
+    requestKey.current = newClientMessageId()
+  }
   const nextRound = (rounds[0]?.round ?? 0) + 1
   const carried = candidates
     .filter((source) => source.availability === 'available' && !excluded.has(`${source.kind}:${source.id}`))
@@ -123,14 +128,26 @@ export function ResearchRoundsPanel({
             {t('kubecode.research.roundRunsAgent')}
           </p>
           <div className="kubecode-research-row">
-            <Select value={mode} onValueChange={(value) => setMode(value as ResearchRoundKind)}>
+            <Select
+              value={mode}
+              onValueChange={(value) => {
+                rekey()
+                setMode(value as ResearchRoundKind)
+              }}
+            >
               <SelectTrigger aria-label={t('kubecode.research.roundMode')}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="team">{t('kubecode.research.mode.team')}</SelectItem>
                 <SelectItem value="solo">{t('kubecode.research.mode.solo')}</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={selectedAgent} onValueChange={(value) => setAgentId(value as AgentId)}>
+            <Select
+              value={selectedAgent}
+              onValueChange={(value) => {
+                rekey()
+                setAgentId(value as AgentId)
+              }}
+            >
               <SelectTrigger aria-label={t('kubecode.agent')} disabled={available.length === 0}>
                 <SelectValue placeholder={t('kubecode.research.noAgents')} />
               </SelectTrigger>
@@ -147,7 +164,10 @@ export function ResearchRoundsPanel({
             value={instruction}
             maxLength={4000}
             placeholder={t('kubecode.research.instructionPlaceholder')}
-            onChange={(event) => setInstruction(event.target.value)}
+            onChange={(event) => {
+              rekey()
+              setInstruction(event.target.value)
+            }}
           />
           {candidates.length > 0 && (
             <fieldset className="kubecode-research-carry">
@@ -162,6 +182,7 @@ export function ResearchRoundsPanel({
                       disabled={!usable}
                       type="checkbox"
                       onChange={(event) => setExcluded((current) => {
+                        rekey()
                         const next = new Set(current)
                         if (event.target.checked) next.delete(id)
                         else next.add(id)

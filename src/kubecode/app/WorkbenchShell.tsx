@@ -142,7 +142,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     reconciliation.workspaceEvents,
     reconciliation.connectionState,
   )
-  // The selection belongs to a Project, so switching Projects clears it.
+  // The selection belongs to a Project; choosing another Project clears it
+  // (and the Project check also covers selections made elsewhere).
   const researchId = researchSelection && researchSelection.projectId === projectId
     ? researchSelection.researchId
     : null
@@ -424,7 +425,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             onProjectDelete={(nextProjectId) => void selection.deleteProject(
               projects.find((candidate) => candidate.id === nextProjectId),
             )}
-            onProjectSelect={selection.selectProject}
+            onProjectSelect={(nextProjectId) => {
+              setResearchSelection(null)
+              selection.selectProject(nextProjectId)
+            }}
             onProjectToggle={selection.toggleProjectExpanded}
             onProjectWorkspacesToggle={(nextProjectId) => {
               const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)

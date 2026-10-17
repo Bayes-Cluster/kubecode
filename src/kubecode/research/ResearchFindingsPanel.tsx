@@ -70,6 +70,7 @@ export function ResearchFindingsPanel({
                 {!detail.archived && (
                   <div className="kubecode-research-row">
                     <Button
+                      aria-label={`${t('kubecode.research.accept')}: ${proposal.entry.body.slice(0, 60)}`}
                       disabled={review.busy}
                       size="xs"
                       onClick={() => void review.run(async () => {
@@ -80,6 +81,7 @@ export function ResearchFindingsPanel({
                       {t('kubecode.research.accept')}
                     </Button>
                     <Button
+                      aria-label={`${t('kubecode.research.reject')}: ${proposal.entry.body.slice(0, 60)}`}
                       disabled={review.busy}
                       size="xs"
                       variant="outline"
@@ -262,7 +264,13 @@ function CaptureForm({
       <h3>{t('kubecode.research.capture')}</h3>
       <p className="kubecode-research-muted">{t('kubecode.research.captureHint')}</p>
       <div className="kubecode-research-row">
-        <Select value={source?.ref_id ?? ''} onValueChange={setSourceId}>
+        <Select
+          value={source?.ref_id ?? ''}
+          onValueChange={(value) => {
+            key.current = newClientMessageId()
+            setSourceId(value)
+          }}
+        >
           <SelectTrigger aria-label={t('kubecode.research.captureFrom')}><SelectValue /></SelectTrigger>
           <SelectContent>
             {sources.map((link) => (
@@ -272,7 +280,13 @@ function CaptureForm({
             ))}
           </SelectContent>
         </Select>
-        <Select value={kind} onValueChange={(value) => setKind(value as ResearchFindingKind)}>
+        <Select
+          value={kind}
+          onValueChange={(value) => {
+            key.current = newClientMessageId()
+            setKind(value as ResearchFindingKind)
+          }}
+        >
           <SelectTrigger aria-label={t('kubecode.research.findingKind')}><SelectValue /></SelectTrigger>
           <SelectContent>
             {FINDING_KINDS.map((item) => (
@@ -286,13 +300,19 @@ function CaptureForm({
         rows={3}
         value={statement}
         maxLength={4000}
-        onChange={(event) => setStatement(event.target.value)}
+        onChange={(event) => {
+          key.current = newClientMessageId()
+          setStatement(event.target.value)
+        }}
       />
       <Input
         aria-label={t('kubecode.research.evidenceFile')}
         placeholder={t('kubecode.research.evidenceFilePlaceholder')}
         value={evidence}
-        onChange={(event) => setEvidence(event.target.value)}
+        onChange={(event) => {
+          key.current = newClientMessageId()
+          setEvidence(event.target.value)
+        }}
       />
       {capture.error && <p className="kubecode-research-error" role="alert">{capture.error}</p>}
       <div className="kubecode-research-panel-actions">

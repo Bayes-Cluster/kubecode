@@ -73,8 +73,10 @@ export function ResearchDiscussionPanel({
         selectedAgent,
         detail.brief.title,
       )
-      onConversationCreated(created)
+      // Linked before the shell is told about it: announcing a Session
+      // navigates away, which would hide a failed link.
       await api.linkResearch(detail.project_id, detail.id, 'session', created.id, 'discussion')
+      onConversationCreated(created)
       onChanged()
       onOpenSession(created.id)
     })
@@ -125,6 +127,7 @@ export function ResearchDiscussionPanel({
                 <span className="kubecode-research-badge" data-tone="muted">{t('kubecode.research.sessionArchived')}</span>
               )}
               <Button
+                aria-label={`${t('kubecode.research.openSession')}: ${link.title || t('kubecode.untitledSession')}`}
                 disabled={link.availability === 'removed'}
                 size="xs"
                 variant="outline"
@@ -132,7 +135,13 @@ export function ResearchDiscussionPanel({
               >
                 {t('kubecode.research.openSession')}
               </Button>
-              <Button disabled={discussion.busy} size="xs" variant="ghost" onClick={() => unlink(link.ref_id)}>
+              <Button
+                aria-label={`${t('kubecode.research.unlink')}: ${link.title || t('kubecode.untitledSession')}`}
+                disabled={discussion.busy}
+                size="xs"
+                variant="ghost"
+                onClick={() => unlink(link.ref_id)}
+              >
                 {t('kubecode.research.unlink')}
               </Button>
             </li>
@@ -214,10 +223,19 @@ export function ResearchDiscussionPanel({
               value={body}
               maxLength={8192}
               placeholder={t('kubecode.research.entryPlaceholder')}
-              onChange={(event) => setBody(event.target.value)}
+              onChange={(event) => {
+                entryKey.current = newClientMessageId()
+                setBody(event.target.value)
+              }}
             />
             <div className="kubecode-research-row">
-              <Select value={kind} onValueChange={(value) => setKind(value as 'note' | 'decision')}>
+              <Select
+                value={kind}
+                onValueChange={(value) => {
+                  entryKey.current = newClientMessageId()
+                  setKind(value as 'note' | 'decision')
+                }}
+              >
                 <SelectTrigger aria-label={t('kubecode.research.entryKind')}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="note">{t('kubecode.research.entryKind.note')}</SelectItem>

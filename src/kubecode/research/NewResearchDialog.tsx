@@ -74,7 +74,10 @@ export function NewResearchDialog({
         <div className="kubecode-research-form">
           <label>
             <span>{t('kubecode.research.field.title')}</span>
-            <Input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+            <Input value={title} maxLength={200} onChange={(event) => {
+                requestId.current = newClientMessageId()
+                setTitle(event.target.value)
+              }} />
           </label>
           <label>
             <span>{t('kubecode.research.field.question')}</span>
@@ -82,7 +85,10 @@ export function NewResearchDialog({
               rows={4}
               value={question}
               maxLength={4000}
-              onChange={(event) => setQuestion(event.target.value)}
+              onChange={(event) => {
+                requestId.current = newClientMessageId()
+                setQuestion(event.target.value)
+              }}
             />
           </label>
           {error && <p className="kubecode-research-error" role="alert">{error}</p>}

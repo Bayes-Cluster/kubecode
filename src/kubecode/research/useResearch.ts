@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   KubecodeApi,
@@ -21,41 +21,43 @@ const MAX_ENTRY_PAGES = 10
 const LINK_EVENT_PREFIXES = ['session_', 'team_']
 
 /**
- * Counts reasons to refetch: matching durable events newer than the ones
- * already seen, and a return to a live stream after it dropped (the server
- * replays from the cursor, but a restart or lost cursor is only repaired by
- * reading the authoritative records again).
+ * A value that changes whenever there is a reason to refetch: a matching
+ * durable event newer than the ones seen at mount, or a return to a live
+ * stream after it dropped (the server replays from the cursor, but a restart
+ * or lost cursor is only repaired by reading the authoritative records again).
  */
 function useRefreshTick(
   events: WorkspaceEvent[],
   connectionState: WorkspaceConnectionState,
   matches: (event: WorkspaceEvent) => boolean,
-): number {
-  const [tick, setTick] = useState(0)
-  const processed = useRef(events.at(-1)?.id ?? 0)
-  const matchesRef = useRef(matches)
-  const previousConnection = useRef(connectionState)
-  useEffect(() => {
-    matchesRef.current = matches
-  })
-
-  useEffect(() => {
-    const fresh = events.filter((event) => event.id > processed.current)
-    processed.current = events.at(-1)?.id ?? processed.current
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (fresh.some((event) => matchesRef.current(event))) setTick((value) => value + 1)
-  }, [events])
-
-  useEffect(() => {
-    const previous = previousConnection.current
-    previousConnection.current = connectionState
-    if (connectionState === 'live' && (previous === 'reconnecting' || previous === 'resynchronizing')) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTick((value) => value + 1)
+): string {
+  const [baseline] = useState(() => events.at(-1)?.id ?? 0)
+  const [seenConnection, setSeenConnection] = useState(connectionState)
+  const [reconnects, setReconnects] = useState(0)
+  // Adjusting state while rendering is the supported way to derive from a
+  // prop transition without an effect.
+  if (seenConnection !== connectionState) {
+    setSeenConnection(connectionState)
+    if (
+      connectionState === 'live'
+      && (seenConnection === 'reconnecting' || seenConnection === 'resynchronizing')
+    ) {
+      setReconnects((value) => value + 1)
     }
-  }, [connectionState])
-
-  return tick
+  }
+  // The newest matching event id only ever grows, so a shed backlog can
+  // never hide a new event.
+  const latest = useMemo(() => {
+    let newest = 0
+    for (const event of events) {
+      if (event.id > baseline && event.id > newest && matches(event)) newest = event.id
+    }
+    return newest
+  }, [events, baseline, matches])
+  // Monotonic, so a shorter retained backlog is never mistaken for news.
+  const [highWater, setHighWater] = useState(0)
+  if (latest > highWater) setHighWater(latest)
+  return `${Math.max(latest, highWater)}:${reconnects}`
 }
 
 export type ResearchList = {
@@ -74,16 +76,17 @@ export function useResearchList(
   const [loaded, setLoaded] = useState<{ projectId: string; items: ResearchSummary[] } | null>(null)
   const [failedProjectId, setFailedProjectId] = useState<string | null>(null)
   const [manual, setManual] = useState(0)
-  const tick = useRefreshTick(events, connectionState, (event) => (
+  const matchesList = useCallback((event: WorkspaceEvent) => (
     event.kind === 'research_updated' && event.project_id === projectId
-  ))
+  ), [projectId])
+  const tick = useRefreshTick(events, connectionState, matchesList)
   const ticket = useRef(0)
 
   useEffect(() => {
     // Hosts and test doubles without a research surface simply show none.
     if (!projectId || typeof api.listResearch !== 'function') return
     const mine = ++ticket.current
-    api.listResearch(projectId).then((items) => {
+    api.listResearch(projectId, true).then((items) => {
       if (mine !== ticket.current) return
       setLoaded({ projectId, items })
       setFailedProjectId(null)
@@ -93,7 +96,8 @@ export function useResearchList(
   }, [api, projectId, tick, manual])
 
   const current = loaded && loaded.projectId === projectId ? loaded : null
-  const status: ResearchLoadStatus = current
+  const unsupported = typeof api.listResearch !== 'function'
+  const status: ResearchLoadStatus = current || unsupported
     ? 'ready'
     : failedProjectId === projectId ? 'error' : 'loading'
   return {
@@ -148,12 +152,12 @@ export function useResearchBundle(
   const [loaded, setLoaded] = useState<{ key: string; bundle: ResearchBundle } | null>(null)
   const [failure, setFailure] = useState<{ key: string; code: string | null } | null>(null)
   const [manual, setManual] = useState(0)
-  const tick = useRefreshTick(events, connectionState, (event) => {
-    if (event.kind === 'research_updated') {
-      return event.project_id === projectId && event.payload.research_id === researchId
-    }
+  const matchesBundle = useCallback((event: WorkspaceEvent) => {
+    if (event.project_id !== projectId) return false
+    if (event.kind === 'research_updated') return event.payload.research_id === researchId
     return LINK_EVENT_PREFIXES.some((prefix) => event.kind.startsWith(prefix))
-  })
+  }, [projectId, researchId])
+  const tick = useRefreshTick(events, connectionState, matchesBundle)
   const ticket = useRef(0)
   const key = projectId && researchId ? `${projectId}/${researchId}` : null
 

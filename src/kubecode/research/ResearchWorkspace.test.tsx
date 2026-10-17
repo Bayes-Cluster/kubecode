@@ -43,6 +43,11 @@ function openTab(name: string) {
   fireEvent.mouseDown(tab, { button: 0 })
 }
 
+/** The visible tab panel; panels stay mounted so drafts survive tab switches. */
+function panel() {
+  return within(screen.getByRole('tabpanel'))
+}
+
 function event(id: number, kind: string, payload: Record<string, unknown> = {}): WorkspaceEvent {
   return {
     id, kind, project_id: 'p1', conversation_id: null, run_id: null, payload, created_at: '',
@@ -112,7 +117,7 @@ describe('ResearchWorkspace', () => {
     mount({ api: fakeApi({ addResearchEntry, startResearchRound }) })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.discussion')
-    expect(await screen.findByText('Start with ResNet')).toBeInTheDocument()
+    expect(await panel().findByText('Start with ResNet')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('kubecode.research.entryBody'), { target: { value: 'Try 50% sparsity' } })
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.addEntry' }))
     await waitFor(() => expect(addResearchEntry).toHaveBeenCalledTimes(1))
@@ -131,12 +136,12 @@ describe('ResearchWorkspace', () => {
     const { props } = mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue(detail) }) })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.discussion')
-    const list = (await screen.findByText('Pruning chat')).closest('li')!
-    fireEvent.click(within(list).getByRole('button', { name: 'kubecode.research.openSession' }))
+    const list = (await panel().findByText('Pruning chat')).closest('li')!
+    fireEvent.click(within(list).getByRole('button', { name: /kubecode.research.openSession/ }))
     expect(props.onOpenSession).toHaveBeenCalledWith('s-1')
-    const gone = screen.getByText('Old chat').closest('li')!
+    const gone = panel().getByText('Old chat').closest('li')!
     expect(within(gone).getByText('kubecode.research.availability.removed')).toBeInTheDocument()
-    expect(within(gone).getByRole('button', { name: 'kubecode.research.openSession' })).toBeDisabled()
+    expect(within(gone).getByRole('button', { name: /kubecode.research.openSession/ })).toBeDisabled()
   })
 
   it('shows findings with their basis, stale revision, and evidence state', async () => {
@@ -177,19 +182,18 @@ describe('ResearchWorkspace', () => {
         }]),
       }),
     })
-    expect(await screen.findByRole('status', { name: '' })).toBeDefined()
     const banner = await screen.findByRole('button', { name: /kubecode.research.pendingDecisions/ })
     expect(banner).toHaveTextContent('"count":2')
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.accept' }))
+    fireEvent.click(screen.getByRole('button', { name: /kubecode.research.accept/ }))
     await waitFor(() => expect(reviewResearchProposal).toHaveBeenCalledWith('p1', 'rq-1', 'e-p', 'accepted'))
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.nothingToRecord' }))
     await waitFor(() => expect(declineResearchOutcome).toHaveBeenCalledWith('p1', 'rq-1', 't-1'))
   })
 
-  it('records findings from a linked Team with a retry key', async () => {
+  it('records findings from a linked Session with a retry key', async () => {
     const captureResearchFindings = vi.fn().mockResolvedValue({ created: true, findings: [] })
     mount({ api: fakeApi({ captureResearchFindings }) })
     await screen.findByText('Does structured pruning keep accuracy?')
@@ -344,6 +348,86 @@ describe('ResearchWorkspace', () => {
       view.rerender(<ResearchWorkspace {...props} connectionState="live" events={[event(2, 'research_updated')]} />)
     })
     await waitFor(() => expect(getResearch.mock.calls.length).toBe(initial + 2))
+  })
+
+  it('keeps an unsaved brief edit when switching tabs and back', async () => {
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.editBrief' }))
+    fireEvent.change(screen.getByLabelText('kubecode.research.field.title'), { target: { value: 'Half-typed' } })
+    openTab('kubecode.research.tab.discussion')
+    openTab('kubecode.research.tab.brief')
+    expect(screen.getByLabelText('kubecode.research.field.title')).toHaveValue('Half-typed')
+  })
+
+  it('records from a Team source and changes the retry key when the content changes', async () => {
+    const captureResearchFindings = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ created: true, findings: [] })
+    const detail = { ...detailFixture, links: [detailFixture.links[1]] }
+    mount({
+      api: fakeApi({
+        captureResearchFindings,
+        getResearch: vi.fn().mockResolvedValue(detail),
+      }),
+    })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.findings')
+    const statement = await panel().findByLabelText('kubecode.research.statement')
+    fireEvent.change(statement, { target: { value: 'First wording' } })
+    fireEvent.click(panel().getByRole('button', { name: 'kubecode.research.record' }))
+    await waitFor(() => expect(captureResearchFindings).toHaveBeenCalledTimes(1))
+    // Retrying the same content reuses the key; editing it must not.
+    fireEvent.click(panel().getByRole('button', { name: 'kubecode.research.record' }))
+    await waitFor(() => expect(captureResearchFindings).toHaveBeenCalledTimes(2))
+    const [, , retry] = captureResearchFindings.mock.calls[1]
+    expect(retry.publication_key).toBe(captureResearchFindings.mock.calls[0][2].publication_key)
+    expect(retry.team_id).toBe('t-1')
+
+    fireEvent.change(await panel().findByLabelText('kubecode.research.statement'), { target: { value: 'Second wording' } })
+    fireEvent.click(panel().getByRole('button', { name: 'kubecode.research.record' }))
+    await waitFor(() => expect(captureResearchFindings).toHaveBeenCalledTimes(3))
+    expect(captureResearchFindings.mock.calls[2][2].publication_key).not.toBe(retry.publication_key)
+  })
+
+  it('does not open the new Session when linking it failed', async () => {
+    const createConversation = vi.fn().mockResolvedValue({ id: 's-new', project_id: 'p1' })
+    const linkResearch = vi.fn().mockRejectedValue(new ApiError('research_link_conflict', 'taken', 409))
+    const { props } = mount({ api: fakeApi({ createConversation, linkResearch }) })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.discussion')
+    fireEvent.click(await panel().findByRole('button', { name: 'kubecode.research.startDiscussion' }))
+    expect(await panel().findByText('kubecode.research.error.linkConflict')).toBeInTheDocument()
+    expect(props.onConversationCreated).not.toHaveBeenCalled()
+    expect(props.onOpenSession).not.toHaveBeenCalled()
+  })
+
+  it('ignores events from other Projects and drops a stale response after switching questions', async () => {
+    let resolveFirst: ((value: typeof detailFixture) => void) | undefined
+    const getResearch = vi.fn().mockImplementation((_project: string, id: string) => (
+      id === 'rq-1'
+        ? new Promise<typeof detailFixture>((resolve) => { resolveFirst = resolve })
+        : Promise.resolve({ ...detailFixture, id: 'rq-2', brief: { ...detailFixture.brief, title: 'Second' } })
+    ))
+    const api = fakeApi({ getResearch })
+    const props: ResearchWorkspaceProps = {
+      agents, api, connectionState: 'live', conversations: [], events: [],
+      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      projectId: 'p1', researchId: 'rq-1', t, teams: [],
+    }
+    const view = render(<ResearchWorkspace {...props} />)
+    view.rerender(<ResearchWorkspace {...props} researchId="rq-2" />)
+    expect(await screen.findByRole('heading', { name: 'Second' })).toBeInTheDocument()
+    // The slow response for the first question arrives last and is ignored.
+    await act(async () => resolveFirst?.(detailFixture))
+    expect(screen.getByRole('heading', { name: 'Second' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Pruning' })).not.toBeInTheDocument()
+
+    const before = getResearch.mock.calls.length
+    const foreign = { ...event(9, 'session_removed'), project_id: 'other-project' }
+    await act(async () => {
+      view.rerender(<ResearchWorkspace {...props} researchId="rq-2" events={[foreign]} />)
+    })
+    expect(getResearch.mock.calls.length).toBe(before)
   })
 
   it('refreshes link availability when a Session is removed', async () => {
