@@ -599,6 +599,7 @@ async fn a_restarted_bridge_delivers_what_happened_while_it_was_down() {
         Arc::clone(&env.service),
         Arc::clone(&env.runtime),
         Arc::clone(&capture) as Arc<dyn OutboundTransport>,
+        None,
         ChannelBridgeConfig {
             language: ChannelLanguage::En,
             outbound: OutboundConfig {
@@ -1006,6 +1007,28 @@ async fn media_resolution_is_scoped_to_the_sharing_session_and_its_revision() {
     assert_eq!(
         source.load(&env.conversation_id, "big").err(),
         Some(MediaRejection::TooLarge)
+    );
+    // A hard link inside the root to a file outside it is refused.
+    let outside = env
+        .project_path
+        .parent()
+        .expect("parent")
+        .join("outside-notes.txt");
+    fs::write(&outside, "private notes").expect("outside file");
+    fs::hard_link(&outside, env.project_path.join("notes.txt")).expect("hard link");
+    env.store
+        .record_agent_media(&kubecode_server::agent_store::AgentMediaRef {
+            id: "hardlink".to_owned(),
+            conversation_id: env.conversation_id.clone(),
+            run_id: "run".to_owned(),
+            uri: format!("file://{}/notes.txt", env.project_path.display()),
+            declared_size: None,
+            caption: None,
+        })
+        .expect("record hard link");
+    assert_eq!(
+        source.load(&env.conversation_id, "hardlink").err(),
+        Some(MediaRejection::Ineligible)
     );
     // Removing the Session removes its media references.
     env.store

@@ -1052,6 +1052,7 @@ impl WorkspaceService {
             execution_mode,
             workspace_path,
         )?;
+        let canonical_root = root.canonicalize()?;
         let relative = path.strip_prefix(&root).map_err(|_| ineligible())?;
         let components = relative.components().collect::<Vec<_>>();
         if components.is_empty() {
@@ -1100,6 +1101,18 @@ impl WorkspaceService {
         let file = fs::File::open(&candidate)?;
         let opened = file.metadata()?;
         if !opened.is_file() || opened.dev() != before.dev() || opened.ino() != before.ino() {
+            return Err(ineligible());
+        }
+        // The component walk above can race with a directory being swapped
+        // for a symlink, so judge the file actually opened: its real path
+        // must still lie inside the execution root, and a hard link (which
+        // could alias a file outside it) is refused.
+        let opened_path = {
+            use std::os::fd::AsRawFd;
+            fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+                .map_err(|_| ineligible())?
+        };
+        if !opened_path.starts_with(&canonical_root) || opened.nlink() > 1 {
             return Err(ineligible());
         }
         let mut bytes = Vec::new();

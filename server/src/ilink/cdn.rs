@@ -19,8 +19,20 @@ use super::types::{CdnMedia, GetUploadUrlReq, UPLOAD_MEDIA_TYPE_IMAGE};
 
 /// Media payload bound (ADR 0211 §10).
 pub const MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
-/// Bounded upload retry budget; 4xx responses are never retried.
+/// Bounded upload retry budget; 4xx responses and timeouts are never
+/// retried.
 pub const UPLOAD_MAX_RETRIES: usize = 3;
+/// Minimum uplink throughput an upload is given time for, on top of the
+/// configured timeout floor (a 10 MiB file gets ~160 s).
+pub const UPLOAD_MIN_BYTES_PER_SECOND: u64 = 64 * 1024;
+
+/// Per-attempt upload timeout: the configured floor, stretched for large
+/// payloads so a slow uplink is not mistaken for a dead one.
+pub fn upload_timeout(floor: Duration, payload_bytes: usize) -> Duration {
+    floor.max(Duration::from_secs(
+        (payload_bytes as u64).div_ceil(UPLOAD_MIN_BYTES_PER_SECOND),
+    ))
+}
 
 /// Result of a successful CDN upload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,17 +187,22 @@ impl CdnClient {
             operation: "cdn_upload",
             status: 0,
         };
+        let timeout = upload_timeout(self.timeout, ciphertext.len());
         for _attempt in 0..UPLOAD_MAX_RETRIES {
             let request = self
                 .http
                 .post(url.clone())
                 .header("Content-Type", "application/octet-stream")
                 .body(ciphertext.clone())
-                .timeout(self.timeout);
+                .timeout(timeout);
             let response = match request.send().await {
                 Ok(response) => response,
                 Err(error) => {
                     last_error = IlinkError::from_transport("cdn_upload", &error);
+                    // A timeout would just time out again on retry.
+                    if error.is_timeout() {
+                        return Err(last_error);
+                    }
                     continue;
                 }
             };
@@ -375,6 +392,16 @@ mod tests {
             upload.aeskey_hex
         );
         assert_eq!(media.encrypt_query_param.as_deref(), Some("param"));
+    }
+
+    #[test]
+    fn upload_timeouts_scale_with_payload_size() {
+        let floor = Duration::from_secs(15);
+        assert_eq!(upload_timeout(floor, 1_024), floor);
+        assert_eq!(
+            upload_timeout(floor, MAX_MEDIA_BYTES),
+            Duration::from_secs(160)
+        );
     }
 
     #[test]
