@@ -876,6 +876,19 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
 - **Events.** Each change commits `research_updated` (content-free: research id
   and change kind) in the same transaction, so a reloaded or reconnected browser
   converges by refetching.
+- **Rounds.** A round is an explicit work request and the only research action
+  that starts anything. It pins the brief revision it consumed, the validated
+  setup as authorized, and selected source references, and advances through
+  durable phases (`created`, `session_ready`, `team_created`, `started`) with
+  every step idempotent: a Session belongs to at most one Team, so a crashed
+  setup is resumed without a second Team, and a Solo prompt is admitted under
+  the stable client message id `research:{round}`. A request key makes retries
+  and concurrent duplicates return the same round; the same key with a
+  different request is refused. Editing the brief never rewrites an admitted
+  round: it is flagged stale and keeps its revision. Members read the pinned
+  brief, source availability, and earlier-round summaries from the `research`
+  section of `team_get_context`; promoting a linked Session carries its
+  association to the new Team.
 
 ## Conversation reducer
 

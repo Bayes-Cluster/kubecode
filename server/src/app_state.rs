@@ -23,6 +23,8 @@ pub struct AppState {
     pub teams: Arc<TeamStore>,
     pub ilink: Arc<ILinkService>,
     pub research: Arc<ResearchStore>,
+    /// Serializes research round setup per round.
+    pub research_locks: Arc<crate::research_api::KeyedLocks>,
     /// The running WeChat channel pipeline, once started.
     pub ilink_bridge: Arc<tokio::sync::Mutex<Option<Arc<ChannelBridge>>>>,
 }
@@ -50,6 +52,7 @@ impl AppState {
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
+                .with_research_store(Arc::clone(&research))
                 .with_terminal_manager(Arc::clone(&terminals)),
         );
         Self {
@@ -61,6 +64,7 @@ impl AppState {
             teams,
             ilink,
             research,
+            research_locks: Arc::default(),
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
@@ -115,6 +119,7 @@ impl AppState {
                 Arc::clone(&agents),
             )
             .with_team_store(Arc::clone(&self.teams))
+            .with_research_store(Arc::clone(&self.research))
             .with_terminal_manager(Arc::clone(&self.terminals)),
         );
         self.agents = agents;

@@ -38,6 +38,7 @@ enum Change {
     Entry,
     Link,
     Unlink,
+    Round,
 }
 
 impl Change {
@@ -51,6 +52,7 @@ impl Change {
             Self::Entry => "entry",
             Self::Link => "link",
             Self::Unlink => "unlink",
+            Self::Round => "round",
         }
     }
 }
@@ -119,7 +121,28 @@ impl ResearchStore {
                    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                    PRIMARY KEY (research_id, kind, ref_id),
                    UNIQUE (kind, ref_id)
-                 );",
+                 );
+                 -- One explicit work request per row; the brief revision it
+                 -- consumed is pinned here (ADR 0212 §6).
+                 CREATE TABLE IF NOT EXISTS research_rounds (
+                   id               TEXT PRIMARY KEY,
+                   research_id      TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   round            INTEGER NOT NULL,
+                   brief_revision   INTEGER NOT NULL,
+                   kind             TEXT NOT NULL,
+                   phase            TEXT NOT NULL DEFAULT 'created',
+                   idempotency_key  TEXT NOT NULL,
+                   session_id       TEXT,
+                   team_id          TEXT,
+                   request_json     TEXT NOT NULL,
+                   sources_json     TEXT NOT NULL DEFAULT '[]',
+                   created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   UNIQUE (research_id, round),
+                   UNIQUE (research_id, idempotency_key)
+                 );
+                 CREATE UNIQUE INDEX IF NOT EXISTS research_rounds_team
+                   ON research_rounds(team_id) WHERE team_id IS NOT NULL;",
             )?;
         }
         Ok(Self { database, agents })
@@ -613,6 +636,265 @@ impl ResearchStore {
         Ok(row)
     }
 
+    // -- Rounds ----------------------------------------------------------------
+
+    /// Records an explicit work request, pinning the current brief revision.
+    /// A repeated key returns the original round (`created = false`) even if
+    /// the brief has since changed; reusing a key for a *different* request
+    /// is refused. A new round must be created against the revision the
+    /// researcher saw (`expected_revision`).
+    pub fn begin_round(
+        &self,
+        project_id: &str,
+        id: &str,
+        new: NewRound<'_>,
+    ) -> Result<(ResearchRound, bool), ResearchError> {
+        let key = normalize_client_request_id(Some(new.idempotency_key))?
+            .ok_or(ResearchError::Invalid("a request key is required"))?;
+        if new.sources.len() > MAX_ROUND_SOURCES {
+            return Err(ResearchError::Invalid("too many sources"));
+        }
+        self.write(|tx| {
+            let question = load_question(tx, project_id, id)?;
+            if let Some(existing) = tx
+                .query_row(
+                    &format!("{ROUND_SELECT} WHERE research_id = ?1 AND idempotency_key = ?2"),
+                    params![id, key],
+                    round_from_row,
+                )
+                .optional()?
+            {
+                let existing = existing?;
+                if existing.kind != new.kind
+                    || existing.request != new.request
+                    || existing.sources != new.sources
+                {
+                    return Err(ResearchError::KeyReuse);
+                }
+                return Ok(((existing, false), None));
+            }
+            if question.archived {
+                return Err(ResearchError::Archived);
+            }
+            if question.revision != new.expected_revision {
+                return Err(ResearchError::RevisionConflict {
+                    current: question.revision,
+                });
+            }
+            let round_id = Uuid::new_v4().to_string();
+            let number: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(round), 0) + 1 FROM research_rounds WHERE research_id = ?1",
+                [id],
+                |row| row.get(0),
+            )?;
+            tx.execute(
+                "INSERT INTO research_rounds
+                   (id, research_id, round, brief_revision, kind, idempotency_key,
+                    request_json, sources_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    round_id,
+                    id,
+                    number,
+                    question.revision as i64,
+                    new.kind.as_str(),
+                    key,
+                    serde_json::to_string(&new.request)?,
+                    serde_json::to_string(&new.sources)?,
+                ],
+            )?;
+            touch(tx, id)?;
+            let round = tx.query_row(
+                &format!("{ROUND_SELECT} WHERE id = ?1"),
+                [&round_id],
+                round_from_row,
+            )??;
+            Ok((
+                (round, true),
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
+    /// Records the Leader or Solo Session. Idempotent for the same Session.
+    /// A Solo round also links its Session as execution unless the Session is
+    /// already linked to this question (its existing role is kept).
+    pub fn round_set_session(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+        session_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        self.write(|tx| {
+            load_question(tx, project_id, id)?;
+            let round = load_round(tx, id, round_id)?;
+            match round.session_id.as_deref() {
+                Some(existing) if existing == session_id => return Ok((round, None)),
+                Some(_) => {
+                    return Err(ResearchError::RoundState(
+                        "the round already has a different Session",
+                    ));
+                }
+                None => {}
+            }
+            if round.phase != RoundPhase::Created {
+                return Err(ResearchError::RoundState("the round has already advanced"));
+            }
+            tx.execute(
+                "UPDATE research_rounds
+                 SET session_id = ?2, phase = 'session_ready', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![round_id, session_id],
+            )?;
+            if round.kind == RoundKind::Solo {
+                link_if_absent(tx, id, LinkKind::Session, session_id, LinkRole::Execution)?;
+            }
+            touch(tx, id)?;
+            Ok((
+                load_round(tx, id, round_id)?,
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
+    /// Records the Team created for the round and links it as execution.
+    /// Idempotent for the same Team.
+    pub fn round_attach_team(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+        team_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        self.write(|tx| {
+            load_question(tx, project_id, id)?;
+            let round = load_round(tx, id, round_id)?;
+            match round.team_id.as_deref() {
+                Some(existing) if existing == team_id => return Ok((round, None)),
+                Some(_) => {
+                    return Err(ResearchError::RoundState(
+                        "the round already has a different Team",
+                    ));
+                }
+                None => {}
+            }
+            if round.kind != RoundKind::Team || round.phase == RoundPhase::Started {
+                return Err(ResearchError::RoundState("the round cannot take a Team"));
+            }
+            tx.execute(
+                "UPDATE research_rounds
+                 SET team_id = ?2, phase = 'team_created', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![round_id, team_id],
+            )?;
+            link_if_absent(tx, id, LinkKind::Team, team_id, LinkRole::Execution)?;
+            touch(tx, id)?;
+            Ok((
+                load_round(tx, id, round_id)?,
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
+    /// Marks setup complete and logs it once.
+    pub fn round_mark_started(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        self.write(|tx| {
+            let question = load_question(tx, project_id, id)?;
+            let round = load_round(tx, id, round_id)?;
+            if round.phase == RoundPhase::Started {
+                return Ok((round, None));
+            }
+            tx.execute(
+                "UPDATE research_rounds
+                 SET phase = 'started', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [round_id],
+            )?;
+            let seq: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM research_entries WHERE research_id = ?1",
+                [id],
+                |row| row.get(0),
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO research_entries
+                   (id, research_id, seq, kind, author_kind, body, brief_revision, client_request_id)
+                 VALUES (?1, ?2, ?3, 'note', 'system', ?4, ?5, ?6)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    id,
+                    seq,
+                    format!(
+                        "Round {} started with brief revision {}.",
+                        round.round, round.brief_revision
+                    ),
+                    question.revision as i64,
+                    format!("round-{round_id}-started"),
+                ],
+            )?;
+            touch(tx, id)?;
+            Ok((
+                load_round(tx, id, round_id)?,
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
+    pub fn rounds(&self, project_id: &str, id: &str) -> Result<Vec<ResearchRound>, ResearchError> {
+        let connection = self.connection();
+        load_question(&connection, project_id, id)?;
+        let mut statement = connection.prepare(&format!(
+            "{ROUND_SELECT} WHERE research_id = ?1 ORDER BY round DESC"
+        ))?;
+        let rows = statement.query_map([id], round_from_row)?;
+        let mut rounds = Vec::new();
+        for row in rows {
+            rounds.push(row??);
+        }
+        Ok(rounds)
+    }
+
+    pub fn round(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        let connection = self.connection();
+        load_question(&connection, project_id, id)?;
+        load_round(&connection, id, round_id)
+    }
+
+    /// The round (and Project) that created or owns a Team, if any.
+    pub fn round_for_team(
+        &self,
+        team_id: &str,
+    ) -> Result<Option<(String, ResearchRound)>, ResearchError> {
+        let connection = self.connection();
+        let row = connection
+            .query_row(
+                "SELECT q.project_id, r.id, r.research_id, r.round, r.brief_revision, r.kind,
+                        r.phase, r.session_id, r.team_id, r.request_json, r.sources_json,
+                        r.created_at, r.updated_at
+                 FROM research_rounds r JOIN research_questions q ON q.id = r.research_id
+                 WHERE r.team_id = ?1",
+                [team_id],
+                |row| {
+                    let project: String = row.get(0)?;
+                    Ok((project, round_from_offset_row(row, 1)))
+                },
+            )
+            .optional()?;
+        match row {
+            Some((project, round)) => Ok(Some((project, round?))),
+            None => Ok(None),
+        }
+    }
+
     // -- Plumbing --------------------------------------------------------------
 
     fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -652,6 +934,96 @@ impl ResearchStore {
             self.agents.workspace_event_bus().publish_committed(cursor);
         }
         Ok(value)
+    }
+}
+
+const ROUND_SELECT: &str = "SELECT id, research_id, round, brief_revision, kind, phase,
+                                   session_id, team_id, request_json, sources_json,
+                                   created_at, updated_at FROM research_rounds";
+
+/// Decodes a round row; stored JSON is validated here, so a corrupt row is
+/// a typed error rather than a panic.
+fn round_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<ResearchRound, ResearchError>> {
+    Ok(round_from_offset_row(row, 0))
+}
+
+fn round_from_offset_row(
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> Result<ResearchRound, ResearchError> {
+    let request_json: String = row.get(offset + 8)?;
+    let sources_json: String = row.get(offset + 9)?;
+    Ok(ResearchRound {
+        id: row.get(offset)?,
+        research_id: row.get(offset + 1)?,
+        round: row.get::<_, i64>(offset + 2)? as u64,
+        brief_revision: row.get::<_, i64>(offset + 3)? as u64,
+        kind: RoundKind::parse(&row.get::<_, String>(offset + 4)?).unwrap_or(RoundKind::Team),
+        phase: RoundPhase::parse(&row.get::<_, String>(offset + 5)?).unwrap_or(RoundPhase::Created),
+        session_id: row.get(offset + 6)?,
+        team_id: row.get(offset + 7)?,
+        request: serde_json::from_str(&request_json)?,
+        sources: serde_json::from_str(&sources_json)?,
+        created_at: row.get(offset + 10)?,
+        updated_at: row.get(offset + 11)?,
+    })
+}
+
+fn load_round(
+    connection: &Connection,
+    research_id: &str,
+    round_id: &str,
+) -> Result<ResearchRound, ResearchError> {
+    connection
+        .query_row(
+            &format!("{ROUND_SELECT} WHERE id = ?1 AND research_id = ?2"),
+            params![round_id, research_id],
+            round_from_row,
+        )
+        .optional()?
+        .ok_or(ResearchError::RoundNotFound)?
+}
+
+fn touch(tx: &Transaction<'_>, id: &str) -> Result<(), ResearchError> {
+    tx.execute(
+        "UPDATE research_questions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        [id],
+    )?;
+    Ok(())
+}
+
+/// Links a target unless it is already linked to this question; an existing
+/// link (and its role) is kept. A target owned by another question is a
+/// conflict.
+fn link_if_absent(
+    tx: &Transaction<'_>,
+    id: &str,
+    kind: LinkKind,
+    ref_id: &str,
+    role: LinkRole,
+) -> Result<(), ResearchError> {
+    let owner = tx
+        .query_row(
+            "SELECT research_id FROM research_links WHERE kind = ?1 AND ref_id = ?2",
+            params![kind.as_str(), ref_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    match owner {
+        Some(owner) if owner != id => Err(ResearchError::LinkConflict {
+            kind: kind.as_str(),
+        }),
+        Some(_) => Ok(()),
+        None => {
+            tx.execute(
+                "INSERT INTO research_links (research_id, kind, ref_id, role)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![id, kind.as_str(), ref_id, role.as_str()],
+            )?;
+            Ok(())
+        }
     }
 }
 

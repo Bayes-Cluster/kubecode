@@ -82,15 +82,15 @@ struct UpdateTeamSettingsRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct StartTeamRequest {
-    goal: String,
-    acceptance_criteria: Vec<String>,
-    allowed_agent_ids: Vec<String>,
+pub(crate) struct StartTeamRequest {
+    pub(crate) goal: String,
+    pub(crate) acceptance_criteria: Vec<String>,
+    pub(crate) allowed_agent_ids: Vec<String>,
     #[serde(default)]
-    mode: TeamMode,
-    max_teammates: u8,
-    max_parallel_runs: u8,
-    max_review_rounds: u8,
+    pub(crate) mode: TeamMode,
+    pub(crate) max_teammates: u8,
+    pub(crate) max_parallel_runs: u8,
+    pub(crate) max_review_rounds: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,16 +206,42 @@ async fn promote_to_team(
     Path(conversation_id): Path<String>,
     Json(request): Json<PromoteToTeamRequest>,
 ) -> Result<impl IntoResponse, TeamApiError> {
+    let team = promote_conversation_core(
+        &state,
+        &conversation_id,
+        &request.leader_name,
+        request.title.as_deref(),
+        request.workspace,
+        false,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(snapshot(&state, team)?)))
+}
+
+/// Turns an existing Session into a Team Leader, keeping its identity and
+/// history. `fresh` marks a Session created moments ago that has never been
+/// initialized (it is initialized rather than reconnected). A Session linked
+/// to a research question carries that association to the new Team, so the
+/// question never loses track of the work (ADR 0212 §6). Shared by the
+/// promote route and research rounds.
+pub(crate) async fn promote_conversation_core(
+    state: &AppState,
+    conversation_id: &str,
+    leader_name: &str,
+    title: Option<&str>,
+    workspace: Option<TeamWorkspace>,
+    fresh: bool,
+) -> Result<Team, TeamApiError> {
     if state
         .teams
-        .team_for_conversation(&conversation_id)?
+        .team_for_conversation(conversation_id)?
         .is_some()
     {
-        return Err(TeamApiError::AlreadyInTeam(conversation_id));
+        return Err(TeamApiError::AlreadyInTeam(conversation_id.to_owned()));
     }
     let store = state.agent_runtime.store();
-    let mut conversation = store.get_conversation(&conversation_id)?;
-    let workspace = request.workspace.unwrap_or_else(|| {
+    let mut conversation = store.get_conversation(conversation_id)?;
+    let workspace = workspace.unwrap_or_else(|| {
         if conversation.execution_mode == ExecutionMode::Worktree {
             TeamWorkspace::Worktree
         } else {
@@ -225,32 +251,68 @@ async fn promote_to_team(
     if workspace == TeamWorkspace::Worktree
         && conversation.execution_mode != ExecutionMode::Worktree
     {
-        conversation = assign_worktree(&state, conversation)?;
+        conversation = assign_worktree(state, conversation)?;
     }
-    let title = request
-        .title
-        .as_deref()
+    let title = title
         .filter(|title| !title.trim().is_empty())
         .unwrap_or(&conversation.title);
     let team = state.teams.create_team(NewTeam {
         project_id: &conversation.project_id,
         leader_conversation_id: &conversation.id,
         agent_session_id: &conversation.agent_session_id,
-        leader_name: &request.leader_name,
+        leader_name,
         title: Some(title),
         workspace,
         workspace_path: conversation.workspace_path.as_deref(),
     })?;
-    if agent_is_available(&state, &conversation)
-        && let Err(error) = state
-            .agent_runtime
-            .reconnect_conversation_ephemeral(&conversation.id)
-            .await
-    {
+    if let Err(error) = link_promoted_team(state, &conversation, &team) {
         let _ = state.teams.delete_team(&team.id);
-        return Err(error.into());
+        return Err(error);
     }
-    Ok((StatusCode::CREATED, Json(snapshot(&state, team)?)))
+    if agent_is_available(state, &conversation) {
+        let connected = if fresh {
+            state
+                .agent_runtime
+                .initialize_conversation_ephemeral(&conversation.id)
+                .await
+        } else {
+            state
+                .agent_runtime
+                .reconnect_conversation_ephemeral(&conversation.id)
+                .await
+        };
+        if let Err(error) = connected {
+            let _ = state.teams.delete_team(&team.id);
+            return Err(error.into());
+        }
+    }
+    Ok(team)
+}
+
+/// Carries a research association from a promoted Session to its Team. An
+/// archived question is read-only, so its association is not extended.
+fn link_promoted_team(
+    state: &AppState,
+    conversation: &Conversation,
+    team: &Team,
+) -> Result<(), TeamApiError> {
+    use crate::research_store::{LinkKind, LinkRole, ResearchError};
+    let Some((project_id, link)) = state
+        .research
+        .link_for(LinkKind::Session, &conversation.id)?
+    else {
+        return Ok(());
+    };
+    match state.research.link(
+        &project_id,
+        &link.research_id,
+        LinkKind::Team,
+        &team.id,
+        LinkRole::Execution,
+    ) {
+        Ok(_) | Err(ResearchError::Archived) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 async fn get_team(
@@ -267,13 +329,24 @@ async fn start_team(
     Path(team_id): Path<String>,
     Json(request): Json<StartTeamRequest>,
 ) -> Result<impl IntoResponse, TeamApiError> {
-    let team = state.teams.get_team(&team_id)?;
+    let started = start_team_core(&state, &team_id, request).await?;
+    Ok(Json(snapshot(&state, started)?))
+}
+
+/// Rejects an allowed-Agent list that names an Agent that is not installed
+/// (when any Agent is installed at all). Shared by the start route and the
+/// research round preflight, so a round cannot create a Team that could not
+/// then start.
+pub(crate) fn check_allowed_agents(
+    state: &AppState,
+    allowed_agent_ids: &[String],
+) -> Result<(), TeamApiError> {
     if state
         .agents
         .descriptors()
         .iter()
         .any(|agent| agent.available)
-        && let Some(agent_id) = request.allowed_agent_ids.iter().find(|agent_id| {
+        && let Some(agent_id) = allowed_agent_ids.iter().find(|agent_id| {
             agent_id
                 .parse::<AgentId>()
                 .ok()
@@ -285,8 +358,22 @@ async fn start_team(
         ))
         .into());
     }
+    Ok(())
+}
+
+/// Validates, starts, activates, and wakes a Team's Leader. Shared by the
+/// start route and research rounds, so a round gets exactly the same setup
+/// requirements, allowed Agents, limits, native permission handling, and
+/// human-input behavior as a manually started Team.
+pub(crate) async fn start_team_core(
+    state: &AppState,
+    team_id: &str,
+    request: StartTeamRequest,
+) -> Result<Team, TeamApiError> {
+    let team = state.teams.get_team(team_id)?;
+    check_allowed_agents(state, &request.allowed_agent_ids)?;
     let native_preparation = (request.mode == TeamMode::Yolo)
-        .then(|| inspect_native_yolo(&state, &team))
+        .then(|| inspect_native_yolo(state, &team))
         .transpose()?;
     let started = state.teams.start_team(StartTeam {
         team_id: &team.id,
@@ -373,8 +460,8 @@ async fn start_team(
         None,
     )?;
     let _ = state.agent_runtime.wake_team_leader(&started.id);
-    publish_team_event(&state, &started.id, "team_started");
-    Ok(Json(snapshot(&state, started)?))
+    publish_team_event(state, &started.id, "team_started");
+    Ok(started)
 }
 
 #[derive(Clone)]
@@ -1087,7 +1174,8 @@ fn publish_team_event(state: &AppState, team_id: &str, kind: &str) {
     );
 }
 
-enum TeamApiError {
+pub(crate) enum TeamApiError {
+    Research(crate::research_store::ResearchError),
     Team(TeamError),
     Store(StoreError),
     Runtime(RuntimeError),
@@ -1110,6 +1198,12 @@ impl From<StoreError> for TeamApiError {
 impl From<RuntimeError> for TeamApiError {
     fn from(error: RuntimeError) -> Self {
         Self::Runtime(error)
+    }
+}
+
+impl From<crate::research_store::ResearchError> for TeamApiError {
+    fn from(error: crate::research_store::ResearchError) -> Self {
+        Self::Research(error)
     }
 }
 
@@ -1184,6 +1278,16 @@ impl IntoResponse for TeamApiError {
                 StatusCode::CONFLICT,
                 "already_in_team",
                 format!("session already belongs to a team: {session_id}"),
+            ),
+            Self::Research(crate::research_store::ResearchError::LinkConflict { .. }) => (
+                StatusCode::CONFLICT,
+                "research_link_conflict",
+                "the Team could not be linked to its research question".to_owned(),
+            ),
+            Self::Research(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                "research storage failed".to_owned(),
             ),
         };
         (status, Json(ErrorBody { code, message })).into_response()

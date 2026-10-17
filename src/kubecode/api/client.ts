@@ -39,8 +39,10 @@ import type {
   ResearchLinkKind,
   ResearchLinkRole,
   ResearchRevision,
+  ResearchRound,
   ResearchRevisionSummary,
   ResearchSummary,
+  StartResearchRoundRequest,
   Team,
   TeamSnapshot,
   TeamWorkspace,
@@ -357,6 +359,40 @@ export class KubecodeApi {
     revision: number,
   ): Promise<ResearchRevision> {
     return this.request(`${this.researchPath(projectId, researchId)}/revisions/${revision}`)
+  }
+
+  listResearchRounds(projectId: string, researchId: string): Promise<ResearchRound[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/rounds`)
+  }
+
+  getResearchRound(projectId: string, researchId: string, roundId: string): Promise<ResearchRound> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}`,
+    )
+  }
+
+  /**
+   * The explicit "do work" request. Creating a round is the only research
+   * action that starts an Agent or Team; saving, discussing, and linking
+   * never do. Safe to retry with the same `client_request_id`.
+   */
+  startResearchRound(
+    projectId: string,
+    researchId: string,
+    request: StartResearchRoundRequest,
+  ): Promise<ResearchRound> {
+    return this.request(`${this.researchPath(projectId, researchId)}/rounds`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
+  /** Continues an unfinished round from its last durable phase. */
+  resumeResearchRound(projectId: string, researchId: string, roundId: string): Promise<ResearchRound> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}/resume`,
+      { method: 'POST' },
+    )
   }
 
   /** Associates a Session or Team; never starts work. */

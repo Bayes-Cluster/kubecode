@@ -11,6 +11,12 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+mod rounds;
+pub(crate) mod sources;
+
+pub use rounds::KeyedLocks;
+
+use crate::agent_runtime::RuntimeError;
 use crate::agent_store::{ConversationRelationship, StoreError};
 use crate::agents::AgentId;
 use crate::app_state::AppState;
@@ -19,10 +25,12 @@ use crate::research_store::{
     ResearchEntry, ResearchError, ResearchLink, ResearchQuestion, ResearchStatus, ResearchSummary,
     RevisionSummary, SourceAvailability,
 };
+use crate::team_api::TeamApiError;
 use crate::workspace::WorkspaceError;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(rounds::routes())
         .route(
             "/projects/{project_id}/research",
             get(list_research).post(create_research),
@@ -140,7 +148,7 @@ fn detail(
     Ok(ResearchDetail { question, links })
 }
 
-fn check_project(state: &AppState, project_id: &str) -> Result<(), ResearchApiError> {
+pub(super) fn check_project(state: &AppState, project_id: &str) -> Result<(), ResearchApiError> {
     state.workspace.project_path(project_id)?;
     Ok(())
 }
@@ -432,10 +440,36 @@ async fn unlink_research(
 
 // -- Errors --------------------------------------------------------------------------
 
-#[derive(Debug)]
-enum ResearchApiError {
+pub(super) enum ResearchApiError {
     Research(ResearchError),
     Workspace(WorkspaceError),
+    Store(StoreError),
+    Runtime(RuntimeError),
+    Team(TeamApiError),
+}
+
+impl From<StoreError> for ResearchApiError {
+    fn from(error: StoreError) -> Self {
+        Self::Store(error)
+    }
+}
+
+impl From<RuntimeError> for ResearchApiError {
+    fn from(error: RuntimeError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
+impl From<TeamApiError> for ResearchApiError {
+    fn from(error: TeamApiError) -> Self {
+        Self::Team(error)
+    }
+}
+
+impl From<crate::teams::TeamError> for ResearchApiError {
+    fn from(error: crate::teams::TeamError) -> Self {
+        Self::Team(error.into())
+    }
 }
 
 impl From<ResearchError> for ResearchApiError {
@@ -454,6 +488,9 @@ impl IntoResponse for ResearchApiError {
     fn into_response(self) -> Response {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
+            Self::Team(error) => return error.into_response(),
+            Self::Store(error) => (StatusCode::BAD_REQUEST, "session_error", error.to_string()),
+            Self::Runtime(error) => (StatusCode::BAD_GATEWAY, "agent_error", error.to_string()),
             Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
                 StatusCode::NOT_FOUND,
                 "not_found",
@@ -478,6 +515,21 @@ impl IntoResponse for ResearchApiError {
                 ResearchError::Archived => {
                     (StatusCode::CONFLICT, "research_archived", error.to_string())
                 }
+                ResearchError::RoundNotFound => (
+                    StatusCode::NOT_FOUND,
+                    "research_round_not_found",
+                    error.to_string(),
+                ),
+                ResearchError::KeyReuse => (
+                    StatusCode::CONFLICT,
+                    "research_request_key_reused",
+                    error.to_string(),
+                ),
+                ResearchError::RoundState(_) => (
+                    StatusCode::CONFLICT,
+                    "research_round_state",
+                    error.to_string(),
+                ),
                 ResearchError::RevisionConflict { current } => {
                     extra.insert("current_revision".into(), json!(current));
                     (

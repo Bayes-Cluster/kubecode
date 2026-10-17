@@ -190,6 +190,7 @@ pub struct AgentRuntime {
     pending_side_questions: Arc<Mutex<HashSet<String>>>,
     terminals: Option<Arc<TerminalManager>>,
     teams: Option<Arc<TeamStore>>,
+    research: Option<Arc<crate::research_store::ResearchStore>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
     adapters: AgentAdapterRegistry,
 }
@@ -312,6 +313,7 @@ impl AgentRuntime {
             pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
             terminals: None,
             teams: None,
+            research: None,
             team_mcp_http: None,
             adapters: AgentAdapterRegistry::new(),
         }
@@ -320,6 +322,20 @@ impl AgentRuntime {
     pub fn with_team_store(mut self, teams: Arc<TeamStore>) -> Self {
         self.teams = Some(teams);
         self
+    }
+
+    /// Lets Team MCP tools read the pinned research context of a Team's
+    /// round (ADR 0212 §6).
+    pub fn with_research_store(
+        mut self,
+        research: Arc<crate::research_store::ResearchStore>,
+    ) -> Self {
+        self.research = Some(research);
+        self
+    }
+
+    pub fn research_store(&self) -> Option<Arc<crate::research_store::ResearchStore>> {
+        self.research.clone()
     }
 
     pub fn with_terminal_manager(mut self, terminals: Arc<TerminalManager>) -> Self {
@@ -828,6 +844,11 @@ impl AgentRuntime {
 
     pub fn store(&self) -> Arc<AgentStore> {
         Arc::clone(&self.store)
+    }
+
+    /// Borrows the store without cloning the handle.
+    pub fn store_ref(&self) -> &AgentStore {
+        &self.store
     }
 
     pub async fn initialize_conversation(&self, conversation_id: &str) -> Result<(), RuntimeError> {
