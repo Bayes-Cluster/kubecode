@@ -308,6 +308,16 @@ impl NewLaunch {
         if self.artifacts.len() > MAX_ARTIFACTS {
             return Err(ExperimentError::Invalid("too many artifacts"));
         }
+        if self.cwd.chars().count() > MAX_ARG_CHARS
+            || self.cwd.contains('\0')
+            || self.artifacts.iter().any(|path| {
+                path.trim().is_empty()
+                    || path.chars().count() > MAX_ARG_CHARS
+                    || path.contains('\0')
+            })
+        {
+            return Err(ExperimentError::Invalid("a path is empty or too long"));
+        }
         if self.sources.len() > crate::research_store::MAX_ROUND_SOURCES {
             return Err(ExperimentError::Invalid("too many sources"));
         }

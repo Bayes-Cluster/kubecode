@@ -26,6 +26,9 @@ use uuid::Uuid;
 use crate::agent_store::AgentStore;
 use crate::database::Database;
 
+/// The longest a wait may run past now (seven days).
+const MAX_WAIT_SECS: i64 = 7 * 24 * 3600;
+
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 type WakeHook = Arc<dyn Fn(&str) + Send + Sync>;
@@ -131,8 +134,10 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            id            TEXT PRIMARY KEY,
            experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
            kind          TEXT NOT NULL,
+           -- What the event is about beyond the kind: the wait that expired.
+           subject       TEXT NOT NULL DEFAULT '',
            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-           UNIQUE (experiment_id, kind)
+           UNIQUE (experiment_id, kind, subject)
          );",
     )?;
     crate::database::ensure_column(
@@ -150,7 +155,14 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
         "reminders",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
-    crate::database::ensure_column(connection, "experiments", "reminded_at", "INTEGER")
+    crate::database::ensure_column(connection, "experiments", "reminded_at", "INTEGER")?;
+    // A launch given back (never started) is not a failed attempt.
+    crate::database::ensure_column(
+        connection,
+        "experiments",
+        "refunded",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
 }
 
 const EXPERIMENT_SELECT: &str = "SELECT id, project_id, research_id, round_id, team_id, task_id,
@@ -564,7 +576,7 @@ impl ExperimentStore {
                 ReconcileTruth::NotStarted => {
                     tx.execute(
                         "UPDATE experiments
-                         SET state = 'failed_to_start', analysis = 'none', reason = ?2,
+                         SET state = 'failed_to_start', analysis = 'none', reason = ?2, refunded = 1,
                              finished_at = CURRENT_TIMESTAMP
                          WHERE id = ?1",
                         params![id, reason],
@@ -592,6 +604,32 @@ impl ExperimentStore {
         })
     }
 
+    /// Records why a stop is under way (e.g. the runtime limit), so the
+    /// eventual outcome is attributed correctly even across a restart.
+    pub fn set_reason(&self, id: &str, reason: &str) -> Result<(), ExperimentError> {
+        self.write(|tx| {
+            tx.execute(
+                "UPDATE experiments SET reason = ?2 WHERE id = ?1
+                 AND state IN ('launching', 'running', 'cancelling')",
+                params![id, reason],
+            )?;
+            Ok(((), None))
+        })
+    }
+
+    /// Puts an experiment in a state without the usual transition (tests
+    /// simulating a crash at a boundary).
+    #[cfg(test)]
+    pub(crate) fn force_state_for_test(&self, id: &str, state: &str) {
+        self.connection()
+            .execute(
+                "UPDATE experiments SET state = ?2, pid = NULL, start_ticks = NULL, boot_id = NULL
+                 WHERE id = ?1",
+                params![id, state],
+            )
+            .expect("force state");
+    }
+
     /// Looks an experiment up by id alone (the runner's own bookkeeping; API
     /// callers use the Project-scoped `experiment`).
     pub fn get(&self, id: &str) -> Result<Experiment, ExperimentError> {
@@ -609,7 +647,7 @@ impl ExperimentStore {
             }
             tx.execute(
                 "UPDATE experiments
-                 SET state = 'failed_to_start', analysis = 'pending', reason = ?2,
+                 SET state = 'failed_to_start', analysis = 'pending', reason = ?2, refunded = 1,
                      finished_at = CURRENT_TIMESTAMP
                  WHERE id = ?1",
                 params![id, reason],
@@ -675,6 +713,19 @@ impl ExperimentStore {
             {
                 return Err(ExperimentError::NotFound);
             }
+            // Only the experiment's owner (or the Leader) may wait on it: a
+            // wait redirects the result, so it is not open to any teammate.
+            let is_leader: bool = tx
+                .query_row(
+                    "SELECT 1 FROM teams WHERE id = ?1 AND leader_member_id = ?2",
+                    params![team_id, member_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !is_leader && experiment.owner_member_id.as_deref() != Some(member_id) {
+                return Err(ExperimentError::NotFound);
+            }
             let member_in_team: bool = tx
                 .query_row(
                     "SELECT 1 FROM team_members WHERE id = ?1 AND team_id = ?2",
@@ -712,6 +763,23 @@ impl ExperimentStore {
             {
                 return Ok((open, None));
             }
+            // A finished experiment's result was already delivered; a repeat
+            // yield from the same member returns the wait it already made.
+            if let Some(existing) = tx
+                .query_row(
+                    &format!(
+                        "{WAIT_SELECT} WHERE experiment_id = ?1 AND owner_member_id = ?2
+                         ORDER BY created_at DESC, rowid DESC LIMIT 1"
+                    ),
+                    params![experiment_id, member_id],
+                    wait_from_row,
+                )
+                .optional()?
+                .transpose()?
+                && !experiment.state.is_active()
+            {
+                return Ok((existing, None));
+            }
             let attempt_id: Option<String> = tx
                 .query_row(
                     "SELECT id FROM team_task_attempts
@@ -723,7 +791,9 @@ impl ExperimentStore {
                 )
                 .optional()?;
             // A wait cannot outlive the process's own runtime cap by much.
-            let deadline = deadline_at.or(Some(
+            let deadline = deadline_at
+                .map(|at| at.clamp(now, now + MAX_WAIT_SECS))
+                .or(Some(
                 now + i64::from(experiment.max_runtime_secs) + 600,
             ));
             let finished = !experiment.state.is_active();
@@ -780,7 +850,12 @@ impl ExperimentStore {
                 [&id],
                 wait_from_row,
             )??;
-            self.deliver(&tx, &wait.experiment_id, EventKind::WaitExpired)?;
+            self.deliver_about(
+                &tx,
+                &wait.experiment_id,
+                EventKind::WaitExpired,
+                Some(&wait),
+            )?;
             cursor = Some(append_research_event(
                 &tx,
                 &scope_of(&tx, &wait.experiment_id)?,
@@ -817,12 +892,13 @@ impl ExperimentStore {
                      LEFT JOIN team_messages m ON m.id = ev.message_id
                      WHERE e.analysis = 'pending'
                        AND (m.id IS NULL OR m.delivery_status = 'acknowledged')
+                       AND e.reminders <= ?3
                        AND COALESCE(e.reminded_at, CAST(strftime('%s', COALESCE(e.finished_at, e.created_at)) AS INTEGER))
                            <= ?1 - ?2
                      ORDER BY e.created_at, e.rowid",
                 )?;
                 statement
-                    .query_map(params![now, after_secs], |row| {
+                    .query_map(params![now, after_secs, max_reminders], |row| {
                         Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
                     })?
                     .collect::<Result<_, _>>()?
@@ -830,12 +906,18 @@ impl ExperimentStore {
             let mut outcome = ReminderOutcome::default();
             for (experiment_id, team_id, reminders, event_id) in due {
                 if reminders >= max_reminders {
+                    // Reported once: past the bound the experiment leaves the
+                    // reminder cycle (the Team is flagged by the caller).
+                    tx.execute(
+                        "UPDATE experiments SET reminders = ?2 WHERE id = ?1",
+                        params![experiment_id, max_reminders + 1],
+                    )?;
                     outcome.exhausted.push((team_id, experiment_id));
                     continue;
                 }
                 let experiment = load_experiment(tx, &experiment_id)?;
                 let body = format!("Reminder {}: {}", reminders + 1, describe(&experiment, EventKind::Finished));
-                let message_id = enqueue_message(tx, &experiment, &body)?;
+                let message_id = enqueue_to_leader(tx, &experiment, &body)?;
                 tx.execute(
                     "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
                     params![event_id, message_id],
@@ -1128,7 +1210,14 @@ impl ExperimentStore {
     ) -> Result<T, ExperimentError> {
         let mut connection = self.connection();
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (value, scope) = operation(&transaction)?;
+        let (value, scope) = match operation(&transaction) {
+            Ok(done) => done,
+            Err(error) => {
+                // Nothing committed, so nothing is owed a wake.
+                self.wakes.lock().expect("wake mutex poisoned").clear();
+                return Err(error);
+            }
+        };
         let cursor = match scope {
             Some(scope) => Some(append_research_event(&transaction, &scope)?),
             None => None,
@@ -1173,11 +1262,29 @@ impl ExperimentStore {
         experiment_id: &str,
         kind: EventKind,
     ) -> Result<(), ExperimentError> {
+        self.deliver_about(tx, experiment_id, kind, None)
+    }
+
+    /// As `deliver`, for an event that concerns one wait: a second member's
+    /// wait expiring is its own event, told to that wait's owner.
+    fn deliver_about(
+        &self,
+        tx: &Connection,
+        experiment_id: &str,
+        kind: EventKind,
+        wait: Option<&ExperimentWait>,
+    ) -> Result<(), ExperimentError> {
         let experiment = load_experiment(tx, experiment_id)?;
         let event_id = Uuid::new_v4().to_string();
         let inserted = tx.execute(
-            "INSERT OR IGNORE INTO experiment_events (id, experiment_id, kind) VALUES (?1, ?2, ?3)",
-            params![event_id, experiment_id, kind.as_str()],
+            "INSERT OR IGNORE INTO experiment_events (id, experiment_id, kind, subject)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                event_id,
+                experiment_id,
+                kind.as_str(),
+                wait.map(|wait| wait.id.as_str()).unwrap_or("")
+            ],
         )?;
         if inserted == 0 {
             return Ok(());
@@ -1185,11 +1292,33 @@ impl ExperimentStore {
         let Some(team_id) = &experiment.team_id else {
             return Ok(());
         };
-        let message_id = enqueue_message(tx, &experiment, &describe(&experiment, kind))?;
+        let body = describe(&experiment, kind);
+        let message_id = enqueue_message(
+            tx,
+            &experiment,
+            &body,
+            wait.map(|wait| wait.owner_member_id.as_str()),
+        )?;
         tx.execute(
             "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
             params![event_id, message_id],
         )?;
+        // Only the Leader can decide what a result means. When it went to
+        // someone else, the Leader is told too, so it is never found out only
+        // by a completion refusal.
+        if kind == EventKind::Finished && recipient_of(tx, &message_id)? != leader_of(tx, team_id)?
+        {
+            let copy = enqueue_to_leader(
+                tx,
+                &experiment,
+                &format!("{body} (Its owner has also been told.)"),
+            )?;
+            // Reminders follow the message that reaches the decider.
+            tx.execute(
+                "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
+                params![event_id, copy],
+            )?;
+        }
         self.note_wake(team_id);
         Ok(())
     }
@@ -1310,7 +1439,8 @@ fn check_team_scope(
 fn no_progress(tx: &Connection, round_id: &str, limit: u32) -> Result<bool, ExperimentError> {
     let mut statement = tx.prepare(
         "SELECT state, exit_code FROM experiments
-         WHERE round_id = ?1 AND state IN ('exited', 'timed_out', 'failed_to_start')
+         WHERE round_id = ?1 AND refunded = 0
+           AND state IN ('exited', 'timed_out', 'failed_to_start')
          ORDER BY finished_at DESC, rowid DESC LIMIT ?2",
     )?;
     let recent: Vec<(String, Option<i32>)> = statement
@@ -1337,7 +1467,41 @@ fn request_hash(launch: &NewLaunch) -> String {
 
 /// Who is told about an experiment: the member who last waited on it, else
 /// its owner, else the Leader — and the Leader whenever that member is gone.
-fn enqueue_message(
+fn leader_of(tx: &Connection, team_id: &str) -> Result<String, ExperimentError> {
+    Ok(tx.query_row(
+        "SELECT leader_member_id FROM teams WHERE id = ?1",
+        [team_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn recipient_of(tx: &Connection, message_id: &str) -> Result<String, ExperimentError> {
+    Ok(tx.query_row(
+        "SELECT to_member_id FROM team_messages WHERE id = ?1",
+        [message_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn insert_message(
+    tx: &Connection,
+    team_id: &str,
+    from: &str,
+    to: &str,
+    task_id: Option<&str>,
+    body: &str,
+) -> Result<String, ExperimentError> {
+    let message_id = Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO team_messages (id, team_id, from_member_id, to_member_id, kind, task_id, body)
+         VALUES (?1, ?2, ?3, ?4, 'system', ?5, ?6)",
+        params![message_id, team_id, from, to, task_id, body],
+    )?;
+    Ok(message_id)
+}
+
+/// A message to the Team's Leader, whatever the experiment's owner.
+fn enqueue_to_leader(
     tx: &Connection,
     experiment: &Experiment,
     body: &str,
@@ -1346,11 +1510,31 @@ fn enqueue_message(
         .team_id
         .as_deref()
         .ok_or(ExperimentError::NotFound)?;
-    let leader: String = tx.query_row(
-        "SELECT leader_member_id FROM teams WHERE id = ?1",
-        [team_id],
-        |row| row.get(0),
-    )?;
+    let leader = leader_of(tx, team_id)?;
+    insert_message(
+        tx,
+        team_id,
+        &leader,
+        &leader,
+        experiment.task_id.as_deref(),
+        body,
+    )
+}
+
+/// Who is told about an experiment: `hint` if given (the owner of the wait an
+/// event concerns), else the member who last waited on it, else its owner,
+/// else the Leader — and the Leader whenever that member is gone.
+fn enqueue_message(
+    tx: &Connection,
+    experiment: &Experiment,
+    body: &str,
+    hint: Option<&str>,
+) -> Result<String, ExperimentError> {
+    let team_id = experiment
+        .team_id
+        .as_deref()
+        .ok_or(ExperimentError::NotFound)?;
+    let leader = leader_of(tx, team_id)?;
     let latest_wait: Option<(String, Option<String>)> = tx
         .query_row(
             "SELECT owner_member_id, task_id FROM experiment_waits
@@ -1363,8 +1547,9 @@ fn enqueue_message(
         .task_id
         .clone()
         .or_else(|| latest_wait.as_ref().and_then(|(_, task)| task.clone()));
-    let candidate = latest_wait
-        .map(|(member, _)| member)
+    let candidate = hint
+        .map(str::to_owned)
+        .or_else(|| latest_wait.map(|(member, _)| member))
         .or_else(|| experiment.owner_member_id.clone());
     let recipient = match candidate {
         Some(member) => {
@@ -1380,20 +1565,22 @@ fn enqueue_message(
         }
         None => leader.clone(),
     };
-    let message_id = Uuid::new_v4().to_string();
-    tx.execute(
-        "INSERT INTO team_messages (id, team_id, from_member_id, to_member_id, kind, task_id, body)
-         VALUES (?1, ?2, ?3, ?4, 'system', ?5, ?6)",
-        params![message_id, team_id, leader, recipient, task_id, body],
-    )?;
-    Ok(message_id)
+    insert_message(tx, team_id, &leader, &recipient, task_id.as_deref(), body)
 }
 
 fn describe(experiment: &Experiment, kind: EventKind) -> String {
-    let name = if experiment.label.is_empty() {
+    // The label is Agent-supplied and lands in another member's prompt: keep
+    // it to one short plain line so it cannot pose as an instruction.
+    let label: String = experiment
+        .label
+        .chars()
+        .map(|c| if c.is_control() || c == '"' { ' ' } else { c })
+        .take(80)
+        .collect();
+    let name = if label.trim().is_empty() {
         experiment.id.as_str()
     } else {
-        experiment.label.as_str()
+        label.trim()
     };
     match kind {
         EventKind::Finished if experiment.state == ExperimentState::Unknown => format!(

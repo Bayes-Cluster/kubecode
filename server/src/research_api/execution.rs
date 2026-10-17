@@ -76,13 +76,24 @@ pub(crate) struct ArtifactStateView {
 }
 
 pub(crate) fn experiment_view(state: &AppState, experiment: Experiment) -> ExperimentView {
+    let workspace_path = experiment
+        .team_id
+        .as_deref()
+        .and_then(|team_id| state.teams.get_team(team_id).ok())
+        .and_then(|team| team.workspace_path);
     let artifact_state = experiment
         .artifact_revisions
         .iter()
         .map(|artifact| {
+            // Resolved where the process ran: the Team's worktree if it has
+            // one, otherwise the Project.
             let current = state
                 .workspace
-                .file_revision(&experiment.project_id, &artifact.path)
+                .execution_file_revision(
+                    &experiment.project_id,
+                    workspace_path.as_deref(),
+                    &artifact.path,
+                )
                 .ok();
             let availability = match (&artifact.revision, current) {
                 // The file did not exist when the process ended.
@@ -282,6 +293,12 @@ async fn launch(
         .as_deref()
         .and_then(|team_id| state.teams.get_team(team_id).ok())
         .map(|team| team.leader_member_id);
+    // Sources must exist in this Project, like a round's.
+    let sources = request
+        .sources
+        .iter()
+        .map(|source| super::rounds::validate_source(&state, &project_id, source))
+        .collect::<Result<Vec<_>, _>>()?;
     let experiment = state
         .experiment_runner
         .launch(
@@ -297,7 +314,7 @@ async fn launch(
                 argv: request.argv,
                 cwd: request.cwd,
                 artifacts: request.artifacts,
-                sources: request.sources,
+                sources,
                 max_runtime_secs: request.max_runtime_secs,
             },
         )
