@@ -33,16 +33,19 @@ fn dropped_variant_marker(update: &SessionUpdate) -> PersistedSessionUpdate {
         payload: json!({ "variant": variant, "count": count }),
         publish_session_state: false,
         title_update: None,
+        media: None,
     }
 }
 
 use agent_client_protocol::schema::MaybeUndefined;
-use agent_client_protocol::schema::v1::SessionUpdate;
+use agent_client_protocol::schema::v1::{ContentBlock, ResourceLink, SessionUpdate};
 use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::agent_store::AgentMediaRef;
 use crate::agents::{AgentEventKind, AgentStore, RuntimeRunEvent, RuntimeUpdate, StoreError};
+use crate::shared_media::{MAX_SHARED_CAPTION_CHARS, classify_extension, file_uri_path};
 
 use super::SessionActorGeneration;
 use super::events::{text_event, tool_started, tool_updated};
@@ -54,6 +57,19 @@ struct PersistedSessionUpdate {
     payload: Value,
     publish_session_state: bool,
     title_update: Option<SessionTitleUpdate>,
+    /// Server-side reference recorded before a `media_shared` event
+    /// (boxed: rare, and inline it would bloat every journal command).
+    media: Option<Box<SharedMediaDraft>>,
+}
+
+/// The server-side half of a shared resource link (issue #132); the
+/// published event carries only the opaque id, kind, and MIME.
+#[derive(Clone, Debug)]
+struct SharedMediaDraft {
+    media_id: String,
+    uri: String,
+    declared_size: Option<u64>,
+    caption: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -462,8 +478,34 @@ impl PersistedSessionUpdate {
     }
 }
 
+/// Maps an Agent-shared resource link to a content-free `media_shared`
+/// payload plus its server-side draft. Only `file://` links with an
+/// allowlisted extension qualify; everything else is not media.
+fn shared_media_update(link: &ResourceLink) -> Option<(Value, SharedMediaDraft)> {
+    let path = file_uri_path(&link.uri)?;
+    let (kind, mime) = classify_extension(path.extension()?.to_str()?)?;
+    let media_id = uuid::Uuid::new_v4().to_string();
+    let caption = link
+        .title
+        .as_deref()
+        .or(link.description.as_deref())
+        .map(str::trim)
+        .filter(|caption| !caption.is_empty())
+        .map(|caption| caption.chars().take(MAX_SHARED_CAPTION_CHARS).collect());
+    Some((
+        json!({"media_id": media_id, "kind": kind.as_str(), "mime": mime}),
+        SharedMediaDraft {
+            media_id,
+            uri: link.uri.clone(),
+            declared_size: link.size.and_then(|size| u64::try_from(size).ok()),
+            caption,
+        },
+    ))
+}
+
 fn session_update_event(update: SessionUpdate) -> Option<PersistedSessionUpdate> {
     let mut title_update = None;
+    let mut media = None;
     let event = match update {
         SessionUpdate::UserMessageChunk(chunk) => {
             text_event(AgentEventKind::TextDelta, chunk).map(|(_, payload)| {
@@ -473,8 +515,16 @@ fn session_update_event(update: SessionUpdate) -> Option<PersistedSessionUpdate>
                 ("user_message_delta", None, payload)
             })
         }
-        SessionUpdate::AgentMessageChunk(chunk) => text_event(AgentEventKind::TextDelta, chunk)
-            .map(|(kind, payload)| ("text_delta", Some(kind), payload)),
+        SessionUpdate::AgentMessageChunk(chunk) => match &chunk.content {
+            ContentBlock::ResourceLink(link) => {
+                shared_media_update(link).map(|(payload, draft)| {
+                    media = Some(Box::new(draft));
+                    ("media_shared", Some(AgentEventKind::MediaShared), payload)
+                })
+            }
+            _ => text_event(AgentEventKind::TextDelta, chunk)
+                .map(|(kind, payload)| ("text_delta", Some(kind), payload)),
+        },
         SessionUpdate::AgentThoughtChunk(chunk) => text_event(AgentEventKind::ThinkingDelta, chunk)
             .map(|(kind, payload)| ("thinking_delta", Some(kind), payload)),
         SessionUpdate::ToolCall(tool_call) => {
@@ -527,6 +577,7 @@ fn session_update_event(update: SessionUpdate) -> Option<PersistedSessionUpdate>
                 | "plan"
         ),
         title_update,
+        media,
     })
 }
 
@@ -538,11 +589,31 @@ fn persist_session_event(
     generation: Option<&SessionActorGeneration>,
 ) -> Result<(), StoreError> {
     let title_updates = event.title_update.clone().into_iter().collect::<Vec<_>>();
+    // A shared file outside a run has no recipient and is not recorded.
+    if event.media.is_some() && run_id.is_none() {
+        return Ok(());
+    }
+    let media = event
+        .media
+        .clone()
+        .zip(run_id)
+        .map(|(draft, run_id)| AgentMediaRef {
+            id: draft.media_id,
+            conversation_id: conversation_id.to_owned(),
+            run_id: run_id.to_owned(),
+            uri: draft.uri,
+            declared_size: draft.declared_size,
+            caption: draft.caption,
+        });
     let update = runtime_update(PendingSessionUpdate {
         run_id: run_id.map(str::to_owned),
         event,
     });
     let persist = || {
+        // The reference lands first so no consumer sees an event without it.
+        if let Some(media) = &media {
+            store.record_agent_media(media)?;
+        }
         store.append_runtime_updates(conversation_id, &[update])?;
         apply_session_title_updates(store, conversation_id, &title_updates);
         Ok(())
@@ -713,6 +784,7 @@ mod tests {
             payload: json!({"message_id":message_id, "text":text}),
             publish_session_state: false,
             title_update: None,
+            media: None,
         };
         let mut pending = Vec::new();
         for _ in 0..1_000 {
@@ -738,6 +810,72 @@ mod tests {
             Some(1_000)
         );
         assert_eq!(pending[1].event.payload["text"], "y");
+    }
+
+    #[tokio::test]
+    async fn shared_resource_links_record_a_server_side_ref_and_a_content_free_event() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace = WorkspaceService::open(temp.path(), &database).expect("workspace service");
+        let project = workspace
+            .create_project_at(temp.path().join("media-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(&conversation.id, &project.id, "Share", PermissionMode::Safe)
+            .expect("run");
+        let journal = SessionUpdateJournal::spawn(Arc::clone(&store), conversation.id.clone());
+        let share = |uri: &str| {
+            let mut link = agent_client_protocol::schema::v1::ResourceLink::new("chart.png", uri);
+            link.title = Some("Build chart".into());
+            link.size = Some(42);
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::ResourceLink(link)))
+        };
+        let uri = format!("file://{}/out/chart.png", project.path);
+        journal
+            .enqueue(Some(run.id.clone()), share(&uri))
+            .await
+            .expect("file link");
+        // Non-file links and unsupported types are not media.
+        journal
+            .enqueue(Some(run.id.clone()), share("https://example.com/chart.png"))
+            .await
+            .expect("web link");
+        journal
+            .enqueue(
+                Some(run.id.clone()),
+                share(&format!("file://{}/out/run.sh", project.path)),
+            )
+            .await
+            .expect("script link");
+        // A link outside any run has no recipient and records nothing.
+        journal.enqueue(None, share(&uri)).await.expect("runless");
+        journal.flush().await.expect("flush");
+
+        let events = store.events_after(&run.id, 0).expect("run events");
+        let shared = events
+            .iter()
+            .filter(|event| event.kind == AgentEventKind::MediaShared)
+            .collect::<Vec<_>>();
+        assert_eq!(shared.len(), 1);
+        let payload = &shared[0].payload;
+        assert_eq!(payload["kind"], "image");
+        assert_eq!(payload["mime"], "image/png");
+        assert!(!payload.to_string().contains("chart.png"));
+        assert!(!payload.to_string().contains(&project.path));
+        let media_id = payload["media_id"].as_str().expect("media id");
+        let media = store
+            .agent_media(media_id)
+            .expect("lookup")
+            .expect("recorded");
+        assert_eq!(media.uri, uri);
+        assert_eq!(media.run_id, run.id);
+        assert_eq!(media.declared_size, Some(42));
+        assert_eq!(media.caption.as_deref(), Some("Build chart"));
+        journal.shutdown().await.expect("shutdown");
     }
 
     #[tokio::test]
@@ -1054,6 +1192,7 @@ mod tests {
                 }),
                 publish_session_state: true,
                 title_update: None,
+                media: None,
             },
         };
         let mut stale = vec![event("stale")];

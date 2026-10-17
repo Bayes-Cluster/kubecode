@@ -14,12 +14,17 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::AgentRuntime;
+use crate::agent_store::AgentStore;
+use crate::shared_media::file_uri_path;
+use crate::workspace::{SharedMediaFile, WorkspaceError, WorkspaceService};
 
 use super::client::UpdatesPage;
 use super::error::IlinkError;
 use super::guard::PeerGate;
 use super::inbound::{BridgePrompt, ChannelLanguage, InboundBridge};
-use super::outbound::{OutboundBridge, OutboundConfig, OutboundTransport};
+use super::outbound::{
+    LoadedMedia, MediaRejection, MediaSource, OutboundBridge, OutboundConfig, OutboundTransport,
+};
 use super::router::SessionRouter;
 use super::service::{ILinkService, ServiceError};
 
@@ -88,6 +93,71 @@ impl OutboundTransport for ServiceTransport {
     ) -> BoxFuture<'a, Result<(), IlinkError>> {
         Box::pin(self.service.set_typing(peer_id, typing))
     }
+
+    fn send_media<'a>(
+        &'a self,
+        peer_id: &'a str,
+        media: &'a SharedMediaFile,
+        client_id: &'a str,
+    ) -> BoxFuture<'a, Result<(), IlinkError>> {
+        Box::pin(self.service.send_media(peer_id, media, client_id))
+    }
+}
+
+/// Resolves shared media by opaque id through the store and
+/// `WorkspaceService`, scoped to the conversation that shared it: another
+/// Session's id, a vanished Session, or a path outside the Session
+/// execution root never resolves.
+pub struct WorkspaceMediaSource {
+    store: Arc<AgentStore>,
+    workspace: Arc<WorkspaceService>,
+}
+
+impl WorkspaceMediaSource {
+    pub fn new(store: Arc<AgentStore>, workspace: Arc<WorkspaceService>) -> Arc<Self> {
+        Arc::new(Self { store, workspace })
+    }
+}
+
+impl MediaSource for WorkspaceMediaSource {
+    fn load(&self, conversation_id: &str, media_id: &str) -> Result<LoadedMedia, MediaRejection> {
+        let media = self
+            .store
+            .agent_media(media_id)
+            .ok()
+            .flatten()
+            .filter(|media| media.conversation_id == conversation_id)
+            .ok_or(MediaRejection::Unavailable)?;
+        let conversation = self
+            .store
+            .get_conversation(conversation_id)
+            .map_err(|_| MediaRejection::Unavailable)?;
+        let path = file_uri_path(&media.uri).ok_or(MediaRejection::Ineligible)?;
+        let file = self
+            .workspace
+            .read_shared_media(
+                &conversation.project_id,
+                &conversation.agent_session_id,
+                conversation.execution_mode,
+                conversation.workspace_path.as_deref(),
+                &path,
+                media.declared_size,
+            )
+            .map_err(|error| match error {
+                WorkspaceError::SharedMediaTooLarge => MediaRejection::TooLarge,
+                WorkspaceError::Conflict { .. } => MediaRejection::Changed,
+                WorkspaceError::Io(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    MediaRejection::Changed
+                }
+                WorkspaceError::ProjectNotFound(_)
+                | WorkspaceError::SessionWorkspaceUnavailable => MediaRejection::Unavailable,
+                _ => MediaRejection::Ineligible,
+            })?;
+        Ok(LoadedMedia {
+            file,
+            caption: media.caption,
+        })
+    }
 }
 
 /// The running channel pipeline.
@@ -108,7 +178,8 @@ impl ChannelBridge {
         config: ChannelBridgeConfig,
     ) -> Result<Arc<Self>, ServiceError> {
         let transport = ServiceTransport::new(Arc::clone(&service));
-        Self::start_with_transport(service, runtime, transport, config).await
+        let media = WorkspaceMediaSource::new(runtime.store(), runtime.workspace_service());
+        Self::start_with_transport(service, runtime, transport, Some(media), config).await
     }
 
     /// Builds and starts the pipeline with an explicit transport (tests
@@ -117,6 +188,7 @@ impl ChannelBridge {
         service: Arc<ILinkService>,
         runtime: Arc<AgentRuntime>,
         transport: Arc<dyn OutboundTransport>,
+        media: Option<Arc<dyn MediaSource>>,
         config: ChannelBridgeConfig,
     ) -> Result<Arc<Self>, ServiceError> {
         let store = runtime.store();
@@ -125,6 +197,7 @@ impl ChannelBridge {
             Arc::clone(&store),
             transport,
             Some(Arc::clone(&router)),
+            media,
             config.outbound,
         );
         let inbound = InboundBridge::new(
@@ -161,13 +234,14 @@ impl ChannelBridge {
         self.service.set_page_sink(None).await;
         self.cancel.cancel();
         let tasks = std::mem::take(&mut *self.tasks.lock().await);
-        for task in tasks {
-            if tokio::time::timeout(Duration::from_secs(5), task)
+        for mut task in tasks {
+            // A wedged loop (e.g. a slow upload) must not hold Runtime
+            // shutdown hostage: abort it after a bounded grace period.
+            if tokio::time::timeout(Duration::from_secs(5), &mut task)
                 .await
                 .is_err()
             {
-                // A wedged loop must not hold Runtime shutdown hostage.
-                continue;
+                task.abort();
             }
         }
     }

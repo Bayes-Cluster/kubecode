@@ -288,13 +288,15 @@ impl CdnClient {
         ))
     }
 
-    /// Renders the outbound `CdnMedia` reference for an uploaded file:
-    /// hex `aeskey` re-encoded as base64 bytes, matching upstream sends.
+    /// Renders the outbound `CdnMedia` reference for an uploaded file,
+    /// matching the reviewed upstream send path byte for byte: `aes_key` is
+    /// base64 of the 32-character *hex string* (upstream
+    /// `Buffer.from(aeskeyHex).toString("base64")`), and `encrypt_type` is 1.
     pub fn media_reference(upload: &UploadedMedia) -> CdnMedia {
         CdnMedia {
             encrypt_query_param: Some(upload.download_encrypted_query_param.clone()),
-            aes_key: Some(BASE64.encode(hex::decode(&upload.aeskey_hex).unwrap_or_default())),
-            encrypt_type: None,
+            aes_key: Some(BASE64.encode(upload.aeskey_hex.as_bytes())),
+            encrypt_type: Some(1),
             full_url: None,
         }
     }
@@ -350,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn media_reference_re_encodes_the_key_for_the_wire() {
+    fn media_reference_matches_the_upstream_send_encoding() {
         let upload = UploadedMedia {
             filekey: "filekey".into(),
             download_encrypted_query_param: "param".into(),
@@ -359,9 +361,18 @@ mod tests {
             file_size_ciphertext: 16,
         };
         let media = CdnClient::media_reference(&upload);
+        // Upstream: Buffer.from("00112233…eeff").toString("base64").
         assert_eq!(
-            parse_cdn_aes_key(media.aes_key.as_deref().expect("aes_key")).expect("key")[0],
-            0x00
+            media.aes_key.as_deref(),
+            Some("MDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmY=")
+        );
+        assert_eq!(media.encrypt_type, Some(1));
+        // The receiving side decodes it back to the same 16-byte key.
+        assert_eq!(
+            hex::encode(
+                parse_cdn_aes_key(media.aes_key.as_deref().expect("aes_key")).expect("key")
+            ),
+            upload.aeskey_hex
         );
         assert_eq!(media.encrypt_query_param.as_deref(), Some("param"));
     }

@@ -403,7 +403,9 @@ fn workspace_error_status(error: &WorkspaceError) -> (StatusCode, &'static str) 
         | WorkspaceError::IneligibleContext(_)
         | WorkspaceError::UnsupportedText
         | WorkspaceError::FileTooLarge => (StatusCode::BAD_REQUEST, "invalid_path"),
-        WorkspaceError::AssetTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large"),
+        WorkspaceError::AssetTooLarge | WorkspaceError::SharedMediaTooLarge => {
+            (StatusCode::PAYLOAD_TOO_LARGE, "asset_too_large")
+        }
         WorkspaceError::ProjectNotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         WorkspaceError::DuplicateProject(_) => (StatusCode::CONFLICT, "duplicate_project"),
         WorkspaceError::Git(_) => (StatusCode::CONFLICT, "git_worktree_error"),

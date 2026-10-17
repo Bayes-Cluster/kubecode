@@ -2,6 +2,7 @@ mod composer;
 mod conversations;
 mod events;
 mod ilink;
+mod media;
 mod models;
 mod permissions;
 mod prompt_queue;
@@ -12,6 +13,7 @@ pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventB
 pub use ilink::{
     ILINK_DEDUPE_KEEP, ILINK_QUICK_PROMPT_SLOTS, IlinkAccount, IlinkCredentialRecord, IlinkPeer,
 };
+pub use media::{AGENT_MEDIA_KEEP, AgentMediaRef};
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
     ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
@@ -189,6 +191,17 @@ impl AgentStore {
                account_id      TEXT PRIMARY KEY REFERENCES ilink_accounts(account_id),
                conversation_id TEXT NOT NULL REFERENCES conversations(id),
                bound_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             -- Agent-shared media references (issue #132): the URI stays
+             -- server-side; events carry only the opaque id.
+             CREATE TABLE IF NOT EXISTS agent_media_refs (
+               id              TEXT PRIMARY KEY,
+               conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+               run_id          TEXT NOT NULL,
+               uri             TEXT NOT NULL,
+               declared_size   INTEGER,
+               caption         TEXT,
+               created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE TABLE IF NOT EXISTS ilink_quick_prompts (
                account_id TEXT NOT NULL REFERENCES ilink_accounts(account_id),

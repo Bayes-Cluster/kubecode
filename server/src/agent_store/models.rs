@@ -117,6 +117,8 @@ pub enum AgentEventKind {
     SessionInfo,
     ElicitationRequested,
     ElicitationResolved,
+    /// An Agent shared a file through a structured resource link (#132).
+    MediaShared,
     Error,
     RunCompleted,
 }
@@ -352,6 +354,7 @@ string_enum!(AgentEventKind, {
     AgentEventKind::SessionInfo => "session_info",
     AgentEventKind::ElicitationRequested => "elicitation_requested",
     AgentEventKind::ElicitationResolved => "elicitation_resolved",
+    AgentEventKind::MediaShared => "media_shared",
     AgentEventKind::Error => "error",
     AgentEventKind::RunCompleted => "run_completed",
 });
