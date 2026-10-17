@@ -233,6 +233,18 @@ async fn workspace_sse_reconnects_from_after_or_last_event_id_without_duplicates
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn workspace_sse_slow_consumer_does_not_delay_writers_or_fast_consumers() {
+    // Calibrate against this machine's commit latency: the same 64 durable
+    // writes with no consumers at all. A slow consumer must not stretch the
+    // contended run far beyond that baseline (fixed budgets fail on storage
+    // with slow fsync, where 64 FULL-sync commits alone can exceed 2s).
+    let budget = {
+        let (_temp, _database, baseline_store, _app) = workspace_sse_app();
+        let started = std::time::Instant::now();
+        for value in 0..64 {
+            append_test_workspace_event(&baseline_store, value);
+        }
+        Duration::from_secs(2).max(started.elapsed() * 3)
+    };
     let (_temp, _database, store, app) = workspace_sse_app();
     let slow = workspace_sse_reader(&app, 0, None).await;
     let first_fast = workspace_sse_reader(&app, 0, None).await;
@@ -246,15 +258,15 @@ async fn workspace_sse_slow_consumer_does_not_delay_writers_or_fast_consumers() 
     let first_consumer = tokio::spawn(collect_workspace_event_ids(first_fast, 64));
     let second_consumer = tokio::spawn(collect_workspace_event_ids(second_fast, 64));
 
-    let expected = tokio::time::timeout(Duration::from_secs(2), writer)
+    let expected = tokio::time::timeout(budget, writer)
         .await
         .expect("workspace writer was not blocked")
         .expect("workspace writer task");
-    let first_received = tokio::time::timeout(Duration::from_secs(2), first_consumer)
+    let first_received = tokio::time::timeout(budget, first_consumer)
         .await
         .expect("first fast consumer")
         .expect("first consumer task");
-    let second_received = tokio::time::timeout(Duration::from_secs(2), second_consumer)
+    let second_received = tokio::time::timeout(budget, second_consumer)
         .await
         .expect("second fast consumer")
         .expect("second consumer task");
