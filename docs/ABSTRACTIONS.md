@@ -889,6 +889,25 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   brief, source availability, and earlier-round summaries from the `research`
   section of `team_get_context`; promoting a linked Session carries its
   association to the new Team.
+- **Findings and outcomes.** Returned work is stored as attributed records, not
+  facts. A publication is one idempotent batch (unique key per RQ; the same key
+  with different content is refused) with fixed provenance — the producing
+  Session, Team, task, or run, and the round — and holds findings of kind
+  `finding`, `attempt`, `limitation`, or `open_question`, each with validated
+  evidence references. The server, not the author, sets the basis: a statement
+  with evidence is an `observation`; one without stays an attributed
+  `interpretation`. Anything that would change the approved direction is a
+  `proposal` entry. A researcher accepts or rejects it, which records a
+  `decision` entry; the brief changes only when the researcher edits it as a new
+  revision. The Leader publishes through `team_publish_research`; Solo work is
+  captured explicitly by the researcher, attributed to the researcher and citing
+  the linked Session. Completing a linked Team writes one pending outcome in the
+  same transaction as the completion (so it is never lost or duplicated);
+  recording a publication for that Team resolves it, or the researcher declines
+  it. Evidence resolves to `available`, `changed`, or `removed` on every read, so
+  a deleted Session or edited file is reported, not trusted. Later rounds receive
+  recent findings with that state in `team_get_context`. Neither publishing nor
+  completing a Team resolves the RQ.
 
 ## Conversation reducer
 

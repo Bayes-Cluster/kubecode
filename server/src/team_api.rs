@@ -659,6 +659,7 @@ async fn complete_team(
             None,
         )?;
     }
+    state.research.announce_committed();
     publish_team_event(&state, &completed.id, "team_completed");
     Ok(Json(snapshot(&state, completed)?))
 }

@@ -340,6 +340,69 @@ export type ResearchEntry = {
   brief_revision: number
   created_at: string
 }
+export type ResearchFindingKind = 'finding' | 'attempt' | 'limitation' | 'open_question'
+/** Only evidence makes an observation; everything else is an attributed interpretation. */
+export type ResearchFindingBasis = 'observation' | 'interpretation'
+export type ResearchOutcomeStatus = 'pending' | 'recorded' | 'declined'
+export type ResearchReviewDecision = 'accepted' | 'rejected'
+export type ResearchProducer = {
+  session_id: string | null
+  team_id: string | null
+  task_id: string | null
+  run_id: string | null
+}
+export type ResearchEvidenceView = ResearchSourceRef & { availability: ResearchSourceAvailability }
+export type ResearchFinding = {
+  id: string
+  research_id: string
+  publication_id: string
+  seq: number
+  kind: ResearchFindingKind
+  basis: ResearchFindingBasis
+  statement: string
+  evidence: ResearchSourceRef[]
+  evidence_state: ResearchEvidenceView[]
+  producer_state: ResearchEvidenceView[]
+  author_kind: ResearchAuthorKind
+  author_ref: string | null
+  producer: ResearchProducer
+  round_id: string | null
+  brief_revision: number
+  /** The brief has moved on since the producing round consumed it. */
+  stale: boolean
+  created_at: string
+}
+export type CaptureResearchFindingsRequest = {
+  /** Retry key: repeating it returns the stored batch. */
+  publication_key: string
+  /** The linked Session or Team the outcome came from. At least one. */
+  session_id?: string
+  team_id?: string
+  round_id?: string
+  findings: Array<{
+    kind: ResearchFindingKind
+    statement: string
+    evidence?: Array<Pick<ResearchSourceRef, 'kind' | 'id'>>
+  }>
+}
+export type CaptureResearchFindingsResponse = { created: boolean; findings: ResearchFinding[] }
+/** A completed Team whose results are not yet recorded, recorded, or declined. */
+export type ResearchOutcome = {
+  team_id: string
+  research_id: string
+  round_id: string | null
+  status: ResearchOutcomeStatus
+  publication_id: string | null
+  created_at: string
+  resolved_at: string | null
+}
+export type ResearchProposalReview = {
+  entry_id: string
+  decision: ResearchReviewDecision
+  note: string | null
+  decided_at: string
+}
+export type ResearchProposal = { entry: ResearchEntry; review: ResearchProposalReview | null }
 export type ResearchRevisionSummary = {
   revision: number
   title: string

@@ -1136,6 +1136,43 @@ describe('Kubecode API client', () => {
       expect(fetch.mock.calls[3][1].method).toBe('POST')
     })
 
+    it('captures findings, declines outcomes, and reviews proposals through the dedicated routes', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await api.listResearchFindings('p', 'r')
+      await api.captureResearchFindings('p', 'r', {
+        publication_key: 'k-1',
+        team_id: 't/1',
+        findings: [{ kind: 'finding', statement: 'Held', evidence: [{ kind: 'file', id: 'a b.csv' }] }],
+      })
+      await api.listResearchOutcomes('p', 'r')
+      await api.declineResearchOutcome('p', 'r', 't/1')
+      await api.listResearchProposals('p', 'r')
+      await api.reviewResearchProposal('p', 'r', 'e/1', 'accepted', 'agreed')
+
+      const urls = fetch.mock.calls.map((call) => call[0])
+      expect(urls).toEqual([
+        '/b/api/v1/projects/p/research/r/findings',
+        '/b/api/v1/projects/p/research/r/findings',
+        '/b/api/v1/projects/p/research/r/outcomes',
+        '/b/api/v1/projects/p/research/r/outcomes/t%2F1/decline',
+        '/b/api/v1/projects/p/research/r/proposals',
+        '/b/api/v1/projects/p/research/r/proposals/e%2F1/review',
+      ])
+      expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+        publication_key: 'k-1',
+        team_id: 't/1',
+        findings: [{ kind: 'finding', statement: 'Held', evidence: [{ kind: 'file', id: 'a b.csv' }] }],
+      })
+      expect(fetch.mock.calls[3][1].method).toBe('POST')
+      expect(JSON.parse(fetch.mock.calls[5][1].body)).toEqual({
+        decision: 'accepted',
+        note: 'agreed',
+      })
+    })
+
     it('links and unlinks Sessions and Teams and reads revisions', async () => {
       const fetch = vi.fn().mockImplementation(async () => ok({}))
       vi.stubGlobal('fetch', fetch)

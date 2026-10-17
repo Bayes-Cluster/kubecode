@@ -108,12 +108,15 @@ store implementations.
 
 Research questions (ADR 0212) are a third feature store on the same SQLite
 owner. `server/src/research_store/` owns the domain — questions, immutable
-brief revisions, the attributed entry log, and Session/Team associations —
-and `server/src/research_api.rs` exposes it under
+brief revisions, the attributed entry log, Session/Team associations,
+rounds, and findings with their publications — and `server/src/research_api/`
+exposes it under
 `/api/v1/projects/{project_id}/research`, composed through `AppState`. The store
 commits its `research_updated` workspace event in the same transaction as each
 change. It never starts an Agent; execution continues to flow through the Team
-and run-admission paths.
+and run-admission paths. The one cross-store write is deliberate: completing a
+Team linked to a question records a pending research outcome inside the Team's
+own completion transaction, so the hand-off cannot be lost or repeated.
 
 The browser workspace follows the same composition pattern.
 `src/kubecode/app/` owns application bootstrap, navigation, dialogs, preferences,

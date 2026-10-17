@@ -29,7 +29,7 @@ use crate::teams::{
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since. Before team_complete the Leader calls team_publish_research to record findings, failed approaches, limitations, open questions, and proposals; earlier findings in the research section are attributed records to build on, not established fact, and evidence marked changed or removed no longer proves what it did.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -60,6 +60,7 @@ impl TeamMcpServer {
                 "team_propose_lineup",
             ],
             TeamRole::Teammate => &[
+                "team_publish_research",
                 "team_list_available_agents",
                 "team_propose_lineup",
                 "team_spawn_teammate",
@@ -80,6 +81,7 @@ impl TeamMcpServer {
                 "team_read_inbox",
             ],
             TeamRole::Discriminator => &[
+                "team_publish_research",
                 "team_list_available_agents",
                 "team_propose_lineup",
                 "team_spawn_teammate",
@@ -203,6 +205,38 @@ struct SubmitVerdictInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CompleteTeamInput {
     final_summary: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+struct EvidenceInput {
+    /// One of: session, run, team, team_task, file.
+    kind: String,
+    /// The record id, or a Project-relative path for a file.
+    id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+struct PublishFindingInput {
+    /// One of: finding, attempt, limitation, open_question.
+    kind: String,
+    statement: String,
+    /// Sources that support the statement. A statement without evidence is
+    /// recorded as your attributed interpretation, not as an observation.
+    #[serde(default)]
+    evidence: Vec<EvidenceInput>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+struct PublishResearchInput {
+    /// Retry key. Optional: repeating an identical call is already
+    /// idempotent; supply one to publish several batches with the same text.
+    publication_key: Option<String>,
+    #[serde(default)]
+    findings: Vec<PublishFindingInput>,
+    /// Suggested changes to the approved research direction. A researcher
+    /// must accept them; they never change the brief by themselves.
+    #[serde(default)]
+    proposals: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1176,8 +1210,123 @@ impl TeamMcpServer {
                 None,
             );
         }
+        if let Some(research) = &self.context.research {
+            research.announce_committed();
+        }
         publish_team_event(&self.context, "team_completed", None);
         json_output(&completed)
+    }
+
+    #[tool(
+        description = "Leader only: publish this Team's research outcome to its research question before calling team_complete. Record findings, attempted approaches (including failed ones), limitations, and open questions, each citing evidence sources (session, run, team, team_task, or Project-relative file). Unsupported claims are stored as attributed interpretations. Put anything that would change the approved direction in proposals; a researcher decides on them. Safe to retry. Publishing never resolves the research question."
+    )]
+    async fn team_publish_research(
+        &self,
+        Parameters(input): Parameters<PublishResearchInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::research_api::sources::SourceResolver;
+        use crate::research_store::{
+            AuthorKind, FindingKind, LinkKind, NewFinding, NewPublication, Producer, SourceKind,
+            SourceRef,
+        };
+        self.require_leader()?;
+        let research = self
+            .context
+            .research
+            .clone()
+            .ok_or_else(|| mcp_error("research is not available"))?;
+        let team_id = self.context.member.team_id.clone();
+        let (project_id, link) = research
+            .link_for(LinkKind::Team, &team_id)
+            .map_err(mcp_error)?
+            .ok_or_else(|| mcp_error("this Team is not linked to a research question"))?;
+        let round_id = research
+            .round_for_team(&team_id)
+            .map_err(mcp_error)?
+            .map(|(_, round)| round.id);
+        let key = match input
+            .publication_key
+            .clone()
+            .filter(|key| !key.trim().is_empty())
+        {
+            Some(key) => key,
+            None => {
+                let digest = serde_json::to_string(&input).map_err(mcp_error)?;
+                format!(
+                    "team-{}",
+                    &hex::encode(<sha2::Sha256 as sha2::Digest>::digest(format!(
+                        "{team_id}:{digest}"
+                    )))[..24]
+                )
+            }
+        };
+        let workspace = self.context.runtime.workspace_service();
+        let resolver = SourceResolver {
+            agents: self.context.runtime.store_ref(),
+            teams: &self.context.teams,
+            workspace: &workspace,
+        };
+        let findings = input
+            .findings
+            .iter()
+            .map(|finding| {
+                let kind = FindingKind::parse(&finding.kind)
+                    .ok_or_else(|| mcp_error(format!("unknown finding kind: {}", finding.kind)))?;
+                let evidence = finding
+                    .evidence
+                    .iter()
+                    .map(|source| {
+                        let kind = SourceKind::parse(&source.kind).ok_or_else(|| {
+                            mcp_error(format!("unknown evidence kind: {}", source.kind))
+                        })?;
+                        resolver
+                            .validate(
+                                &project_id,
+                                &SourceRef {
+                                    kind,
+                                    id: source.id.clone(),
+                                    revision: None,
+                                },
+                            )
+                            .map_err(|_| {
+                                mcp_error(format!(
+                                    "evidence {}:{} was not found in this Project",
+                                    source.kind, source.id
+                                ))
+                            })
+                    })
+                    .collect::<Result<Vec<_>, McpError>>()?;
+                Ok(NewFinding {
+                    kind,
+                    statement: finding.statement.clone(),
+                    evidence,
+                })
+            })
+            .collect::<Result<Vec<_>, McpError>>()?;
+        let outcome = research
+            .publish(
+                &project_id,
+                &link.research_id,
+                NewPublication {
+                    key,
+                    author_kind: AuthorKind::Agent,
+                    author_ref: Some(self.context.member.id.clone()),
+                    producer: Producer {
+                        team_id: Some(team_id),
+                        ..Producer::default()
+                    },
+                    round_id,
+                    findings,
+                    proposals: input.proposals.clone(),
+                },
+            )
+            .map_err(mcp_error)?;
+        json_output(&serde_json::json!({
+            "created": outcome.created,
+            "publication_id": outcome.publication.id,
+            "findings": outcome.findings.len(),
+            "proposals": outcome.proposals.len(),
+        }))
     }
 
     #[tool(
@@ -1552,6 +1701,9 @@ fn tool_context(
 const PREVIOUS_SUMMARY_CHARS: usize = 2_000;
 /// Earlier rounds shown, newest first.
 const PREVIOUS_ROUNDS: usize = 5;
+/// Earlier findings shown, newest first, each bounded.
+const CONTEXT_FINDINGS: usize = 20;
+const CONTEXT_FINDING_CHARS: usize = 1_000;
 
 /// The research context of the Team's round, or `null` for a Team that is not
 /// part of one. The brief is the immutable revision the round consumed — not
@@ -1619,6 +1771,36 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
             })
         })
         .collect();
+    let mut earlier_findings = research
+        .findings(&project_id, &round.research_id)
+        .unwrap_or_default();
+    earlier_findings.reverse();
+    let findings: Vec<_> = earlier_findings
+        .into_iter()
+        .take(CONTEXT_FINDINGS)
+        .map(|finding| {
+            let evidence: Vec<_> = finding
+                .evidence
+                .iter()
+                .map(|source| {
+                    serde_json::json!({
+                        "kind": source.kind,
+                        "id": source.id,
+                        "availability": resolver.resolve(&project_id, source),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "kind": finding.kind,
+                "basis": finding.basis,
+                "statement": finding.statement.chars().take(CONTEXT_FINDING_CHARS).collect::<String>(),
+                "author_kind": finding.author_kind,
+                "round_id": finding.round_id,
+                "brief_revision": finding.brief_revision,
+                "evidence": evidence,
+            })
+        })
+        .collect();
     serde_json::json!({
         "research_id": round.research_id,
         "round": round.round,
@@ -1629,6 +1811,7 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
         "instruction": instruction,
         "sources": sources,
         "previous_rounds": previous,
+        "findings": findings,
     })
 }
 
@@ -1926,6 +2109,169 @@ mod research_context_tests {
         );
         assert_eq!(first_value["research"]["stale"], true);
         assert_eq!(first_value["research"]["current_revision"], 2);
+    }
+
+    fn text(result: CallToolResult) -> serde_json::Value {
+        let text = result
+            .content
+            .iter()
+            .find_map(|content| content.as_text().map(|text| text.text.clone()))
+            .expect("text content");
+        serde_json::from_str(&text).expect("JSON")
+    }
+
+    #[tokio::test]
+    async fn the_leader_publishes_attributed_findings_once_and_later_rounds_see_them() {
+        let fixture = fixture();
+        let (question, _) = fixture
+            .research
+            .create(
+                &fixture.project_id,
+                ResearchBrief {
+                    title: "Pruning".into(),
+                    question: "Does pruning keep accuracy?".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("question");
+        let (team, leader) = team_with_leader(&fixture, "Team");
+        let (round, _) = fixture
+            .research
+            .begin_round(
+                &fixture.project_id,
+                &question.id,
+                NewRound {
+                    kind: RoundKind::Team,
+                    idempotency_key: "a",
+                    expected_revision: 1,
+                    request: serde_json::json!({}),
+                    sources: Vec::new(),
+                },
+            )
+            .expect("round");
+        fixture
+            .research
+            .round_set_session(
+                &fixture.project_id,
+                &question.id,
+                &round.id,
+                &team.agent_session_id,
+            )
+            .expect("session");
+        fixture
+            .research
+            .round_attach_team(&fixture.project_id, &question.id, &round.id, &team.id)
+            .expect("attach");
+
+        let server = TeamMcpServer::new(context(&fixture, leader.clone()));
+        let input = || PublishResearchInput {
+            publication_key: None,
+            findings: vec![
+                PublishFindingInput {
+                    kind: "finding".into(),
+                    statement: "Layer 4 tolerates pruning".into(),
+                    evidence: vec![EvidenceInput {
+                        kind: "team".into(),
+                        id: team.id.clone(),
+                    }],
+                },
+                PublishFindingInput {
+                    kind: "attempt".into(),
+                    statement: "Unstructured pruning diverged".into(),
+                    evidence: Vec::new(),
+                },
+            ],
+            proposals: vec!["Drop the single-GPU constraint".into()],
+        };
+        let first = text(
+            server
+                .team_publish_research(Parameters(input()))
+                .await
+                .expect("publish"),
+        );
+        let replay = text(
+            server
+                .team_publish_research(Parameters(input()))
+                .await
+                .expect("replay"),
+        );
+        assert_eq!(first["created"], true);
+        assert_eq!(replay["created"], false);
+        assert_eq!(first["publication_id"], replay["publication_id"]);
+        let stored = fixture
+            .research
+            .findings(&fixture.project_id, &question.id)
+            .expect("findings");
+        assert_eq!(stored.len(), 2, "a retry must not duplicate findings");
+        assert_eq!(stored[0].basis.as_str(), "observation");
+        assert_eq!(
+            stored[1].basis.as_str(),
+            "interpretation",
+            "an unsupported claim stays an attributed interpretation"
+        );
+        assert_eq!(stored[0].author_kind.as_str(), "agent");
+        assert_eq!(
+            stored[0].producer.team_id.as_deref(),
+            Some(team.id.as_str())
+        );
+        assert_eq!(stored[0].round_id.as_deref(), Some(round.id.as_str()));
+        let proposals = fixture
+            .research
+            .proposals(&fixture.project_id, &question.id)
+            .expect("proposals");
+        assert_eq!(proposals.len(), 1);
+        assert!(proposals[0].review.is_none());
+        let unchanged = fixture
+            .research
+            .get(&fixture.project_id, &question.id)
+            .expect("question");
+        assert_eq!(
+            (unchanged.revision, unchanged.status.as_str()),
+            (1, "open"),
+            "publishing never edits the brief or resolves the question"
+        );
+
+        // Evidence that is not in the Project is refused, and nothing is
+        // stored for the rejected call.
+        let mut bad = input();
+        bad.publication_key = Some("bad".into());
+        bad.findings[0].evidence[0].id = "missing-team".into();
+        assert!(server.team_publish_research(Parameters(bad)).await.is_err());
+        assert_eq!(
+            fixture
+                .research
+                .findings(&fixture.project_id, &question.id)
+                .expect("findings")
+                .len(),
+            2
+        );
+
+        // The next member context carries the findings, with state.
+        let value = team_context(context(&fixture, leader)).await;
+        let findings = value["research"]["findings"].as_array().expect("findings");
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[1]["evidence"][0]["availability"], "available");
+        assert_eq!(findings[0]["basis"], "interpretation", "newest first");
+    }
+
+    #[tokio::test]
+    async fn only_the_leader_of_a_linked_team_can_publish() {
+        let fixture = fixture();
+        let (_, leader) = team_with_leader(&fixture, "Unlinked");
+        let server = TeamMcpServer::new(context(&fixture, leader));
+        let result = server
+            .team_publish_research(Parameters(PublishResearchInput {
+                publication_key: None,
+                findings: vec![PublishFindingInput {
+                    kind: "finding".into(),
+                    statement: "x".into(),
+                    evidence: Vec::new(),
+                }],
+                proposals: Vec::new(),
+            }))
+            .await;
+        assert!(result.is_err(), "an unlinked Team has nowhere to publish");
     }
 
     #[tokio::test]

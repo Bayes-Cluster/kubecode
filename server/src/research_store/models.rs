@@ -16,6 +16,10 @@ pub const MAX_NOTE_CHARS: usize = 500;
 pub const MAX_CLIENT_REQUEST_ID_CHARS: usize = 128;
 pub const DEFAULT_ENTRY_PAGE: usize = 100;
 pub const MAX_ENTRY_PAGE: usize = 500;
+pub const MAX_STATEMENT_CHARS: usize = 4_000;
+pub const MAX_PUBLICATION_FINDINGS: usize = 20;
+pub const MAX_PUBLICATION_PROPOSALS: usize = 5;
+pub const MAX_FINDING_EVIDENCE: usize = 10;
 
 #[derive(Debug, Error)]
 pub enum ResearchError {
@@ -39,6 +43,12 @@ pub enum ResearchError {
     KeyReuse,
     #[error("research round state conflict: {0}")]
     RoundState(&'static str),
+    #[error("research entry not found")]
+    EntryNotFound,
+    #[error("no pending outcome for this Team")]
+    OutcomeNotFound,
+    #[error("this proposal was already decided differently")]
+    ReviewConflict,
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -510,5 +520,190 @@ mod tests {
         assert!(!EntryKind::Observation.researcher_recordable());
         assert_eq!(EntryKind::parse("decision"), Some(EntryKind::Decision));
         assert_eq!(EntryKind::parse("nope"), None);
+    }
+}
+
+text_enum!(FindingKind {
+    Finding => "finding",
+    Attempt => "attempt",
+    Limitation => "limitation",
+    OpenQuestion => "open_question",
+});
+
+// How a finding is held. Only a statement that cites evidence can be an
+// `observation`; anything unsupported stays an attributed `interpretation`
+// (ADR 0212 §7). The server decides this, never the author.
+text_enum!(FindingBasis {
+    Observation => "observation",
+    Interpretation => "interpretation",
+});
+
+text_enum!(OutcomeStatus {
+    Pending => "pending",
+    Recorded => "recorded",
+    Declined => "declined",
+});
+
+text_enum!(ReviewDecision {
+    Accepted => "accepted",
+    Rejected => "rejected",
+});
+
+/// One finding as submitted. Evidence must already be validated by the
+/// caller's `SourceResolver`; the store keeps identifiers only.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NewFinding {
+    pub kind: FindingKind,
+    pub statement: String,
+    #[serde(default)]
+    pub evidence: Vec<SourceRef>,
+}
+
+/// The execution that produced a publication. Provenance is fixed here, not
+/// per finding, so one batch cannot claim several origins.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Producer {
+    pub session_id: Option<String>,
+    pub team_id: Option<String>,
+    pub task_id: Option<String>,
+    pub run_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewPublication {
+    /// Idempotency key, unique per question.
+    pub key: String,
+    pub author_kind: AuthorKind,
+    pub author_ref: Option<String>,
+    pub producer: Producer,
+    pub round_id: Option<String>,
+    pub findings: Vec<NewFinding>,
+    /// Suggested changes to the approved direction. They become `proposal`
+    /// entries that wait for a researcher decision.
+    pub proposals: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Publication {
+    pub id: String,
+    pub research_id: String,
+    pub key: String,
+    pub author_kind: AuthorKind,
+    pub author_ref: Option<String>,
+    pub producer: Producer,
+    pub round_id: Option<String>,
+    pub brief_revision: u64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Finding {
+    pub id: String,
+    pub research_id: String,
+    pub publication_id: String,
+    pub seq: u64,
+    pub kind: FindingKind,
+    pub basis: FindingBasis,
+    pub statement: String,
+    pub evidence: Vec<SourceRef>,
+    pub author_kind: AuthorKind,
+    pub author_ref: Option<String>,
+    pub producer: Producer,
+    pub round_id: Option<String>,
+    /// The brief revision the producing round consumed (or the current one
+    /// for work captured outside a round).
+    pub brief_revision: u64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct PublishOutcome {
+    pub publication: Publication,
+    pub findings: Vec<Finding>,
+    pub proposals: Vec<ResearchEntry>,
+    /// `false` when the key had already been published and this is the
+    /// stored result.
+    pub created: bool,
+}
+
+/// A completed Team whose results have not yet been recorded. It is created
+/// in the same transaction that completes the Team, so it can be neither
+/// lost nor created twice.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PendingOutcome {
+    pub team_id: String,
+    pub research_id: String,
+    pub round_id: Option<String>,
+    pub status: OutcomeStatus,
+    pub publication_id: Option<String>,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProposalReview {
+    pub entry_id: String,
+    pub decision: ReviewDecision,
+    pub note: Option<String>,
+    pub decided_at: String,
+}
+
+/// A proposal entry with the researcher's decision, when there is one.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProposalView {
+    pub entry: ResearchEntry,
+    pub review: Option<ProposalReview>,
+}
+
+impl NewPublication {
+    /// Bounds and normalizes the batch. `evidence` identity is deduplicated
+    /// per finding; empty batches are rejected.
+    pub fn normalized(mut self) -> Result<Self, ResearchError> {
+        self.key = normalize_client_request_id(Some(&self.key))?
+            .ok_or(ResearchError::Invalid("a publication key is required"))?;
+        if self.findings.is_empty() && self.proposals.is_empty() {
+            return Err(ResearchError::Invalid("nothing to publish"));
+        }
+        if self.findings.len() > MAX_PUBLICATION_FINDINGS {
+            return Err(ResearchError::Invalid(
+                "too many findings in one publication",
+            ));
+        }
+        if self.proposals.len() > MAX_PUBLICATION_PROPOSALS {
+            return Err(ResearchError::Invalid(
+                "too many proposals in one publication",
+            ));
+        }
+        for finding in &mut self.findings {
+            finding.statement = finding.statement.trim().to_owned();
+            if finding.statement.is_empty() {
+                return Err(ResearchError::Invalid("a finding statement is required"));
+            }
+            if finding.statement.chars().count() > MAX_STATEMENT_CHARS {
+                return Err(ResearchError::Invalid("a finding statement is too long"));
+            }
+            let mut seen = Vec::new();
+            finding.evidence.retain(|source| {
+                let identity = (source.kind, source.id.clone());
+                if seen.contains(&identity) {
+                    false
+                } else {
+                    seen.push(identity);
+                    true
+                }
+            });
+            if finding.evidence.len() > MAX_FINDING_EVIDENCE {
+                return Err(ResearchError::Invalid("too much evidence on one finding"));
+            }
+        }
+        for proposal in &mut self.proposals {
+            *proposal = proposal.trim().to_owned();
+            if proposal.is_empty() || proposal.chars().count() > MAX_ENTRY_CHARS {
+                return Err(ResearchError::Invalid(
+                    "a proposal must be 1-8192 characters",
+                ));
+            }
+        }
+        Ok(self)
     }
 }

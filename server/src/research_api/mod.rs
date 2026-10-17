@@ -11,6 +11,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+mod findings;
 mod rounds;
 pub(crate) mod sources;
 
@@ -31,6 +32,7 @@ use crate::workspace::WorkspaceError;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(rounds::routes())
+        .merge(findings::routes())
         .route(
             "/projects/{project_id}/research",
             get(list_research).post(create_research),
@@ -523,6 +525,21 @@ impl IntoResponse for ResearchApiError {
                 ResearchError::KeyReuse => (
                     StatusCode::CONFLICT,
                     "research_request_key_reused",
+                    error.to_string(),
+                ),
+                ResearchError::EntryNotFound => (
+                    StatusCode::NOT_FOUND,
+                    "research_entry_not_found",
+                    error.to_string(),
+                ),
+                ResearchError::OutcomeNotFound => (
+                    StatusCode::NOT_FOUND,
+                    "research_outcome_not_found",
+                    error.to_string(),
+                ),
+                ResearchError::ReviewConflict => (
+                    StatusCode::CONFLICT,
+                    "research_review_conflict",
                     error.to_string(),
                 ),
                 ResearchError::RoundState(_) => (
