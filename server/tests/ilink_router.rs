@@ -289,8 +289,16 @@ async fn missing_stale_readonly_and_team_bindings_fail_without_runs() {
     env.store
         .set_archived(&env.conversation_id, true)
         .expect("archive");
+    // Archiving clears the binding server-side (#135, ADR 0211 §13), so the
+    // router finds no binding rather than an archived one.
+    assert!(
+        env.store
+            .ilink_session_binding(ACCOUNT)
+            .expect("binding")
+            .is_none()
+    );
     env.router.route(prompt("hello"), &*capture).await;
-    assert!(capture.last().contains("archived"));
+    assert!(capture.last().contains("No Session"));
     assert!(
         env.store
             .list_runs(&env.conversation_id)

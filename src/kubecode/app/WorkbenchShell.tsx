@@ -39,6 +39,7 @@ import { SettingsDialog, type SettingsSection } from './SettingsDialog'
 import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
 import { useWorkspaceBootstrap } from './useWorkspaceBootstrap'
+import { useWeChatBinding } from './useWeChatBinding'
 import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
 import { WorkbenchTitlebar } from './WorkbenchTitlebar'
@@ -128,6 +129,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setTerminalsLoadedForProjectId,
     setError,
   })
+  const wechatBinding = useWeChatBinding(api, reconciliation.workspaceEvents)
 
   const selection = useProjectSelection(api, t, {
     projectId,
@@ -420,6 +422,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             query={navigatorQuery}
             t={t}
             teams={teams}
+            wechat={wechatBinding}
           />
         )}
 
@@ -632,6 +635,9 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         onRefreshAgents={refreshAgents}
         onTestNotification={preferences.sendTestNotification}
         t={t}
+        wechatBinding={wechatBinding}
+        wechatConversations={sessionCatalog}
+        wechatProjects={projects}
         workspaceEvents={reconciliation.workspaceEvents}
       />
     </main>

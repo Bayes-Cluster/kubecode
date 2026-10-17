@@ -810,6 +810,18 @@ codes. The section keeps a safe projection of status, converges on
 progress, requires confirmation before logout removes channel credentials, and
 edits quick prompts.
 
+Exactly one Session is the active WeChat Session. `PUT /api/v1/ilink/session-binding`
+revalidates the target at submit time (existing, registered Project, not
+archived, not read-only, not a sub-agent or Team-owned Session) and refuses with
+a categorical `reason`; `DELETE` unbinds. Archiving or deleting the bound Session
+clears the binding without choosing a replacement and publishes
+`ilink_status_changed` with a `binding_reason` (`session_archived` or
+`session_removed`), so every browser converges and can explain the recoverable
+state. The browser keeps one fenced binding view, shared by the WeChat Settings
+selector (Sessions grouped by Project, unbindable ones disabled with a reason)
+and the Session sidebar (a context-menu command and a restrained marker on the
+bound row); the server stays authoritative after refresh and reconnect.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

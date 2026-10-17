@@ -5618,3 +5618,171 @@ async fn ilink_quick_prompt_settings_are_bounded_per_linked_account() {
             .all(|event| !event.payload.to_string().contains("pull requests"))
     );
 }
+
+#[tokio::test]
+async fn ilink_session_binding_is_revalidated_and_cleared_with_a_reason() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_directory = root.join(".state/kubecode");
+    fs::create_dir_all(&state_directory).expect("state directory");
+    let database_path = state_directory.join("kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(&root, &database_path).expect("workspace"));
+    let project = workspace.create_project(".", "binding").expect("project");
+    let agent_store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let app = app_router(
+        AppState::new(
+            Arc::clone(&workspace),
+            Arc::clone(&agent_store),
+            Arc::new(teams),
+        ),
+        BASE_PATH,
+    );
+    let binding = format!("{BASE_PATH}/api/v1/ilink/session-binding");
+    let bound = agent_store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Bound"))
+        .expect("conversation");
+
+    // No linked account yet.
+    let (status, body) = json_request(
+        &app,
+        Method::PUT,
+        &binding,
+        json!({"conversation_id": bound.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ilink_not_available");
+
+    agent_store
+        .upsert_ilink_account("ilink_bot_synthetic_01", "Test")
+        .expect("account");
+    agent_store
+        .save_ilink_credentials(&kubecode_server::agent_store::IlinkCredentialRecord {
+            account_id: "ilink_bot_synthetic_01".to_owned(),
+            device_id: "device".to_owned(),
+            committed_cursor: 0,
+            get_updates_buf: String::new(),
+            api_origin: String::new(),
+            cdn_origin: String::new(),
+            sealed_blob: vec![0; 16],
+        })
+        .expect("credentials");
+
+    let (status, body) = json_request(
+        &app,
+        Method::PUT,
+        &binding,
+        json!({"conversation_id": bound.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["bound_conversation_id"], bound.id.as_str());
+    let (_, status_body) = json_request(
+        &app,
+        Method::GET,
+        &format!("{BASE_PATH}/api/v1/ilink/status"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status_body["bound_conversation_id"], bound.id.as_str());
+
+    // Unbindable targets are rejected with a categorical reason.
+    let archived = agent_store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Archived"))
+        .expect("archived");
+    agent_store
+        .set_archived(&archived.id, true)
+        .expect("archive");
+    let subagent = agent_store
+        .ensure_subagent_conversation(&bound.id, "sub-1", "Helper", "assist")
+        .expect("subagent");
+    for (conversation_id, reason) in [
+        (archived.id.as_str(), "archived"),
+        (
+            subagent.id.as_str(),
+            if subagent.read_only {
+                "read_only"
+            } else {
+                "team"
+            },
+        ),
+        ("missing-session", "missing"),
+    ] {
+        let (status, body) = json_request(
+            &app,
+            Method::PUT,
+            &binding,
+            json!({"conversation_id": conversation_id}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{reason}");
+        assert_eq!(body["code"], "ilink_binding_rejected");
+        assert_eq!(body["reason"], reason);
+    }
+    assert_eq!(
+        agent_store
+            .ilink_session_binding("ilink_bot_synthetic_01")
+            .expect("binding")
+            .as_deref(),
+        Some(bound.id.as_str()),
+        "rejections never change the binding"
+    );
+
+    // Archiving the bound Session clears the binding with a reason.
+    let cursor = agent_store.latest_workspace_event_id().expect("cursor");
+    agent_store
+        .set_archived(&bound.id, true)
+        .expect("archive bound");
+    let cleared = agent_store
+        .workspace_events_after(cursor)
+        .expect("events")
+        .into_iter()
+        .find(|event| event.kind == "ilink_status_changed")
+        .expect("status event");
+    assert_eq!(cleared.payload["binding_reason"], "session_archived");
+    assert!(cleared.payload["conversation_id"].is_null());
+
+    // Deleting a bound Session clears the binding with a reason too.
+    let next = agent_store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Next"))
+        .expect("next");
+    let (status, _) = json_request(
+        &app,
+        Method::PUT,
+        &binding,
+        json!({"conversation_id": next.id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let cursor = agent_store.latest_workspace_event_id().expect("cursor");
+    agent_store.delete_conversation(&next.id).expect("delete");
+    let removed = agent_store
+        .workspace_events_after(cursor)
+        .expect("events")
+        .into_iter()
+        .find(|event| event.kind == "ilink_status_changed")
+        .expect("status event");
+    assert_eq!(removed.payload["binding_reason"], "session_removed");
+
+    // Explicit unbind.
+    let other = agent_store
+        .create_conversation(&project.id, AgentId::OpenCode, Some("Other"))
+        .expect("other");
+    json_request(
+        &app,
+        Method::PUT,
+        &binding,
+        json!({"conversation_id": other.id}),
+    )
+    .await;
+    let (status, body) = json_request(&app, Method::DELETE, &binding, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["bound_conversation_id"].is_null());
+    assert!(
+        agent_store
+            .ilink_session_binding("ilink_bot_synthetic_01")
+            .expect("binding")
+            .is_none()
+    );
+}

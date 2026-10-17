@@ -27,6 +27,10 @@ pub fn routes() -> Router<AppState> {
         .route("/ilink/login/cancel", post(ilink_login_cancel))
         .route("/ilink/reconnect", post(ilink_reconnect))
         .route("/ilink/disconnect", post(ilink_disconnect))
+        .route(
+            "/ilink/session-binding",
+            put(bind_session).delete(unbind_session),
+        )
         .route("/ilink/quick-prompts", get(list_quick_prompts))
         .route(
             "/ilink/quick-prompts/{slot}",
@@ -247,6 +251,94 @@ async fn remove_quick_prompt(State(state): State<AppState>, Path(slot): Path<u8>
         .remove_ilink_quick_prompt(&account_id, slot)
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => service_error_response(ServiceError::Store(error)),
+    }
+}
+
+// -- Active Session binding (issue #135) --------------------------------------
+
+#[derive(Deserialize)]
+struct BindSessionBody {
+    conversation_id: String,
+}
+
+fn binding_rejected(reason: &'static str) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "code": "ilink_binding_rejected",
+            "reason": reason,
+            "message": "this Session cannot be bound to WeChat",
+        })),
+    )
+        .into_response()
+}
+
+/// Why a Session cannot be the WeChat target, revalidated at submit time
+/// against current server state (ADR 0211 §13).
+fn binding_problem(state: &AppState, conversation_id: &str) -> Option<&'static str> {
+    use crate::agent_store::ConversationRelationship;
+    let Ok(conversation) = state
+        .agent_runtime
+        .store()
+        .get_conversation(conversation_id)
+    else {
+        return Some("missing");
+    };
+    if conversation.archived {
+        return Some("archived");
+    }
+    if conversation.read_only {
+        return Some("read_only");
+    }
+    let team_owned = matches!(
+        conversation.relationship,
+        Some(ConversationRelationship::Subagent | ConversationRelationship::TeamMember)
+    ) || state
+        .teams
+        .member_for_conversation(conversation_id)
+        .ok()
+        .flatten()
+        .is_some();
+    if team_owned {
+        return Some("team");
+    }
+    if state.workspace.project(&conversation.project_id).is_err() {
+        return Some("missing");
+    }
+    None
+}
+
+async fn bind_session(
+    State(state): State<AppState>,
+    Json(body): Json<BindSessionBody>,
+) -> Response {
+    let Some(account_id) = linked_account(&state) else {
+        return service_error_response(ServiceError::NotAvailable);
+    };
+    if let Some(reason) = binding_problem(&state, &body.conversation_id) {
+        return binding_rejected(reason);
+    }
+    match state
+        .agent_runtime
+        .store()
+        .bind_ilink_session(&account_id, &body.conversation_id)
+    {
+        Ok(()) => Json(json!({ "bound_conversation_id": body.conversation_id })).into_response(),
+        Err(_) => binding_rejected("unavailable"),
+    }
+}
+
+async fn unbind_session(State(state): State<AppState>) -> Response {
+    let Some(account_id) = linked_account(&state) else {
+        return service_error_response(ServiceError::NotAvailable);
+    };
+    match state
+        .agent_runtime
+        .store()
+        .unbind_ilink_session(&account_id)
+    {
+        Ok(()) => Json(json!({ "bound_conversation_id": null })).into_response(),
         Err(error) => service_error_response(ServiceError::Store(error)),
     }
 }

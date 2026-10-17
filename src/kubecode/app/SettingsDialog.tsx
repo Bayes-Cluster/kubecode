@@ -38,6 +38,8 @@ import type {
   AgentDescriptor,
   AgentId,
   KubecodeApi,
+  Conversation,
+  Project,
   RuntimeStatus,
   WorkspaceEvent,
 } from '../api'
@@ -47,6 +49,7 @@ import type {
 } from '../workspaceNotifications'
 import type { Translator } from '@/lib/i18n'
 
+import type { WeChatBinding } from './useWeChatBinding'
 import { WeChatSettingsPanel } from './WeChatSettingsPanel'
 
 export type SettingsSection = 'general' | 'notifications' | 'agents' | 'wechat' | 'terminal' | 'editor'
@@ -72,6 +75,9 @@ export type SettingsDialogProps = {
   onRefreshAgents: () => Promise<void>
   onTestNotification: () => Promise<void>
   t: Translator
+  wechatBinding?: WeChatBinding
+  wechatConversations?: Conversation[]
+  wechatProjects?: Project[]
   workspaceEvents?: WorkspaceEvent[]
 }
 
@@ -96,6 +102,9 @@ export function SettingsDialog({
   onRefreshAgents,
   onTestNotification,
   t,
+  wechatBinding,
+  wechatConversations = NO_CONVERSATIONS,
+  wechatProjects = NO_PROJECTS,
   workspaceEvents = NO_EVENTS,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
@@ -444,7 +453,14 @@ export function SettingsDialog({
             </>
           )}
           {section === 'wechat' && (
-            <WeChatSettingsPanel api={api} t={t} workspaceEvents={workspaceEvents} />
+            <WeChatSettingsPanel
+              api={api}
+              binding={wechatBinding}
+              conversations={wechatConversations}
+              projects={wechatProjects}
+              t={t}
+              workspaceEvents={workspaceEvents}
+            />
           )}
           {section === 'editor' && (
             <div className="kubecode-settings-group">
@@ -477,6 +493,8 @@ export function SettingsDialog({
 }
 
 const NO_EVENTS: WorkspaceEvent[] = []
+const NO_CONVERSATIONS: Conversation[] = []
+const NO_PROJECTS: Project[] = []
 
 type RuntimeStatusViewModel = {
   active_actor_count: number

@@ -305,3 +305,15 @@ describe('WeChat quick prompt editing failures', () => {
     expect(trackEvent).not.toHaveBeenCalledWith('kubecode_wechat_quick_prompt_changed', expect.anything())
   })
 })
+
+describe('a linked but stopped WeChat account', () => {
+  it('offers reconnect and a new QR code, not just disconnect', async () => {
+    const api = wechatApi({ ilinkStatus: vi.fn().mockResolvedValue(linked('disconnected')) })
+    renderPanel(api)
+    expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New QR code' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+    await waitFor(() => expect(api.ilinkReconnect).toHaveBeenCalledTimes(1))
+  })
+})

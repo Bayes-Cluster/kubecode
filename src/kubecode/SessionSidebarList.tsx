@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { RiWechatLine } from '@remixicon/react'
 import {
   Archive,
   ChevronDown,
@@ -33,6 +34,7 @@ import { RUN_STATUS_ICONS } from './icons/statusIcons'
 
 import type { Conversation, KubecodeApi, Project, RunStatus, TeamRole, TeamSnapshot } from './api'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
+import { wechatUnbindableReason, type WeChatBinding } from './app/useWeChatBinding'
 import {
   buildSessionSections,
   readSessionListPreferences,
@@ -63,6 +65,8 @@ type SessionSidebarListProps = {
   query?: string
   t: Translator
   teams?: TeamSnapshot[]
+  /** The single active WeChat Session (issue #135), when available. */
+  wechat?: WeChatBinding
 }
 
 export function SessionSidebarList({
@@ -86,6 +90,7 @@ export function SessionSidebarList({
   query = '',
   t,
   teams = [],
+  wechat,
 }: SessionSidebarListProps) {
   const [preferences, setPreferences] = useState<SessionListPreferences>(() => (
     readSessionListPreferences(localStorage)
@@ -362,6 +367,7 @@ export function SessionSidebarList({
                             remove={remove}
                             t={t}
                             teamRole={role}
+                            wechat={wechat}
                           />
                         ))}
                       </div>
@@ -385,6 +391,7 @@ export function SessionSidebarList({
                       remove={remove}
                       t={t}
                       teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
+                      wechat={wechat}
                     />
                   ))}
                   {projectTeams.length === 0 && sessions.length === 0 && (
@@ -437,6 +444,7 @@ type SessionRowProps = {
   remove: (conversation: Conversation) => Promise<void>
   t: Translator
   teamRole?: TeamRole | null
+  wechat?: WeChatBinding
 }
 
 function SessionRow({
@@ -449,7 +457,11 @@ function SessionRow({
   remove,
   t,
   teamRole,
+  wechat,
 }: SessionRowProps) {
+  const title = conversation.title || t('kubecode.untitledSession')
+  const wechatBound = Boolean(wechat?.linked && wechat.boundConversationId === conversation.id)
+  const unbindable = wechatUnbindableReason(conversation)
   return (
     <div
       className="kubecode-session-row-shell"
@@ -457,7 +469,9 @@ function SessionRow({
       data-team-child={nested}
     >
       <Button
-        aria-label={conversation.title || t('kubecode.untitledSession')}
+        aria-label={wechatBound
+          ? `${title}, ${t('kubecode.wechat.activeSessionMarker')}`
+          : title}
         className="kubecode-session-row"
         data-active={conversation.id === activeConversationId}
         variant="ghost"
@@ -467,6 +481,14 @@ function SessionRow({
         <span className="kubecode-session-row-copy">
           <span>{conversation.title || t('kubecode.untitledSession')}</span>
         </span>
+        {wechatBound && (
+          <Icon
+            className="kubecode-session-wechat-marker"
+            role="status"
+            size="secondary"
+            source={RiWechatLine}
+          />
+        )}
         {conversation.latest_run_status && (
           <Icon
             role="status"
@@ -506,6 +528,31 @@ function SessionRow({
               <GitFork  size={16}/> {t('kubecode.forkSession')}
             </DropdownMenuItem>
           )}
+          {wechat?.linked && (wechatBound ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                trackEvent('kubecode_wechat_session_binding_changed', { action: 'unbind', source: 'sidebar' })
+                void wechat.unbind()
+              }}
+            >
+              <RiWechatLine size={16} /> {t('kubecode.wechat.stopUsingForWeChat')}
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              disabled={Boolean(unbindable) || wechat.pending}
+              onSelect={() => {
+                trackEvent('kubecode_wechat_session_binding_changed', { action: 'bind', source: 'sidebar' })
+                void wechat.bind(conversation.id)
+              }}
+            >
+              <RiWechatLine size={16} />
+              {unbindable
+                ? t('kubecode.wechat.useForWeChatUnavailable', {
+                  reason: t(`kubecode.wechat.unbindable.${unbindable}`),
+                })
+                : t('kubecode.wechat.useForWeChat')}
+            </DropdownMenuItem>
+          ))}
           {(!teamRole || teamRole === 'leader') && (
             <>
               <DropdownMenuSeparator />

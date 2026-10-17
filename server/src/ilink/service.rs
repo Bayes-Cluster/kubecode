@@ -325,16 +325,21 @@ impl ILinkService {
     /// Current safe status snapshot.
     pub async fn status(&self) -> ServiceStatus {
         let core = self.core.lock().await;
-        let account = core
-            .account_id
+        // A linked-but-stopped account (credentials stored, no live task)
+        // still reports its identity and binding.
+        let account_id = core.account_id.clone().or_else(|| {
+            self.store
+                .first_ilink_credentials()
+                .map(|credentials| credentials.account_id)
+        });
+        let account = account_id
             .as_deref()
             .and_then(|account_id| self.store.ilink_account(account_id).ok().flatten());
         ServiceStatus {
             status: core.status,
-            account_id: core.account_id.clone(),
+            account_id: account_id.clone(),
             display_name: account.map(|account| account.display_name),
-            bound_conversation_id: core
-                .account_id
+            bound_conversation_id: account_id
                 .as_deref()
                 .and_then(|account_id| self.store.ilink_session_binding(account_id).ok().flatten()),
             login_active: core.login.is_some(),
@@ -712,7 +717,13 @@ impl ILinkService {
             return Ok(());
         }
         if core.account_id.is_none() {
-            return Err(ServiceError::NotAvailable);
+            // Linked but never restored (e.g. a failed startup restore):
+            // reconnecting means restoring from the stored credentials.
+            drop(core);
+            return match self.restore_on_startup().await? {
+                true => Ok(()),
+                false => Err(ServiceError::NotAvailable),
+            };
         }
         if let Some(since) = core.stale_since {
             let remaining = core.config.stale_cooldown.saturating_sub(since.elapsed());
@@ -758,7 +769,13 @@ impl ILinkService {
             let mut core = self.core.lock().await;
             self.teardown_tasks_locked(&mut core).await;
             core.status = ConnectionStatus::Disconnected;
-            core.account_id.take()
+            // A linked account that never restored still has stored
+            // credentials to remove.
+            core.account_id.take().or_else(|| {
+                self.store
+                    .first_ilink_credentials()
+                    .map(|credentials| credentials.account_id)
+            })
         };
         self.typing_tickets.lock().await.clear();
         let Some(account_id) = account_id else {

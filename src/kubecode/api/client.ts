@@ -48,18 +48,22 @@ export class ApiError extends Error {
   readonly code: string
   readonly status: number
   readonly stage: string | null
+  /** Optional categorical refinement of `code` (e.g. why a binding was refused). */
+  readonly reason: string | null
 
   constructor(
     code: string,
     message: string,
     status: number,
     stage: string | null = null,
+    reason: string | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
     this.stage = stage
+    this.reason = reason
   }
 }
 
@@ -239,6 +243,17 @@ export class KubecodeApi {
 
   ilinkDisconnect(): Promise<void> {
     return this.request('/ilink/disconnect', { method: 'POST' })
+  }
+
+  ilinkBindSession(conversationId: string): Promise<{ bound_conversation_id: string | null }> {
+    return this.request('/ilink/session-binding', {
+      method: 'PUT',
+      body: JSON.stringify({ conversation_id: conversationId }),
+    })
+  }
+
+  ilinkUnbindSession(): Promise<{ bound_conversation_id: string | null }> {
+    return this.request('/ilink/session-binding', { method: 'DELETE' })
   }
 
   ilinkQuickPrompts(): Promise<IlinkQuickPrompts> {
@@ -786,12 +801,13 @@ export class KubecodeApi {
       const error = await response.json().catch(() => ({
         code: 'request_failed',
         message: response.statusText || `Request failed (${response.status})`,
-      })) as { code?: string; message?: string; stage?: string }
+      })) as { code?: string; message?: string; stage?: string; reason?: string }
       throw new ApiError(
         error.code ?? 'request_failed',
         error.message ?? `Request failed (${response.status})`,
         response.status,
         error.stage ?? null,
+        error.reason ?? null,
       )
     }
     if (response.status === 204 || response.headers.get('content-length') === '0') {

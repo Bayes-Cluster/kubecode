@@ -18,18 +18,31 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
 import { ApiError } from '../api'
 import type {
+  Conversation,
   IlinkConnectionStatus,
   IlinkQuickPrompts,
   IlinkStatus,
   KubecodeApi,
+  Project,
   WorkspaceEvent,
 } from '../api'
+
+import { wechatUnbindableReason, type WeChatBinding } from './useWeChatBinding'
 
 import {
   LOGIN_STATUSES,
@@ -68,10 +81,16 @@ function statusTone(status: IlinkConnectionStatus): 'ok' | 'pending' | 'problem'
 
 export function WeChatSettingsPanel({
   api,
+  binding,
+  conversations = [],
+  projects = [],
   t,
   workspaceEvents,
 }: {
   api: KubecodeApi
+  binding?: WeChatBinding
+  conversations?: Conversation[]
+  projects?: Project[]
   t: Translator
   workspaceEvents: WorkspaceEvent[]
 }) {
@@ -199,10 +218,14 @@ export function WeChatSettingsPanel({
   }
 
   const tone = statusTone(view.status)
+  // A linked account that is stopped (e.g. a cancelled re-login or a failed
+  // restore) can reconnect with its stored credentials or scan again.
   const canConnect = !view.linked
     || view.status === 'expired'
     || view.status === 'verification_blocked'
-  const canReconnect = view.linked && (view.status === 'backing_off' || view.status === 'error')
+    || view.status === 'disconnected'
+  const canReconnect = view.linked
+    && (view.status === 'backing_off' || view.status === 'error' || view.status === 'disconnected')
   const StatusIcon = tone === 'ok' ? CircleCheck : tone === 'problem' ? CircleAlert : tone === 'pending' ? LoaderCircle : QrCode
 
   return (
@@ -317,6 +340,17 @@ export function WeChatSettingsPanel({
           </form>
         )}
       </div>
+      {view.linked && binding && (
+        <>
+          <h3 className="kubecode-settings-section-heading">{t('kubecode.wechat.activeSession')}</h3>
+          <ActiveSessionSelector
+            binding={binding}
+            conversations={conversations}
+            projects={projects}
+            t={t}
+          />
+        </>
+      )}
       {view.linked && (
         <>
           <h3 className="kubecode-settings-section-heading">{t('kubecode.wechat.quickPrompts')}</h3>
@@ -346,6 +380,97 @@ export function WeChatSettingsPanel({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/** Sentinel select value meaning "no active Session". */
+const NO_SESSION = '__none__'
+
+function ActiveSessionSelector({
+  binding,
+  conversations,
+  projects,
+  t,
+}: {
+  binding: WeChatBinding
+  conversations: Conversation[]
+  projects: Project[]
+  t: Translator
+}) {
+  const groups = projects
+    .map((project) => ({
+      project,
+      sessions: conversations.filter((conversation) => (
+        conversation.project_id === project.id && conversation.relationship !== 'subagent'
+      )),
+    }))
+    .filter((group) => group.sessions.length > 0)
+  const bound = binding.boundConversationId
+  const title = (conversation: Conversation) => conversation.title || t('kubecode.untitledSession')
+  return (
+    <div className="kubecode-settings-group" data-testid="wechat-active-session">
+      <div className="kubecode-setting-row">
+        <div>
+          <strong>{t('kubecode.wechat.activeSession')}</strong>
+          <span>{t('kubecode.wechat.activeSessionDescription')}</span>
+          {binding.clearedReason && !bound && (
+            <span role="status">{t(`kubecode.wechat.bindingCleared.${binding.clearedReason}`)}</span>
+          )}
+          {binding.rejected && (
+            <span role="alert">{t(`kubecode.wechat.bindingRejected.${binding.rejected}`)}</span>
+          )}
+        </div>
+        <div className="kubecode-wechat-actions">
+          <Select
+            disabled={binding.pending}
+            value={bound ?? NO_SESSION}
+            onValueChange={(value) => {
+              if (value === NO_SESSION) return
+              trackEvent('kubecode_wechat_session_binding_changed', { action: 'bind', source: 'settings' })
+              void binding.bind(value)
+            }}
+          >
+            <SelectTrigger aria-label={t('kubecode.wechat.activeSession')} className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem disabled value={NO_SESSION}>{t('kubecode.wechat.noActiveSession')}</SelectItem>
+              {groups.map(({ project, sessions }) => (
+                <SelectGroup key={project.id}>
+                  <SelectLabel>{project.name}</SelectLabel>
+                  {sessions.map((conversation) => {
+                    const reason = wechatUnbindableReason(conversation)
+                    return (
+                      <SelectItem disabled={Boolean(reason)} key={conversation.id} value={conversation.id}>
+                        {reason
+                          ? t('kubecode.wechat.sessionUnavailable', {
+                            title: title(conversation),
+                            reason: t(`kubecode.wechat.unbindable.${reason}`),
+                          })
+                          : title(conversation)}
+                      </SelectItem>
+                    )
+                  })}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+          {bound && (
+            <Button
+              disabled={binding.pending}
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                trackEvent('kubecode_wechat_session_binding_changed', { action: 'unbind', source: 'settings' })
+                void binding.unbind()
+              }}
+            >
+              {t('kubecode.wechat.unbind')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
