@@ -885,3 +885,172 @@ async fn a_retry_is_answered_from_the_record_after_its_evidence_is_gone() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// Boots a second process over an existing Runtime directory.
+fn restart(first: &Env) -> Env {
+    let root = first._root.path();
+    let database = root.join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(root, &database).expect("workspace"));
+    let agents = Arc::new(AgentStore::open(&database).expect("agents"));
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let state = AppState::new(workspace, agents, teams);
+    let app = app_router(state.clone(), BASE);
+    Env {
+        _root: TempDir::new().expect("placeholder"),
+        state,
+        app,
+        project_id: first.project_id.clone(),
+        other_project_id: first.other_project_id.clone(),
+        project_path: first.project_path.clone(),
+    }
+}
+
+/// The milestone loop (#148): discuss, run a linked Team, keep findings with
+/// source references, restart, and start a second round from the recorded
+/// context. The second round must name the brief revision it consumed, and
+/// the findings must still trace to their sources.
+#[tokio::test]
+async fn a_second_round_after_a_restart_builds_on_the_recorded_context() {
+    let first = env(false);
+    let rq = create_rq(&first, "Milestone").await;
+    let id = rq["id"].as_str().expect("id").to_owned();
+
+    // Discussion is a linked Session; it starts nothing.
+    let discussion = first
+        .state
+        .agent_runtime
+        .store()
+        .create_conversation(
+            &first.project_id,
+            kubecode_server::agents::AgentId::OpenCode,
+            Some("Discuss"),
+        )
+        .expect("session");
+    let (status, _) = call(
+        &first,
+        Method::POST,
+        &format!("{}/{id}/links", rq_path(&first)),
+        json!({"kind": "session", "ref_id": discussion.id, "role": "discussion"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Round 1 runs a Team that completes; its findings cite a result file.
+    fs::write(first.project_path.join("results.csv"), "acc\n0.9\n").expect("file");
+    let team_id = completed_team(&first, &id, "round-1").await;
+    let (status, body) = call(
+        &first,
+        Method::POST,
+        &format!("{}/{id}/findings", rq_path(&first)),
+        capture(
+            "round-1-findings",
+            &team_id,
+            json!([{"kind": "finding", "statement": "Accuracy held",
+                    "evidence": [{"kind": "file", "id": "results.csv"}]}]),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The brief is revised between rounds.
+    let (status, _) = call(
+        &first,
+        Method::PATCH,
+        &format!("{}/{id}", rq_path(&first)),
+        json!({"expected_revision": 1, "constraints": ["two GPUs"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A new process over the same database sees the associations, revision
+    // information, and findings, and runs round 2 from them.
+    let second = restart(&first);
+    let (_, detail) = call(
+        &second,
+        Method::GET,
+        &format!("{}/{id}", rq_path(&second)),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(detail["revision"], 2);
+    let linked: Vec<_> = detail["links"]
+        .as_array()
+        .expect("links")
+        .iter()
+        .map(|l| l["kind"].clone())
+        .collect();
+    assert!(
+        linked.contains(&json!("session")) && linked.contains(&json!("team")),
+        "{detail}"
+    );
+    let (_, findings) = call(
+        &second,
+        Method::GET,
+        &format!("{}/{id}/findings", rq_path(&second)),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(findings[0]["brief_revision"], 1);
+    assert_eq!(
+        findings[0]["stale"], true,
+        "the finding predates the revised brief"
+    );
+    assert_eq!(
+        findings[0]["evidence_state"][0]["availability"],
+        "available"
+    );
+
+    let mut round_two = team_round("round-2");
+    round_two["expected_revision"] = json!(2);
+    round_two["sources"] = json!([{"kind": "file", "id": "results.csv"}]);
+    let (status, round) = call(
+        &second,
+        Method::POST,
+        &format!("{}/{id}/rounds", rq_path(&second)),
+        round_two,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{round}");
+    assert_eq!(round["round"], 2);
+    assert_eq!(
+        round["brief_revision"], 2,
+        "the consumed revision is recorded"
+    );
+    assert_eq!(round["sources"][0]["availability"], "available");
+    let team = second
+        .state
+        .teams
+        .get_team(round["team"]["id"].as_str().expect("team"))
+        .expect("team");
+    assert!(team.goal.contains("brief revision 2"), "{}", team.goal);
+
+    // Round 1 keeps the revision it used, and is flagged stale.
+    let (_, rounds) = call(
+        &second,
+        Method::GET,
+        &format!("{}/{id}/rounds", rq_path(&second)),
+        Value::Null,
+    )
+    .await;
+    let by_round: Vec<_> = rounds
+        .as_array()
+        .expect("rounds")
+        .iter()
+        .map(|r| {
+            (
+                r["round"].clone(),
+                r["brief_revision"].clone(),
+                r["stale"].clone(),
+            )
+        })
+        .collect();
+    assert!(
+        by_round.contains(&(json!(1), json!(1), json!(true))),
+        "{rounds}"
+    );
+    assert!(
+        by_round.contains(&(json!(2), json!(2), json!(false))),
+        "{rounds}"
+    );
+    // Findings still trace to their sources, and the question is not resolved.
+    assert_eq!(detail["status"], "open");
+}
