@@ -1018,6 +1018,31 @@ impl ExperimentStore {
         })
     }
 
+    /// The existing decision for `(experiment, kind, key)`, if any.
+    pub fn find_decision(
+        &self,
+        project_id: &str,
+        experiment_id: &str,
+        kind: DecisionKind,
+        key: &str,
+    ) -> Result<Option<ExperimentDecision>, ExperimentError> {
+        let connection = self.connection();
+        let experiment = load_experiment(&connection, experiment_id)?;
+        if experiment.project_id != project_id {
+            return Err(ExperimentError::NotFound);
+        }
+        connection
+            .query_row(
+                &format!(
+                    "{DECISION_SELECT} WHERE experiment_id = ?1 AND kind = ?2 AND decision_key = ?3"
+                ),
+                params![experiment_id, kind.as_str(), key],
+                decision_from_row,
+            )
+            .optional()?
+            .transpose()
+    }
+
     pub fn decisions(
         &self,
         project_id: &str,

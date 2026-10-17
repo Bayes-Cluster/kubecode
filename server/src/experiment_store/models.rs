@@ -423,6 +423,32 @@ pub struct ExperimentDecision {
     pub created_at: String,
 }
 
+impl NewDecision {
+    /// The decision's own fields checked up front, so a malformed decision is
+    /// refused before anything it would start is started.
+    pub fn validate(&self) -> Result<(), ExperimentError> {
+        let rationale = self.rationale.trim();
+        if rationale.is_empty() || rationale.chars().count() > MAX_RATIONALE_CHARS {
+            return Err(ExperimentError::Invalid(
+                "a rationale of 1 to 2000 characters is required",
+            ));
+        }
+        if self.evidence.len() > MAX_DECISION_EVIDENCE {
+            return Err(ExperimentError::Invalid(
+                "too much evidence on one decision",
+            ));
+        }
+        if self
+            .decision_key
+            .as_deref()
+            .is_some_and(|key| key.trim().chars().count() > MAX_KEY_CHARS)
+        {
+            return Err(ExperimentError::Invalid("the decision key is too long"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NewDecision {
     pub experiment_id: String,
