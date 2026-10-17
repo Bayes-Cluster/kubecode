@@ -118,6 +118,15 @@ and run-admission paths. The one cross-store write is deliberate: completing a
 Team linked to a question records a pending research outcome inside the Team's
 own completion transaction, so the hand-off cannot be lost or repeated.
 
+Durable research experiments (ADR 0213) are a fourth feature store on the same
+SQLite owner. `server/src/experiment_store/` owns the execution envelope a
+researcher approves per round, the launch attempts admitted under it, the waits
+members register, and the committed observations that resolve them;
+`server/src/research_api/execution.rs` exposes read and control routes. Team
+transitions consult these tables in their own transactions: completion is
+blocked while an experiment is active, an analysis is pending, or a wait is
+open, and a turn that ends with a registered wait is not a missing report.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

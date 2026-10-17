@@ -806,6 +806,14 @@ impl AgentRuntime {
         if task.status == crate::teams::TeamTaskStatus::PlanReview {
             return;
         }
+        // A registered wait on a running experiment is a yield, not a missing
+        // report: the result arrives as a durable event.
+        if teams
+            .member_has_open_wait(&team.id, &member.id)
+            .unwrap_or(false)
+        {
+            return;
+        }
         if attempt.status == crate::teams::TeamTaskAttemptStatus::NeedsReport {
             if let Ok(Some(failed)) = teams.fail_active_attempt(
                 &member.id,
@@ -1350,4 +1358,133 @@ fn run_git(path: &std::path::Path, args: &[&str]) {
         .status()
         .expect("git command");
     assert!(status.success(), "git {args:?}");
+}
+
+#[cfg(test)]
+mod experiment_wait_tests {
+    use super::*;
+    use crate::agent_store::TerminalCause;
+    use crate::experiment_store::testing::Fixture;
+    use crate::teams::TeamTaskAttemptStatus;
+
+    fn runtime(fixture: &Fixture) -> AgentRuntime {
+        AgentRuntime::new(
+            Arc::clone(&fixture.workspace),
+            Arc::clone(&fixture.agents),
+            Vec::new(),
+        )
+        .with_team_store(Arc::clone(&fixture.teams))
+    }
+
+    /// Ends a turn for the Teammate without a Team result.
+    fn end_turn(fixture: &Fixture, runtime: &AgentRuntime) {
+        let run = fixture
+            .agents
+            .start_run(
+                &fixture.teammate.conversation_id,
+                &fixture.project_id,
+                "work",
+                crate::agents::PermissionMode::Safe,
+            )
+            .expect("run");
+        // The wake path binds the run to the member's attempt when it starts.
+        fixture
+            .teams
+            .bind_task_attempt_run(&fixture.teammate.id, &run.id)
+            .expect("bind");
+        fixture
+            .agents
+            .finish_run(&run.id, RunStatus::Completed, None, TerminalCause::EndTurn)
+            .expect("finish");
+        runtime.wake_team_member_for_conversation(&fixture.teammate.conversation_id);
+    }
+
+    fn status(fixture: &Fixture) -> TeamTaskAttemptStatus {
+        fixture
+            .teams
+            .active_attempt_for_member(&fixture.teammate.id)
+            .expect("attempt query")
+            .expect("active attempt")
+            .status
+    }
+
+    #[test]
+    fn ending_a_turn_with_a_registered_wait_is_not_a_missing_report() {
+        let fixture = Fixture::new();
+        let runtime = runtime(&fixture);
+        let (experiment, _) = fixture.reserve("k", &["echo", "x"]).expect("reserve");
+        fixture
+            .experiments
+            .register_wait(
+                &fixture.project_id,
+                &fixture.team.id,
+                &fixture.teammate.id,
+                &experiment.id,
+                Some(&fixture.task_id),
+                "analyze",
+                None,
+            )
+            .expect("wait");
+        // Several turns end while the experiment runs: no reminder, no failure.
+        end_turn(&fixture, &runtime);
+        end_turn(&fixture, &runtime);
+        assert_eq!(status(&fixture), TeamTaskAttemptStatus::Running);
+        assert!(
+            fixture
+                .teams
+                .unread_messages(&fixture.teammate.id)
+                .expect("inbox")
+                .iter()
+                .all(|message| !message.body.contains("Submit the task result")),
+            "no missing-report reminder"
+        );
+    }
+
+    #[test]
+    fn ending_a_turn_with_neither_a_result_nor_a_wait_still_fails_after_one_reminder() {
+        let fixture = Fixture::new();
+        let runtime = runtime(&fixture);
+        end_turn(&fixture, &runtime);
+        assert_eq!(status(&fixture), TeamTaskAttemptStatus::NeedsReport);
+        end_turn(&fixture, &runtime);
+        assert!(
+            fixture
+                .teams
+                .active_attempt_for_member(&fixture.teammate.id)
+                .expect("attempt query")
+                .is_none(),
+            "the second report-less turn fails the attempt"
+        );
+    }
+
+    #[test]
+    fn a_wait_that_has_resolved_no_longer_excuses_a_missing_report() {
+        let fixture = Fixture::new();
+        let runtime = runtime(&fixture);
+        let (experiment, _) = fixture.reserve("k", &["echo", "x"]).expect("reserve");
+        fixture
+            .experiments
+            .register_wait(
+                &fixture.project_id,
+                &fixture.team.id,
+                &fixture.teammate.id,
+                &experiment.id,
+                None,
+                "",
+                None,
+            )
+            .expect("wait");
+        fixture
+            .experiments
+            .observe(
+                &experiment.id,
+                crate::experiment_store::Outcome {
+                    exit_code: Some(0),
+                    ..Default::default()
+                },
+            )
+            .expect("observe");
+        end_turn(&fixture, &runtime);
+        assert_eq!(status(&fixture), TeamTaskAttemptStatus::NeedsReport);
+    }
 }

@@ -1173,6 +1173,32 @@ describe('Kubecode API client', () => {
       })
     })
 
+    it('reads and controls a round\'s execution through the dedicated routes', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+      const limits = {
+        max_launches: 3, max_concurrent: 1, deadline_at: null, max_runtime_secs: 60,
+        max_no_progress: 2, allowed_commands: [['echo']],
+      }
+
+      await api.getResearchExecution('p', 'r', 'round/1')
+      await api.setResearchEnvelope('p', 'r', 'round/1', limits, 2)
+      await api.setResearchExecutionState('p', 'r', 'round/1', 'pause')
+      await api.reconcileExperiment('p', 'r', 'e/1', 'finished', 0)
+
+      const base = '/b/api/v1/projects/p/research/r'
+      expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+        `${base}/rounds/round%2F1/execution`,
+        `${base}/rounds/round%2F1/execution/envelope`,
+        `${base}/rounds/round%2F1/execution/pause`,
+        `${base}/experiments/e%2F1/reconcile`,
+      ])
+      expect(fetch.mock.calls[1][1].method).toBe('PUT')
+      expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ limits, expected_revision: 2 })
+      expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({ truth: 'finished', exit_code: 0 })
+    })
+
     it('links and unlinks Sessions and Teams and reads revisions', async () => {
       const fetch = vi.fn().mockImplementation(async () => ok({}))
       vi.stubGlobal('fetch', fetch)

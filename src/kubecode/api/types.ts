@@ -262,6 +262,84 @@ export type ResearchRound = {
   created_at: string
   updated_at: string
 }
+export type ExecutionEnvelopeState = 'active' | 'paused' | 'closed'
+/** The researcher-approved limits of one round; nothing launches without them. */
+export type ExecutionEnvelopeLimits = {
+  max_launches: number
+  max_concurrent: number
+  /** Unix seconds; no launch is admitted after it. */
+  deadline_at: number | null
+  max_runtime_secs: number
+  /** Consecutive unproductive attempts before admission refuses. */
+  max_no_progress: number
+  /** argv prefixes a launch must start with. */
+  allowed_commands: string[][]
+}
+export type ExecutionEnvelope = {
+  round_id: string
+  research_id: string
+  revision: number
+  state: ExecutionEnvelopeState
+  limits: ExecutionEnvelopeLimits
+  launches_reserved: number
+  created_at: string
+  updated_at: string
+}
+export type ExperimentState =
+  | 'reserved' | 'launching' | 'running' | 'cancelling'
+  | 'exited' | 'timed_out' | 'cancelled' | 'failed_to_start' | 'unknown'
+/** `pending` until an explicit analysis decision; an acknowledgement is not analysis. */
+export type ExperimentAnalysis = 'none' | 'pending' | 'analyzed'
+export type ExperimentWaitState = 'open' | 'resolved' | 'expired' | 'cancelled' | 'reassigned'
+export type ExperimentProcessIdentity = { pid: number; start_ticks: number; boot_id: string }
+export type Experiment = {
+  id: string
+  project_id: string
+  research_id: string
+  round_id: string
+  team_id: string | null
+  task_id: string | null
+  owner_member_id: string | null
+  launch_key: string
+  label: string
+  argv: string[]
+  cwd: string
+  artifacts: string[]
+  sources: ResearchSourceRef[]
+  /** The envelope revision this attempt was admitted under. */
+  policy_revision: number
+  max_runtime_secs: number
+  state: ExperimentState
+  analysis: ExperimentAnalysis
+  identity: ExperimentProcessIdentity | null
+  exit_code: number | null
+  signal: number | null
+  reason: string | null
+  cancel_requested: boolean
+  created_at: string
+  launched_at: string | null
+  finished_at: string | null
+}
+export type ExperimentWait = {
+  id: string
+  experiment_id: string
+  team_id: string
+  task_id: string | null
+  attempt_id: string | null
+  owner_member_id: string
+  expected_follow_up: string
+  deadline_at: number | null
+  state: ExperimentWaitState
+  created_at: string
+  resolved_at: string | null
+}
+export type ResearchExecution = {
+  envelope: ExecutionEnvelope | null
+  experiments: Experiment[]
+  waits: ExperimentWait[]
+  /** Server time (unix seconds), so deadlines render consistently. */
+  now: number
+}
 export type StartResearchRoundRequest = {
   /** Idempotency key: a retry with the same key and request resumes the same round. */
   client_request_id: string
@@ -282,6 +360,8 @@ export type StartResearchRoundRequest = {
   max_teammates?: number
   max_parallel_runs?: number
   max_review_rounds?: number
+  /** The execution envelope for this round; without one nothing can launch. */
+  envelope?: ExecutionEnvelopeLimits
 }
 /** The researcher-approved direction. */
 export type ResearchBrief = {

@@ -39,6 +39,7 @@ use crate::teams::{TeamMode, TeamStatus, TeamWorkspace};
 
 use super::sources::{SourceError, SourceResolver};
 use super::{ResearchApiError, check_project};
+use crate::experiment_store::EnvelopeLimits;
 
 const DEFAULT_LEADER_NAME: &str = "Lead";
 const DEFAULT_ALLOWED_AGENTS: [&str; 3] = ["claude_code", "codex", "opencode"];
@@ -103,6 +104,9 @@ struct StartRoundRequest {
     max_teammates: Option<u8>,
     max_parallel_runs: Option<u8>,
     max_review_rounds: Option<u8>,
+    /// The execution envelope for this round (ADR 0213). Without one, nothing
+    /// can launch a process; it can also be set or revised later.
+    envelope: Option<EnvelopeLimits>,
 }
 
 /// The setup exactly as authorized, with defaults resolved so that a replay
@@ -178,6 +182,7 @@ fn fingerprint(request: &StartRoundRequest) -> String {
         "max_teammates": request.max_teammates,
         "max_parallel_runs": request.max_parallel_runs,
         "max_review_rounds": request.max_review_rounds,
+        "envelope": request.envelope,
     });
     hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
         canonical.to_string().as_bytes(),
@@ -206,6 +211,9 @@ fn preflight(
     }
     if request.sources.len() > MAX_ROUND_SOURCES {
         return Err(invalid("too many sources"));
+    }
+    if let Some(envelope) = &request.envelope {
+        envelope.clone().normalized()?;
     }
     let mut sources: Vec<SourceRef> = Vec::new();
     for source in &request.sources {
@@ -743,6 +751,16 @@ async fn start_round(
             sources,
         },
     )?;
+    if created && let Some(limits) = request.envelope.clone() {
+        state.experiments.set_envelope(
+            &project_id,
+            &research_id,
+            &round.id,
+            None,
+            limits,
+            Some("researcher"),
+        )?;
+    }
     // A replay of an unfinished round resumes it.
     let round = drive_round(&state, &project_id, &research_id, &round.id).await?;
     let current = state.research.get(&project_id, &research_id)?.revision;

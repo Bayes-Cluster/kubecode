@@ -294,7 +294,15 @@ impl TeamStore {
                 WHERE team_id = ?1 AND status IN ('pending_leader', 'waiting_user'))
                + (SELECT COUNT(*) FROM team_messages
                   WHERE team_id = ?1
-                    AND delivery_status IN ('pending', 'delivered', 'failed'))",
+                    AND delivery_status IN ('pending', 'delivered', 'failed'))
+               -- Running or unaccounted experiments, results awaiting analysis,
+               -- and open waits must be reconciled first (ADR 0213).
+               + (SELECT COUNT(*) FROM experiments
+                  WHERE team_id = ?1
+                    AND (state IN ('reserved', 'launching', 'running', 'cancelling', 'unknown')
+                         OR analysis = 'pending'))
+               + (SELECT COUNT(*) FROM experiment_waits
+                  WHERE team_id = ?1 AND state = 'open')",
             [team_id],
             |row| row.get(0),
         )?;
