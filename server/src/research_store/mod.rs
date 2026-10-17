@@ -692,6 +692,28 @@ impl ResearchStore {
     /// the brief has since changed; reusing a key for a *different* request
     /// is refused. A new round must be created against the revision the
     /// researcher saw (`expected_revision`).
+    /// The round started under an idempotency key, if any.
+    pub fn round_by_key(
+        &self,
+        project_id: &str,
+        id: &str,
+        key: &str,
+    ) -> Result<Option<ResearchRound>, ResearchError> {
+        let connection = self.connection();
+        load_question(&connection, project_id, id)?;
+        let Some(key) = normalize_client_request_id(Some(key))? else {
+            return Ok(None);
+        };
+        connection
+            .query_row(
+                &format!("{ROUND_SELECT} WHERE research_id = ?1 AND idempotency_key = ?2"),
+                params![id, key],
+                round_from_row,
+            )
+            .optional()?
+            .transpose()
+    }
+
     pub fn begin_round(
         &self,
         project_id: &str,
@@ -714,9 +736,11 @@ impl ResearchStore {
                 .optional()?
             {
                 let existing = existing?;
+                // The request fingerprint covers what the client asked for;
+                // resolved defaults and file revisions may legitimately differ
+                // on a replay.
                 if existing.kind != new.kind
-                    || existing.request != new.request
-                    || existing.sources != new.sources
+                    || existing.request.get("fingerprint") != new.request.get("fingerprint")
                 {
                     return Err(ResearchError::KeyReuse);
                 }
