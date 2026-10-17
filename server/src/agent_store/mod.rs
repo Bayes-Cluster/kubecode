@@ -40,6 +40,12 @@ impl AgentStore {
         Self::from_database(database)
     }
 
+    /// The shared state database, for stores that compose with this one
+    /// (the single SQLite owner, ADR 0200).
+    pub fn database(&self) -> Arc<Database> {
+        Arc::clone(&self.database)
+    }
+
     /// The directory holding the state database — the parent of the
     /// iLink secret state folder (ADR 0211 §3).
     pub fn database_directory(&self) -> std::path::PathBuf {

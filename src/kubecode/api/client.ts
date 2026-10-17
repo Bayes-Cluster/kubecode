@@ -32,6 +32,15 @@ import type {
   SideQuestionAccepted,
   StartTeamInput,
   StructuredComposerRunRequest,
+  ResearchBrief,
+  ResearchBriefPatch,
+  ResearchDetail,
+  ResearchEntry,
+  ResearchLinkKind,
+  ResearchLinkRole,
+  ResearchRevision,
+  ResearchRevisionSummary,
+  ResearchSummary,
   Team,
   TeamSnapshot,
   TeamWorkspace,
@@ -269,6 +278,111 @@ export class KubecodeApi {
 
   ilinkRemoveQuickPrompt(slot: number): Promise<void> {
     return this.request(`/ilink/quick-prompts/${slot}`, { method: 'DELETE' })
+  }
+
+  listResearch(projectId: string, includeArchived = false): Promise<ResearchSummary[]> {
+    return this.request(`${this.projectPath(projectId)}/research${includeArchived ? `?${query({ archived: 'true' })}` : ''}`)
+  }
+
+  createResearch(
+    projectId: string,
+    brief: Partial<ResearchBrief> & Pick<ResearchBrief, 'title' | 'question'>,
+    clientRequestId?: string,
+  ): Promise<ResearchDetail> {
+    return this.request(`${this.projectPath(projectId)}/research`, {
+      method: 'POST',
+      body: JSON.stringify({ ...brief, client_request_id: clientRequestId }),
+    })
+  }
+
+  getResearch(projectId: string, researchId: string): Promise<ResearchDetail> {
+    return this.request(this.researchPath(projectId, researchId))
+  }
+
+  /** Edits the brief under an optimistic revision check (409 on a stale revision). */
+  updateResearch(
+    projectId: string,
+    researchId: string,
+    expectedRevision: number,
+    patch: ResearchBriefPatch,
+    note?: string,
+  ): Promise<ResearchDetail> {
+    return this.request(this.researchPath(projectId, researchId), {
+      method: 'PATCH',
+      body: JSON.stringify({ ...patch, expected_revision: expectedRevision, note }),
+    })
+  }
+
+  /** Idempotent state commands; none of them creates a brief revision. */
+  setResearchState(
+    projectId: string,
+    researchId: string,
+    action: 'archive' | 'restore' | 'resolve' | 'reopen',
+  ): Promise<ResearchDetail> {
+    return this.request(`${this.researchPath(projectId, researchId)}/${action}`, { method: 'POST' })
+  }
+
+  listResearchEntries(
+    projectId: string,
+    researchId: string,
+    afterSeq = 0,
+    limit?: number,
+  ): Promise<ResearchEntry[]> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/entries?${query({ after_seq: afterSeq, limit })}`,
+    )
+  }
+
+  /** Records a researcher note or decision; the server sets attribution. */
+  addResearchEntry(
+    projectId: string,
+    researchId: string,
+    kind: 'note' | 'decision',
+    body: string,
+    clientRequestId?: string,
+  ): Promise<ResearchEntry> {
+    return this.request(`${this.researchPath(projectId, researchId)}/entries`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, body, client_request_id: clientRequestId }),
+    })
+  }
+
+  listResearchRevisions(projectId: string, researchId: string): Promise<ResearchRevisionSummary[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/revisions`)
+  }
+
+  getResearchRevision(
+    projectId: string,
+    researchId: string,
+    revision: number,
+  ): Promise<ResearchRevision> {
+    return this.request(`${this.researchPath(projectId, researchId)}/revisions/${revision}`)
+  }
+
+  /** Associates a Session or Team; never starts work. */
+  linkResearch(
+    projectId: string,
+    researchId: string,
+    kind: ResearchLinkKind,
+    refId: string,
+    role: ResearchLinkRole,
+  ): Promise<ResearchDetail> {
+    return this.request(`${this.researchPath(projectId, researchId)}/links`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, ref_id: refId, role }),
+    })
+  }
+
+  unlinkResearch(
+    projectId: string,
+    researchId: string,
+    kind: ResearchLinkKind,
+    refId: string,
+  ): Promise<ResearchDetail> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/links/${kind}/${encodeURIComponent(refId)}`,
+      { method: 'DELETE' },
+    )
   }
 
   listConversations(projectId: string): Promise<Conversation[]> {
@@ -790,6 +904,10 @@ export class KubecodeApi {
 
   private projectPath(projectId: string): string {
     return `/projects/${encodeURIComponent(projectId)}`
+  }
+
+  private researchPath(projectId: string, researchId: string): string {
+    return `${this.projectPath(projectId)}/research/${encodeURIComponent(researchId)}`
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {

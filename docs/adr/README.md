@@ -56,3 +56,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0209](0209-semantic-icon-system.md) | Semantic icon system |
 | [0210](0210-agent-interaction-model.md) | Agent interaction model: queue, optimistic send, typed stops, boundary fork |
 | [0211](0211-wechat-ilink-channel.md) | Rust-owned WeChat iLink channel: protocol authority, durable state, trust boundary, bridge |
+| [0212](0212-research-questions-and-continuity.md) | Project-scoped research questions, versioned briefs, and execution continuity |

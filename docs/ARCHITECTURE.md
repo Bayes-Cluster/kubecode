@@ -106,6 +106,15 @@ one `AgentStore` and one `TeamStore`. `server/src/agents.rs` and
 `server/src/teams.rs` are public compatibility re-export shims, not competing
 store implementations.
 
+Research questions (ADR 0212) are a third feature store on the same SQLite
+owner. `server/src/research_store/` owns the domain — questions, immutable
+brief revisions, the attributed entry log, and Session/Team associations —
+and `server/src/research_api.rs` exposes it under
+`/api/v1/projects/{project_id}/research`, composed through `AppState`. The store
+commits its `research_updated` workspace event in the same transaction as each
+change. It never starts an Agent; execution continues to flow through the Team
+and run-admission paths.
+
 The browser workspace follows the same composition pattern.
 `src/kubecode/app/` owns application bootstrap, navigation, dialogs, preferences,
 and the workbench shell; `src/kubecode/session/` owns the Agent Session timeline,

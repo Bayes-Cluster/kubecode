@@ -832,6 +832,51 @@ selector (Sessions grouped by Project, unbindable ones disabled with a reason)
 and the Session sidebar (a context-menu command and a restrained marker on the
 bound row); the server stays authoritative after refresh and reconnect.
 
+## Research question
+
+A research question (RQ, ADR 0212) is the durable, Project-scoped home for a
+research direction that outlives individual Sessions and Team rounds. It is
+identified by `(project_id, research_id)`; every lookup is scoped by Project,
+so another Project's RQ is indistinguishable from a missing one. Saving,
+editing, discussing, archiving, or linking an RQ never starts an Agent.
+
+- **State.** `status` is `open` or `resolved` and changes only by researcher
+  command (`resolve` / `reopen`); Team completion never resolves an RQ.
+  `archived` is a reversible flag that hides the RQ and blocks writes without
+  deleting anything. Both are idempotent commands that never create a brief
+  revision.
+- **Brief and revisions.** The approved direction is `title`, `question`,
+  `motivation`, `hypotheses`, `constraints`, and `evaluation_criteria`, bounded
+  to 16 KiB. The RQ's integer `revision` starts at 1 and increases only when the
+  brief changes. Every revision is an immutable row that is never pruned,
+  because rounds and findings cite revisions by number. An edit supplies
+  `expected_revision`; a stale value is a conflict that names the current
+  revision and writes nothing, and an edit that changes nothing creates no
+  revision. Agents never write the brief: an Agent-suggested change is a
+  `proposal` entry a researcher accepts.
+- **Entries.** An append-only, per-RQ sequenced log of `note`, `decision`,
+  `proposal`, and `observation` entries. Each records its author kind
+  (`researcher`, `agent`, `system`), an optional author reference, and the brief
+  revision current when written. The browser API records only researcher notes
+  and decisions; the server sets attribution, never the client. Creates and
+  entries accept a client request id for idempotent retries.
+- **Associations.** `research_links` ties an RQ to Sessions and Teams by
+  identifier with a `discussion` or `execution` role. A given Session or Team
+  belongs to at most one RQ (a second link is a conflict, never a move); an RQ
+  may have many. Linking validates the target exists in the same Project and is
+  not a Team-owned Session. Unlinking removes only the association and is
+  allowed on archived RQs. Unlinked Sessions and Teams behave exactly as before.
+- **Source references.** Research rows hold identifiers, never copies:
+  `{ kind, id }` with kind `session`, `run`, `team`, `team_task`, or `file` (a
+  Project-relative path resolved through `WorkspaceService`). A source resolves
+  to `available`, `changed`, or `removed`. Local-only deletion keeps its meaning:
+  removing a Session or unregistering a Project cascades nothing into research
+  rows, and a removed target is reported as `removed` without exposing another
+  Project.
+- **Events.** Each change commits `research_updated` (content-free: research id
+  and change kind) in the same transaction, so a reloaded or reconnected browser
+  converges by refetching.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

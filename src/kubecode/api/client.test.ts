@@ -1016,4 +1016,114 @@ describe('Kubecode API client', () => {
       status: 502,
     })
   })
+
+  describe('research', () => {
+    const ok = (body: unknown) => new Response(JSON.stringify(body))
+
+    it('encodes ids and sends the list filter below the base path', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok([]))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/user/alice/kubecode')
+
+      await api.listResearch('project/id')
+      await api.listResearch('project/id', true)
+
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        '/user/alice/kubecode/api/v1/projects/project%2Fid/research',
+        expect.anything(),
+      )
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        '/user/alice/kubecode/api/v1/projects/project%2Fid/research?archived=true',
+        expect.anything(),
+      )
+    })
+
+    it('creates with an idempotency key and edits under a revision check', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('')
+
+      await api.createResearch('p', { title: 'T', question: 'Q?', constraints: ['c'] }, 'req-1')
+      await api.updateResearch('p', 'r/1', 3, { title: 'T2' }, 'narrowed')
+
+      const [createUrl, createInit] = fetch.mock.calls[0]
+      expect(createUrl).toBe('/api/v1/projects/p/research')
+      expect(createInit.method).toBe('POST')
+      expect(JSON.parse(createInit.body)).toEqual({
+        title: 'T',
+        question: 'Q?',
+        constraints: ['c'],
+        client_request_id: 'req-1',
+      })
+      const [patchUrl, patchInit] = fetch.mock.calls[1]
+      expect(patchUrl).toBe('/api/v1/projects/p/research/r%2F1')
+      expect(patchInit.method).toBe('PATCH')
+      expect(JSON.parse(patchInit.body)).toEqual({
+        title: 'T2',
+        expected_revision: 3,
+        note: 'narrowed',
+      })
+    })
+
+    it('surfaces a stale-revision conflict with the current revision', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+        JSON.stringify({
+          code: 'research_revision_conflict',
+          message: 'conflict',
+          current_revision: 5,
+        }),
+        { status: 409, headers: { 'content-type': 'application/json' } },
+      )))
+      const api = new KubecodeApi('')
+
+      await expect(api.updateResearch('p', 'r', 1, { title: 'x' })).rejects.toMatchObject({
+        code: 'research_revision_conflict',
+        status: 409,
+      })
+    })
+
+    it('uses command routes for state and records only notes and decisions', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('')
+
+      await api.setResearchState('p', 'r', 'archive')
+      await api.addResearchEntry('p', 'r', 'decision', 'Drop B', 'd-1')
+      await api.listResearchEntries('p', 'r', 4, 50)
+
+      expect(fetch.mock.calls[0][0]).toBe('/api/v1/projects/p/research/r/archive')
+      expect(fetch.mock.calls[0][1].method).toBe('POST')
+      expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+        kind: 'decision',
+        body: 'Drop B',
+        client_request_id: 'd-1',
+      })
+      expect(fetch.mock.calls[2][0]).toBe(
+        '/api/v1/projects/p/research/r/entries?after_seq=4&limit=50',
+      )
+    })
+
+    it('links and unlinks Sessions and Teams and reads revisions', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await api.linkResearch('p', 'r', 'session', 's/1', 'discussion')
+      await api.unlinkResearch('p', 'r', 'team', 't/1')
+      await api.listResearchRevisions('p', 'r')
+      await api.getResearchRevision('p', 'r', 2)
+
+      expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+        kind: 'session',
+        ref_id: 's/1',
+        role: 'discussion',
+      })
+      expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/research/r/links/team/t%2F1')
+      expect(fetch.mock.calls[1][1].method).toBe('DELETE')
+      expect(fetch.mock.calls[2][0]).toBe('/b/api/v1/projects/p/research/r/revisions')
+      expect(fetch.mock.calls[3][0]).toBe('/b/api/v1/projects/p/research/r/revisions/2')
+    })
+  })
 })
