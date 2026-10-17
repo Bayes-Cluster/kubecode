@@ -770,6 +770,18 @@ Delivery goes through `ILinkService`, which alone unseals the bot token and
 the peer's stored context token and caches per-peer typing tickets; a peer
 without a stored context cannot be addressed at all.
 
+Agent-shared files reach WeChat only through a structured ACP `resource_link`
+with a `file://` URI ([media addendum](adr/0211-media-2026-10-17.md)); model
+text is never read as a path. The journal records a server-side
+`agent_media_refs` row and publishes a `media_shared` run event carrying only
+an opaque id, kind, and MIME. The outbound bridge flushes preceding text, then
+resolves the id within the sharing conversation through
+`WorkspaceService::read_shared_media` — inside the Session execution root, no
+symlink or hidden component, regular file, allowlisted extension confirmed by
+content signature, at most 10 MiB, and stable across the read — and uploads it
+through the encrypted CDN with an optional caption sent first. Any rejection
+becomes one localized notice; the buffer lives only for that delivery.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

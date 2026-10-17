@@ -13,6 +13,9 @@ use uuid::Uuid;
 use crate::agents::ExecutionMode;
 use crate::database::{Database, DatabaseError, ensure_column};
 use crate::project_watcher::{ProjectWatcher, WorkspaceEventSink};
+use crate::shared_media::{
+    MAX_SHARED_MEDIA_BYTES, SharedMediaKind, classify_extension, content_matches, safe_file_name,
+};
 
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
@@ -39,6 +42,8 @@ pub enum WorkspaceError {
     FileTooLarge,
     #[error("asset is larger than the 8 MiB preview limit")]
     AssetTooLarge,
+    #[error("shared file is larger than the 10 MiB delivery limit")]
+    SharedMediaTooLarge,
     #[error("git worktree operation failed: {0}")]
     Git(String),
     #[error("workspace changed after this turn (expected {expected}, current {current})")]
@@ -72,6 +77,29 @@ pub struct TextDocument {
     pub content: String,
     pub revision: String,
     pub size: usize,
+}
+
+/// One Agent-shared file read for channel delivery (issue #132).
+#[derive(Clone, Eq, PartialEq)]
+pub struct SharedMediaFile {
+    pub bytes: Vec<u8>,
+    /// Plain attachment name (no directories).
+    pub file_name: String,
+    pub kind: SharedMediaKind,
+    pub mime: &'static str,
+}
+
+/// Content-free rendering: never prints bytes or the file name.
+impl std::fmt::Debug for SharedMediaFile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "SharedMediaFile({:?}, {}, {} bytes)",
+            self.kind,
+            self.mime,
+            self.bytes.len()
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -995,6 +1023,122 @@ impl WorkspaceService {
             return Err(WorkspaceError::AssetTooLarge);
         }
         Ok(bytes)
+    }
+
+    /// Reads one Agent-shared file for channel delivery (issue #132). The
+    /// absolute `path` must lie inside the Session execution root and reach
+    /// a regular file through plain directories — no symlink, hidden, `.`,
+    /// or `..` component. The extension must be allowlisted and the content
+    /// must match it; the file must be the same inode and size before,
+    /// during, and after the bounded read, and must match a
+    /// provider-declared size when one exists. Errors never carry the path.
+    pub fn read_shared_media(
+        &self,
+        project_id: &str,
+        agent_session_id: &str,
+        execution_mode: ExecutionMode,
+        workspace_path: Option<&str>,
+        path: &Path,
+        declared_size: Option<u64>,
+    ) -> Result<SharedMediaFile, WorkspaceError> {
+        use std::os::unix::fs::MetadataExt;
+        let ineligible = || WorkspaceError::IneligibleContext("shared media".to_owned());
+        if !path.is_absolute() {
+            return Err(ineligible());
+        }
+        let root = self.session_execution_path(
+            project_id,
+            agent_session_id,
+            execution_mode,
+            workspace_path,
+        )?;
+        let canonical_root = root.canonicalize()?;
+        let relative = path.strip_prefix(&root).map_err(|_| ineligible())?;
+        let components = relative.components().collect::<Vec<_>>();
+        if components.is_empty() {
+            return Err(ineligible());
+        }
+        let mut candidate = root;
+        for (index, component) in components.iter().enumerate() {
+            let Component::Normal(name) = component else {
+                return Err(ineligible());
+            };
+            if name.to_string_lossy().starts_with('.') {
+                return Err(ineligible());
+            }
+            candidate.push(name);
+            let metadata = fs::symlink_metadata(&candidate).map_err(|_| ineligible())?;
+            if metadata.file_type().is_symlink() {
+                return Err(ineligible());
+            }
+            let is_final = index + 1 == components.len();
+            if (!is_final && !metadata.is_dir()) || (is_final && !metadata.is_file()) {
+                return Err(ineligible());
+            }
+        }
+        let file_name = candidate
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(safe_file_name)
+            .ok_or_else(ineligible)?;
+        let (kind, mime) = Path::new(&file_name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(classify_extension)
+            .ok_or_else(ineligible)?;
+        let before = fs::symlink_metadata(&candidate)?;
+        if before.len() > MAX_SHARED_MEDIA_BYTES {
+            return Err(WorkspaceError::SharedMediaTooLarge);
+        }
+        if let Some(declared) = declared_size
+            && declared != before.len()
+        {
+            return Err(WorkspaceError::Conflict {
+                expected: declared.to_string(),
+                current: before.len().to_string(),
+            });
+        }
+        let file = fs::File::open(&candidate)?;
+        let opened = file.metadata()?;
+        if !opened.is_file() || opened.dev() != before.dev() || opened.ino() != before.ino() {
+            return Err(ineligible());
+        }
+        // The component walk above can race with a directory being swapped
+        // for a symlink, so judge the file actually opened: its real path
+        // must still lie inside the execution root, and a hard link (which
+        // could alias a file outside it) is refused.
+        let opened_path = {
+            use std::os::fd::AsRawFd;
+            fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+                .map_err(|_| ineligible())?
+        };
+        if !opened_path.starts_with(&canonical_root) || opened.nlink() > 1 {
+            return Err(ineligible());
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_SHARED_MEDIA_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        let after = fs::symlink_metadata(&candidate)?;
+        if bytes.len() as u64 != before.len()
+            || after.len() != before.len()
+            || after.ino() != before.ino()
+            || after.mtime() != before.mtime()
+            || after.mtime_nsec() != before.mtime_nsec()
+        {
+            return Err(WorkspaceError::Conflict {
+                expected: before.len().to_string(),
+                current: bytes.len().to_string(),
+            });
+        }
+        if !content_matches(mime, &bytes) {
+            return Err(ineligible());
+        }
+        Ok(SharedMediaFile {
+            bytes,
+            file_name,
+            kind,
+            mime,
+        })
     }
 
     pub fn write_text(

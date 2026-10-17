@@ -4,6 +4,12 @@
 //! cancellation sends its typed notice; an unreachable peer stops
 //! receiving sends; and the service delivers text/typing with the sealed
 //! peer context and a cached typing ticket over the real wire shape.
+//!
+//! Shared media (#132): structured resource links resolve through
+//! `WorkspaceService` by opaque id, arrive after preceding text, and
+//! ineligible files (outside the root, symlinked, hidden, directories,
+//! changed, mislabelled, oversized, other Sessions') never upload; the
+//! service's encrypted CDN upload matches the reviewed upstream wire.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -18,13 +24,16 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_runtime::AgentRuntime;
 use kubecode_server::agent_store::{AgentStore, IlinkAccountStatus, IlinkCredentialRecord};
 use kubecode_server::agents::{AgentId, RunStatus};
+use kubecode_server::ilink::bridge::WorkspaceMediaSource;
 use kubecode_server::ilink::inbound::{BridgePrompt, ChannelLanguage};
 use kubecode_server::ilink::outbound::OutboundConfig;
+use kubecode_server::ilink::outbound::{MediaRejection, MediaSource};
 use kubecode_server::ilink::{
     ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkError, IlinkServiceConfig, OriginPolicy,
     OutboundTransport, Secret, SecretKeyring,
 };
-use kubecode_server::workspace::WorkspaceService;
+use kubecode_server::shared_media::SharedMediaKind;
+use kubecode_server::workspace::{SharedMediaFile, WorkspaceService};
 use tempfile::TempDir;
 
 const ACCOUNT: &str = "ilink_bot_synthetic_01";
@@ -34,8 +43,17 @@ const PEER: &str = "wxid_synthetic_owner";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Sent {
-    Text { client_id: String, text: String },
+    Text {
+        client_id: String,
+        text: String,
+    },
     Typing(bool),
+    Media {
+        client_id: String,
+        kind: SharedMediaKind,
+        file_name: String,
+        bytes: usize,
+    },
 }
 
 #[derive(Default)]
@@ -56,7 +74,7 @@ impl Capture {
             .into_iter()
             .filter_map(|sent| match sent {
                 Sent::Text { text, .. } => Some(text),
-                Sent::Typing(_) => None,
+                Sent::Typing(_) | Sent::Media { .. } => None,
             })
             .collect()
     }
@@ -95,12 +113,32 @@ impl OutboundTransport for Capture {
             Ok(())
         })
     }
+
+    fn send_media<'a>(
+        &'a self,
+        peer_id: &'a str,
+        media: &'a SharedMediaFile,
+        client_id: &'a str,
+    ) -> BoxFuture<'a, Result<(), IlinkError>> {
+        Box::pin(async move {
+            assert_eq!(peer_id, PEER);
+            self.sent.lock().unwrap().push(Sent::Media {
+                client_id: client_id.to_owned(),
+                kind: media.kind,
+                file_name: media.file_name.clone(),
+                bytes: media.bytes.len(),
+            });
+            Ok(())
+        })
+    }
 }
 
 // -- Runtime harness -------------------------------------------------------------
 
 struct Environment {
-    _root: TempDir,
+    root: TempDir,
+    workspace: Arc<WorkspaceService>,
+    project_path: std::path::PathBuf,
     store: Arc<AgentStore>,
     runtime: Arc<AgentRuntime>,
     service: Arc<ILinkService>,
@@ -135,7 +173,7 @@ async fn environment(tag: &str, agent_body: &str) -> Environment {
             id: AgentId::OpenCode,
             available: true,
             version: Some("test".into()),
-            executable: executable(&root, agent_body),
+            executable: executable(&root, &agent_body.replace("__PROJECT__", &project.path)),
             error: None,
         }],
     ));
@@ -176,10 +214,13 @@ async fn environment(tag: &str, agent_body: &str) -> Environment {
         .bind_ilink_session(ACCOUNT, &conversation.id)
         .expect("bind");
     let capture = Arc::new(Capture::default());
+    let media: Arc<dyn MediaSource> =
+        WorkspaceMediaSource::new(Arc::clone(&store), Arc::clone(&workspace));
     let bridge = ChannelBridge::start_with_transport(
         Arc::clone(&service),
         Arc::clone(&runtime),
         Arc::clone(&capture) as Arc<dyn OutboundTransport>,
+        Some(media),
         ChannelBridgeConfig {
             language: ChannelLanguage::En,
             outbound: OutboundConfig {
@@ -193,7 +234,9 @@ async fn environment(tag: &str, agent_body: &str) -> Environment {
     .await
     .expect("bridge");
     Environment {
-        _root: root,
+        root,
+        workspace,
+        project_path: std::path::PathBuf::from(&project.path),
         store,
         runtime,
         service,
@@ -556,6 +599,7 @@ async fn a_restarted_bridge_delivers_what_happened_while_it_was_down() {
         Arc::clone(&env.service),
         Arc::clone(&env.runtime),
         Arc::clone(&capture) as Arc<dyn OutboundTransport>,
+        None,
         ChannelBridgeConfig {
             language: ChannelLanguage::En,
             outbound: OutboundConfig {
@@ -745,5 +789,469 @@ async fn service_sends_text_and_typing_with_the_sealed_peer_context() {
             .filter(|(path, _)| path == "/ilink/bot/sendtyping")
             .all(|(_, body)| body["typing_ticket"] == "synthetic-ticket")
     );
+    service.shutdown().await;
+}
+
+// -- Shared media (#132) ----------------------------------------------------------
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\nsynthetic-image-bytes";
+
+fn resource_link(uri: &str, name: &str, title: Option<&str>) -> String {
+    let title = title
+        .map(|title| format!(r#","title":"{title}""#))
+        .unwrap_or_default();
+    format!(
+        r#"      printf '%s\n' '{{"jsonrpc":"2.0","method":"session/update","params":{{"sessionId":"outbound-session","update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"resource_link","uri":"{uri}","name":"{name}"{title}}}}}}}}}'"#
+    )
+}
+
+fn sharing_agent(links: &[String]) -> String {
+    agent(&format!(
+        r#"    *'"method":"session/prompt"'*)
+{}
+{}
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      ;;"#,
+        chunk("Here is the chart."),
+        links.join("\n"),
+    ))
+}
+
+#[tokio::test]
+async fn shared_image_follows_its_text_with_caption_and_content_free_events() {
+    let env = environment(
+        "media",
+        &sharing_agent(&[resource_link(
+            "file://__PROJECT__/out/chart.png",
+            "chart.png",
+            Some("Build chart"),
+        )]),
+    )
+    .await;
+    fs::create_dir_all(env.project_path.join("out")).expect("out dir");
+    fs::write(env.project_path.join("out/chart.png"), PNG).expect("chart");
+    route(&env, prompt("draw the chart", 1)).await;
+    wait_until(
+        || env.capture.snapshot().last() == Some(&Sent::Typing(false)),
+        "completion",
+    )
+    .await;
+    let sent: Vec<Sent> = env
+        .capture
+        .snapshot()
+        .into_iter()
+        .filter(|item| !matches!(item, Sent::Text { text, .. } if text == "Sent to the Session."))
+        .collect();
+    let run = env
+        .store
+        .list_runs(&env.conversation_id)
+        .expect("runs")
+        .pop()
+        .expect("run");
+    assert_eq!(
+        sent[1..],
+        [
+            Sent::Text {
+                client_id: format!("kubecode-{}-0", run.id),
+                text: "Here is the chart.".into()
+            },
+            Sent::Text {
+                client_id: format!("kubecode-{}-m0-caption", run.id),
+                text: "Build chart".into()
+            },
+            Sent::Media {
+                client_id: format!("kubecode-{}-m0", run.id),
+                kind: SharedMediaKind::Image,
+                file_name: "chart.png".into(),
+                bytes: PNG.len(),
+            },
+            Sent::Typing(false),
+        ]
+    );
+    // The public event carries only the opaque id, kind, and MIME.
+    let event = env
+        .store
+        .workspace_events_after(0)
+        .expect("events")
+        .into_iter()
+        .find(|event| event.kind == "media_shared")
+        .expect("media event");
+    let mut keys: Vec<&String> = event.payload.as_object().expect("object").keys().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["kind", "media_id", "mime"]);
+    let rendered = event.payload.to_string();
+    assert!(
+        !rendered.contains("chart.png")
+            && !rendered.contains(&env.project_path.display().to_string())
+    );
+    env.bridge.shutdown().await;
+}
+
+#[tokio::test]
+async fn ineligible_shared_files_never_upload_and_send_one_notice_each() {
+    let links = [
+        // Outside the Session execution root.
+        resource_link("file://__PROJECT__/../outside.png", "outside.png", None),
+        // Symlink into the project pointing outside.
+        resource_link("file://__PROJECT__/link.png", "link.png", None),
+        // Hidden component.
+        resource_link("file://__PROJECT__/.secrets/key.txt", "key.txt", None),
+        // A directory with an allowlisted extension.
+        resource_link("file://__PROJECT__/folder.png", "folder.png", None),
+        // Missing.
+        resource_link("file://__PROJECT__/missing.pdf", "missing.pdf", None),
+        // Content does not match the extension.
+        resource_link("file://__PROJECT__/fake.png", "fake.png", None),
+        // Executable disguised as text.
+        resource_link("file://__PROJECT__/run.txt", "run.txt", None),
+    ];
+    let env = environment("ineligible", &sharing_agent(&links)).await;
+    let parent = env.project_path.parent().expect("parent");
+    fs::write(parent.join("outside.png"), PNG).expect("outside");
+    std::os::unix::fs::symlink(
+        parent.join("outside.png"),
+        env.project_path.join("link.png"),
+    )
+    .expect("symlink");
+    fs::create_dir_all(env.project_path.join(".secrets")).expect("hidden dir");
+    fs::write(env.project_path.join(".secrets/key.txt"), "secret").expect("hidden");
+    fs::create_dir_all(env.project_path.join("folder.png")).expect("dir");
+    fs::write(env.project_path.join("fake.png"), "not an image").expect("fake");
+    fs::write(env.project_path.join("run.txt"), "#!/bin/sh\necho hi\n").expect("script");
+    route(&env, prompt("share files", 1)).await;
+    wait_until(
+        || env.capture.snapshot().last() == Some(&Sent::Typing(false)),
+        "completion",
+    )
+    .await;
+    let snapshot = env.capture.snapshot();
+    assert!(
+        !snapshot
+            .iter()
+            .any(|item| matches!(item, Sent::Media { .. })),
+        "nothing ineligible uploads"
+    );
+    let notices = env
+        .capture
+        .texts()
+        .into_iter()
+        .filter(|text| text == "A shared file could not be sent. Open Kubecode to get it.")
+        .count();
+    assert_eq!(notices, links.len());
+    env.bridge.shutdown().await;
+}
+
+#[tokio::test]
+async fn media_resolution_is_scoped_to_the_sharing_session_and_its_revision() {
+    let env = environment("scope", &streaming_agent()).await;
+    let conversation = env
+        .store
+        .get_conversation(&env.conversation_id)
+        .expect("conversation");
+    let other = env
+        .store
+        .create_conversation(&conversation.project_id, AgentId::OpenCode, Some("Other"))
+        .expect("other");
+    fs::write(env.project_path.join("report.pdf"), b"%PDF-1.7 synthetic").expect("pdf");
+    let uri = format!("file://{}/report.pdf", env.project_path.display());
+    let record = |id: &str, conversation_id: &str, declared: Option<u64>| {
+        env.store
+            .record_agent_media(&kubecode_server::agent_store::AgentMediaRef {
+                id: id.to_owned(),
+                conversation_id: conversation_id.to_owned(),
+                run_id: "run".to_owned(),
+                uri: uri.clone(),
+                declared_size: declared,
+                caption: None,
+            })
+            .expect("record");
+    };
+    record("ok", &env.conversation_id, Some(18));
+    record("stale-size", &env.conversation_id, Some(999));
+    record("foreign", &other.id, None);
+    let source = WorkspaceMediaSource::new(Arc::clone(&env.store), Arc::clone(&env.workspace));
+    let loaded = source.load(&env.conversation_id, "ok").expect("loads");
+    assert_eq!(loaded.file.kind, SharedMediaKind::File);
+    assert_eq!(loaded.file.mime, "application/pdf");
+    assert_eq!(loaded.file.file_name, "report.pdf");
+    assert_eq!(
+        source.load(&env.conversation_id, "stale-size").err(),
+        Some(MediaRejection::Changed),
+        "a file that changed since it was shared is refused"
+    );
+    assert_eq!(
+        source.load(&env.conversation_id, "foreign").err(),
+        Some(MediaRejection::Unavailable),
+        "another Session's media id never resolves here"
+    );
+    assert_eq!(
+        source.load(&env.conversation_id, "unknown").err(),
+        Some(MediaRejection::Unavailable)
+    );
+    // Oversized files are refused before reading.
+    let big = env.project_path.join("big.zip");
+    fs::File::create(&big)
+        .expect("big")
+        .set_len(10 * 1024 * 1024 + 1)
+        .expect("size");
+    env.store
+        .record_agent_media(&kubecode_server::agent_store::AgentMediaRef {
+            id: "big".to_owned(),
+            conversation_id: env.conversation_id.clone(),
+            run_id: "run".to_owned(),
+            uri: format!("file://{}", big.display()),
+            declared_size: None,
+            caption: None,
+        })
+        .expect("record big");
+    assert_eq!(
+        source.load(&env.conversation_id, "big").err(),
+        Some(MediaRejection::TooLarge)
+    );
+    // A hard link inside the root to a file outside it is refused.
+    let outside = env
+        .project_path
+        .parent()
+        .expect("parent")
+        .join("outside-notes.txt");
+    fs::write(&outside, "private notes").expect("outside file");
+    fs::hard_link(&outside, env.project_path.join("notes.txt")).expect("hard link");
+    env.store
+        .record_agent_media(&kubecode_server::agent_store::AgentMediaRef {
+            id: "hardlink".to_owned(),
+            conversation_id: env.conversation_id.clone(),
+            run_id: "run".to_owned(),
+            uri: format!("file://{}/notes.txt", env.project_path.display()),
+            declared_size: None,
+            caption: None,
+        })
+        .expect("record hard link");
+    assert_eq!(
+        source.load(&env.conversation_id, "hardlink").err(),
+        Some(MediaRejection::Ineligible)
+    );
+    // Removing the Session removes its media references.
+    env.store
+        .delete_conversation(&env.conversation_id)
+        .expect("delete");
+    assert!(env.store.agent_media("ok").expect("lookup").is_none());
+    drop(env.root);
+}
+
+// -- Encrypted CDN upload wire (#132) -------------------------------------------
+
+#[derive(Default)]
+struct MediaWire {
+    requests: Mutex<Vec<(String, serde_json::Value)>>,
+    uploads: Mutex<Vec<Vec<u8>>>,
+    upload_full_url: Mutex<Option<String>>,
+}
+
+async fn media_fallback(State(state): State<Arc<MediaWire>>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    let body = axum::body::to_bytes(body, 32 << 20)
+        .await
+        .unwrap_or_default();
+    let path = parts.uri.path().to_owned();
+    if path == "/upload" {
+        state.uploads.lock().unwrap().push(body.to_vec());
+        return Response::builder()
+            .status(200)
+            .header("x-encrypted-param", "synthetic-download-param")
+            .body(axum::body::Body::empty())
+            .unwrap();
+    }
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    state.requests.lock().unwrap().push((path.clone(), json));
+    let response = match path.as_str() {
+        "/ilink/bot/getupdates" => {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            r#"{"ret":0,"msgs":[],"get_updates_buf":"cursor"}"#.to_owned()
+        }
+        "/ilink/bot/getuploadurl" => match state.upload_full_url.lock().unwrap().clone() {
+            Some(url) => serde_json::json!({ "upload_full_url": url }).to_string(),
+            None => r#"{"upload_param":"synthetic-upload-param"}"#.to_owned(),
+        },
+        _ => r#"{"ret":0}"#.to_owned(),
+    };
+    Response::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(response))
+        .unwrap()
+}
+
+async fn media_service() -> (TempDir, Arc<ILinkService>, Arc<MediaWire>) {
+    let root = TempDir::new().expect("tempdir");
+    let database = root.path().join(".state/kubecode/kubecode.sqlite3");
+    let store = Arc::new(AgentStore::open(&database).expect("store"));
+    let mock = Arc::new(MediaWire::default());
+    let app = Router::new()
+        .fallback(media_fallback)
+        .with_state(Arc::clone(&mock));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let keyring = SecretKeyring::open(store.database_directory().join("ilink")).expect("keyring");
+    let sealed = keyring
+        .seal(br#"{"bot_token":"synthetic-bot-token"}"#)
+        .expect("seal");
+    store
+        .upsert_ilink_account(ACCOUNT, "Test")
+        .expect("account");
+    store
+        .save_ilink_credentials(&IlinkCredentialRecord {
+            account_id: ACCOUNT.to_owned(),
+            device_id: "device".to_owned(),
+            committed_cursor: 0,
+            get_updates_buf: String::new(),
+            api_origin: base.clone(),
+            cdn_origin: base.clone(),
+            sealed_blob: sealed,
+        })
+        .expect("credentials");
+    store
+        .upsert_ilink_peer(ACCOUNT, PEER, "", true)
+        .expect("peer");
+    let service = ILinkService::new(
+        Arc::clone(&store),
+        IlinkServiceConfig {
+            api_base: base.clone(),
+            cdn_base: base,
+            origin_policy: OriginPolicy::testing(),
+            long_poll_timeout: Duration::from_millis(200),
+            retry_delay: Duration::from_millis(50),
+            ..IlinkServiceConfig::default()
+        },
+    );
+    assert!(service.restore_on_startup().await.expect("restore"));
+    (root, service, mock)
+}
+
+fn shared(kind: SharedMediaKind, mime: &'static str, name: &str, bytes: &[u8]) -> SharedMediaFile {
+    SharedMediaFile {
+        bytes: bytes.to_vec(),
+        file_name: name.to_owned(),
+        kind,
+        mime,
+    }
+}
+
+#[tokio::test]
+async fn service_uploads_encrypted_media_and_sends_upstream_items() {
+    let (_root, service, mock) = media_service().await;
+    let image = shared(SharedMediaKind::Image, "image/png", "chart.png", PNG);
+    // No reply context yet: nothing is uploaded.
+    assert!(matches!(
+        service.send_media(PEER, &image, "kubecode-run-m0").await,
+        Err(IlinkError::PeerContextUnavailable)
+    ));
+    assert!(mock.uploads.lock().unwrap().is_empty());
+    service
+        .remember_peer_context(ACCOUNT, PEER, &Secret::new("ctx-synthetic"))
+        .expect("context");
+
+    service
+        .send_media(PEER, &image, "kubecode-run-m0")
+        .await
+        .expect("image send");
+    let pdf = shared(
+        SharedMediaKind::File,
+        "application/pdf",
+        "report.pdf",
+        b"%PDF-1.7 synthetic",
+    );
+    service
+        .send_media(PEER, &pdf, "kubecode-run-m1")
+        .await
+        .expect("file send");
+
+    let requests = mock.requests.lock().unwrap().clone();
+    let uploads = mock.uploads.lock().unwrap().clone();
+    let upload_requests: Vec<serde_json::Value> = requests
+        .iter()
+        .filter(|(path, _)| path == "/ilink/bot/getuploadurl")
+        .map(|(_, body)| body.clone())
+        .collect();
+    let sends: Vec<serde_json::Value> = requests
+        .iter()
+        .filter(|(path, _)| path == "/ilink/bot/sendmessage")
+        .map(|(_, body)| body.clone())
+        .collect();
+    assert_eq!(
+        (upload_requests.len(), uploads.len(), sends.len()),
+        (2, 2, 2)
+    );
+
+    for (index, (plaintext, media_type)) in [(PNG, 1), (&b"%PDF-1.7 synthetic"[..], 3)]
+        .into_iter()
+        .enumerate()
+    {
+        let request = &upload_requests[index];
+        assert_eq!(request["media_type"], media_type);
+        assert_eq!(request["to_user_id"], PEER);
+        assert_eq!(request["rawsize"], plaintext.len());
+        assert_eq!(request["filesize"], (plaintext.len() / 16 + 1) * 16);
+        assert_eq!(request["no_need_thumb"], true);
+        assert_eq!(
+            request["rawfilemd5"],
+            kubecode_server::ilink::crypto::md5_hex(plaintext)
+        );
+        let key_hex = request["aeskey"].as_str().expect("aeskey");
+        let key: [u8; 16] = hex::decode(key_hex)
+            .expect("hex key")
+            .try_into()
+            .expect("16 bytes");
+        // The CDN received ciphertext that decrypts to the plaintext.
+        assert_ne!(uploads[index], plaintext);
+        assert_eq!(
+            kubecode_server::ilink::crypto::aes_ecb_decrypt(&key, &uploads[index])
+                .expect("decrypt"),
+            plaintext
+        );
+        // The sent item references the upload exactly like upstream.
+        let item = &sends[index]["msg"]["item_list"][0];
+        let media = if media_type == 1 {
+            assert_eq!(item["type"], 2);
+            assert_eq!(item["image_item"]["mid_size"], uploads[index].len());
+            &item["image_item"]["media"]
+        } else {
+            assert_eq!(item["type"], 4);
+            assert_eq!(item["file_item"]["file_name"], "report.pdf");
+            assert_eq!(item["file_item"]["len"], plaintext.len().to_string());
+            &item["file_item"]["media"]
+        };
+        assert_eq!(media["encrypt_query_param"], "synthetic-download-param");
+        assert_eq!(media["encrypt_type"], 1);
+        use base64::Engine as _;
+        assert_eq!(
+            media["aes_key"],
+            base64::engine::general_purpose::STANDARD.encode(key_hex.as_bytes())
+        );
+        assert_eq!(sends[index]["msg"]["context_token"], "ctx-synthetic");
+        assert_eq!(
+            sends[index]["msg"]["client_id"],
+            format!("kubecode-run-m{index}")
+        );
+    }
+
+    // An upload URL on an unexpected host is refused before any upload.
+    *mock.upload_full_url.lock().unwrap() = Some("https://cdn.evil.example/upload".to_owned());
+    assert!(matches!(
+        service.send_media(PEER, &image, "kubecode-run-m2").await,
+        Err(IlinkError::OriginRejected { .. })
+    ));
+    assert_eq!(mock.uploads.lock().unwrap().len(), 2);
+    // Oversized payloads never leave the process.
+    let huge = shared(
+        SharedMediaKind::File,
+        "application/zip",
+        "huge.zip",
+        &vec![0u8; 10 * 1024 * 1024 + 1],
+    );
+    assert!(matches!(
+        service.send_media(PEER, &huge, "kubecode-run-m3").await,
+        Err(IlinkError::PayloadTooLarge { .. })
+    ));
     service.shutdown().await;
 }

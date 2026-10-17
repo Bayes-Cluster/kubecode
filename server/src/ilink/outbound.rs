@@ -27,6 +27,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_store::{AgentStore, WorkspaceEvent};
+use crate::workspace::SharedMediaFile;
 
 use super::error::IlinkError;
 use super::inbound::{ChannelLanguage, ChannelReply, ResponseChannel};
@@ -462,6 +463,13 @@ pub enum OutboundAction {
     ClearInteractions {
         peer_id: String,
     },
+    /// Delivers one Agent-shared file, resolved by opaque id (#132).
+    Media {
+        peer_id: String,
+        conversation_id: String,
+        media_id: String,
+        client_id: String,
+    },
 }
 
 /// Content-free rendering: never prints reply text or peer ids.
@@ -484,6 +492,7 @@ impl std::fmt::Debug for OutboundAction {
                 option_ids.len()
             ),
             Self::ClearInteractions { .. } => write!(formatter, "ClearInteractions"),
+            Self::Media { client_id, .. } => write!(formatter, "Media({client_id})"),
         }
     }
 }
@@ -510,6 +519,7 @@ struct RunReply {
     filter: MarkdownFilter,
     fence: Option<String>,
     next_chunk: u32,
+    next_media: u32,
     sent_chars: usize,
     sent_text: bool,
     truncated: bool,
@@ -609,6 +619,7 @@ impl ReplyProjector {
                             filter: MarkdownFilter::default(),
                             fence: None,
                             next_chunk: 0,
+                            next_media: 0,
                             sent_chars: 0,
                             sent_text: false,
                             truncated: false,
@@ -643,6 +654,7 @@ impl ReplyProjector {
             "elicitation_requested" => {
                 actions.extend(self.elicitation_notice(run_id, &event.payload))
             }
+            "media_shared" => actions.extend(self.media(run_id, &event.payload)),
             "run_completed" => actions.extend(self.complete(run_id, &event.payload)),
             _ => {}
         }
@@ -959,6 +971,29 @@ impl ReplyProjector {
         actions
     }
 
+    /// Text before a shared file reaches the peer first; the file itself
+    /// is resolved by opaque id at delivery time.
+    fn media(&mut self, run_id: &str, payload: &Value) -> Vec<OutboundAction> {
+        let Some(media_id) = payload.get("media_id").and_then(Value::as_str) else {
+            return Vec::new();
+        };
+        let mut actions = self.flush(run_id);
+        let Some(run) = self.runs.get_mut(run_id) else {
+            return actions;
+        };
+        if run.truncated {
+            return actions;
+        }
+        actions.push(OutboundAction::Media {
+            peer_id: run.peer_id.clone(),
+            conversation_id: run.conversation_id.clone(),
+            media_id: media_id.to_owned(),
+            client_id: format!("kubecode-{run_id}-m{}", run.next_media),
+        });
+        run.next_media += 1;
+        actions
+    }
+
     fn first_sighting(&mut self, request_id: &str) -> bool {
         if self.seen_requests.iter().any(|seen| seen == request_id) {
             return false;
@@ -981,6 +1016,7 @@ fn is_run_event(kind: &str) -> bool {
             | "tool_completed"
             | "permission_requested"
             | "elicitation_requested"
+            | "media_shared"
             | "run_completed"
     )
 }
@@ -1039,6 +1075,35 @@ pub fn terminal_notice(
     }
 }
 
+// -- Media --------------------------------------------------------------------
+
+/// A shared file resolved for delivery, with its optional caption.
+pub struct LoadedMedia {
+    pub file: SharedMediaFile,
+    pub caption: Option<String>,
+}
+
+/// Why a shared file cannot be delivered. Content-free by construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaRejection {
+    /// Unknown id, another Session's media, or the Session is gone.
+    Unavailable,
+    /// Outside the execution root, symlinked, hidden, not a regular file,
+    /// unsupported type, or content that does not match its type.
+    Ineligible,
+    /// Changed or missing since it was shared.
+    Changed,
+    /// Above the delivery bound.
+    TooLarge,
+}
+
+/// Resolves shared media by opaque id within one conversation. Production
+/// reads through `WorkspaceService`; the call is blocking file I/O and runs
+/// on the blocking pool.
+pub trait MediaSource: Send + Sync {
+    fn load(&self, conversation_id: &str, media_id: &str) -> Result<LoadedMedia, MediaRejection>;
+}
+
 // -- Transport and bridge ------------------------------------------------------
 
 /// Delivery surface for outbound actions. Production delivers through
@@ -1055,6 +1120,13 @@ pub trait OutboundTransport: Send + Sync {
         &'a self,
         peer_id: &'a str,
         typing: bool,
+    ) -> BoxFuture<'a, Result<(), IlinkError>>;
+
+    fn send_media<'a>(
+        &'a self,
+        peer_id: &'a str,
+        media: &'a SharedMediaFile,
+        client_id: &'a str,
     ) -> BoxFuture<'a, Result<(), IlinkError>>;
 }
 
@@ -1109,6 +1181,7 @@ pub struct OutboundCounters {
     pub failed: AtomicU64,
     pub dropped: AtomicU64,
     pub duplicates: AtomicU64,
+    pub media_rejected: AtomicU64,
 }
 
 /// Tunables; production uses the defaults.
@@ -1137,6 +1210,7 @@ pub struct OutboundBridge {
     store: Arc<AgentStore>,
     transport: Arc<dyn OutboundTransport>,
     router: Option<Arc<SessionRouter>>,
+    media: Option<Arc<dyn MediaSource>>,
     config: OutboundConfig,
     replies: mpsc::Sender<QueuedReply>,
     inbox: std::sync::Mutex<Option<mpsc::Receiver<QueuedReply>>>,
@@ -1148,6 +1222,7 @@ impl OutboundBridge {
         store: Arc<AgentStore>,
         transport: Arc<dyn OutboundTransport>,
         router: Option<Arc<SessionRouter>>,
+        media: Option<Arc<dyn MediaSource>>,
         config: OutboundConfig,
     ) -> Arc<Self> {
         let (replies, inbox) = mpsc::channel(REPLY_QUEUE_CAPACITY);
@@ -1155,6 +1230,7 @@ impl OutboundBridge {
             store,
             transport,
             router,
+            media,
             config,
             replies,
             inbox: std::sync::Mutex::new(Some(inbox)),
@@ -1355,6 +1431,115 @@ impl OutboundBridge {
                         router.clear_peer_requests(&account_id, &peer_id).await;
                     }
                 }
+                OutboundAction::Media {
+                    peer_id,
+                    conversation_id,
+                    media_id,
+                    client_id,
+                } => {
+                    if unreachable.contains(&peer_id) {
+                        continue;
+                    }
+                    if !self
+                        .deliver_media(
+                            projector,
+                            sent,
+                            &peer_id,
+                            &conversation_id,
+                            &media_id,
+                            client_id,
+                        )
+                        .await
+                    {
+                        unreachable.insert(peer_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resolves and delivers one shared file: optional caption first, then
+    /// the media. Any rejection or failed upload becomes one bounded,
+    /// localized notice. The file buffer is dropped when this returns.
+    /// Returns `false` when the peer is unreachable.
+    async fn deliver_media(
+        &self,
+        projector: &mut ReplyProjector,
+        sent: &mut SentLedger,
+        peer_id: &str,
+        conversation_id: &str,
+        media_id: &str,
+        client_id: String,
+    ) -> bool {
+        if sent.contains(&client_id) {
+            self.counters.duplicates.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+        let loaded = match &self.media {
+            Some(source) => {
+                let source = Arc::clone(source);
+                let conversation_id = conversation_id.to_owned();
+                let media_id = media_id.to_owned();
+                tokio::task::spawn_blocking(move || source.load(&conversation_id, &media_id))
+                    .await
+                    .unwrap_or(Err(MediaRejection::Unavailable))
+            }
+            None => Err(MediaRejection::Unavailable),
+        };
+        let failure_notice = format!("{client_id}-failed");
+        let loaded = match loaded {
+            Ok(loaded) => loaded,
+            Err(_) => {
+                self.counters.media_rejected.fetch_add(1, Ordering::Relaxed);
+                return self
+                    .deliver_text(
+                        projector,
+                        sent,
+                        peer_id,
+                        media_failure_notice(self.config.language),
+                        Some(failure_notice),
+                    )
+                    .await;
+            }
+        };
+        if let Some(caption) = loaded.caption.as_deref()
+            && !self
+                .deliver_text(
+                    projector,
+                    sent,
+                    peer_id,
+                    caption,
+                    Some(format!("{client_id}-caption")),
+                )
+                .await
+        {
+            return false;
+        }
+        match self
+            .transport
+            .send_media(peer_id, &loaded.file, &client_id)
+            .await
+        {
+            Ok(()) => {
+                sent.insert(client_id);
+                self.counters.sent.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(error) if is_peer_unreachable(&error) => {
+                self.counters.failed.fetch_add(1, Ordering::Relaxed);
+                projector.drop_peer(peer_id);
+                false
+            }
+            Err(_) => {
+                self.counters.failed.fetch_add(1, Ordering::Relaxed);
+                self.deliver_text(
+                    projector,
+                    sent,
+                    peer_id,
+                    media_failure_notice(self.config.language),
+                    Some(failure_notice),
+                )
+                .await
             }
         }
     }
@@ -1399,6 +1584,14 @@ impl OutboundBridge {
             }
         }
     }
+}
+
+fn media_failure_notice(language: ChannelLanguage) -> &'static str {
+    language_pick(
+        language,
+        "A shared file could not be sent. Open Kubecode to get it.",
+        "共享文件发送失败，请在 Kubecode 中查看。",
+    )
 }
 
 /// Bounded memory of delivered client ids (replay suppression).
@@ -1934,6 +2127,35 @@ mod tests {
             OutboundAction::Interaction { kind: InteractionKind::Elicitation, option_ids, .. }
                 if option_ids == &vec!["decline".to_owned()]
         ));
+    }
+
+    #[test]
+    fn shared_media_flushes_text_first_and_gets_a_stable_id() {
+        let mut feed = Feed::new(WECHAT_TEXT_LIMIT, RUN_OUTPUT_LIMIT);
+        feed.push("run_started", json!({}));
+        feed.push("text_delta", json!({"text": "Here is the chart."}));
+        let actions = feed.push(
+            "media_shared",
+            json!({"media_id": "media-1", "kind": "image", "mime": "image/png"}),
+        );
+        assert_eq!(actions.len(), 2);
+        assert!(
+            matches!(&actions[0], OutboundAction::Text { text, .. } if text == "Here is the chart.")
+        );
+        assert!(matches!(
+            &actions[1],
+            OutboundAction::Media { media_id, client_id, conversation_id, .. }
+                if media_id == "media-1" && client_id == "kubecode-run-1-m0" && conversation_id == CONVERSATION
+        ));
+        let second = feed.push("media_shared", json!({"media_id": "media-2"}));
+        assert!(matches!(
+            &second[0],
+            OutboundAction::Media { client_id, .. } if client_id == "kubecode-run-1-m1"
+        ));
+        assert!(
+            feed.push("media_shared", json!({})).is_empty(),
+            "no id, no action"
+        );
     }
 
     #[test]

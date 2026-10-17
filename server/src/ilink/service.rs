@@ -25,15 +25,20 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_store::{AgentStore, IlinkAccountStatus, IlinkCredentialRecord, StoreError};
 
-use super::cdn::CdnClient;
+use super::cdn::{CdnClient, MAX_MEDIA_BYTES, build_upload_request};
 use super::client::{IlinkClient, LongPollOutcome, UpdatesPage};
 use super::crypto::random_key_hex;
-use super::domain::OutboundText;
+use super::domain::{OutboundMedia, OutboundMediaItem, OutboundText};
 use super::error::{IlinkError, Secret};
 use super::inbound::seal_peer_context;
 use super::origins::{OriginPolicy, QR_LOGIN_BASE_URL};
 use super::seal::SecretKeyring;
-use super::types::{LoginState, TYPING_STATUS_CANCEL, TYPING_STATUS_TYPING};
+use super::types::{
+    LoginState, TYPING_STATUS_CANCEL, TYPING_STATUS_TYPING, UPLOAD_MEDIA_TYPE_FILE,
+    UPLOAD_MEDIA_TYPE_IMAGE,
+};
+use crate::shared_media::SharedMediaKind;
+use crate::workspace::SharedMediaFile;
 
 /// Fixed production CDN base used for canonical URL fallbacks; every
 /// destination still passes the origin policy before any request.
@@ -406,6 +411,67 @@ impl ILinkService {
         let outbound = OutboundText::new(peer_id, text, client_id.to_owned())
             .with_context_token(Some(context));
         client.send_message(&outbound, &token, None).await
+    }
+
+    /// Uploads one shared file through the encrypted CDN and sends it to
+    /// the peer (issue #132): random file key and AES key, plaintext MD5,
+    /// ciphertext size, `getuploadurl`, a bounded-retry CDN upload, then
+    /// one `sendmessage` with the image or file item. Buffers live only for
+    /// the duration of the call; nothing is written to disk.
+    pub async fn send_media(
+        &self,
+        peer_id: &str,
+        media: &SharedMediaFile,
+        client_id: &str,
+    ) -> Result<(), IlinkError> {
+        if media.bytes.len() > MAX_MEDIA_BYTES {
+            return Err(IlinkError::PayloadTooLarge {
+                limit: MAX_MEDIA_BYTES,
+            });
+        }
+        let (client, token, context) = self.send_material(peer_id).await?;
+        let context = context.ok_or(IlinkError::PeerContextUnavailable)?;
+        let media_type = match media.kind {
+            SharedMediaKind::Image => UPLOAD_MEDIA_TYPE_IMAGE,
+            SharedMediaKind::File => UPLOAD_MEDIA_TYPE_FILE,
+        };
+        let (request, key) = build_upload_request(peer_id, media_type, &media.bytes);
+        let filekey = request.filekey.clone().unwrap_or_default();
+        let target = client.get_upload_url(request, &token).await?;
+        let cdn = self.cdn_client().await.map_err(|error| match error {
+            ServiceError::Protocol(error) => error,
+            _ => IlinkError::OriginRejected {
+                reason: "cdn client unavailable",
+            },
+        })?;
+        let uploaded = cdn
+            .upload(
+                &media.bytes,
+                target.upload_full_url.as_deref(),
+                target.upload_param.as_deref(),
+                &filekey,
+                &key,
+            )
+            .await?;
+        let reference = CdnClient::media_reference(&uploaded);
+        let item = match media.kind {
+            SharedMediaKind::Image => OutboundMediaItem::Image {
+                media: reference,
+                ciphertext_size: uploaded.file_size_ciphertext,
+            },
+            SharedMediaKind::File => OutboundMediaItem::File {
+                media: reference,
+                file_name: media.file_name.clone(),
+                plaintext_size: uploaded.file_size,
+            },
+        };
+        let outbound = OutboundMedia {
+            to_peer_id: peer_id.to_owned(),
+            item,
+            context_token: Some(context),
+            client_id: client_id.to_owned(),
+        };
+        client.send_media_message(&outbound, &token, None).await
     }
 
     /// Starts or cancels the typing indicator for a peer, fetching and

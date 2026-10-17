@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod git;
 pub mod ilink;
 pub mod project_watcher;
+pub mod shared_media;
 pub mod team_api;
 pub mod team_coordinator;
 pub mod team_mcp;

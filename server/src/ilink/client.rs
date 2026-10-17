@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::crypto::random_wechat_uin;
-use super::domain::{InboundMessage, OutboundText};
+use super::domain::{InboundMessage, OutboundMedia, OutboundText};
 use super::error::{IlinkError, Secret, check_business};
 use super::origins::OriginPolicy;
 use super::types::{
@@ -542,8 +542,29 @@ impl IlinkClient {
         token: &Secret,
         cancel: Option<&CancellationToken>,
     ) -> Result<(), IlinkError> {
+        self.send_wire_message(outbound.to_wire(), token, cancel)
+            .await
+    }
+
+    /// Sends one media message (one item per request, as upstream).
+    pub async fn send_media_message(
+        &self,
+        outbound: &OutboundMedia,
+        token: &Secret,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<(), IlinkError> {
+        self.send_wire_message(outbound.to_wire(), token, cancel)
+            .await
+    }
+
+    async fn send_wire_message(
+        &self,
+        message: super::types::WeixinMessage,
+        token: &Secret,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<(), IlinkError> {
         let wire = SendMessageReq {
-            msg: Some(outbound.to_wire()),
+            msg: Some(message),
             base_info: Some(self.base_info()),
         };
         let _: SendMessageResp = self

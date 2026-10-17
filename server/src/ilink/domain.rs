@@ -245,6 +245,78 @@ impl OutboundText {
     }
 }
 
+/// The media payload of one outbound message (upstream `send.ts`).
+#[derive(Debug, Clone)]
+pub enum OutboundMediaItem {
+    /// `image_item`: `mid_size` is the ciphertext size.
+    Image {
+        media: CdnMedia,
+        ciphertext_size: usize,
+    },
+    /// `file_item`: `len` is the plaintext size as a decimal string.
+    File {
+        media: CdnMedia,
+        file_name: String,
+        plaintext_size: usize,
+    },
+}
+
+/// One media message bound to a peer and its context token. Each media
+/// item is its own request, exactly like upstream `sendMediaItems`.
+#[derive(Debug, Clone)]
+pub struct OutboundMedia {
+    pub to_peer_id: String,
+    pub item: OutboundMediaItem,
+    pub context_token: Option<Secret>,
+    pub client_id: String,
+}
+
+impl OutboundMedia {
+    pub fn to_wire(&self) -> WeixinMessage {
+        use super::types::{FileItem, MESSAGE_STATE_FINISH, MESSAGE_TYPE_BOT};
+        let item = match &self.item {
+            OutboundMediaItem::Image {
+                media,
+                ciphertext_size,
+            } => MessageItem {
+                item_type: Some(ITEM_TYPE_IMAGE),
+                image_item: Some(ImageItem {
+                    media: Some(media.clone()),
+                    mid_size: Some(*ciphertext_size as i64),
+                    ..ImageItem::default()
+                }),
+                ..MessageItem::default()
+            },
+            OutboundMediaItem::File {
+                media,
+                file_name,
+                plaintext_size,
+            } => MessageItem {
+                item_type: Some(ITEM_TYPE_FILE),
+                file_item: Some(FileItem {
+                    media: Some(media.clone()),
+                    file_name: Some(file_name.clone()),
+                    md5: None,
+                    len: Some(plaintext_size.to_string()),
+                }),
+                ..MessageItem::default()
+            },
+        };
+        WeixinMessage {
+            to_user_id: Some(self.to_peer_id.clone()),
+            client_id: Some(self.client_id.clone()),
+            message_type: Some(MESSAGE_TYPE_BOT),
+            message_state: Some(MESSAGE_STATE_FINISH),
+            item_list: Some(vec![item]),
+            context_token: self
+                .context_token
+                .as_ref()
+                .map(|token| token.expose().to_owned()),
+            ..WeixinMessage::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,6 +423,46 @@ mod tests {
         assert_eq!(json["item_list"][0]["text_item"]["text"], "done");
         // The domain type never prints the context token.
         assert!(!format!("{outbound:?}").contains("ctx-synthetic"));
+    }
+
+    #[test]
+    fn outbound_media_renders_the_upstream_image_and_file_shapes() {
+        let media = CdnMedia {
+            encrypt_query_param: Some("download-param".into()),
+            aes_key: Some("a2V5".into()),
+            encrypt_type: Some(1),
+            full_url: None,
+        };
+        let image = OutboundMedia {
+            to_peer_id: "wxid_synthetic_01".into(),
+            item: OutboundMediaItem::Image {
+                media: media.clone(),
+                ciphertext_size: 32,
+            },
+            context_token: Some(Secret::new("ctx-synthetic")),
+            client_id: "kubecode-run-m0".into(),
+        };
+        let json = serde_json::to_value(image.to_wire()).expect("serialize");
+        assert_eq!(json["item_list"][0]["type"], ITEM_TYPE_IMAGE);
+        assert_eq!(json["item_list"][0]["image_item"]["mid_size"], 32);
+        assert_eq!(
+            json["item_list"][0]["image_item"]["media"]["encrypt_type"],
+            1
+        );
+        assert_eq!(json["context_token"], "ctx-synthetic");
+        let file = OutboundMedia {
+            item: OutboundMediaItem::File {
+                media,
+                file_name: "report.pdf".into(),
+                plaintext_size: 20,
+            },
+            ..image
+        };
+        let json = serde_json::to_value(file.to_wire()).expect("serialize");
+        assert_eq!(json["item_list"][0]["type"], ITEM_TYPE_FILE);
+        assert_eq!(json["item_list"][0]["file_item"]["file_name"], "report.pdf");
+        assert_eq!(json["item_list"][0]["file_item"]["len"], "20");
+        assert!(json["item_list"][0].get("image_item").is_none());
     }
 
     #[test]

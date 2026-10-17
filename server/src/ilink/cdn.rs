@@ -19,8 +19,20 @@ use super::types::{CdnMedia, GetUploadUrlReq, UPLOAD_MEDIA_TYPE_IMAGE};
 
 /// Media payload bound (ADR 0211 §10).
 pub const MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
-/// Bounded upload retry budget; 4xx responses are never retried.
+/// Bounded upload retry budget; 4xx responses and timeouts are never
+/// retried.
 pub const UPLOAD_MAX_RETRIES: usize = 3;
+/// Minimum uplink throughput an upload is given time for, on top of the
+/// configured timeout floor (a 10 MiB file gets ~160 s).
+pub const UPLOAD_MIN_BYTES_PER_SECOND: u64 = 64 * 1024;
+
+/// Per-attempt upload timeout: the configured floor, stretched for large
+/// payloads so a slow uplink is not mistaken for a dead one.
+pub fn upload_timeout(floor: Duration, payload_bytes: usize) -> Duration {
+    floor.max(Duration::from_secs(
+        (payload_bytes as u64).div_ceil(UPLOAD_MIN_BYTES_PER_SECOND),
+    ))
+}
 
 /// Result of a successful CDN upload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,17 +187,22 @@ impl CdnClient {
             operation: "cdn_upload",
             status: 0,
         };
+        let timeout = upload_timeout(self.timeout, ciphertext.len());
         for _attempt in 0..UPLOAD_MAX_RETRIES {
             let request = self
                 .http
                 .post(url.clone())
                 .header("Content-Type", "application/octet-stream")
                 .body(ciphertext.clone())
-                .timeout(self.timeout);
+                .timeout(timeout);
             let response = match request.send().await {
                 Ok(response) => response,
                 Err(error) => {
                     last_error = IlinkError::from_transport("cdn_upload", &error);
+                    // A timeout would just time out again on retry.
+                    if error.is_timeout() {
+                        return Err(last_error);
+                    }
                     continue;
                 }
             };
@@ -288,13 +305,15 @@ impl CdnClient {
         ))
     }
 
-    /// Renders the outbound `CdnMedia` reference for an uploaded file:
-    /// hex `aeskey` re-encoded as base64 bytes, matching upstream sends.
+    /// Renders the outbound `CdnMedia` reference for an uploaded file,
+    /// matching the reviewed upstream send path byte for byte: `aes_key` is
+    /// base64 of the 32-character *hex string* (upstream
+    /// `Buffer.from(aeskeyHex).toString("base64")`), and `encrypt_type` is 1.
     pub fn media_reference(upload: &UploadedMedia) -> CdnMedia {
         CdnMedia {
             encrypt_query_param: Some(upload.download_encrypted_query_param.clone()),
-            aes_key: Some(BASE64.encode(hex::decode(&upload.aeskey_hex).unwrap_or_default())),
-            encrypt_type: None,
+            aes_key: Some(BASE64.encode(upload.aeskey_hex.as_bytes())),
+            encrypt_type: Some(1),
             full_url: None,
         }
     }
@@ -350,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn media_reference_re_encodes_the_key_for_the_wire() {
+    fn media_reference_matches_the_upstream_send_encoding() {
         let upload = UploadedMedia {
             filekey: "filekey".into(),
             download_encrypted_query_param: "param".into(),
@@ -359,11 +378,30 @@ mod tests {
             file_size_ciphertext: 16,
         };
         let media = CdnClient::media_reference(&upload);
+        // Upstream: Buffer.from("00112233…eeff").toString("base64").
         assert_eq!(
-            parse_cdn_aes_key(media.aes_key.as_deref().expect("aes_key")).expect("key")[0],
-            0x00
+            media.aes_key.as_deref(),
+            Some("MDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmY=")
+        );
+        assert_eq!(media.encrypt_type, Some(1));
+        // The receiving side decodes it back to the same 16-byte key.
+        assert_eq!(
+            hex::encode(
+                parse_cdn_aes_key(media.aes_key.as_deref().expect("aes_key")).expect("key")
+            ),
+            upload.aeskey_hex
         );
         assert_eq!(media.encrypt_query_param.as_deref(), Some("param"));
+    }
+
+    #[test]
+    fn upload_timeouts_scale_with_payload_size() {
+        let floor = Duration::from_secs(15);
+        assert_eq!(upload_timeout(floor, 1_024), floor);
+        assert_eq!(
+            upload_timeout(floor, MAX_MEDIA_BYTES),
+            Duration::from_secs(160)
+        );
     }
 
     #[test]
