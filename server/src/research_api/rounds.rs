@@ -127,13 +127,13 @@ struct StoredRequest {
     max_review_rounds: u8,
 }
 
-fn invalid(message: &'static str) -> ResearchApiError {
+pub(super) fn invalid(message: &'static str) -> ResearchApiError {
     ResearchError::Invalid(message).into()
 }
 
 // -- Sources ---------------------------------------------------------------------------------------------
 
-fn resolver(state: &AppState) -> SourceResolver<'_> {
+pub(super) fn resolver(state: &AppState) -> SourceResolver<'_> {
     SourceResolver {
         agents: state.agent_runtime.store_ref(),
         teams: &state.teams,
@@ -141,7 +141,7 @@ fn resolver(state: &AppState) -> SourceResolver<'_> {
     }
 }
 
-fn validate_source(
+pub(super) fn validate_source(
     state: &AppState,
     project_id: &str,
     source: &SourceRef,

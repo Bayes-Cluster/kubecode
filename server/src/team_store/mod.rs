@@ -27,6 +27,9 @@ impl TeamStore {
 
     pub fn from_database(database: Arc<Database>) -> Result<Self, TeamError> {
         let connection = database.lock().expect("team database mutex poisoned");
+        // Completing a linked Team records a pending research outcome in the
+        // same transaction (ADR 0212 §7), so those tables must exist here.
+        crate::research_store::ensure_schema(&connection)?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS teams (
                id TEXT PRIMARY KEY,

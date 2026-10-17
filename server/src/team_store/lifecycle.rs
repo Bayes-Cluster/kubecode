@@ -321,6 +321,7 @@ impl TeamStore {
                     updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
             params![team_id, final_summary.trim(), workspace_fingerprint],
         )?;
+        record_pending_research_outcome(&transaction, team_id)?;
         transaction.commit()?;
         drop(database);
         self.get_team(team_id)
@@ -860,4 +861,72 @@ fn team_user_input_request_from_row(
         created_at: row.get(8)?,
         resolved_at: row.get(9)?,
     })
+}
+
+/// A Team linked to a research question owes the question its results. The
+/// pending record is written in the transaction that completes the Team, so
+/// a crash or retry can neither lose it nor create it twice (ADR 0212 §7).
+/// Completing the Team never resolves the question.
+fn record_pending_research_outcome(
+    transaction: &rusqlite::Transaction<'_>,
+    team_id: &str,
+) -> Result<(), TeamError> {
+    let linked = transaction
+        .query_row(
+            "SELECT l.research_id, t.project_id,
+                    (SELECT id FROM research_rounds WHERE team_id = ?1)
+             FROM research_links l JOIN teams t ON t.id = l.ref_id
+             WHERE l.kind = 'team' AND l.ref_id = ?1",
+            [team_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((research_id, project_id, round_id)) = linked else {
+        return Ok(());
+    };
+    // The Leader is told to publish before completing, so the results may
+    // already be recorded; the hand-off is then born resolved.
+    let published: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM research_publications
+             WHERE research_id = ?1 AND team_id = ?2 ORDER BY created_at, id LIMIT 1",
+            params![research_id, team_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let inserted = transaction.execute(
+        "INSERT OR IGNORE INTO research_pending_outcomes
+           (team_id, research_id, round_id, status, publication_id, resolved_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, CASE WHEN ?5 IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END)",
+        params![
+            team_id,
+            research_id,
+            round_id,
+            if published.is_some() {
+                "recorded"
+            } else {
+                "pending"
+            },
+            published
+        ],
+    )?;
+    // Nothing is owed (and nothing to announce) when it is already recorded.
+    if inserted > 0 && published.is_none() {
+        transaction.execute(
+            "INSERT INTO workspace_events (kind, project_id, payload)
+             VALUES ('research_updated', ?1, ?2)",
+            params![
+                project_id,
+                serde_json::json!({"research_id": research_id, "change": "outcome_pending"})
+                    .to_string()
+            ],
+        )?;
+    }
+    Ok(())
 }

@@ -9,6 +9,7 @@
 //! pure persistence. Every lookup is scoped by Project id, so a research
 //! question in another Project is indistinguishable from a missing one.
 
+mod findings;
 mod models;
 
 pub use models::*;
@@ -39,6 +40,9 @@ enum Change {
     Link,
     Unlink,
     Round,
+    Finding,
+    Outcome,
+    Review,
 }
 
 impl Change {
@@ -53,19 +57,19 @@ impl Change {
             Self::Link => "link",
             Self::Unlink => "unlink",
             Self::Round => "round",
+            Self::Finding => "finding",
+            Self::Outcome => "outcome",
+            Self::Review => "review",
         }
     }
 }
 
-impl ResearchStore {
-    pub fn from_database(
-        database: Arc<Database>,
-        agents: Arc<AgentStore>,
-    ) -> Result<Self, ResearchError> {
-        {
-            let connection = database.lock().expect("research database mutex poisoned");
-            connection.execute_batch(
-                "CREATE TABLE IF NOT EXISTS research_questions (
+/// Creates the research tables. `TeamStore` calls this too: completing a
+/// linked Team writes a pending outcome in the Team's own transaction, so
+/// the table must exist wherever that transaction can run.
+pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS research_questions (
                    id                TEXT PRIMARY KEY,
                    project_id        TEXT NOT NULL,
                    client_request_id TEXT,
@@ -142,10 +146,78 @@ impl ResearchStore {
                    UNIQUE (research_id, idempotency_key)
                  );
                  CREATE UNIQUE INDEX IF NOT EXISTS research_rounds_team
-                   ON research_rounds(team_id) WHERE team_id IS NOT NULL;",
-            )?;
+                   ON research_rounds(team_id) WHERE team_id IS NOT NULL;
+                 -- One batch of findings per idempotency key. Provenance
+                 -- (the producing execution) is recorded once per batch.
+                 CREATE TABLE IF NOT EXISTS research_publications (
+                   id             TEXT PRIMARY KEY,
+                   research_id    TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   key            TEXT NOT NULL,
+                   payload_hash   TEXT NOT NULL,
+                   author_kind    TEXT NOT NULL,
+                   author_ref     TEXT,
+                   session_id     TEXT,
+                   team_id        TEXT,
+                   task_id        TEXT,
+                   run_id         TEXT,
+                   round_id       TEXT,
+                   brief_revision INTEGER NOT NULL,
+                   created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   UNIQUE (research_id, key)
+                 );
+                 CREATE TABLE IF NOT EXISTS research_findings (
+                   id             TEXT PRIMARY KEY,
+                   research_id    TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   publication_id TEXT NOT NULL REFERENCES research_publications(id) ON DELETE CASCADE,
+                   seq            INTEGER NOT NULL,
+                   ordinal        INTEGER NOT NULL,
+                   kind           TEXT NOT NULL,
+                   basis          TEXT NOT NULL,
+                   statement      TEXT NOT NULL,
+                   evidence_json  TEXT NOT NULL DEFAULT '[]',
+                   created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   UNIQUE (research_id, seq),
+                   UNIQUE (publication_id, ordinal)
+                 );
+                 -- Created in the transaction that completes a linked Team.
+                 CREATE TABLE IF NOT EXISTS research_pending_outcomes (
+                   team_id        TEXT PRIMARY KEY,
+                   research_id    TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   round_id       TEXT,
+                   status         TEXT NOT NULL DEFAULT 'pending',
+                   publication_id TEXT,
+                   created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   resolved_at    TEXT
+                 );
+                 CREATE TABLE IF NOT EXISTS research_proposal_reviews (
+                   entry_id    TEXT PRIMARY KEY REFERENCES research_entries(id) ON DELETE CASCADE,
+                   research_id TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   decision    TEXT NOT NULL,
+                   note        TEXT,
+                   decided_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );",
+    )
+}
+
+impl ResearchStore {
+    pub fn from_database(
+        database: Arc<Database>,
+        agents: Arc<AgentStore>,
+    ) -> Result<Self, ResearchError> {
+        {
+            let connection = database.lock().expect("research database mutex poisoned");
+            ensure_schema(&connection)?;
         }
         Ok(Self { database, agents })
+    }
+
+    /// Announces events committed by another store's transaction (a Team
+    /// completion writes a pending outcome and its event itself), so open
+    /// browsers refetch without waiting for the next unrelated event.
+    pub fn announce_committed(&self) {
+        if let Ok(latest) = self.agents.latest_workspace_event_id() {
+            self.agents.workspace_event_bus().publish_committed(latest);
+        }
     }
 
     // -- Questions -----------------------------------------------------------
@@ -437,37 +509,14 @@ impl ResearchStore {
             {
                 return Ok((existing, None));
             }
-            let seq: i64 = tx.query_row(
-                "SELECT COALESCE(MAX(seq), 0) + 1 FROM research_entries WHERE research_id = ?1",
-                [id],
-                |row| row.get(0),
-            )?;
-            let entry_id = Uuid::new_v4().to_string();
-            tx.execute(
-                "INSERT INTO research_entries
-                   (id, research_id, seq, kind, author_kind, author_ref, body,
-                    brief_revision, client_request_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    entry_id,
-                    id,
-                    seq,
-                    entry.kind.as_str(),
-                    entry.author_kind.as_str(),
-                    entry.author_ref,
-                    body,
-                    question.revision as i64,
-                    request_id,
-                ],
-            )?;
-            tx.execute(
-                "UPDATE research_questions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
-                [id],
-            )?;
-            let stored = tx.query_row(
-                &format!("{ENTRY_SELECT} WHERE id = ?1"),
-                [&entry_id],
-                entry_from_row,
+            let stored = insert_entry(
+                tx,
+                &question,
+                entry.kind,
+                entry.author_kind,
+                entry.author_ref.as_deref(),
+                &body,
+                request_id.as_deref(),
             )?;
             Ok((
                 stored,
@@ -959,6 +1008,52 @@ impl ResearchStore {
         }
         Ok(value)
     }
+}
+
+/// Appends one entry to the question's log and bumps its `updated_at`.
+/// Callers run inside their own write transaction and have already checked
+/// that the question is writable and that `request_id` is new.
+fn insert_entry(
+    tx: &Transaction<'_>,
+    question: &ResearchQuestion,
+    kind: EntryKind,
+    author_kind: AuthorKind,
+    author_ref: Option<&str>,
+    body: &str,
+    request_id: Option<&str>,
+) -> Result<ResearchEntry, ResearchError> {
+    let seq: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM research_entries WHERE research_id = ?1",
+        [&question.id],
+        |row| row.get(0),
+    )?;
+    let entry_id = Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO research_entries
+           (id, research_id, seq, kind, author_kind, author_ref, body,
+            brief_revision, client_request_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            entry_id,
+            question.id,
+            seq,
+            kind.as_str(),
+            author_kind.as_str(),
+            author_ref,
+            body,
+            question.revision as i64,
+            request_id,
+        ],
+    )?;
+    tx.execute(
+        "UPDATE research_questions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        [&question.id],
+    )?;
+    Ok(tx.query_row(
+        &format!("{ENTRY_SELECT} WHERE id = ?1"),
+        [&entry_id],
+        entry_from_row,
+    )?)
 }
 
 const ROUND_SELECT: &str = "SELECT id, research_id, round, brief_revision, kind, phase,

@@ -33,11 +33,17 @@ import type {
   StartTeamInput,
   StructuredComposerRunRequest,
   ResearchBrief,
+  CaptureResearchFindingsRequest,
+  CaptureResearchFindingsResponse,
   ResearchBriefPatch,
   ResearchDetail,
   ResearchEntry,
+  ResearchFinding,
   ResearchLinkKind,
   ResearchLinkRole,
+  ResearchOutcome,
+  ResearchProposal,
+  ResearchReviewDecision,
   ResearchRevision,
   ResearchRound,
   ResearchRevisionSummary,
@@ -392,6 +398,56 @@ export class KubecodeApi {
     return this.request(
       `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}/resume`,
       { method: 'POST' },
+    )
+  }
+
+  listResearchFindings(projectId: string, researchId: string): Promise<ResearchFinding[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/findings`)
+  }
+
+  /** Records what a linked Session or Team produced, attributed to the researcher. */
+  captureResearchFindings(
+    projectId: string,
+    researchId: string,
+    request: CaptureResearchFindingsRequest,
+  ): Promise<CaptureResearchFindingsResponse> {
+    return this.request(`${this.researchPath(projectId, researchId)}/findings`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
+  listResearchOutcomes(projectId: string, researchId: string): Promise<ResearchOutcome[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/outcomes`)
+  }
+
+  /** States that a completed Team has nothing to record. */
+  declineResearchOutcome(
+    projectId: string,
+    researchId: string,
+    teamId: string,
+  ): Promise<ResearchOutcome> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/outcomes/${encodeURIComponent(teamId)}/decline`,
+      { method: 'POST' },
+    )
+  }
+
+  listResearchProposals(projectId: string, researchId: string): Promise<ResearchProposal[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/proposals`)
+  }
+
+  /** Accepting records a decision; the researcher still edits the brief separately. */
+  reviewResearchProposal(
+    projectId: string,
+    researchId: string,
+    entryId: string,
+    decision: ResearchReviewDecision,
+    note?: string,
+  ): Promise<ResearchProposal> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/proposals/${encodeURIComponent(entryId)}/review`,
+      { method: 'POST', body: JSON.stringify({ decision, note }) },
     )
   }
 

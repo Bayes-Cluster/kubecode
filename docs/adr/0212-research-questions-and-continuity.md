@@ -159,13 +159,48 @@ Project, a `file` source recording the content revision it was selected at).
 
 ### 7. Findings and provenance (issue #151)
 
-Findings are attributed, idempotent records that cite their producing
-execution (Session, run, Team, task) and validated evidence references (§5).
-Observations and interpretations are recorded directly; anything that would
-change the approved direction is a proposal requiring a researcher decision
-(§3). Publication from a Team uses a per-Team pending-publication record
-created in the same transition that completes the Team, so a retry or restart
-publishes exactly once and never loses a pending result.
+Work that returns to the question is a **record with provenance**, not an
+established fact.
+
+- **Publication.** A publication is one batch with a caller key, unique per
+  question. The same key with identical content returns the stored batch
+  (`created: false`); the same key with different content is a conflict. The
+  batch, its proposals, its event, and the resolution of a Team's pending
+  outcome commit in one transaction. Provenance is fixed per batch: the
+  producing Session, Team, task, or run, the author (`agent` or `researcher`)
+  and the round, whose pinned brief revision the findings inherit. Capture
+  outside a round is attributed to the revision current at the time.
+- **Findings.** `finding`, `attempt` (including failed approaches), `limitation`,
+  and `open_question`, each bounded (4,000 characters, at most 10 evidence
+  references; at most 20 findings and 5 proposals per batch). Findings are
+  append-only. The server sets the basis: a statement that cites evidence is an
+  `observation`; any other stays an attributed `interpretation`, whatever the
+  author called it. Nothing marks a claim as verified; independent Agent review
+  does not establish scientific validity.
+- **Evidence.** References use the source model of §5 and are validated against
+  the Project when submitted (a file records its revision through
+  `WorkspaceService`). Every read re-resolves them to `available`, `changed`, or
+  `removed`; the finding and its producer stay readable either way, and another
+  Project's record is reported as removed.
+- **Proposals.** An Agent never edits the approved direction. A suggested change
+  is a `proposal` entry; the researcher accepts or rejects it, once, which
+  records a `decision` entry. Accepting does not change the brief: the
+  researcher makes that edit as an ordinary revision (§2).
+- **Team hand-off.** The Leader calls the Team MCP tool `team_publish_research`
+  before `team_complete`; teammates and the Discriminator cannot. Completing a
+  Team that is linked to a question writes one `research_pending_outcomes` row in
+  the completion transaction (`INSERT OR IGNORE`, so a Team yields at most one,
+  and a crash cannot lose it). A publication naming that Team marks it
+  `recorded`; the researcher may `decline` it. A completed Team whose Leader
+  never published stays `pending` and visible, and the researcher can capture its
+  outcome explicitly. Completing a Team and recording a finding never resolve
+  the question.
+- **Solo work.** There is no Agent-side tool in a Solo Session. The researcher
+  captures outcomes explicitly, citing the linked Session; the record is
+  attributed to the researcher.
+- **Reuse.** `team_get_context.research.findings` carries the most recent
+  findings (bounded) with evidence state, so a later round starts from recorded
+  context while treating it as attributed, not authoritative.
 
 ### 8. Events
 
