@@ -18,6 +18,7 @@ use crate::agent_store::AgentStore;
 use super::guard::{AdvertisedOption, InteractionRegistry, PendingInteraction};
 use super::inbound::ResponseChannel;
 use super::inbound::{BridgePrompt, ChannelLanguage, ChannelReply};
+use super::outbound::InteractionKind;
 
 /// How long a registered interactive request stays answerable; the
 /// runtime's own pending timeout remains the authority, this only bounds
@@ -82,28 +83,19 @@ impl SessionRouter {
         let Some(peer) = self.origin_peers.lock().await.get(conversation_id).cloned() else {
             return;
         };
-        let options = option_ids
-            .into_iter()
-            .map(|option_id| AdvertisedOption { option_id })
-            .collect();
-        self.registry.lock().await.register(PendingInteraction::new(
-            request_id.to_owned(),
-            account_id.to_owned(),
-            peer.clone(),
-            "permission",
-            options,
-            INTERACTION_TTL,
-        ));
-        self.peer_requests
-            .lock()
-            .await
-            .entry((account_id.to_owned(), peer))
-            .or_default()
-            .push(request_id.to_owned());
+        self.register_interaction(
+            account_id,
+            &peer,
+            request_id,
+            InteractionKind::Permission,
+            option_ids,
+        )
+        .await;
     }
 
     /// Registers an elicitation; WeChat can only decline it in this
-    /// release (the typed runtime contract accepts `None` → Decline).
+    /// release (the typed runtime contract accepts `None` → Decline), so
+    /// the single advertised option is "decline".
     pub async fn register_elicitation(
         &self,
         account_id: &str,
@@ -113,20 +105,52 @@ impl SessionRouter {
         let Some(peer) = self.origin_peers.lock().await.get(conversation_id).cloned() else {
             return;
         };
-        self.registry.lock().await.register(PendingInteraction::new(
+        self.register_interaction(
+            account_id,
+            &peer,
+            request_id,
+            InteractionKind::Elicitation,
+            vec!["decline".to_owned()],
+        )
+        .await;
+    }
+
+    /// Registers a pending interactive request for an explicit peer (the
+    /// outbound bridge resolves the originating peer from the run).
+    pub async fn register_interaction(
+        &self,
+        account_id: &str,
+        peer_id: &str,
+        request_id: &str,
+        kind: InteractionKind,
+        option_ids: Vec<String>,
+    ) {
+        let options = option_ids
+            .into_iter()
+            .map(|option_id| AdvertisedOption { option_id })
+            .collect();
+        let kind = match kind {
+            InteractionKind::Permission => "permission",
+            InteractionKind::Elicitation => "elicitation",
+        };
+        let mut registry = self.registry.lock().await;
+        registry.reclaim_expired();
+        registry.register(PendingInteraction::new(
             request_id.to_owned(),
             account_id.to_owned(),
-            peer.clone(),
-            "elicitation",
-            Vec::new(),
+            peer_id.to_owned(),
+            kind,
+            options,
             INTERACTION_TTL,
         ));
-        self.peer_requests
-            .lock()
-            .await
-            .entry((account_id.to_owned(), peer))
-            .or_default()
-            .push(request_id.to_owned());
+        drop(registry);
+        let mut peer_requests = self.peer_requests.lock().await;
+        let pending = peer_requests
+            .entry((account_id.to_owned(), peer_id.to_owned()))
+            .or_default();
+        if !pending.iter().any(|id| id == request_id) {
+            pending.push(request_id.to_owned());
+        }
     }
 
     /// Drops peer-scoped interaction state (binding change, logout,
