@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "期限（現在から何時間後か。空欄で期限なし）",
   "kubecode.research.exec.allowedCommands": "許可するコマンド",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "1 行に 1 コマンド。起動するコマンドは、これらのいずれかとトークン単位で先頭まで一致する必要があります。それ以外は拒否されます。",
+  "kubecode.research.exec.commandsHint": "1 行に 1 コマンド。起動するコマンドは、これらのいずれかとトークン単位で先頭まで一致する必要があります。後続の引数は自由に指定できるため、どんな引数で実行されても構わないコマンドだけを記載してください。sh -c のようなシェルは任意のスクリプトを実行できてしまいます。",
   "kubecode.research.exec.invalid": "制限を確認してください。範囲内の整数であること、許可するコマンドが 1 つ以上あることが必要です。",
   "kubecode.research.exec.setUp": "実行を設定",
   "kubecode.research.exec.editEnvelope": "エンベロープを編集",

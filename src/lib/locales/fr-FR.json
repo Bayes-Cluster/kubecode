@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Échéance (heures à partir de maintenant, vide pour aucune)",
   "kubecode.research.exec.allowedCommands": "Commandes autorisées",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Une commande par ligne. Un lancement doit commencer par l’une de ces commandes, token pour token ; toute autre est refusée.",
+  "kubecode.research.exec.commandsHint": "Une commande par ligne. Un lancement doit commencer par l’une de ces commandes, token pour token. Tout argument supplémentaire est autorisé : n’indiquez donc que les commandes que vous acceptez d’exécuter avec n’importe quels arguments ; un shell tel que sh -c autorise n’importe quel script.",
   "kubecode.research.exec.invalid": "Vérifiez les limites : des nombres entiers dans la plage autorisée et au moins une commande autorisée.",
   "kubecode.research.exec.setUp": "Configurer l’exécution",
   "kubecode.research.exec.editEnvelope": "Modifier l’enveloppe",

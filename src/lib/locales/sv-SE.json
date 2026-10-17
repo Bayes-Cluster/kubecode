@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Tidsfrist (timmar från nu, tomt för ingen)",
   "kubecode.research.exec.allowedCommands": "Tillåtna kommandon",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Ett kommando per rad. En start måste börja med ett av dessa, token för token. Allt annat avvisas.",
+  "kubecode.research.exec.commandsHint": "Ett kommando per rad. En start måste börja med ett av dessa, token för token. Alla ytterligare argument tillåts, så ange bara kommandon som du går med på att köra med vilka argument som helst. Ett skal som sh -c tillåter vilket skript som helst.",
   "kubecode.research.exec.invalid": "Kontrollera gränserna: heltal inom intervallet och minst ett tillåtet kommando.",
   "kubecode.research.exec.setUp": "Ställ in körning",
   "kubecode.research.exec.editEnvelope": "Redigera ram",

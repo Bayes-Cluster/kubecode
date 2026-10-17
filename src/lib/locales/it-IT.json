@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Scadenza (ore da ora, vuoto per nessuna)",
   "kubecode.research.exec.allowedCommands": "Comandi consentiti",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Un comando per riga. Un avvio deve iniziare con uno di questi comandi, token per token; tutto il resto viene rifiutato.",
+  "kubecode.research.exec.commandsHint": "Un comando per riga. Un avvio deve iniziare con uno di questi comandi, token per token. Qualsiasi argomento aggiuntivo è consentito, quindi elenca solo i comandi che accetti di eseguire con qualsiasi argomento; una shell come sh -c consente qualsiasi script.",
   "kubecode.research.exec.invalid": "Controlla i limiti: numeri interi nell'intervallo valido e almeno un comando consentito.",
   "kubecode.research.exec.setUp": "Configura esecuzione",
   "kubecode.research.exec.editEnvelope": "Modifica envelope",

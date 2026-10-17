@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Срок (часов от текущего момента, пусто — без срока)",
   "kubecode.research.exec.allowedCommands": "Разрешённые команды",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "По одной команде на строку. Запуск должен начинаться с одной из них, токен в токен; всё остальное отклоняется.",
+  "kubecode.research.exec.commandsHint": "По одной команде на строку. Запуск должен начинаться с одной из них, токен в токен. Любые дальнейшие аргументы разрешены, поэтому перечисляйте только те команды, которые вы готовы запускать с любыми аргументами; оболочка вроде sh -c разрешает выполнить любой скрипт.",
   "kubecode.research.exec.invalid": "Проверьте ограничения: целые числа в допустимом диапазоне и хотя бы одна разрешённая команда.",
   "kubecode.research.exec.setUp": "Настроить выполнение",
   "kubecode.research.exec.editEnvelope": "Изменить конверт",

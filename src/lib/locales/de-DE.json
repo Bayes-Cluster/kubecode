@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Frist (Stunden ab jetzt, leer für keine)",
   "kubecode.research.exec.allowedCommands": "Erlaubte Befehle",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Ein Befehl pro Zeile. Ein Start muss exakt mit einem dieser Befehle beginnen, Token für Token; alles andere wird abgelehnt.",
+  "kubecode.research.exec.commandsHint": "Ein Befehl pro Zeile. Ein Start muss exakt mit einem dieser Befehle beginnen, Token für Token. Weitere Argumente sind beliebig erlaubt. Führe daher nur Befehle auf, die du mit beliebigen Argumenten ausführen lassen willst; eine Shell wie sh -c erlaubt jedes Skript.",
   "kubecode.research.exec.invalid": "Prüfe die Grenzen: ganze Zahlen im zulässigen Bereich und mindestens ein erlaubter Befehl.",
   "kubecode.research.exec.setUp": "Ausführung einrichten",
   "kubecode.research.exec.editEnvelope": "Rahmen bearbeiten",

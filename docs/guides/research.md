@@ -32,7 +32,9 @@ fill in the execution envelope:
 - **Deadline** — no launch after it (blank for none).
 - **Stop after failed runs in a row** — launching stops until you intervene.
 - **Allowed commands** — one command per line. A launch must begin with one of
-  these, token for token; anything else is refused.
+  these, token for token; anything else is refused. Further arguments after the
+  listed ones are allowed, so list only commands you are content to run with
+  any arguments: allowing `sh -c` allows any script.
 
 These limits are enforced by Kubecode, separately from Agent concurrency
 settings, and an Agent cannot raise them. Editing the envelope creates a new
@@ -60,6 +62,11 @@ the Team cannot complete while results are owed.
   finish; this is the only way out of that state.
 - A reply that grants more budget or scope has no effect until you save a new
   envelope revision.
+
+Logs are kept per process (up to 16 MiB each) and shown as bounded tails; the
+process itself is never stopped for writing a lot of output. A process that
+ignores a stop request keeps its slot until Kubecode has killed its whole
+process group.
 
 ### Restarts
 

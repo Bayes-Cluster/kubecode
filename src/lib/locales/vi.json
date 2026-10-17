@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Hạn chót (số giờ kể từ bây giờ, để trống nếu không có)",
   "kubecode.research.exec.allowedCommands": "Lệnh được phép",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Mỗi dòng một lệnh. Một lần khởi chạy phải bắt đầu bằng một trong các lệnh này, khớp từng token; mọi thứ khác đều bị từ chối.",
+  "kubecode.research.exec.commandsHint": "Mỗi dòng một lệnh. Một lần khởi chạy phải bắt đầu bằng một trong các lệnh này, khớp từng token. Mọi đối số theo sau đều được phép, vì vậy chỉ liệt kê những lệnh bạn đồng ý chạy với bất kỳ đối số nào; một shell như sh -c cho phép chạy bất kỳ script nào.",
   "kubecode.research.exec.invalid": "Hãy kiểm tra các giới hạn: số nguyên trong phạm vi cho phép và ít nhất một lệnh được phép.",
   "kubecode.research.exec.setUp": "Thiết lập thực thi",
   "kubecode.research.exec.editEnvelope": "Sửa phạm vi",

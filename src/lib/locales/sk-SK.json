@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Termín (hodiny od teraz, prázdne = bez termínu)",
   "kubecode.research.exec.allowedCommands": "Povolené príkazy",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Jeden príkaz na riadok. Spustenie musí začínať jedným z týchto príkazov, token po tokene; všetko ostatné sa odmietne.",
+  "kubecode.research.exec.commandsHint": "Jeden príkaz na riadok. Spustenie musí začínať jedným z týchto príkazov, token po tokene. Povolené sú akékoľvek ďalšie argumenty, preto uvádzajte iba príkazy, ktoré ste ochotní spustiť s ľubovoľnými argumentmi; shell, napríklad sh -c, povoľuje ľubovoľný skript.",
   "kubecode.research.exec.invalid": "Skontrolujte limity: celé čísla v povolenom rozsahu a aspoň jeden povolený príkaz.",
   "kubecode.research.exec.setUp": "Nastaviť spúšťanie",
   "kubecode.research.exec.editEnvelope": "Upraviť rámec",

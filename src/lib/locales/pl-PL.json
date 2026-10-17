@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Termin (godziny od teraz, puste = brak)",
   "kubecode.research.exec.allowedCommands": "Dozwolone polecenia",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Jedno polecenie w wierszu. Uruchomienie musi zaczynać się od jednego z nich, token po tokenie; wszystko inne zostanie odrzucone.",
+  "kubecode.research.exec.commandsHint": "Jedno polecenie w wierszu. Uruchomienie musi zaczynać się od jednego z nich, token po tokenie. Dowolne dalsze argumenty są dozwolone, więc wypisz tylko polecenia, które akceptujesz z dowolnymi argumentami; powłoka taka jak sh -c pozwala uruchomić dowolny skrypt.",
   "kubecode.research.exec.invalid": "Sprawdź limity: liczby całkowite w dozwolonym zakresie oraz co najmniej jedno dozwolone polecenie.",
   "kubecode.research.exec.setUp": "Skonfiguruj wykonanie",
   "kubecode.research.exec.editEnvelope": "Edytuj kopertę",

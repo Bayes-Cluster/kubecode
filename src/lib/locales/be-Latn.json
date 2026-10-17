@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Krajni termin (hadzin ad ciapier, pusta — biez terminu)",
   "kubecode.research.exec.allowedCommands": "Dazvolienyja kamandy",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Adna kamanda na radok. Zapusk pavinien pačynacca z adnoj z ich, slova ŭ slova; usio astatniaje adchiliajecca.",
+  "kubecode.research.exec.commandsHint": "Adna kamanda na radok. Zapusk pavinien pačynacca z adnoj z ich, slova ŭ slova. Ludyja nastupnyja arhumenty dazvoleny, tamu pieraličvajcie tolki tyja kamandy, jakija vy hatovyja zapuskać z ludymi arhumentami; abałonka, naprykład sh -c, dazvaliaje vykanać ludy skrypt.",
   "kubecode.research.exec.invalid": "Praviercie abmiežavanni: celyja liki ŭ dapuščalnym dyjapazonie i chacia b adna dazvolienaja kamanda.",
   "kubecode.research.exec.setUp": "Naladzić vykanannie",
   "kubecode.research.exec.editEnvelope": "Redahavać ramki",

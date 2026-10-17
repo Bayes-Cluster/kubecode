@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Крайні тэрмін (гадзін ад цяпер, пуста — без тэрміну)",
   "kubecode.research.exec.allowedCommands": "Дазволеныя каманды",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Адна каманда на радок. Запуск павінен пачынацца з адной з іх, слова ў слова; усё астатняе адхіляецца.",
+  "kubecode.research.exec.commandsHint": "Адна каманда на радок. Запуск павінен пачынацца з адной з іх, слова ў слова. Любыя наступныя аргументы дазволены, таму пералічвайце толькі тыя каманды, якія вы гатовыя запускаць з любымі аргументамі; абалонка, напрыклад sh -c, дазваляе выканаць любы скрыпт.",
   "kubecode.research.exec.invalid": "Праверце абмежаванні: цэлыя лікі ў дапушчальным дыяпазоне і хаця б адна дазволеная каманда.",
   "kubecode.research.exec.setUp": "Наладзіць выкананне",
   "kubecode.research.exec.editEnvelope": "Рэдагаваць рамкі",

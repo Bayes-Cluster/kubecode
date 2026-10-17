@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "截止时间（从现在起的小时数，留空表示无）",
   "kubecode.research.exec.allowedCommands": "允许的命令",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "每行一条命令。启动命令必须以其中一条开头，逐词完全一致；其他命令一律拒绝。",
+  "kubecode.research.exec.commandsHint": "每行一条命令。启动命令必须以其中一条开头，逐词完全一致。后续参数不受限制，因此只列出你愿意以任意参数运行的命令；像 sh -c 这样的 shell 会允许运行任何脚本。",
   "kubecode.research.exec.invalid": "请检查限制：需为范围内的整数，且至少有一条允许的命令。",
   "kubecode.research.exec.setUp": "设置执行",
   "kubecode.research.exec.editEnvelope": "编辑执行范围",

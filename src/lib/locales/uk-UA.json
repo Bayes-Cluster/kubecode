@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Крайній термін (годин від зараз, порожньо — без терміну)",
   "kubecode.research.exec.allowedCommands": "Дозволені команди",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Одна команда на рядок. Запуск має починатися з однієї з цих команд, токен у токен; усе інше відхиляється.",
+  "kubecode.research.exec.commandsHint": "Одна команда на рядок. Запуск має починатися з однієї з цих команд, токен у токен. Будь-які подальші аргументи дозволені, тому перелічуйте лише ті команди, які ви готові запускати з будь-якими аргументами; оболонка на кшталт sh -c дозволяє виконати будь-який скрипт.",
   "kubecode.research.exec.invalid": "Перевірте обмеження: цілі числа в межах діапазону та принаймні одна дозволена команда.",
   "kubecode.research.exec.setUp": "Налаштувати виконання",
   "kubecode.research.exec.editEnvelope": "Редагувати рамку",

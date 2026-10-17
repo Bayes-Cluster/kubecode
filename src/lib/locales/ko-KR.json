@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "마감(지금부터 몇 시간 후, 비워 두면 없음)",
   "kubecode.research.exec.allowedCommands": "허용된 명령",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "한 줄에 명령 하나. 시작하는 명령은 이 중 하나로 토큰 단위까지 똑같이 시작해야 하며, 그 외에는 거부됩니다.",
+  "kubecode.research.exec.commandsHint": "한 줄에 명령 하나. 시작하는 명령은 이 중 하나로 토큰 단위까지 똑같이 시작해야 합니다. 뒤따르는 인자는 무엇이든 허용되므로, 어떤 인자로 실행되어도 괜찮은 명령만 나열하세요. sh -c 같은 셸은 모든 스크립트를 실행할 수 있게 합니다.",
   "kubecode.research.exec.invalid": "제한을 확인하세요. 범위 내의 정수여야 하며 허용된 명령이 하나 이상 있어야 합니다.",
   "kubecode.research.exec.setUp": "실행 설정",
   "kubecode.research.exec.editEnvelope": "엔벨로프 편집",

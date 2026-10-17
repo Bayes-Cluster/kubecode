@@ -1810,7 +1810,7 @@
   "kubecode.research.exec.deadlineHours": "Tenggat (jam dari sekarang, kosongkan jika tidak ada)",
   "kubecode.research.exec.allowedCommands": "Perintah yang diizinkan",
   "kubecode.research.exec.commandsPlaceholder": "python3 train.py\nbash scripts/eval.sh",
-  "kubecode.research.exec.commandsHint": "Satu perintah per baris. Peluncuran harus diawali salah satu perintah ini, token demi token; selain itu ditolak.",
+  "kubecode.research.exec.commandsHint": "Satu perintah per baris. Peluncuran harus diawali salah satu perintah ini, token demi token. Argumen tambahan apa pun diizinkan, jadi cantumkan hanya perintah yang Anda terima untuk dijalankan dengan argumen apa pun; shell seperti sh -c mengizinkan skrip apa pun.",
   "kubecode.research.exec.invalid": "Periksa batasnya: bilangan bulat dalam rentang yang valid, dan setidaknya satu perintah yang diizinkan.",
   "kubecode.research.exec.setUp": "Siapkan eksekusi",
   "kubecode.research.exec.editEnvelope": "Ubah envelope",
