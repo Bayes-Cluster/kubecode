@@ -684,9 +684,239 @@ fn a_team_cannot_complete_while_experiments_or_analysis_are_outstanding() {
     };
     assert!(blocked(&f), "a running experiment must be accounted for");
     f.experiments.observe(&experiment.id, finished(0)).unwrap();
-    assert!(blocked(&f), "an unanalyzed result must be accounted for");
+    assert!(blocked(&f), "the delivered result must be read");
+    f.teams.read_messages(&f.leader.id).unwrap();
+    assert!(
+        blocked(&f),
+        "an unanalyzed result must be accounted for, read or not"
+    );
     f.experiments.mark_analyzed(&experiment.id).unwrap();
     f.teams
         .complete_team(&f.team.id, &f.leader.id, "Done", "fp")
         .expect("complete once nothing is owed");
+}
+
+// -- Delivery (#164) -----------------------------------------------------------
+
+fn inbox(f: &Fixture, member: &str) -> Vec<crate::teams::TeamMessage> {
+    f.teams.pending_messages(member).unwrap()
+}
+
+/// The fake clock starts at the real time, because finished_at is stamped by
+/// the database.
+fn real_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+fn store_with_clock(f: &Fixture, clock: Arc<AtomicI64>) -> ExperimentStore {
+    ExperimentStore::from_database(f.agents.database(), Arc::clone(&f.agents))
+        .unwrap()
+        .with_clock(move || clock.load(Ordering::SeqCst))
+}
+
+#[test]
+fn a_result_is_enqueued_for_the_waiting_member_in_the_same_commit_exactly_once() {
+    let f = Fixture::new();
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    f.experiments
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.teammate.id,
+            &experiment.id,
+            Some(&f.task_id),
+            "analyze",
+            None,
+        )
+        .unwrap();
+    let before = inbox(&f, &f.teammate.id).len();
+
+    assert!(f.experiments.observe(&experiment.id, finished(0)).unwrap());
+    assert!(!f.experiments.observe(&experiment.id, finished(0)).unwrap());
+    let messages = inbox(&f, &f.teammate.id);
+    assert_eq!(messages.len(), before + 1, "one observation, one delivery");
+    let message = messages.iter().find(|m| m.body.contains("ended")).unwrap();
+    assert!(
+        message.body.contains("ended: exited") && message.body.contains("analysis"),
+        "{}",
+        message.body
+    );
+    assert_eq!(message.task_id.as_deref(), Some(f.task_id.as_str()));
+    assert!(
+        inbox(&f, &f.leader.id)
+            .iter()
+            .all(|m| !m.body.contains("ended: exited"))
+    );
+}
+
+#[test]
+fn delivery_routes_to_the_leader_when_the_owner_is_gone_or_there_was_no_wait() {
+    let f = Fixture::new();
+    let (waited, _) = f.reserve("a", &["echo", "a"]).unwrap();
+    f.experiments
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.teammate.id,
+            &waited.id,
+            None,
+            "",
+            None,
+        )
+        .unwrap();
+    f.experiments
+        .reassign_waits_of_member(&f.team.id, &f.teammate.id)
+        .unwrap();
+    f.teams
+        .remove_teammate(&f.team.id, &f.leader.id, &f.teammate.id)
+        .unwrap();
+    f.experiments.observe(&waited.id, finished(0)).unwrap();
+    assert!(
+        inbox(&f, &f.leader.id)
+            .iter()
+            .any(|m| m.body.contains("ended: exited")),
+        "an absent owner routes to the Leader"
+    );
+
+    let (unowned, _) = f.reserve("b", &["echo", "b"]).unwrap();
+    f.experiments.observe(&unowned.id, finished(2)).unwrap();
+    let leader_messages = inbox(&f, &f.leader.id);
+    assert!(
+        leader_messages
+            .iter()
+            .any(|m| m.body.contains("exit code 2"))
+    );
+}
+
+#[test]
+fn a_delivery_that_commits_without_a_wake_is_still_pending_for_the_supervisor() {
+    let f = Fixture::new();
+    let woken = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let record = Arc::clone(&woken);
+    f.experiments
+        .set_delivery_hook(move |team| record.lock().unwrap().push(team.to_owned()));
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    f.experiments.observe(&experiment.id, finished(0)).unwrap();
+    assert_eq!(
+        *woken.lock().unwrap(),
+        vec![f.team.id.clone()],
+        "woken once, after commit"
+    );
+    // Whether or not the wake worked, the obligation is a committed row.
+    assert!(
+        inbox(&f, &f.leader.id)
+            .iter()
+            .any(|m| m.body.contains("ended"))
+    );
+    assert_eq!(
+        f.experiments.get(&experiment.id).unwrap().analysis,
+        AnalysisState::Pending
+    );
+    f.experiments.observe(&experiment.id, finished(0)).unwrap();
+    assert_eq!(
+        woken.lock().unwrap().len(),
+        1,
+        "a duplicate observation wakes nobody"
+    );
+}
+
+#[test]
+fn an_expired_wait_notifies_its_owner_once() {
+    let f = Fixture::new();
+    let now = Arc::new(AtomicI64::new(10_000));
+    let store = store_with_clock(&f, Arc::clone(&now));
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    store
+        .register_wait(
+            &f.project_id,
+            &f.team.id,
+            &f.teammate.id,
+            &experiment.id,
+            None,
+            "",
+            Some(10_050),
+        )
+        .unwrap();
+    let before = inbox(&f, &f.teammate.id).len();
+    now.store(10_060, Ordering::SeqCst);
+    assert_eq!(store.expire_due_waits().unwrap().len(), 1);
+    assert_eq!(store.expire_due_waits().unwrap().len(), 0);
+    let messages = inbox(&f, &f.teammate.id);
+    assert_eq!(messages.len(), before + 1);
+    assert!(messages.iter().any(|m| m.body.contains("expired")));
+    // The experiment itself is untouched.
+    assert_eq!(
+        f.experiments.get(&experiment.id).unwrap().state,
+        ExperimentState::Reserved
+    );
+}
+
+#[test]
+fn an_acknowledged_but_unanalyzed_result_is_re_raised_a_bounded_number_of_times() {
+    let f = Fixture::new();
+    let now = Arc::new(AtomicI64::new(real_now()));
+    let store = store_with_clock(&f, Arc::clone(&now));
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    f.experiments.observe(&experiment.id, finished(0)).unwrap();
+
+    // Unread: the mailbox lease handles redelivery, not a reminder.
+    now.fetch_add(10_000, Ordering::SeqCst);
+    assert!(store.remind_unanalyzed(600, 2).unwrap().reminded.is_empty());
+
+    // Read (acknowledged) but not analyzed: the obligation remains detectable.
+    f.teams.read_messages(&f.leader.id).unwrap();
+    assert_eq!(
+        f.experiments.get(&experiment.id).unwrap().analysis,
+        AnalysisState::Pending
+    );
+    let first = store.remind_unanalyzed(600, 2).unwrap();
+    assert_eq!(first.reminded, vec![experiment.id.clone()]);
+    assert!(
+        inbox(&f, &f.leader.id)
+            .iter()
+            .any(|m| m.body.starts_with("Reminder 1"))
+    );
+    // Not again until the interval passes.
+    assert!(store.remind_unanalyzed(600, 2).unwrap().reminded.is_empty());
+
+    f.teams.read_messages(&f.leader.id).unwrap();
+    now.fetch_add(700, Ordering::SeqCst);
+    assert_eq!(store.remind_unanalyzed(600, 2).unwrap().reminded.len(), 1);
+    f.teams.read_messages(&f.leader.id).unwrap();
+    now.fetch_add(700, Ordering::SeqCst);
+    let exhausted = store.remind_unanalyzed(600, 2).unwrap();
+    assert!(exhausted.reminded.is_empty());
+    assert_eq!(
+        exhausted.exhausted,
+        vec![(f.team.id.clone(), experiment.id.clone())]
+    );
+
+    // An explicit analysis ends the obligation.
+    f.experiments.mark_analyzed(&experiment.id).unwrap();
+    now.fetch_add(10_000, Ordering::SeqCst);
+    let after = store.remind_unanalyzed(600, 2).unwrap();
+    assert!(after.reminded.is_empty() && after.exhausted.is_empty());
+}
+
+#[test]
+fn a_paused_team_gets_no_reminders_and_keeps_its_pending_events() {
+    let f = Fixture::new();
+    let now = Arc::new(AtomicI64::new(real_now()));
+    let store = store_with_clock(&f, Arc::clone(&now));
+    let (experiment, _) = f.reserve("k", &["echo", "x"]).unwrap();
+    f.experiments.observe(&experiment.id, finished(0)).unwrap();
+    f.teams.read_messages(&f.leader.id).unwrap();
+    f.teams.pause_team(&f.team.id).unwrap();
+    now.fetch_add(10_000, Ordering::SeqCst);
+    let paused = store.remind_unanalyzed(600, 3).unwrap();
+    assert!(paused.reminded.is_empty() && paused.exhausted.is_empty());
+    f.teams.resume_team(&f.team.id).unwrap();
+    assert_eq!(
+        store.remind_unanalyzed(600, 3).unwrap().reminded.len(),
+        1,
+        "resumes from current state"
+    );
 }

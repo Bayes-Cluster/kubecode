@@ -33,6 +33,11 @@ pub struct AppState {
     pub ilink_bridge: Arc<tokio::sync::Mutex<Option<Arc<ChannelBridge>>>>,
 }
 
+/// How long an acknowledged result may sit unanalyzed before it is re-raised,
+/// and how many times, before the Team is flagged for attention.
+pub const EXPERIMENT_REMINDER_SECS: i64 = 600;
+pub const EXPERIMENT_MAX_REMINDERS: u32 = 3;
+
 impl AppState {
     pub fn new(
         workspace: Arc<WorkspaceService>,
@@ -69,7 +74,7 @@ impl AppState {
                 .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
         );
-        Self {
+        let state = Self {
             workspace,
             terminals,
             agents,
@@ -82,7 +87,9 @@ impl AppState {
             experiment_runner,
             research_locks: Arc::default(),
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
-        }
+        };
+        state.install_experiment_wake();
+        state
     }
 
     /// Starts the iLink channel service supervisor: wires the inbound and
@@ -143,6 +150,7 @@ impl AppState {
             .with_terminal_manager(Arc::clone(&self.terminals)),
         );
         self.agents = agents;
+        self.install_experiment_wake();
         self
     }
 
@@ -153,6 +161,7 @@ impl AppState {
                 .clone()
                 .with_team_mcp_http_origin(origin),
         );
+        self.install_experiment_wake();
         self
     }
 
@@ -168,10 +177,46 @@ impl AppState {
         });
     }
 
+    /// Wakes a Team's members when an experiment delivery commits. The hook
+    /// holds the runtime weakly, so it never keeps a replaced runtime alive.
+    fn install_experiment_wake(&self) {
+        let runtime = Arc::downgrade(&self.agent_runtime);
+        self.experiments.set_delivery_hook(move |team_id| {
+            if let Some(runtime) = runtime.upgrade() {
+                let _ = runtime.reconcile_team(team_id);
+            }
+        });
+    }
+
+    /// Backstops for experiment delivery: waits past their deadline expire
+    /// into events, and results that were read but never analyzed are
+    /// re-raised a bounded number of times before the Team is flagged.
+    fn reconcile_experiments(&self) {
+        let _ = self.experiments.expire_due_waits();
+        let Ok(outcome) = self
+            .experiments
+            .remind_unanalyzed(EXPERIMENT_REMINDER_SECS, EXPERIMENT_MAX_REMINDERS)
+        else {
+            return;
+        };
+        for (team_id, experiment_id) in outcome.exhausted {
+            let _ = self.teams.append_activity(
+                &team_id,
+                None,
+                None,
+                "experiment_unanalyzed",
+                "An experiment result is still unanalyzed after repeated reminders",
+                Some(&format!("{{\"experiment_id\":\"{experiment_id}\"}}")),
+            );
+            let _ = self.teams.mark_team_needs_attention(&team_id);
+        }
+    }
+
     pub async fn reconcile_teams_once(&self) -> Result<(), RuntimeError> {
         self.teams
             .requeue_expired_deliveries(90)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        self.reconcile_experiments();
         let _ = self
             .agent_runtime
             .process_due_lifecycle_operations()

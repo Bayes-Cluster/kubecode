@@ -47,15 +47,12 @@ pub enum RunnerError {
     Spawn(String),
 }
 
-type Observer = Arc<dyn Fn(&Experiment) + Send + Sync>;
-
 pub struct ExperimentRunner {
     store: Arc<ExperimentStore>,
     workspace: Arc<WorkspaceService>,
     teams: Arc<TeamStore>,
     monitored: Mutex<HashSet<String>>,
     poll: Duration,
-    observer: Mutex<Option<Observer>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,7 +81,6 @@ impl ExperimentRunner {
             teams,
             monitored: Mutex::default(),
             poll: Duration::from_millis(200),
-            observer: Mutex::default(),
         })
     }
 
@@ -97,11 +93,6 @@ impl ExperimentRunner {
             }
             Err(shared) => shared,
         }
-    }
-
-    /// Called after a terminal observation is committed, to deliver it.
-    pub fn set_observer(&self, observer: impl Fn(&Experiment) + Send + Sync + 'static) {
-        *self.observer.lock().expect("observer mutex poisoned") = Some(Arc::new(observer));
     }
 
     pub fn store(&self) -> &Arc<ExperimentStore> {
@@ -339,18 +330,8 @@ impl ExperimentRunner {
                     .ok(),
             })
             .collect();
-        if matches!(self.store.observe(&experiment.id, outcome), Ok(true))
-            && let Ok(finished) = self.store.get(&experiment.id)
-        {
-            let observer = self
-                .observer
-                .lock()
-                .expect("observer mutex poisoned")
-                .clone();
-            if let Some(observer) = observer {
-                observer(&finished);
-            }
-        }
+        // The observation commits its own delivery to the responsible member.
+        let _ = self.store.observe(&experiment.id, outcome);
     }
 
     // -- Cancellation ---------------------------------------------------------
@@ -370,14 +351,6 @@ impl ExperimentRunner {
 
     fn after_cancel(self: &Arc<Self>, experiment: &Experiment) {
         if experiment.state == ExperimentState::Cancelled {
-            if let Some(observer) = self
-                .observer
-                .lock()
-                .expect("observer mutex poisoned")
-                .clone()
-            {
-                observer(experiment);
-            }
             return;
         }
         if let Some(identity) = &experiment.identity
