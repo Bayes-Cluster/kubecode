@@ -2,7 +2,7 @@
 type: ADR
 id: "0212"
 title: "Project-scoped research questions, versioned briefs, and execution continuity"
-status: proposed
+status: accepted
 date: 2026-10-17
 ---
 
