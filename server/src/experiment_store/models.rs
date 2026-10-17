@@ -308,6 +308,16 @@ impl NewLaunch {
         if self.artifacts.len() > MAX_ARTIFACTS {
             return Err(ExperimentError::Invalid("too many artifacts"));
         }
+        if self.cwd.chars().count() > MAX_ARG_CHARS
+            || self.cwd.contains('\0')
+            || self.artifacts.iter().any(|path| {
+                path.trim().is_empty()
+                    || path.chars().count() > MAX_ARG_CHARS
+                    || path.contains('\0')
+            })
+        {
+            return Err(ExperimentError::Invalid("a path is empty or too long"));
+        }
         if self.sources.len() > crate::research_store::MAX_ROUND_SOURCES {
             return Err(ExperimentError::Invalid("too many sources"));
         }
@@ -411,6 +421,32 @@ pub struct ExperimentDecision {
     /// The attempt this decision started, for `retry` and `follow_up`.
     pub launched_experiment_id: Option<String>,
     pub created_at: String,
+}
+
+impl NewDecision {
+    /// The decision's own fields checked up front, so a malformed decision is
+    /// refused before anything it would start is started.
+    pub fn validate(&self) -> Result<(), ExperimentError> {
+        let rationale = self.rationale.trim();
+        if rationale.is_empty() || rationale.chars().count() > MAX_RATIONALE_CHARS {
+            return Err(ExperimentError::Invalid(
+                "a rationale of 1 to 2000 characters is required",
+            ));
+        }
+        if self.evidence.len() > MAX_DECISION_EVIDENCE {
+            return Err(ExperimentError::Invalid(
+                "too much evidence on one decision",
+            ));
+        }
+        if self
+            .decision_key
+            .as_deref()
+            .is_some_and(|key| key.trim().chars().count() > MAX_KEY_CHARS)
+        {
+            return Err(ExperimentError::Invalid("the decision key is too long"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]

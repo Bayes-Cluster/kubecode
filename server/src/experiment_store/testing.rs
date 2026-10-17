@@ -191,7 +191,20 @@ impl Fixture {
         }
     }
 
+    /// Reserves an experiment owned by the Teammate (who may wait on it).
     pub fn reserve(&self, key: &str, argv: &[&str]) -> Result<(Experiment, bool), ExperimentError> {
+        let mut request = launch(&self.round_id, &self.team, key, argv);
+        request.owner_member_id = Some(self.teammate.id.clone());
+        self.experiments
+            .reserve(&self.project_id, &self.research_id, request)
+    }
+
+    /// Reserves an experiment nobody owns.
+    pub fn reserve_unowned(
+        &self,
+        key: &str,
+        argv: &[&str],
+    ) -> Result<(Experiment, bool), ExperimentError> {
         self.experiments.reserve(
             &self.project_id,
             &self.research_id,

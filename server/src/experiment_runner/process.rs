@@ -6,15 +6,16 @@ use std::path::Path;
 
 use crate::experiment_store::ProcessIdentity;
 
-/// Runs the user's argv (`"$@"`) with output redirected to files and an
-/// atomically written exit receipt, so the outcome survives a Runtime restart.
-/// `ulimit -f` bounds each log file in the kernel; the wrapper leads its own
-/// process group so the whole tree can be signalled.
+/// Runs the user's argv (`"$@"`) with stdout and stderr copied into
+/// Runtime-owned files, each bounded by `head -c` (the rest is drained so the
+/// program never sees a broken pipe), and an exit code recorded in an
+/// atomically renamed receipt. The cap applies to the log files only: the
+/// program itself may write whatever it needs elsewhere. The wrapper leads a
+/// new process group so the whole tree can be signalled.
 pub const WRAPPER: &str = r#"printf '%s' "$$" > "$KUBECODE_EXPERIMENT_DIR/pid"
-ulimit -f "$KUBECODE_EXPERIMENT_FILE_BLOCKS" 2>/dev/null
-"$@" >"$KUBECODE_EXPERIMENT_DIR/stdout.log" 2>"$KUBECODE_EXPERIMENT_DIR/stderr.log"
-code=$?
-printf '%s' "$code" > "$KUBECODE_EXPERIMENT_DIR/exit.tmp" && mv "$KUBECODE_EXPERIMENT_DIR/exit.tmp" "$KUBECODE_EXPERIMENT_DIR/exit"
+bound() { head -c "$KUBECODE_EXPERIMENT_LOG_LIMIT" > "$1"; cat > /dev/null; }
+{ { "$@"; printf '%s' "$?" > "$KUBECODE_EXPERIMENT_DIR/code"; } 2>&1 1>&3 3>&- | bound "$KUBECODE_EXPERIMENT_DIR/stderr.log"; } 3>&1 | bound "$KUBECODE_EXPERIMENT_DIR/stdout.log"
+mv "$KUBECODE_EXPERIMENT_DIR/code" "$KUBECODE_EXPERIMENT_DIR/exit" 2>/dev/null
 "#;
 
 pub fn boot_id() -> String {
@@ -84,6 +85,47 @@ pub fn signal_group(identity: &ProcessIdentity, signal: i32) -> bool {
     // SAFETY: a negative pid addresses the process group; the identity check
     // above established that the leader is the process we launched.
     unsafe { libc::kill(-(identity.pid as libc::pid_t), signal) == 0 }
+}
+
+/// Whether any process of the experiment's group is still running. The
+/// wrapper leads the group and dies on the first SIGTERM, but the program may
+/// have trapped it and carry on; the slot is held until the group is empty.
+/// A group id cannot be reused while it has members.
+pub fn group_alive(identity: &ProcessIdentity) -> bool {
+    if identity.boot_id != boot_id() {
+        return false;
+    }
+    // SAFETY: signal 0 only checks that the group exists.
+    let result = unsafe { libc::kill(-(identity.pid as libc::pid_t), 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Signals every member of the group, whether or not the leader still lives.
+pub fn signal_whole_group(identity: &ProcessIdentity, signal: i32) -> bool {
+    if !group_alive(identity) {
+        return false;
+    }
+    // SAFETY: as in `signal_group`; liveness of the group was just checked.
+    unsafe { libc::kill(-(identity.pid as libc::pid_t), signal) == 0 }
+}
+
+/// When the process started, in unix seconds, from the boot time and its
+/// start ticks.
+pub fn start_unix(identity: &ProcessIdentity) -> Option<i64> {
+    let stat = std::fs::read_to_string("/proc/stat").ok()?;
+    let btime: i64 = stat
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(btime + (identity.start_ticks as f64 / clock_ticks()) as i64)
+}
+
+pub fn read_pid_file(dir: &Path) -> Option<(i64, std::time::SystemTime)> {
+    let path = dir.join("pid");
+    let pid = std::fs::read_to_string(&path).ok()?.trim().parse().ok()?;
+    Some((pid, std::fs::metadata(&path).ok()?.modified().ok()?))
 }
 
 pub fn read_receipt(dir: &Path) -> Option<i32> {

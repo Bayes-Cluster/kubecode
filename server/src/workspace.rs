@@ -1077,6 +1077,48 @@ impl WorkspaceService {
         Ok(revision(&bytes))
     }
 
+    /// A content revision for a file under an execution root (the Project, or
+    /// a Session's worktree), used for experiment artifacts. A file larger
+    /// than the hashing cap is identified by its size and modification time
+    /// instead of being reported as missing.
+    pub fn execution_file_revision(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        let root = self.execution_path(project_id, workspace_path)?;
+        let relative = normalize_relative(relative, false)?;
+        let mut candidate = root;
+        for component in relative.components() {
+            candidate.push(component.as_os_str());
+            if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
+                return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+            }
+        }
+        let metadata = fs::symlink_metadata(&candidate)?;
+        if !metadata.is_file() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+        if metadata.len() > MAX_ASSET_BYTES {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            return Ok(format!("large:{}:{modified}", metadata.len()));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&candidate)?
+            .take(MAX_ASSET_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        Ok(revision(&bytes))
+    }
+
     pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
         let (_, target) = self.existing_entry(project_id, relative)?;
         let file = fs::File::open(&target)?;
