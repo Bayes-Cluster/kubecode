@@ -5520,3 +5520,89 @@ done"#,
             .any(|event| event["kind"] == "tool_completed")
     );
 }
+
+#[tokio::test]
+async fn ilink_quick_prompt_settings_are_bounded_per_linked_account() {
+    let temp = TempDir::new().expect("tempdir");
+    let root = temp.path().join("srv");
+    let state_directory = root.join(".state/kubecode");
+    fs::create_dir_all(&state_directory).expect("state directory");
+    let database_path = state_directory.join("kubecode.sqlite3");
+    let workspace = WorkspaceService::open(&root, &database_path).expect("workspace service");
+    let agent_store = Arc::new(AgentStore::open(&database_path).expect("agent store"));
+    let teams = TeamStore::open(&database_path).expect("team store");
+    let app = app_router(
+        AppState::new(
+            Arc::new(workspace),
+            Arc::clone(&agent_store),
+            Arc::new(teams),
+        ),
+        BASE_PATH,
+    );
+    let prompts = format!("{BASE_PATH}/api/v1/ilink/quick-prompts");
+
+    // No linked account: nothing to configure.
+    let (status, body) = json_request(&app, Method::GET, &prompts, Value::Null).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ilink_not_available");
+
+    agent_store
+        .upsert_ilink_account("ilink_bot_synthetic_01", "Test")
+        .expect("account");
+    agent_store
+        .save_ilink_credentials(&kubecode_server::agent_store::IlinkCredentialRecord {
+            account_id: "ilink_bot_synthetic_01".to_owned(),
+            device_id: "device".to_owned(),
+            committed_cursor: 0,
+            get_updates_buf: String::new(),
+            api_origin: String::new(),
+            cdn_origin: String::new(),
+            sealed_blob: vec![0; 16],
+        })
+        .expect("credentials");
+
+    let (status, body) = json_request(
+        &app,
+        Method::PUT,
+        &format!("{prompts}/2"),
+        json!({"content": "  Summarize the open pull requests  "}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["content"], "Summarize the open pull requests");
+    for (slot, content, code) in [
+        ("0", "x".to_owned(), "invalid_quick_prompt_slot"),
+        ("10", "x".to_owned(), "invalid_quick_prompt_slot"),
+        ("3", "   ".to_owned(), "invalid_quick_prompt"),
+        ("3", "x".repeat(2_001), "invalid_quick_prompt"),
+    ] {
+        let (status, body) = json_request(
+            &app,
+            Method::PUT,
+            &format!("{prompts}/{slot}"),
+            json!({ "content": content }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "slot {slot}");
+        assert_eq!(body["code"], code);
+    }
+    let (status, body) = json_request(&app, Method::GET, &prompts, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["slots"], 9);
+    assert_eq!(
+        body["prompts"],
+        json!([{"slot": 2, "content": "Summarize the open pull requests"}])
+    );
+    let (status, _) =
+        json_request(&app, Method::DELETE, &format!("{prompts}/2"), Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, body) = json_request(&app, Method::GET, &prompts, Value::Null).await;
+    assert_eq!(body["prompts"], json!([]));
+    // Prompt content never enters the workspace event stream.
+    let events = agent_store.workspace_events_after(0).expect("events");
+    assert!(
+        events
+            .iter()
+            .all(|event| !event.payload.to_string().contains("pull requests"))
+    );
+}

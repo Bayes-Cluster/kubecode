@@ -19,9 +19,10 @@ use crate::shared_media::file_uri_path;
 use crate::workspace::{SharedMediaFile, WorkspaceError, WorkspaceService};
 
 use super::client::UpdatesPage;
+use super::commands::CommandCenter;
 use super::error::IlinkError;
 use super::guard::PeerGate;
-use super::inbound::{BridgePrompt, ChannelLanguage, InboundBridge};
+use super::inbound::{BridgePrompt, ChannelLanguage, InboundBridge, ResponseChannel};
 use super::outbound::{
     LoadedMedia, MediaRejection, MediaSource, OutboundBridge, OutboundConfig, OutboundTransport,
 };
@@ -163,6 +164,7 @@ impl MediaSource for WorkspaceMediaSource {
 /// The running channel pipeline.
 pub struct ChannelBridge {
     pub router: Arc<SessionRouter>,
+    pub commands: Arc<CommandCenter>,
     pub inbound: Arc<InboundBridge>,
     pub outbound: Arc<OutboundBridge>,
     service: Arc<ILinkService>,
@@ -192,7 +194,8 @@ impl ChannelBridge {
         config: ChannelBridgeConfig,
     ) -> Result<Arc<Self>, ServiceError> {
         let store = runtime.store();
-        let router = SessionRouter::new(runtime, Arc::clone(&store), config.language);
+        let router = SessionRouter::new(Arc::clone(&runtime), Arc::clone(&store), config.language);
+        let commands = CommandCenter::new(runtime, Arc::clone(&router), config.language);
         let outbound = OutboundBridge::new(
             Arc::clone(&store),
             transport,
@@ -212,6 +215,7 @@ impl ChannelBridge {
         let (prompt_sender, prompts) = mpsc::unbounded_channel();
         let bridge = Arc::new(Self {
             router,
+            commands,
             inbound,
             outbound,
             service: Arc::clone(&service),
@@ -294,7 +298,15 @@ impl ChannelBridge {
             let Some(prompt) = prompt else {
                 return;
             };
-            self.router.route(prompt, &responses).await;
+            self.dispatch(prompt, &responses).await;
+        }
+    }
+
+    /// One normalized prompt: control commands and open-menu selections
+    /// first (#133), everything else through the Session router.
+    pub async fn dispatch(&self, prompt: BridgePrompt, responses: &dyn ResponseChannel) {
+        if !self.commands.handle(&prompt, responses).await {
+            self.router.route(prompt, responses).await;
         }
     }
 }
