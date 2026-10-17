@@ -136,6 +136,49 @@ describe('useWeChatBinding', () => {
     expect(result.current.clearedReason).toBe('session_removed')
   })
 
+  it('settles pending even when the status event outruns the bind response', async () => {
+    let finishBind: (value: { bound_conversation_id: string }) => void = () => undefined
+    const api = {
+      ilinkStatus: vi.fn()
+        .mockResolvedValueOnce(status(null))
+        .mockResolvedValue(status('session-2')),
+      ilinkBindSession: vi.fn(() => new Promise((resolve) => { finishBind = resolve })),
+    } as unknown as KubecodeApi
+    const { result, rerender } = renderHook(
+      ({ events }) => useWeChatBinding(api, events),
+      { initialProps: { events: [] as WorkspaceEvent[] } },
+    )
+    await waitFor(() => expect(api.ilinkStatus).toHaveBeenCalledTimes(1))
+    let binding: Promise<void> = Promise.resolve()
+    act(() => { binding = result.current.bind('session-2') })
+    expect(result.current.pending).toBe(true)
+    // The server's status event arrives before the HTTP response.
+    rerender({ events: [statusEvent(7, { conversation_id: 'session-2' })] })
+    await waitFor(() => expect(result.current.boundConversationId).toBe('session-2'))
+    await act(async () => {
+      finishBind({ bound_conversation_id: 'session-2' })
+      await binding
+    })
+    expect(result.current.pending).toBe(false)
+  })
+
+  it('drops a stale cleared-binding note once a binding exists again', async () => {
+    const api = {
+      ilinkStatus: vi.fn().mockResolvedValue(status(null)),
+    } as unknown as KubecodeApi
+    const { result, rerender } = renderHook(
+      ({ events }) => useWeChatBinding(api, events),
+      { initialProps: { events: [] as WorkspaceEvent[] } },
+    )
+    rerender({ events: [statusEvent(3, { binding_reason: 'session_archived', conversation_id: null })] })
+    await waitFor(() => expect(result.current.clearedReason).toBe('session_archived'))
+    rerender({ events: [
+      statusEvent(3, { binding_reason: 'session_archived', conversation_id: null }),
+      statusEvent(4, { conversation_id: 'session-5' }),
+    ] })
+    await waitFor(() => expect(result.current.clearedReason).toBeNull())
+  })
+
   it('stays inert when the API has no WeChat surface', () => {
     const { result } = renderHook(() => useWeChatBinding({} as KubecodeApi, []))
     expect(result.current.linked).toBe(false)

@@ -49,15 +49,19 @@ export function useWeChatBinding(api: KubecodeApi, workspaceEvents: WorkspaceEve
   const [clearedReason, setClearedReason] = useState<WeChatBindingClearedReason | null>(null)
   const [pending, setPending] = useState(false)
   const [rejected, setRejected] = useState<WeChatBinding['rejected']>(null)
-  const ticket = useRef(0)
+  // Loads and mutations are fenced separately: a background reload never
+  // cancels a mutation's bookkeeping (pending would stick), while a
+  // mutation still invalidates loads that started before it.
+  const loadTicket = useRef(0)
+  const mutationTicket = useRef(0)
   const processed = useRef(workspaceEvents.at(-1)?.id ?? 0)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
     if (!available) return
-    const mine = ++ticket.current
+    const mine = ++loadTicket.current
     void api.ilinkStatus().then((status) => {
-      if (mine !== ticket.current) return
+      if (mine !== loadTicket.current) return
       setLinked(Boolean(status.account_id))
       setBound(status.bound_conversation_id)
     }).catch(() => undefined)
@@ -68,29 +72,39 @@ export function useWeChatBinding(api: KubecodeApi, workspaceEvents: WorkspaceEve
       event.id > processed.current && event.kind === 'ilink_status_changed'
     ))
     processed.current = workspaceEvents.at(-1)?.id ?? processed.current
-    if (changes.length === 0) return
-    const reason = changes.at(-1)?.payload.binding_reason
-    if (reason === 'session_removed' || reason === 'session_archived') setClearedReason(reason)
+    const latest = changes.at(-1)?.payload
+    if (!latest) return
+    const reason = latest.binding_reason
+    if (reason === 'session_removed' || reason === 'session_archived') {
+      setClearedReason(reason)
+    } else if (latest.conversation_id || latest.status === 'disconnected') {
+      // A binding exists again, or the account was logged out: the old
+      // explanation no longer applies.
+      setClearedReason(null)
+    }
     setReload((value) => value + 1)
   }, [workspaceEvents])
 
   const apply = useCallback(async (operation: () => Promise<{ bound_conversation_id: string | null }>) => {
-    const mine = ++ticket.current
+    const mine = ++mutationTicket.current
+    loadTicket.current += 1
     setPending(true)
     setRejected(null)
     try {
       const result = await operation()
-      if (mine !== ticket.current) return
+      if (mine !== mutationTicket.current) return
       setBound(result.bound_conversation_id)
+      // The server only accepts a binding change for a linked account.
+      setLinked(true)
       setClearedReason(null)
     } catch (error) {
-      if (mine !== ticket.current) return
+      if (mine !== mutationTicket.current) return
       const reason = error instanceof ApiError ? error.reason ?? '' : ''
       setRejected(UNBINDABLE_REASONS.has(reason) ? reason as WeChatUnbindableReason : 'failed')
       // Re-read the authoritative binding after a refusal.
       setReload((value) => value + 1)
     } finally {
-      if (mine === ticket.current) setPending(false)
+      if (mine === mutationTicket.current) setPending(false)
     }
   }, [])
 

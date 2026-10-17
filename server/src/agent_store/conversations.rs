@@ -621,9 +621,18 @@ impl AgentStore {
         scope: &str,
     ) -> Result<(), StoreError> {
         let conversation = self.get_conversation(conversation_id)?;
-        let bound_accounts = self.ilink_accounts_bound_to(conversation_id)?;
         let mut database = self.database.lock().expect("agent database mutex poisoned");
         let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Read the bound accounts inside the deleting transaction so a bind
+        // racing the delete still gets its "removed" status event.
+        let bound_accounts = {
+            let mut statement = transaction.prepare(
+                "SELECT account_id FROM ilink_session_binding WHERE conversation_id = ?1",
+            )?;
+            statement
+                .query_map([conversation_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let snapshot_ids = {
             let mut statement = transaction.prepare(
                 "SELECT snapshot_conversation_id FROM conversation_revisions
