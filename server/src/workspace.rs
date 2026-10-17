@@ -1011,6 +1011,37 @@ impl WorkspaceService {
         })
     }
 
+    /// The content revision (SHA-256 hex) of a regular Project file, for
+    /// research source references (ADR 0212 §5). The path must be
+    /// Project-relative, stay inside the Project, pass through no symlink,
+    /// and name a file of at most 8 MiB. A missing file is an `Io(NotFound)`
+    /// error, which callers report as a removed source.
+    pub fn file_revision(
+        &self,
+        project_id: &str,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        if self.project_relative_path_contains_symlink(project_id, relative)? {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        let (_, target) = self.existing_entry(project_id, relative)?;
+        let metadata = fs::symlink_metadata(&target)?;
+        if !metadata.is_file() {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        if metadata.len() > MAX_ASSET_BYTES {
+            return Err(WorkspaceError::AssetTooLarge);
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&target)?
+            .take(MAX_ASSET_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_ASSET_BYTES {
+            return Err(WorkspaceError::AssetTooLarge);
+        }
+        Ok(revision(&bytes))
+    }
+
     pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
         let (_, target) = self.existing_entry(project_id, relative)?;
         let file = fs::File::open(&target)?;

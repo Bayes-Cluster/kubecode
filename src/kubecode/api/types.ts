@@ -232,7 +232,57 @@ export type ResearchLinkRole = 'discussion' | 'execution'
 export type ResearchSourceKind = 'session' | 'run' | 'team' | 'team_task' | 'file'
 export type ResearchSourceAvailability = 'available' | 'changed' | 'removed'
 /** A typed pointer to another record; research rows hold identifiers only. */
-export type ResearchSourceRef = { kind: ResearchSourceKind; id: string }
+export type ResearchSourceRef = { kind: ResearchSourceKind; id: string; revision?: string | null }
+export type ResearchRoundKind = 'team' | 'solo'
+/** Durable setup phases; a round that stops before `started` can be resumed. */
+export type ResearchRoundPhase = 'created' | 'session_ready' | 'team_created' | 'started'
+export type ResearchTargetView = {
+  id: string
+  title: string | null
+  availability: ResearchSourceAvailability
+  /** Team lifecycle status. */
+  state: string | null
+}
+export type ResearchSourceView = ResearchSourceRef & { availability: ResearchSourceAvailability }
+export type ResearchRound = {
+  id: string
+  research_id: string
+  /** 1-based, per question. */
+  round: number
+  /** The brief revision this round consumed. */
+  brief_revision: number
+  /** True when the brief has changed since this round pinned its revision. */
+  stale: boolean
+  kind: ResearchRoundKind
+  phase: ResearchRoundPhase
+  session: ResearchTargetView | null
+  team: ResearchTargetView | null
+  request: { instruction?: string; [key: string]: unknown }
+  sources: ResearchSourceView[]
+  created_at: string
+  updated_at: string
+}
+export type StartResearchRoundRequest = {
+  /** Idempotency key: a retry with the same key and request resumes the same round. */
+  client_request_id: string
+  /** The brief revision the researcher is looking at (409 if it moved). */
+  expected_revision: number
+  mode: ResearchRoundKind
+  /** Continue in an existing Session; otherwise a new one is created for `agent_id`. */
+  session_id?: string
+  agent_id?: AgentId
+  title?: string
+  instruction?: string
+  sources?: Array<Pick<ResearchSourceRef, 'kind' | 'id'>>
+  leader_name?: string
+  workspace?: 'shared' | 'worktree'
+  acceptance_criteria?: string[]
+  allowed_agent_ids?: string[]
+  team_mode?: 'standard' | 'yolo'
+  max_teammates?: number
+  max_parallel_runs?: number
+  max_review_rounds?: number
+}
 /** The researcher-approved direction. */
 export type ResearchBrief = {
   title: string

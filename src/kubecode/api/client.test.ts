@@ -1105,6 +1105,37 @@ describe('Kubecode API client', () => {
       )
     })
 
+    it('starts, reads, and resumes rounds through the dedicated routes', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await api.startResearchRound('p', 'r', {
+        client_request_id: 'k-1',
+        expected_revision: 4,
+        mode: 'team',
+        agent_id: 'codex',
+        sources: [{ kind: 'file', id: 'notes/a b.md' }],
+      })
+      await api.listResearchRounds('p', 'r')
+      await api.getResearchRound('p', 'r', 'round/1')
+      await api.resumeResearchRound('p', 'r', 'round/1')
+
+      expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/research/r/rounds')
+      expect(fetch.mock.calls[0][1].method).toBe('POST')
+      expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+        client_request_id: 'k-1',
+        expected_revision: 4,
+        mode: 'team',
+        agent_id: 'codex',
+        sources: [{ kind: 'file', id: 'notes/a b.md' }],
+      })
+      expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/research/r/rounds')
+      expect(fetch.mock.calls[2][0]).toBe('/b/api/v1/projects/p/research/r/rounds/round%2F1')
+      expect(fetch.mock.calls[3][0]).toBe('/b/api/v1/projects/p/research/r/rounds/round%2F1/resume')
+      expect(fetch.mock.calls[3][1].method).toBe('POST')
+    })
+
     it('links and unlinks Sessions and Teams and reads revisions', async () => {
       const fetch = vi.fn().mockImplementation(async () => ok({}))
       vi.stubGlobal('fetch', fetch)

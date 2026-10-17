@@ -29,13 +29,14 @@ use crate::teams::{
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
 struct ToolContext {
     runtime: AgentRuntime,
     teams: Arc<TeamStore>,
+    research: Option<Arc<crate::research_store::ResearchStore>>,
     member: TeamMember,
 }
 
@@ -296,6 +297,7 @@ impl TeamMcpServer {
                 .map_err(mcp_error)?,
             "pending_user_input": self.context.teams.pending_user_input_requests(&team.id)
                 .map_err(mcp_error)?,
+            "research": research_context(&self.context, &team),
         }))
     }
 
@@ -1537,11 +1539,97 @@ fn tool_context(
         .into_iter()
         .find(|member| member.conversation_id == conversation_id)
         .ok_or_else(|| RuntimeError::Acp("team member is missing for this conversation".into()))?;
+    let research = runtime.research_store();
     Ok(Some(ToolContext {
         runtime,
         teams,
+        research,
         member,
     }))
+}
+
+/// Longest earlier-round summary shown to a member.
+const PREVIOUS_SUMMARY_CHARS: usize = 2_000;
+/// Earlier rounds shown, newest first.
+const PREVIOUS_ROUNDS: usize = 5;
+
+/// The research context of the Team's round, or `null` for a Team that is not
+/// part of one. The brief is the immutable revision the round consumed — not
+/// the live question — plus references (never transcripts) for retrieval, and
+/// a bounded summary of earlier rounds so a new round can build on them
+/// (ADR 0212 §6).
+fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_json::Value {
+    use crate::research_api::sources::SourceResolver;
+    let Some(research) = context.research.as_ref() else {
+        return serde_json::Value::Null;
+    };
+    let Ok(Some((project_id, round))) = research.round_for_team(&team.id) else {
+        return serde_json::Value::Null;
+    };
+    let (Ok(question), Ok(brief)) = (
+        research.get(&project_id, &round.research_id),
+        research.revision(&project_id, &round.research_id, round.brief_revision),
+    ) else {
+        return serde_json::Value::Null;
+    };
+    let workspace = context.runtime.workspace_service();
+    let resolver = SourceResolver {
+        agents: context.runtime.store_ref(),
+        teams: &context.teams,
+        workspace: &workspace,
+    };
+    let sources: Vec<_> = round
+        .sources
+        .iter()
+        .map(|source| {
+            serde_json::json!({
+                "kind": source.kind,
+                "id": source.id,
+                "revision": source.revision,
+                "availability": resolver.resolve(&project_id, source),
+            })
+        })
+        .collect();
+    let instruction = round
+        .request
+        .get("instruction")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let previous: Vec<_> = research
+        .rounds(&project_id, &round.research_id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|earlier| earlier.round < round.round)
+        .take(PREVIOUS_ROUNDS)
+        .map(|earlier| {
+            let earlier_team = earlier
+                .team_id
+                .as_deref()
+                .and_then(|id| context.teams.get_team(id).ok());
+            serde_json::json!({
+                "round": earlier.round,
+                "brief_revision": earlier.brief_revision,
+                "kind": earlier.kind,
+                "team_id": earlier.team_id,
+                "team_title": earlier_team.as_ref().map(|team| team.title.clone()),
+                "team_status": earlier_team.as_ref().map(|team| team.status),
+                "final_summary": earlier_team
+                    .and_then(|team| team.final_summary)
+                    .map(|summary| summary.chars().take(PREVIOUS_SUMMARY_CHARS).collect::<String>()),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "research_id": round.research_id,
+        "round": round.round,
+        "brief_revision": round.brief_revision,
+        "current_revision": question.revision,
+        "stale": round.brief_revision < question.revision,
+        "brief": brief.brief,
+        "instruction": instruction,
+        "sources": sources,
+        "previous_rounds": previous,
+    })
 }
 
 fn coordinator(context: &ToolContext) -> TeamCoordinator {
@@ -1589,4 +1677,263 @@ fn publish_team_event(context: &ToolContext, kind: &str, conversation_id: Option
         None,
         &serde_json::json!({"team_id": team.id}),
     );
+}
+
+#[cfg(test)]
+mod research_context_tests {
+    use super::*;
+    use crate::agent_store::AgentStore;
+    use crate::research_store::{
+        NewRound, ResearchBrief, ResearchStore, RoundKind, SourceKind, SourceRef,
+    };
+    use crate::teams::{NewTeam, TeamWorkspace};
+    use crate::workspace::WorkspaceService;
+
+    struct Fixture {
+        _root: tempfile::TempDir,
+        runtime: AgentRuntime,
+        teams: Arc<TeamStore>,
+        research: Arc<ResearchStore>,
+        project_id: String,
+    }
+
+    fn fixture() -> Fixture {
+        let root = tempfile::TempDir::new().expect("tempdir");
+        let database = root.path().join("state/kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(root.path(), &database).expect("workspace"));
+        let project = workspace.create_project(".", "alpha").expect("project");
+        let agents = Arc::new(AgentStore::open(&database).expect("agents"));
+        let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+        let research = Arc::new(
+            ResearchStore::from_database(agents.database(), Arc::clone(&agents)).expect("research"),
+        );
+        let runtime = AgentRuntime::new(workspace, agents, Vec::new())
+            .with_team_store(Arc::clone(&teams))
+            .with_research_store(Arc::clone(&research));
+        Fixture {
+            _root: root,
+            runtime,
+            teams,
+            research,
+            project_id: project.id,
+        }
+    }
+
+    fn team_with_leader(fixture: &Fixture, title: &str) -> (crate::teams::Team, TeamMember) {
+        let leader = fixture
+            .runtime
+            .store()
+            .create_conversation(&fixture.project_id, AgentId::OpenCode, Some(title))
+            .expect("leader session");
+        let team = fixture
+            .teams
+            .create_team(NewTeam {
+                project_id: &fixture.project_id,
+                leader_conversation_id: &leader.id,
+                agent_session_id: &leader.agent_session_id,
+                leader_name: "Lead",
+                title: Some(title),
+                workspace: TeamWorkspace::Shared,
+                workspace_path: None,
+            })
+            .expect("team");
+        let member = fixture
+            .teams
+            .list_members(&team.id)
+            .expect("members")
+            .into_iter()
+            .next()
+            .expect("leader member");
+        (team, member)
+    }
+
+    fn context(fixture: &Fixture, member: TeamMember) -> ToolContext {
+        ToolContext {
+            runtime: fixture.runtime.clone(),
+            teams: Arc::clone(&fixture.teams),
+            research: fixture.runtime.research_store(),
+            member,
+        }
+    }
+
+    async fn team_context(context: ToolContext) -> serde_json::Value {
+        let result = TeamMcpServer::new(context)
+            .team_get_context()
+            .await
+            .expect("team_get_context");
+        let text = result
+            .content
+            .iter()
+            .find_map(|content| content.as_text().map(|text| text.text.clone()))
+            .expect("text content");
+        serde_json::from_str(&text).expect("context JSON")
+    }
+
+    #[tokio::test]
+    async fn members_receive_the_pinned_brief_sources_and_earlier_rounds() {
+        let fixture = fixture();
+        let (question, _) = fixture
+            .research
+            .create(
+                &fixture.project_id,
+                ResearchBrief {
+                    title: "Pruning".into(),
+                    question: "Does pruning keep accuracy?".into(),
+                    motivation: String::new(),
+                    hypotheses: vec!["H1".into()],
+                    constraints: vec!["single GPU".into()],
+                    evaluation_criteria: vec!["top-1".into()],
+                },
+                None,
+            )
+            .expect("question");
+        let new_round = |key: &'static str, revision: u64, sources: Vec<SourceRef>| NewRound {
+            kind: RoundKind::Team,
+            idempotency_key: key,
+            expected_revision: revision,
+            request: serde_json::json!({"instruction": "Compare approaches"}),
+            sources,
+        };
+
+        // Round 1 finishes with a summary the next round can build on.
+        let (first_team, _) = team_with_leader(&fixture, "First team");
+        let (first, _) = fixture
+            .research
+            .begin_round(
+                &fixture.project_id,
+                &question.id,
+                new_round("a", 1, Vec::new()),
+            )
+            .expect("round 1");
+        fixture
+            .research
+            .round_set_session(
+                &fixture.project_id,
+                &question.id,
+                &first.id,
+                &first_team.agent_session_id,
+            )
+            .expect("session");
+        fixture
+            .research
+            .round_attach_team(&fixture.project_id, &question.id, &first.id, &first_team.id)
+            .expect("attach");
+
+        // The brief is edited, then round 2 starts against revision 2.
+        fixture
+            .research
+            .update_brief(
+                &fixture.project_id,
+                &question.id,
+                1,
+                &crate::research_store::BriefPatch {
+                    constraints: Some(vec!["two GPUs".into()]),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("edit");
+        let (second_team, second_leader) = team_with_leader(&fixture, "Second team");
+        let sources = vec![
+            SourceRef {
+                kind: SourceKind::Team,
+                id: first_team.id.clone(),
+                revision: None,
+            },
+            SourceRef {
+                kind: SourceKind::Session,
+                id: "removed-session".into(),
+                revision: None,
+            },
+        ];
+        let (second, _) = fixture
+            .research
+            .begin_round(
+                &fixture.project_id,
+                &question.id,
+                new_round("b", 2, sources),
+            )
+            .expect("round 2");
+        fixture
+            .research
+            .round_set_session(
+                &fixture.project_id,
+                &question.id,
+                &second.id,
+                &second_team.agent_session_id,
+            )
+            .expect("session");
+        fixture
+            .research
+            .round_attach_team(
+                &fixture.project_id,
+                &question.id,
+                &second.id,
+                &second_team.id,
+            )
+            .expect("attach");
+
+        let value = team_context(context(&fixture, second_leader.clone())).await;
+        let research = &value["research"];
+        assert_eq!(research["round"], 2);
+        assert_eq!(research["brief_revision"], 2);
+        assert_eq!(research["stale"], false);
+        assert_eq!(
+            research["brief"]["constraints"],
+            serde_json::json!(["two GPUs"])
+        );
+        assert_eq!(research["instruction"], "Compare approaches");
+        let states: Vec<_> = research["sources"]
+            .as_array()
+            .expect("sources")
+            .iter()
+            .map(|source| {
+                (
+                    source["id"].as_str().expect("id"),
+                    source["availability"].as_str().expect("state"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            states,
+            vec![
+                (first_team.id.as_str(), "available"),
+                ("removed-session", "removed")
+            ]
+        );
+        let previous = research["previous_rounds"].as_array().expect("previous");
+        assert_eq!(previous.len(), 1);
+        assert_eq!(
+            (
+                previous[0]["round"].clone(),
+                previous[0]["brief_revision"].clone()
+            ),
+            (serde_json::json!(1), serde_json::json!(1))
+        );
+        assert_eq!(previous[0]["team_title"], "First team");
+
+        // Round 1 keeps seeing the revision it consumed, flagged stale.
+        let first_leader = fixture
+            .teams
+            .list_members(&first_team.id)
+            .expect("members")
+            .remove(0);
+        let first_value = team_context(context(&fixture, first_leader)).await;
+        assert_eq!(
+            first_value["research"]["brief"]["constraints"],
+            serde_json::json!(["single GPU"])
+        );
+        assert_eq!(first_value["research"]["stale"], true);
+        assert_eq!(first_value["research"]["current_revision"], 2);
+    }
+
+    #[tokio::test]
+    async fn teams_outside_a_round_see_no_research_section() {
+        let fixture = fixture();
+        let (_, member) = team_with_leader(&fixture, "Plain team");
+        let value = team_context(context(&fixture, member)).await;
+        assert!(value["research"].is_null());
+        assert_eq!(value["role"], "leader");
+    }
 }

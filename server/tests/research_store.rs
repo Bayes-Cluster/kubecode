@@ -627,3 +627,277 @@ fn mutations_publish_content_free_events_in_the_same_transaction() {
         cursor
     );
 }
+
+// -- Rounds (#150) ---------------------------------------------------------------
+
+fn new_round<'a>(key: &'a str, expected: u64, request: serde_json::Value) -> NewRound<'a> {
+    NewRound {
+        kind: RoundKind::Team,
+        idempotency_key: key,
+        expected_revision: expected,
+        request,
+        sources: vec![SourceRef {
+            kind: SourceKind::Session,
+            id: "s1".into(),
+            revision: None,
+        }],
+    }
+}
+
+#[test]
+fn rounds_pin_the_brief_revision_and_replay_by_key() {
+    let env = env();
+    let (question, _) = env
+        .store
+        .create("p1", brief("Rounds"), None)
+        .expect("create");
+    let request = serde_json::json!({"fingerprint": "a", "instruction": "run the baseline"});
+    let (first, created) = env
+        .store
+        .begin_round("p1", &question.id, new_round("k1", 1, request.clone()))
+        .expect("begin");
+    assert!(created);
+    assert_eq!(
+        (first.round, first.brief_revision, first.phase),
+        (1, 1, RoundPhase::Created)
+    );
+
+    // The brief changes afterwards; the round still names the revision it
+    // consumed, and the immutable revision keeps the old text.
+    env.store
+        .update_brief("p1", &question.id, 1, &patch_title("Rounds, edited"), None)
+        .expect("edit");
+    let pinned = env
+        .store
+        .revision("p1", &question.id, first.brief_revision)
+        .expect("pinned");
+    assert_eq!(pinned.brief.title, "Rounds");
+
+    // A replay returns the original round even though the brief moved on.
+    let (replay, created_again) = env
+        .store
+        .begin_round("p1", &question.id, new_round("k1", 1, request.clone()))
+        .expect("replay");
+    assert!(!created_again);
+    assert_eq!(
+        (replay.id.as_str(), replay.brief_revision),
+        (first.id.as_str(), 1)
+    );
+
+    // The same key for a different request is refused.
+    assert!(matches!(
+        env.store.begin_round(
+            "p1",
+            &question.id,
+            new_round(
+                "k1",
+                1,
+                serde_json::json!({"fingerprint": "b", "instruction": "something else"})
+            )
+        ),
+        Err(ResearchError::KeyReuse)
+    ));
+
+    // A new round must be created against the revision the researcher saw.
+    assert!(matches!(
+        env.store
+            .begin_round("p1", &question.id, new_round("k2", 1, request.clone())),
+        Err(ResearchError::RevisionConflict { current: 2 })
+    ));
+    let (second, _) = env
+        .store
+        .begin_round("p1", &question.id, new_round("k2", 2, request))
+        .expect("second round");
+    assert_eq!((second.round, second.brief_revision), (2, 2));
+    assert_eq!(env.store.rounds("p1", &question.id).expect("list").len(), 2);
+}
+
+#[test]
+fn round_phases_advance_once_and_attach_exactly_one_team() {
+    let env = env();
+    let (question, _) = env
+        .store
+        .create("p1", brief("Phases"), None)
+        .expect("create");
+    let (round, _) = env
+        .store
+        .begin_round(
+            "p1",
+            &question.id,
+            new_round("k1", 1, serde_json::json!({})),
+        )
+        .expect("begin");
+    let ready = env
+        .store
+        .round_set_session("p1", &question.id, &round.id, "leader-1")
+        .expect("session");
+    assert_eq!(ready.phase, RoundPhase::SessionReady);
+    // Idempotent for the same Session; a different Session is refused.
+    env.store
+        .round_set_session("p1", &question.id, &round.id, "leader-1")
+        .expect("same");
+    assert!(matches!(
+        env.store
+            .round_set_session("p1", &question.id, &round.id, "other"),
+        Err(ResearchError::RoundState(_))
+    ));
+    let attached = env
+        .store
+        .round_attach_team("p1", &question.id, &round.id, "team-1")
+        .expect("team");
+    assert_eq!(
+        (attached.phase, attached.team_id.as_deref()),
+        (RoundPhase::TeamCreated, Some("team-1"))
+    );
+    env.store
+        .round_attach_team("p1", &question.id, &round.id, "team-1")
+        .expect("same team");
+    assert!(matches!(
+        env.store
+            .round_attach_team("p1", &question.id, &round.id, "team-2"),
+        Err(ResearchError::RoundState(_))
+    ));
+    // The Team is linked as execution and findable by the Team id.
+    let links = env.store.links("p1", &question.id).expect("links");
+    assert_eq!(
+        (links[0].kind, links[0].role),
+        (LinkKind::Team, LinkRole::Execution)
+    );
+    let (project, owner) = env
+        .store
+        .round_for_team("team-1")
+        .expect("lookup")
+        .expect("owner");
+    assert_eq!(
+        (project.as_str(), owner.id.as_str()),
+        ("p1", round.id.as_str())
+    );
+
+    // Starting is recorded once and logged once.
+    let before = env.agents.latest_workspace_event_id().expect("cursor");
+    let started = env
+        .store
+        .round_mark_started("p1", &question.id, &round.id)
+        .expect("start");
+    assert_eq!(started.phase, RoundPhase::Started);
+    env.store
+        .round_mark_started("p1", &question.id, &round.id)
+        .expect("again");
+    let entries = env
+        .store
+        .entries("p1", &question.id, 0, None)
+        .expect("entries");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].author_kind, AuthorKind::System);
+    assert_eq!(entries[0].body, "Round 1 started with brief revision 1.");
+    assert_eq!(
+        env.agents
+            .workspace_events_after(before)
+            .expect("events")
+            .len(),
+        1
+    );
+    // Once started, a round takes no more Teams.
+    assert!(
+        env.store
+            .round_attach_team("p1", &question.id, &round.id, "team-3")
+            .is_err()
+    );
+}
+
+#[test]
+fn solo_rounds_link_their_session_without_stealing_existing_roles() {
+    let env = env();
+    let (question, _) = env.store.create("p1", brief("Solo"), None).expect("create");
+    env.store
+        .link(
+            "p1",
+            &question.id,
+            LinkKind::Session,
+            "discussion-1",
+            LinkRole::Discussion,
+        )
+        .expect("link");
+    let solo = |key: &'static str| NewRound {
+        kind: RoundKind::Solo,
+        idempotency_key: key,
+        expected_revision: 1,
+        request: serde_json::json!({}),
+        sources: Vec::new(),
+    };
+    let (existing, _) = env
+        .store
+        .begin_round("p1", &question.id, solo("a"))
+        .expect("a");
+    env.store
+        .round_set_session("p1", &question.id, &existing.id, "discussion-1")
+        .expect("existing");
+    let (fresh, _) = env
+        .store
+        .begin_round("p1", &question.id, solo("b"))
+        .expect("b");
+    env.store
+        .round_set_session("p1", &question.id, &fresh.id, "new-solo")
+        .expect("fresh");
+    let links = env.store.links("p1", &question.id).expect("links");
+    let role = |id: &str| links.iter().find(|l| l.ref_id == id).map(|l| l.role);
+    assert_eq!(
+        role("discussion-1"),
+        Some(LinkRole::Discussion),
+        "an existing role is kept"
+    );
+    assert_eq!(role("new-solo"), Some(LinkRole::Execution));
+    // A Solo round cannot take a Team.
+    assert!(
+        env.store
+            .round_attach_team("p1", &question.id, &fresh.id, "t")
+            .is_err()
+    );
+}
+
+#[test]
+fn archived_and_foreign_questions_take_no_new_rounds() {
+    let env = env();
+    let (question, _) = env
+        .store
+        .create("p1", brief("Closed"), None)
+        .expect("create");
+    let (round, _) = env
+        .store
+        .begin_round(
+            "p1",
+            &question.id,
+            new_round("k1", 1, serde_json::json!({})),
+        )
+        .expect("begin");
+    env.store
+        .set_archived("p1", &question.id, true)
+        .expect("archive");
+    assert!(matches!(
+        env.store.begin_round(
+            "p1",
+            &question.id,
+            new_round("k2", 1, serde_json::json!({}))
+        ),
+        Err(ResearchError::Archived)
+    ));
+    // An existing round can still be replayed while archived.
+    assert!(
+        !env.store
+            .begin_round(
+                "p1",
+                &question.id,
+                new_round("k1", 1, serde_json::json!({}))
+            )
+            .expect("replay")
+            .1
+    );
+    assert!(matches!(
+        env.store.round("p2", &question.id, &round.id),
+        Err(ResearchError::NotFound)
+    ));
+    assert!(matches!(
+        env.store.round("p1", &question.id, "missing"),
+        Err(ResearchError::RoundNotFound)
+    ));
+}

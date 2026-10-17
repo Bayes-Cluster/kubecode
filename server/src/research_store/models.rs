@@ -33,6 +33,12 @@ pub enum ResearchError {
     InvalidLinkTarget,
     #[error("research revision {0} does not exist")]
     RevisionNotFound(u64),
+    #[error("research round not found")]
+    RoundNotFound,
+    #[error("this request key was already used for a different round request")]
+    KeyReuse,
+    #[error("research round state conflict: {0}")]
+    RoundState(&'static str),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -100,6 +106,20 @@ text_enum!(SourceKind {
     File => "file",
 });
 
+text_enum!(RoundKind {
+    Team => "team",
+    Solo => "solo",
+});
+
+// Durable setup phases of a round. Each transition is recorded before the
+// next side effect, so a retry resumes instead of repeating (ADR 0212 §6).
+text_enum!(RoundPhase {
+    Created => "created",
+    SessionReady => "session_ready",
+    TeamCreated => "team_created",
+    Started => "started",
+});
+
 text_enum!(SourceAvailability {
     Available => "available",
     Changed => "changed",
@@ -114,12 +134,19 @@ impl EntryKind {
 }
 
 /// A typed pointer to another record. Research rows hold identifiers only;
-/// they never embed the referenced content (ADR 0212 §5).
+/// they never embed the referenced content (ADR 0212 §5). A `file` source
+/// records the content revision it was selected at, which is how a later
+/// change is detected.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SourceRef {
     pub kind: SourceKind,
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
+
+pub const MAX_ROUND_SOURCES: usize = 20;
+pub const MAX_INSTRUCTION_CHARS: usize = 4_000;
 
 /// The approved research direction.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -330,6 +357,38 @@ pub struct NewEntry {
     pub author_ref: Option<String>,
     pub body: String,
     pub client_request_id: Option<String>,
+}
+
+/// One explicit request to do work for the question (ADR 0212 §6). It pins
+/// the brief revision the work consumed and the validated setup request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResearchRound {
+    pub id: String,
+    pub research_id: String,
+    /// 1-based, per question.
+    pub round: u64,
+    pub brief_revision: u64,
+    pub kind: RoundKind,
+    pub phase: RoundPhase,
+    /// The Leader (Team) or Solo Session once it exists.
+    pub session_id: Option<String>,
+    pub team_id: Option<String>,
+    /// The validated setup request exactly as authorized.
+    pub request: serde_json::Value,
+    pub sources: Vec<SourceRef>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Input for a new round.
+#[derive(Clone, Debug)]
+pub struct NewRound<'a> {
+    pub kind: RoundKind,
+    pub idempotency_key: &'a str,
+    /// The brief revision the researcher was looking at.
+    pub expected_revision: u64,
+    pub request: serde_json::Value,
+    pub sources: Vec<SourceRef>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

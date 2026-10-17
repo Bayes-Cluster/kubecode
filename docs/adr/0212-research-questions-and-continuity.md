@@ -111,19 +111,51 @@ RQs are unreachable (every API call validates the Project).
 
 ### 6. Linked work, context handoff, and rounds (issue #150)
 
-Starting work from an RQ is an explicit request that creates a **round**: a
-durable record of `(research_id, round, brief revision consumed, execution
-target)`. The server resolves the bounded brief text from the immutable
-revision at admission and records the revision number; a later brief edit
-cannot change what an admitted round consumed. Rounds carry a client
-idempotency key and an ordered set of setup phases, so a retry after a partial
-failure resumes the same round rather than creating a second Team.
+Starting work from an RQ is an explicit request that creates a **round**
+(`POST …/research/{id}/rounds`) — the only research action that can start an
+Agent or Team. A round records its number, the **brief revision it consumed**,
+its kind (`team` or `solo`), the validated setup exactly as authorized, and
+selected **source references** (§5; at most 20, validated to exist in the
+Project, a `file` source recording the content revision it was selected at).
 
-The consumed revision is exposed to the Leader and members through the existing
-Team MCP path as a read tool that returns that revision's brief plus source
-references, not through transcript copying. Existing Team creation limits,
-allowed Agents, native permissions, and human-input handling apply unchanged,
-and the Leader keeps task decomposition and team formation.
+- **Pinned context.** The researcher names the revision they are looking at
+  (`expected_revision`); a mismatch is a conflict and creates nothing. The
+  round stores that revision number, so a later edit can never change what an
+  admitted round consumed — revisions are immutable (§2). The UI can show a
+  round as *stale* when the brief has moved on.
+- **Pre-flight, then durable phases.** The whole request (limits, allowed
+  Agents, criteria, Session eligibility, sources) is validated before anything
+  is created, so a bad request leaves no Session, Team, or round behind. Setup
+  then advances through recorded phases — `created → session_ready →
+  team_created → started` — and each side effect is idempotent:
+  a Team is created through the existing promote path (a Session belongs to at
+  most one Team, so a Team left by a crashed attempt is found again, never
+  duplicated); a Solo prompt is admitted under the stable client message id
+  `research:{round}`, which run admission already de-duplicates; starting a
+  Team reuses the same start path as a manual start (setup validation, allowed
+  Agents, limits, native permission handling, human-input behavior), and a
+  Team left in `starting` is recovered by the existing Team supervisor.
+- **Retries.** A request key (`client_request_id`) is required. Replaying the
+  same key and request returns the same round and resumes it if unfinished;
+  the same key with a different request is refused. A failed step leaves the
+  round at its last durable phase and `POST …/rounds/{id}/resume` continues it.
+  Concurrent duplicates are serialized per round. A crash between creating a
+  fresh Session and recording it can leave one unused Session behind; that is
+  benign and removable like any Session.
+- **Association.** A Team round links its Team as `execution` work. Promoting a
+  Session that is linked to an RQ — by round or by the ordinary promote route —
+  carries the association to the new Team and keeps the Session, its history,
+  and its provider identity. An archived RQ is read-only, so promotion does not
+  extend its association.
+- **Context for members.** The goal states the round and revision and points
+  to `team_get_context`, which returns a `research` section for the Leader and
+  every member: the pinned revision's brief, the instruction, the sources with
+  current availability, a stale flag, and a bounded summary of earlier rounds'
+  Teams. It lists references, never transcripts. A Solo round instead renders
+  the same bounded brief into the admitted prompt, fixed at admission.
+- **Authority.** Team creation limits, allowed Agents, native permissions, and
+  human-input handling apply unchanged, and the Leader keeps task decomposition
+  and team formation. There is no new scheduler or router.
 
 ### 7. Findings and provenance (issue #151)
 
