@@ -45,6 +45,12 @@ pub const REPLY_QUEUE_CAPACITY: usize = 256;
 pub const TYPING_KEEPALIVE: Duration = Duration::from_secs(5);
 /// Typing never outlives this, even for very long runs.
 pub const TYPING_MAX: Duration = Duration::from_secs(15 * 60);
+/// After a restart the bridge resumes from its persisted delivery cursor,
+/// but never replays more than this many events.
+pub const RESTART_REPLAY_WINDOW: u64 = 2_048;
+/// The persisted delivery cursor is written at most this often (and at
+/// shutdown); a crash may re-deliver at most this much.
+const CURSOR_PERSIST_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Characters kept free in every chunk so a split inside a code fence
 /// can close and reopen the fence without exceeding the limit.
@@ -201,8 +207,9 @@ fn render_inline(text: &str) -> String {
             }
             continue;
         }
-        if let Some(stripped) = rest.strip_prefix("**") {
-            rest = stripped;
+        if let Some((inner, consumed)) = strong_at(rest, out.chars().next_back()) {
+            out.push_str(&render_inline(inner));
+            rest = &rest[consumed..];
             continue;
         }
         if let Some((rendered, consumed)) = link_at(rest) {
@@ -214,6 +221,35 @@ fn render_inline(text: &str) -> String {
         rest = &rest[ch.len_utf8()..];
     }
     out
+}
+
+/// A `**strong**` span at the start of `text` (`previous` is the character
+/// just before it). Like CommonMark flanking: the opener is not preceded by
+/// an alphanumeric and is followed by non-space; the closer is preceded by
+/// non-space and not followed by an alphanumeric. So `2**10` and
+/// `src/**/*.rs` stay literal. Returns the inner text and bytes consumed.
+fn strong_at(text: &str, previous: Option<char>) -> Option<(&str, usize)> {
+    if previous.is_some_and(char::is_alphanumeric) {
+        return None;
+    }
+    let body = text.strip_prefix("**")?;
+    if body.starts_with(char::is_whitespace) || body.starts_with('*') {
+        return None;
+    }
+    let mut search = 0;
+    while let Some(offset) = body[search..].find("**") {
+        let close = search + offset;
+        let inner = &body[..close];
+        let after = body[close + 2..].chars().next();
+        if !inner.is_empty()
+            && !inner.ends_with(char::is_whitespace)
+            && !after.is_some_and(char::is_alphanumeric)
+        {
+            return Some((inner, 2 + close + 2));
+        }
+        search = close + 2;
+    }
+    None
 }
 
 fn link_at(text: &str) -> Option<(String, usize)> {
@@ -1135,24 +1171,79 @@ impl OutboundBridge {
         }
     }
 
-    /// Starts the delivery loop. Events committed after this call are
-    /// projected; older history is never replayed to WeChat.
+    /// Starts the delivery loop. It resumes from the linked account's
+    /// persisted delivery cursor (bounded by [`RESTART_REPLAY_WINDOW`]), so
+    /// output committed while the bridge was down — notably the
+    /// "interrupted" outcome written when the Runtime restarts, and queued
+    /// prompts that start draining at boot — still reaches the peer. Without
+    /// a usable cursor it starts at the newest event: older history is
+    /// never replayed wholesale.
     pub fn spawn(self: &Arc<Self>, cancel: CancellationToken) -> JoinHandle<()> {
         let bridge = Arc::clone(self);
-        let cursor = self.store.latest_workspace_event_id().unwrap_or(0);
         let bus = self.store.workspace_event_bus().subscribe();
-        tokio::spawn(async move { bridge.run(cancel, cursor, bus).await })
+        tokio::spawn(async move { bridge.run(cancel, bus).await })
+    }
+
+    /// The starting cursor; a failed read retries instead of replaying
+    /// from zero.
+    async fn starting_cursor(&self, cancel: &CancellationToken) -> Option<u64> {
+        let latest = loop {
+            match self.store.latest_workspace_event_id() {
+                Ok(latest) => break latest,
+                Err(_) => {
+                    tokio::select! {
+                        _ = cancel.cancelled() => return None,
+                        _ = tokio::time::sleep(self.config.retry_delay) => {}
+                    }
+                }
+            }
+        };
+        let resumed = self
+            .current_account()
+            .and_then(|account_id| self.store.ilink_outbound_cursor(&account_id).ok().flatten())
+            .filter(|stored| {
+                *stored > 0 && *stored <= latest && latest - *stored <= RESTART_REPLAY_WINDOW
+            });
+        Some(resumed.unwrap_or(latest))
+    }
+
+    fn persist_cursor(&self, cursor: u64) {
+        if let Some(account_id) = self.current_account() {
+            let _ = self.store.set_ilink_outbound_cursor(&account_id, cursor);
+        }
+    }
+
+    /// Projects and executes every event after `cursor`, in pages.
+    async fn drain(&self, cursor: &mut u64, projector: &mut ReplyProjector, sent: &mut SentLedger) {
+        loop {
+            let Ok(events) = self.store.workspace_events_after(*cursor) else {
+                return;
+            };
+            let page = events.len();
+            for event in events {
+                *cursor = (*cursor).max(event.id);
+                let actions = projector.observe(&event, &|run_id| self.run_origin(run_id));
+                self.execute(projector, sent, actions).await;
+            }
+            if page < 512 {
+                return;
+            }
+        }
     }
 
     async fn run(
         self: Arc<Self>,
         cancel: CancellationToken,
-        mut cursor: u64,
         mut bus: tokio::sync::watch::Receiver<u64>,
     ) {
         let Some(mut inbox) = self.inbox.lock().expect("outbound inbox poisoned").take() else {
             return;
         };
+        let Some(mut cursor) = self.starting_cursor(&cancel).await else {
+            return;
+        };
+        let mut persisted = cursor;
+        let mut persisted_at = Instant::now();
         let bound = self
             .current_account()
             .and_then(|account_id| self.store.ilink_session_binding(&account_id).ok().flatten());
@@ -1161,7 +1252,13 @@ impl OutboundBridge {
         let mut keepalive = tokio::time::interval(self.config.keepalive);
         keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         keepalive.tick().await;
+        self.drain(&mut cursor, &mut projector, &mut sent).await;
         loop {
+            if cursor != persisted && persisted_at.elapsed() >= CURSOR_PERSIST_INTERVAL {
+                self.persist_cursor(cursor);
+                persisted = cursor;
+                persisted_at = Instant::now();
+            }
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => break,
@@ -1172,26 +1269,16 @@ impl OutboundBridge {
                     if changed.is_err() {
                         break;
                     }
-                    loop {
-                        let Ok(events) = self.store.workspace_events_after(cursor) else {
-                            break;
-                        };
-                        let page = events.len();
-                        for event in events {
-                            cursor = cursor.max(event.id);
-                            let actions = projector.observe(&event, &|run_id| self.run_origin(run_id));
-                            self.execute(&mut projector, &mut sent, actions).await;
-                        }
-                        if page < 512 {
-                            break;
-                        }
-                    }
+                    self.drain(&mut cursor, &mut projector, &mut sent).await;
                 }
                 _ = keepalive.tick() => {
                     let actions = projector.keepalive(Instant::now(), self.config.typing_max);
                     self.execute(&mut projector, &mut sent, actions).await;
                 }
             }
+        }
+        if cursor != persisted {
+            self.persist_cursor(cursor);
         }
         // Shutdown: abandon buffers, stop typing best-effort, never wait
         // on a slow upstream.
@@ -1398,6 +1485,18 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn only_paired_strong_markers_are_stripped() {
+        let mut filter = MarkdownFilter::default();
+        assert_eq!(
+            filter.filter("Compute 2**10 = 1024 and match src/**/*.rs"),
+            "Compute 2**10 = 1024 and match src/**/*.rs"
+        );
+        assert_eq!(filter.filter("a **bold** word"), "a bold word");
+        assert_eq!(filter.filter("** not bold **"), "** not bold **");
+        assert_eq!(filter.filter("unclosed **marker"), "unclosed **marker");
     }
 
     #[test]
