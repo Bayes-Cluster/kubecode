@@ -409,3 +409,137 @@ fn domain_message(prompt: &BridgePrompt) -> kubecode_server::ilink::domain::Inbo
 // Shared async-mutex type import retained for future watcher tests.
 #[allow(dead_code)]
 type SharedGate = AsyncMutex<PeerGate>;
+
+// -- Inbound images (#136 epic gap) -------------------------------------------
+
+fn image_agent(advertise_images: bool) -> String {
+    let capabilities = if advertise_images {
+        r#"{\"promptCapabilities\":{\"image\":true}}"#
+    } else {
+        "{}"
+    };
+    format!(
+        r#"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"protocolVersion\":1,\"agentCapabilities\":{capabilities},\"authMethods\":[]}}}}"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"sessionId\":\"image-session\"}}}}"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in
+        *'"type":"image"'*'"mimeType":"image/jpeg"'*|*'"mimeType":"image/jpeg"'*'"type":"image"'*) echo "saw-image" >&2 ;;
+      esac
+      if [ -n "$HOLD" ]; then
+        prompt_id=$id
+      else
+        printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+      fi
+      ;;
+    *'"method":"session/cancel"'*)
+      printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$prompt_id,\"result\":{{\"stopReason\":\"cancelled\"}}}}"
+      ;;
+  esac
+done
+"#
+    )
+}
+
+fn image_prompt(text: &str, sequence: u32) -> BridgePrompt {
+    BridgePrompt {
+        account_id: ACCOUNT.to_owned(),
+        peer_id: PEER.to_owned(),
+        message_key: format!("{PEER}:1750000000000:{sequence}"),
+        text: text.to_owned(),
+        images: vec![kubecode_server::ilink::inbound::BridgeImage {
+            mime: "image/jpeg".to_owned(),
+            bytes: std::sync::Arc::from(&b"\xFF\xD8\xFF\xE0synthetic"[..]),
+            source: kubecode_server::ilink::inbound::ImageSource::Thumb,
+        }],
+    }
+}
+
+#[tokio::test]
+async fn images_reach_an_image_capable_agent_as_acp_image_blocks() {
+    let (env, capture) = environment("image-ok", &image_agent(true)).await;
+    let outcome = env
+        .router
+        .route(image_prompt("what is this?", 1), &*capture)
+        .await;
+    assert_eq!(outcome, RouteOutcome::Started);
+    assert!(capture.last().contains("Sent"));
+    wait_for_run_status(&env, kubecode_server::agents::RunStatus::Completed, 400).await;
+    let run = env
+        .store
+        .list_runs(&env.conversation_id)
+        .expect("runs")
+        .pop()
+        .expect("run");
+    assert_eq!(
+        run.message, "what is this?\n[image]",
+        "history shows the image marker"
+    );
+    assert!(
+        run.client_message_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("ilink:")),
+        "channel identity kept for replies"
+    );
+    env.service.shutdown().await;
+}
+
+#[tokio::test]
+async fn images_for_text_only_agents_are_refused_but_text_still_goes_through() {
+    let (env, capture) = environment("image-unsupported", &image_agent(false)).await;
+    // Image only: nothing is admitted.
+    let outcome = env.router.route(image_prompt("", 1), &*capture).await;
+    assert_eq!(outcome, RouteOutcome::Declined);
+    assert!(capture.last().contains("doesn't accept images"));
+    assert!(
+        env.store
+            .list_runs(&env.conversation_id)
+            .expect("runs")
+            .is_empty()
+    );
+    // Image with text: the notice, then the text as an ordinary prompt.
+    let outcome = env
+        .router
+        .route(image_prompt("describe the bug", 2), &*capture)
+        .await;
+    assert_eq!(outcome, RouteOutcome::Started);
+    let replies = capture.replies.lock().unwrap().clone();
+    assert!(replies[replies.len() - 2].contains("doesn't accept images"));
+    let run = env
+        .store
+        .list_runs(&env.conversation_id)
+        .expect("runs")
+        .pop()
+        .expect("run");
+    assert_eq!(run.message, "describe the bug");
+    env.service.shutdown().await;
+}
+
+#[tokio::test]
+async fn images_for_a_busy_session_are_declined_instead_of_queued() {
+    // The mock reads HOLD to keep the first prompt open.
+    let (env, capture) = environment("image-busy", &format!("HOLD=1\n{}", image_agent(true))).await;
+    env.router.route(prompt("long task"), &*capture).await;
+    wait_for_run_status(&env, kubecode_server::agents::RunStatus::Running, 400).await;
+    let outcome = env
+        .router
+        .route(image_prompt("and this", 2), &*capture)
+        .await;
+    assert_eq!(outcome, RouteOutcome::Declined);
+    assert!(capture.last().contains("images can't wait in the queue"));
+    assert_eq!(
+        env.store
+            .list_runs(&env.conversation_id)
+            .expect("runs")
+            .len(),
+        1
+    );
+    env.service.shutdown().await;
+}

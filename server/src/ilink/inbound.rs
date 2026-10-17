@@ -426,11 +426,14 @@ impl InboundBridge {
         if bytes.len() > MAX_MEDIA_BYTES {
             return None;
         }
+        // The type comes from the content itself; anything that is not a
+        // supported raster image is treated as a failed download.
+        let mime = crate::shared_media::sniff_image_mime(&bytes)?;
         self.counters
             .media_bytes
             .fetch_add(bytes.len() as u64, Ordering::Relaxed);
         Some(BridgeImage {
-            mime: "image/png".to_owned(),
+            mime: mime.to_owned(),
             bytes: bytes.into(),
             source: ImageSource::Thumb,
         })
