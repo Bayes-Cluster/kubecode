@@ -568,3 +568,58 @@ async fn quick_prompts_list_and_admit_through_normal_run_admission() {
     assert!(env.replies.last().contains("no longer available"));
     let _ = &env.workspace;
 }
+
+#[tokio::test]
+async fn a_pending_permission_outranks_an_open_menu() {
+    let env = environment("precedence", Duration::from_secs(60)).await;
+    let other = env.create("Other Session");
+    assert!(env.send("!s").await, "menu opens");
+    // A permission request arrives for this peer while the menu is open.
+    env.router
+        .register_interaction(
+            ACCOUNT,
+            PEER,
+            "req-1",
+            kubecode_server::ilink::outbound::InteractionKind::Permission,
+            vec!["allow_once".to_owned(), "reject".to_owned()],
+        )
+        .await;
+    let before = env.binding();
+    // The digit is not consumed by the menu: the router gets it.
+    assert!(!env.send("1").await);
+    assert_eq!(env.binding(), before, "no Session was bound by the digit");
+    assert!(
+        env.router.has_pending_interaction(ACCOUNT, PEER).await,
+        "the permission request is still answerable"
+    );
+    // The stale menu closed.
+    env.router.clear_peer_requests(ACCOUNT, PEER).await;
+    assert!(!env.send("1").await, "no menu remains");
+    let _ = other;
+}
+
+#[tokio::test]
+async fn long_option_lists_page_instead_of_truncating() {
+    let env = environment("options-paging", Duration::from_secs(60)).await;
+    let options: Vec<serde_json::Value> = (0..23)
+        .map(|index| serde_json::json!({"value": format!("model-{index}"), "name": format!("Model {index}")}))
+        .collect();
+    env.store
+        .append_session_event(
+            &env.conversation_id,
+            "config_options",
+            &serde_json::json!({"configOptions": [{
+                "id": "model", "name": "Model", "type": "select", "category": "model",
+                "currentValue": "model-0", "options": options,
+            }]}),
+        )
+        .expect("options");
+    assert!(env.send("!m").await);
+    let first = env.replies.last();
+    assert!(first.starts_with("Options (1/3)"), "{first}");
+    assert!(first.contains("!m 2"));
+    assert!(env.send("!m 3").await);
+    let last = env.replies.last();
+    assert!(last.contains("Model 22"), "{last}");
+    assert!(!last.contains("!m 4"));
+}

@@ -160,6 +160,17 @@ impl SessionRouter {
         }
     }
 
+    /// Whether a permission or elicitation request currently awaits this
+    /// peer's numeric answer; such digits belong to the router, never to a
+    /// command menu.
+    pub async fn has_pending_interaction(&self, account_id: &str, peer_id: &str) -> bool {
+        self.peer_requests
+            .lock()
+            .await
+            .get(&(account_id.to_owned(), peer_id.to_owned()))
+            .is_some_and(|pending| !pending.is_empty())
+    }
+
     /// Drops peer-scoped interaction state (binding change, logout,
     /// Session removal).
     pub async fn clear_peer_requests(&self, account_id: &str, peer_id: &str) {

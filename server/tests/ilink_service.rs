@@ -659,3 +659,40 @@ async fn login_ttl_expiry_without_refresh_budget_ends_the_loop() {
     );
     service.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_linked_account_that_failed_to_restore_can_still_disconnect() {
+    let (env, base, _mock) = environment("restore-failed").await;
+    env.store
+        .upsert_ilink_account("ilink_bot_synthetic_01", "")
+        .expect("account");
+    env.store
+        .save_ilink_credentials(&kubecode_server::agent_store::IlinkCredentialRecord {
+            account_id: "ilink_bot_synthetic_01".to_owned(),
+            device_id: "device".to_owned(),
+            committed_cursor: 0,
+            get_updates_buf: String::new(),
+            api_origin: String::new(),
+            cdn_origin: String::new(),
+            // Not a valid sealed blob: restore fails.
+            sealed_blob: vec![0; 16],
+        })
+        .expect("credentials");
+    let service = ILinkService::new(Arc::clone(&env.store), fast_config(&base));
+    assert!(service.restore_on_startup().await.is_err());
+    // Status still reports the linked account from stored credentials.
+    assert_eq!(
+        service.status().await.account_id.as_deref(),
+        Some("ilink_bot_synthetic_01")
+    );
+    // Reconnect retries the restore (and fails the same way) instead of
+    // claiming nothing is linked.
+    assert!(!matches!(
+        service.reconnect().await,
+        Err(kubecode_server::ilink::service::ServiceError::NotAvailable)
+    ));
+    // Disconnect removes the stored credentials even without a live account.
+    service.disconnect().await.expect("disconnect");
+    assert!(env.store.first_ilink_credentials().is_none());
+    service.shutdown().await;
+}

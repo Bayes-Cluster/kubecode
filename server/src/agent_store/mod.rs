@@ -211,6 +211,14 @@ impl AgentStore {
                PRIMARY KEY (account_id, slot)
              );",
         )?;
+        // The WeChat outbound bridge's delivery cursor (#131 review): lets
+        // a restart resume instead of skipping what happened while down.
+        ensure_column(
+            &connection,
+            "ilink_credentials",
+            "outbound_cursor",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         ensure_column(
             &connection,
             "agent_runs",

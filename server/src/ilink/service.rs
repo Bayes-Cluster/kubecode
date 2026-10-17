@@ -747,7 +747,13 @@ impl ILinkService {
             return Ok(());
         }
         if core.account_id.is_none() {
-            return Err(ServiceError::NotAvailable);
+            // Linked but never restored (e.g. a failed startup restore):
+            // reconnecting means restoring from the stored credentials.
+            drop(core);
+            return match self.restore_on_startup().await? {
+                true => Ok(()),
+                false => Err(ServiceError::NotAvailable),
+            };
         }
         if let Some(since) = core.stale_since {
             let remaining = core.config.stale_cooldown.saturating_sub(since.elapsed());
@@ -793,7 +799,13 @@ impl ILinkService {
             let mut core = self.core.lock().await;
             self.teardown_tasks_locked(&mut core).await;
             core.status = ConnectionStatus::Disconnected;
-            core.account_id.take()
+            // A linked account that never restored still has stored
+            // credentials to remove.
+            core.account_id.take().or_else(|| {
+                self.store
+                    .first_ilink_credentials()
+                    .map(|credentials| credentials.account_id)
+            })
         };
         self.typing_tickets.lock().await.clear();
         self.transient_contexts.lock().await.clear();

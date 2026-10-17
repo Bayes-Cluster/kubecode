@@ -218,10 +218,14 @@ export function WeChatSettingsPanel({
   }
 
   const tone = statusTone(view.status)
+  // A linked account that is stopped (e.g. a cancelled re-login or a failed
+  // restore) can reconnect with its stored credentials or scan again.
   const canConnect = !view.linked
     || view.status === 'expired'
     || view.status === 'verification_blocked'
-  const canReconnect = view.linked && (view.status === 'backing_off' || view.status === 'error')
+    || view.status === 'disconnected'
+  const canReconnect = view.linked
+    && (view.status === 'backing_off' || view.status === 'error' || view.status === 'disconnected')
   const StatusIcon = tone === 'ok' ? CircleCheck : tone === 'problem' ? CircleAlert : tone === 'pending' ? LoaderCircle : QrCode
 
   return (
@@ -505,10 +509,12 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
     try {
       if (content) await api.ilinkSetQuickPrompt(slot, content)
       else await api.ilinkRemoveQuickPrompt(slot)
-      trackEvent('kubecode_wechat_quick_prompt_changed', { action: content ? 'save' : 'remove' })
     } catch {
+      // Keep the typed draft and the error until the user acts again.
       setFailed(true)
+      return
     }
+    trackEvent('kubecode_wechat_quick_prompt_changed', { action: content ? 'save' : 'remove' })
     load()
   }
 
@@ -550,10 +556,10 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setDrafts((current) => ({ ...current, [slot]: '' }))
                     void api.ilinkRemoveQuickPrompt(slot).then(() => {
                       trackEvent('kubecode_wechat_quick_prompt_changed', { action: 'remove' })
-                    }).catch(() => setFailed(true)).finally(load)
+                      load()
+                    }).catch(() => setFailed(true))
                   }}
                 >
                   {t('common.remove')}

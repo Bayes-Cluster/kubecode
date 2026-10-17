@@ -34,8 +34,6 @@ use super::router::SessionRouter;
 
 /// Entries per menu page (single-digit replies).
 pub const MENU_PAGE_SIZE: usize = 9;
-/// Upper bound for model/mode menus, which are not paged.
-pub const OPTION_MENU_LIMIT: usize = 20;
 /// How long a menu stays answerable.
 pub const MENU_TTL: Duration = Duration::from_secs(120);
 /// Longest quick prompt accepted by the settings API.
@@ -50,7 +48,7 @@ pub enum Command {
     Status,
     Sessions { page: usize },
     NewSession { page: usize },
-    Model,
+    Model { page: usize },
     QuickPrompts,
     Unknown,
 }
@@ -73,7 +71,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "" => Command::Status,
         "s" => Command::Sessions { page },
         "n" => Command::NewSession { page },
-        "m" => Command::Model,
+        "m" => Command::Model { page },
         "q" => Command::QuickPrompts,
         _ => Command::Unknown,
     })
@@ -212,6 +210,16 @@ impl CommandCenter {
             self.menus.lock().await.remove(&key);
             return false;
         };
+        // A pending permission/elicitation outranks any open menu: its
+        // digits go to the router, and the stale menu closes.
+        if self
+            .router
+            .has_pending_interaction(&prompt.account_id, &prompt.peer_id)
+            .await
+        {
+            self.menus.lock().await.remove(&key);
+            return false;
+        }
         let Some(menu) = self.menus.lock().await.remove(&key) else {
             return false;
         };
@@ -317,7 +325,7 @@ impl CommandCenter {
             Command::Status => Rendered::text(self.status(account_id)),
             Command::Sessions { page } => self.sessions_menu(account_id, page),
             Command::NewSession { page } => self.projects_menu(page),
-            Command::Model => self.options_menu(account_id),
+            Command::Model { page } => self.options_menu(account_id, page),
             Command::QuickPrompts => self.quick_prompts_menu(account_id),
             Command::Unknown => {
                 Rendered::text(format!("{}\n\n{}", self.help(), self.status(account_id)))
@@ -544,7 +552,7 @@ impl CommandCenter {
             .collect()
     }
 
-    fn options_menu(&self, account_id: &str) -> Rendered {
+    fn options_menu(&self, account_id: &str, page: usize) -> Rendered {
         let Some(conversation_id) = self.bound_conversation(account_id) else {
             return Rendered::text(self.status(account_id));
         };
@@ -555,10 +563,14 @@ impl CommandCenter {
                 "此 Session 未提供模型或模式选项。",
             ));
         }
+        let (page, pages, slice) = paginate(&choices, page);
         let mut lines = Vec::new();
+        if pages > 1 {
+            lines.push(self.page_heading(self.pick("Options", "选项"), page, pages));
+        }
         let mut entries = Vec::new();
         let mut group = String::new();
-        for choice in choices.into_iter().take(OPTION_MENU_LIMIT) {
+        for choice in slice.iter().cloned() {
             if choice.group != group {
                 group = choice.group.clone();
                 lines.push(format!("[{group}]"));
@@ -571,10 +583,7 @@ impl CommandCenter {
                 if choice.current { " ✓" } else { "" }
             ));
         }
-        lines.push(
-            self.pick("Reply with a number to switch.", "回复数字进行切换。")
-                .to_owned(),
-        );
+        lines.push(self.page_footer("!m", page, pages, self.pick("to switch", "进行切换")));
         Rendered {
             text: lines.join("\n"),
             menu: Some(entries),
@@ -853,6 +862,8 @@ impl CommandCenter {
             .bind_ilink_session(account_id, &conversation.id)
             .is_err()
         {
+            // Never leave an unreachable Session behind.
+            let _ = self.store.delete_conversation(&conversation.id);
             return failed();
         }
         self.router.clear_peer_requests(account_id, peer_id).await;
@@ -1051,7 +1062,8 @@ mod tests {
         assert_eq!(parse_command("!s"), Some(Command::Sessions { page: 1 }));
         assert_eq!(parse_command("！S 2"), Some(Command::Sessions { page: 2 }));
         assert_eq!(parse_command("!n 0"), Some(Command::NewSession { page: 1 }));
-        assert_eq!(parse_command("!m"), Some(Command::Model));
+        assert_eq!(parse_command("!m"), Some(Command::Model { page: 1 }));
+        assert_eq!(parse_command("!m 2"), Some(Command::Model { page: 2 }));
         assert_eq!(parse_command("!q"), Some(Command::QuickPrompts));
         assert_eq!(parse_command("!help"), Some(Command::Unknown));
         assert_eq!(parse_command("hello !s"), None);
