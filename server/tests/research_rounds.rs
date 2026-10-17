@@ -881,3 +881,83 @@ async fn a_solo_round_admits_the_pinned_context_once() {
         .phase;
     assert_eq!(phase, RoundPhase::Started);
 }
+
+#[tokio::test]
+async fn replaying_a_round_on_an_existing_session_returns_the_same_round() {
+    let env = env(false);
+    let rq = create_rq(&env, "Replay").await;
+    let id = rq["id"].as_str().expect("id");
+    let session = env
+        .state
+        .agent_runtime
+        .store()
+        .create_conversation(
+            &env.project_id,
+            kubecode_server::agents::AgentId::OpenCode,
+            Some("chat"),
+        )
+        .expect("session");
+    let rounds = format!("{}/{id}/rounds", rq_path(&env));
+    let mut request = team_round("k-existing", 1);
+    request["session_id"] = json!(session.id);
+    let (status, first) = call(&env, Method::POST, &rounds, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+
+    // The first attempt promoted the Session; a retry must still find the
+    // round rather than be refused for using a Team member's Session.
+    let (status, replay) = call(&env, Method::POST, &rounds, request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], first["id"]);
+
+    // A brief edit moves a defaulted value but is still the same request.
+    let (status, _) = call(
+        &env,
+        Method::PATCH,
+        &format!("{}/{id}", rq_path(&env)),
+        json!({"expected_revision": 1, "evaluation_criteria": ["something else"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, replay) = call(&env, Method::POST, &rounds, request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], first["id"]);
+
+    // A different request under the same key is still refused.
+    let mut changed = request.clone();
+    changed["instruction"] = json!("Something else entirely");
+    let (status, body) = call(&env, Method::POST, &rounds, changed).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "research_request_key_reused");
+
+    // A second round cannot take over the Session that already leads
+    // the first round's Team.
+    let mut second = team_round("k-second", 2);
+    second["session_id"] = json!(session.id);
+    let (status, body) = call(&env, Method::POST, &rounds, second).await;
+    assert!(status.is_client_error(), "{status} {body}");
+}
+
+#[tokio::test]
+async fn an_unsupported_allowed_agent_is_refused_before_anything_is_created() {
+    let env = env(false);
+    let rq = create_rq(&env, "Agents").await;
+    let id = rq["id"].as_str().expect("id");
+    let mut request = team_round("k-bogus", 1);
+    request["allowed_agent_ids"] = json!(["bogus"]);
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{}/{id}/rounds", rq_path(&env)),
+        request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (_, rounds) = call(
+        &env,
+        Method::GET,
+        &format!("{}/{id}/rounds", rq_path(&env)),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(rounds, json!([]));
+}

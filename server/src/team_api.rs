@@ -265,10 +265,6 @@ pub(crate) async fn promote_conversation_core(
         workspace,
         workspace_path: conversation.workspace_path.as_deref(),
     })?;
-    if let Err(error) = link_promoted_team(state, &conversation, &team) {
-        let _ = state.teams.delete_team(&team.id);
-        return Err(error);
-    }
     if agent_is_available(state, &conversation) {
         let connected = if fresh {
             state
@@ -285,6 +281,11 @@ pub(crate) async fn promote_conversation_core(
             let _ = state.teams.delete_team(&team.id);
             return Err(error.into());
         }
+    }
+    // Linked last, so a failed promotion leaves no dangling association.
+    if let Err(error) = link_promoted_team(state, &conversation, &team) {
+        let _ = state.teams.delete_team(&team.id);
+        return Err(error);
     }
     Ok(team)
 }

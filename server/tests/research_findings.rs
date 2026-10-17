@@ -191,9 +191,8 @@ fn finish_team(env: &Env, team_id: &str, tag: &str) {
         .expect("complete");
 }
 
-/// Starts a linked Team round and drives the Team to completion through the
-/// same store transition production uses.
-async fn completed_team(env: &Env, rq_id: &str, key: &str) -> String {
+/// Starts a linked Team round and returns its Team, still active.
+async fn started_team(env: &Env, rq_id: &str, key: &str) -> String {
     let (status, round) = call(
         env,
         Method::POST,
@@ -202,7 +201,13 @@ async fn completed_team(env: &Env, rq_id: &str, key: &str) -> String {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{round}");
-    let team_id = round["team"]["id"].as_str().expect("team").to_owned();
+    round["team"]["id"].as_str().expect("team").to_owned()
+}
+
+/// Starts a linked Team round and drives the Team to completion through the
+/// same store transition production uses.
+async fn completed_team(env: &Env, rq_id: &str, key: &str) -> String {
+    let team_id = started_team(env, rq_id, key).await;
     finish_team(env, &team_id, key);
     team_id
 }
@@ -752,4 +757,131 @@ async fn findings_and_pending_outcomes_survive_a_restart() {
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn publishing_before_completion_leaves_nothing_pending() {
+    let env = env(false);
+    let rq = create_rq(&env, "Order").await;
+    let id = rq["id"].as_str().expect("id");
+    let team_id = started_team(&env, id, "r1").await;
+    // The Leader is told to publish first and complete second.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{}/{id}/findings", rq_path(&env)),
+        capture(
+            "early",
+            &team_id,
+            json!([{"kind": "finding", "statement": "done"}]),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    finish_team(&env, &team_id, "r1");
+
+    let (_, outcomes) = call(
+        &env,
+        Method::GET,
+        &format!("{}/{id}/outcomes", rq_path(&env)),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(outcomes[0]["status"], "recorded", "{outcomes}");
+    assert!(outcomes[0]["publication_id"].is_string());
+    let announced = env
+        .state
+        .agent_runtime
+        .store()
+        .workspace_events_after(0)
+        .expect("events")
+        .iter()
+        .filter(|event| event.payload["change"] == "outcome_pending")
+        .count();
+    assert_eq!(announced, 0, "nothing is owed, so nothing is announced");
+}
+
+#[tokio::test]
+async fn proposal_entries_never_collide_with_other_keys_or_browser_entries() {
+    let env = env(false);
+    let rq = create_rq(&env, "Keys").await;
+    let id = rq["id"].as_str().expect("id");
+    let publish = |key: &str, text: &str| {
+        env.state.research.publish(
+            &env.project_id,
+            id,
+            kubecode_server::research_store::NewPublication {
+                key: key.into(),
+                author_kind: kubecode_server::research_store::AuthorKind::Agent,
+                author_ref: None,
+                producer: kubecode_server::research_store::Producer {
+                    team_id: Some("team-1".into()),
+                    ..Default::default()
+                },
+                round_id: None,
+                findings: Vec::new(),
+                proposals: vec![text.into()],
+            },
+        )
+    };
+    // A browser entry using the shape the server once reserved for itself.
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &format!("{}/{id}/entries", rq_path(&env)),
+        json!({"kind": "note", "body": "mine", "client_request_id": "k:proposal:0"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    publish("k", "first").expect("no collision with the browser's id");
+
+    let nested = publish("a:proposal:0", "nested").expect("nested key");
+    let outer = publish("a", "outer").expect("outer key");
+    assert_eq!(nested.proposals.len(), 1);
+    assert_eq!(
+        outer.proposals.len(),
+        1,
+        "another batch's proposal leaked in"
+    );
+    assert_eq!(outer.proposals[0].body, "outer");
+    let replay = publish("a", "outer").expect("replay");
+    assert!(!replay.created);
+    assert_eq!(replay.proposals.len(), 1);
+}
+
+#[tokio::test]
+async fn a_retry_is_answered_from_the_record_after_its_evidence_is_gone() {
+    let env = env(false);
+    let rq = create_rq(&env, "Replay").await;
+    let id = rq["id"].as_str().expect("id");
+    let team_id = completed_team(&env, id, "r1").await;
+    fs::write(env.project_path.join("note.md"), "v1").expect("file");
+    let path = format!("{}/{id}/findings", rq_path(&env));
+    let body = capture(
+        "k",
+        &team_id,
+        json!([{"kind": "finding", "statement": "s", "evidence": [{"kind": "file", "id": "note.md"}]}]),
+    );
+    let (status, first) = call(&env, Method::POST, &path, body.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+
+    // The response was lost and the file is gone by the time of the retry.
+    fs::remove_file(env.project_path.join("note.md")).expect("remove");
+    let (status, replay) = call(&env, Method::POST, &path, body).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["created"], false);
+    assert_eq!(replay["findings"][0]["id"], first["findings"][0]["id"]);
+    // A new request citing the same missing file is still refused.
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &path,
+        capture(
+            "k2",
+            &team_id,
+            json!([{"kind": "finding", "statement": "t", "evidence": [{"kind": "file", "id": "note.md"}]}]),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

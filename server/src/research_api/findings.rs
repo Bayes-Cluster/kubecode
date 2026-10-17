@@ -167,15 +167,23 @@ async fn capture_findings(
             .map(|(_, round)| round.id),
         _ => None,
     };
+    // A retry of a stored batch is answered from the record: its evidence
+    // may have been removed since, which must not turn the retry into an error.
+    let replay =
+        state
+            .research
+            .has_publication(&project_id, &research_id, &request.publication_key)?;
     let findings = request
         .findings
         .into_iter()
         .map(|mut finding| {
-            finding.evidence = finding
-                .evidence
-                .iter()
-                .map(|source| validate_source(&state, &project_id, source))
-                .collect::<Result<_, _>>()?;
+            if !replay {
+                finding.evidence = finding
+                    .evidence
+                    .iter()
+                    .map(|source| validate_source(&state, &project_id, source))
+                    .collect::<Result<_, _>>()?;
+            }
             Ok(finding)
         })
         .collect::<Result<Vec<_>, ResearchApiError>>()?;
