@@ -124,7 +124,9 @@ impl ResearchStore {
                     publication.author_kind,
                     publication.author_ref.as_deref(),
                     proposal,
-                    Some(&format!("{}:proposal:{index}", publication.key)),
+                    // `~` cannot appear in a client-supplied request id, so these keys
+                    // never collide with the browser's own entries.
+                    Some(&format!("~p:{publication_id}:{index}")),
                 )?;
             }
             if let Some(team_id) = &publication.producer.team_id {
@@ -146,6 +148,30 @@ impl ResearchStore {
                 Some((project_id.to_owned(), id.to_owned(), Change::Finding)),
             ))
         })
+    }
+
+    /// Whether a batch with this key was already published. Adapters use it
+    /// to answer a retry from the stored record even when the evidence the
+    /// first attempt cited has since been removed or changed.
+    pub fn has_publication(
+        &self,
+        project_id: &str,
+        id: &str,
+        key: &str,
+    ) -> Result<bool, ResearchError> {
+        let connection = self.connection();
+        load_question(&connection, project_id, id)?;
+        let Some(key) = normalize_client_request_id(Some(key))? else {
+            return Ok(false);
+        };
+        Ok(connection
+            .query_row(
+                "SELECT 1 FROM research_publications WHERE research_id = ?1 AND key = ?2",
+                params![id, key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     }
 
     pub fn findings(&self, project_id: &str, id: &str) -> Result<Vec<Finding>, ResearchError> {
@@ -326,7 +352,7 @@ impl ResearchStore {
                 AuthorKind::Researcher,
                 None,
                 &body,
-                Some(&format!("review:{entry_id}")),
+                Some(&format!("~review:{entry_id}")),
             )?;
             let review = load_review(tx, entry_id)?;
             Ok((
@@ -371,7 +397,6 @@ fn payload_hash(publication: &NewPublication) -> String {
     let canonical = serde_json::json!({
         "author": [publication.author_kind.as_str(), publication.author_ref],
         "producer": publication.producer,
-        "round": publication.round_id,
         "findings": publication.findings.iter().map(|finding| serde_json::json!({
             "kind": finding.kind.as_str(),
             "statement": finding.statement,
@@ -396,7 +421,7 @@ fn load_publication_outcome(
     let mut statement = tx.prepare(&format!(
         "{ENTRY_SELECT} WHERE research_id = ?1 AND client_request_id LIKE ?2 ESCAPE '\\' ORDER BY seq"
     ))?;
-    let pattern = format!("{}:proposal:%", escape_like(&publication.key));
+    let pattern = format!("~p:{}:%", escape_like(&publication.id));
     let proposals = statement
         .query_map(params![research_id, pattern], entry_from_row)?
         .collect::<Result<Vec<_>, _>>()?;

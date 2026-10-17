@@ -890,12 +890,34 @@ fn record_pending_research_outcome(
     let Some((research_id, project_id, round_id)) = linked else {
         return Ok(());
     };
+    // The Leader is told to publish before completing, so the results may
+    // already be recorded; the hand-off is then born resolved.
+    let published: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM research_publications
+             WHERE research_id = ?1 AND team_id = ?2 ORDER BY created_at, id LIMIT 1",
+            params![research_id, team_id],
+            |row| row.get(0),
+        )
+        .optional()?;
     let inserted = transaction.execute(
-        "INSERT OR IGNORE INTO research_pending_outcomes (team_id, research_id, round_id)
-         VALUES (?1, ?2, ?3)",
-        params![team_id, research_id, round_id],
+        "INSERT OR IGNORE INTO research_pending_outcomes
+           (team_id, research_id, round_id, status, publication_id, resolved_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, CASE WHEN ?5 IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END)",
+        params![
+            team_id,
+            research_id,
+            round_id,
+            if published.is_some() {
+                "recorded"
+            } else {
+                "pending"
+            },
+            published
+        ],
     )?;
-    if inserted > 0 {
+    // Nothing is owed (and nothing to announce) when it is already recorded.
+    if inserted > 0 && published.is_none() {
         transaction.execute(
             "INSERT INTO workspace_events (kind, project_id, payload)
              VALUES ('research_updated', ?1, ?2)",

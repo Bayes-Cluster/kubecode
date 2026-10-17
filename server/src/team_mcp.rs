@@ -1266,6 +1266,9 @@ impl TeamMcpServer {
             teams: &self.context.teams,
             workspace: &workspace,
         };
+        let replay = research
+            .has_publication(&project_id, &link.research_id, &key)
+            .map_err(mcp_error)?;
         let findings = input
             .findings
             .iter()
@@ -1279,21 +1282,22 @@ impl TeamMcpServer {
                         let kind = SourceKind::parse(&source.kind).ok_or_else(|| {
                             mcp_error(format!("unknown evidence kind: {}", source.kind))
                         })?;
-                        resolver
-                            .validate(
-                                &project_id,
-                                &SourceRef {
-                                    kind,
-                                    id: source.id.clone(),
-                                    revision: None,
-                                },
-                            )
-                            .map_err(|_| {
-                                mcp_error(format!(
-                                    "evidence {}:{} was not found in this Project",
-                                    source.kind, source.id
-                                ))
-                            })
+                        let reference = SourceRef {
+                            kind,
+                            id: source.id.clone(),
+                            revision: None,
+                        };
+                        // A retry of a stored batch is answered from the
+                        // record even if its evidence is gone by now.
+                        if replay {
+                            return Ok(reference);
+                        }
+                        resolver.validate(&project_id, &reference).map_err(|_| {
+                            mcp_error(format!(
+                                "evidence {}:{} was not found in this Project",
+                                source.kind, source.id
+                            ))
+                        })
                     })
                     .collect::<Result<Vec<_>, McpError>>()?;
                 Ok(NewFinding {
