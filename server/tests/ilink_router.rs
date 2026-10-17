@@ -62,7 +62,7 @@ impl ResponseChannel for Capture {
 
 struct Environment {
     _root: TempDir,
-    _workspace: Arc<WorkspaceService>,
+    workspace: Arc<WorkspaceService>,
     store: Arc<AgentStore>,
     _runtime: Arc<AgentRuntime>,
     service: Arc<ILinkService>,
@@ -132,7 +132,7 @@ async fn environment(tag: &str, agent_body: &str) -> (Environment, Arc<Capture>)
     (
         Environment {
             _root: root,
-            _workspace: workspace,
+            workspace,
             store,
             _runtime: runtime,
             service,
@@ -431,7 +431,7 @@ while IFS= read -r line; do
       ;;
     *'"method":"session/prompt"'*)
       case "$line" in
-        *'"type":"image"'*'"mimeType":"image/jpeg"'*|*'"mimeType":"image/jpeg"'*'"type":"image"'*) echo "saw-image" >&2 ;;
+        *'"type":"image"'*'"mimeType":"image/jpeg"'*|*'"mimeType":"image/jpeg"'*'"type":"image"'*) touch saw-image ;;
       esac
       if [ -n "$HOLD" ]; then
         prompt_id=$id
@@ -481,6 +481,16 @@ async fn images_reach_an_image_capable_agent_as_acp_image_blocks() {
     assert_eq!(
         run.message, "what is this?\n[image]",
         "history shows the image marker"
+    );
+    // The mock Agent (cwd = the Project) touches a marker only when its
+    // session/prompt carries an ACP image block with the JPEG type.
+    let project_path = env
+        .workspace
+        .project_path(&run.project_id)
+        .expect("project path");
+    assert!(
+        project_path.join("saw-image").exists(),
+        "the Agent received the image block"
     );
     assert!(
         run.client_message_id

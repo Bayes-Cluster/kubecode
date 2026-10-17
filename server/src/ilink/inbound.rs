@@ -284,12 +284,23 @@ impl InboundBridge {
         };
         if let Err(rejection) = admission {
             if matches!(rejection, Rejection::UnauthorizedPeer) {
+                // A replayed stranger message (cursor replay after restart)
+                // is not answered again; a fresh one is answered and then
+                // committed so it is never redelivered.
+                if self
+                    .store
+                    .ilink_message_seen(account_id, &message.message_key)
+                    .unwrap_or(false)
+                {
+                    return Disposition::Duplicate;
+                }
                 self.reply(
                     account_id,
                     &message.peer_id,
                     responses,
                     ReplyKind::Unauthorized,
                 );
+                let _ = self.commit(account_id, &message.message_key, page_buf);
                 return Disposition::Rejected("unauthorized");
             }
             if let Rejection::RateLimited { retry_after_ms } = rejection {

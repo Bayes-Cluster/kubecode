@@ -477,10 +477,15 @@ async fn unauthorized_peers_and_oversized_media_never_reach_the_session() {
     env.store
         .bind_ilink_session(BOT_ID, &env.conversation_id)
         .expect("bind");
-    // An oversized (11 MiB) encrypted image from the authorized scanner.
+    // An oversized but otherwise valid encrypted PNG (11 MiB) from the
+    // authorized scanner: only the size bound can refuse it.
     let key: [u8; 16] = core::array::from_fn(|index| index as u8);
-    env.fake
-        .serve_blob("huge-image", vec![0u8; 11 * 1024 * 1024]);
+    let mut huge_png = PNG.to_vec();
+    huge_png.resize(11 * 1024 * 1024, 0);
+    env.fake.serve_blob(
+        "huge-image",
+        kubecode_server::ilink::crypto::aes_ecb_encrypt(&key, &huge_png).expect("encrypt"),
+    );
     env.fake.push_updates(Updates::Page {
         msgs: vec![
             user_text(
@@ -489,6 +494,7 @@ async fn unauthorized_peers_and_oversized_media_never_reach_the_session() {
                 "rm -rf everything",
                 "ctx-stranger",
             ),
+            user_text("wxid_synthetic_stranger", 3, "again", "ctx-stranger-2"),
             user_image(SCANNER, 2, "huge-image", &BASE64.encode(key), "ctx-scanner"),
         ],
         buf: "c1".to_owned(),
@@ -516,7 +522,37 @@ async fn unauthorized_peers_and_oversized_media_never_reach_the_session() {
             .expect("runs")
             .is_empty()
     );
-    // The stranger's context was used once and never stored.
+    // A replay of the stranger's message (as after a restart) and later
+    // messages inside the window get no further reply.
+    env.fake.push_updates(Updates::Page {
+        msgs: vec![
+            user_text(
+                "wxid_synthetic_stranger",
+                1,
+                "rm -rf everything",
+                "ctx-stranger",
+            ),
+            user_text("wxid_synthetic_stranger", 4, "please", "ctx-stranger-3"),
+        ],
+        buf: "c2".to_owned(),
+        timeout_ms: None,
+    });
+    wait_until(
+        || {
+            env.store
+                .ilink_message_seen(BOT_ID, &message_key("wxid_synthetic_stranger", 4))
+                .unwrap_or(false)
+        },
+        "second stranger page processed",
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        env.fake.texts_to("wxid_synthetic_stranger").len(),
+        1,
+        "one rejection per window, none for replays"
+    );
+    // The stranger's context is never persisted.
     assert!(
         env.store
             .ilink_peer_context_token(BOT_ID, "wxid_synthetic_stranger")

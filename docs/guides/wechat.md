@@ -11,7 +11,7 @@ OpenClaw installation is involved.
 ## Before you start
 
 - The Kubecode server needs outbound HTTPS to Tencent's iLink hosts
-  (`*.weixin.qq.com` and `*.wechat.com`). Kubecode refuses every other
+  (`*.qq.com` and `*.wechat.com`, HTTPS only). Kubecode refuses every other
   destination, including hosts that Tencent responses point to.
 - You need a WeChat account that can scan bot-login QR codes. One WeChat
   account can be linked per Kubecode Runtime.
@@ -95,7 +95,8 @@ files are never touched. Stopping the server keeps the link for the next start.
   names, file contents, or paths. Analytics record only the action and a
   categorical result.
 - Only the authorized contact can drive the Session. Messages from anyone else
-  receive a single "not available" reply and nothing else.
+  receive at most one "not available" reply every ten minutes and nothing
+  else; their messages are never replayed or answered again after a restart.
 
 ## Troubleshooting
 
@@ -105,6 +106,7 @@ files are never touched. Stopping the server keeps the link for the next start.
 | **Verification blocked** | Too many wrong numbers. Select **New QR code**. |
 | **Reconnecting** that does not settle | The server keeps retrying with backoff; check its network. **Reconnect** forces an immediate attempt after a short cooldown. |
 | **Login expired** | WeChat rejected the saved login. Scan a **New QR code**. |
+| **Not connected** while an account is still linked | Select **Reconnect** to restore the saved login, or **New QR code** to scan again. |
 | WeChat says no Session is bound | Choose an active Session in Settings or with `!s`. |
 | A shared file did not arrive | Only files inside the Session's Project, on the allowlist, and under 10 MiB are sent. Open the Session in Kubecode to get it. |
 | No reply at all | WeChat allows replies only to contacts who recently wrote to the bot; send any message to refresh the conversation. |

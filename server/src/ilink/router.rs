@@ -361,8 +361,16 @@ impl SessionRouter {
         let supported = match self.runtime.image_prompts_supported(&conversation.id) {
             Some(supported) => supported,
             None => {
-                // Capabilities arrive with ACP initialization.
-                let _ = self.runtime.initialize_conversation(&conversation.id).await;
+                // Capabilities arrive with ACP initialization; an Agent that
+                // cannot even start is a dispatch failure, not "no images".
+                if self
+                    .runtime
+                    .initialize_conversation(&conversation.id)
+                    .await
+                    .is_err()
+                {
+                    return ImageAdmission::Failed;
+                }
                 self.runtime
                     .image_prompts_supported(&conversation.id)
                     .unwrap_or(false)

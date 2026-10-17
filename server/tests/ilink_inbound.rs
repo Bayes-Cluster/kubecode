@@ -394,9 +394,13 @@ async fn unauthorized_peers_fail_closed_with_a_localized_rejection() {
     let replies = responses.texts_to("wxid_stranger");
     assert_eq!(replies.len(), 1);
     assert!(replies[0].contains("not available"));
-    // No dedupe commit for strangers is fine (they stay rejected); no
-    // prompt ever existed.
     assert_eq!(bridge.counters.snapshot().2, 1);
+    // The rejected message is committed: a cursor replay (e.g. after a
+    // restart) is not answered a second time, and no prompt ever existed.
+    bridge
+        .process_page("acct", &test_page, &responses, &tx)
+        .await;
+    assert_eq!(responses.texts_to("wxid_stranger").len(), 1);
 }
 
 #[tokio::test]
