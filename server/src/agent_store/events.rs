@@ -55,7 +55,7 @@ impl WorkspaceEventBus {
         self.latest_committed_cursor.subscribe()
     }
 
-    pub(super) fn publish_committed(&self, cursor: u64) {
+    pub fn publish_committed(&self, cursor: u64) {
         self.latest_committed_cursor.send_if_modified(|current| {
             if cursor > *current {
                 *current = cursor;

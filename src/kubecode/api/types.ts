@@ -223,6 +223,89 @@ export type TeamTask = {
   created_at: string
   updated_at: string
 }
+/** Project-scoped research (ADR 0212). */
+export type ResearchStatus = 'open' | 'resolved'
+export type ResearchAuthorKind = 'researcher' | 'agent' | 'system'
+export type ResearchEntryKind = 'note' | 'decision' | 'proposal' | 'observation'
+export type ResearchLinkKind = 'session' | 'team'
+export type ResearchLinkRole = 'discussion' | 'execution'
+export type ResearchSourceKind = 'session' | 'run' | 'team' | 'team_task' | 'file'
+export type ResearchSourceAvailability = 'available' | 'changed' | 'removed'
+/** A typed pointer to another record; research rows hold identifiers only. */
+export type ResearchSourceRef = { kind: ResearchSourceKind; id: string }
+/** The researcher-approved direction. */
+export type ResearchBrief = {
+  title: string
+  question: string
+  motivation: string
+  hypotheses: string[]
+  constraints: string[]
+  evaluation_criteria: string[]
+}
+export type ResearchBriefPatch = Partial<ResearchBrief>
+export type ResearchSummary = {
+  id: string
+  project_id: string
+  title: string
+  status: ResearchStatus
+  archived: boolean
+  revision: number
+  entry_count: number
+  link_count: number
+  updated_at: string
+}
+export type ResearchLinkView = {
+  research_id: string
+  kind: ResearchLinkKind
+  ref_id: string
+  role: ResearchLinkRole
+  created_at: string
+  availability: ResearchSourceAvailability
+  title: string | null
+  agent_id: AgentId | null
+  /** Team lifecycle status, or `archived` for an archived Session. */
+  state: string | null
+}
+export type ResearchDetail = {
+  id: string
+  project_id: string
+  status: ResearchStatus
+  archived: boolean
+  /** Current brief revision; increases only when the brief changes. */
+  revision: number
+  brief: ResearchBrief
+  created_at: string
+  updated_at: string
+  resolved_at: string | null
+  links: ResearchLinkView[]
+}
+export type ResearchEntry = {
+  id: string
+  research_id: string
+  seq: number
+  kind: ResearchEntryKind
+  author_kind: ResearchAuthorKind
+  author_ref: string | null
+  body: string
+  brief_revision: number
+  created_at: string
+}
+export type ResearchRevisionSummary = {
+  revision: number
+  title: string
+  author_kind: ResearchAuthorKind
+  note: string | null
+  created_at: string
+}
+export type ResearchRevision = {
+  research_id: string
+  revision: number
+  brief: ResearchBrief
+  author_kind: ResearchAuthorKind
+  author_ref: string | null
+  note: string | null
+  created_at: string
+}
 export type TeamSnapshot = {
   team: Team
   leader_conversation: Conversation

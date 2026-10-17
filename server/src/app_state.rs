@@ -8,6 +8,7 @@ use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
 use crate::git::GitService;
 use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
+use crate::research_store::ResearchStore;
 use crate::teams::{Team, TeamRole, TeamStore};
 use crate::terminal::{TerminalEventSink, TerminalLifecycleEvent, TerminalManager};
 use crate::workspace::WorkspaceService;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub git: Arc<GitService>,
     pub teams: Arc<TeamStore>,
     pub ilink: Arc<ILinkService>,
+    pub research: Arc<ResearchStore>,
     /// The running WeChat channel pipeline, once started.
     pub ilink_bridge: Arc<tokio::sync::Mutex<Option<Arc<ChannelBridge>>>>,
 }
@@ -41,6 +43,10 @@ impl AppState {
         ));
         let git = Arc::new(GitService::new(Arc::clone(&workspace)));
         let ilink = ILinkService::new(Arc::clone(&agent_store), IlinkServiceConfig::default());
+        let research = Arc::new(
+            ResearchStore::from_database(agent_store.database(), Arc::clone(&agent_store))
+                .expect("research store"),
+        );
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
@@ -54,6 +60,7 @@ impl AppState {
             git,
             teams,
             ilink,
+            research,
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
