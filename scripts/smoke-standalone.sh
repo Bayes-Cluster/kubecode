@@ -53,4 +53,7 @@ done
 curl -fsS "http://127.0.0.1:$port/readyz" | grep -Fx "ok"
 curl -fsS "http://127.0.0.1:$port/" | grep -F "<div id=\"root\"></div>"
 curl -fsS "http://127.0.0.1:$port/api/v1/agents" | grep -F '"id":"codex"'
+# The native WeChat channel initializes inside the packaged binary with no
+# Node, OpenClaw, or openclaw-weixin installation.
+curl -fsS "http://127.0.0.1:$port/api/v1/ilink/status" | grep -F '"status":"disconnected"'
 test -f "$state/kubecode.sqlite3"

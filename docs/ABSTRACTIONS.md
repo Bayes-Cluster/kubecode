@@ -767,8 +767,18 @@ starts with the run, refreshes on a keepalive with a hard cap, and stops on
 completion, binding change, logout, Session removal, peer-context loss, and
 Runtime shutdown — in those cleanup paths buffers are dropped, not flushed.
 Delivery goes through `ILinkService`, which alone unseals the bot token and
-the peer's stored context token and caches per-peer typing tickets; a peer
-without a stored context cannot be addressed at all.
+the peer's stored context token and caches per-peer typing tickets. A peer
+without a stored context cannot be addressed, with one exception: an
+unauthorized sender's context is held in memory for exactly one reply, the
+localized rejection, and is never persisted.
+
+Inbound images are typed by content signature and reach the Agent as ACP image
+blocks only when the Agent advertises image prompts and the Session is idle;
+the durable queue is text-only, so other cases produce a localized notice.
+Release evidence, the reviewed upstream revision, and the repeatable
+compatibility-audit checklist live in the
+[release audit](adr/0211-audit-2026-10-17.md); the deterministic fake iLink
+server used by the end-to-end tests is `server/tests/support/fake_ilink.rs`.
 
 Agent-shared files reach WeChat only through a structured ACP `resource_link`
 with a `file://` URI ([media addendum](adr/0211-media-2026-10-17.md)); model

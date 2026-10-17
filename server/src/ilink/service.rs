@@ -48,6 +48,10 @@ pub const ILINK_CDN_BASE_URL: &str = "https://szextshort.wechat.com";
 const TYPING_TICKET_TTL: Duration = Duration::from_secs(10 * 60);
 /// Bounded typing-ticket cache size.
 const TYPING_TICKET_CACHE: usize = 64;
+/// Unauthorized senders' reply contexts live this long, in memory only.
+const TRANSIENT_CONTEXT_TTL: Duration = Duration::from_secs(120);
+/// Bounded transient-context map size.
+const TRANSIENT_CONTEXT_CACHE: usize = 32;
 
 /// Safe, externally visible connection state (ADR 0211 §4 statuses).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +271,10 @@ pub struct ILinkService {
     core: Arc<Mutex<ServiceCore>>,
     /// peer → (typing ticket, fetched at); secrets never leave the service.
     typing_tickets: Mutex<HashMap<String, (Secret, Instant)>>,
+    /// peer → single-use reply context for senders whose context is never
+    /// stored (unauthorized peers): enough to deliver the localized
+    /// rejection ADR 0211 §7 promises, and nothing else.
+    transient_contexts: Mutex<HashMap<String, (Secret, Instant)>>,
 }
 
 impl ILinkService {
@@ -306,6 +314,7 @@ impl ILinkService {
                 get_updates_buf: String::new(),
             })),
             typing_tickets: Mutex::new(HashMap::new()),
+            transient_contexts: Mutex::new(HashMap::new()),
         })
     }
 
@@ -381,6 +390,21 @@ impl ILinkService {
         })
     }
 
+    /// Keeps an unauthorized sender's context in memory for one reply.
+    pub async fn remember_transient_context(&self, peer_id: &str, context_token: &Secret) {
+        let mut contexts = self.transient_contexts.lock().await;
+        contexts.retain(|_, (_, seen)| seen.elapsed() < TRANSIENT_CONTEXT_TTL);
+        if contexts.len() >= TRANSIENT_CONTEXT_CACHE && !contexts.contains_key(peer_id) {
+            return;
+        }
+        contexts.insert(peer_id.to_owned(), (context_token.clone(), Instant::now()));
+    }
+
+    async fn take_transient_context(&self, peer_id: &str) -> Option<Secret> {
+        let (context, seen) = self.transient_contexts.lock().await.remove(peer_id)?;
+        (seen.elapsed() < TRANSIENT_CONTEXT_TTL).then_some(context)
+    }
+
     fn peer_context(&self, account_id: &str, peer_id: &str) -> Option<Secret> {
         let sealed = self
             .store
@@ -422,7 +446,13 @@ impl ILinkService {
         client_id: &str,
     ) -> Result<(), IlinkError> {
         let (client, token, context) = self.send_material(peer_id).await?;
-        let context = context.ok_or(IlinkError::PeerContextUnavailable)?;
+        let context = match context {
+            Some(context) => context,
+            None => self
+                .take_transient_context(peer_id)
+                .await
+                .ok_or(IlinkError::PeerContextUnavailable)?,
+        };
         let outbound = OutboundText::new(peer_id, text, client_id.to_owned())
             .with_context_token(Some(context));
         client.send_message(&outbound, &token, None).await
@@ -766,6 +796,7 @@ impl ILinkService {
             core.account_id.take()
         };
         self.typing_tickets.lock().await.clear();
+        self.transient_contexts.lock().await.clear();
         let Some(account_id) = account_id else {
             return Err(ServiceError::NotAvailable);
         };

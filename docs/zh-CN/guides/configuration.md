@@ -16,6 +16,7 @@ Command-line Option 优先于当前 Environment Variable；当前变量优先于
 | `--state-dir` | `KUBECODE_STATE_DIR` | `$XDG_DATA_HOME/kubecode` 或 `$HOME/.local/share/kubecode` | SQLite 与私有状态 |
 | — | `KUBECODE_STATIC_DIR` | `dist` | 构建后的 Web Asset；Standalone Launcher 会自动配置 |
 | — | `KUBECODE_INTERNAL_ORIGIN` | Loopback Server URL 加 Base Path | 本地 Agent 访问 Team MCP 的 URL |
+| — | `KUBECODE_ILINK_LANGUAGE` | `en` | 微信通道回复的语言（`en` 或 `zh-CN`），参见[微信](wechat.md) |
 
 同一时间只能有一个 Kubecode server 使用一个状态目录。SQLite 使用 rollback
 journal 以提高文件系统兼容性，但底层存储仍需提供可靠的文件锁和 `fsync` 语义。

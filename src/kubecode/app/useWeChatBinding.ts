@@ -82,6 +82,8 @@ export function useWeChatBinding(api: KubecodeApi, workspaceEvents: WorkspaceEve
       const result = await operation()
       if (mine !== ticket.current) return
       setBound(result.bound_conversation_id)
+      // The server only accepts a binding change for a linked account.
+      setLinked(true)
       setClearedReason(null)
     } catch (error) {
       if (mine !== ticket.current) return
