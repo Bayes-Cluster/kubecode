@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { CircleHelp, Plus, Settings } from 'lucide-react'
 
 import { ResizeHandle } from '@/components/ResizeHandle'
@@ -31,6 +32,8 @@ export type ProjectNavigatorProps = {
   projects: Project[]
   projectRuns: Record<string, AgentRun[]>
   query: string
+  /** The active Project's research questions, shown above its Sessions. */
+  researchSection?: ReactNode
   t: Translator
   teams: TeamSnapshot[]
   wechat?: WeChatBinding
@@ -59,6 +62,7 @@ export function ProjectNavigator({
   projects,
   projectRuns,
   query,
+  researchSection,
   t,
   teams,
   wechat,
@@ -83,6 +87,7 @@ export function ProjectNavigator({
             <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><CircleHelp  size={16}/></Button>
           </div>
         </div>
+        {researchSection}
         <SessionSidebarList
           activeConversationId={activeConversationId}
           activeProjectId={activeProjectId}

@@ -118,6 +118,16 @@ and run-admission paths. The one cross-store write is deliberate: completing a
 Team linked to a question records a pending research outcome inside the Team's
 own completion transaction, so the hand-off cannot be lost or repeated.
 
+The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
+owns the selected question (scoped to its Project, so switching Projects clears
+it) beside the selected Session, and swaps the main pane between the Session
+workspace and `ResearchWorkspace`; the Project navigator shows the question list
+above its Sessions. `useResearchList` and `useResearchBundle` converge on
+`research_updated` events, on Session and Team lifecycle events that change link
+availability, and on a return to a live stream after a drop, by refetching the
+authoritative records and dropping any response older than the newest request.
+Standalone Sessions, Teams, files, Git, and terminals are unchanged.
+
 The browser workspace follows the same composition pattern.
 `src/kubecode/app/` owns application bootstrap, navigation, dialogs, preferences,
 and the workbench shell; `src/kubecode/session/` owns the Agent Session timeline,
