@@ -651,7 +651,7 @@ fn rounds_pin_the_brief_revision_and_replay_by_key() {
         .store
         .create("p1", brief("Rounds"), None)
         .expect("create");
-    let request = serde_json::json!({"instruction": "run the baseline"});
+    let request = serde_json::json!({"fingerprint": "a", "instruction": "run the baseline"});
     let (first, created) = env
         .store
         .begin_round("p1", &question.id, new_round("k1", 1, request.clone()))
@@ -692,7 +692,7 @@ fn rounds_pin_the_brief_revision_and_replay_by_key() {
             new_round(
                 "k1",
                 1,
-                serde_json::json!({"instruction": "something else"})
+                serde_json::json!({"fingerprint": "b", "instruction": "something else"})
             )
         ),
         Err(ResearchError::KeyReuse)
