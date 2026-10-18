@@ -70,6 +70,14 @@ text_enum!(WorkOutcome {
     Inconclusive => "inconclusive",
 });
 
+text_enum!(WorkKind {
+    Experiment => "experiment",
+    Analysis => "analysis",
+    Implementation => "implementation",
+    Review => "review",
+    Other => "other",
+});
+
 // Who writes a work item. A legacy item mirrors a Team task and is changed
 // only through the Team store; a native item is owned by the work store.
 text_enum!(WorkOrigin {
@@ -141,9 +149,14 @@ pub struct WorkItem {
     /// Attribution of legacy work only; never an owner.
     pub team_id: Option<String>,
     pub origin: WorkOrigin,
+    /// What sort of work this is, so a view can show only the stages that apply.
+    pub kind: WorkKind,
     pub title: String,
     pub description: String,
     pub plan: Option<String>,
+    /// What the executor reported (mirrored from a Team task's result).
+    pub result: Option<String>,
+    pub verification: Option<String>,
     pub stage: WorkStage,
     pub condition: WorkCondition,
     pub condition_reason: Option<String>,
@@ -156,6 +169,11 @@ pub struct WorkItem {
     pub priority: i64,
     /// Bumped by every plan, dependency, or round-link change.
     pub revision: u64,
+    /// Bumped by *every* change to the item, including stage, condition,
+    /// assignment, and review, so a stale board command can be refused.
+    pub state_revision: u64,
+    /// What this work arose from: a finding, or the work it follows up.
+    pub derived_from: Option<DerivedFrom>,
     pub dependencies: Vec<String>,
     /// Who created it: a Session's conversation id, or `researcher`.
     pub created_by: Option<String>,
@@ -233,6 +251,86 @@ pub struct WorkSummary {
     pub latest_attempt: Option<Attempt>,
     pub attempt_count: usize,
     pub results: Vec<ResultRef>,
+    /// Each dependency with the state a card needs to explain why it waits.
+    pub dependency_states: Vec<DependencyState>,
+    /// The work this replaces (the reverse of `superseded_by`).
+    pub supersedes: Vec<String>,
+    /// Experiments recorded against this task.
+    pub experiment_count: usize,
+    /// The latest change to the item, its attempts, or its results.
+    pub last_activity_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DependencyState {
+    pub id: String,
+    pub title: String,
+    pub stage: WorkStage,
+    pub lifecycle: WorkLifecycle,
+    pub acceptance: Acceptance,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DerivedFrom {
+    /// `finding` or `work`.
+    pub kind: String,
+    pub id: String,
+}
+
+/// A recorded review decision and exactly what it looked at.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ReviewRecord {
+    pub id: String,
+    pub task_id: String,
+    pub kind: ReviewKind,
+    pub accepted: bool,
+    pub outcome: WorkOutcome,
+    pub reviewer: String,
+    pub reason: Option<String>,
+    /// Attempts and result references (`kind:id@revision`) that existed when the
+    /// decision was made, so later invalidation of the inputs is detectable.
+    pub inputs: Vec<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ReviewInput<'a> {
+    pub accept: bool,
+    pub outcome: WorkOutcome,
+    pub reason: Option<&'a str>,
+}
+
+/// An actor plus an optional precondition on the item's `state_revision`.
+/// A command carrying one is refused if anything about the item changed since
+/// the caller looked, so a stale card can never act on newer state.
+#[derive(Clone, Copy, Debug)]
+pub struct Ctx<'a> {
+    pub actor: &'a Actor,
+    pub expected_state_revision: Option<u64>,
+}
+
+impl<'a> Ctx<'a> {
+    pub fn expecting(actor: &'a Actor, state_revision: u64) -> Self {
+        Self {
+            actor,
+            expected_state_revision: Some(state_revision),
+        }
+    }
+}
+
+impl<'a> From<&'a Actor> for Ctx<'a> {
+    fn from(actor: &'a Actor) -> Self {
+        Self {
+            actor,
+            expected_state_revision: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WorkCounts {
+    pub total: usize,
+    pub by_stage: Vec<(WorkStage, usize)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -242,12 +340,19 @@ pub struct WorkFilter {
     pub team_id: Option<String>,
     pub conversation_id: Option<String>,
     pub stage: Option<WorkStage>,
+    pub condition: Option<WorkCondition>,
+    pub origin: Option<WorkOrigin>,
     /// Include canceled, abandoned, and superseded work.
     pub include_closed: bool,
+    /// At most this many (default and ceiling 200); `offset` skips that many.
+    pub limit: Option<usize>,
+    pub offset: usize,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct NewWork<'a> {
+    pub kind: Option<WorkKind>,
+    pub derived_from: Option<(&'a str, &'a str)>,
     pub title: &'a str,
     pub description: &'a str,
     pub plan: Option<&'a str>,
@@ -264,8 +369,10 @@ pub struct NewWork<'a> {
 pub struct PlanPatch {
     pub title: Option<String>,
     pub description: Option<String>,
+    /// `Some("")` clears the plan.
     pub plan: Option<String>,
     pub priority: Option<i64>,
+    pub kind: Option<WorkKind>,
     pub add_dependencies: Vec<String>,
     pub remove_dependencies: Vec<String>,
 }
@@ -324,6 +431,8 @@ pub enum WorkError {
     DependencyCycle,
     #[error("work is closed ({0})")]
     Closed(&'static str),
+    #[error("the work changed (current state revision {current})")]
+    StaleState { current: u64 },
     #[error("the task has no executing Session assigned")]
     NotAssigned,
     #[error("an attempt is already open for this task")]

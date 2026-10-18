@@ -189,7 +189,12 @@ transaction as the legacy write, and `WorkStore::reconcile` applies the queue
 before any work read or write and at startup, so the mirror is resumable and
 never stale to a reader. The Team store stays the only writer of legacy items;
 native items are changed only through the work store's revision-checked,
-coordinator-fenced commands. Deleting a Team never deletes its work.
+coordinator-fenced commands (authority is re-read inside each command's
+transaction; a handoff increments the round's epoch). Deleting a Team mirrors
+its last changes and re-owns its work as native in the same transaction, so
+work, attempts, and results outlive the Team. Each command commits a
+content-free `work_updated` workspace event, and every item carries a
+state revision so a stale card is refused rather than applied.
 
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears

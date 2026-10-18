@@ -455,7 +455,7 @@ fn candidate_work_exists_before_a_round_but_cannot_execute_without_one() {
         .unwrap();
     assert!(matches!(
         r.work
-            .begin_attempt(r.project(), &candidate.id, &Actor::Researcher),
+            .begin_attempt(r.project(), &candidate.id, None, &Actor::Researcher),
         Err(WorkError::NoApprovedRound)
     ));
     // Linking it to the approved round makes it executable, by revision.
@@ -485,7 +485,7 @@ fn candidate_work_exists_before_a_round_but_cannot_execute_without_one() {
         Some(r.f.research_id.as_str())
     );
     r.work
-        .begin_attempt(r.project(), &candidate.id, &Actor::Researcher)
+        .begin_attempt(r.project(), &candidate.id, None, &Actor::Researcher)
         .unwrap();
 }
 
@@ -640,8 +640,11 @@ fn dependencies_decide_eligibility_and_closing_one_blocks_its_dependents() {
         .unwrap();
     let attempt = r
         .work
-        .begin_attempt(r.project(), &a.id, &r.coordinator())
+        .begin_attempt(r.project(), &a.id, None, &r.coordinator())
         .unwrap();
+    r.work
+        .bind_attempt_run(r.project(), &attempt.id, "run-x", &Actor::Researcher)
+        .ok();
     r.work
         .finish_attempt(
             r.project(),
@@ -664,8 +667,11 @@ fn dependencies_decide_eligibility_and_closing_one_blocks_its_dependents() {
         .review(
             r.project(),
             &a.id,
-            true,
-            WorkOutcome::Supported,
+            ReviewInput {
+                accept: true,
+                outcome: WorkOutcome::Supported,
+                reason: None,
+            },
             &r.coordinator(),
         )
         .unwrap();
@@ -734,7 +740,7 @@ fn a_task_acquires_a_new_executing_session_without_losing_its_attempts() {
     let (item, first) = r.assigned("Long task");
     let attempt = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
     // Reassigning under a running attempt would orphan it.
     let second = r.session("replacement");
@@ -766,7 +772,7 @@ fn a_task_acquires_a_new_executing_session_without_losing_its_attempts() {
         .unwrap();
     let retry = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
     assert_ne!(retry.id, attempt.id);
 
@@ -792,7 +798,7 @@ fn attempts_need_assignment_eligibility_and_never_overlap() {
     let item = r.native("Task");
     assert!(matches!(
         r.work
-            .begin_attempt(r.project(), &item.id, &r.coordinator()),
+            .begin_attempt(r.project(), &item.id, None, &r.coordinator()),
         Err(WorkError::NotAssigned)
     ));
     let session = r.session("exec");
@@ -810,7 +816,7 @@ fn attempts_need_assignment_eligibility_and_never_overlap() {
         .unwrap();
     assert!(
         r.work
-            .begin_attempt(r.project(), &item.id, &r.coordinator())
+            .begin_attempt(r.project(), &item.id, None, &r.coordinator())
             .is_err()
     );
     r.work
@@ -824,16 +830,16 @@ fn attempts_need_assignment_eligibility_and_never_overlap() {
         .unwrap();
     let attempt = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
     assert!(matches!(
         r.work
-            .begin_attempt(r.project(), &item.id, &r.coordinator()),
+            .begin_attempt(r.project(), &item.id, None, &r.coordinator()),
         Err(WorkError::AttemptOpen)
     ));
     let bound = r
         .work
-        .bind_attempt_run(r.project(), &attempt.id, "run-1")
+        .bind_attempt_run(r.project(), &attempt.id, "run-1", &Actor::Researcher)
         .unwrap();
     assert_eq!(
         (bound.status, bound.run_id.as_deref()),
@@ -849,12 +855,24 @@ fn attempts_need_assignment_eligibility_and_never_overlap() {
             },
         )
         .unwrap();
+    // Repeating the same report is a no-op; a different one is refused.
     assert!(
         r.work
             .finish_attempt(
                 r.project(),
                 &attempt.id,
                 AttemptOutcome::Completed,
+                &r.coordinator()
+            )
+            .is_ok(),
+        "a repeated report converges"
+    );
+    assert!(
+        r.work
+            .finish_attempt(
+                r.project(),
+                &attempt.id,
+                AttemptOutcome::Cancelled,
                 &r.coordinator()
             )
             .is_err(),
@@ -887,7 +905,7 @@ fn done_is_reachable_only_through_review_and_a_valid_negative_result_can_be_acce
     let (item, session) = r.assigned("Negative result");
     let attempt = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
     // Not even the coordinator can mark work done by a stage change.
     for target in [WorkStage::Done, WorkStage::Review] {
@@ -905,6 +923,9 @@ fn done_is_reachable_only_through_review_and_a_valid_negative_result_can_be_acce
             "{target:?}"
         );
     }
+    r.work
+        .bind_attempt_run(r.project(), &attempt.id, "run-x", &Actor::Researcher)
+        .ok();
     r.work
         .finish_attempt(
             r.project(),
@@ -935,8 +956,11 @@ fn done_is_reachable_only_through_review_and_a_valid_negative_result_can_be_acce
             .review(
                 r.project(),
                 &item.id,
-                true,
-                WorkOutcome::Refuted,
+                ReviewInput {
+                    accept: true,
+                    outcome: WorkOutcome::Refuted,
+                    reason: None
+                },
                 &Actor::Executor {
                     conversation_id: session
                 }
@@ -962,8 +986,11 @@ fn done_is_reachable_only_through_review_and_a_valid_negative_result_can_be_acce
         .review(
             r.project(),
             &item.id,
-            true,
-            WorkOutcome::Refuted,
+            ReviewInput {
+                accept: true,
+                outcome: WorkOutcome::Refuted,
+                reason: None,
+            },
             &r.coordinator(),
         )
         .unwrap();
@@ -987,8 +1014,11 @@ fn done_is_reachable_only_through_review_and_a_valid_negative_result_can_be_acce
             .review(
                 r.project(),
                 &item.id,
-                true,
-                WorkOutcome::Supported,
+                ReviewInput {
+                    accept: true,
+                    outcome: WorkOutcome::Supported,
+                    reason: None
+                },
                 &r.coordinator()
             )
             .is_err(),
@@ -1002,8 +1032,11 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
     let (item, _) = r.assigned("Rework");
     let attempt = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
+    r.work
+        .bind_attempt_run(r.project(), &attempt.id, "run-x", &Actor::Researcher)
+        .ok();
     r.work
         .finish_attempt(
             r.project(),
@@ -1027,8 +1060,11 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
         .review(
             r.project(),
             &item.id,
-            false,
-            WorkOutcome::Unknown,
+            ReviewInput {
+                accept: false,
+                outcome: WorkOutcome::Unknown,
+                reason: None,
+            },
             &r.coordinator(),
         )
         .unwrap();
@@ -1039,7 +1075,7 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
 
     let next = r
         .work
-        .begin_attempt(r.project(), &item.id, &r.coordinator())
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
         .unwrap();
     r.work
         .add_result(
@@ -1048,8 +1084,8 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
             NewResult {
                 attempt_id: Some(&next.id),
                 role: ResultRole::Evidence,
-                kind: "experiment",
-                ref_id: "exp-1",
+                kind: "file",
+                ref_id: "results/exp-1.csv",
                 revision: Some("rev1"),
             },
             &r.coordinator(),
@@ -1063,8 +1099,8 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
             NewResult {
                 attempt_id: Some(&next.id),
                 role: ResultRole::Evidence,
-                kind: "experiment",
-                ref_id: "exp-1",
+                kind: "file",
+                ref_id: "results/exp-1.csv",
                 revision: Some("rev1"),
             },
             &r.coordinator(),
@@ -1075,7 +1111,7 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
         1,
         "a repeated reference is one reference"
     );
-    assert_eq!(duplicate.ref_id, "exp-1");
+    assert_eq!(duplicate.ref_id, "results/exp-1.csv");
 
     let current = r.work.get(r.project(), &item.id).unwrap();
     assert!(
@@ -1167,7 +1203,7 @@ fn rejected_review_sends_work_back_and_closing_keeps_history_with_its_reason() {
     );
     assert!(
         r.work
-            .begin_attempt(r.project(), &item.id, &r.coordinator())
+            .begin_attempt(r.project(), &item.id, None, &r.coordinator())
             .is_err()
     );
 }
@@ -1179,7 +1215,10 @@ fn a_handoff_revokes_the_old_coordinator_at_every_boundary_and_keeps_the_work() 
     let r = rig();
     let old = r.coordinator();
     let (item, _) = r.assigned("Pending work");
-    let attempt = r.work.begin_attempt(r.project(), &item.id, &old).unwrap();
+    let attempt = r
+        .work
+        .begin_attempt(r.project(), &item.id, None, &old)
+        .unwrap();
     let successor = r.session("new coordinator");
     let Actor::Coordinator(old_auth) = &old else {
         unreachable!()
@@ -1257,7 +1296,7 @@ fn a_handoff_revokes_the_old_coordinator_at_every_boundary_and_keeps_the_work() 
     );
     refused(
         r.work
-            .begin_attempt(r.project(), &item.id, &old)
+            .begin_attempt(r.project(), &item.id, None, &old)
             .map(|_| ()),
     );
     refused(
@@ -1284,7 +1323,16 @@ fn a_handoff_revokes_the_old_coordinator_at_every_boundary_and_keeps_the_work() 
     );
     refused(
         r.work
-            .review(r.project(), &item.id, true, WorkOutcome::Supported, &old)
+            .review(
+                r.project(),
+                &item.id,
+                ReviewInput {
+                    accept: true,
+                    outcome: WorkOutcome::Supported,
+                    reason: None,
+                },
+                &old,
+            )
             .map(|_| ()),
     );
     refused(
@@ -1315,6 +1363,9 @@ fn a_handoff_revokes_the_old_coordinator_at_every_boundary_and_keeps_the_work() 
         holder: successor.clone(),
         epoch: 2,
     });
+    r.work
+        .bind_attempt_run(r.project(), &attempt.id, "run-x", &Actor::Researcher)
+        .ok();
     r.work
         .finish_attempt(r.project(), &attempt.id, AttemptOutcome::Completed, &new)
         .unwrap();
@@ -1508,4 +1559,450 @@ fn commands_announce_a_content_free_work_updated_event() {
         !payload.contains("Announced"),
         "titles never travel in events"
     );
+}
+
+// -- Review fixes: re-owning, stale cards, references, replays -------------------------------------------
+
+#[test]
+fn deleting_a_team_mirrors_its_last_changes_and_hands_the_work_to_the_workspace() {
+    let r = rig();
+    // A change made through the Team and never read before the Team is deleted.
+    r.f.teams
+        .submit_result(&r.f.task_id, &r.f.teammate.id, "accuracy 0.9", "ran twice")
+        .unwrap();
+    r.f.teams.delete_team(&r.f.team.id).unwrap();
+
+    let item = r.work.get(r.project(), &r.f.task_id).unwrap();
+    assert_eq!(
+        (item.stage, item.review_kind),
+        (WorkStage::Review, Some(ReviewKind::Result)),
+        "the last change was not lost with the Team"
+    );
+    assert_eq!(item.result.as_deref(), Some("accuracy 0.9"));
+    assert_eq!(item.origin, WorkOrigin::Native, "the workspace now owns it");
+    let attempts = r.work.attempts(r.project(), &r.f.task_id).unwrap();
+    assert!(attempts.iter().all(|a| !is_open(a.status)));
+    assert!(
+        r.work
+            .assignments(r.project(), &r.f.task_id)
+            .unwrap()
+            .iter()
+            .all(|a| a.ended_at.is_some()),
+        "the removed Team's Session no longer executes it"
+    );
+    // The researcher can still finish the work: it is not orphaned.
+    let done = r
+        .work
+        .review(
+            r.project(),
+            &item.id,
+            ReviewInput {
+                accept: true,
+                outcome: WorkOutcome::Supported,
+                reason: Some("reviewed after the Team was removed"),
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert_eq!(done.stage, WorkStage::Done);
+}
+
+#[test]
+fn a_stale_card_cannot_act_on_newer_state() {
+    let r = rig();
+    let (item, session) = r.assigned("card");
+    let seen = r.work.get(r.project(), &item.id).unwrap().state_revision;
+    // Something else changes the item after the card was rendered.
+    r.work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::Paused,
+            Some("hold on"),
+            &r.coordinator(),
+        )
+        .unwrap();
+    let coordinator = r.coordinator();
+    assert!(matches!(
+        r.work.assign(
+            r.project(),
+            &item.id,
+            &session,
+            None,
+            "",
+            Ctx::expecting(&coordinator, seen),
+        ),
+        Err(WorkError::StaleState { .. })
+    ));
+    let current = r.work.get(r.project(), &item.id).unwrap().state_revision;
+    r.work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::None,
+            None,
+            Ctx::expecting(&coordinator, current),
+        )
+        .unwrap();
+}
+
+#[test]
+fn results_reference_only_records_that_exist_in_this_project() {
+    let r = rig();
+    let (item, _) = r.assigned("evidence");
+    let add = |kind: &'static str, ref_id: &str| {
+        r.work.add_result(
+            r.project(),
+            &item.id,
+            NewResult {
+                attempt_id: None,
+                role: ResultRole::Evidence,
+                kind,
+                ref_id,
+                revision: None,
+            },
+            &r.coordinator(),
+        )
+    };
+    assert!(
+        add("experiment", "no-such-experiment").is_err(),
+        "a missing record is refused"
+    );
+    assert!(add("finding", "nope").is_err());
+    assert!(add("file", "../outside").is_err(), "paths stay relative");
+    assert!(add("file", "/etc/passwd").is_err(), "paths stay relative");
+    assert!(add("unknown-kind", "x").is_err());
+    assert!(add("work", &item.id).is_ok(), "work in this Project exists");
+    assert!(add("file", "results/table.csv").is_ok());
+}
+
+#[test]
+fn a_replayed_dispatch_returns_the_attempt_it_already_made() {
+    let r = rig();
+    let (item, _) = r.assigned("dispatch");
+    assert_eq!(
+        r.work.get(r.project(), &item.id).unwrap().stage,
+        WorkStage::Ready
+    );
+    let first = r
+        .work
+        .begin_attempt(r.project(), &item.id, Some("dispatch:1"), &r.coordinator())
+        .unwrap();
+    let again = r
+        .work
+        .begin_attempt(r.project(), &item.id, Some("dispatch:1"), &r.coordinator())
+        .unwrap();
+    assert_eq!(first.id, again.id);
+    assert_eq!(r.work.attempts(r.project(), &item.id).unwrap().len(), 1);
+    // A different dispatch while the first is open is still an overlap.
+    assert!(matches!(
+        r.work
+            .begin_attempt(r.project(), &item.id, Some("dispatch:2"), &r.coordinator()),
+        Err(WorkError::AttemptOpen)
+    ));
+}
+
+#[test]
+fn a_plan_is_reviewed_before_work_starts_and_acceptance_sends_it_on() {
+    let r = rig();
+    let (item, _) = r.assigned("plan");
+    // No plan, nothing to review.
+    assert!(
+        r.work
+            .advance(
+                r.project(),
+                &item.id,
+                item.stage,
+                WorkStage::Review,
+                Some(ReviewKind::Plan),
+                &r.coordinator(),
+            )
+            .is_err()
+    );
+    let planned = r
+        .work
+        .update_plan(
+            r.project(),
+            &item.id,
+            item.revision,
+            PlanPatch {
+                plan: Some("1. baseline 2. ablate".into()),
+                ..Default::default()
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    let reviewing = r
+        .work
+        .advance(
+            r.project(),
+            &item.id,
+            planned.stage,
+            WorkStage::Review,
+            Some(ReviewKind::Plan),
+            &r.coordinator(),
+        )
+        .unwrap();
+    assert_eq!(reviewing.review_kind, Some(ReviewKind::Plan));
+    let accepted = r
+        .work
+        .review(
+            r.project(),
+            &item.id,
+            ReviewInput {
+                accept: true,
+                outcome: WorkOutcome::Unknown,
+                reason: Some("sound"),
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    assert_eq!(
+        (accepted.stage, accepted.acceptance),
+        (WorkStage::Ready, Acceptance::Pending),
+        "an accepted plan is not an accepted result"
+    );
+    let reviews = r.work.reviews(r.project(), &item.id).unwrap();
+    assert_eq!(reviews.len(), 1);
+    assert_eq!(reviews[0].reason.as_deref(), Some("sound"));
+}
+
+#[test]
+fn a_pause_survives_dependency_recalculation() {
+    let r = rig();
+    let item = r.native("paused");
+    r.work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::Paused,
+            Some("budget"),
+            &r.coordinator(),
+        )
+        .unwrap();
+    let other = r.native("unrelated");
+    r.work
+        .update_plan(
+            r.project(),
+            &other.id,
+            other.revision,
+            PlanPatch {
+                priority: Some(3),
+                ..Default::default()
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    let still = r.work.get(r.project(), &item.id).unwrap();
+    assert_eq!(still.condition, WorkCondition::Paused);
+    assert_eq!(still.condition_reason.as_deref(), Some("budget"));
+}
+
+#[test]
+fn a_rejected_plan_stays_with_the_planner_instead_of_becoming_ready() {
+    let r = rig();
+    let item = r.native("plan");
+    let planned = r
+        .work
+        .update_plan(
+            r.project(),
+            &item.id,
+            item.revision,
+            PlanPatch {
+                plan: Some("try it".into()),
+                ..Default::default()
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    r.work
+        .advance(
+            r.project(),
+            &item.id,
+            planned.stage,
+            WorkStage::Review,
+            Some(ReviewKind::Plan),
+            &r.coordinator(),
+        )
+        .unwrap();
+    let back = r
+        .work
+        .review(
+            r.project(),
+            &item.id,
+            ReviewInput {
+                accept: false,
+                outcome: WorkOutcome::Unknown,
+                reason: Some("too vague"),
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    assert_eq!(
+        (back.stage, back.condition),
+        (WorkStage::Planned, WorkCondition::NeedsInput)
+    );
+    // Once the planner answers, it is eligible again.
+    let lifted = r
+        .work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::None,
+            None,
+            &r.coordinator(),
+        )
+        .unwrap();
+    assert_eq!(lifted.stage, WorkStage::Ready);
+}
+
+#[test]
+fn a_teams_experiments_stay_as_evidence_after_the_team_is_deleted() {
+    let r = rig();
+    let (experiment, _) =
+        r.f.reserve("baseline", &["python3", "train.py", "--lr", "1"])
+            .unwrap();
+    // Evidence is attached to the task through a result reference.
+    r.work
+        .add_result(
+            r.project(),
+            &r.f.task_id,
+            NewResult {
+                attempt_id: None,
+                role: ResultRole::Evidence,
+                kind: "experiment",
+                ref_id: &experiment.id,
+                revision: None,
+            },
+            &Actor::Researcher,
+        )
+        .expect_err("legacy work is changed through its Team");
+    r.f.teams.delete_team(&r.f.team.id).unwrap();
+    // Re-owned work accepts the reference, and the experiment still exists.
+    r.work
+        .add_result(
+            r.project(),
+            &r.f.task_id,
+            NewResult {
+                attempt_id: None,
+                role: ResultRole::Evidence,
+                kind: "experiment",
+                ref_id: &experiment.id,
+                revision: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert_eq!(
+        r.work
+            .results(r.project(), &r.f.task_id)
+            .unwrap()
+            .iter()
+            .filter(|result| result.ref_id == experiment.id)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn an_attempt_that_never_ran_cannot_complete_and_stage_changes_cannot_start_execution() {
+    let r = rig();
+    let (item, session) = r.assigned("never ran");
+    let attempt = r
+        .work
+        .begin_attempt(r.project(), &item.id, None, &r.coordinator())
+        .unwrap();
+    let executor = Actor::Executor {
+        conversation_id: session,
+    };
+    assert!(matches!(
+        r.work.finish_attempt(
+            r.project(),
+            &attempt.id,
+            AttemptOutcome::Completed,
+            &executor
+        ),
+        Err(WorkError::Invalid(_))
+    ));
+    // Rework after a review goes through a new attempt, never a stage move.
+    r.work
+        .bind_attempt_run(r.project(), &attempt.id, "run-1", &executor)
+        .unwrap();
+    r.work
+        .finish_attempt(
+            r.project(),
+            &attempt.id,
+            AttemptOutcome::Completed,
+            &executor,
+        )
+        .unwrap();
+    r.work
+        .advance(
+            r.project(),
+            &item.id,
+            WorkStage::Executing,
+            WorkStage::Analyzing,
+            None,
+            &executor,
+        )
+        .unwrap();
+    assert!(matches!(
+        r.work.advance(
+            r.project(),
+            &item.id,
+            WorkStage::Analyzing,
+            WorkStage::Executing,
+            None,
+            &r.coordinator(),
+        ),
+        Err(WorkError::InvalidTransition { .. })
+    ));
+}
+
+#[test]
+fn reserved_and_oversized_inputs_are_refused() {
+    let r = rig();
+    let (item, session) = r.assigned("limits");
+    assert!(
+        r.work
+            .set_condition(
+                r.project(),
+                &item.id,
+                WorkCondition::Blocked,
+                Some("dependency closed: x"),
+                &r.coordinator(),
+            )
+            .is_err(),
+        "the automatic-block prefix is reserved"
+    );
+    let long = "x".repeat(MAX_ID_CHARS + 1);
+    assert!(
+        r.work
+            .assign(
+                r.project(),
+                &item.id,
+                &session,
+                Some(&long),
+                "",
+                &r.coordinator(),
+            )
+            .is_err()
+    );
+    let add = |kind: &'static str, ref_id: &str| {
+        r.work.add_result(
+            r.project(),
+            &item.id,
+            NewResult {
+                attempt_id: None,
+                role: ResultRole::Evidence,
+                kind,
+                ref_id,
+                revision: None,
+            },
+            &r.coordinator(),
+        )
+    };
+    assert!(add("artifact", "no-experiment/../../x").is_err());
+    assert!(add("session_turn", &format!("{session}/..")).is_err());
+    assert!(add("session_turn", &format!("{session}/turn-1")).is_ok());
 }

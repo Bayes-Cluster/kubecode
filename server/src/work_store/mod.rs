@@ -65,6 +65,15 @@ impl Change {
 /// The event a write announces: `(project_id, work_id or round_id, change)`.
 pub(crate) type Announce = Option<(String, String, Change)>;
 
+/// Called by the Team store when it deletes a Team, in the same transaction:
+/// mirrors the Team's last changes, then re-owns its work (ADR 0215 §5).
+pub fn drain_team(tx: &Transaction<'_>, team_id: &str) -> rusqlite::Result<()> {
+    sync::drain_team(tx, team_id).map_err(|error| match error {
+        WorkError::Database(error) => error,
+        other => rusqlite::Error::ToSqlConversionFailure(Box::new(other)),
+    })
+}
+
 pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS work_items (
@@ -88,6 +97,12 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            outcome           TEXT NOT NULL DEFAULT 'unknown',
            priority          INTEGER NOT NULL DEFAULT 0,
            revision          INTEGER NOT NULL DEFAULT 1,
+           state_revision    INTEGER NOT NULL DEFAULT 1,
+           kind              TEXT NOT NULL DEFAULT 'other',
+           result            TEXT,
+           verification      TEXT,
+           derived_from_kind TEXT,
+           derived_from_id   TEXT,
            created_by        TEXT,
            client_request_id TEXT,
            created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -98,6 +113,12 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
          CREATE INDEX IF NOT EXISTS work_items_team ON work_items(team_id);
          CREATE UNIQUE INDEX IF NOT EXISTS work_items_request
            ON work_items(project_id, client_request_id) WHERE client_request_id IS NOT NULL;
+         -- Every change to an item bumps its state revision exactly once, whatever
+         -- code path made it, so a command can be refused if the item moved on.
+         CREATE TRIGGER IF NOT EXISTS work_items_state_revision AFTER UPDATE ON work_items
+           WHEN NEW.state_revision = OLD.state_revision BEGIN
+           UPDATE work_items SET state_revision = OLD.state_revision + 1 WHERE id = NEW.id;
+         END;
          CREATE TABLE IF NOT EXISTS work_dependencies (
            task_id       TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
            dependency_id TEXT NOT NULL,
@@ -121,6 +142,7 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            assignment_id   TEXT,
            conversation_id TEXT,
            run_id          TEXT,
+           request_key     TEXT,
            status          TEXT NOT NULL DEFAULT 'queued',
            failure_kind    TEXT,
            error           TEXT,
@@ -129,6 +151,19 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            completed_at    TEXT
          );
          CREATE INDEX IF NOT EXISTS work_attempts_task ON work_attempts(task_id);
+         CREATE UNIQUE INDEX IF NOT EXISTS work_attempts_request
+           ON work_attempts(task_id, request_key) WHERE request_key IS NOT NULL;
+         CREATE TABLE IF NOT EXISTS work_reviews (
+           id         TEXT PRIMARY KEY,
+           task_id    TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+           kind       TEXT NOT NULL,
+           accepted   INTEGER NOT NULL,
+           outcome    TEXT NOT NULL,
+           reviewer   TEXT NOT NULL,
+           reason     TEXT,
+           inputs     TEXT NOT NULL DEFAULT '[]',
+           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
          CREATE TABLE IF NOT EXISTS work_results (
            id         TEXT PRIMARY KEY,
            task_id    TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
@@ -158,10 +193,6 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
          );
          CREATE TABLE IF NOT EXISTS work_sync_queue (
            team_id TEXT PRIMARY KEY
-         );
-         CREATE TABLE IF NOT EXISTS work_migrations (
-           name         TEXT PRIMARY KEY,
-           completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );",
     )?;
     sync::install_triggers(connection)?;
@@ -269,7 +300,8 @@ impl WorkStore {
     }
 
     /// Work of one Project, highest priority first. Filters narrow the same
-    /// items; none of them selects a different set of records.
+    /// items; none of them selects a different set of records. Paged: `limit`
+    /// defaults to and is capped at 200.
     pub fn list(
         &self,
         project_id: &str,
@@ -277,18 +309,10 @@ impl WorkStore {
     ) -> Result<Vec<WorkSummary>, WorkError> {
         self.reconcile()?;
         let connection = self.connection();
+        let limit = filter.limit.unwrap_or(MAX_LIST).clamp(1, MAX_LIST);
         let mut statement = connection.prepare(&format!(
-            "{ITEM_SELECT} WHERE project_id = ?1
-               AND (?2 IS NULL OR research_id = ?2)
-               AND (?3 IS NULL OR round_id = ?3)
-               AND (?4 IS NULL OR team_id = ?4)
-               AND (?5 IS NULL OR stage = ?5)
-               AND (?6 OR lifecycle = 'active')
-               AND (?7 IS NULL OR EXISTS (
-                     SELECT 1 FROM work_assignments a
-                     WHERE a.task_id = work_items.id AND a.ended_at IS NULL
-                       AND a.conversation_id = ?7))
-             ORDER BY priority DESC, created_at, id"
+            "{ITEM_SELECT} WHERE {FILTER_SQL}
+             ORDER BY priority DESC, created_at, id LIMIT ?9 OFFSET ?10"
         ))?;
         let rows = statement.query_map(
             params![
@@ -299,6 +323,10 @@ impl WorkStore {
                 filter.stage.map(WorkStage::as_str),
                 filter.include_closed,
                 filter.conversation_id,
+                filter.condition.map(WorkCondition::as_str),
+                limit as i64,
+                filter.offset as i64,
+                filter.origin.map(WorkOrigin::as_str),
             ],
             item_from_row,
         )?;
@@ -308,6 +336,84 @@ impl WorkStore {
             summaries.push(summarize(&connection, item)?);
         }
         Ok(summaries)
+    }
+
+    /// How much work each stage holds under the same filter a view uses, so a
+    /// board header never disagrees with its columns.
+    pub fn counts(&self, project_id: &str, filter: &WorkFilter) -> Result<WorkCounts, WorkError> {
+        self.reconcile()?;
+        let connection = self.connection();
+        let mut statement = connection.prepare(&format!(
+            "SELECT stage, COUNT(*) FROM work_items WHERE {FILTER_SQL} GROUP BY stage"
+        ))?;
+        let rows = statement.query_map(
+            params![
+                project_id,
+                filter.research_id,
+                filter.round_id,
+                filter.team_id,
+                Option::<&str>::None,
+                filter.include_closed,
+                filter.conversation_id,
+                filter.condition.map(WorkCondition::as_str),
+                0_i64,
+                0_i64,
+                filter.origin.map(WorkOrigin::as_str),
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)),
+        )?;
+        let mut counts = WorkCounts::default();
+        for row in rows {
+            let (stage, count) = row?;
+            if let Some(stage) = WorkStage::parse(&stage) {
+                counts.total += count;
+                counts.by_stage.push((stage, count));
+            }
+        }
+        counts
+            .by_stage
+            .sort_by_key(|(stage, _)| WorkStage::ALL.iter().position(|s| s == stage));
+        Ok(counts)
+    }
+
+    /// Review decisions on a task, oldest first, with the inputs each saw.
+    pub fn reviews(&self, project_id: &str, id: &str) -> Result<Vec<ReviewRecord>, WorkError> {
+        self.reconcile()?;
+        let connection = self.connection();
+        load_item(&connection, project_id, id)?;
+        let mut statement = connection.prepare(
+            "SELECT id, task_id, kind, accepted, outcome, reviewer, reason, inputs, created_at
+             FROM work_reviews WHERE task_id = ?1 ORDER BY created_at, rowid",
+        )?;
+        let rows = statement.query_map([id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)? != 0,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+            ))
+        })?;
+        let mut records = Vec::new();
+        for row in rows {
+            let (id, task_id, kind, accepted, outcome, reviewer, reason, inputs, created_at) = row?;
+            records.push(ReviewRecord {
+                id,
+                task_id,
+                kind: ReviewKind::parse(&kind).unwrap_or(ReviewKind::Result),
+                accepted,
+                outcome: WorkOutcome::parse(&outcome).unwrap_or(WorkOutcome::Unknown),
+                reviewer,
+                reason,
+                inputs: serde_json::from_str(&inputs)?,
+                created_at,
+            });
+        }
+        Ok(records)
     }
 
     pub fn attempts(&self, project_id: &str, id: &str) -> Result<Vec<Attempt>, WorkError> {
@@ -384,13 +490,29 @@ impl WorkStore {
     }
 }
 
+const MAX_LIST: usize = 200;
+
+/// The one filter every view shares (see `list` and `counts`).
+const FILTER_SQL: &str = "project_id = ?1
+       AND (?2 IS NULL OR research_id = ?2)
+       AND (?3 IS NULL OR round_id = ?3)
+       AND (?4 IS NULL OR team_id = ?4)
+       AND (?5 IS NULL OR stage = ?5)
+       AND (?6 OR lifecycle = 'active')
+       AND (?7 IS NULL OR EXISTS (
+             SELECT 1 FROM work_assignments a
+             WHERE a.task_id = work_items.id AND a.ended_at IS NULL AND a.conversation_id = ?7))
+       AND (?8 IS NULL OR condition = ?8)
+       AND (?11 IS NULL OR origin = ?11)";
+
 // -- Row mapping -------------------------------------------------------------------------------------------
 
 pub(crate) const ITEM_SELECT: &str =
     "SELECT id, project_id, research_id, round_id, team_id, origin,
         title, description, plan, stage, condition, condition_reason, review_kind, lifecycle,
         closed_reason, superseded_by, acceptance, outcome, priority, revision, created_by,
-        created_at, updated_at FROM work_items";
+        created_at, updated_at, kind, result, verification, state_revision, derived_from_kind,
+        derived_from_id FROM work_items";
 
 pub(crate) fn item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
     let text = |index: usize| row.get::<_, String>(index);
@@ -421,6 +543,17 @@ pub(crate) fn item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkIte
         created_by: row.get(20)?,
         created_at: row.get(21)?,
         updated_at: row.get(22)?,
+        kind: WorkKind::parse(&text(23)?).unwrap_or(WorkKind::Other),
+        result: row.get(24)?,
+        verification: row.get(25)?,
+        state_revision: row.get::<_, i64>(26)? as u64,
+        derived_from: match (
+            row.get::<_, Option<String>>(27)?,
+            row.get::<_, Option<String>>(28)?,
+        ) {
+            (Some(kind), Some(id)) => Some(DerivedFrom { kind, id }),
+            _ => None,
+        },
     })
 }
 
@@ -567,11 +700,56 @@ pub(crate) fn results_of(
 
 fn summarize(connection: &Connection, item: WorkItem) -> Result<WorkSummary, WorkError> {
     let attempts = attempts_of(connection, &item.id)?;
+    let results = results_of(connection, &item.id)?;
+    let dependency_states = {
+        let mut statement = connection.prepare(
+            "SELECT w.id, w.title, w.stage, w.lifecycle, w.acceptance
+             FROM work_dependencies d JOIN work_items w ON w.id = d.dependency_id
+             WHERE d.task_id = ?1 ORDER BY w.id",
+        )?;
+        statement
+            .query_map([&item.id], |row| {
+                Ok(DependencyState {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    stage: WorkStage::parse(&row.get::<_, String>(2)?)
+                        .unwrap_or(WorkStage::Planned),
+                    lifecycle: WorkLifecycle::parse(&row.get::<_, String>(3)?)
+                        .unwrap_or(WorkLifecycle::Active),
+                    acceptance: Acceptance::parse(&row.get::<_, String>(4)?)
+                        .unwrap_or(Acceptance::Pending),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let supersedes = {
+        let mut statement =
+            connection.prepare("SELECT id FROM work_items WHERE superseded_by = ?1 ORDER BY id")?;
+        statement
+            .query_map([&item.id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let experiment_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM experiments WHERE task_id = ?1",
+        [&item.id],
+        |row| row.get(0),
+    )?;
+    let last_activity_at = attempts
+        .iter()
+        .map(|attempt| attempt.updated_at.clone())
+        .chain(results.iter().map(|result| result.created_at.clone()))
+        .chain(std::iter::once(item.updated_at.clone()))
+        .max()
+        .unwrap_or_default();
     Ok(WorkSummary {
         assignment: open_assignment(connection, &item.id)?,
-        results: results_of(connection, &item.id)?,
+        results,
         attempt_count: attempts.len(),
         latest_attempt: attempts.into_iter().last(),
+        dependency_states,
+        supersedes,
+        experiment_count: experiment_count as usize,
+        last_activity_at,
         item,
     })
 }

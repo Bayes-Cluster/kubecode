@@ -376,11 +376,12 @@ impl TeamStore {
     }
 
     pub fn delete_team(&self, team_id: &str) -> Result<(), TeamError> {
-        let changed = self
-            .database
-            .lock()
-            .expect("team database mutex poisoned")
-            .execute("DELETE FROM teams WHERE id = ?1", [team_id])?;
+        let mut connection = self.database.lock().expect("team database mutex poisoned");
+        let transaction = connection.transaction()?;
+        // The Team's work outlives it: mirror its last changes and re-own them.
+        crate::work_store::drain_team(&transaction, team_id)?;
+        let changed = transaction.execute("DELETE FROM teams WHERE id = ?1", [team_id])?;
+        transaction.commit()?;
         if changed == 0 {
             return Err(TeamError::TeamNotFound(team_id.to_owned()));
         }
