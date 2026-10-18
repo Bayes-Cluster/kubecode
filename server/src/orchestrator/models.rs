@@ -36,6 +36,7 @@ text_enum!(RouteKind {
     Ask => "ask",
     Dispatch => "dispatch",
     Result => "result",
+    Handoff => "handoff",
 });
 
 // Where a route's payload came from.
@@ -82,6 +83,8 @@ pub struct Route {
     pub target: Target,
     /// The Thread to report progress to, when the route began in one.
     pub thread_id: Option<String>,
+    /// The task a dispatch or result is about.
+    pub work_id: Option<String>,
     pub body: String,
     pub state: RouteState,
     pub attempts: u32,
@@ -130,6 +133,15 @@ pub struct DeliveryReport {
     pub delivered: usize,
     pub retried: usize,
     pub failed: usize,
+}
+
+/// Why a route cannot be delivered right now.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecipientError {
+    /// May become possible later (no coordinator yet, a lookup failed).
+    Unavailable(String),
+    /// Never will: the Session is gone or the task moved on.
+    Gone(String),
 }
 
 pub const MAX_ATTEMPTS: u32 = 5;

@@ -64,6 +64,13 @@ impl Rig {
         self.agent(&self.f.project_id, &self.f.leader.conversation_id)
     }
 
+    /// An executor Session the coordinator made for the round.
+    fn executor(&self, coordinator: &WorkAgent, key: &str) -> String {
+        coordinator
+            .create_executor(None, "opencode", key, key)
+            .unwrap()
+    }
+
     fn session(&self, title: &str) -> String {
         self.f
             .agents
@@ -159,10 +166,10 @@ fn a_round_grows_from_one_executor_to_several_and_every_result_reaches_its_threa
     // One executor first, then a second one for the second task: the round
     // keeps its history and tasks while it grows.
     let a = coordinator
-        .create_executor(None, "opencode", "Pruner")
+        .create_executor(None, "opencode", "Pruner", "k-pruner")
         .unwrap();
     let b = coordinator
-        .create_executor(None, "opencode", "Quantizer")
+        .create_executor(None, "opencode", "Quantizer", "k-quantizer")
         .unwrap();
     coordinator.assign(&first.item.id, &a, "").unwrap();
     coordinator.assign(&second.item.id, &b, "").unwrap();
@@ -181,6 +188,8 @@ fn a_round_grows_from_one_executor_to_several_and_every_result_reaches_its_threa
         .count();
     assert_eq!(dispatches, 1);
 
+    // The dispatch reaches the executor while its attempt is open.
+    r.orchestrator.tick(&Always).unwrap();
     // The executor works under its own identity and reports.
     let executor = r.agent(&r.f.project_id, &a);
     r.work
@@ -239,7 +248,7 @@ fn authority_comes_from_persisted_state_not_from_who_claims_a_role() {
     let r = rig();
     let coordinator = r.leader();
     let item = coordinator.create(r.task("Task", None)).unwrap();
-    let executor_id = r.session("Executor");
+    let executor_id = r.executor(&coordinator, "executor");
     coordinator.assign(&item.item.id, &executor_id, "").unwrap();
     let executor = r.agent(&r.f.project_id, &executor_id);
     let stranger_id = r.session("Stranger");
@@ -289,13 +298,14 @@ fn a_handoff_revokes_the_old_coordinator_on_its_next_command_and_keeps_the_work(
     let old = r.leader();
     let item = old.create(r.task("Task", None)).unwrap();
     let successor_id = r.session("Successor");
+    let old_made = r.executor(&old, "old-made");
     old.handoff(&r.f.round_id, &successor_id, "going away")
         .unwrap();
     let new = r.agent(&r.f.project_id, &successor_id);
 
     for result in [
         old.create(r.task("Late", None)).map(|_| ()),
-        old.assign(&item.item.id, &successor_id, "").map(|_| ()),
+        old.assign(&item.item.id, &old_made, "").map(|_| ()),
         old.update(&item.item.id, 1, PlanPatch::default())
             .map(|_| ()),
         old.handoff(&r.f.round_id, &successor_id, "again"),
@@ -309,7 +319,7 @@ fn a_handoff_revokes_the_old_coordinator_on_its_next_command_and_keeps_the_work(
     // The task, its history, and its creator survive; the new holder carries on.
     let carried = new.get(&item.item.id).unwrap();
     assert_eq!(carried.item.title, "Task");
-    let executor = r.session("Executor");
+    let executor = r.executor(&new, "carried-on");
     new.assign(&item.item.id, &executor, "").unwrap();
     assert!(new.create(r.task("Next", None)).is_ok());
 }
@@ -336,8 +346,8 @@ fn limits_are_enforced_for_the_coordinator_and_only_the_researcher_widens_them()
     assert_eq!((view.policy.max_executors, view.used.executors), (2, 1));
     let a = coordinator.create(r.task("A", None)).unwrap();
     let b = coordinator.create(r.task("B", None)).unwrap();
-    let session_a = r.session("A");
-    let session_b = r.session("B");
+    let session_a = r.executor(&coordinator, "a");
+    let session_b = r.executor(&coordinator, "b");
     coordinator.assign(&a.item.id, &session_a, "").unwrap();
     // The Team's teammate and Session A fill both executor slots.
     assert!(matches!(
@@ -383,7 +393,7 @@ fn limits_are_enforced_for_the_coordinator_and_only_the_researcher_widens_them()
         )
         .unwrap();
     assert!(matches!(
-        coordinator.create_executor(None, "opencode", "More"),
+        coordinator.create_executor(None, "opencode", "More", "k-more"),
         Err(AgentWorkError::Work(WorkError::RoundPaused))
     ));
 }
@@ -393,15 +403,15 @@ fn executors_come_only_from_available_providers_and_never_start_work_themselves(
     let r = rig();
     let coordinator = r.leader();
     assert!(matches!(
-        coordinator.create_executor(None, "codex", "Nope"),
+        coordinator.create_executor(None, "codex", "Nope", "k-nope"),
         Err(AgentWorkError::Invalid(_))
     ));
     assert!(matches!(
-        coordinator.create_executor(None, "gpt-9000", "Nope"),
+        coordinator.create_executor(None, "gpt-9000", "Nope", "k-nope"),
         Err(AgentWorkError::Invalid(_))
     ));
     let id = coordinator
-        .create_executor(None, "opencode", "Helper")
+        .create_executor(None, "opencode", "Helper", "k-helper")
         .unwrap();
     // The new Session exists but runs nothing and holds no assignment.
     assert!(r.f.agents.list_runs(&id).unwrap().is_empty());
@@ -432,7 +442,7 @@ fn a_failed_attempt_stays_in_execution_and_is_reported_not_swallowed() {
     let item = coordinator
         .create(r.task("Flaky", Some(&thread.id)))
         .unwrap();
-    let executor_id = r.session("Executor");
+    let executor_id = r.executor(&coordinator, "executor");
     coordinator.assign(&item.item.id, &executor_id, "").unwrap();
     let attempt = coordinator.start(&item.item.id, "k1").unwrap();
     let executor = r.agent(&r.f.project_id, &executor_id);
@@ -619,4 +629,229 @@ fn another_projects_sessions_have_no_standing_here() {
     // Even naming the round does not make the outsider its coordinator.
     assert!(agent.policy(Some(&r.f.round_id)).is_err());
     assert!(agent.handoff(&r.f.round_id, &outsider.id, "mine").is_err());
+}
+
+// -- Review regressions ---------------------------------------------------------------------------------
+
+#[test]
+fn executors_are_made_once_per_request_and_are_the_only_other_sessions_a_coordinator_directs() {
+    let r = rig();
+    let coordinator = r.leader();
+    let item = coordinator.create(r.task("Task", None)).unwrap();
+    // A key is required, and a retry returns the same Session.
+    assert!(matches!(
+        coordinator.create_executor(None, "opencode", "x", "  "),
+        Err(AgentWorkError::Invalid(_))
+    ));
+    let first = coordinator
+        .create_executor(None, "opencode", "Pruner", "same-key")
+        .unwrap();
+    assert_eq!(
+        coordinator
+            .create_executor(None, "opencode", "Pruner", "same-key")
+            .unwrap(),
+        first
+    );
+    // The new Session is idle: no run, no escalated permissions to inherit.
+    assert!(r.f.agents.list_runs(&first).unwrap().is_empty());
+    // Other Sessions of the Project (the researcher's chats, Team members) are not its to direct.
+    let chat = r.session("Researcher's chat");
+    for target in [chat.as_str(), r.f.teammate.conversation_id.as_str()] {
+        assert!(
+            matches!(
+                coordinator.assign(&item.item.id, target, ""),
+                Err(AgentWorkError::Invalid(_))
+            ),
+            "{target}"
+        );
+    }
+    assert!(coordinator.assign(&item.item.id, &first, "").is_ok());
+    assert!(
+        coordinator
+            .assign(&item.item.id, &r.f.leader.conversation_id, "")
+            .is_ok(),
+        "a coordinator may execute work itself"
+    );
+    // A loop cannot flood the Project with idle Sessions: twice the executor limit.
+    let mut refused = None;
+    for n in 0..20 {
+        if let Err(error) =
+            coordinator.create_executor(None, "opencode", "Flood", &format!("flood-{n}"))
+        {
+            refused = Some((n, error));
+            break;
+        }
+    }
+    let (n, error) = refused.expect("the cap must stop the loop");
+    assert!(n >= 1, "a few are allowed before the cap");
+    assert!(matches!(
+        error,
+        AgentWorkError::Work(WorkError::BudgetExhausted(_))
+    ));
+}
+
+#[test]
+fn a_thread_must_be_this_rounds_discussion_to_justify_its_work() {
+    let r = rig();
+    let coordinator = r.leader();
+    let channel = r.channels.default_channel(&r.f.project_id).unwrap();
+    let root = r
+        .channels
+        .post(
+            &r.f.project_id,
+            &channel.id,
+            NewMessage {
+                body: "unlinked",
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    let (unlinked, _) = r
+        .channels
+        .start_thread(&r.f.project_id, &channel.id, &root.id, None, None)
+        .unwrap();
+    assert!(matches!(
+        coordinator.create(r.task("Chosen standing", Some(&unlinked.id))),
+        Err(AgentWorkError::Invalid(_))
+    ));
+}
+
+#[test]
+fn standing_in_a_thread_ends_with_the_authority_that_gave_it() {
+    let r = rig();
+    let thread = r.thread();
+    let old = r.leader();
+    let item = old
+        .create(r.task("From the thread", Some(&thread.id)))
+        .unwrap();
+    let executor_id = r.executor(&old, "worker");
+    old.assign(&item.item.id, &executor_id, "").unwrap();
+    let executor = r.agent(&r.f.project_id, &executor_id);
+    assert!(executor.post(&thread.id, "working on it", &[]).is_ok());
+    assert!(old.post(&thread.id, "status", &[]).is_ok());
+
+    // The coordinator hands off: its standing goes with its authority.
+    let successor = r.session("Successor");
+    old.handoff(&r.f.round_id, &successor, "rotate").unwrap();
+    assert!(matches!(
+        old.post(&thread.id, "still here?", &[]),
+        Err(AgentWorkError::NotFound)
+    ));
+    assert!(
+        r.agent(&r.f.project_id, &successor)
+            .post(&thread.id, "mine now", &[])
+            .is_ok()
+    );
+
+    // The task is reassigned: the previous executor can no longer speak for it.
+    let new = r.agent(&r.f.project_id, &successor);
+    let replacement = r.executor(&new, "replacement");
+    new.assign(&item.item.id, &replacement, "swap").unwrap();
+    assert!(matches!(
+        executor.post(&thread.id, "also me", &[]),
+        Err(AgentWorkError::NotFound)
+    ));
+}
+
+#[test]
+fn a_report_repeated_after_a_crash_finishes_what_was_left_undone() {
+    let r = rig();
+    let thread = r.thread();
+    let coordinator = r.leader();
+    let item = coordinator
+        .create(r.task("Task", Some(&thread.id)))
+        .unwrap();
+    let executor_id = r.executor(&coordinator, "worker");
+    coordinator.assign(&item.item.id, &executor_id, "").unwrap();
+    let attempt = coordinator.start(&item.item.id, "k").unwrap();
+    r.work
+        .bind_attempt_run(&r.f.project_id, &attempt.id, "run-1", &Actor::Researcher)
+        .unwrap();
+    let executor = r.agent(&r.f.project_id, &executor_id);
+    // The process died after the attempt was closed but before anything else:
+    // simulate by closing it directly.
+    r.work
+        .finish_attempt(
+            &r.f.project_id,
+            &attempt.id,
+            AttemptOutcome::Completed,
+            &Actor::Executor {
+                conversation_id: executor_id.clone(),
+            },
+        )
+        .unwrap();
+    // The executor retries the same report: the stage moves, the Thread and the
+    // coordinator are told, and a second retry adds nothing.
+    for _ in 0..2 {
+        let fresh = executor
+            .report(&item.item.id, ReportStatus::Completed, "30% works", None)
+            .unwrap();
+        assert_eq!(fresh.item.stage, WorkStage::Review);
+    }
+    let notes = r.texts(&thread);
+    assert_eq!(
+        notes
+            .iter()
+            .filter(|(_, t)| t.contains("30% works"))
+            .count(),
+        1
+    );
+    let results = r
+        .orchestrator
+        .routes_for(&r.f.project_id, None, Some(&item.item.id), 20)
+        .unwrap()
+        .into_iter()
+        .filter(|route| route.kind == RouteKind::Result)
+        .count();
+    assert_eq!(results, 1);
+    // A different outcome for a closed attempt is still refused.
+    assert!(matches!(
+        executor.report(&item.item.id, ReportStatus::Failed, "no", None),
+        Err(AgentWorkError::Invalid(_))
+    ));
+}
+
+#[test]
+fn a_coordinator_that_assigns_itself_can_report_its_own_attempt() {
+    let r = rig();
+    let coordinator = r.leader();
+    let me = r.f.leader.conversation_id.clone();
+    let item = coordinator.create(r.task("Simple work", None)).unwrap();
+    coordinator
+        .assign(&item.item.id, &me, "no teammate needed")
+        .unwrap();
+    let attempt = coordinator.start(&item.item.id, "k").unwrap();
+    r.work
+        .bind_attempt_run(&r.f.project_id, &attempt.id, "run-1", &Actor::Researcher)
+        .unwrap();
+    let reported = coordinator
+        .report(&item.item.id, ReportStatus::Completed, "done", None)
+        .unwrap();
+    assert_eq!(reported.item.stage, WorkStage::Review);
+}
+
+#[test]
+fn a_handoff_tells_the_new_coordinator_what_it_holds() {
+    let r = rig();
+    let old = r.leader();
+    old.create(r.task("Open task", None)).unwrap();
+    let successor = r.session("Successor");
+    old.handoff(&r.f.round_id, &successor, "going away")
+        .unwrap();
+    let route = r
+        .orchestrator
+        .routes(&r.f.project_id, None, 10)
+        .unwrap()
+        .into_iter()
+        .find(|route| route.kind == RouteKind::Handoff)
+        .expect("a handoff route");
+    assert_eq!(
+        route.target,
+        crate::orchestrator::Target::Session {
+            session_id: successor.clone()
+        }
+    );
+    assert!(route.body.contains("Open task"));
+    assert!(route.body.contains("going away"));
 }

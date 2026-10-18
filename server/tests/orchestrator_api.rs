@@ -74,6 +74,10 @@ fn env() -> Env {
         .research
         .round_set_session(&project.id, &question.id, &round.id, &session.id)
         .expect("session");
+    state
+        .research
+        .round_mark_started(&project.id, &question.id, &round.id)
+        .expect("started");
     let app = app_router(state.clone(), BASE);
     Env {
         _root: root,
@@ -261,6 +265,15 @@ async fn a_request_in_a_linked_thread_is_routed_once_and_visible_to_the_research
     assert_eq!(routes.as_array().unwrap().len(), 1);
     assert_eq!(routes[0]["kind"], "request");
     assert_eq!(routes[0]["recipient"], env.coordinator);
+    let (status, bad) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/routes?state=garbage", env.project_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(bad["code"], "invalid_routing");
     let (_, theirs) = call(
         &env,
         Method::GET,

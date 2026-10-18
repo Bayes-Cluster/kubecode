@@ -21,7 +21,10 @@ impl RuntimeSink {
 
 impl RouteSink for RuntimeSink {
     fn deliver(&self, request: &DeliveryRequest<'_>) -> DeliveryOutcome {
-        let client_message_id = format!("route:{}", request.delivery_key);
+        // Per recipient: a route retargeted by a handoff after a delivery to
+        // the old holder must still reach the new one.
+        let client_message_id =
+            format!("route:{}:{}", request.delivery_key, request.conversation_id);
         // A restart can repeat a delivery that already reached the Session.
         if self
             .runtime

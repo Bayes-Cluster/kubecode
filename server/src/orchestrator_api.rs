@@ -163,7 +163,12 @@ async fn list_routes(
     Query(query): Query<RoutesQuery>,
 ) -> Result<Json<Vec<Route>>, ApiError> {
     state.workspace.project_path(&project_id)?;
-    let filter = query.state.as_deref().and_then(RouteState::parse);
+    let filter = match query.state.as_deref() {
+        None => None,
+        Some(value) => Some(RouteState::parse(value).ok_or(ApiError::Orchestrator(
+            OrchestratorError::Invalid("state must be pending, delivered, or failed"),
+        ))?),
+    };
     Ok(Json(state.orchestrator.routes(
         &project_id,
         filter,

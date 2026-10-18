@@ -103,6 +103,9 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
            updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
+         -- The orchestrator's pass scans only what nobody has claimed.
+         CREATE INDEX IF NOT EXISTS channel_messages_intents
+           ON channel_messages(created_at) WHERE intent != 'say' AND intent_claimed_by IS NULL;
          CREATE INDEX IF NOT EXISTS channel_threads_channel
            ON channel_threads(channel_id);
          CREATE INDEX IF NOT EXISTS channel_threads_research
@@ -496,6 +499,7 @@ impl ChannelStore {
                 let same = existing.body == body
                     && existing.thread_id.as_deref() == new.thread_id
                     && existing.author_kind == author_kind
+                    && existing.author_ref.as_deref() == new.author_ref
                     && existing.intent == intent
                     && existing.mentions == new.mentions
                     && existing.references == new.references;

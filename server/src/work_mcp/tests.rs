@@ -87,6 +87,7 @@ async fn a_coordinator_drives_a_task_from_creation_to_acceptance_through_the_too
     let created = payload(
         leader
             .work_executor_create(Parameters(ExecutorInput {
+                request_key: "e-1".into(),
                 round_id: None,
                 agent: "opencode".into(),
                 title: Some("Pruner".into()),
@@ -261,6 +262,7 @@ async fn limits_and_provider_availability_reach_the_agent_as_clear_errors() {
     let message = refused(
         leader
             .work_executor_create(Parameters(ExecutorInput {
+                request_key: "e-2".into(),
                 round_id: None,
                 agent: "gpt-9000".into(),
                 title: None,
@@ -284,6 +286,7 @@ async fn limits_and_provider_availability_reach_the_agent_as_clear_errors() {
     let paused = refused(
         leader
             .work_executor_create(Parameters(ExecutorInput {
+                request_key: "e-3".into(),
                 round_id: None,
                 agent: "opencode".into(),
                 title: None,

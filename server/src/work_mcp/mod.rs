@@ -198,6 +198,8 @@ struct ExecutorInput {
     agent: String,
     #[serde(default)]
     title: Option<String>,
+    /// Reuse the same value when retrying so one Session is made.
+    request_key: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -398,7 +400,7 @@ impl WorkMcpServer {
     }
 
     #[tool(
-        description = "Coordinator: create a new Session for executing work with an installed provider. It is created idle at the default permission mode; assign it a task to use it."
+        description = "Coordinator: create a new Session for executing work with an installed provider (request_key makes a retry return the same Session). It is created idle at the default permission mode; you can assign work only to yourself or to Sessions you created this way."
     )]
     async fn work_executor_create(
         &self,
@@ -410,6 +412,7 @@ impl WorkMcpServer {
                     input.round_id.as_deref(),
                     &input.agent,
                     input.title.as_deref().unwrap_or_default(),
+                    &input.request_key,
                 )
             })
             .await?;

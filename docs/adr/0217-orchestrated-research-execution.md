@@ -25,8 +25,9 @@ A route is identified by `(source, target)`, so routing the same message, the
 same attempt, or the same result twice makes one route.
 
 - A `request` goes to the **coordinator of an admitted round**: the Thread's
-  round, else the newest round of its question, else one the message cites. The
-  round needs a Session and an open question; if it has no coordinator yet, its
+  round, else the newest *started* round of its question, else one the message
+  cites. The round must be started (the researcher authorized it), have a live
+  Session, and belong to an open question; if it has no coordinator yet, its
   own Session is seated (epoch 1). A request with no such round is *answered,
   not acted on*: a system note tells the researcher to start a round. A
   message, a mention, or a Thread link never authorizes work or widens a
@@ -37,9 +38,17 @@ same attempt, or the same result twice makes one route.
   Thread.
 
 Routes are written before the intent is claimed, so a crash between the two is
-repaired by the next pass. Delivery leases a route with one conditional write,
+repaired by the next pass. One request that cannot be routed is answered and
+claimed (or left for the next pass on a storage error); it never blocks the
+others, and delivery runs in the same pass whatever routing did. Free text
+that someone else wrote (the researcher's message, a task description, an
+executor's report) is fenced and labelled as data inside prompts, and a line
+imitating the fence cannot close it. Delivery leases a route with one conditional write,
 resolves the recipient **at delivery time** (a coordinator route follows the
-round's current holder, so a handoff retargets what was pending), and hands the
+round's current holder, so a handoff retargets what was pending; a dispatch is
+only for the attempt's current executor and fails visibly if the task moved or
+the attempt ended; the new coordinator is sent a `handoff` route naming what is
+open), and hands the
 prompt to the Session under a delivery key the runtime de-duplicates on. A busy
 Session is retried with backoff and is not a failure until it stays busy; a
 provider failure is retried a bounded number of times; both end in a visible
@@ -69,11 +78,16 @@ handoff takes effect on the very next call. The server has no tool that sets a
 limit, authorizes a round, or edits a brief.
 
 The coordinator can create, update, assign, start, review, close, and hand off
-work, and create idle executor Sessions with an installed provider at the
-default permission mode. An executor can attach evidence, say it is waiting,
+work, and create idle executor Sessions with an installed provider. It
+directs only itself and the Sessions it created for the round (not the
+researcher's chats or Team members); executor creation is idempotent per
+request key and capped at twice the executor limit. An executor can attach evidence, say it is waiting,
 and report its attempt. Either can post to the conversation where it has
-standing: a Thread of a round it coordinates, a Thread it was asked in or sent
-work from, or the Thread of work it executes. Every command that creates or
+standing *now*: a Thread of a round it currently coordinates, a Thread it was
+asked in, or the Thread of work it currently executes; a coordinator that handed
+off or an executor that was reassigned has none. A `from_thread` must be linked
+to the round's own question (and round), so a coordinator cannot grant itself
+or an executor a voice in an unrelated discussion. Every command that creates or
 starts something is idempotent on a caller-supplied key.
 
 ### 4. Credentials
@@ -90,6 +104,15 @@ history, because tasks, attempts, and results are the work store's, and the
 coordinator is a replaceable holder of a fenced epoch. A duplicate request, a
 browser retry, a restart, or a second consumer cannot duplicate a task, an
 attempt, a route, or a delivery.
+
+Authority is fenced where the work lives: the work store and the work tools.
+Team Leader tools, the Team mailbox, and experiment launches and waits are not
+fenced by the round's coordinator row, so a handoff does not move a legacy
+Leader's Team or experiment authority, and pending experiment waits and
+analysis obligations stay with the Team that owns them. A crash between
+starting an attempt and routing its dispatch, or between closing an attempt and
+routing its result, is repaired by replaying the same command (the attempt, the
+route, and the Thread note are each idempotent), not by a sweep.
 
 Not yet unified, and recorded as gaps: experiments and their waits still
 validate against Team tasks, so a native task cannot own an experiment launch;

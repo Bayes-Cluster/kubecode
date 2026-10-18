@@ -263,9 +263,14 @@ impl WorkAgent {
     pub fn create(&self, task: NewTask<'_>) -> Result<WorkSummary, AgentWorkError> {
         let round_id = self.coordinated(task.round_id)?;
         let actor = self.coordinator_actor(&round_id)?;
-        let round = self.research.round_by_id(&self.project_id, &round_id).ok();
-        // A Thread of another question is another context: its discussion
-        // does not justify this round's tasks.
+        let round = self
+            .research
+            .round_by_id(&self.project_id, &round_id)
+            .map_err(|_| AgentWorkError::NotFound)?;
+        // A task's discussion must be this round's: a Thread of another
+        // question, of another round, or of no question at all is another
+        // context and does not justify this round's work (nor does it gain the
+        // executor standing to speak there).
         if let Some(thread_id) = task.from_thread {
             let thread = self
                 .channels
@@ -274,11 +279,14 @@ impl WorkAgent {
                     ChannelError::ThreadNotFound => AgentWorkError::NotFound,
                     other => other.into(),
                 })?;
-            if let (Some(round), Some(linked)) = (&round, &thread.research_id)
-                && *linked != round.research_id
-            {
+            let same_question = thread.research_id.as_deref() == Some(round.research_id.as_str());
+            let same_round = thread
+                .round_id
+                .as_deref()
+                .is_none_or(|linked| linked == round_id);
+            if !(same_question && same_round) {
                 return Err(invalid(
-                    "that Thread belongs to a different research question than this round",
+                    "that Thread is not linked to this round's research question",
                 ));
             }
         }
@@ -321,25 +329,43 @@ impl WorkAgent {
         session_id: &str,
         reason: &str,
     ) -> Result<WorkSummary, AgentWorkError> {
-        let (_, role) = self.visible(work_id)?;
+        let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        // A coordinator executes work itself or hands it to a Session it made
+        // for the round. Other Sessions (the researcher's chats, Team members,
+        // other work) are not its to direct.
+        if session_id != self.caller {
+            let round_id = summary.item.round_id.as_deref().unwrap_or_default();
+            if !self
+                .work
+                .is_round_executor(&self.project_id, round_id, session_id)?
+            {
+                return Err(invalid(
+                    "assign yourself or a Session you created with work_executor_create",
+                ));
+            }
+        }
         self.work
             .assign(&self.project_id, work_id, session_id, None, reason, &actor)?;
         Ok(self.work.summary(&self.project_id, work_id)?)
     }
 
-    /// Creates a Session for executing work. It is not started and not
-    /// assigned: it only exists, at the default (non-escalated) permission
-    /// mode, until the coordinator assigns it within the round's limits.
     pub fn create_executor(
         &self,
         round_id: Option<&str>,
         agent: &str,
         title: &str,
+        request_key: &str,
     ) -> Result<String, AgentWorkError> {
         let round_id = self.coordinated(round_id)?;
+        let key = request_key.trim();
+        if key.is_empty() || key.chars().count() > 128 {
+            return Err(invalid(
+                "a request key (at most 128 characters) is required so a retry makes one Session",
+            ));
+        }
         let agent_id: AgentId = agent.parse().map_err(|_| invalid("unknown agent"))?;
         if !(self.provider_available)(agent_id) {
             return Err(invalid(format!("{agent} is not installed or available")));
@@ -348,17 +374,36 @@ impl WorkAgent {
         if policy.paused {
             return Err(WorkError::RoundPaused.into());
         }
+        // A retry returns the Session the first call made. Idle Sessions are
+        // bounded too: twice the executor limit, so a loop cannot flood the Project.
+        if let Some(existing) = self.work.reserve_executor(
+            &self.project_id,
+            &round_id,
+            key,
+            &self.caller,
+            policy.max_executors.saturating_mul(2),
+        )? {
+            return Ok(existing);
+        }
         let title: String = title.trim().chars().take(120).collect();
         let conversation = self.agents.create_conversation(
             &self.project_id,
             agent_id,
             Some(if title.is_empty() { "Executor" } else { &title }),
         )?;
-        Ok(conversation.id)
+        let owner =
+            self.work
+                .record_executor(&self.project_id, &round_id, key, &conversation.id)?;
+        if owner != conversation.id {
+            // A concurrent call recorded its Session first; ours is surplus.
+            let _ = self.agents.delete_conversation(&conversation.id);
+        }
+        Ok(owner)
     }
 
     /// Starts one attempt (within the round's limits) and tells the executor.
-    /// A repeated `request_key` returns the same attempt and the same route.
+    /// A repeated `request_key` returns the same attempt and the same route, so
+    /// a crash between the two is repaired by replaying the command.
     pub fn start(&self, work_id: &str, request_key: &str) -> Result<Attempt, AgentWorkError> {
         let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
@@ -372,11 +417,10 @@ impl WorkAgent {
         let attempt =
             self.work
                 .begin_attempt(&self.project_id, work_id, Some(request_key), &actor)?;
-        let executor = summary
-            .assignment
-            .as_ref()
-            .map(|assignment| assignment.conversation_id.clone())
-            .or_else(|| attempt.conversation_id.clone())
+        // The attempt names its own executor, even if the task moved since.
+        let executor = attempt
+            .conversation_id
+            .clone()
             .ok_or(WorkError::NotAssigned)?;
         self.orchestrator.route_dispatch(
             &self.project_id,
@@ -455,7 +499,8 @@ impl WorkAgent {
     }
 
     /// Hands a round to another Session. The old holder's authority ends at
-    /// once: its very next command is refused.
+    /// once: its very next command is refused. The new holder is told what it
+    /// now holds and what is open.
     pub fn handoff(
         &self,
         round_id: &str,
@@ -465,7 +510,7 @@ impl WorkAgent {
         let Actor::Coordinator(auth) = self.coordinator_actor(round_id)? else {
             return Err(AgentWorkError::NotCoordinator);
         };
-        self.work.handoff_coordinator(
+        let new = self.work.handoff_coordinator(
             &self.project_id,
             round_id,
             auth.epoch,
@@ -473,10 +518,36 @@ impl WorkAgent {
             reason,
             &Actor::Coordinator(auth.clone()),
         )?;
+        let open: Vec<(String, String, String)> = self
+            .work
+            .list(
+                &self.project_id,
+                &WorkFilter {
+                    round_id: Some(round_id.to_owned()),
+                    limit: Some(LIST_LIMIT),
+                    ..Default::default()
+                },
+            )?
+            .into_iter()
+            .filter(|summary| summary.item.stage != WorkStage::Done)
+            .map(|summary| {
+                (
+                    summary.item.id,
+                    summary.item.title,
+                    summary.item.stage.as_str().to_owned(),
+                )
+            })
+            .collect();
+        self.orchestrator.route_handoff(
+            &self.project_id,
+            round_id,
+            new.epoch,
+            to_session,
+            &open,
+            reason,
+        )?;
         Ok(())
     }
-
-    // -- Execution -------------------------------------------------------------------------------------
 
     /// Attaches an existing record as evidence or a result of the caller's
     /// task (or, for a coordinator, any task of its round).
@@ -514,7 +585,9 @@ impl WorkAgent {
     /// The executing Session reports its open attempt. A completed attempt
     /// goes to review; a failed or cancelled one is history and the task stays
     /// in execution for a decision. Either way the coordinator is told and the
-    /// originating Thread hears it, once.
+    /// originating Thread hears it, once. Repeating a report that was already
+    /// recorded finishes whatever a crash left undone (the stage move, the
+    /// result route, the Thread note) instead of failing.
     pub fn report(
         &self,
         work_id: &str,
@@ -522,55 +595,84 @@ impl WorkAgent {
         summary_text: &str,
         error: Option<&str>,
     ) -> Result<WorkSummary, AgentWorkError> {
-        let (summary, role) = self.visible(work_id)?;
-        let Role::Executor(actor) = role else {
-            return Err(invalid("only the executing Session reports on its attempt"));
-        };
-        let attempt = self
-            .work
-            .attempts(&self.project_id, work_id)?
-            .into_iter()
-            .rev()
-            .find(|attempt| {
-                matches!(
-                    attempt.status,
-                    crate::work_store::AttemptStatus::Queued
-                        | crate::work_store::AttemptStatus::Running
-                        | crate::work_store::AttemptStatus::NeedsReport
-                )
-            })
-            .ok_or_else(|| invalid("there is no open attempt to report on"))?;
-        if attempt.status == crate::work_store::AttemptStatus::Queued
-            && status == ReportStatus::Completed
-        {
-            // The run that is doing the work: its newest running run.
-            let run = self
-                .agents
-                .list_runs(&self.caller)?
-                .into_iter()
-                .rev()
-                .find(|run| {
-                    matches!(
-                        run.status,
-                        crate::agents::RunStatus::Running
-                            | crate::agents::RunStatus::WaitingPermission
-                    )
-                })
-                .ok_or_else(|| invalid("no running turn to attribute the work to"))?;
+        let summary =
             self.work
-                .bind_attempt_run(&self.project_id, &attempt.id, &run.id, &actor)?;
+                .summary(&self.project_id, work_id)
+                .map_err(|error| match error {
+                    WorkError::NotFound => AgentWorkError::NotFound,
+                    other => other.into(),
+                })?;
+        // Execution is the open assignment, even when the executor also
+        // coordinates the round.
+        if summary
+            .assignment
+            .as_ref()
+            .is_none_or(|assignment| assignment.conversation_id != self.caller)
+        {
+            return Err(if self.role_for(&summary).is_ok() {
+                invalid("only the executing Session reports on its attempt")
+            } else {
+                AgentWorkError::NotFound
+            });
         }
-        let outcome = match status {
-            ReportStatus::Completed => AttemptOutcome::Completed,
-            ReportStatus::Failed => AttemptOutcome::Failed {
-                kind: Some("reported".to_owned()),
-                error: error.map(str::to_owned),
-            },
-            ReportStatus::Cancelled => AttemptOutcome::Cancelled,
+        let actor = self.executor_actor();
+        let wanted = match status {
+            ReportStatus::Completed => crate::work_store::AttemptStatus::Completed,
+            ReportStatus::Failed => crate::work_store::AttemptStatus::Failed,
+            ReportStatus::Cancelled => crate::work_store::AttemptStatus::Cancelled,
         };
-        self.work
-            .finish_attempt(&self.project_id, &attempt.id, outcome, &actor)?;
-        if status == ReportStatus::Completed && summary.item.stage == WorkStage::Executing {
+        let attempts = self.work.attempts(&self.project_id, work_id)?;
+        let open = attempts.iter().rev().find(|attempt| {
+            matches!(
+                attempt.status,
+                crate::work_store::AttemptStatus::Queued
+                    | crate::work_store::AttemptStatus::Running
+                    | crate::work_store::AttemptStatus::NeedsReport
+            )
+        });
+        let attempt_id = match open {
+            Some(attempt) => {
+                if attempt.status == crate::work_store::AttemptStatus::Queued
+                    && status == ReportStatus::Completed
+                {
+                    // The run that is doing the work: its newest running run.
+                    let run = self
+                        .agents
+                        .list_runs(&self.caller)?
+                        .into_iter()
+                        .rev()
+                        .find(|run| {
+                            matches!(
+                                run.status,
+                                crate::agents::RunStatus::Running
+                                    | crate::agents::RunStatus::WaitingPermission
+                            )
+                        })
+                        .ok_or_else(|| invalid("no running turn to attribute the work to"))?;
+                    self.work
+                        .bind_attempt_run(&self.project_id, &attempt.id, &run.id, &actor)?;
+                }
+                let outcome = match status {
+                    ReportStatus::Completed => AttemptOutcome::Completed,
+                    ReportStatus::Failed => AttemptOutcome::Failed {
+                        kind: Some("reported".to_owned()),
+                        error: error.map(str::to_owned),
+                    },
+                    ReportStatus::Cancelled => AttemptOutcome::Cancelled,
+                };
+                self.work
+                    .finish_attempt(&self.project_id, &attempt.id, outcome, &actor)?;
+                attempt.id.clone()
+            }
+            // Already recorded: only the same outcome converges.
+            None => attempts
+                .last()
+                .filter(|attempt| attempt.status == wanted)
+                .map(|attempt| attempt.id.clone())
+                .ok_or_else(|| invalid("there is no open attempt to report on"))?,
+        };
+        let fresh = self.work.summary(&self.project_id, work_id)?;
+        if status == ReportStatus::Completed && fresh.item.stage == WorkStage::Executing {
             self.work.advance(
                 &self.project_id,
                 work_id,
@@ -588,31 +690,30 @@ impl WorkAgent {
         };
         let fresh = self.work.summary(&self.project_id, work_id)?;
         self.orchestrator
-            .route_result(&self.project_id, &fresh.item, &attempt.id, &text)?;
+            .route_result(&self.project_id, &fresh.item, &attempt_id, &text)?;
         Ok(fresh)
     }
 
-    // -- Conversation ------------------------------------------------------------------------------------
-
     /// Posts into the Workspace conversation as this Session. Only where it has
-    /// standing: the Thread of a round it coordinates, a Thread it was asked in
-    /// or sent work from, or the Thread of work it executes. `in_reply_to` is a
-    /// Thread id or a message id (a message without a Thread gets one).
+    /// standing *now*: the Thread of a round it coordinates, a Thread it was
+    /// asked in, or the Thread of work it currently executes. `in_reply_to` is
+    /// a Thread id or a message id (a message without a Thread gets one, but
+    /// only for a Session that was asked about it).
     pub fn post(
         &self,
         in_reply_to: &str,
         body: &str,
         references: &[ContextRef],
     ) -> Result<Message, AgentWorkError> {
-        let thread = self.thread_for(in_reply_to)?;
-        if !self.may_speak_in(&thread)? {
+        let (thread, asked) = self.thread_for(in_reply_to)?;
+        if !asked && !self.may_speak_in(&thread)? {
             return Err(AgentWorkError::NotFound);
         }
         // A repeated post of the same words by the same Session is one message.
         let digest = {
             use sha2::{Digest, Sha256};
             hex::encode(Sha256::digest(
-                format!("{}\u{0}{body}", thread.id).as_bytes(),
+                format!("{}\u{0}{}\u{0}{body}", self.caller, thread.id).as_bytes(),
             ))
         };
         let key = format!("agent:{}", &digest[..32]);
@@ -632,19 +733,24 @@ impl WorkAgent {
         Ok(message)
     }
 
-    fn thread_for(&self, id: &str) -> Result<Thread, AgentWorkError> {
+    /// The Thread to speak in, and whether the Session was asked about the
+    /// message that opened it (which is standing enough to answer).
+    fn thread_for(&self, id: &str) -> Result<(Thread, bool), AgentWorkError> {
         if let Ok(thread) = self.channels.thread(&self.project_id, id) {
-            return Ok(thread);
+            return Ok((thread, false));
         }
         let message = self
             .channels
             .message(&self.project_id, id)
             .map_err(|_| AgentWorkError::NotFound)?;
         if let Some(thread_id) = &message.thread_id {
-            return Ok(self.channels.thread(&self.project_id, thread_id)?);
+            return Ok((self.channels.thread(&self.project_id, thread_id)?, false));
         }
         // Only a Session that was asked about this message may open its Thread.
-        if !self.was_routed(&message.id)? {
+        if !self
+            .orchestrator
+            .was_asked(&self.project_id, &self.caller, &message.id, None)?
+        {
             return Err(AgentWorkError::NotFound);
         }
         let (thread, _) = self.channels.start_thread(
@@ -654,59 +760,38 @@ impl WorkAgent {
             None,
             Some(&self.caller),
         )?;
-        Ok(thread)
+        Ok((thread, true))
     }
 
-    fn was_routed(&self, message_id: &str) -> Result<bool, AgentWorkError> {
-        Ok(self
-            .orchestrator
-            .routes(&self.project_id, None, 200)?
-            .iter()
-            .any(|route| {
-                route.source_id == message_id
-                    && (route.recipient.as_deref() == Some(self.caller.as_str())
-                        || matches!(
-                            &route.target,
-                            crate::orchestrator::Target::Session { session_id }
-                                if *session_id == self.caller
-                        ))
-            }))
-    }
-
+    /// Standing in a Thread, from current state only: coordinating its round,
+    /// having been asked in it, or executing work that came from it. A
+    /// coordinator that handed off or an executor that was reassigned has none.
     fn may_speak_in(&self, thread: &Thread) -> Result<bool, AgentWorkError> {
+        let coordinated = self
+            .work
+            .coordinated_rounds(&self.project_id, &self.caller)?;
         if let Some(round_id) = &thread.round_id
-            && self.coordinator_actor(round_id).is_ok()
+            && coordinated.contains(round_id)
         {
             return Ok(true);
         }
-        // A coordinator of the question's latest round, for an unrounded link.
-        if let Some(research_id) = &thread.research_id {
-            for round in self
+        if let Some(research_id) = &thread.research_id
+            && !coordinated.is_empty()
+            && self
                 .research
                 .rounds(&self.project_id, research_id)
                 .unwrap_or_default()
-            {
-                if self.coordinator_actor(&round.id).is_ok() {
-                    return Ok(true);
-                }
-            }
-        }
-        // Routed to this Session from this Thread (asked, dispatched, notified).
-        if self
-            .orchestrator
-            .routes(&self.project_id, None, 200)?
-            .iter()
-            .any(|route| {
-                (route.thread_id.as_deref() == Some(thread.id.as_str())
-                    || route.source_id == thread.root_message_id)
-                    && (route.recipient.as_deref() == Some(self.caller.as_str())
-                        || matches!(
-                            &route.target,
-                            crate::orchestrator::Target::Session { session_id }
-                                if *session_id == self.caller
-                        ))
-            })
+                .iter()
+                .any(|round| coordinated.contains(&round.id))
         {
+            return Ok(true);
+        }
+        if self.orchestrator.was_asked(
+            &self.project_id,
+            &self.caller,
+            &thread.root_message_id,
+            Some(&thread.id),
+        )? {
             return Ok(true);
         }
         // Executing work that came from this Thread.

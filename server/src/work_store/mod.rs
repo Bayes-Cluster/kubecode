@@ -204,6 +204,17 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            revision              INTEGER NOT NULL DEFAULT 1,
            updated_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
+         -- Sessions a coordinator created for executing a round's work, keyed by the
+         -- coordinator's request so a retry returns the same Session.
+         CREATE TABLE IF NOT EXISTS round_executors (
+           round_id    TEXT NOT NULL,
+           project_id  TEXT NOT NULL,
+           request_key TEXT NOT NULL,
+           session_id  TEXT NOT NULL DEFAULT '',
+           created_by  TEXT NOT NULL,
+           created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (round_id, request_key)
+         );
          CREATE TABLE IF NOT EXISTS work_sync_queue (
            team_id TEXT PRIMARY KEY
          );",
@@ -471,6 +482,89 @@ impl WorkStore {
         self.reconcile()?;
         let connection = self.connection();
         round_stats(&connection, project_id, round_id)
+    }
+
+    /// Reserves the creation of an executor Session for a request. `Ok(None)`
+    /// means this caller should create it; `Some(id)` is the Session an
+    /// earlier call already made. At most `limit` executors per round.
+    pub fn reserve_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        request_key: &str,
+        created_by: &str,
+        limit: u32,
+    ) -> Result<Option<String>, WorkError> {
+        let connection = self.connection();
+        if let Some(existing) = connection
+            .query_row(
+                "SELECT session_id FROM round_executors
+                 WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3",
+                params![round_id, project_id, request_key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .filter(|session| !session.is_empty())
+        {
+            return Ok(Some(existing));
+        }
+        let made: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM round_executors WHERE round_id = ?1 AND project_id = ?2
+               AND request_key != ?3",
+            params![round_id, project_id, request_key],
+            |row| row.get(0),
+        )?;
+        if made as u32 >= limit {
+            return Err(WorkError::BudgetExhausted("executor Sessions"));
+        }
+        connection.execute(
+            "INSERT OR IGNORE INTO round_executors (round_id, project_id, request_key, created_by)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![round_id, project_id, request_key, created_by],
+        )?;
+        Ok(None)
+    }
+
+    /// Records the Session made for a reservation. Returns the Session that
+    /// owns the request: this one, or one a concurrent caller recorded first.
+    pub fn record_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        request_key: &str,
+        session_id: &str,
+    ) -> Result<String, WorkError> {
+        let connection = self.connection();
+        connection.execute(
+            "UPDATE round_executors SET session_id = ?4
+             WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3 AND session_id = ''",
+            params![round_id, project_id, request_key, session_id],
+        )?;
+        Ok(connection.query_row(
+            "SELECT session_id FROM round_executors
+             WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3",
+            params![round_id, project_id, request_key],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Whether the coordinator made this Session for the round.
+    pub fn is_round_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        session_id: &str,
+    ) -> Result<bool, WorkError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT 1 FROM round_executors
+                 WHERE round_id = ?1 AND project_id = ?2 AND session_id = ?3",
+                params![round_id, project_id, session_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     }
 
     /// The rounds this Session currently coordinates in the Project.
