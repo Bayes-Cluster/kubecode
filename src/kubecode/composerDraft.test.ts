@@ -5,6 +5,7 @@ import {
   applyComposerCatalogSnapshot,
   composerDraftCapabilityReferences,
   composerDraftFromEditorValue,
+  composerDraftHasStaleContext,
   composerDraftPlainText,
   composerDraftToEditorValue,
   composerDraftToStructuredSegments,
@@ -127,6 +128,99 @@ describe('typed Composer drafts', () => {
       catalog_revision: 19,
       context_kind: 'session_turn',
     })
+  })
+
+  it('restores a Project-work reference as stale, carrying only the opaque id and display data', () => {
+    const reference = createComposerContextReference({
+      catalogRevision: 21,
+      id: 'ctx:project-work:opaque',
+      kind: 'project_context',
+      name: 'Finding: Pruning keeps accuracy',
+      path: 'project-context',
+      summary: {
+        kind: 'project_context', ref_kind: 'finding', revision: '1', title: 'Pruning keeps accuracy',
+      },
+    })
+    const draft = appendComposerContext(textComposerDraft('Build on '), reference)
+    const serialized = serializeComposerDraft(draft)
+    // The question text, session ids, and artifact paths are never in the draft.
+    expect(serialized).not.toContain('finding:')
+
+    const restored = parseStoredComposerDraft(serialized)
+    expect(composerDraftReferences(restored)[0]).toMatchObject({
+      availability: 'stale',
+      kind: 'project_context',
+      summary: { ref_kind: 'finding', revision: '1' },
+    })
+    expect(composerDraftHasStaleContext(restored)).toBe(true)
+    expect(composerDraftToStructuredSegments(restored)).toContainEqual({
+      kind: 'context_ref',
+      id: 'ctx:project-work:opaque',
+      catalog_revision: 21,
+      context_kind: 'project_context',
+    })
+    expect(composerDraftPlainText(restored)).toContain('Build on @Finding: Pruning keeps accuracy')
+    // A server verdict of "no longer available" keeps it blocking until re-selected.
+    const validated = applyComposerContextValidation(restored, {
+      catalog: { conversation_id: 'c', revision: 22, items: [], contexts: [] },
+      references: [{
+        id: 'ctx:project-work:opaque', catalog_revision: 21, context_kind: 'project_context',
+        available: false,
+      }],
+    })
+    expect(composerDraftReferences(validated)[0]?.availability).toBe('stale')
+  })
+
+  it('degrades a Project-work chip to its readable name, never to the placeholder path', () => {
+    const chip = (n: number) => ({
+      kind: 'context' as const,
+      reference: createComposerContextReference({
+        catalogRevision: 5,
+        id: `ctx:pw:${n}`,
+        kind: 'project_context',
+        name: `Finding: claim ${n}`,
+        path: 'project-context',
+        summary: { kind: 'project_context', ref_kind: 'finding', revision: '1', title: `claim ${n}` },
+      }),
+    })
+    // Over the reference limit the overflow becomes text.
+    const overflow = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: Array.from({ length: MAX_COMPOSER_CONTEXT_REFERENCES + 1 }, (_, n) => chip(n)),
+    }))
+    const text = composerDraftPlainText(overflow)
+    expect(text).toContain(`@Finding: claim ${MAX_COMPOSER_CONTEXT_REFERENCES}`)
+    expect(text).not.toContain('project-context')
+    // A malformed reference (bad summary) also degrades to its name.
+    const broken = chip(1)
+    const malformed = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: [{ ...broken, reference: { ...broken.reference, summary: { kind: 'project_context' } } }],
+    }))
+    expect(composerDraftPlainText(malformed)).toBe('@Finding: claim 1')
+    expect(composerDraftHasStaleContext(malformed)).toBe(false)
+  })
+
+  it('rejects a Project-work reference with a mismatched or malformed summary', () => {
+    const base = {
+      catalogRevision: 3, id: 'ctx:x', kind: 'project_context' as const,
+      name: 'x', path: 'project-context',
+    }
+    expect(() => createComposerContextReference({ ...base, summary: undefined })).toThrow()
+    expect(() => createComposerContextReference({
+      ...base,
+      summary: { kind: 'project_context', ref_kind: 'nonsense' as never, revision: '1', title: 't' },
+    })).toThrow()
+    expect(() => createComposerContextReference({
+      ...base,
+      summary: { kind: 'project_context', ref_kind: 'finding', revision: '', title: 't' },
+    })).toThrow()
+    // Project-work paths are display placeholders, never filesystem paths.
+    expect(() => createComposerContextReference({
+      ...base,
+      path: '../x\n',
+      summary: { kind: 'project_context', ref_kind: 'finding', revision: '1', title: 't' },
+    })).toThrow()
   })
 
   it('migrates legacy string drafts without trusting @ text as context', () => {

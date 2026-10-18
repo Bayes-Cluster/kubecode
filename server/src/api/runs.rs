@@ -81,17 +81,21 @@ pub(super) async fn start_agent_run(
         }
         StartRunRequest::Structured(request) => {
             let client_message_id = validate_client_message_id(request.client_message_id)?;
+            let runtime = state.agent_runtime.clone();
+            let structured = StartStructuredComposerRun {
+                conversation_id,
+                project_id,
+                item_id: request.item_id,
+                catalog_revision: request.catalog_revision,
+                segments: request.segments,
+                client_message_id,
+            };
+            // Preflight may re-read Project work (SQLite and files); keep it
+            // off the async workers.
             let run =
-                state
-                    .agent_runtime
-                    .start_structured_composer(StartStructuredComposerRun {
-                        conversation_id,
-                        project_id,
-                        item_id: request.item_id,
-                        catalog_revision: request.catalog_revision,
-                        segments: request.segments,
-                        client_message_id,
-                    })?;
+                tokio::task::spawn_blocking(move || runtime.start_structured_composer(structured))
+                    .await
+                    .map_err(|error| ApiError::InvalidRequest(error.to_string()))??;
             serde_json::to_value(&run)
                 .map_err(|_| ApiError::InvalidRequest("run could not serialize".into()))?
         }

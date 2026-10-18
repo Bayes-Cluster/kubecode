@@ -308,4 +308,56 @@ describe('ComposerAddMenu', () => {
     expect(api.listSessionEntries).toHaveBeenCalledWith('session-1', '')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('offers Project work only when the Session can reference it, and hands back the typed item', async () => {
+    const item = {
+      ref: { kind: 'finding' as const, id: 'f1', revision: '2' },
+      title: 'Accuracy holds',
+      summary: 'Pruned model within 1 percent',
+      provenance: {
+        author: 'agent', updated_at: null, research_id: 'r1', parent: null, state: null,
+      },
+      availability: 'available' as const,
+    }
+    const api = {
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [item], next_cursor: null, truncated: false }),
+    } as unknown as KubecodeApi
+    const withoutHandler = render(
+      <ComposerAddMenu
+        api={api}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    expect(screen.queryByRole('button', { name: /Reference Project work/i })).not.toBeInTheDocument()
+    withoutHandler.unmount()
+
+    const onProjectContext = vi.fn()
+    render(
+      <ComposerAddMenu
+        api={api}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onProjectContext={onProjectContext}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference Project work/i }))
+    const option = await screen.findByRole('option', { name: /Accuracy holds/ })
+    expect(screen.getByText(/Referencing or previewing only reads/)).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search Project work' }), { key: 'Enter' })
+    expect(onProjectContext).toHaveBeenCalledWith(item)
+    expect(option).toBeDefined()
+    // Choosing a reference closes the menu; it started nothing else.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })

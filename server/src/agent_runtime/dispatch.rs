@@ -382,6 +382,7 @@ impl AgentRuntime {
             &selectors,
         )?;
         let mut preflight = Vec::with_capacity(records.len());
+        let mut project_context_bytes = 0usize;
         for (selector, record) in selectors.iter().zip(records) {
             let record = record.ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
             if record.kind != selector.context_kind {
@@ -396,7 +397,8 @@ impl AgentRuntime {
                 }
                 crate::composer_catalog::ComposerContextKind::GitDiff
                 | crate::composer_catalog::ComposerContextKind::Terminal
-                | crate::composer_catalog::ComposerContextKind::SessionTurn => None,
+                | crate::composer_catalog::ComposerContextKind::SessionTurn
+                | crate::composer_catalog::ComposerContextKind::ProjectContext => None,
                 _ => return Err(StoreError::Composer(ComposerCatalogError::ItemUnsupported).into()),
             };
             if let Some(expected_kind) = expected_kind {
@@ -453,6 +455,22 @@ impl AgentRuntime {
                 let resolved = self
                     .resolve_terminal_composer_context(&conversation.id, &record)?
                     .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                preflight.push(resolved);
+            } else if record.kind == crate::composer_catalog::ComposerContextKind::ProjectContext {
+                let resolved = self
+                    .resolve_project_context_composer_context(
+                        &conversation.id,
+                        &conversation.project_id,
+                        &record,
+                    )?
+                    .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                // One prompt may cite many references; keep the sum bounded
+                // (a repeated reference counts every time it is injected).
+                project_context_bytes += resolved.content.as_ref().map_or(0, String::len);
+                if project_context_bytes > crate::composer_catalog::MAX_PROJECT_CONTEXT_TOTAL_BYTES
+                {
+                    return Err(StoreError::Composer(ComposerCatalogError::ContextOverLimit).into());
+                }
                 preflight.push(resolved);
             } else {
                 let resolved = self

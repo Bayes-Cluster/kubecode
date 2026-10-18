@@ -9,6 +9,7 @@ import type { ComposerCatalogSnapshot, GitDiffContextCandidate, KubecodeApi } fr
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities } from './composerCapabilities'
 import {
+  composerContextFallbackText,
   composerDraftFromEditorValue,
   composerDraftAllReferences,
   composerDraftPlainText,
@@ -18,6 +19,7 @@ import {
   createComposerCapabilityReference,
   applyComposerContextValidation,
   MAX_COMPOSER_CONTEXT_REFERENCES,
+  type ComposerContextKind,
   type ComposerDraft,
 } from './composerDraft'
 import { searchSessionEntries } from './projectPathSearch'
@@ -137,7 +139,7 @@ export function ComposerContextInput({
     const referenceRecords = JSON.parse(staleReferenceKey) as Array<{
       id: string
       catalog_revision: number
-      context_kind: 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
+      context_kind: ComposerContextKind
     }>
     if (referenceRecords.length === 0) return
     let current = true
@@ -311,7 +313,7 @@ export function ComposerContextInput({
   const sanitizePastedText = useCallback((value: string) => referencesRef.current.reduce(
     (text, reference) => text.replaceAll(
       `[[${reference.id}]]`,
-      'path' in reference ? `@${reference.path}` : `$${reference.name}`,
+      'path' in reference ? composerContextFallbackText(reference) : `$${reference.name}`,
     ),
     value,
   ), [])

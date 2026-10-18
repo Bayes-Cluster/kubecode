@@ -548,6 +548,12 @@ fn experiment_revision(experiment: &Experiment) -> String {
             .exit_code
             .map(|c| c.to_string())
             .unwrap_or_default(),
+        experiment.reason.as_deref().unwrap_or_default(),
+        if experiment.cancel_requested {
+            "cancel"
+        } else {
+            ""
+        },
     ])
 }
 
@@ -1488,7 +1494,11 @@ impl ProjectContext {
                 Err(crate::workspace::WorkspaceError::UnsupportedText) => {
                     doc.note("The file is not UTF-8 text, so no content is shown.");
                 }
-                Err(_) => doc.note("The file could not be read; it may have been removed."),
+                Err(_) => {
+                    // Gone or unreadable between lookup and read: not usable context.
+                    doc.availability = Availability::Removed;
+                    doc.note("The file could not be read; it may have been removed.");
+                }
             }
         }
         Ok(())
