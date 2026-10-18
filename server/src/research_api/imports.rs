@@ -149,7 +149,14 @@ async fn get_import(
 
 /// Largest packet, so a preview is always something a person can read.
 pub const MAX_PACKET_BYTES: usize = 32 * 1024;
+/// Each section has its own budget, so a long one cannot push out the rest.
+const SECTION_BUDGET_BYTES: usize = 6 * 1024;
 const PACKET_FINDINGS: usize = 30;
+const PACKET_ROUNDS: usize = 20;
+const PACKET_EXPERIMENTS_PER_ROUND: usize = 5;
+const PACKET_EVIDENCE: usize = 40;
+const PACKET_IMPORT_QUESTIONS: usize = 10;
+const PACKET_IMPORT_QUESTIONS_TOTAL: usize = 30;
 const PACKET_STATEMENT_CHARS: usize = 600;
 
 #[derive(Debug, Deserialize)]
@@ -162,7 +169,10 @@ struct ExportQuery {
 struct PacketSection {
     id: &'static str,
     included: bool,
+    /// Bytes after the section's own budget was applied.
     bytes: usize,
+    /// The section was cut at its budget.
+    truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,10 +183,8 @@ struct ExportPacket {
     sections: Vec<PacketSection>,
     markdown: String,
     total_bytes: usize,
-    /// The packet was cut at its size limit.
+    /// At least one section was cut at its budget.
     truncated: bool,
-    /// Plain statements of what is and is not in the packet.
-    contents: Vec<&'static str>,
 }
 
 const SECTION_IDS: [&str; 5] = [
@@ -186,6 +194,30 @@ const SECTION_IDS: [&str; 5] = [
     "evidence",
     "open_questions",
 ];
+
+/// One line: whitespace collapsed (so free text cannot start a new markdown
+/// block) and cut at `max` characters.
+fn one_line(text: &str, max: usize) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        flat
+    } else {
+        format!("{}…", flat.chars().take(max).collect::<String>())
+    }
+}
+
+fn cut_to_budget(mut text: String) -> (String, bool) {
+    if text.len() <= SECTION_BUDGET_BYTES {
+        return (text, false);
+    }
+    let cut = (0..=SECTION_BUDGET_BYTES)
+        .rev()
+        .find(|index| text.is_char_boundary(*index))
+        .unwrap_or(0);
+    text.truncate(cut);
+    text.push_str("\n[section cut at its size limit]\n");
+    (text, true)
+}
 
 async fn export_packet(
     State(state): State<AppState>,
@@ -210,29 +242,105 @@ async fn export_packet(
                     chosen.push(*id);
                 }
             }
+            if chosen.is_empty() {
+                return Err(ResearchError::Invalid("choose at least one packet section").into());
+            }
             chosen
         }
     };
-    let question = state.research.get(&project_id, &research_id)?;
-    let resolver = super::rounds::resolver(&state);
-    let findings = state.research.findings(&project_id, &research_id)?;
-    let mut newest_first: Vec<_> = findings.iter().rev().take(PACKET_FINDINGS).collect();
-    newest_first.sort_by_key(|finding| std::cmp::Reverse(finding.seq));
-    let clip = |text: &str, max: usize| -> String {
-        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        if flat.chars().count() <= max {
-            flat
-        } else {
-            format!("{}…", flat.chars().take(max).collect::<String>())
-        }
-    };
-    let brief = &question.brief;
-    let mut bodies: Vec<(&'static str, String)> = Vec::new();
+    // Store and file reads are synchronous; keep them off the async workers.
+    let packet = tokio::task::spawn_blocking(move || {
+        build_packet(&state, &project_id, &research_id, &wanted)
+    })
+    .await
+    .map_err(|_| ResearchError::Invalid("the packet could not be built"))??;
+    Ok(Json(packet))
+}
 
+fn build_packet(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+    wanted: &[&str],
+) -> Result<ExportPacket, ResearchApiError> {
+    let question = state.research.get(project_id, research_id)?;
+    let brief = &question.brief;
+    // Only what was asked for is built: a brief-only packet reads nothing else.
+    let mut bodies: Vec<(&'static str, Option<String>)> = Vec::new();
+    for id in SECTION_IDS {
+        let body = wanted.contains(&id).then(|| match id {
+            "brief" => brief_section(&question),
+            "progress" => progress_section(state, project_id, research_id),
+            "findings" => findings_section(state, project_id, research_id),
+            "evidence" => evidence_section(state, project_id, research_id),
+            _ => open_questions_section(state, project_id, research_id),
+        });
+        bodies.push((id, body.transpose()?));
+    }
+
+    let mut markdown = format!(
+        "# Research discussion packet\n\nQuestion: {} (brief revision {}). When you reply, say which revision your notes are about.\n\n",
+        one_line(&brief.title, 200),
+        question.revision
+    );
+    let mut sections = Vec::new();
+    let mut truncated = false;
+    for (id, body) in bodies {
+        match body {
+            Some(body) => {
+                let (body, cut) = cut_to_budget(body);
+                truncated |= cut;
+                sections.push(PacketSection {
+                    id,
+                    included: true,
+                    bytes: body.len(),
+                    truncated: cut,
+                });
+                markdown.push_str(&body);
+                markdown.push('\n');
+            }
+            None => sections.push(PacketSection {
+                id,
+                included: false,
+                bytes: 0,
+                truncated: false,
+            }),
+        }
+    }
+    // Five budgeted sections and the header always fit; this only guards the bound.
+    if markdown.len() > MAX_PACKET_BYTES {
+        let cut = (0..=MAX_PACKET_BYTES)
+            .rev()
+            .find(|index| markdown.is_char_boundary(*index))
+            .unwrap_or(0);
+        markdown.truncate(cut);
+        truncated = true;
+    }
+    Ok(ExportPacket {
+        research_id: research_id.to_owned(),
+        brief_revision: question.revision,
+        sections,
+        total_bytes: markdown.len(),
+        markdown,
+        truncated,
+    })
+}
+
+fn brief_section(
+    question: &crate::research_store::ResearchQuestion,
+) -> Result<String, ResearchApiError> {
+    let brief = &question.brief;
     let mut text = format!("## Approved brief (revision {})\n\n", question.revision);
-    text.push_str(&format!("**{}**\n\n{}\n", brief.title, brief.question));
+    text.push_str(&format!(
+        "**{}**\n\n{}\n",
+        one_line(&brief.title, 200),
+        one_line(&brief.question, 4_000)
+    ));
     if !brief.motivation.is_empty() {
-        text.push_str(&format!("\nMotivation: {}\n", brief.motivation));
+        text.push_str(&format!(
+            "\nMotivation: {}\n",
+            one_line(&brief.motivation, 4_000)
+        ));
     }
     for (heading, items) in [
         ("Hypotheses", &brief.hypotheses),
@@ -242,18 +350,25 @@ async fn export_packet(
         if !items.is_empty() {
             text.push_str(&format!("\n{heading}:\n"));
             for item in items {
-                text.push_str(&format!("- {item}\n"));
+                text.push_str(&format!("- {}\n", one_line(item, 1_000)));
             }
         }
     }
-    bodies.push(("brief", text));
+    Ok(text)
+}
 
+fn progress_section(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+) -> Result<String, ResearchApiError> {
     let mut text = String::from("## Progress\n\n");
-    let rounds = state.research.rounds(&project_id, &research_id)?;
+    // Newest first, and only the most recent rounds.
+    let rounds = state.research.rounds(project_id, research_id)?;
     if rounds.is_empty() {
         text.push_str("No work has been requested yet.\n");
     }
-    for round in rounds.iter().rev() {
+    for round in rounds.iter().take(PACKET_ROUNDS) {
         text.push_str(&format!(
             "- Round {} ({}, {}), brief revision {}\n",
             round.round,
@@ -263,9 +378,9 @@ async fn export_packet(
         ));
         if let Ok(experiments) = state
             .experiments
-            .experiments(&project_id, &research_id, &round.id)
+            .experiments(project_id, research_id, &round.id)
         {
-            for experiment in experiments.iter().take(10) {
+            for experiment in experiments.iter().take(PACKET_EXPERIMENTS_PER_ROUND) {
                 let label = if experiment.label.is_empty() {
                     "experiment"
                 } else {
@@ -275,63 +390,106 @@ async fn export_packet(
                     .ok()
                     .and_then(|value| value.as_str().map(str::to_owned))
                     .unwrap_or_default();
-                text.push_str(&format!("  - {}: {state_text}\n", clip(label, 80)));
+                text.push_str(&format!("  - {}: {state_text}\n", one_line(label, 80)));
             }
         }
     }
-    bodies.push(("progress", text));
+    if rounds.len() > PACKET_ROUNDS {
+        text.push_str(&format!(
+            "- … and {} earlier rounds\n",
+            rounds.len() - PACKET_ROUNDS
+        ));
+    }
+    Ok(text)
+}
 
+fn findings_section(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+) -> Result<String, ResearchApiError> {
     let mut text =
         String::from("## Findings\n\nThese are attributed records, not verified results.\n\n");
-    let recorded: Vec<_> = newest_first
+    let findings = state.research.findings(project_id, research_id)?;
+    let recorded: Vec<_> = findings
         .iter()
+        .rev()
         .filter(|finding| finding.kind != crate::research_store::FindingKind::OpenQuestion)
+        .take(PACKET_FINDINGS)
         .collect();
     if recorded.is_empty() {
         text.push_str("None recorded.\n");
     }
-    for finding in &recorded {
+    for finding in recorded {
         text.push_str(&format!(
             "- [{} / {}] by {} at brief revision {}: {}\n",
             finding.kind.as_str(),
             finding.basis.as_str(),
             finding.author_kind.as_str(),
             finding.brief_revision,
-            clip(&finding.statement, PACKET_STATEMENT_CHARS)
+            one_line(&finding.statement, PACKET_STATEMENT_CHARS)
         ));
     }
-    bodies.push(("findings", text));
+    Ok(text)
+}
 
-    // Evidence is named, never included: kinds, short ids or Project-relative
-    // paths, and whether each still stands.
+/// Evidence is named, never included. A file shows its Project-relative path
+/// only (no read, no hash); other records show a short id and whether they
+/// still exist. Repeated references are listed once.
+fn evidence_section(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+) -> Result<String, ResearchApiError> {
+    let resolver = super::rounds::resolver(state);
     let mut text = String::from(
         "## Evidence references\n\nNames only; no file contents, transcripts, or logs are included.\n\n",
     );
-    let mut any = false;
-    for finding in &recorded {
+    let findings = state.research.findings(project_id, research_id)?;
+    let mut seen: Vec<(crate::research_store::SourceKind, String)> = Vec::new();
+    for finding in findings
+        .iter()
+        .rev()
+        .filter(|finding| finding.kind != crate::research_store::FindingKind::OpenQuestion)
+        .take(PACKET_FINDINGS)
+    {
         for source in &finding.evidence {
-            any = true;
-            let name = if source.kind == crate::research_store::SourceKind::File {
-                source.id.clone()
+            if seen.len() >= PACKET_EVIDENCE
+                || seen
+                    .iter()
+                    .any(|(kind, id)| *kind == source.kind && *id == source.id)
+            {
+                continue;
+            }
+            seen.push((source.kind, source.id.clone()));
+            if source.kind == crate::research_store::SourceKind::File {
+                text.push_str(&format!("- file {}\n", one_line(&source.id, 300)));
             } else {
-                source.id.chars().take(8).collect()
-            };
-            text.push_str(&format!(
-                "- {} {} ({})\n",
-                source.kind.as_str(),
-                name,
-                resolver.resolve(&project_id, source).as_str()
-            ));
+                let short: String = source.id.chars().take(8).collect();
+                text.push_str(&format!(
+                    "- {} {} ({})\n",
+                    source.kind.as_str(),
+                    one_line(&short, 8),
+                    resolver.resolve(project_id, source).as_str()
+                ));
+            }
         }
     }
-    if !any {
+    if seen.is_empty() {
         text.push_str("None cited.\n");
     }
-    bodies.push(("evidence", text));
+    Ok(text)
+}
 
+fn open_questions_section(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+) -> Result<String, ResearchApiError> {
     let mut text = String::from("## Limitations and open questions\n\n");
     let mut any = false;
-    for finding in &newest_first {
+    let findings = state.research.findings(project_id, research_id)?;
+    for finding in findings.iter().rev().take(PACKET_FINDINGS) {
         if matches!(
             finding.kind,
             crate::research_store::FindingKind::Limitation
@@ -341,82 +499,50 @@ async fn export_packet(
             text.push_str(&format!(
                 "- ({}) {}\n",
                 finding.kind.as_str().replace('_', " "),
-                clip(&finding.statement, PACKET_STATEMENT_CHARS)
+                one_line(&finding.statement, PACKET_STATEMENT_CHARS)
             ));
         }
     }
-    for proposal in state.research.proposals(&project_id, &research_id)? {
+    for proposal in state.research.proposals(project_id, research_id)? {
         if proposal.review.is_none() {
             any = true;
             text.push_str(&format!(
                 "- (proposal awaiting a decision) {}\n",
-                clip(&proposal.entry.body, PACKET_STATEMENT_CHARS)
+                one_line(&proposal.entry.body, PACKET_STATEMENT_CHARS)
             ));
         }
     }
-    for import in state.research.imports(&project_id, &research_id)? {
-        if let Ok((_, content)) = state.research.import_by_id(&project_id, &import.id) {
-            for candidate in extract_candidates(&content)
-                .into_iter()
-                .filter(|candidate| {
-                    candidate.kind == crate::research_store::CandidateKind::OpenQuestion
-                })
-            {
-                any = true;
-                text.push_str(&format!(
-                    "- (from imported discussion \"{}\") {}\n",
-                    clip(&import.label, 80),
-                    candidate.text
-                ));
+    // Open questions found in imported discussions: a few per import, a few
+    // overall, each as written by the researcher.
+    let mut from_imports = 0;
+    for import in state.research.imports(project_id, research_id)? {
+        if from_imports >= PACKET_IMPORT_QUESTIONS_TOTAL {
+            break;
+        }
+        let Ok((_, content)) = state.research.import_by_id(project_id, &import.id) else {
+            continue;
+        };
+        for candidate in extract_candidates(&content)
+            .into_iter()
+            .filter(|candidate| {
+                candidate.kind == crate::research_store::CandidateKind::OpenQuestion
+            })
+            .take(PACKET_IMPORT_QUESTIONS)
+        {
+            if from_imports >= PACKET_IMPORT_QUESTIONS_TOTAL {
+                break;
             }
+            from_imports += 1;
+            any = true;
+            text.push_str(&format!(
+                "- (from imported discussion \"{}\") {}\n",
+                one_line(&import.label, 80),
+                one_line(&candidate.text, PACKET_STATEMENT_CHARS)
+            ));
         }
     }
     if !any {
         text.push_str("None recorded.\n");
     }
-    bodies.push(("open_questions", text));
-
-    let mut markdown = format!(
-        "# Research discussion packet\n\nQuestion: {} (brief revision {}). When you reply, say which revision your notes are about.\n\n",
-        clip(&brief.title, 200),
-        question.revision
-    );
-    let mut sections = Vec::new();
-    for (id, body) in &bodies {
-        let included = wanted.contains(id);
-        sections.push(PacketSection {
-            id,
-            included,
-            bytes: if included { body.len() } else { 0 },
-        });
-        if included {
-            markdown.push_str(body);
-            markdown.push('\n');
-        }
-    }
-    let mut truncated = false;
-    if markdown.len() > MAX_PACKET_BYTES {
-        let cut = (0..=MAX_PACKET_BYTES)
-            .rev()
-            .find(|index| markdown.is_char_boundary(*index))
-            .unwrap_or(0);
-        markdown.truncate(cut);
-        markdown.push_str("\n[packet cut at its size limit]\n");
-        truncated = true;
-    }
-    Ok(Json(ExportPacket {
-        research_id,
-        brief_revision: question.revision,
-        sections,
-        total_bytes: markdown.len(),
-        markdown,
-        truncated,
-        contents: vec![
-            "The approved brief and its revision number",
-            "Round and experiment status, without commands or logs",
-            "Attributed findings, limitations, and open questions (claims, not verified)",
-            "Names of evidence (Project-relative file paths, short ids), never their contents",
-            "No transcripts, prompts, credentials, or server paths",
-        ],
-    }))
+    Ok(text)
 }

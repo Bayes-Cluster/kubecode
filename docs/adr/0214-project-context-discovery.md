@@ -130,7 +130,10 @@ Discussion held outside Kubecode is **source material**, not a finding.
   and the SHA-256 digest of the text. Its reference is `{kind: import, id,
   revision: first 16 hex of the digest}`, usable as a round source
   (`SourceKind::Import`), by the context tools, and in the Composer picker. At
-  most 50 per question. The same `client_request_id` returns the original
+  most 50 per question, cited only by work on the same question (another
+  question's import reads as missing). There is no deletion in this slice: an
+  import lives until its question does, so text pasted by mistake cannot be
+  removed yet. The same `client_request_id` returns the original
   import; reusing it for different text is refused. Imports are never copied
   into Agent transcripts and never edited.
 - **Attribution.** The author is always the researcher. Nothing an import
@@ -150,13 +153,18 @@ Discussion held outside Kubecode is **source material**, not a finding.
   round may cite imports as sources; its brief revision, instruction, sources,
   and execution authorization are pinned exactly as before and repeated
   requests reuse the round's idempotency key.
-- **Export.** `GET .../export` builds a packet of at most 32 KiB from the
-  approved brief, round and experiment status (no commands or logs), attributed
-  findings, limitations and open questions (including those found in imports),
-  and evidence *names* (Project-relative paths and short ids, never contents).
-  The researcher chooses sections and previews the exact text and a plain
-  statement of what is and is not included before copying it; Kubecode sends
-  nothing anywhere.
+- **Export.** `GET .../export` builds a packet from the approved brief, the
+  newest rounds' status (no commands or logs), attributed findings, limitations
+  and open questions (including a few written in imports), and evidence *names*
+  (Project-relative paths and short ids, never contents; no file is read).
+  Only the requested sections are built; each has its own 6 KiB budget and a
+  cut section is marked, so a long one cannot push out the others (32 KiB
+  overall). Free text is flattened to one line per item. Kubecode adds no
+  transcripts, prompts, credentials, file contents, or server paths, but text
+  the researcher or an Agent wrote in findings or imports is included as
+  written. The researcher chooses sections and previews the exact text and a
+  statement of what the chosen sections contain before copying it; Kubecode
+  sends nothing anywhere.
 
 ## Validation status
 

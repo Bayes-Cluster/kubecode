@@ -5,6 +5,13 @@
 //! published and then referenced from another Session, the researcher exports
 //! open questions, and a follow-up imported against a changed brief never
 //! silently replaces newer direction.
+//!
+//! These are deterministic fixtures, not a real Agent: the fresh Agent's
+//! discovery goes through the same HTTP routes the context tools wrap (the MCP
+//! transport itself is covered in `context_mcp`'s tests), and the finding is
+//! published through the research store as the Team tool would. The experiment
+//! step of the milestone is covered by the context reader and `context_mcp`
+//! tests.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -253,15 +260,53 @@ async fn import_review_round_discovery_reference_export_and_stale_reimport() {
         note.contains("From imported discussion \"Call with the pruning group\""),
         "{revisions}"
     );
-    // An import of another question cannot be cited as the source of an edit.
-    let (status, _) = call(
+    // Neither an invented import nor another question's can be named as the
+    // source of an edit.
+    let (_, other_rq) = call(
         &env,
-        Method::PATCH,
-        &format!("{rq_base}/{rq_id}"),
-        json!({"expected_revision": 2, "import_id": "not-an-import", "title": "Hijack"}),
+        Method::POST,
+        &rq_base,
+        json!({"title": "Other", "question": "Q?"}),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    let other_rq_id = other_rq["id"].as_str().unwrap().to_owned();
+    let (_, other_import) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{other_rq_id}/imports"),
+        json!({"origin": "paste", "label": "Elsewhere", "content": "Constraint: elsewhere"}),
+    )
+    .await;
+    for foreign in ["not-an-import", other_import["id"].as_str().unwrap()] {
+        let (status, _) = call(
+            &env,
+            Method::PATCH,
+            &format!("{rq_base}/{rq_id}"),
+            json!({"expected_revision": 2, "import_id": foreign, "title": "Hijack"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{foreign}");
+    }
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/rounds"),
+        json!({"client_request_id": "cross", "expected_revision": 2, "mode": "solo",
+               "agent_id": "opencode", "sources": [{"kind": "import", "id": other_import["id"]}]}),
+    )
+    .await;
+    assert!(
+        status.is_client_error(),
+        "another question's import cannot be cited by a round"
+    );
+    let (_, unchanged) = call(
+        &env,
+        Method::GET,
+        &format!("{rq_base}/{rq_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(unchanged["revision"], 2);
 
     // -- An explicit handoff: the existing round action, citing the import and
     // the prior Session; a repeated request reuses the round.
@@ -361,8 +406,6 @@ async fn import_review_round_discovery_reference_export_and_stale_reimport() {
         "{text}"
     );
     assert!(text.contains("Does the effect survive a different seed?"));
-    // The Solo Session was created for the round, and reading it needs no extra work.
-    assert!(!fresh_session.is_empty());
 
     // -- The Agent publishes a finding citing what it read.
     let publication = env
@@ -747,4 +790,214 @@ async fn imports_are_validated_scoped_and_citable_only_when_real() {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn the_packet_is_budgeted_per_section_and_the_attribution_of_an_edit_is_never_cut() {
+    let env = env();
+    let p = env.project_id.clone();
+    let rq_base = format!("/projects/{p}/research");
+    let (_, rq) = call(
+        &env,
+        Method::POST,
+        &rq_base,
+        json!({"title": "Big", "question": "Q?"}),
+    )
+    .await;
+    let rq_id = rq["id"].as_str().unwrap().to_owned();
+
+    // Far more findings than fit, plus a limitation that must still be exported.
+    let long = "z".repeat(550);
+    for batch in 0..4 {
+        env.state
+            .research
+            .publish(
+                &p,
+                &rq_id,
+                NewPublication {
+                    key: format!("big-{batch}"),
+                    author_kind: AuthorKind::Agent,
+                    author_ref: None,
+                    producer: Producer::default(),
+                    round_id: None,
+                    findings: (0..10)
+                        .map(|n| NewFinding {
+                            kind: FindingKind::Finding,
+                            statement: format!("claim {batch}-{n} {long}"),
+                            evidence: vec![],
+                        })
+                        .collect(),
+                    proposals: vec![],
+                },
+            )
+            .unwrap();
+    }
+    env.state
+        .research
+        .publish(
+            &p,
+            &rq_id,
+            NewPublication {
+                key: "limit".into(),
+                author_kind: AuthorKind::Agent,
+                author_ref: None,
+                producer: Producer::default(),
+                round_id: None,
+                findings: vec![NewFinding {
+                    kind: FindingKind::Limitation,
+                    statement: "Only one seed was tried".into(),
+                    evidence: vec![],
+                }],
+                proposals: vec![],
+            },
+        )
+        .unwrap();
+    let (status, packet) = call(
+        &env,
+        Method::GET,
+        &format!("{rq_base}/{rq_id}/export"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{packet}");
+    let markdown = packet["markdown"].as_str().unwrap();
+    assert!(packet["total_bytes"].as_u64().unwrap() <= 32 * 1024);
+    let section = |id: &str| {
+        packet["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(section("findings")["truncated"], true);
+    assert!(section("findings")["bytes"].as_u64().unwrap() <= 6 * 1024 + 64);
+    // A long section never pushes out the ones after it.
+    assert!(
+        markdown.contains("Only one seed was tried"),
+        "the limitation survives"
+    );
+    assert_eq!(packet["truncated"], true);
+
+    // Only what is asked for is built and reported.
+    let (_, brief_only) = call(
+        &env,
+        Method::GET,
+        &format!("{rq_base}/{rq_id}/export?sections=brief"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        section_flags(&brief_only),
+        vec![
+            ("brief", true),
+            ("progress", false),
+            ("findings", false),
+            ("evidence", false),
+            ("open_questions", false)
+        ]
+    );
+    assert!(
+        !brief_only["markdown"]
+            .as_str()
+            .unwrap()
+            .contains("claim 0-0")
+    );
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!("{rq_base}/{rq_id}/export?sections="),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A source note is never cut to make room: a note too long to leave room is refused.
+    let (_, imported) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/imports"),
+        json!({"origin": "paste", "label": "Attribution", "content": "Constraint: c"}),
+    )
+    .await;
+    let (status, body) = call(
+        &env,
+        Method::PATCH,
+        &format!("{rq_base}/{rq_id}"),
+        json!({"expected_revision": 1, "import_id": imported["id"], "note": "n".repeat(480), "title": "T2"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, ok) = call(
+        &env,
+        Method::PATCH,
+        &format!("{rq_base}/{rq_id}"),
+        json!({"expected_revision": 1, "import_id": imported["id"], "note": "short", "title": "T2"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{ok}");
+    let (_, revisions) = call(
+        &env,
+        Method::GET,
+        &format!("{rq_base}/{rq_id}/revisions"),
+        Value::Null,
+    )
+    .await;
+    assert!(
+        revisions[0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("From imported discussion \"Attribution\"")
+    );
+
+    // Idempotency: the same key with another label is a conflict, and a replay
+    // still returns the original after the question is archived.
+    let first =
+        json!({"origin": "paste", "label": "Same", "content": "text", "client_request_id": "idem"});
+    let (status, created) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/imports"),
+        first.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let mut relabelled = first.clone();
+    relabelled["label"] = json!("Different");
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/imports"),
+        relabelled,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/archive"),
+        Value::Null,
+    )
+    .await;
+    let (status, replay) = call(
+        &env,
+        Method::POST,
+        &format!("{rq_base}/{rq_id}/imports"),
+        first,
+    )
+    .await;
+    assert_eq!(
+        (status, replay["id"].clone()),
+        (StatusCode::OK, created["id"].clone())
+    );
+}
+
+fn section_flags(packet: &Value) -> Vec<(&str, bool)> {
+    packet["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["id"].as_str().unwrap(), s["included"].as_bool().unwrap()))
+        .collect()
 }

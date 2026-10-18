@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +18,14 @@ const SECTIONS: Array<{ id: ResearchPacketSectionId; label: TranslationKey }> = 
   { id: 'evidence', label: 'kubecode.research.export.section.evidence' },
   { id: 'open_questions', label: 'kubecode.research.export.section.open_questions' },
 ]
+
+const CONTENTS: Record<ResearchPacketSectionId, TranslationKey> = {
+  brief: 'kubecode.research.export.contents.brief',
+  progress: 'kubecode.research.export.contents.progress',
+  findings: 'kubecode.research.export.contents.findings',
+  evidence: 'kubecode.research.export.contents.evidence',
+  open_questions: 'kubecode.research.export.contents.open_questions',
+}
 
 /**
  * A bounded packet for a discussion held elsewhere. The researcher chooses
@@ -39,15 +47,21 @@ export function ResearchExportPanel({
   const [packet, setPacket] = useState<ResearchExportPacket | null>(null)
   const [state, setState] = useState<'idle' | 'loading' | 'failed'>('idle')
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
+  // Only the newest build may land: a slow response for other checkboxes is dropped.
+  const ticket = useRef(0)
 
   const build = async () => {
+    const mine = ++ticket.current
     setState('loading')
     setCopy('idle')
     try {
       const sections = SECTIONS.filter((section) => included.has(section.id)).map((section) => section.id)
-      setPacket(await api.exportResearchPacket(detail.project_id, detail.id, sections))
+      const built = await api.exportResearchPacket(detail.project_id, detail.id, sections)
+      if (mine !== ticket.current) return
+      setPacket(built)
       setState('idle')
     } catch {
+      if (mine !== ticket.current) return
       setPacket(null)
       setState('failed')
     }
@@ -75,7 +89,9 @@ export function ResearchExportPanel({
               checked={included.has(section.id)}
               type="checkbox"
               onChange={(event) => {
+                ticket.current += 1
                 setPacket(null)
+                setState('idle')
                 setIncluded((current) => {
                   const next = new Set(current)
                   if (event.target.checked) next.add(section.id)
@@ -102,11 +118,17 @@ export function ResearchExportPanel({
       {state === 'failed' && (
         <p className="kubecode-research-error" role="alert">{t('kubecode.research.export.previewFailed')}</p>
       )}
-      {packet && (
+      {packet && packet.brief_revision !== detail.revision && (
+        <p className="kubecode-research-notice" role="status">{t('kubecode.research.export.outdated')}</p>
+      )}
+      {packet && packet.brief_revision === detail.revision && (
         <div>
           <h4>{t('kubecode.research.export.leaves')}</h4>
           <ul>
-            {packet.contents.map((line) => <li key={line}>{line}</li>)}
+            {SECTIONS.filter((section) => (
+              packet.sections.find((item) => item.id === section.id)?.included
+            )).map((section) => <li key={section.id}>{t(CONTENTS[section.id])}</li>)}
+            <li>{t('kubecode.research.export.contents.never')}</li>
           </ul>
           <p className="kubecode-research-muted">
             {t('kubecode.research.export.size', {

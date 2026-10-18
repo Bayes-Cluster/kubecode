@@ -297,7 +297,7 @@ async fn launch(
     let sources = request
         .sources
         .iter()
-        .map(|source| super::rounds::validate_source(&state, &project_id, source))
+        .map(|source| super::rounds::validate_source(&state, &project_id, &research_id, source))
         .collect::<Result<Vec<_>, _>>()?;
     let experiment = state
         .experiment_runner

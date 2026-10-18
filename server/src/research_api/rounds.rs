@@ -149,10 +149,11 @@ pub(super) fn resolver(state: &AppState) -> SourceResolver<'_> {
 pub(super) fn validate_source(
     state: &AppState,
     project_id: &str,
+    research_id: &str,
     source: &SourceRef,
 ) -> Result<SourceRef, ResearchApiError> {
     resolver(state)
-        .validate(project_id, source)
+        .validate(project_id, research_id, source)
         .map_err(|error| match error {
             SourceError::Invalid => invalid("a source reference is invalid"),
             SourceError::Missing => {
@@ -218,7 +219,7 @@ fn preflight(
     }
     let mut sources: Vec<SourceRef> = Vec::new();
     for source in &request.sources {
-        let validated = validate_source(state, project_id, source)?;
+        let validated = validate_source(state, project_id, research_id, source)?;
         if !sources
             .iter()
             .any(|seen| seen.kind == validated.kind && seen.id == validated.id)

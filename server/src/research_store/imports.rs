@@ -252,9 +252,6 @@ impl ResearchStore {
         let digest = import_digest(&content);
         self.write(|tx| {
             let question = load_question(tx, project_id, id)?;
-            if question.archived {
-                return Err(ResearchError::Archived);
-            }
             if let Some(request_id) = &request_id
                 && let Some(existing) = tx
                     .query_row(
@@ -266,11 +263,17 @@ impl ResearchStore {
                     )
                     .optional()?
             {
-                // The same request id must carry the same text.
-                if existing.digest != digest {
+                // The same request id must carry the same import, label and all.
+                if existing.digest != digest
+                    || existing.label != label
+                    || existing.origin != new.origin
+                {
                     return Err(ResearchError::KeyReuse);
                 }
                 return Ok(((existing, false), None));
+            }
+            if question.archived {
+                return Err(ResearchError::Archived);
             }
             if new.based_on_revision == 0 || new.based_on_revision > question.revision {
                 return Err(ResearchError::Invalid(

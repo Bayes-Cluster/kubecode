@@ -161,6 +161,7 @@ export function ResearchWorkspace({
             api={api}
             detail={detail}
             imports={importsState.imports}
+            importsStatus={importsState.status}
             onChanged={() => {
               reload()
               importsState.reload()

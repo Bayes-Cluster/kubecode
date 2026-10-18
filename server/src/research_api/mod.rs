@@ -246,7 +246,14 @@ async fn update_research(
         } else {
             format!("{} — {source}", note.trim())
         };
-        note = note.chars().take(500).collect();
+        // The attribution is never the part that gets cut: refuse a note that
+        // would not leave room for it.
+        if note.chars().count() > 500 {
+            return Err(ResearchError::Invalid(
+                "the revision note is too long to record its source",
+            )
+            .into());
+        }
     }
     let (question, _changed) = state.research.update_brief(
         &project_id,

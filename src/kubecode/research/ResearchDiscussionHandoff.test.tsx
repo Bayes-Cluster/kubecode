@@ -140,7 +140,7 @@ describe('imported discussion', () => {
     })
     await openDiscussion()
     expect(await importSection().findByText(/kubecode.research.import.stale/)).toHaveTextContent('"based":1')
-    fireEvent.click(importSection().getByRole('button', { name: 'kubecode.research.import.review' }))
+    fireEvent.click(importSection().getByRole('button', { name: /kubecode.research.import.reviewItem/ }))
     expect(await importSection().findByText('kubecode.research.import.staleWarning')).toBeInTheDocument()
     const apply = importSection().getByRole('button', { name: /kubecode.research.import.apply/ })
     expect(apply).toBeDisabled()
@@ -179,7 +179,7 @@ describe('imported discussion', () => {
       }),
     })
     await openDiscussion()
-    fireEvent.click(await importSection().findByRole('button', { name: 'kubecode.research.import.review' }))
+    fireEvent.click(await importSection().findByRole('button', { name: /kubecode.research.import.reviewItem/ }))
     const constraint = await importSection().findByRole('checkbox', { name: /No more than 4 GPUs/ })
     fireEvent.click(constraint)
     fireEvent.click(importSection().getByRole('button', { name: /kubecode.research.import.apply/ }))
@@ -196,7 +196,7 @@ describe('imported discussion', () => {
       }),
     })
     await openDiscussion()
-    fireEvent.click(await importSection().findByRole('button', { name: 'kubecode.research.import.review' }))
+    fireEvent.click(await importSection().findByRole('button', { name: /kubecode.research.import.reviewItem/ }))
     expect(await importSection().findByText('kubecode.research.import.loadFailed')).toBeInTheDocument()
   })
 
@@ -211,7 +211,7 @@ describe('imported discussion', () => {
     await openDiscussion()
     await importSection().findByText('Call with the group')
     expect(importSection().queryByLabelText('kubecode.research.import.text')).not.toBeInTheDocument()
-    fireEvent.click(importSection().getByRole('button', { name: 'kubecode.research.import.review' }))
+    fireEvent.click(importSection().getByRole('button', { name: /kubecode.research.import.reviewItem/ }))
     expect(await importSection().findByRole('checkbox', { name: /No more than 4 GPUs/ })).toBeDisabled()
     expect(importSection().getByRole('button', { name: /kubecode.research.import.apply/ })).toBeDisabled()
   })
@@ -252,11 +252,16 @@ describe('discussion packet export', () => {
   const packet = {
     research_id: 'rq-1',
     brief_revision: 2,
-    sections: [],
+    sections: [
+      { id: 'brief', included: true, bytes: 40, truncated: false },
+      { id: 'progress', included: true, bytes: 20, truncated: false },
+      { id: 'findings', included: true, bytes: 20, truncated: false },
+      { id: 'evidence', included: false, bytes: 0, truncated: false },
+      { id: 'open_questions', included: true, bytes: 20, truncated: false },
+    ],
     markdown: '# Research discussion packet\n\nQuestion: Pruning (brief revision 2).',
     total_bytes: 71,
     truncated: false,
-    contents: ['The approved brief and its revision number', 'No transcripts, prompts, credentials, or server paths'],
   }
 
   it('previews exactly what leaves, only for the chosen sections, and copies on request', async () => {
@@ -273,7 +278,11 @@ describe('discussion packet export', () => {
     expect(exportResearchPacket).toHaveBeenCalledWith('p1', 'rq-1', [
       'brief', 'progress', 'findings', 'open_questions',
     ])
-    expect(await exportSection.findByText('No transcripts, prompts, credentials, or server paths')).toBeInTheDocument()
+    // The statement of what leaves follows the sections actually included.
+    expect(await exportSection.findByText('kubecode.research.export.contents.brief')).toBeInTheDocument()
+    expect(exportSection.getByText('kubecode.research.export.contents.findings')).toBeInTheDocument()
+    expect(exportSection.queryByText('kubecode.research.export.contents.evidence')).not.toBeInTheDocument()
+    expect(exportSection.getByText('kubecode.research.export.contents.never')).toBeInTheDocument()
     expect(exportSection.getByLabelText('kubecode.research.export.packet')).toHaveValue(packet.markdown)
     expect(writeText).not.toHaveBeenCalled()
     fireEvent.click(exportSection.getByRole('button', { name: 'kubecode.research.export.copy' }))
@@ -306,5 +315,147 @@ describe('discussion packet export', () => {
       fireEvent.click(exportSection.getByRole('checkbox', { name: `kubecode.research.export.section.${name}` }))
     }
     expect(preview).toBeDisabled()
+  })
+})
+
+describe('review and export under change', () => {
+  const event = (id: number) => ({
+    id, kind: 'research_updated', project_id: 'p1', conversation_id: null, run_id: null,
+    payload: { research_id: 'rq-1' }, created_at: '',
+  }) as never
+
+  it('holds Apply when the approved brief moves under an open review and sends the confirmed revision', async () => {
+    const updateResearch = vi.fn().mockResolvedValue(detailFixture)
+    const getResearch = vi.fn()
+      .mockResolvedValueOnce(detailFixture)
+      .mockResolvedValue({ ...detailFixture, revision: 3 })
+    const api = fakeApi({
+      getResearch,
+      updateResearch,
+      listResearchImports: vi.fn().mockResolvedValue([imported]),
+      getResearchImport: vi.fn().mockResolvedValue(importDetail),
+    })
+    const { rerender, props } = mount({ api })
+    await openDiscussion()
+    fireEvent.click(await importSection().findByRole('button', { name: /kubecode.research.import.reviewItem/ }))
+    const constraint = await importSection().findByRole('checkbox', { name: /No more than 4 GPUs/ })
+    fireEvent.click(constraint)
+    const apply = () => importSection().getByRole('button', { name: /kubecode.research.import.apply/ })
+    expect(apply()).toBeEnabled()
+
+    // A colleague's edit lands: the proposal must not silently rebase onto it.
+    rerender(<ResearchWorkspace {...props} events={[event(1)]} />)
+    expect(await importSection().findByText(/kubecode.research.import.briefChanged/)).toHaveTextContent('"revision":3')
+    expect(constraint).toBeChecked()
+    expect(apply()).toBeDisabled()
+    expect(apply()).toHaveTextContent('"from":2')
+
+    fireEvent.click(importSection().getByRole('button', { name: /kubecode.research.import.reReview/ }))
+    expect(apply()).toBeEnabled()
+    fireEvent.click(apply())
+    await waitFor(() => expect(updateResearch).toHaveBeenCalledTimes(1))
+    expect(updateResearch.mock.calls[0].slice(0, 3)).toEqual(['p1', 'rq-1', 3])
+  })
+
+  it('refreshes after a partial apply and records each decision under its own key', async () => {
+    const updateResearch = vi.fn().mockResolvedValue(detailFixture)
+    const addResearchEntry = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('down'))
+    const getResearch = vi.fn().mockResolvedValue(detailFixture)
+    const twoDecisions: ResearchImportDetail = {
+      ...importDetail,
+      candidates: [
+        { kind: 'decision', text: 'Alpha decision', line: 2 },
+        { kind: 'decision', text: 'Bravo decision', line: 3 },
+        { kind: 'constraint', text: 'No more than 4 GPUs', line: 4 },
+      ],
+    }
+    mount({
+      api: fakeApi({
+        getResearch,
+        updateResearch,
+        addResearchEntry,
+        listResearchImports: vi.fn().mockResolvedValue([imported]),
+        getResearchImport: vi.fn().mockResolvedValue(twoDecisions),
+      }),
+    })
+    await openDiscussion()
+    fireEvent.click(await importSection().findByRole('button', { name: /kubecode.research.import.reviewItem/ }))
+    for (const name of [/Alpha decision/, /Bravo decision/, /No more than 4 GPUs/]) {
+      fireEvent.click(await importSection().findByRole('checkbox', { name }))
+    }
+    const before = getResearch.mock.calls.length
+    fireEvent.click(importSection().getByRole('button', { name: /kubecode.research.import.apply/ }))
+    await waitFor(() => expect(addResearchEntry).toHaveBeenCalledTimes(2))
+    // The brief edit landed before a later step failed, so the view reloads.
+    await waitFor(() => expect(getResearch.mock.calls.length).toBeGreaterThan(before))
+    const keys = addResearchEntry.mock.calls.map((call) => call[4])
+    expect(new Set(keys).size).toBe(2)
+    expect(await importSection().findAllByRole('alert')).not.toHaveLength(0)
+  })
+
+  it('shows a failed import list with a retry instead of an empty list', async () => {
+    const listResearchImports = vi.fn().mockRejectedValue(new Error('down'))
+    mount({ api: fakeApi({ listResearchImports }) })
+    await openDiscussion()
+    expect(await importSection().findByText('kubecode.research.import.listFailed')).toBeInTheDocument()
+    expect(importSection().queryByText('kubecode.research.import.empty')).not.toBeInTheDocument()
+    const before = listResearchImports.mock.calls.length
+    fireEvent.click(importSection().getByRole('button', { name: 'kubecode.retry' }))
+    await waitFor(() => expect(listResearchImports.mock.calls.length).toBeGreaterThan(before))
+  })
+
+  it('does not reuse an import key once the text changes after a failed attempt', async () => {
+    const createResearchImport = vi.fn()
+      .mockRejectedValueOnce(new ApiError('internal_error', 'down', 500))
+      .mockResolvedValue({ ...imported, created: true })
+    mount({ api: fakeApi({ createResearchImport, listResearchImports: vi.fn().mockResolvedValue([]) }) })
+    await openDiscussion()
+    const label = await importSection().findByLabelText('kubecode.research.import.label')
+    fireEvent.change(label, { target: { value: 'Thread' } })
+    fireEvent.change(importSection().getByLabelText('kubecode.research.import.text'), { target: { value: 'first text' } })
+    fireEvent.click(importSection().getByRole('button', { name: 'kubecode.research.import.submit' }))
+    await waitFor(() => expect(createResearchImport).toHaveBeenCalledTimes(1))
+    await screen.findAllByRole('alert')
+    fireEvent.change(importSection().getByLabelText('kubecode.research.import.text'), { target: { value: 'edited text' } })
+    fireEvent.click(importSection().getByRole('button', { name: 'kubecode.research.import.submit' }))
+    await waitFor(() => expect(createResearchImport).toHaveBeenCalledTimes(2))
+    expect(createResearchImport.mock.calls[1][2].client_request_id)
+      .not.toBe(createResearchImport.mock.calls[0][2].client_request_id)
+  })
+
+  it('drops a packet built for other checkboxes and one made for an older revision', async () => {
+    let resolveSlow: (packet: unknown) => void = () => {}
+    const exportResearchPacket = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveSlow = resolve
+    }))
+    mount({ api: fakeApi({ exportResearchPacket, listResearchImports: vi.fn().mockResolvedValue([]) }) })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.discussion')
+    const exportSection = within(await screen.findByRole('region', { name: 'kubecode.research.export.title' }))
+    fireEvent.click(exportSection.getByRole('button', { name: 'kubecode.research.export.preview' }))
+    await waitFor(() => expect(exportResearchPacket).toHaveBeenCalledTimes(1))
+    // The selection changes while the build is in flight.
+    fireEvent.click(exportSection.getByRole('checkbox', { name: 'kubecode.research.export.section.evidence' }))
+    resolveSlow({
+      research_id: 'rq-1', brief_revision: 2, sections: [], markdown: 'STALE PACKET',
+      total_bytes: 12, truncated: false,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(exportSection.queryByDisplayValue('STALE PACKET')).not.toBeInTheDocument()
+  })
+
+  it('warns instead of offering a packet whose revision is no longer the approved one', async () => {
+    const exportResearchPacket = vi.fn().mockResolvedValue({
+      research_id: 'rq-1', brief_revision: 1, sections: [], markdown: 'OLD', total_bytes: 3, truncated: false,
+    })
+    mount({ api: fakeApi({ exportResearchPacket, listResearchImports: vi.fn().mockResolvedValue([]) }) })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.discussion')
+    const exportSection = within(await screen.findByRole('region', { name: 'kubecode.research.export.title' }))
+    fireEvent.click(exportSection.getByRole('button', { name: 'kubecode.research.export.preview' }))
+    expect(await exportSection.findByText('kubecode.research.export.outdated')).toBeInTheDocument()
+    expect(exportSection.queryByRole('button', { name: 'kubecode.research.export.copy' })).not.toBeInTheDocument()
   })
 })

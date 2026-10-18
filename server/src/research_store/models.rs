@@ -39,7 +39,7 @@ pub enum ResearchError {
     RevisionNotFound(u64),
     #[error("research round not found")]
     RoundNotFound,
-    #[error("this request key was already used for a different round request")]
+    #[error("this request key was already used for a different request")]
     KeyReuse,
     #[error("imported discussion not found")]
     ImportNotFound,

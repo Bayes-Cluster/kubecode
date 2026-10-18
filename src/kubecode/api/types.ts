@@ -1022,10 +1022,14 @@ export type ResearchPacketSectionId =
 export type ResearchExportPacket = {
   research_id: string
   brief_revision: number
-  sections: Array<{ id: ResearchPacketSectionId; included: boolean; bytes: number }>
+  sections: Array<{
+    id: ResearchPacketSectionId
+    included: boolean
+    bytes: number
+    /** The section was cut at its own size budget. */
+    truncated: boolean
+  }>
   markdown: string
   total_bytes: number
   truncated: boolean
-  /** Plain statements of what is and is not in the packet. */
-  contents: string[]
 }

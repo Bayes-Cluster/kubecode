@@ -47,12 +47,15 @@ export function ResearchImportPanel({
   api,
   detail,
   imports,
+  importsStatus = 'ready',
   onChanged,
   t,
 }: {
   api: KubecodeApi
   detail: ResearchDetail
   imports: ResearchImport[]
+  /** A failed list must not read as "nothing imported". */
+  importsStatus?: 'error' | 'loading' | 'ready'
   onChanged: () => void
   t: Translator
 }) {
@@ -62,6 +65,11 @@ export function ResearchImportPanel({
   const [saved, setSaved] = useState(false)
   // One key per intended import: a retry after a lost response reuses it.
   const requestKey = useRef(newClientMessageId())
+  // Any change to what is imported is a new intent, so a retry after a lost
+  // response never reuses a key for different text.
+  const rekey = () => {
+    requestKey.current = newClientMessageId()
+  }
   const importing = useAction(t)
   const [openId, setOpenId] = useState<string | null>(null)
   const bytes = utf8Bytes(content)
@@ -105,11 +113,18 @@ export function ResearchImportPanel({
               placeholder={t('kubecode.research.import.labelPlaceholder')}
               value={label}
               onChange={(event) => {
+                rekey()
                 setSaved(false)
                 setLabel(event.target.value)
               }}
             />
-            <Select value={origin} onValueChange={(value) => setOrigin(value as ResearchImportOrigin)}>
+            <Select
+              value={origin}
+              onValueChange={(value) => {
+                rekey()
+                setOrigin(value as ResearchImportOrigin)
+              }}
+            >
               <SelectTrigger aria-label={t('kubecode.research.import.origin')}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="markdown">{t('kubecode.research.import.originMarkdown')}</SelectItem>
@@ -123,6 +138,7 @@ export function ResearchImportPanel({
             rows={6}
             value={content}
             onChange={(event) => {
+              rekey()
               setSaved(false)
               setContent(event.target.value)
             }}
@@ -144,7 +160,12 @@ export function ResearchImportPanel({
           </div>
         </form>
       )}
-      {imports.length === 0 ? (
+      {importsStatus === 'error' && imports.length === 0 ? (
+        <div role="alert">
+          <p className="kubecode-research-error">{t('kubecode.research.import.listFailed')}</p>
+          <Button size="xs" variant="outline" onClick={onChanged}>{t('kubecode.retry')}</Button>
+        </div>
+      ) : imports.length === 0 ? (
         <p className="kubecode-research-muted">{t('kubecode.research.import.empty')}</p>
       ) : (
         <ul className="kubecode-research-list">
@@ -160,7 +181,9 @@ export function ResearchImportPanel({
                   {item.created_at}
                 </span>
                 <Button
+                  aria-controls={`research-import-review-${item.id}`}
                   aria-expanded={openId === item.id}
+                  aria-label={t('kubecode.research.import.reviewItem', { label: item.label })}
                   size="xs"
                   variant="outline"
                   onClick={() => setOpenId(openId === item.id ? null : item.id)}
@@ -189,6 +212,16 @@ export function ResearchImportPanel({
   )
 }
 
+/** A short stable digest of a candidate, so an idempotency key names the text itself. */
+function textKey(text: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16)
+}
+
 function ImportReview({
   api,
   detail,
@@ -207,7 +240,13 @@ function ImportReview({
   >(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [applied, setApplied] = useState<number | null>(null)
+  // The revision the researcher is reviewing against. If the approved brief
+  // moves underneath an open review, nothing is rebased silently: the selection
+  // is kept, Apply is held, and the researcher confirms against the new revision.
+  const [reviewedRevision, setReviewedRevision] = useState(detail.revision)
   const apply = useAction(t)
+  const clearApplyError = apply.clearError
+  const moved = detail.revision !== reviewedRevision
 
   useEffect(() => {
     let current = true
@@ -218,6 +257,11 @@ function ImportReview({
       current = false
     }
   }, [api, detail.id, detail.project_id, item.id])
+
+  useEffect(() => {
+    // A message about an older revision must not outlive the revision it was about.
+    if (moved) clearApplyError()
+  }, [clearApplyError, moved])
 
   const ready = loaded && loaded.id === item.id ? loaded : null
   if (!ready) {
@@ -246,40 +290,72 @@ function ImportReview({
   const hasChange = proposal.changes.length > 0 || proposal.decisions.length > 0
 
   const applyChange = () => apply.run(async () => {
-    // The revision the researcher is looking at: a newer approved brief makes
-    // the server refuse (409) instead of overwriting it, and the selection stays.
-    if (proposal.changes.length > 0) {
-      await api.updateResearch(
-        detail.project_id,
-        detail.id,
-        detail.revision,
-        proposal.patch,
-        undefined,
-        item.id,
-      )
+    try {
+      // Sent under the revision that was reviewed, never the latest one seen: a
+      // newer approved brief makes the server refuse (409) instead of being
+      // overwritten, and the selection stays.
+      if (proposal.changes.length > 0) {
+        await api.updateResearch(
+          detail.project_id,
+          detail.id,
+          reviewedRevision,
+          proposal.patch,
+          undefined,
+          item.id,
+        )
+      }
+      for (const decision of proposal.decisions) {
+        await api.addResearchEntry(
+          detail.project_id,
+          detail.id,
+          'decision',
+          `${decision} (${item.label})`,
+          `import-${item.id.slice(0, 8)}-${textKey(decision)}`,
+        )
+      }
+      setApplied(reviewedRevision + (proposal.changes.length > 0 ? 1 : 0))
+      setSelected(new Set())
+    } finally {
+      // Even a partial success changed the brief or the log; show it.
+      onChanged()
     }
-    for (const [index, decision] of proposal.decisions.entries()) {
-      await api.addResearchEntry(
-        detail.project_id,
-        detail.id,
-        'decision',
-        `${decision} (${item.label})`,
-        `import-${item.id.slice(0, 8)}-d${index}-${decision.length}`,
-      )
-    }
-    setApplied(detail.revision + (proposal.changes.length > 0 ? 1 : 0))
-    setSelected(new Set())
-    onChanged()
   })
 
   return (
-    <div className="kubecode-research-review" aria-label={item.label}>
+    <div
+      aria-label={item.label}
+      className="kubecode-research-review"
+      id={`research-import-review-${item.id}`}
+      role="group"
+    >
       {item.stale && (
         <p className="kubecode-research-notice" role="status">
           {t('kubecode.research.import.staleWarning')}
         </p>
       )}
-      <pre className="kubecode-research-import-text" tabIndex={0}>{content}</pre>
+      {moved && (
+        <div className="kubecode-research-notice" role="status">
+          <p>{t('kubecode.research.import.briefChanged', { revision: detail.revision })}</p>
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setReviewedRevision(detail.revision)
+              setApplied(null)
+              clearApplyError()
+            }}
+          >
+            {t('kubecode.research.import.reReview', { revision: detail.revision })}
+          </Button>
+        </div>
+      )}
+      <pre
+        aria-label={t('kubecode.research.import.text')}
+        className="kubecode-research-import-text"
+        tabIndex={0}
+      >
+        {content}
+      </pre>
       <h4>{t('kubecode.research.import.candidates')}</h4>
       <p className="kubecode-research-muted">{t('kubecode.research.import.candidatesNote')}</p>
       {candidates.length === 0 ? (
@@ -346,7 +422,7 @@ function ImportReview({
         <p className="kubecode-research-error" role="alert">{t('kubecode.research.import.overLimit')}</p>
       )}
       {apply.error && <p className="kubecode-research-error" role="alert">{apply.error}</p>}
-      {applied !== null && (
+      {applied !== null && !moved && (
         <p className="kubecode-research-notice" role="status">
           {t('kubecode.research.import.applied', { revision: applied })}
         </p>
@@ -354,13 +430,13 @@ function ImportReview({
       <div className="kubecode-research-panel-actions">
         <Button
           aria-busy={apply.busy}
-          disabled={detail.archived || !hasChange || proposal.overLimit || apply.busy}
+          disabled={detail.archived || moved || !hasChange || proposal.overLimit || apply.busy}
           size="sm"
           onClick={() => void applyChange()}
         >
           {t('kubecode.research.import.apply', {
-            from: detail.revision,
-            to: detail.revision + (proposal.changes.length > 0 ? 1 : 0),
+            from: reviewedRevision,
+            to: reviewedRevision + (proposal.changes.length > 0 ? 1 : 0),
           })}
         </Button>
       </div>

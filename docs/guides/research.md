@@ -40,8 +40,10 @@ Brainstorming often happens outside Kubecode. From the Discussion tab:
   request reuses the existing round.
 - **Export** a bounded discussion packet (brief, progress, findings, evidence
   names, limitations and open questions). You preview exactly what leaves the
-  workspace, choose the sections, and copy it yourself. It never contains
-  transcripts, prompts, credentials, file contents, or server paths.
+  workspace, choose the sections, and copy it yourself. Kubecode adds no
+  transcripts, prompts, credentials, file contents, or server paths; text that
+  you or an Agent wrote in findings or imports is included as written. Each
+  section has its own size limit, and a cut section is marked.
 
 Agents and other Sessions can find and read the same material through the
 read-only context tools and the Composer's "Reference Project work" picker;

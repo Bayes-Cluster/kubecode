@@ -31,6 +31,7 @@ impl SourceResolver<'_> {
     pub(crate) fn validate(
         &self,
         project_id: &str,
+        research_id: &str,
         source: &SourceRef,
     ) -> Result<SourceRef, SourceError> {
         let id = source.id.trim();
@@ -55,14 +56,24 @@ impl SourceResolver<'_> {
             validated.id = normalized;
             return Ok(validated);
         }
+        if source.kind == SourceKind::Import {
+            // An imported discussion belongs to one question and may be cited
+            // only by work on that question. Another question's import reads
+            // exactly like a missing one. It is immutable, so the digest it was
+            // cited at is recorded.
+            let found = self
+                .research
+                .and_then(|research| research.import_by_id(project_id, id).ok())
+                .filter(|(import, _)| import.research_id == research_id);
+            return match found {
+                Some((import, _)) => {
+                    validated.revision = Some(import.digest.chars().take(16).collect());
+                    Ok(validated)
+                }
+                None => Err(SourceError::Missing),
+            };
+        }
         if self.record_in_project(project_id, source.kind, id) {
-            if source.kind == SourceKind::Import {
-                // An import is immutable; record the digest it was cited at.
-                validated.revision = self
-                    .research
-                    .and_then(|research| research.import_by_id(project_id, id).ok())
-                    .map(|(import, _)| import.digest.chars().take(16).collect());
-            }
             Ok(validated)
         } else {
             Err(SourceError::Missing)

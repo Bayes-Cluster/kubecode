@@ -1368,7 +1368,13 @@ impl TeamMcpServer {
             workspace: &workspace,
             research: self.context.research.as_deref(),
         };
-        let evidence = validate_evidence(&resolver, &project_id, &input.evidence, false)?;
+        let evidence = validate_evidence(
+            &resolver,
+            &project_id,
+            &round.research_id,
+            &input.evidence,
+            false,
+        )?;
         let question = input
             .question
             .as_deref()
@@ -1600,8 +1606,13 @@ impl TeamMcpServer {
             .map(|finding| {
                 let kind = FindingKind::parse(&finding.kind)
                     .ok_or_else(|| mcp_error(format!("unknown finding kind: {}", finding.kind)))?;
-                let evidence =
-                    validate_evidence(&resolver, &project_id, &finding.evidence, replay)?;
+                let evidence = validate_evidence(
+                    &resolver,
+                    &project_id,
+                    &link.research_id,
+                    &finding.evidence,
+                    replay,
+                )?;
                 Ok(NewFinding {
                     kind,
                     statement: finding.statement.clone(),
@@ -2169,6 +2180,7 @@ pub(crate) fn round_delivery(
 fn validate_evidence(
     resolver: &crate::research_api::sources::SourceResolver<'_>,
     project_id: &str,
+    research_id: &str,
     evidence: &[EvidenceInput],
     replay: bool,
 ) -> Result<Vec<crate::research_store::SourceRef>, McpError> {
@@ -2186,12 +2198,14 @@ fn validate_evidence(
             if replay {
                 return Ok(reference);
             }
-            resolver.validate(project_id, &reference).map_err(|_| {
-                mcp_error(format!(
-                    "evidence {}:{} was not found in this Project",
-                    source.kind, source.id
-                ))
-            })
+            resolver
+                .validate(project_id, research_id, &reference)
+                .map_err(|_| {
+                    mcp_error(format!(
+                        "evidence {}:{} was not found in this Project",
+                        source.kind, source.id
+                    ))
+                })
         })
         .collect()
 }
