@@ -63,7 +63,7 @@ struct SearchInput {
     /// Words that must all appear in an item's title or summary. Empty lists recent work.
     #[serde(default)]
     query: Option<String>,
-    /// Restrict to kinds: research, round, finding, session, session_turn, team, team_task, experiment, artifact.
+    /// Restrict to kinds: research, round, import, finding, session, session_turn, team, team_task, experiment, artifact.
     #[serde(default)]
     kinds: Vec<String>,
     /// Results per page (default 20, at most 50).

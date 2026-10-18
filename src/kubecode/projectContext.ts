@@ -4,7 +4,7 @@ import type { ProjectContextItem, ProjectContextKind } from './api'
 
 /** Every reference kind the server's Project context reader understands (ADR 0214). */
 export const PROJECT_CONTEXT_KINDS: string[] = [
-  'research', 'round', 'finding', 'session', 'session_turn', 'team', 'team_task',
+  'research', 'round', 'import', 'finding', 'session', 'session_turn', 'team', 'team_task',
   'experiment', 'artifact',
 ]
 
@@ -12,6 +12,7 @@ export const PROJECT_CONTEXT_KINDS: string[] = [
 export const PROJECT_CONTEXT_KIND_LABELS: Record<ProjectContextKind, TranslationKey> = {
   research: 'kubecode.projectWorkKindResearch',
   round: 'kubecode.projectWorkKindRound',
+  import: 'kubecode.projectWorkKindImport',
   finding: 'kubecode.projectWorkKindFinding',
   session: 'kubecode.projectWorkKindSession',
   session_turn: 'kubecode.projectWorkKindSessionTurn',
@@ -29,7 +30,7 @@ export const PROJECT_WORK_FILTERS: Array<{
   label: TranslationKey
 }> = [
   { id: 'all', kinds: null, label: 'kubecode.projectWorkFilterAll' },
-  { id: 'research', kinds: ['research', 'round'], label: 'kubecode.projectWorkFilterResearch' },
+  { id: 'research', kinds: ['research', 'round', 'import'], label: 'kubecode.projectWorkFilterResearch' },
   { id: 'findings', kinds: ['finding'], label: 'kubecode.projectWorkFilterFindings' },
   { id: 'sessions', kinds: ['session'], label: 'kubecode.projectWorkFilterSessions' },
   { id: 'teams', kinds: ['team', 'team_task'], label: 'kubecode.projectWorkFilterTeams' },

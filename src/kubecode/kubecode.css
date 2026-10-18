@@ -3626,6 +3626,20 @@
 
 .kubecode-research-sources code,
 .kubecode-research-carry code { overflow-wrap: anywhere; }
+.kubecode-research-import-text {
+  max-height: 20rem;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted);
+  font-size: var(--kubecode-ui-font-small);
+}
+.kubecode-research-review { display: grid; gap: 8px; margin-top: 8px; }
+.kubecode-research-compare { display: grid; gap: 8px; }
+.kubecode-research-compare .kubecode-research-row > div { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
 
 .kubecode-research-carry {
   border: 1px solid var(--border-subtle);

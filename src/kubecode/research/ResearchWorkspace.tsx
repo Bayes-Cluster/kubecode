@@ -14,10 +14,12 @@ import type {
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { ResearchBriefPanel } from './ResearchBriefPanel'
 import { ResearchDiscussionPanel } from './ResearchDiscussionPanel'
+import { ResearchExportPanel } from './ResearchExportPanel'
+import { ResearchImportPanel } from './ResearchImportPanel'
 import { ResearchFindingsPanel } from './ResearchFindingsPanel'
 import { ResearchRoundsPanel } from './ResearchRoundsPanel'
 import { useAction } from './useAction'
-import { useResearchBundle } from './useResearch'
+import { useResearchBundle, useResearchImports } from './useResearch'
 
 export type ResearchWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -63,6 +65,7 @@ export function ResearchWorkspace({
     events,
     connectionState,
   )
+  const importsState = useResearchImports(api, projectId, researchId, events, connectionState)
   const [tab, setTab] = useState<TabId>('brief')
   const state = useAction(t)
 
@@ -154,6 +157,18 @@ export function ResearchWorkspace({
             onOpenSession={onOpenSession}
             t={t}
           />
+          <ResearchImportPanel
+            api={api}
+            detail={detail}
+            imports={importsState.imports}
+            importsStatus={importsState.status}
+            onChanged={() => {
+              reload()
+              importsState.reload()
+            }}
+            t={t}
+          />
+          <ResearchExportPanel api={api} detail={detail} t={t} />
         </TabsContent>
         <TabsContent forceMount value="findings" hidden={tab !== 'findings'}>
           <ResearchFindingsPanel
@@ -175,6 +190,7 @@ export function ResearchWorkspace({
             detail={detail}
             events={events}
             findings={bundle.findings}
+            imports={importsState.imports}
             onChanged={reload}
             onOpenSession={onOpenSession}
             rounds={bundle.rounds}

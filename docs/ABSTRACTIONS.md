@@ -1005,6 +1005,18 @@ context reader to the Agent with the Project taken from the Session. Reading
 another Session's turns is allowed only through these explicit references; it
 never merges provider histories, which stay independent.
 
+## Imported discussion
+
+An **imported discussion** is text a researcher brought in from outside Kubecode:
+immutable, attributed to the researcher, identified by its id and the digest of
+its normalized text. It is source material, not a finding, and it never edits the
+approved brief. Reviewing it yields *candidates* (derived, not stored); a change
+reaches the brief only as an explicit edit checked against the revision the
+researcher is looking at, whose note names the import. A discussion written
+against an older brief is flagged stale. It can be cited by a round or a
+reference, and a bounded *discussion packet* can be exported after the researcher
+previews exactly what leaves the workspace.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

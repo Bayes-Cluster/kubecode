@@ -3,7 +3,7 @@
 //! validate and resolve sources without depending on `AppState`.
 
 use crate::agent_store::AgentStore;
-use crate::research_store::{SourceAvailability, SourceKind, SourceRef};
+use crate::research_store::{ResearchStore, SourceAvailability, SourceKind, SourceRef};
 use crate::teams::TeamStore;
 use crate::workspace::WorkspaceService;
 
@@ -11,6 +11,8 @@ pub(crate) struct SourceResolver<'a> {
     pub agents: &'a AgentStore,
     pub teams: &'a TeamStore,
     pub workspace: &'a WorkspaceService,
+    /// Needed to cite imported discussions; `None` where none can be cited.
+    pub research: Option<&'a ResearchStore>,
 }
 
 /// Why a source could not be accepted.
@@ -29,6 +31,7 @@ impl SourceResolver<'_> {
     pub(crate) fn validate(
         &self,
         project_id: &str,
+        research_id: &str,
         source: &SourceRef,
     ) -> Result<SourceRef, SourceError> {
         let id = source.id.trim();
@@ -52,6 +55,23 @@ impl SourceResolver<'_> {
             );
             validated.id = normalized;
             return Ok(validated);
+        }
+        if source.kind == SourceKind::Import {
+            // An imported discussion belongs to one question and may be cited
+            // only by work on that question. Another question's import reads
+            // exactly like a missing one. It is immutable, so the digest it was
+            // cited at is recorded.
+            let found = self
+                .research
+                .and_then(|research| research.import_by_id(project_id, id).ok())
+                .filter(|(import, _)| import.research_id == research_id);
+            return match found {
+                Some((import, _)) => {
+                    validated.revision = Some(import.digest.chars().take(16).collect());
+                    Ok(validated)
+                }
+                None => Err(SourceError::Missing),
+            };
         }
         if self.record_in_project(project_id, source.kind, id) {
             Ok(validated)
@@ -100,6 +120,9 @@ impl SourceResolver<'_> {
                 .ok()
                 .and_then(|task| self.teams.get_team(&task.team_id).ok())
                 .is_some_and(|team| team.project_id == project_id),
+            SourceKind::Import => self
+                .research
+                .is_some_and(|research| research.import_by_id(project_id, id).is_ok()),
             SourceKind::File => false,
         }
     }

@@ -181,7 +181,7 @@ async fn capture_findings(
                 finding.evidence = finding
                     .evidence
                     .iter()
-                    .map(|source| validate_source(&state, &project_id, source))
+                    .map(|source| validate_source(&state, &project_id, &research_id, source))
                     .collect::<Result<_, _>>()?;
             }
             Ok(finding)

@@ -29,6 +29,7 @@ export function sourceKindLabel(t: Translator, kind: ResearchSourceKind): string
     case 'team': return t('kubecode.research.sourceKind.team')
     case 'team_task': return t('kubecode.research.sourceKind.teamTask')
     case 'file': return t('kubecode.research.sourceKind.file')
+    case 'import': return t('kubecode.research.sourceKind.import')
     default: return t('kubecode.research.sourceKind.session')
   }
 }

@@ -13,6 +13,8 @@ export function researchErrorMessage(cause: unknown, t: Translator): string {
     if (cause.code === 'research_link_conflict') return t('kubecode.research.error.linkConflict')
     if (cause.code === 'research_review_conflict') return t('kubecode.research.error.reviewConflict')
     if (cause.code === 'research_not_found') return t('kubecode.research.error.notFound')
+    if (cause.code === 'research_import_not_found') return t('kubecode.research.error.importNotFound')
+    if (cause.code === 'research_request_key_reused') return t('kubecode.research.error.keyReused')
     if (cause.code === 'envelope_revision_conflict') return t('kubecode.research.exec.error.conflict')
   }
   return errorMessage(cause, t('kubecode.error'))

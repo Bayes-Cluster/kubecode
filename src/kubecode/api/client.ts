@@ -46,8 +46,13 @@ import type {
   ExperimentView,
   LaunchExperimentRequest,
   CaptureResearchFindingsResponse,
+  CreateResearchImportRequest,
   ResearchBriefPatch,
   ResearchDetail,
+  ResearchExportPacket,
+  ResearchImport,
+  ResearchImportDetail,
+  ResearchPacketSectionId,
   ResearchEntry,
   ResearchExecution,
   ResearchFinding,
@@ -326,11 +331,54 @@ export class KubecodeApi {
     expectedRevision: number,
     patch: ResearchBriefPatch,
     note?: string,
+    /** The imported discussion this edit was reviewed from, for attribution. */
+    importId?: string,
   ): Promise<ResearchDetail> {
     return this.request(this.researchPath(projectId, researchId), {
       method: 'PATCH',
-      body: JSON.stringify({ ...patch, expected_revision: expectedRevision, note }),
+      body: JSON.stringify({
+        ...patch,
+        expected_revision: expectedRevision,
+        note,
+        import_id: importId,
+      }),
     })
+  }
+
+  listResearchImports(projectId: string, researchId: string): Promise<ResearchImport[]> {
+    return this.request(`${this.researchPath(projectId, researchId)}/imports`)
+  }
+
+  /** Stores text as source material; it starts no Agent and changes no brief. */
+  createResearchImport(
+    projectId: string,
+    researchId: string,
+    request: CreateResearchImportRequest,
+  ): Promise<ResearchImport & { created: boolean }> {
+    return this.request(`${this.researchPath(projectId, researchId)}/imports`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
+  getResearchImport(
+    projectId: string,
+    researchId: string,
+    importId: string,
+  ): Promise<ResearchImportDetail> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/imports/${encodeURIComponent(importId)}`,
+    )
+  }
+
+  /** A bounded discussion packet to preview; nothing leaves until the researcher copies it. */
+  exportResearchPacket(
+    projectId: string,
+    researchId: string,
+    sections?: ResearchPacketSectionId[],
+  ): Promise<ResearchExportPacket> {
+    const params = sections ? `?${query({ sections: sections.join(',') })}` : ''
+    return this.request(`${this.researchPath(projectId, researchId)}/export${params}`)
   }
 
   /** Idempotent state commands; none of them creates a brief revision. */

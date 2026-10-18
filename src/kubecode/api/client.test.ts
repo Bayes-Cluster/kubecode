@@ -1017,6 +1017,50 @@ describe('Kubecode API client', () => {
     })
   })
 
+  describe('research imports and export', () => {
+    const ok = (body: unknown) => new Response(JSON.stringify(body))
+
+    it('imports, lists, reads, and exports below the base path with encoded ids', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/user/alice/kubecode')
+
+      await api.listResearchImports('p/1', 'r/1')
+      await api.createResearchImport('p/1', 'r/1', {
+        origin: 'markdown', label: 'Call', content: '- a', based_on_revision: 2, client_request_id: 'k',
+      })
+      await api.getResearchImport('p/1', 'r/1', 'i/1')
+      await api.exportResearchPacket('p/1', 'r/1')
+      await api.exportResearchPacket('p/1', 'r/1', ['brief', 'open_questions'])
+
+      const base = '/user/alice/kubecode/api/v1/projects/p%2F1/research/r%2F1'
+      expect(fetch.mock.calls[0][0]).toBe(`${base}/imports`)
+      const [createUrl, createInit] = fetch.mock.calls[1]
+      expect(createUrl).toBe(`${base}/imports`)
+      expect(createInit.method).toBe('POST')
+      expect(JSON.parse(createInit.body)).toEqual({
+        origin: 'markdown', label: 'Call', content: '- a', based_on_revision: 2, client_request_id: 'k',
+      })
+      expect(fetch.mock.calls[2][0]).toBe(`${base}/imports/i%2F1`)
+      expect(fetch.mock.calls[3][0]).toBe(`${base}/export`)
+      expect(fetch.mock.calls[4][0]).toBe(`${base}/export?sections=brief%2Copen_questions`)
+    })
+
+    it('names the import a brief edit came from, and omits it otherwise', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({}))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('')
+
+      await api.updateResearch('p', 'r', 3, { constraints: ['c'] }, undefined, 'imp-1')
+      await api.updateResearch('p', 'r', 3, { title: 'T' })
+
+      expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+        constraints: ['c'], expected_revision: 3, import_id: 'imp-1',
+      })
+      expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ title: 'T', expected_revision: 3 })
+    })
+  })
+
   describe('project context', () => {
     const ok = (body: unknown) => new Response(JSON.stringify(body))
 

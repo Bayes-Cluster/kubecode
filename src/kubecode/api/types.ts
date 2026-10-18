@@ -229,7 +229,7 @@ export type ResearchAuthorKind = 'researcher' | 'agent' | 'system'
 export type ResearchEntryKind = 'note' | 'decision' | 'proposal' | 'observation'
 export type ResearchLinkKind = 'session' | 'team'
 export type ResearchLinkRole = 'discussion' | 'execution'
-export type ResearchSourceKind = 'session' | 'run' | 'team' | 'team_task' | 'file'
+export type ResearchSourceKind = 'session' | 'run' | 'team' | 'team_task' | 'file' | 'import'
 export type ResearchSourceAvailability = 'available' | 'changed' | 'removed'
 /** A typed pointer to another record; research rows hold identifiers only. */
 export type ResearchSourceRef = { kind: ResearchSourceKind; id: string; revision?: string | null }
@@ -925,6 +925,7 @@ export type TerminalInfo = {
 export type ProjectContextKind =
   | 'research'
   | 'round'
+  | 'import'
   | 'finding'
   | 'session'
   | 'session_turn'
@@ -970,4 +971,65 @@ export type ProjectContextResolved = {
   ref: ProjectContextRef
   availability: ResearchSourceAvailability
   current_revision: string | null
+}
+
+/** Imported discussion (ADR 0214 §8): attributed source material, never a finding. */
+export type ResearchImportOrigin = 'paste' | 'markdown'
+export type ResearchImportCandidateKind =
+  | 'question'
+  | 'hypothesis'
+  | 'decision'
+  | 'constraint'
+  | 'evaluation_criterion'
+  | 'open_question'
+export type ResearchImport = {
+  id: string
+  research_id: string
+  origin: ResearchImportOrigin
+  label: string
+  /** The brief revision the discussion was about, as the researcher stated it. */
+  based_on_revision: number
+  digest: string
+  byte_count: number
+  created_at: string
+  current_revision: number
+  /** The brief has moved on since the discussion was written. */
+  stale: boolean
+}
+/** A suggestion found in the text; none is an approved change. */
+export type ResearchImportCandidate = {
+  kind: ResearchImportCandidateKind
+  text: string
+  line: number
+}
+export type ResearchImportDetail = ResearchImport & {
+  content: string
+  candidates: ResearchImportCandidate[]
+}
+export type CreateResearchImportRequest = {
+  origin: ResearchImportOrigin
+  label: string
+  content: string
+  based_on_revision?: number
+  client_request_id: string
+}
+export type ResearchPacketSectionId =
+  | 'brief'
+  | 'progress'
+  | 'findings'
+  | 'evidence'
+  | 'open_questions'
+export type ResearchExportPacket = {
+  research_id: string
+  brief_revision: number
+  sections: Array<{
+    id: ResearchPacketSectionId
+    included: boolean
+    bytes: number
+    /** The section was cut at its own size budget. */
+    truncated: boolean
+  }>
+  markdown: string
+  total_bytes: number
+  truncated: boolean
 }

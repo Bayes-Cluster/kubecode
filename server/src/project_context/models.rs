@@ -55,6 +55,7 @@ text_enum!(ContextKind {
     SessionTurn => "session_turn",
     Team => "team",
     TeamTask => "team_task",
+    Import => "import",
     Experiment => "experiment",
     Artifact => "artifact",
 });

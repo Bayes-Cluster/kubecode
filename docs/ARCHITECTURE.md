@@ -169,6 +169,13 @@ and previews through `/context/search` and `/context/read`, and registration,
 validation, and dispatch re-resolve the typed reference server-side, so the
 browser never supplies authority or content.
 
+Imported discussion (ADR 0214 §8) lives in `research_store/imports.rs` and is
+exposed by `research_api/imports.rs`: immutable, attributed source material per
+question with deterministic candidate extraction, a revision-checked path into
+the brief (`import_id` on the brief edit), `import` as a round source and as a
+context reference kind, and a bounded, previewable discussion packet. Importing
+and exporting never start work.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

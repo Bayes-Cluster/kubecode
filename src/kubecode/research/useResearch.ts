@@ -6,6 +6,7 @@ import type {
   ResearchEntry,
   ResearchExecution,
   ResearchFinding,
+  ResearchImport,
   ResearchOutcome,
   ResearchProposal,
   ResearchRound,
@@ -196,6 +197,57 @@ export function useResearchBundle(
     bundle: failed?.code === 'research_not_found' ? null : current,
     status,
     errorCode: failed?.code ?? null,
+    reload: useCallback(() => setManual((value) => value + 1), []),
+  }
+}
+
+export type ResearchImportsState = {
+  imports: ResearchImport[]
+  status: ResearchLoadStatus
+  reload: () => void
+}
+
+/**
+ * A question's imported discussions, converged on its durable events and on a
+ * return to a live stream. A response older than the newest request is dropped.
+ */
+export function useResearchImports(
+  api: KubecodeApi,
+  projectId: string | null,
+  researchId: string | null,
+  events: WorkspaceEvent[],
+  connectionState: WorkspaceConnectionState,
+): ResearchImportsState {
+  const [loaded, setLoaded] = useState<{ key: string; imports: ResearchImport[] } | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  const [manual, setManual] = useState(0)
+  const matches = useCallback((event: WorkspaceEvent) => (
+    event.project_id === projectId
+    && event.kind === 'research_updated'
+    && event.payload.research_id === researchId
+  ), [projectId, researchId])
+  const tick = useRefreshTick(events, connectionState, matches)
+  const ticket = useRef(0)
+  const key = projectId && researchId ? `${projectId}/${researchId}` : null
+
+  useEffect(() => {
+    if (!projectId || !researchId || !key) return
+    if (typeof api.listResearchImports !== 'function') return
+    const mine = ++ticket.current
+    api.listResearchImports(projectId, researchId).then((imports) => {
+      if (mine !== ticket.current) return
+      setLoaded({ key, imports })
+      setFailedKey(null)
+    }).catch(() => {
+      if (mine === ticket.current) setFailedKey(key)
+    })
+  }, [api, key, projectId, researchId, tick, manual])
+
+  const current = loaded && loaded.key === key ? loaded.imports : null
+  const status: ResearchLoadStatus = failedKey === key ? 'error' : current ? 'ready' : 'loading'
+  return {
+    imports: current ?? [],
+    status,
     reload: useCallback(() => setManual((value) => value + 1), []),
   }
 }
