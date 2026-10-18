@@ -865,6 +865,18 @@ impl ChannelStore {
         })
     }
 
+    /// Unclaimed intents of every Project, oldest first (for the orchestrator).
+    pub fn all_unclaimed_intents(&self, limit: usize) -> Result<Vec<Message>, ChannelError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(&format!(
+            "{MESSAGE_SELECT} WHERE intent != 'say' AND intent_claimed_by IS NULL
+             ORDER BY created_at, seq LIMIT ?1"
+        ))?;
+        Ok(statement
+            .query_map([limit.clamp(1, MAX_PAGE) as i64], message_from_row)?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Messages whose intent nobody has claimed yet, oldest first.
     pub fn unclaimed_intents(
         &self,

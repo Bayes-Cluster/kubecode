@@ -125,6 +125,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("WARN: experiment recovery failed: {error}");
     }
     state.start_team_supervisor();
+    state.start_orchestrator();
     state.start_ilink_service();
     workspace.start_watching(workspace_event_sink(Arc::clone(&agent_store)));
     let app = match access_token {

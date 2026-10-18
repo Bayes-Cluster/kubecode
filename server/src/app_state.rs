@@ -11,6 +11,7 @@ use crate::experiment_runner::ExperimentRunner;
 use crate::experiment_store::ExperimentStore;
 use crate::git::GitService;
 use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
+use crate::orchestrator::{Orchestrator, RuntimeSink};
 use crate::project_context::ProjectContext;
 use crate::research_store::ResearchStore;
 use crate::teams::{Team, TeamRole, TeamStore};
@@ -33,6 +34,8 @@ pub struct AppState {
     pub work: Arc<WorkStore>,
     /// The Workspace conversation (ADR 0216).
     pub channels: Arc<ChannelStore>,
+    /// Routes intents of the conversation to Sessions (ADR 0217).
+    pub orchestrator: Arc<Orchestrator>,
     pub experiment_runner: Arc<ExperimentRunner>,
     /// Read-only discovery over the stores above (ADR 0214).
     pub context: Arc<ProjectContext>,
@@ -79,6 +82,16 @@ impl AppState {
             ChannelStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("channel store"),
         );
+        let orchestrator = Arc::new(
+            Orchestrator::new(
+                agent_store.database(),
+                Arc::clone(&agent_store),
+                Arc::clone(&channels),
+                Arc::clone(&work),
+                Arc::clone(&research),
+            )
+            .expect("orchestrator"),
+        );
         let experiment_runner = ExperimentRunner::new(
             Arc::clone(&experiments),
             Arc::clone(&workspace),
@@ -98,6 +111,11 @@ impl AppState {
                 .with_team_store(Arc::clone(&teams))
                 .with_research_store(Arc::clone(&research))
                 .with_project_context(Arc::clone(&context))
+                .with_work_services(crate::work_agent::WorkServices {
+                    work: Arc::clone(&work),
+                    channels: Arc::clone(&channels),
+                    orchestrator: Arc::clone(&orchestrator),
+                })
                 .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
         );
@@ -113,6 +131,7 @@ impl AppState {
             experiments,
             work,
             channels,
+            orchestrator,
             experiment_runner,
             context,
             research_locks: Arc::default(),
@@ -174,6 +193,11 @@ impl AppState {
             .with_team_store(Arc::clone(&self.teams))
             .with_research_store(Arc::clone(&self.research))
             .with_project_context(Arc::clone(&self.context))
+            .with_work_services(crate::work_agent::WorkServices {
+                work: Arc::clone(&self.work),
+                channels: Arc::clone(&self.channels),
+                orchestrator: Arc::clone(&self.orchestrator),
+            })
             .with_experiments(
                 Arc::clone(&self.experiments),
                 Arc::clone(&self.experiment_runner),
@@ -194,6 +218,31 @@ impl AppState {
         );
         self.install_experiment_wake();
         self
+    }
+
+    /// Routes the conversation's intents and delivers due routes: promptly
+    /// when a message with an intent is saved, and at least every few seconds
+    /// so retries, expired leases, and a restart's leftovers are picked up.
+    pub fn start_orchestrator(&self) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {}
+                    _ = state.orchestrator.woken() => {}
+                }
+                let orchestrator = Arc::clone(&state.orchestrator);
+                let sink = RuntimeSink::new(Arc::clone(&state.agent_runtime));
+                let result = tokio::task::spawn_blocking(move || orchestrator.tick(&sink)).await;
+                match result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => eprintln!("WARN: orchestrator pass failed: {error}"),
+                    Err(error) => eprintln!("WARN: orchestrator task failed: {error}"),
+                }
+            }
+        });
     }
 
     pub fn start_team_supervisor(&self) {

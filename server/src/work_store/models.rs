@@ -364,6 +364,45 @@ pub struct NewWork<'a> {
     pub client_request_id: Option<&'a str>,
 }
 
+pub const DEFAULT_MAX_EXECUTORS: u32 = 4;
+pub const DEFAULT_MAX_PARALLEL_ATTEMPTS: u32 = 2;
+pub const DEFAULT_MAX_ATTEMPTS: u32 = 20;
+pub const MAX_POLICY_LIMIT: u32 = 1_000;
+
+/// What the researcher authorized a round to spend on execution (ADR 0217).
+/// Only the researcher sets it; no mention, message, or coordinator command
+/// can widen it. A round without a stored policy runs under the defaults.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RoundPolicy {
+    pub round_id: String,
+    /// Distinct Sessions executing at once.
+    pub max_executors: u32,
+    /// Attempts open at once across the round.
+    pub max_parallel_attempts: u32,
+    /// Attempts ever started in the round, retries included.
+    pub max_attempts: u32,
+    /// No new attempts start while paused.
+    pub paused: bool,
+    /// 0 for the defaults, then bumped by every change.
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct PolicyPatch {
+    pub max_executors: Option<u32>,
+    pub max_parallel_attempts: Option<u32>,
+    pub max_attempts: Option<u32>,
+    pub paused: Option<bool>,
+}
+
+/// What a round has used so far.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RoundStats {
+    pub executors: u32,
+    pub open_attempts: u32,
+    pub total_attempts: u32,
+}
+
 /// A revision-checked change to a task's plan. Absent fields keep their value.
 #[derive(Clone, Debug, Default)]
 pub struct PlanPatch {
@@ -441,6 +480,10 @@ pub enum WorkError {
     StaleCoordinator { current_epoch: u64 },
     #[error("the round has no coordinator")]
     NoCoordinator,
+    #[error("the round's {0} limit is reached")]
+    BudgetExhausted(&'static str),
+    #[error("the round is paused")]
+    RoundPaused,
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
     #[error(transparent)]

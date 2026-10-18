@@ -191,6 +191,27 @@ pub(crate) fn validate_reference(
             project_id,
             ref_id,
         )?,
+        // Conversation records live in a sibling store whose tables may not
+        // exist where only the work store is installed.
+        "thread" | "message" | "channel" => {
+            let (table, owner) = match kind {
+                "thread" => ("channel_threads", "id"),
+                "message" => ("channel_messages", "id"),
+                _ => ("channels", "id"),
+            };
+            let present: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [table],
+                |row| row.get(0),
+            )?;
+            present > 0
+                && exists_in_project(
+                    tx,
+                    &format!("SELECT 1 FROM {table} WHERE {owner} = ?1 AND project_id = ?2"),
+                    project_id,
+                    ref_id,
+                )?
+        }
         "work" | "team_task" => exists_in_project(
             tx,
             "SELECT 1 FROM work_items WHERE id = ?1 AND project_id = ?2",
@@ -570,8 +591,10 @@ impl WorkStore {
             };
             let derived = match new.derived_from {
                 Some((kind, id)) => {
-                    if !matches!(kind, "finding" | "work") {
-                        return Err(WorkError::Invalid("work derives from a finding or other work"));
+                    if !matches!(kind, "finding" | "work" | "thread" | "message") {
+                        return Err(WorkError::Invalid(
+                            "work derives from a finding, other work, a Thread, or a message",
+                        ));
                     }
                     validate_reference(tx, project_id, kind, id)?;
                     Some((kind, id))
@@ -803,10 +826,27 @@ impl WorkStore {
             if has_open_attempt(tx, id)? {
                 return Err(WorkError::AttemptOpen);
             }
-            if let Some(open) = open_assignment(tx, id)? {
-                if open.conversation_id == conversation_id {
-                    return Ok((open, None));
+            if let Some(open) = open_assignment(tx, id)?
+                && open.conversation_id == conversation_id
+            {
+                return Ok((open, None));
+            }
+            // A new executing Session counts against the round's executor limit.
+            if let Some(round_id) = item.round_id.as_deref() {
+                let policy = load_policy(tx, project_id, round_id)?;
+                let already: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM work_assignments a JOIN work_items w ON w.id = a.task_id
+                     WHERE w.project_id = ?1 AND w.round_id = ?2 AND a.ended_at IS NULL
+                       AND w.lifecycle = 'active' AND a.conversation_id = ?3",
+                    params![project_id, round_id, conversation_id],
+                    |row| row.get(0),
+                )?;
+                let stats = round_stats(tx, project_id, round_id)?;
+                if already == 0 && stats.executors >= policy.max_executors {
+                    return Err(WorkError::BudgetExhausted("executors"));
                 }
+            }
+            if let Some(open) = open_assignment(tx, id)? {
                 tx.execute(
                     "UPDATE work_assignments SET ended_at = CURRENT_TIMESTAMP, end_reason = ?2
                      WHERE id = ?1",
@@ -890,6 +930,18 @@ impl WorkStore {
                 return Err(WorkError::AttemptOpen);
             }
             let assignment = open_assignment(tx, id)?.ok_or(WorkError::NotAssigned)?;
+            // What the researcher authorized the round to spend (ADR 0217).
+            let policy = load_policy(tx, project_id, round_id)?;
+            if policy.paused {
+                return Err(WorkError::RoundPaused);
+            }
+            let stats = round_stats(tx, project_id, round_id)?;
+            if stats.open_attempts >= policy.max_parallel_attempts {
+                return Err(WorkError::BudgetExhausted("parallel attempts"));
+            }
+            if stats.total_attempts >= policy.max_attempts {
+                return Err(WorkError::BudgetExhausted("attempts"));
+            }
             let attempt_id = new_id();
             tx.execute(
                 "INSERT INTO work_attempts
@@ -1424,6 +1476,81 @@ impl WorkStore {
             Ok((
                 stored,
                 Some((project_id.to_owned(), id.to_owned(), Change::Result)),
+            ))
+        })
+    }
+
+    /// Sets what the round may spend on execution. Only the researcher can: no
+    /// message, mention, or coordinator command widens a budget. Revision-
+    /// checked (0 is the unstored defaults), so two edits cannot overwrite each
+    /// other, and every limit is bounded.
+    pub fn set_policy(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        expected_revision: u64,
+        patch: PolicyPatch,
+        actor: &Actor,
+    ) -> Result<RoundPolicy, WorkError> {
+        if !matches!(actor, Actor::Researcher) {
+            return Err(WorkError::Invalid(
+                "only the researcher sets a round's execution limits",
+            ));
+        }
+        for limit in [
+            patch.max_executors,
+            patch.max_parallel_attempts,
+            patch.max_attempts,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if limit == 0 || limit > MAX_POLICY_LIMIT {
+                return Err(WorkError::Invalid("a limit must be between 1 and 1000"));
+            }
+        }
+        self.write(|tx| {
+            round_research(tx, project_id, round_id)?;
+            let current = load_policy(tx, project_id, round_id)?;
+            if current.revision != expected_revision {
+                return Err(WorkError::Stale {
+                    current: current.revision,
+                });
+            }
+            let next = RoundPolicy {
+                max_executors: patch.max_executors.unwrap_or(current.max_executors),
+                max_parallel_attempts: patch
+                    .max_parallel_attempts
+                    .unwrap_or(current.max_parallel_attempts),
+                max_attempts: patch.max_attempts.unwrap_or(current.max_attempts),
+                paused: patch.paused.unwrap_or(current.paused),
+                ..current.clone()
+            };
+            if next == current {
+                return Ok((current, None));
+            }
+            tx.execute(
+                "INSERT INTO round_policies
+                   (round_id, project_id, max_executors, max_parallel_attempts, max_attempts,
+                    paused, revision)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
+                 ON CONFLICT(round_id) DO UPDATE SET
+                   max_executors = excluded.max_executors,
+                   max_parallel_attempts = excluded.max_parallel_attempts,
+                   max_attempts = excluded.max_attempts, paused = excluded.paused,
+                   revision = round_policies.revision + 1, updated_at = CURRENT_TIMESTAMP",
+                params![
+                    round_id,
+                    project_id,
+                    next.max_executors,
+                    next.max_parallel_attempts,
+                    next.max_attempts,
+                    next.paused,
+                ],
+            )?;
+            Ok((
+                load_policy(tx, project_id, round_id)?,
+                Some((project_id.to_owned(), round_id.to_owned(), Change::Policy)),
             ))
         })
     }

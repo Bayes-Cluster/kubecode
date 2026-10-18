@@ -212,6 +212,21 @@ research list, the main pane swaps to `ChannelWorkspace` (timeline, composer,
 Thread pane), and feeds converge on `channel_updated` events by sequence
 number.
 
+Orchestrated execution (ADR 0217) adds three server-side pieces. The
+orchestrator (`server/src/orchestrator/`) owns durable `message_routes`: it
+turns unclaimed `ask`/`request` intents into routes (requests only to the
+coordinator of an admitted round, otherwise answered with a note), leases and
+delivers them under a runtime-de-duplicated delivery key with bounded retry, and
+resolves a coordinator route to the round's *current* holder at delivery. A
+background loop in `AppState::start_orchestrator` runs it on a short interval
+and immediately when a message with an intent is saved. The work store holds
+`round_policies` (executors, parallel attempts, total attempts, pause) that only
+the researcher sets and that `assign`/`begin_attempt` enforce in their own
+transactions. `WorkAgent` (`server/src/work_agent/`) is the caller-bound command
+service, exposed to every Session as the `kubecode-work` MCP server
+(`server/src/work_mcp/`) with a per-server, per-conversation credential;
+`orchestrator_api` lets the researcher read and set limits and list routes.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

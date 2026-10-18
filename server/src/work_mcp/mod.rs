@@ -1,0 +1,650 @@
+//! The `kubecode-work` MCP server (ADR 0217): the commands an agent may issue
+//! over Workspace work, as tools. It is a thin transport over `WorkAgent`. The
+//! caller's Project and identity come from its Session, never from an argument,
+//! and every command re-reads its authority from persisted state, so a role
+//! stated in a prompt grants nothing and a coordinator handoff takes effect on
+//! the very next call. Nothing here can widen a budget or authorize a round.
+
+use std::sync::Arc;
+
+use axum::body::Body;
+use axum::extract::{Path, State};
+use axum::http::{Request, StatusCode};
+use axum::response::{IntoResponse, Response};
+use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
+use rmcp::model::{
+    CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
+};
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
+use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use tower::ServiceExt;
+
+use crate::agent_runtime::AgentRuntime;
+use crate::app_state::AppState;
+use crate::project_context::{ContextKind, ContextRef};
+use crate::work_agent::{AgentWorkError, NewTask, ReportStatus, WorkAgent};
+use crate::work_store::{
+    PlanPatch, ResultRole, WorkCondition, WorkError, WorkLifecycle, WorkOutcome,
+};
+
+#[cfg(test)]
+mod tests;
+
+pub const WORK_MCP_NAME: &str = "kubecode-work";
+
+const WORK_MCP_INSTRUCTIONS: &str = "Commands over this Workspace's research work. What you may do depends on your current standing, which the server checks on every call: the Session that coordinates a research round can create tasks, assign Sessions, start attempts, review results, and hand the round to another Session; the Session assigned to a task can attach evidence, report its attempt, and say it is waiting. A role you were told about grants nothing; if you lost the round (a handoff) your next command says so. A round has limits set by the researcher (work_policy shows them and what is used); you cannot widen them, and messages or mentions never authorize more work. Prefer one executor for simple work and add more only when tasks can run independently. Report material results back with work_post, which writes to the Workspace conversation as you. Every command that starts or creates something takes a request_key or client_request_id: reuse the same one when you retry, so nothing happens twice.";
+
+#[derive(Clone)]
+struct WorkMcpServer {
+    runtime: AgentRuntime,
+    project_id: String,
+    conversation_id: String,
+    tool_router: ToolRouter<Self>,
+}
+
+impl WorkMcpServer {
+    fn new(runtime: AgentRuntime, project_id: String, conversation_id: String) -> Self {
+        Self {
+            runtime,
+            project_id,
+            conversation_id,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    fn agent(&self) -> Result<WorkAgent, McpError> {
+        let services = self
+            .runtime
+            .work_services()
+            .ok_or_else(|| McpError::internal_error("work tools are not configured", None))?;
+        let research = self
+            .runtime
+            .research_store()
+            .ok_or_else(|| McpError::internal_error("work tools are not configured", None))?;
+        let runtime = self.runtime.clone();
+        Ok(WorkAgent::new(
+            self.project_id.clone(),
+            self.conversation_id.clone(),
+            services.work,
+            services.channels,
+            services.orchestrator,
+            research,
+            self.runtime.store(),
+            Arc::new(move |agent| runtime.agent_available(agent)),
+        ))
+    }
+
+    /// Commands touch SQLite: run them off the async workers.
+    async fn run<T: Send + 'static>(
+        &self,
+        command: impl FnOnce(WorkAgent) -> Result<T, AgentWorkError> + Send + 'static,
+    ) -> Result<T, McpError> {
+        let agent = self.agent()?;
+        tokio::task::spawn_blocking(move || command(agent))
+            .await
+            .map_err(|error| McpError::internal_error(error.to_string(), None))?
+            .map_err(work_error)
+    }
+}
+
+fn work_error(error: AgentWorkError) -> McpError {
+    match error {
+        AgentWorkError::NotFound | AgentWorkError::NotCoordinator | AgentWorkError::Invalid(_) => {
+            McpError::invalid_params(error.to_string(), None)
+        }
+        AgentWorkError::Work(inner) => match inner {
+            WorkError::Database(_) | WorkError::Json(_) => {
+                eprintln!("WARN: work tool failed: {inner}");
+                McpError::internal_error("work storage failed", None)
+            }
+            // Budgets, staleness, and state rules are the caller's to act on.
+            other => McpError::invalid_params(other.to_string(), None),
+        },
+        AgentWorkError::Channel(inner) => match inner {
+            crate::channel_store::ChannelError::Database(_)
+            | crate::channel_store::ChannelError::Json(_) => {
+                eprintln!("WARN: work tool failed: {inner}");
+                McpError::internal_error("conversation storage failed", None)
+            }
+            other => McpError::invalid_params(other.to_string(), None),
+        },
+        AgentWorkError::Orchestrator(inner) => {
+            eprintln!("WARN: work tool failed: {inner}");
+            McpError::internal_error("routing storage failed", None)
+        }
+        AgentWorkError::Store(inner) => {
+            eprintln!("WARN: work tool failed: {inner}");
+            McpError::internal_error("session storage failed", None)
+        }
+    }
+}
+
+fn json_output(value: &impl Serialize) -> Result<CallToolResult, McpError> {
+    serde_json::to_string(value)
+        .map(|json| CallToolResult::success(vec![Content::text(json)]))
+        .map_err(|error| McpError::internal_error(error.to_string(), None))
+}
+
+fn parse<T>(value: &str, parse: impl Fn(&str) -> Option<T>, what: &str) -> Result<T, McpError> {
+    parse(value).ok_or_else(|| McpError::invalid_params(format!("unknown {what}: {value}"), None))
+}
+
+// -- Inputs -----------------------------------------------------------------------------------------
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct RoundInput {
+    /// The round; optional when you coordinate exactly one.
+    #[serde(default)]
+    round_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkIdInput {
+    work_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CreateInput {
+    #[serde(default)]
+    round_id: Option<String>,
+    title: String,
+    description: String,
+    #[serde(default)]
+    plan: Option<String>,
+    /// Ids of tasks that must be accepted first.
+    #[serde(default)]
+    depends_on: Vec<String>,
+    /// The Workspace Thread this task comes from (it must belong to the same research question).
+    #[serde(default)]
+    from_thread: Option<String>,
+    /// Reuse the same value when retrying so the task is created once.
+    client_request_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UpdateInput {
+    work_id: String,
+    expected_revision: u64,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    plan: Option<String>,
+    #[serde(default)]
+    priority: Option<i64>,
+    #[serde(default)]
+    add_depends_on: Vec<String>,
+    #[serde(default)]
+    remove_depends_on: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AssignInput {
+    work_id: String,
+    session_id: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ExecutorInput {
+    #[serde(default)]
+    round_id: Option<String>,
+    /// claude_code, codex, or opencode; it must be installed.
+    agent: String,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct StartInput {
+    work_id: String,
+    /// Reuse the same value when retrying so only one attempt starts.
+    request_key: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReviewInput {
+    work_id: String,
+    accept: bool,
+    /// unknown, supported, refuted, or inconclusive (what the science showed).
+    #[serde(default)]
+    outcome: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CloseInput {
+    work_id: String,
+    expected_revision: u64,
+    /// canceled, abandoned, or superseded.
+    lifecycle: String,
+    reason: String,
+    #[serde(default)]
+    superseded_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ConditionInput {
+    work_id: String,
+    /// none, waiting, needs_input (executor or coordinator); blocked or paused (coordinator).
+    condition: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HandoffInput {
+    round_id: String,
+    /// The Session that coordinates the round from now on.
+    to_session: String,
+    reason: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AttachInput {
+    work_id: String,
+    /// experiment, artifact, finding, file, session_turn, work, ...
+    kind: String,
+    id: String,
+    #[serde(default)]
+    revision: Option<String>,
+    /// result or evidence (default evidence).
+    #[serde(default)]
+    role: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReportInput {
+    work_id: String,
+    /// completed, failed, or cancelled.
+    status: String,
+    /// What was done and found, in a few sentences. It is shown to the researcher.
+    summary: String,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PostInput {
+    /// The Thread (or the message you were asked about) to answer in.
+    in_reply_to: String,
+    body: String,
+    /// Existing records to cite: [{kind, id, revision}].
+    #[serde(default)]
+    references: Vec<RefInput>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RefInput {
+    kind: String,
+    id: String,
+    #[serde(default)]
+    revision: Option<String>,
+}
+
+#[tool_router]
+impl WorkMcpServer {
+    #[tool(
+        description = "The limits the researcher set for a round you coordinate (executors, parallel attempts, total attempts, paused) and how much is used. You cannot change them."
+    )]
+    async fn work_policy(
+        &self,
+        Parameters(input): Parameters<RoundInput>,
+    ) -> Result<CallToolResult, McpError> {
+        json_output(
+            &self
+                .run(move |agent| agent.policy(input.round_id.as_deref()))
+                .await?,
+        )
+    }
+
+    #[tool(
+        description = "Work in the rounds you coordinate and work assigned to you: id, title, stage, condition, acceptance, assignee, latest attempt."
+    )]
+    async fn work_list(
+        &self,
+        Parameters(input): Parameters<RoundInput>,
+    ) -> Result<CallToolResult, McpError> {
+        json_output(
+            &self
+                .run(move |agent| agent.list(input.round_id.as_deref()))
+                .await?,
+        )
+    }
+
+    #[tool(
+        description = "One task you coordinate or execute, with its attempts' latest state, results, and dependencies."
+    )]
+    async fn work_get(
+        &self,
+        Parameters(input): Parameters<WorkIdInput>,
+    ) -> Result<CallToolResult, McpError> {
+        json_output(&self.run(move |agent| agent.get(&input.work_id)).await?)
+    }
+
+    #[tool(
+        description = "Coordinator: create a task in your round. client_request_id makes it idempotent. from_thread links it to the discussion it came from."
+    )]
+    async fn work_create(
+        &self,
+        Parameters(input): Parameters<CreateInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let summary = self
+            .run(move |agent| {
+                agent.create(NewTask {
+                    round_id: input.round_id.as_deref(),
+                    title: &input.title,
+                    description: &input.description,
+                    plan: input.plan.as_deref(),
+                    depends_on: &input.depends_on,
+                    from_thread: input.from_thread.as_deref(),
+                    client_request_id: Some(&input.client_request_id),
+                })
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Coordinator: change a task's title, description, plan, priority, or dependencies. Revision-checked: pass the revision you read."
+    )]
+    async fn work_update(
+        &self,
+        Parameters(input): Parameters<UpdateInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let summary = self
+            .run(move |agent| {
+                agent.update(
+                    &input.work_id,
+                    input.expected_revision,
+                    PlanPatch {
+                        title: input.title,
+                        description: input.description,
+                        plan: input.plan,
+                        priority: input.priority,
+                        kind: None,
+                        add_dependencies: input.add_depends_on,
+                        remove_dependencies: input.remove_depends_on,
+                    },
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Coordinator: make a Session the executor of a task. A new executor counts against the round's executor limit."
+    )]
+    async fn work_assign(
+        &self,
+        Parameters(input): Parameters<AssignInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let summary = self
+            .run(move |agent| {
+                agent.assign(
+                    &input.work_id,
+                    &input.session_id,
+                    input.reason.as_deref().unwrap_or_default(),
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Coordinator: create a new Session for executing work with an installed provider. It is created idle at the default permission mode; assign it a task to use it."
+    )]
+    async fn work_executor_create(
+        &self,
+        Parameters(input): Parameters<ExecutorInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = self
+            .run(move |agent| {
+                agent.create_executor(
+                    input.round_id.as_deref(),
+                    &input.agent,
+                    input.title.as_deref().unwrap_or_default(),
+                )
+            })
+            .await?;
+        json_output(&serde_json::json!({ "session_id": id }))
+    }
+
+    #[tool(
+        description = "Coordinator: start one attempt of an assigned, ready task within the round's limits, and send the task to its executor. request_key makes a retry start nothing twice."
+    )]
+    async fn work_start(
+        &self,
+        Parameters(input): Parameters<StartInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let attempt = self
+            .run(move |agent| agent.start(&input.work_id, &input.request_key))
+            .await?;
+        json_output(&attempt)
+    }
+
+    #[tool(
+        description = "Coordinator: accept or reject a task that is in review, with your reason. Accepting a result completes the task."
+    )]
+    async fn work_review(
+        &self,
+        Parameters(input): Parameters<ReviewInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let outcome = match input.outcome.as_deref() {
+            None => WorkOutcome::Unknown,
+            Some(value) => parse(value, WorkOutcome::parse, "outcome")?,
+        };
+        let summary = self
+            .run(move |agent| {
+                agent.review(
+                    &input.work_id,
+                    input.accept,
+                    outcome,
+                    input.reason.as_deref(),
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Coordinator: cancel, abandon, or supersede a task, keeping its history. A reason is required."
+    )]
+    async fn work_close(
+        &self,
+        Parameters(input): Parameters<CloseInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let lifecycle = parse(&input.lifecycle, WorkLifecycle::parse, "lifecycle")?;
+        let summary = self
+            .run(move |agent| {
+                agent.close(
+                    &input.work_id,
+                    input.expected_revision,
+                    lifecycle,
+                    &input.reason,
+                    input.superseded_by.as_deref(),
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Say why a task is not moving: waiting, needs_input, or none (executor); also blocked or paused (coordinator)."
+    )]
+    async fn work_condition(
+        &self,
+        Parameters(input): Parameters<ConditionInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let condition = parse(&input.condition, WorkCondition::parse, "condition")?;
+        let summary = self
+            .run(move |agent| {
+                agent.set_condition(&input.work_id, condition, input.reason.as_deref())
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Coordinator: hand your round to another Session. Tasks, attempts, results, and pending events stay; your authority ends at once."
+    )]
+    async fn work_handoff(
+        &self,
+        Parameters(input): Parameters<HandoffInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.run(move |agent| agent.handoff(&input.round_id, &input.to_session, &input.reason))
+            .await?;
+        json_output(&serde_json::json!({ "handed_off": true }))
+    }
+
+    #[tool(
+        description = "Attach an existing record (experiment, artifact, finding, file, ...) as evidence or a result of a task you execute or coordinate. Nothing is copied."
+    )]
+    async fn work_attach(
+        &self,
+        Parameters(input): Parameters<AttachInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let role = match input.role.as_deref() {
+            None => ResultRole::Evidence,
+            Some(value) => parse(value, ResultRole::parse, "role")?,
+        };
+        let summary = self
+            .run(move |agent| {
+                agent.attach(
+                    &input.work_id,
+                    &input.kind,
+                    &input.id,
+                    input.revision.as_deref(),
+                    role,
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Executor: report your open attempt as completed, failed, or cancelled with a short summary. A completed attempt goes to the coordinator for review; the summary is shown in the researcher's conversation."
+    )]
+    async fn work_report(
+        &self,
+        Parameters(input): Parameters<ReportInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let status = match input.status.as_str() {
+            "completed" => ReportStatus::Completed,
+            "failed" => ReportStatus::Failed,
+            "cancelled" => ReportStatus::Cancelled,
+            other => {
+                return Err(McpError::invalid_params(
+                    format!("status must be completed, failed, or cancelled, not {other}"),
+                    None,
+                ));
+            }
+        };
+        let summary = self
+            .run(move |agent| {
+                agent.report(
+                    &input.work_id,
+                    status,
+                    &input.summary,
+                    input.error.as_deref(),
+                )
+            })
+            .await?;
+        json_output(&summary)
+    }
+
+    #[tool(
+        description = "Post a message into the Workspace conversation as yourself: answer a question you were asked, or report a result in the Thread your work came from. Only where you have standing."
+    )]
+    async fn work_post(
+        &self,
+        Parameters(input): Parameters<PostInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let references = input
+            .references
+            .into_iter()
+            .map(|reference| {
+                Ok(ContextRef {
+                    kind: parse(&reference.kind, ContextKind::parse, "reference kind")?,
+                    id: reference.id,
+                    revision: reference.revision,
+                })
+            })
+            .collect::<Result<Vec<_>, McpError>>()?;
+        let message = self
+            .run(move |agent| agent.post(&input.in_reply_to, &input.body, &references))
+            .await?;
+        json_output(&serde_json::json!({
+            "message_id": message.id,
+            "thread_id": message.thread_id,
+        }))
+    }
+}
+
+#[tool_handler(router = self.tool_router)]
+impl ServerHandler for WorkMcpServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(
+                WORK_MCP_NAME,
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_protocol_version(ProtocolVersion::V_2025_03_26)
+            .with_instructions(WORK_MCP_INSTRUCTIONS)
+    }
+}
+
+pub async fn handle_http(
+    State(state): State<AppState>,
+    Path((token, conversation_id)): Path<(String, String)>,
+    request: Request<Body>,
+) -> Response {
+    if !state
+        .agent_runtime
+        .authorize_mcp("work", &conversation_id, &token)
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let runtime = state.agent_runtime.as_ref().clone();
+    // Hidden revision snapshots and subagent threads have no work tools.
+    let project_id = match runtime.store_ref().get_conversation(&conversation_id) {
+        Ok(conversation) => {
+            match runtime
+                .store_ref()
+                .visible_conversation(&conversation.project_id, &conversation_id)
+            {
+                Ok(Some(_)) => conversation.project_id,
+                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                Err(error) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
+                }
+            }
+        }
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let caller = conversation_id.clone();
+    let service: StreamableHttpService<WorkMcpServer, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || {
+                Ok(WorkMcpServer::new(
+                    runtime.clone(),
+                    project_id.clone(),
+                    caller.clone(),
+                ))
+            },
+            crate::context_mcp::session_manager(WORK_MCP_NAME, &conversation_id),
+            StreamableHttpServerConfig::default()
+                .with_json_response(true)
+                .with_sse_keep_alive(None),
+        );
+    match service.oneshot(request).await {
+        Ok(response) => response.into_response(),
+        Err(error) => match error {},
+    }
+}

@@ -1211,3 +1211,23 @@ duplicate delivery or a restarted consumer sees `already claimed` and does
 nothing. Only the researcher can author a `request`. Channel messages are
 distinct from provider transcripts (one per Session) and from the delivery
 mailbox between Team members. See ADR 0216.
+
+## Route
+
+A **route** is the durable delivery of one thing to one Session: a researcher's
+request, a targeted question, a dispatched attempt, or a result. It is
+identified by its source and its target, so the same source reaches the same
+target once however often it is routed. A coordinator route names a *round*, not
+a Session, and is resolved to the round's current coordinator when it is
+delivered, so a handoff retargets pending routes. A route is `pending`,
+`delivered` (the Session has the event), or `failed` (visible, with the reason,
+in the conversation). Delivery is neither task completion nor experiment
+analysis.
+
+## Round limits
+
+A round's **limits** say what the researcher authorized it to spend: executing
+Sessions, attempts open at once, attempts ever started, and whether it is
+paused. Only the researcher sets them. They are enforced where work is
+assigned and attempts begin, so no command path can exceed them. See ADR 0217.
+
