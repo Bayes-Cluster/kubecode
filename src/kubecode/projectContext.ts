@@ -1,3 +1,5 @@
+import type { TranslationKey } from '@/lib/i18n'
+
 import type { ProjectContextItem, ProjectContextKind } from './api'
 
 /** Every reference kind the server's Project context reader understands (ADR 0214). */
@@ -7,7 +9,7 @@ export const PROJECT_CONTEXT_KINDS: string[] = [
 ]
 
 /** Translation keys for each kind's label, so the copy lives in the locale catalogs. */
-export const PROJECT_CONTEXT_KIND_LABELS: Record<ProjectContextKind, string> = {
+export const PROJECT_CONTEXT_KIND_LABELS: Record<ProjectContextKind, TranslationKey> = {
   research: 'kubecode.projectWorkKindResearch',
   round: 'kubecode.projectWorkKindRound',
   finding: 'kubecode.projectWorkKindFinding',
@@ -24,7 +26,7 @@ export type ProjectWorkFilter = 'all' | 'research' | 'findings' | 'sessions' | '
 export const PROJECT_WORK_FILTERS: Array<{
   id: ProjectWorkFilter
   kinds: ProjectContextKind[] | null
-  label: string
+  label: TranslationKey
 }> = [
   { id: 'all', kinds: null, label: 'kubecode.projectWorkFilterAll' },
   { id: 'research', kinds: ['research', 'round'], label: 'kubecode.projectWorkFilterResearch' },
