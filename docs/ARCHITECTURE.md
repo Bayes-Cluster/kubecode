@@ -145,6 +145,21 @@ root of the Team that ran the experiment, with no symlink traversal.
 `AgentStore::read_turn_text` gives cross-Session turn reads a bounded view of
 the canonical event log without copying it.
 
+Agents reach the same reader through `server/src/context_mcp.rs`, a read-only
+`kubecode-context` MCP server advertised to **every** Session next to the Team
+server (HTTP at `/api/v1/context-mcp/{token}/{conversation_id}`, authorized by
+the same process-wide token). It has four passive tools — `context_round`,
+`context_search`, `context_read`, `context_resolve` — and the caller's Project
+is derived from its Session, never from an argument. Hidden revision snapshots
+and unknown conversations get no tools. A Team member whose Agent cannot reach
+an HTTP MCP URL receives the server in-process as before; a Solo Session on such
+an Agent has no context tools and relies on the round prompt. Solo and Team
+rounds share one delivery: `team_mcp::round_delivery` builds the pinned brief
+revision, the instruction, the selected sources with their current availability,
+bounded earlier rounds, attributed findings, and execution facts, and is served
+both by `team_get_context` and by `context_round`. A later brief edit never
+changes a running round's direction; the delivery reports `stale` instead.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

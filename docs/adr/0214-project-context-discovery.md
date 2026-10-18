@@ -97,7 +97,11 @@ reference; the Composer's current-Session turn checks (§Composer) are unchanged
 
 Adapters, not new sources of truth: the HTTP routes (researcher and Composer),
 a read-only `kubecode-context` MCP server for every Session and Team member
-(passive; one fixed set of tools), typed Composer references that carry
+(passive; one fixed set of tools: `context_round`, `context_search`,
+`context_read`, `context_resolve`; HTTP-advertised to every Session, in-process
+for Team members whose Agent lacks HTTP MCP, none for a Solo Session on such an
+Agent, which relies on the round prompt; Solo and Team rounds share one
+delivery function), typed Composer references that carry
 `{kind, id, revision}` and are re-validated at dispatch, and external
 discussion import/export. Each is specified with the work that adds it; the
 semantics above are shared so identity, provenance, and scope cannot drift.
