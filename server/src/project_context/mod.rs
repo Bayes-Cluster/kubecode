@@ -165,6 +165,7 @@ impl ProjectContext {
         let need_research = [
             ContextKind::Research,
             ContextKind::Round,
+            ContextKind::Import,
             ContextKind::Finding,
             ContextKind::Experiment,
             ContextKind::Artifact,
@@ -195,6 +196,16 @@ impl ProjectContext {
                         &question.updated_at,
                         state_label(&full.status),
                     ));
+                }
+                if wanted(ContextKind::Import) {
+                    for import in cap(
+                        self.research
+                            .imports(project_id, &question.id)
+                            .map_err(source_error)?,
+                        truncated,
+                    ) {
+                        out.push(self.import_item(&import));
+                    }
                 }
                 if wanted(ContextKind::Finding) {
                     let mut findings = self
@@ -302,6 +313,32 @@ impl ProjectContext {
                 research_id: Some(id.to_owned()),
                 state,
                 ..Provenance::default()
+            },
+            availability: Availability::Available,
+        }
+    }
+
+    /// An imported discussion's metadata. Its revision is the digest prefix of
+    /// the exact text, so a reference can tell whether it is the same words.
+    fn import_item(&self, import: &crate::research_store::ResearchImport) -> ContextItem {
+        ContextItem {
+            reference: ContextRef::at(
+                ContextKind::Import,
+                &import.id,
+                import.digest.chars().take(16).collect::<String>(),
+            ),
+            title: import.label.clone(),
+            summary: summarize(&format!(
+                "Imported {} discussion about brief revision {}",
+                import.origin.as_str(),
+                import.based_on_revision
+            )),
+            provenance: Provenance {
+                author: Some("researcher".into()),
+                updated_at: Some(import.created_at.clone()),
+                research_id: Some(import.research_id.clone()),
+                parent: Some(ContextRef::new(ContextKind::Research, &import.research_id)),
+                state: Some("source material".into()),
             },
             availability: Availability::Available,
         }
@@ -582,7 +619,7 @@ fn research_missing(error: &crate::research_store::ResearchError) -> bool {
     use crate::research_store::ResearchError as E;
     matches!(
         error,
-        E::NotFound | E::RoundNotFound | E::RevisionNotFound(_)
+        E::NotFound | E::RoundNotFound | E::RevisionNotFound(_) | E::ImportNotFound
     )
 }
 
@@ -705,6 +742,10 @@ impl ProjectContext {
                         .unwrap_or_default();
                     self.round_item(&title, &round)
                 })
+            }
+            ContextKind::Import => {
+                missing(self.research.import_by_id(project_id, id), research_missing)?
+                    .map(|(import, _)| self.import_item(&import))
             }
             ContextKind::Finding => {
                 missing(self.research.finding(project_id, id), research_missing)?
@@ -928,6 +969,7 @@ impl ProjectContext {
         match reference.kind {
             ContextKind::Research => self.read_research(project_id, reference, depth, &mut doc)?,
             ContextKind::Round => self.read_round(project_id, &reference.id, depth, &mut doc)?,
+            ContextKind::Import => self.read_import(project_id, &reference.id, depth, &mut doc)?,
             ContextKind::Finding => {
                 self.read_finding(project_id, &reference.id, depth, &mut doc)?
             }
@@ -1134,6 +1176,59 @@ impl ProjectContext {
             {
                 doc.related.push(self.experiment_item(experiment));
             }
+        }
+        Ok(())
+    }
+
+    fn read_import(
+        &self,
+        project_id: &str,
+        id: &str,
+        depth: u8,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let (import, content) = self
+            .research
+            .import_by_id(project_id, id)
+            .map_err(source_error)?;
+        doc.note(
+            "Imported discussion: attributed source material from outside Kubecode, not a verified finding and not an approved change to the brief.",
+        );
+        if let Ok(question) = self.research.get(project_id, &import.research_id) {
+            if import.based_on_revision < question.revision {
+                doc.note(format!(
+                    "This discussion was about brief revision {}; the current approved brief is revision {}.",
+                    import.based_on_revision, question.revision
+                ));
+            }
+            doc.related.push(self.research_item(
+                &question.id,
+                &question.brief.title,
+                &question.brief.question,
+                question.revision,
+                &question.updated_at,
+                state_label(&question.status),
+            ));
+        }
+        if depth >= 1 {
+            doc.section("Imported text", &content);
+        }
+        if depth >= 2 {
+            let lines: Vec<String> = crate::research_store::extract_candidates(&content)
+                .iter()
+                .take(RELATED_CAP * 2)
+                .map(|candidate| {
+                    format!(
+                        "{} (line {}): {}",
+                        state_label(&candidate.kind)
+                            .unwrap_or_default()
+                            .replace('_', " "),
+                        candidate.line,
+                        candidate.text
+                    )
+                })
+                .collect();
+            doc.list("Candidates found in the text", &lines);
         }
         Ok(())
     }
@@ -1534,6 +1629,7 @@ impl ProjectContext {
     ) -> Availability {
         use crate::research_store::SourceKind;
         let kind = match source.kind {
+            SourceKind::Import => ContextKind::Import,
             SourceKind::File => {
                 return match self.workspace.file_revision(project_id, &source.id) {
                     Ok(current) => compare(source.revision.as_deref(), &current),

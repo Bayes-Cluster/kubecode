@@ -3,7 +3,7 @@
 //! validate and resolve sources without depending on `AppState`.
 
 use crate::agent_store::AgentStore;
-use crate::research_store::{SourceAvailability, SourceKind, SourceRef};
+use crate::research_store::{ResearchStore, SourceAvailability, SourceKind, SourceRef};
 use crate::teams::TeamStore;
 use crate::workspace::WorkspaceService;
 
@@ -11,6 +11,8 @@ pub(crate) struct SourceResolver<'a> {
     pub agents: &'a AgentStore,
     pub teams: &'a TeamStore,
     pub workspace: &'a WorkspaceService,
+    /// Needed to cite imported discussions; `None` where none can be cited.
+    pub research: Option<&'a ResearchStore>,
 }
 
 /// Why a source could not be accepted.
@@ -54,6 +56,13 @@ impl SourceResolver<'_> {
             return Ok(validated);
         }
         if self.record_in_project(project_id, source.kind, id) {
+            if source.kind == SourceKind::Import {
+                // An import is immutable; record the digest it was cited at.
+                validated.revision = self
+                    .research
+                    .and_then(|research| research.import_by_id(project_id, id).ok())
+                    .map(|(import, _)| import.digest.chars().take(16).collect());
+            }
             Ok(validated)
         } else {
             Err(SourceError::Missing)
@@ -100,6 +109,9 @@ impl SourceResolver<'_> {
                 .ok()
                 .and_then(|task| self.teams.get_team(&task.team_id).ok())
                 .is_some_and(|team| team.project_id == project_id),
+            SourceKind::Import => self
+                .research
+                .is_some_and(|research| research.import_by_id(project_id, id).is_ok()),
             SourceKind::File => false,
         }
     }

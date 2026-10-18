@@ -119,6 +119,45 @@ TypeScript union, a lookup and read arm in `ProjectContext`, and tests for
 Project scoping and for changed/removed reporting. Consumers must treat an
 unknown kind as unsupported, never as a different kind.
 
+### 8. Imported discussion and the discussion packet
+
+Discussion held outside Kubecode is **source material**, not a finding.
+
+- **Identity and persistence.** An import is an immutable row of the research
+  question (`research_imports`): the normalized text (at most 64 KiB, line
+  endings unified, NULs removed), an origin label (200 characters), its format
+  (`paste` or `markdown`), the brief revision the researcher says it was about,
+  and the SHA-256 digest of the text. Its reference is `{kind: import, id,
+  revision: first 16 hex of the digest}`, usable as a round source
+  (`SourceKind::Import`), by the context tools, and in the Composer picker. At
+  most 50 per question. The same `client_request_id` returns the original
+  import; reusing it for different text is refused. Imports are never copied
+  into Agent transcripts and never edited.
+- **Attribution.** The author is always the researcher. Nothing an import
+  contains is a finding; the reader labels it as unverified source material.
+- **Review.** Candidate questions, hypotheses, constraints, evaluation
+  criteria, decisions, and open questions are derived deterministically from the
+  stored text (headings, labels, list items, standalone questions) and are not
+  persisted. They are suggestions only.
+- **Applying.** The only way to change the brief is the existing
+  revision-checked edit (`expected_revision`). It may name `import_id`, which
+  the revision note records, so the change stays traceable to its source.
+  Decisions are recorded as researcher decision notes. A newer brief makes the
+  edit fail with a conflict; nothing is silently replaced. An import written
+  against an older revision is reported `stale` so it is reviewed against the
+  approved brief.
+- **Handoff.** A round is started only through the existing round action. A
+  round may cite imports as sources; its brief revision, instruction, sources,
+  and execution authorization are pinned exactly as before and repeated
+  requests reuse the round's idempotency key.
+- **Export.** `GET .../export` builds a packet of at most 32 KiB from the
+  approved brief, round and experiment status (no commands or logs), attributed
+  findings, limitations and open questions (including those found in imports),
+  and evidence *names* (Project-relative paths and short ids, never contents).
+  The researcher chooses sections and previews the exact text and a plain
+  statement of what is and is not included before copying it; Kubecode sends
+  nothing anywhere.
+
 ## Validation status
 
 Deterministic fixtures cover the reader, the HTTP adapter, the MCP transport

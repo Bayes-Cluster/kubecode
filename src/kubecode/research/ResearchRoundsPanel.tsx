@@ -18,6 +18,7 @@ import type {
   KubecodeApi,
   ResearchDetail,
   ResearchFinding,
+  ResearchImport,
   ResearchRound,
   ResearchRoundKind,
   ResearchSourceAvailability,
@@ -57,6 +58,7 @@ export function ResearchRoundsPanel({
   detail,
   events,
   findings,
+  imports = [],
   onChanged,
   onOpenSession,
   rounds,
@@ -69,6 +71,8 @@ export function ResearchRoundsPanel({
   detail: ResearchDetail
   events: WorkspaceEvent[]
   findings: ResearchFinding[]
+  /** Imported discussions that can be cited by this round. */
+  imports?: ResearchImport[]
   onChanged: () => void
   onOpenSession: (conversationId: string) => void
   rounds: ResearchRound[]
@@ -81,6 +85,8 @@ export function ResearchRoundsPanel({
   const [agentId, setAgentId] = useState<AgentId | ''>('')
   const [instruction, setInstruction] = useState('')
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  // Imported discussions are cited only when the researcher picks them.
+  const [citedImports, setCitedImports] = useState<Set<string>>(new Set())
   // One key per intended round: retrying after a lost response resumes the
   // same round instead of creating a second one.
   const requestKey = useRef(newClientMessageId())
@@ -126,12 +132,18 @@ export function ResearchRoundsPanel({
       mode,
       agent_id: selectedAgent,
       instruction: instruction.trim() || undefined,
-      sources: carried.map((source) => ({ kind: source.kind, id: source.id })),
+      sources: [
+        ...carried.map((source) => ({ kind: source.kind, id: source.id })),
+        ...imports
+          .filter((item) => citedImports.has(item.id))
+          .map((item) => ({ kind: 'import' as const, id: item.id })),
+      ],
       ...(limits ? { envelope: limits } : {}),
     }))
     if (started) {
       requestKey.current = newClientMessageId()
       setInstruction('')
+      setCitedImports(new Set())
       onChanged()
     }
   }
@@ -221,6 +233,41 @@ export function ResearchRoundsPanel({
                   </label>
                 )
               })}
+            </fieldset>
+          )}
+          {imports.length > 0 && (
+            <fieldset className="kubecode-research-carry">
+              <legend>{t('kubecode.research.import.handoff')}</legend>
+              {imports.map((item) => (
+                <label key={item.id}>
+                  <input
+                    checked={citedImports.has(item.id)}
+                    type="checkbox"
+                    onChange={(event) => setCitedImports((current) => {
+                      rekey()
+                      const next = new Set(current)
+                      if (event.target.checked) next.add(item.id)
+                      else next.delete(item.id)
+                      return next
+                    })}
+                  />
+                  <span>{item.label}</span>
+                  {item.stale && (
+                    <span className="kubecode-research-muted">
+                      {t('kubecode.research.import.stale', {
+                        based: item.based_on_revision,
+                        current: item.current_revision,
+                      })}
+                    </span>
+                  )}
+                </label>
+              ))}
+              <p className="kubecode-research-muted">
+                {t('kubecode.research.import.handoffSummary', {
+                  revision: detail.revision,
+                  count: citedImports.size,
+                })}
+              </p>
             </fieldset>
           )}
           <label className="kubecode-research-check">

@@ -41,6 +41,8 @@ pub enum ResearchError {
     RoundNotFound,
     #[error("this request key was already used for a different round request")]
     KeyReuse,
+    #[error("imported discussion not found")]
+    ImportNotFound,
     #[error("research round state conflict: {0}")]
     RoundState(&'static str),
     #[error("research entry not found")]
@@ -108,7 +110,13 @@ text_enum!(LinkRole {
     Execution => "execution",
 });
 
+text_enum!(ImportOrigin {
+    Paste => "paste",
+    Markdown => "markdown",
+});
+
 text_enum!(SourceKind {
+    Import => "import",
     Session => "session",
     Run => "run",
     Team => "team",

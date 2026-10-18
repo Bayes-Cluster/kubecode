@@ -13,6 +13,7 @@ use serde_json::json;
 
 mod execution;
 mod findings;
+mod imports;
 mod rounds;
 pub(crate) mod sources;
 
@@ -36,6 +37,7 @@ pub fn routes() -> Router<AppState> {
         .merge(rounds::routes())
         .merge(findings::routes())
         .merge(execution::routes())
+        .merge(imports::routes())
         .route(
             "/projects/{project_id}/research",
             get(list_research).post(create_research),
@@ -214,6 +216,8 @@ async fn get_research(
 struct UpdateResearchRequest {
     expected_revision: u64,
     note: Option<String>,
+    /// The imported discussion this edit was reviewed from, for attribution.
+    import_id: Option<String>,
     #[serde(flatten)]
     patch: BriefPatch,
 }
@@ -224,12 +228,32 @@ async fn update_research(
     Json(request): Json<UpdateResearchRequest>,
 ) -> Result<Json<ResearchDetail>, ResearchApiError> {
     check_project(&state, &project_id)?;
+    // Attribute an edit that came from an imported discussion in the revision's
+    // own note, so the source stays traceable.
+    let mut note = request.note.clone().unwrap_or_default();
+    if let Some(import_id) = request.import_id.as_deref() {
+        let (import, _) = state.research.import_by_id(&project_id, import_id)?;
+        if import.research_id != research_id {
+            return Err(ResearchError::ImportNotFound.into());
+        }
+        let label: String = import.label.chars().take(80).collect();
+        let source = format!(
+            "From imported discussion \"{label}\" ({})",
+            &import.id[..8.min(import.id.len())]
+        );
+        note = if note.trim().is_empty() {
+            source
+        } else {
+            format!("{} — {source}", note.trim())
+        };
+        note = note.chars().take(500).collect();
+    }
     let (question, _changed) = state.research.update_brief(
         &project_id,
         &research_id,
         request.expected_revision,
         &request.patch,
-        request.note.as_deref(),
+        (!note.is_empty()).then_some(note.as_str()),
     )?;
     Ok(Json(detail(&state, &project_id, question)?))
 }
@@ -562,6 +586,11 @@ impl IntoResponse for ResearchApiError {
                 ResearchError::Archived => {
                     (StatusCode::CONFLICT, "research_archived", error.to_string())
                 }
+                ResearchError::ImportNotFound => (
+                    StatusCode::NOT_FOUND,
+                    "research_import_not_found",
+                    error.to_string(),
+                ),
                 ResearchError::RoundNotFound => (
                     StatusCode::NOT_FOUND,
                     "research_round_not_found",

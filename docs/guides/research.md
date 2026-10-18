@@ -21,6 +21,32 @@ brief, posting a note, or linking a Session only records it.
    observation; one without stays an attributed interpretation. Agent
    suggestions to change the direction wait for your decision.
 
+## Bringing a discussion in and taking one out
+
+Brainstorming often happens outside Kubecode. From the Discussion tab:
+
+- **Import** pasted text or Markdown with a note about where it came from. It
+  is saved as source material attributed to you. Importing starts no Agent,
+  records no finding, and changes no brief.
+- **Review** the import. Kubecode lists suggestions it recognised (questions,
+  hypotheses, constraints, evaluation criteria, decisions, open questions). You
+  tick the ones you want and compare them with the current brief; nothing
+  changes until you apply. The edit is checked against the revision you are
+  looking at, so a newer brief is never overwritten, and the new revision's note
+  names the import it came from. A discussion written against an older brief is
+  marked so you review it against what is approved now.
+- **Start a round** from the Work tab and, if you want, cite imported
+  discussions. This is the same explicit round action as always; repeating a
+  request reuses the existing round.
+- **Export** a bounded discussion packet (brief, progress, findings, evidence
+  names, limitations and open questions). You preview exactly what leaves the
+  workspace, choose the sections, and copy it yourself. It never contains
+  transcripts, prompts, credentials, file contents, or server paths.
+
+Agents and other Sessions can find and read the same material through the
+read-only context tools and the Composer's "Reference Project work" picker;
+reading never starts work.
+
 ## Letting a round run experiments
 
 By default a round can run no processes. To allow it, tick **Allow this round

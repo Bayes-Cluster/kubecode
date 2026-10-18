@@ -1366,6 +1366,7 @@ impl TeamMcpServer {
             agents: self.context.runtime.store_ref(),
             teams: &self.context.teams,
             workspace: &workspace,
+            research: self.context.research.as_deref(),
         };
         let evidence = validate_evidence(&resolver, &project_id, &input.evidence, false)?;
         let question = input
@@ -1588,6 +1589,7 @@ impl TeamMcpServer {
             agents: self.context.runtime.store_ref(),
             teams: &self.context.teams,
             workspace: &workspace,
+            research: self.context.research.as_deref(),
         };
         let replay = research
             .has_publication(&project_id, &link.research_id, &key)
@@ -2072,6 +2074,7 @@ pub(crate) fn round_delivery(
         agents: runtime.store_ref(),
         teams: &teams,
         workspace: &workspace,
+        research: Some(research.as_ref()),
     };
     let sources: Vec<_> = round
         .sources

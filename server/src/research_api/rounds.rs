@@ -142,6 +142,7 @@ pub(super) fn resolver(state: &AppState) -> SourceResolver<'_> {
         agents: state.agent_runtime.store_ref(),
         teams: &state.teams,
         workspace: &state.workspace,
+        research: Some(state.research.as_ref()),
     }
 }
 

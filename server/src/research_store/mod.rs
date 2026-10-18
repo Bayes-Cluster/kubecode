@@ -10,8 +10,10 @@
 //! question in another Project is indistinguishable from a missing one.
 
 mod findings;
+mod imports;
 mod models;
 
+pub use imports::*;
 pub use models::*;
 
 use std::sync::Arc;
@@ -43,6 +45,7 @@ enum Change {
     Finding,
     Outcome,
     Review,
+    Import,
 }
 
 impl Change {
@@ -60,6 +63,7 @@ impl Change {
             Self::Finding => "finding",
             Self::Outcome => "outcome",
             Self::Review => "review",
+            Self::Import => "import",
         }
     }
 }
@@ -189,6 +193,22 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
                    created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                    resolved_at    TEXT
                  );
+                 -- Imported discussion: immutable, attributed source material.
+                 CREATE TABLE IF NOT EXISTS research_imports (
+                   id                TEXT PRIMARY KEY,
+                   research_id       TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
+                   origin            TEXT NOT NULL,
+                   label             TEXT NOT NULL,
+                   based_on_revision INTEGER NOT NULL,
+                   digest            TEXT NOT NULL,
+                   content           TEXT NOT NULL,
+                   byte_count        INTEGER NOT NULL,
+                   client_request_id TEXT,
+                   created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE UNIQUE INDEX IF NOT EXISTS research_imports_request
+                   ON research_imports(research_id, client_request_id)
+                   WHERE client_request_id IS NOT NULL;
                  CREATE TABLE IF NOT EXISTS research_proposal_reviews (
                    entry_id    TEXT PRIMARY KEY REFERENCES research_entries(id) ON DELETE CASCADE,
                    research_id TEXT NOT NULL REFERENCES research_questions(id) ON DELETE CASCADE,
