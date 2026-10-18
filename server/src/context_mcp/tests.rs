@@ -942,3 +942,186 @@ fn credentials_are_scoped_to_one_server_and_one_conversation() {
     );
     assert!(!rig.runtime.authorize_mcp("context", &member, ""));
 }
+
+/// A URL token proves who may connect; the `mcp-session-id` it later carries
+/// must belong to the same conversation too. A session id issued to another
+/// conversation (another Project) must never reach that conversation's data.
+#[tokio::test]
+async fn an_mcp_session_id_is_bound_to_the_conversation_it_was_issued_to() {
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request, header};
+    use tower::ServiceExt;
+
+    let f = Fixture::new();
+    let state = AppState::new(
+        std::sync::Arc::clone(&f.workspace),
+        std::sync::Arc::clone(&f.agents),
+        std::sync::Arc::clone(&f.teams),
+    )
+    .with_team_mcp_http_origin("http://127.0.0.1:9999/base");
+    let app = crate::api::app_router(state.clone(), "/base");
+    let other_project = f.workspace.create_project(".", "beta").unwrap();
+    let a = f
+        .agents
+        .create_conversation(&f.project_id, AgentId::OpenCode, Some("A"))
+        .unwrap();
+    let b = f
+        .agents
+        .create_conversation(&other_project.id, AgentId::OpenCode, Some("B"))
+        .unwrap();
+    let path_of = |name: &str, conversation: &str| -> String {
+        let url = state
+            .agent_runtime
+            .mcp_http_servers(conversation)
+            .unwrap()
+            .into_iter()
+            .find_map(|server| match server {
+                agent_client_protocol::schema::v1::McpServer::Http(http) if http.name == name => {
+                    Some(http.url)
+                }
+                _ => None,
+            })
+            .expect("advertised");
+        url.strip_prefix("http://127.0.0.1:9999")
+            .unwrap()
+            .to_owned()
+    };
+    let rpc = |path: String, session: Option<String>, body: Value| {
+        let app = app.clone();
+        async move {
+            let mut request = Request::builder()
+                .method(Method::POST)
+                .uri(path)
+                .header(header::HOST, "127.0.0.1:9999")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream");
+            if let Some(id) = session {
+                request = request.header("mcp-session-id", id);
+            }
+            let response = app
+                .oneshot(request.body(Body::from(body.to_string())).unwrap())
+                .await
+                .unwrap();
+            let status = response.status();
+            let session = response
+                .headers()
+                .get("mcp-session-id")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (
+                status,
+                session,
+                String::from_utf8_lossy(&bytes).into_owned(),
+            )
+        }
+    };
+    let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+        "protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"0"}}});
+    let call = json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+        "name":"context_search","arguments":{"query":"pruning","kinds":["research"]}}});
+    let notify = json!({"jsonrpc":"2.0","method":"notifications/initialized"});
+
+    for server in ["kubecode-context", "kubecode-team"] {
+        if server == "kubecode-team" {
+            // Only a Team member is offered the Team server.
+            continue;
+        }
+        let a_path = path_of(server, &a.id);
+        let b_path = path_of(server, &b.id);
+        let (_, a_session, _) = rpc(a_path.clone(), None, init.clone()).await;
+        let a_session = a_session.expect("A's session id");
+        rpc(a_path.clone(), Some(a_session.clone()), notify.clone()).await;
+        // A's own session works and sees A's Project.
+        let (_, _, own) = rpc(a_path.clone(), Some(a_session.clone()), call.clone()).await;
+        assert!(own.contains("Pruning"), "{own}");
+        // B's legitimate URL and token with A's session id reaches nothing of A's.
+        let (status, _, stolen) = rpc(b_path, Some(a_session), call.clone()).await;
+        assert!(!stolen.contains("Pruning"), "{status} {stolen}");
+        assert!(!status.is_success(), "{status} {stolen}");
+    }
+}
+
+#[tokio::test]
+async fn a_queued_second_solo_round_never_replaces_the_round_being_worked() {
+    let rig = rig();
+    let (session, first) = rig.solo_round();
+    // The first round's prompt is in flight under its stable id.
+    let run = rig
+        .f
+        .agents
+        .start_run_with_client_message_id(
+            &session.id,
+            &rig.f.project_id,
+            "round 1 prompt",
+            PermissionMode::Safe,
+            Some(&format!("research:{}", first.id)),
+        )
+        .unwrap();
+    // A second round, started later with a different brief, targets the same Session.
+    rig.f
+        .research
+        .update_brief(
+            &rig.f.project_id,
+            &rig.f.research_id,
+            1,
+            &BriefPatch {
+                title: Some("Second direction".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    let (second, _) = rig
+        .f
+        .research
+        .begin_round(
+            &rig.f.project_id,
+            &rig.f.research_id,
+            NewRound {
+                kind: RoundKind::Solo,
+                idempotency_key: "queued-second",
+                expected_revision: 2,
+                request: json!({"instruction": "Second instruction"}),
+                sources: Vec::new(),
+            },
+        )
+        .unwrap();
+    rig.f
+        .research
+        .round_set_session(
+            &rig.f.project_id,
+            &rig.f.research_id,
+            &second.id,
+            &session.id,
+        )
+        .unwrap();
+
+    let server = server_for(&rig.runtime, &session.id).unwrap();
+    let during = payload(server.context_round().await)["research"].clone();
+    assert_eq!(during["instruction"], "Try structured pruning", "{during}");
+    assert_eq!(during["brief_revision"], 1);
+    assert_eq!(
+        during["brief"]["title"], "Pruning",
+        "the first round's pinned direction"
+    );
+
+    // Once the first run is done, the next run (the second round's) takes over.
+    rig.f
+        .agents
+        .set_run_status(&run.id, crate::agent_store::RunStatus::Completed)
+        .unwrap();
+    rig.f
+        .agents
+        .start_run_with_client_message_id(
+            &session.id,
+            &rig.f.project_id,
+            "round 2 prompt",
+            PermissionMode::Safe,
+            Some(&format!("research:{}", second.id)),
+        )
+        .unwrap();
+    let after = payload(server.context_round().await)["research"].clone();
+    assert_eq!(after["instruction"], "Second instruction");
+    assert_eq!(after["brief_revision"], 2);
+}
