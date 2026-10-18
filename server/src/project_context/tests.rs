@@ -324,7 +324,17 @@ fn hidden_revision_snapshots_are_never_readable() {
 fn search_matches_parts_of_words_and_orders_title_hits_first() {
     let w = world();
     let page = w.search("prun");
-    assert_eq!(page.items[0].reference.kind, ContextKind::Research);
+    assert!(
+        page.items
+            .iter()
+            .any(|i| i.reference.kind == ContextKind::Research)
+    );
+    // Every title hit precedes every summary-only hit.
+    let is_title_hit = |i: &ContextItem| i.title.to_lowercase().contains("prun");
+    let first_other = page.items.iter().position(|i| !is_title_hit(i));
+    if let Some(index) = first_other {
+        assert!(page.items[index..].iter().all(|i| !is_title_hit(i)));
+    }
     assert!(
         w.search("PRUNING")
             .items
