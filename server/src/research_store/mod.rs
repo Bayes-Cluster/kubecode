@@ -989,6 +989,33 @@ impl ResearchStore {
         }
     }
 
+    /// The Solo round (one without a Team) whose Session is `session_id`.
+    pub fn round_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<(String, ResearchRound)>, ResearchError> {
+        let connection = self.connection();
+        let row = connection
+            .query_row(
+                "SELECT q.project_id, r.id, r.research_id, r.round, r.brief_revision, r.kind,
+                        r.phase, r.session_id, r.team_id, r.request_json, r.sources_json,
+                        r.created_at, r.updated_at
+                 FROM research_rounds r JOIN research_questions q ON q.id = r.research_id
+                 WHERE r.session_id = ?1 AND r.team_id IS NULL
+                 ORDER BY r.round DESC LIMIT 1",
+                [session_id],
+                |row| {
+                    let project: String = row.get(0)?;
+                    Ok((project, round_from_offset_row(row, 1)))
+                },
+            )
+            .optional()?;
+        match row {
+            Some((project, round)) => Ok(Some((project, round?))),
+            None => Ok(None),
+        }
+    }
+
     // -- Plumbing --------------------------------------------------------------
 
     fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {

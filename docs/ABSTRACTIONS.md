@@ -975,6 +975,20 @@ subagent threads are not Sessions, and a turn still running is readable but
 marked partial. Reading is passive and never writes. A finding read carries its
 basis: it is an Agent's recorded claim, not a verified result.
 
+## Context tools
+
+The `kubecode-context` tools are how an Agent uses context references. They are
+read-only by construction: the tool set is fixed at four tools and none of
+them writes a record, starts an Agent, assigns work, approves a brief, or
+authorizes an experiment. `context_round` returns the caller's own research
+round (Team member or Solo Session) as one shared delivery — the brief pinned at
+the revision the round consumed, whether the live brief has moved, the selected
+sources and their availability, earlier rounds, and attributed findings.
+`context_search`, `context_read`, and `context_resolve` expose the Project
+context reader to the Agent with the Project taken from the Session. Reading
+another Session's turns is allowed only through these explicit references; it
+never merges provider histories, which stay independent.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their
