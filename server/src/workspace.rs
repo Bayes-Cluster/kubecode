@@ -1120,10 +1120,14 @@ impl WorkspaceService {
     }
 
     /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
-    /// Project, or a Team's worktree), for read-only context (ADR 0214). The
-    /// path must stay inside the root and pass through no symlink. Returns the
-    /// text, whether it was cut, and the file's current revision (the same
-    /// value `execution_file_revision` yields).
+    /// Project, or a Team's worktree), for read-only context (ADR 0214).
+    ///
+    /// The file is opened **once** without following a final symlink and
+    /// without blocking on a FIFO, then checked to be a regular file; the
+    /// returned content revision is computed from that same descriptor, so the
+    /// text and the revision always describe the same bytes even if the file is
+    /// replaced concurrently. Returns the text, whether it was cut, and the
+    /// revision (`execution_file_revision`'s value for the same bytes).
     pub fn read_execution_text(
         &self,
         project_id: &str,
@@ -1131,13 +1135,50 @@ impl WorkspaceService {
         relative: &str,
         max_bytes: usize,
     ) -> Result<(String, bool, String), WorkspaceError> {
-        let revision = self.execution_file_revision(project_id, workspace_path, relative)?;
+        use std::os::unix::fs::OpenOptionsExt;
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
         let root = self.execution_path(project_id, workspace_path)?;
-        let target = root.join(normalize_relative(relative, false)?);
+        let relative = normalize_relative(relative, false)?;
+        let mut candidate = root.clone();
+        for component in relative.components() {
+            candidate.push(component.as_os_str());
+            if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
+                return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+            }
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&candidate)?;
+        // A parent swapped for a symlink after the walk above would resolve
+        // outside the root; the opened file must still live under it.
+        let opened = fs::canonicalize(format!("/proc/self/fd/{}", {
+            use std::os::fd::AsRawFd;
+            file.as_raw_fd()
+        }))
+        .ok();
+        if opened.as_ref().is_some_and(|path| !path.starts_with(&root)) {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
         let mut bytes = Vec::new();
-        fs::File::open(&target)?
-            .take(max_bytes as u64 + 1)
-            .read_to_end(&mut bytes)?;
+        file.take(MAX_ASSET_BYTES + 1).read_to_end(&mut bytes)?;
+        let revision = if metadata.len() > MAX_ASSET_BYTES {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            format!("large:{}:{modified}", metadata.len())
+        } else {
+            revision(&bytes)
+        };
         let truncated = bytes.len() > max_bytes;
         bytes.truncate(max_bytes);
         // A cut can land inside a character; drop the partial tail only.

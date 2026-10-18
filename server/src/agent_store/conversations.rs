@@ -178,6 +178,28 @@ impl AgentStore {
             .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))
     }
 
+    /// A user-visible Session of `project_id`: not a hidden revision snapshot,
+    /// not a subagent thread, and not another Project's. Used by read-only
+    /// context reads, which must treat anything else as missing.
+    pub fn visible_conversation(
+        &self,
+        project_id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<Conversation>, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        database
+            .query_row(
+                &conversation_query(
+                    "WHERE c.id = ?1 AND c.project_id = ?2 AND c.internal_revision = 0
+                     AND (c.relationship IS NULL OR c.relationship != 'subagent')",
+                ),
+                params![conversation_id, project_id],
+                conversation_from_row,
+            )
+            .optional()
+            .map_err(StoreError::from)
+    }
+
     pub fn list_conversations(&self, project_id: &str) -> Result<Vec<Conversation>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(&conversation_query(

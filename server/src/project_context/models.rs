@@ -13,6 +13,10 @@ pub const MAX_PAGE: usize = 50;
 pub const MAX_RESOLVE: usize = 32;
 /// Candidates scanned per owner for one search.
 pub const SCAN_CAP: usize = 200;
+/// Candidates gathered across all owners for one search.
+pub const CANDIDATE_BUDGET: usize = 2_000;
+/// Characters in one whole document, across its sections.
+pub const MAX_DOCUMENT_CHARS: usize = 32 * 1024;
 pub const TURN_PAGE: usize = 10;
 pub const MAX_ID_CHARS: usize = 512;
 

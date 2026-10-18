@@ -2,6 +2,8 @@
 //! availability resolution. The Project always comes from the route; nothing
 //! here writes, starts an Agent, or changes authority.
 
+use std::sync::Arc;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -54,11 +56,14 @@ impl IntoResponse for ContextApiError {
                 "invalid_context_request",
                 reason.to_owned(),
             ),
-            Self::Context(ContextError::Source(_)) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
-                "context storage failed".to_owned(),
-            ),
+            Self::Context(ContextError::Source(detail)) => {
+                eprintln!("WARN: project context read failed: {detail}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "context storage failed".to_owned(),
+                )
+            }
             Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
                 StatusCode::NOT_FOUND,
                 "not_found",
@@ -83,6 +88,19 @@ impl IntoResponse for ContextApiError {
     }
 }
 
+/// Context reads touch SQLite and the filesystem synchronously, so they run
+/// off the async workers.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, ContextError> + Send + 'static,
+) -> Result<T, ContextApiError> {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(result) => Ok(result?),
+        Err(error) => Err(ContextApiError::Context(ContextError::Source(format!(
+            "context task failed: {error}"
+        )))),
+    }
+}
+
 fn check_project(state: &AppState, project_id: &str) -> Result<(), ContextApiError> {
     state.workspace.project_path(project_id)?;
     Ok(())
@@ -104,13 +122,19 @@ async fn search(
 ) -> Result<Json<ContextPage>, ContextApiError> {
     check_project(&state, &project_id)?;
     let kinds = parse_kinds(query.kinds.as_deref())?;
-    Ok(Json(state.context.search(
-        &project_id,
-        query.q.as_deref(),
-        &kinds,
-        query.limit,
-        query.cursor.as_deref(),
-    )?))
+    let context = Arc::clone(&state.context);
+    Ok(Json(
+        blocking(move || {
+            context.search(
+                &project_id,
+                query.q.as_deref(),
+                &kinds,
+                query.limit,
+                query.cursor.as_deref(),
+            )
+        })
+        .await?,
+    ))
 }
 
 fn parse_kinds(value: Option<&str>) -> Result<Vec<ContextKind>, ContextApiError> {
@@ -153,12 +177,11 @@ async fn read(
         id: query.id,
         revision: query.revision,
     };
-    Ok(Json(state.context.read(
-        &project_id,
-        &reference,
-        detail,
-        query.cursor.as_deref(),
-    )?))
+    let context = Arc::clone(&state.context);
+    Ok(Json(
+        blocking(move || context.read(&project_id, &reference, detail, query.cursor.as_deref()))
+            .await?,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,5 +195,8 @@ async fn resolve(
     Json(body): Json<ResolveBody>,
 ) -> Result<Json<Vec<ResolvedRef>>, ContextApiError> {
     check_project(&state, &project_id)?;
-    Ok(Json(state.context.resolve(&project_id, &body.refs)?))
+    let context = Arc::clone(&state.context);
+    Ok(Json(
+        blocking(move || context.resolve(&project_id, &body.refs)).await?,
+    ))
 }

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use sha2::{Digest, Sha256};
 
-use crate::agent_store::{AgentStore, Conversation, ConversationRelationship};
+use crate::agent_store::{AgentStore, Conversation};
 use crate::experiment_store::{Experiment, ExperimentStore};
 use crate::research_store::{Finding, LinkKind, ResearchRound, ResearchStore};
 use crate::teams::{Team, TeamStore};
@@ -29,6 +29,16 @@ pub struct ProjectContext {
     research: Arc<ResearchStore>,
     experiments: Arc<ExperimentStore>,
     workspace: Arc<WorkspaceService>,
+}
+
+/// Keeps the first `SCAN_CAP` entries (callers order newest first) and flags
+/// the page when anything was left out.
+fn cap<T>(mut items: Vec<T>, truncated: &mut bool) -> Vec<T> {
+    if items.len() > SCAN_CAP {
+        *truncated = true;
+        items.truncate(SCAN_CAP);
+    }
+    items
 }
 
 fn digest(parts: &[&str]) -> String {
@@ -162,12 +172,16 @@ impl ProjectContext {
         .into_iter()
         .any(wanted);
         if need_research {
-            let mut questions = self.research.list(project_id, true).map_err(source_error)?;
-            if questions.len() > SCAN_CAP {
-                *truncated = true;
-                questions.truncate(SCAN_CAP);
-            }
+            // Newest first: the cap keeps the most recent candidates.
+            let questions = cap(
+                self.research.list(project_id, true).map_err(source_error)?,
+                truncated,
+            );
             for question in &questions {
+                if out.len() >= CANDIDATE_BUDGET {
+                    *truncated = true;
+                    break;
+                }
                 if wanted(ContextKind::Research) {
                     let full = self
                         .research
@@ -183,15 +197,13 @@ impl ProjectContext {
                     ));
                 }
                 if wanted(ContextKind::Finding) {
-                    for finding in self
+                    let mut findings = self
                         .research
                         .findings(project_id, &question.id)
-                        .map_err(source_error)?
-                        .into_iter()
-                        .rev()
-                        .take(SCAN_CAP)
-                    {
-                        out.push(self.finding_item(&finding, &question.updated_at));
+                        .map_err(source_error)?;
+                    findings.reverse();
+                    for finding in cap(findings, truncated) {
+                        out.push(self.finding_item(&finding));
                     }
                 }
                 if [
@@ -202,24 +214,20 @@ impl ProjectContext {
                 .into_iter()
                 .any(wanted)
                 {
-                    for round in self
+                    let rounds = self
                         .research
                         .rounds(project_id, &question.id)
-                        .map_err(source_error)?
-                        .into_iter()
-                        .take(SCAN_CAP)
-                    {
+                        .map_err(source_error)?;
+                    for round in cap(rounds, truncated) {
                         if wanted(ContextKind::Round) {
                             out.push(self.round_item(&question.title, &round));
                         }
                         if wanted(ContextKind::Experiment) || wanted(ContextKind::Artifact) {
-                            for experiment in self
+                            let experiments = self
                                 .experiments
                                 .experiments(project_id, &question.id, &round.id)
-                                .map_err(source_error)?
-                                .into_iter()
-                                .take(SCAN_CAP)
-                            {
+                                .map_err(source_error)?;
+                            for experiment in cap(experiments, truncated) {
                                 if wanted(ContextKind::Experiment) {
                                     out.push(self.experiment_item(&experiment));
                                 }
@@ -243,48 +251,34 @@ impl ProjectContext {
                 .agents
                 .list_conversations(project_id)
                 .map_err(source_error)?;
-            if conversations.len() > SCAN_CAP {
-                *truncated = true;
-                conversations.truncate(SCAN_CAP);
-            }
-            for conversation in &conversations {
-                if self.visible_session(conversation) {
-                    out.push(self.session_item(conversation));
-                }
+            conversations.reverse();
+            for conversation in cap(conversations, truncated) {
+                out.push(self.session_item(&conversation));
             }
         }
         if wanted(ContextKind::Team) || wanted(ContextKind::TeamTask) {
-            let mut teams = self.teams.list_teams(project_id).map_err(source_error)?;
-            if teams.len() > SCAN_CAP {
-                *truncated = true;
-                teams.truncate(SCAN_CAP);
-            }
+            let teams = cap(
+                self.teams.list_teams(project_id).map_err(source_error)?,
+                truncated,
+            );
             for team in &teams {
+                if out.len() >= CANDIDATE_BUDGET {
+                    *truncated = true;
+                    break;
+                }
                 if wanted(ContextKind::Team) {
                     out.push(self.team_item(team));
                 }
                 if wanted(ContextKind::TeamTask) {
-                    for task in self
-                        .teams
-                        .list_tasks(&team.id)
-                        .map_err(source_error)?
-                        .into_iter()
-                        .take(SCAN_CAP)
-                    {
+                    let mut tasks = self.teams.list_tasks(&team.id).map_err(source_error)?;
+                    tasks.reverse();
+                    for task in cap(tasks, truncated) {
                         out.push(self.task_item(team, &task));
                     }
                 }
             }
         }
         Ok(())
-    }
-
-    /// Hidden snapshots and subagent threads are not discoverable Sessions.
-    fn visible_session(&self, conversation: &Conversation) -> bool {
-        !matches!(
-            conversation.relationship,
-            Some(ConversationRelationship::Subagent)
-        )
     }
 
     // -- Item builders (metadata only) ---------------------------------------------
@@ -313,8 +307,7 @@ impl ProjectContext {
         }
     }
 
-    fn finding_item(&self, finding: &Finding, updated_at: &str) -> ContextItem {
-        let _ = updated_at;
+    fn finding_item(&self, finding: &Finding) -> ContextItem {
         ContextItem {
             reference: ContextRef::at(ContextKind::Finding, &finding.id, "1"),
             title: format!(
@@ -368,6 +361,17 @@ impl ProjectContext {
         }
     }
 
+    /// The research question a Session or Team is linked to, only if it lives
+    /// in the same Project.
+    fn linked_research(&self, project_id: &str, kind: LinkKind, id: &str) -> Option<String> {
+        self.research
+            .link_for(kind, id)
+            .ok()
+            .flatten()
+            .filter(|(owner, _)| owner == project_id)
+            .map(|(_, link)| link.research_id)
+    }
+
     fn session_item(&self, conversation: &Conversation) -> ContextItem {
         let (_, last) = self
             .agents
@@ -377,7 +381,16 @@ impl ProjectContext {
             reference: ContextRef::at(
                 ContextKind::Session,
                 &conversation.id,
-                last.unwrap_or_else(|| "0".into()),
+                digest(&[
+                    last.as_deref().unwrap_or("0"),
+                    &state_label(&conversation.latest_run_status).unwrap_or_default(),
+                    &conversation.title,
+                    if conversation.archived {
+                        "archived"
+                    } else {
+                        "active"
+                    },
+                ]),
             ),
             title: conversation.title.clone(),
             summary: summarize(&format!(
@@ -392,12 +405,11 @@ impl ProjectContext {
             provenance: Provenance {
                 author: Some("agent".into()),
                 updated_at: Some(conversation.updated_at.clone()),
-                research_id: self
-                    .research
-                    .link_for(LinkKind::Session, &conversation.id)
-                    .ok()
-                    .flatten()
-                    .map(|(_, link)| link.research_id),
+                research_id: self.linked_research(
+                    &conversation.project_id,
+                    LinkKind::Session,
+                    &conversation.id,
+                ),
                 state: Some(if conversation.archived {
                     "archived".into()
                 } else {
@@ -417,6 +429,8 @@ impl ProjectContext {
                 digest(&[
                     &state_label(&team.status).unwrap_or_default(),
                     &team.updated_at,
+                    &team.goal,
+                    team.final_summary.as_deref().unwrap_or_default(),
                 ]),
             ),
             title: team.title.clone(),
@@ -424,12 +438,7 @@ impl ProjectContext {
             provenance: Provenance {
                 author: Some("agent".into()),
                 updated_at: Some(team.updated_at.clone()),
-                research_id: self
-                    .research
-                    .link_for(LinkKind::Team, &team.id)
-                    .ok()
-                    .flatten()
-                    .map(|(_, link)| link.research_id),
+                research_id: self.linked_research(&team.project_id, LinkKind::Team, &team.id),
                 state: state_label(&team.status),
                 ..Provenance::default()
             },
@@ -526,6 +535,8 @@ fn task_revision(task: &crate::teams::TeamTask) -> String {
         &state_label(&task.status).unwrap_or_default(),
         task.result.as_deref().unwrap_or_default(),
         task.verification.as_deref().unwrap_or_default(),
+        task.plan.as_deref().unwrap_or_default(),
+        &task.description,
     ])
 }
 
@@ -624,6 +635,26 @@ impl ContextDocument {
         self.section(heading, &lines.join("\n"));
     }
 
+    /// Keeps the whole document within `MAX_DOCUMENT_CHARS`: later sections
+    /// are cut or dropped, and the cut is flagged.
+    fn bound(&mut self) {
+        let mut budget = MAX_DOCUMENT_CHARS;
+        let mut cut = false;
+        for section in &mut self.sections {
+            let (text, truncated) = clip(&section.text, budget);
+            budget -= text.chars().count();
+            if truncated {
+                section.text = text;
+                section.truncated = true;
+                cut = true;
+            }
+        }
+        if cut {
+            self.notes
+                .push("Some sections were cut to keep this read within its size limit.".into());
+        }
+    }
+
     fn note(&mut self, text: impl Into<String>) {
         self.notes.push(text.into());
     }
@@ -639,6 +670,14 @@ impl ProjectContext {
     ) -> Result<Option<ContextItem>, ContextError> {
         let id = reference.id.as_str();
         valid_id(id)?;
+        if reference.kind == ContextKind::Research
+            && reference
+                .revision
+                .as_deref()
+                .is_some_and(|revision| revision.parse::<u64>().is_err())
+        {
+            return Err(ContextError::Invalid("a research revision is a number"));
+        }
         Ok(match reference.kind {
             ContextKind::Research => missing(self.research.get(project_id, id), research_missing)?
                 .map(|q| {
@@ -663,7 +702,7 @@ impl ProjectContext {
             }
             ContextKind::Finding => {
                 missing(self.research.finding(project_id, id), research_missing)?
-                    .map(|finding| self.finding_item(&finding, &finding.created_at))
+                    .map(|finding| self.finding_item(&finding))
             }
             ContextKind::Session => self
                 .conversation(project_id, id)?
@@ -685,10 +724,9 @@ impl ProjectContext {
         project_id: &str,
         id: &str,
     ) -> Result<Option<Conversation>, ContextError> {
-        let found = missing(self.agents.get_conversation(id), |e| {
-            matches!(e, crate::agent_store::StoreError::ConversationNotFound(_))
-        })?;
-        Ok(found.filter(|c| c.project_id == project_id && self.visible_session(c)))
+        self.agents
+            .visible_conversation(project_id, id)
+            .map_err(source_error)
     }
 
     fn team(&self, project_id: &str, id: &str) -> Result<Option<Team>, ContextError> {
@@ -796,14 +834,11 @@ impl ProjectContext {
         if !experiment.artifacts.iter().any(|declared| declared == path) {
             return Ok(None);
         }
-        let current = self
-            .workspace
-            .execution_file_revision(
-                project_id,
-                self.workspace_path(&experiment).as_deref(),
-                path,
-            )
-            .ok();
+        let current = self.execution_root(&experiment).and_then(|root| {
+            self.workspace
+                .execution_file_revision(project_id, root.as_deref(), path)
+                .ok()
+        });
         let mut item = self.artifact_item(&experiment, path, current.as_deref());
         if current.is_none() {
             item.availability = Availability::Removed;
@@ -811,12 +846,19 @@ impl ProjectContext {
         Ok(Some(item))
     }
 
-    fn workspace_path(&self, experiment: &Experiment) -> Option<String> {
-        experiment
-            .team_id
-            .as_deref()
-            .and_then(|team_id| self.teams.get_team(team_id).ok())
-            .and_then(|team| team.workspace_path)
+    /// Where the experiment's process ran: `Some(None)` is the Project root,
+    /// `Some(Some(path))` a Team worktree. `None` means the Team that owned
+    /// the run is gone, so its worktree cannot be located and the Project's
+    /// same-named files must not be substituted.
+    fn execution_root(&self, experiment: &Experiment) -> Option<Option<String>> {
+        match experiment.team_id.as_deref() {
+            None => Some(None),
+            Some(team_id) => self
+                .teams
+                .get_team(team_id)
+                .ok()
+                .map(|team| team.workspace_path),
+        }
     }
 
     /// The availability of a reference and its current revision.
@@ -894,10 +936,15 @@ impl ProjectContext {
             ContextKind::Experiment => {
                 self.read_experiment(project_id, &reference.id, depth, &mut doc)?
             }
-            ContextKind::Artifact => {
-                self.read_artifact(project_id, &reference.id, depth, &mut doc)?
-            }
+            ContextKind::Artifact => self.read_artifact(
+                project_id,
+                &reference.id,
+                reference.revision.as_deref(),
+                depth,
+                &mut doc,
+            )?,
         }
+        doc.bound();
         Ok(doc)
     }
 
@@ -921,8 +968,16 @@ impl ProjectContext {
                 let old = self
                     .research
                     .revision(project_id, &question.id, pinned)
-                    .map_err(source_error)?;
+                    .map_err(|error| match error {
+                        crate::research_store::ResearchError::RevisionNotFound(_) => {
+                            ContextError::NotFound
+                        }
+                        other => source_error(other),
+                    })?;
                 brief = old.brief;
+                if let Some(first) = doc.sections.first_mut() {
+                    first.text = summarize(&brief.question);
+                }
                 doc.note(format!(
                     "Showing brief revision {pinned}; the current approved brief is revision {}.",
                     question.revision
@@ -975,7 +1030,7 @@ impl ProjectContext {
                     .iter()
                     .rev()
                     .take(RELATED_CAP)
-                    .map(|f| self.finding_item(f, &question.updated_at)),
+                    .map(|f| self.finding_item(f)),
             );
             let rounds = self
                 .research
@@ -1328,20 +1383,18 @@ impl ProjectContext {
                 outcome.push_str(&format!(", {reason}"));
             }
             doc.section("Outcome", &outcome);
-            let workspace_path = self.workspace_path(&experiment);
+            let root = self.execution_root(&experiment);
             let lines: Vec<String> = experiment
                 .artifact_revisions
                 .iter()
                 .map(|artifact| {
-                    let now = self
-                        .workspace
-                        .execution_file_revision(
-                            project_id,
-                            workspace_path.as_deref(),
-                            &artifact.path,
-                        )
-                        .ok();
+                    let now = root.as_ref().and_then(|root| {
+                        self.workspace
+                            .execution_file_revision(project_id, root.as_deref(), &artifact.path)
+                            .ok()
+                    });
                     let status = match (&artifact.revision, &now) {
+                        _ if root.is_none() => "unavailable: the Team that ran it is gone",
                         (None, None) => "missing",
                         (None, Some(_)) => "appeared after the run",
                         (Some(_), None) => "removed",
@@ -1396,6 +1449,7 @@ impl ProjectContext {
         &self,
         project_id: &str,
         id: &str,
+        requested: Option<&str>,
         depth: u8,
         doc: &mut ContextDocument,
     ) -> Result<(), ContextError> {
@@ -1405,13 +1459,21 @@ impl ProjectContext {
             .ok_or(ContextError::NotFound)?;
         doc.related.push(self.experiment_item(&experiment));
         if depth >= 1 {
+            let Some(root) = self.execution_root(&experiment) else {
+                doc.note("The Team that ran this experiment no longer exists, so its files cannot be located.");
+                return Ok(());
+            };
             match self.workspace.read_execution_text(
                 project_id,
-                self.workspace_path(&experiment).as_deref(),
+                root.as_deref(),
                 path,
                 TEXT_READ_BYTES,
             ) {
-                Ok((text, truncated, _)) => {
+                Ok((text, truncated, revision)) => {
+                    // The revision comes from the bytes just read, so the
+                    // reference and the text always agree.
+                    doc.availability = compare(requested, &revision);
+                    doc.reference.revision = Some(revision);
                     doc.sections.push(Section {
                         heading: "Content".into(),
                         text,
@@ -1483,8 +1545,16 @@ impl ProjectContext {
                 };
             }
         };
-        match self.lookup(project_id, &ContextRef::new(kind, &source.id)) {
-            Ok(Some(_)) => Availability::Available,
+        let reference = ContextRef {
+            kind,
+            id: source.id.clone(),
+            revision: source.revision.clone(),
+        };
+        match self.lookup(project_id, &reference) {
+            Ok(Some(item)) => compare(
+                source.revision.as_deref(),
+                item.reference.revision.as_deref().unwrap_or_default(),
+            ),
             _ => Availability::Removed,
         }
     }

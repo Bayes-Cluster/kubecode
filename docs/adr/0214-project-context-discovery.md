@@ -40,10 +40,10 @@ A reference is `{ kind, id, revision? }`:
 | `research` | RQ id | brief revision |
 | `round` | round id | phase and pinned brief revision |
 | `finding` | finding id | immutable (`1`) |
-| `session` | conversation id | latest user-visible run id |
-| `session_turn` | `conversation_id/run_id` | digest of the turn text |
-| `team` | team id | status and last update |
-| `team_task` | task id | digest of status, result, verification |
+| `session` | conversation id | digest of the latest turn id and status, title, archive state |
+| `session_turn` | `conversation_id/run_id` | digest of status and the first 8 KiB of the turn text |
+| `team` | team id | digest of status, last update, goal, final summary |
+| `team_task` | task id | digest of status, result, verification, plan, description |
 | `experiment` | experiment id | digest of state, analysis, exit |
 | `artifact` | `experiment_id/path` | content revision when the process ended |
 
@@ -59,14 +59,22 @@ reference reads the pinned brief revision and says a newer one exists.
 
 - `search(query, kinds, limit, cursor)` returns metadata items — reference,
   title, a ≤280-character summary, provenance, availability — newest first,
-  filtered by whole-word text matching over titles and summaries. Each owner is
-  scanned for at most 200 recent candidates; the page cap is 50; the cursor is
-  opaque. Results beyond the scan cap are flagged `truncated`, not hidden.
+  filtered by case-insensitive text matching: every query word must occur in the
+  title or summary (a word may match part of a longer word). Each owner is
+  scanned newest first for at most 200 candidates and one search gathers at most
+  2,000 in total; the page cap is 50; the cursor is opaque. Anything left out by
+  either cap sets `truncated` on the page rather than being hidden. Artifact
+  items carry the revision recorded when the process ended and are listed as
+  `available`; `read` and `resolve` report their current state.
 - `read(ref, detail, cursor)` returns a document with a summary first
   (`summary`), then selected content (`content`), then evidence or execution
   detail (`evidence`). A document is a list of titled text sections with `truncated`
-  flags, related references, and notes; no section exceeds 8 KiB and a
-  document is bounded overall. Long lists (a Session's turns) paginate.
+  flags, related references, and notes; no section exceeds 8 KiB and a whole
+  document is cut at 32 KiB, with a note. Long lists (a Session's turns)
+  paginate. A Session or turn read returns message text; tool calls and other
+  execution events are not included. `read` of a missing or removed record is
+  `not found` (as for another Project's record); only `resolve` reports
+  `removed`.
 - `resolve(refs)` reports availability and the current revision for up to 32
   references, which is what drafts and rounds use to show stale sources.
 
@@ -74,11 +82,15 @@ reference reads the pinned brief revision and says a newer one exists.
 
 The caller's Project comes from the HTTP route or, for Agents, from the Session
 (never from an argument). Every lookup checks the record's Project. Session
-reads exclude hidden revision snapshots and subagent conversations. A turn
+reads exclude hidden revision snapshots and subagent conversations in every
+path (search, read, resolve, turn reads). A turn
 that is still running is readable but marked partial. Artifacts resolve through
 `WorkspaceService` under the **execution root of the experiment's Team** (the
 Project or its worktree), with no symlink traversal, and are read as bounded
-text only. A cross-Session turn read is allowed only here, through an explicit
+text only. A file is opened once without following a final symlink or blocking
+on a FIFO, and its revision is computed from the same bytes that are shown. If
+the Team that ran the experiment no longer exists the artifact is unavailable;
+the reader never substitutes the Project's same-named file. A cross-Session turn read is allowed only here, through an explicit
 reference; the Composer's current-Session turn checks (§Composer) are unchanged.
 
 ### 5. Consumers
@@ -95,6 +107,13 @@ semantics above are shared so identity, provenance, and scope cannot drift.
 A vector database, automatic transcript sharing, an embedded browser, remote
 execution, and new Agent providers. Cross-RQ references do not change the
 one-RQ-per-Session/Team association. Reading never writes.
+
+### 7. Extending the reference kinds
+
+A new kind is additive: one variant in the Rust `ContextKind`, the mirrored
+TypeScript union, a lookup and read arm in `ProjectContext`, and tests for
+Project scoping and for changed/removed reporting. Consumers must treat an
+unknown kind as unsupported, never as a different kind.
 
 ## Consequences
 

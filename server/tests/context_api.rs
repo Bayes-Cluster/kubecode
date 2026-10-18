@@ -249,3 +249,46 @@ async fn reading_does_not_write() {
         "{entries}"
     );
 }
+
+#[tokio::test]
+async fn sessions_are_discoverable_and_pages_are_clamped_over_http() {
+    let env = env();
+    let (status, session) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/sessions", env.project_id),
+        json!({"agent_id": "opencode", "title": "Sweep notes"}),
+    )
+    .await;
+    assert!(status.is_success(), "{session}");
+    let id = session["id"].as_str().unwrap();
+    let base = format!("/projects/{}/context", env.project_id);
+    let (_, page) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/search?q=sweep&kinds=session&limit=1000"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(page["items"][0]["ref"]["id"], id);
+    assert_eq!(page["items"][0]["provenance"]["state"], "active");
+    let (status, doc) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/read?kind=session&id={id}&detail=content"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{doc}");
+    assert_eq!(doc["title"], "Sweep notes");
+    // Another Project cannot read it.
+    let other = format!("/projects/{}/context", env.other_project_id);
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!("{other}/read?kind=session&id={id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
