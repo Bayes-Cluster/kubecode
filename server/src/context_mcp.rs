@@ -307,7 +307,10 @@ pub async fn handle_http(
     Path((token, conversation_id)): Path<(String, String)>,
     request: Request<Body>,
 ) -> Response {
-    if !state.agent_runtime.authorize_team_mcp(&token) {
+    if !state
+        .agent_runtime
+        .authorize_mcp("context", &conversation_id, &token)
+    {
         return StatusCode::NOT_FOUND.into_response();
     }
     let context = match tool_context(state.agent_runtime.as_ref().clone(), &conversation_id) {

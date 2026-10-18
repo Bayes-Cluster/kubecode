@@ -201,7 +201,22 @@ pub struct AgentRuntime {
 #[derive(Clone)]
 struct TeamMcpHttpConfig {
     origin: String,
+    /// The runtime-wide secret. It is never placed in a URL; per-server,
+    /// per-conversation tokens are derived from it.
     token: String,
+}
+
+impl TeamMcpHttpConfig {
+    fn derive_token(&self, server: &str, conversation_id: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.token.as_bytes());
+        for part in [server, conversation_id] {
+            hasher.update([0]);
+            hasher.update(part.as_bytes());
+        }
+        hex::encode(hasher.finalize())
+    }
 }
 
 #[derive(Clone)]
@@ -397,10 +412,21 @@ impl AgentRuntime {
         self
     }
 
-    pub fn authorize_team_mcp(&self, token: &str) -> bool {
-        self.team_mcp_http
-            .as_ref()
-            .is_some_and(|config| config.token == token)
+    /// Whether `token` is the credential issued for `server` ("team" or
+    /// "context") and this exact conversation. Each URL carries its own
+    /// derived token, so the read-only context credential that every Session
+    /// holds can never open the Team server, nor another conversation's route.
+    pub fn authorize_mcp(&self, server: &str, conversation_id: &str, token: &str) -> bool {
+        let Some(config) = self.team_mcp_http.as_ref() else {
+            return false;
+        };
+        let expected = config.derive_token(server, conversation_id);
+        expected.len() == token.len()
+            && expected
+                .bytes()
+                .zip(token.bytes())
+                .fold(0u8, |difference, (a, b)| difference | (a ^ b))
+                == 0
     }
 
     fn team_mcp_http_server(
@@ -425,7 +451,9 @@ impl AgentRuntime {
             "kubecode-team",
             format!(
                 "{}/api/v1/team-mcp/{}/{}",
-                config.origin, config.token, conversation_id
+                config.origin,
+                config.derive_token("team", conversation_id),
+                conversation_id
             ),
         ))))
     }
@@ -450,7 +478,9 @@ impl AgentRuntime {
             crate::context_mcp::CONTEXT_MCP_NAME,
             format!(
                 "{}/api/v1/context-mcp/{}/{}",
-                config.origin, config.token, conversation_id
+                config.origin,
+                config.derive_token("context", conversation_id),
+                conversation_id
             ),
         )))
     }

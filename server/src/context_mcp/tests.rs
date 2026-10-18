@@ -903,3 +903,42 @@ async fn a_session_whose_team_has_no_round_falls_back_to_its_own_solo_round() {
     let delivery = payload(server.context_round().await)["research"].clone();
     assert_eq!(delivery["instruction"], "x");
 }
+
+#[test]
+fn credentials_are_scoped_to_one_server_and_one_conversation() {
+    let rig = rig();
+    let member = rig.f.teammate.conversation_id.clone();
+    let solo = rig.prior_session();
+    let token_of = |conversation_id: &str, name: &str| -> String {
+        rig.runtime
+            .mcp_http_servers(conversation_id)
+            .unwrap()
+            .into_iter()
+            .find_map(|server| match server {
+                agent_client_protocol::schema::v1::McpServer::Http(http) if http.name == name => {
+                    http.url.rsplit('/').nth(1).map(str::to_owned)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{name} not advertised"))
+    };
+    let team_token = token_of(&member, "kubecode-team");
+    let context_token = token_of(&member, "kubecode-context");
+    let solo_context = token_of(&solo.id, "kubecode-context");
+    assert_ne!(team_token, context_token);
+    assert!(rig.runtime.authorize_mcp("team", &member, &team_token));
+    assert!(
+        rig.runtime
+            .authorize_mcp("context", &member, &context_token)
+    );
+    // The read-only credential every Session holds cannot open the Team server...
+    assert!(!rig.runtime.authorize_mcp("team", &member, &context_token));
+    assert!(!rig.runtime.authorize_mcp("team", &member, &solo_context));
+    // ...nor any other conversation's route.
+    assert!(!rig.runtime.authorize_mcp("context", &member, &solo_context));
+    assert!(
+        !rig.runtime
+            .authorize_mcp("team", &rig.f.leader.conversation_id, &team_token)
+    );
+    assert!(!rig.runtime.authorize_mcp("context", &member, ""));
+}

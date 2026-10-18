@@ -148,7 +148,9 @@ the canonical event log without copying it.
 Agents reach the same reader through `server/src/context_mcp.rs`, a read-only
 `kubecode-context` MCP server advertised to **every** Session next to the Team
 server (HTTP at `/api/v1/context-mcp/{token}/{conversation_id}`, authorized by
-the same process-wide token). It has four passive tools — `context_round`,
+a credential derived per server and per conversation from the process secret, so
+the read-only credential every Session holds cannot open the Team server or
+another conversation's route). It has four passive tools — `context_round`,
 `context_search`, `context_read`, `context_resolve` — and the caller's Project
 is derived from its Session, never from an argument. Hidden revision snapshots
 and unknown conversations get no tools. A Team member whose Agent cannot reach
