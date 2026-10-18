@@ -239,6 +239,20 @@ store needs it). The browser surface is `src/kubecode/work/`: `WorkBoard`
 The Team view's task tab renders the same board under a Team scope and keeps
 the Team's own dialog for Team-owned tasks.
 
+Experiments, analysis, and evidence on native work (ADR 0219): an experiment may
+carry a native task id and no Team (`experiment_store` admits it only for active
+native work of the same round). `orchestrator/analysis.rs` routes each finished
+task-owned experiment to the executor once and moves the task to `analyzing`;
+`work_agent/analysis.rs` holds `launch_experiment`, `decide`, `request_decision`,
+`brief`, and `repin`, exposed as `work_launch_experiment`, `work_decide`,
+`work_request_decision`, `work_brief`, and `work_repin`. `work_agent/evidence.rs`
+compares each cited reference's pinned revision with its current one; acceptance
+(`WorkAgent::review` and the researcher's `review` command) refuses stale
+evidence with `409 work_evidence_stale`. `work_store/decisions.rs` holds
+`decision_requests` (answered at `POST .../work/{id}/decisions/{request}/answer`)
+and the server-owned analysis/attention transitions. Reviews are published to
+the Thread and the question's log by `Orchestrator::publish_review`.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

@@ -509,3 +509,81 @@ describe('WorkBoard review regressions', () => {
     expect(screen.getByText('Newest')).toBeInTheDocument()
   })
 })
+
+describe('WorkBoard analysis and evidence', () => {
+  const analyzing = workCard({ id: 'w1', stage: 'analyzing', state_revision: 6 }, { executor, assignment })
+
+  function open(detail: ReturnType<typeof detailOf>, extra: object = {}) {
+    const workBoard = vi.fn().mockResolvedValue(boardOf([detail]))
+    const workDetail = vi.fn().mockResolvedValue(detail)
+    const workCommand = vi.fn().mockResolvedValue(detail)
+    view(workApi({ workBoard, workDetail, workCommand, ...extra }))
+    return { workCommand, workDetail }
+  }
+
+  it('says a finished experiment awaits analysis and shows what was decided about earlier ones', async () => {
+    open(detailOf(analyzing, {
+      experiments: [{ id: 'e1', label: 'baseline', state: 'exited', analysis: 'pending', exit_code: 3, created_at: '' }],
+      decisions: [{
+        id: 'd1', experiment_id: 'e0', kind: 'retry', rationale: 'loss diverged at 4 heads',
+        launched_experiment_id: 'e1', created_at: '',
+      }],
+    }))
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    expect(await within(inspector).findByText('kubecode.work.analysisWaiting')).toBeInTheDocument()
+    expect(inspector).toHaveTextContent('kubecode.work.decisionKind.retry')
+    expect(inspector).toHaveTextContent('loss diverged at 4 heads')
+  })
+
+  it('shows changed evidence and re-pins it only when the researcher asks', async () => {
+    const card = workCard({ id: 'w1', stage: 'review', state_revision: 4 }, { executor, assignment })
+    const { workCommand } = open(detailOf(card, {
+      results: [{ id: 'x', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'file', ref_id: 'notes.md', revision: 'a', created_at: '' }],
+      stale_evidence: [{ result_id: 'x', kind: 'file', ref_id: 'notes.md', status: 'changed' }],
+    }))
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    expect(await within(inspector).findByText('kubecode.work.stale.hint')).toBeInTheDocument()
+    expect(workCommand).not.toHaveBeenCalled()
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.command.repin' }))
+    await waitFor(() => expect(workCommand).toHaveBeenCalledWith('p1', 'w1', 4, { command: 'repin', result_id: 'x' }))
+  })
+
+  it('explains a refused acceptance when evidence changed under the researcher', async () => {
+    const card = workCard({ id: 'w1', stage: 'review', state_revision: 4 }, { executor, assignment })
+    const workCommand = vi.fn().mockRejectedValue(new ApiError('work_evidence_stale', 'x', 409))
+    const { workDetail } = open(detailOf(card), { workCommand })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const initial = workDetail.mock.calls.length
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.work.command.accept' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.work.error.evidenceStale')
+    // The inspector reloads so the changed evidence and its re-pin control appear.
+    await waitFor(() => expect(workDetail.mock.calls.length).toBeGreaterThan(initial))
+  })
+
+  it('answers a question with an offered option, and says the answer grants nothing', async () => {
+    const answerWorkDecision = vi.fn().mockResolvedValue({})
+    open(detailOf(analyzing, {
+      decision_requests: [
+        {
+          id: 'q1', work_id: 'w1', question: 'Spend more budget?', options: ['yes', 'no'], impact: 'one more day',
+          asked_by: 's1', state: 'open', answer: null, created_at: '',
+        },
+        {
+          id: 'q2', work_id: 'w1', question: 'Which dataset?', options: [], impact: null,
+          asked_by: 's1', state: 'answered', answer: 'wiki', created_at: '',
+        },
+      ],
+    }), { answerWorkDecision })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    const send = await within(inspector).findByRole('button', { name: 'kubecode.work.question.answer' })
+    expect(send).toBeDisabled()
+    expect(inspector).toHaveTextContent('kubecode.work.question.note')
+    expect(inspector).toHaveTextContent('kubecode.work.question.answered:{"answer":"wiki"}')
+    fireEvent.change(within(inspector).getByLabelText('Spend more budget? — kubecode.work.question.choose'), { target: { value: 'yes' } })
+    fireEvent.click(send)
+    await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
+  })
+})

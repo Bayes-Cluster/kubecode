@@ -81,6 +81,7 @@ import type {
   WorkBoardFilter,
   WorkCard,
   WorkCommand,
+  WorkDecisionRequest,
   WorkDetail,
   WorkspaceMigrationPreview,
   WorkspaceMigrationResolution,
@@ -347,6 +348,19 @@ export class KubecodeApi {
 
   workDetail(projectId: string, workId: string): Promise<WorkDetail> {
     return this.request(`${this.projectPath(projectId)}/work/${encodeURIComponent(workId)}`)
+  }
+
+  /** Answers a question an agent put about a task; the answer grants nothing. */
+  answerWorkDecision(
+    projectId: string,
+    workId: string,
+    requestId: string,
+    answer: string,
+  ): Promise<WorkDecisionRequest> {
+    return this.request(
+      `${this.projectPath(projectId)}/work/${encodeURIComponent(workId)}/decisions/${encodeURIComponent(requestId)}/answer`,
+      { method: 'POST', body: JSON.stringify({ answer }) },
+    )
   }
 
   /** A researcher command; refused if the card changed since `expectedStateRevision`. */

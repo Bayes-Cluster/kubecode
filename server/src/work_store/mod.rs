@@ -9,10 +9,12 @@
 //! its `work_updated` workspace event in the same transaction as each change.
 
 mod commands;
+mod decisions;
 mod models;
 mod sync;
 
-pub(crate) use commands::validate_reference;
+pub(crate) use commands::{refresh_readiness, validate_reference};
+pub use decisions::DecisionRequest;
 pub use models::*;
 
 use std::sync::Arc;
@@ -43,6 +45,9 @@ pub(crate) enum Change {
     Result,
     Coordinator,
     Policy,
+    Decision,
+    Analysis,
+    Attention,
     Synced,
 }
 
@@ -60,6 +65,9 @@ impl Change {
             Self::Result => "result",
             Self::Coordinator => "coordinator",
             Self::Policy => "policy",
+            Self::Decision => "decision",
+            Self::Analysis => "analysis",
+            Self::Attention => "attention",
             Self::Synced => "synced",
         }
     }
@@ -214,6 +222,24 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            created_by  TEXT NOT NULL,
            created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
            PRIMARY KEY (round_id, request_key)
+         );
+         -- Bounded questions an agent puts to the researcher about one task.
+         CREATE TABLE IF NOT EXISTS decision_requests (
+           id           TEXT PRIMARY KEY,
+           project_id   TEXT NOT NULL,
+           work_id      TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+           thread_id    TEXT,
+           request_key  TEXT NOT NULL,
+           question     TEXT NOT NULL,
+           options_json TEXT NOT NULL DEFAULT '[]',
+           impact       TEXT,
+           asked_by     TEXT NOT NULL,
+           state        TEXT NOT NULL DEFAULT 'open',
+           answer       TEXT,
+           answered_by  TEXT,
+           created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           answered_at  TEXT,
+           UNIQUE (work_id, request_key)
          );
          CREATE TABLE IF NOT EXISTS work_sync_queue (
            team_id TEXT PRIMARY KEY

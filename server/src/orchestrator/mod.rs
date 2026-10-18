@@ -13,6 +13,7 @@
 //! Thread with no admitted round is answered, not acted on. One request that
 //! cannot be routed never blocks the others.
 
+mod analysis;
 mod models;
 mod sink;
 #[cfg(test)]
@@ -808,6 +809,23 @@ impl Orchestrator {
     /// round's current holder, so a handoff retargets what was pending. A
     /// dispatch is only for the attempt's current executor.
     fn recipient(&self, route: &Route) -> Result<String, RecipientError> {
+        // What an experiment ended or a researcher answered concerns the task,
+        // so it goes to whoever executes the task *now* (else the original
+        // addressee), not to a Session that was replaced since routing.
+        if matches!(route.kind, RouteKind::Experiment | RouteKind::Decision)
+            && let Some(work_id) = route.work_id.as_deref()
+            && let Ok(assignments) = self.work.assignments(&route.project_id, work_id)
+            && let Some(current) = assignments
+                .into_iter()
+                .find(|assignment| assignment.ended_at.is_none())
+            && matches!(
+                self.agents
+                    .visible_conversation(&route.project_id, &current.conversation_id),
+                Ok(Some(_))
+            )
+        {
+            return Ok(current.conversation_id);
+        }
         match &route.target {
             Target::Coordinator { round_id } => self
                 .work
@@ -965,7 +983,11 @@ impl Orchestrator {
         sink: &dyn RouteSink,
     ) -> Result<(RoutingReport, DeliveryReport), OrchestratorError> {
         let routed = self.route_intents();
+        let experiments = self
+            .route_experiments()
+            .and(self.route_answers().map(|_| 0));
         let delivered = self.deliver_due(sink, now_secs());
+        experiments?;
         Ok((routed?, delivered?))
     }
 }

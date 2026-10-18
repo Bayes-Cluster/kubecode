@@ -367,6 +367,9 @@ impl ExperimentStore {
             }
             if let Some(team_id) = &launch.team_id {
                 check_team_scope(tx, project_id, team_id, &launch)?;
+            } else if let Some(task_id) = &launch.task_id {
+                // No Team: the task is native Workspace work of this very round.
+                check_native_task(tx, project_id, &launch.round_id, task_id)?;
             }
             if envelope.launches_reserved >= envelope.limits.max_launches {
                 return Err(ExperimentError::Denied(LaunchDenial::LaunchBudgetExhausted));
@@ -1644,6 +1647,37 @@ fn resolve_open_waits(tx: &Connection, experiment_id: &str) -> Result<(), Experi
         [experiment_id],
     )?;
     Ok(())
+}
+
+/// A team-less experiment may belong to native work, which must be active work
+/// of the same round in this Project; anything else reads as not found.
+fn check_native_task(
+    tx: &Connection,
+    project_id: &str,
+    round_id: &str,
+    task_id: &str,
+) -> Result<(), ExperimentError> {
+    let present: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'work_items'",
+        [],
+        |row| row.get(0),
+    )?;
+    let found = present > 0
+        && tx
+            .query_row(
+                "SELECT 1 FROM work_items
+                 WHERE id = ?1 AND project_id = ?2 AND round_id = ?3 AND origin = 'native'
+                   AND lifecycle = 'active'",
+                params![task_id, project_id, round_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+    if found {
+        Ok(())
+    } else {
+        Err(ExperimentError::NotFound)
+    }
 }
 
 fn find_by_key(

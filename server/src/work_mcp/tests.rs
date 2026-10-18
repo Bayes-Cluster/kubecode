@@ -495,3 +495,140 @@ async fn the_advertised_url_serves_the_tools_and_a_wrong_token_is_refused() {
     .await;
     assert!(called.contains("coordinate"), "{called}");
 }
+
+#[tokio::test]
+async fn experiments_decisions_and_the_brief_are_tools_bound_to_the_executing_session() {
+    let rig = rig();
+    let leader = rig.leader();
+    let task = payload(
+        leader
+            .work_create(Parameters(CreateInput {
+                round_id: None,
+                title: "Sweep".into(),
+                description: "Try ratios".into(),
+                plan: None,
+                depends_on: vec![],
+                from_thread: None,
+                client_request_id: "c-1".into(),
+            }))
+            .await,
+    );
+    let work_id = task["item"]["id"].as_str().unwrap().to_owned();
+    let executor_id = payload(
+        leader
+            .work_executor_create(Parameters(ExecutorInput {
+                request_key: "e-1".into(),
+                round_id: None,
+                agent: "opencode".into(),
+                title: None,
+            }))
+            .await,
+    )["session_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    payload(
+        leader
+            .work_assign(Parameters(AssignInput {
+                work_id: work_id.clone(),
+                session_id: executor_id.clone(),
+                reason: None,
+            }))
+            .await,
+    );
+    payload(
+        leader
+            .work_start(Parameters(StartInput {
+                work_id: work_id.clone(),
+                request_key: "s-1".into(),
+            }))
+            .await,
+    );
+    let executor = rig.server(&executor_id);
+
+    let brief = payload(
+        executor
+            .work_brief(Parameters(WorkIdInput {
+                work_id: work_id.clone(),
+            }))
+            .await,
+    );
+    assert_eq!(brief["title"], "Sweep");
+    assert_eq!(brief["resources"]["policy"]["paused"], false);
+
+    // The researcher's authorized commands bound what a Session can run.
+    let launch = |key: &str, argv: &[&str]| LaunchInput {
+        work_id: work_id.clone(),
+        launch_key: key.into(),
+        argv: argv.iter().map(|t| (*t).to_owned()).collect(),
+        cwd: None,
+        label: None,
+        artifacts: vec![],
+        max_runtime_secs: None,
+    };
+    let denied = refused(
+        executor
+            .work_launch_experiment(Parameters(launch("k-1", &["rm", "-rf", "x"])))
+            .await,
+    );
+    assert!(denied.contains("command_not_authorized"), "{denied}");
+    // The coordinator is not the executing Session, and a decision about an
+    // experiment that is not this task's finds nothing.
+    let by_leader = refused(
+        leader
+            .work_launch_experiment(Parameters(launch("k-2", &["echo", "x"])))
+            .await,
+    );
+    assert!(by_leader.contains("executing"), "{by_leader}");
+    let unknown = refused(
+        executor
+            .work_decide(Parameters(DecideInput {
+                work_id: work_id.clone(),
+                experiment_id: "nope".into(),
+                decision: "conclude".into(),
+                decision_key: None,
+                rationale: "because".into(),
+                evidence: vec![],
+                launch: None,
+                question: None,
+                options: vec![],
+            }))
+            .await,
+    );
+    assert!(unknown.contains("not found"), "{unknown}");
+
+    let asked = payload(
+        executor
+            .work_request_decision(Parameters(RequestDecisionInput {
+                work_id: work_id.clone(),
+                request_key: "q-1".into(),
+                question: "More budget?".into(),
+                options: vec![],
+                impact: None,
+            }))
+            .await,
+    );
+    assert_eq!(asked["state"], "open");
+    let asked_again = payload(
+        executor
+            .work_request_decision(Parameters(RequestDecisionInput {
+                work_id: work_id.clone(),
+                request_key: "q-1".into(),
+                question: "More budget?".into(),
+                options: vec![],
+                impact: None,
+            }))
+            .await,
+    );
+    assert_eq!(asked_again["id"], asked["id"]);
+    // Re-pinning is the coordinator's act.
+    let repin = refused(
+        executor
+            .work_repin(Parameters(RepinInput {
+                work_id: work_id.clone(),
+                result_id: "r".into(),
+            }))
+            .await,
+    );
+    assert!(repin.contains("coordinate"), "{repin}");
+}

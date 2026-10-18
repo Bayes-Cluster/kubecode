@@ -86,6 +86,7 @@ export function workErrorMessage(cause: unknown, t: Translator): string {
       case 'work_round_paused': return t('kubecode.work.error.roundPaused')
       case 'work_not_assigned': return t('kubecode.work.error.notAssigned')
       case 'work_condition_in_use': return t('kubecode.work.error.conditionInUse')
+      case 'work_evidence_stale': return t('kubecode.work.error.evidenceStale')
       default: return cause.message || t('kubecode.error')
     }
   }
@@ -94,7 +95,9 @@ export function workErrorMessage(cause: unknown, t: Translator): string {
 
 export function isStale(cause: unknown): boolean {
   return cause instanceof ApiError
-    && (cause.code === 'work_state_conflict' || cause.code === 'work_revision_conflict')
+    && (cause.code === 'work_state_conflict'
+      || cause.code === 'work_revision_conflict'
+      || cause.code === 'work_evidence_stale')
 }
 
 /**

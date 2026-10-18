@@ -1244,3 +1244,13 @@ request changes, close) and cannot complete work or bypass a check; commands
 carry the state revision the card was shown at and are refused if it moved on.
 See ADR 0218.
 
+## Analysis and evidence
+
+A task owns its **experiments**. A finished one owes an **analysis**: the
+executing Session records a **decision** (what the result means and what
+happens next) before it can report the attempt done, and the task is
+`analyzing` meanwhile. Cited evidence is **pinned** to the revision it had;
+acceptance refuses evidence that changed until a person **re-pins** it. A
+**decision request** is a bounded question to the researcher whose answer
+settles that question and grants nothing. See ADR 0219.
+

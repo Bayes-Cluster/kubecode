@@ -37,6 +37,8 @@ text_enum!(RouteKind {
     Dispatch => "dispatch",
     Result => "result",
     Handoff => "handoff",
+    Experiment => "experiment",
+    Decision => "decision",
 });
 
 // Where a route's payload came from.
@@ -44,6 +46,8 @@ text_enum!(SourceKind {
     Message => "message",
     Attempt => "attempt",
     Work => "work",
+    Experiment => "experiment",
+    Decision => "decision",
 });
 
 // `delivered` is receipt of the event by the Session. It is not task

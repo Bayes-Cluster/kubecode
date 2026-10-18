@@ -101,3 +101,23 @@ process group.
 Processes keep running if the Kubecode server restarts. On startup Kubecode
 reads each process's exit receipt, resumes watching processes that are still
 running, and marks anything it cannot account for as unknown.
+
+## Tasks that run experiments
+
+A task executed by one Session can run experiments of its own inside the
+round's envelope. On the work board:
+
+- A finished experiment moves its task to **Analyzing** until the executing
+  Session records what the result means (more analysis, repair, retry,
+  follow-up, waiting, asking you, or concluding). The inspector lists these
+  decisions. A failed or negative result is evidence, not an error.
+- The inspector's **Questions for you** lists what a Session asked. Your
+  answer settles that question only; it never raises a limit or approves
+  more work. To allow more, edit the limits or the envelope.
+- A card is flagged **Needs input** with an *attention* reason when a limit
+  stopped progress or cited evidence changed.
+- **Evidence changed** appears when a file or result cited by the task is no
+  longer what was cited. Accepting is refused until you look at it and choose
+  **Accept current version**.
+- Accepted and rejected reviews are posted back to the Thread the work came
+  from, and accepted work adds an observation to the question's log.

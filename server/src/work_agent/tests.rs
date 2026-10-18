@@ -855,3 +855,810 @@ fn a_handoff_tells_the_new_coordinator_what_it_holds() {
     assert!(route.body.contains("Open task"));
     assert!(route.body.contains("going away"));
 }
+
+// -- Experiments, analysis, evidence (ADR 0219) ------------------------------------------------------
+
+mod analysis {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::experiment_runner::ExperimentRunner;
+    use crate::experiment_store::{AnalysisState, EnvelopeLimits, Experiment};
+    use crate::orchestrator::SourceKind as RouteSource;
+    use crate::project_context::ProjectContext;
+    use crate::work_store::DecisionRequest;
+
+    struct Lab {
+        r: Rig,
+        runner: Arc<ExperimentRunner>,
+        evidence: Evidence,
+    }
+
+    fn lab() -> Lab {
+        let r = rig();
+        r.f.experiments
+            .set_envelope(
+                &r.f.project_id,
+                &r.f.research_id,
+                &r.f.round_id,
+                Some(1),
+                EnvelopeLimits {
+                    max_launches: 6,
+                    max_concurrent: 2,
+                    deadline_at: None,
+                    max_runtime_secs: 30,
+                    max_no_progress: 5,
+                    allowed_commands: vec![vec!["sh".into(), "-c".into()]],
+                },
+                None,
+            )
+            .unwrap();
+        let runner = ExperimentRunner::new(
+            Arc::clone(&r.f.experiments),
+            Arc::clone(&r.f.workspace),
+            Arc::clone(&r.f.teams),
+        )
+        .with_poll(Duration::from_millis(20));
+        let context = Arc::new(ProjectContext::new(
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.f.teams),
+            Arc::clone(&r.f.research),
+            Arc::clone(&r.f.experiments),
+            Arc::clone(&r.work),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.f.workspace),
+        ));
+        let evidence = Evidence::new(context, Arc::clone(&r.f.workspace));
+        Lab {
+            r,
+            runner,
+            evidence,
+        }
+    }
+
+    impl Lab {
+        fn agent(&self, caller: &str) -> WorkAgent {
+            self.r
+                .agent(&self.r.f.project_id, caller)
+                .with_experiments(Arc::clone(&self.runner))
+                .with_evidence(self.evidence.clone())
+        }
+
+        /// A coordinator, an executor Session, and a started task they share.
+        fn started(&self, thread: Option<&Thread>) -> (WorkAgent, WorkAgent, String, String) {
+            let coordinator = self.agent(&self.r.f.leader.conversation_id);
+            let task = coordinator
+                .create(self.r.task("Sweep ratios", thread.map(|t| t.id.as_str())))
+                .unwrap();
+            let executor_id = self.r.executor(&coordinator, "exec");
+            coordinator.assign(&task.item.id, &executor_id, "").unwrap();
+            let attempt = coordinator.start(&task.item.id, "start-1").unwrap();
+            self.r
+                .work
+                .bind_attempt_run(
+                    &self.r.f.project_id,
+                    &attempt.id,
+                    "run-1",
+                    &Actor::Researcher,
+                )
+                .unwrap();
+            let executor = self.agent(&executor_id);
+            (coordinator, executor, executor_id, task.item.id)
+        }
+
+        async fn settle(&self, id: &str) -> Experiment {
+            for _ in 0..400 {
+                let experiment = self.r.f.experiments.get(id).unwrap();
+                if !experiment.state.is_active() {
+                    return experiment;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            panic!("experiment {id} did not settle");
+        }
+
+        fn spec(key: &str, script: &str) -> LaunchSpec {
+            LaunchSpec {
+                launch_key: key.into(),
+                argv: vec!["sh".into(), "-c".into(), script.into()],
+                artifacts: vec!["lab-out.txt".into()],
+                ..Default::default()
+            }
+        }
+
+        fn stage(&self, work: &str) -> WorkStage {
+            self.r.work.get(&self.r.f.project_id, work).unwrap().stage
+        }
+
+        fn decide(kind: &str, experiment: &str, key: &str) -> DecisionInput {
+            DecisionInput {
+                experiment_id: experiment.into(),
+                kind: kind.into(),
+                decision_key: Some(key.into()),
+                rationale: "the loss diverged at 4 heads".into(),
+                ..Default::default()
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_experiment_is_analyzed_retried_and_accepted_without_duplicates() {
+        let lab = lab();
+        let r = &lab.r;
+        let thread = r.thread();
+        let (coordinator, executor, _, work) = lab.started(Some(&thread));
+
+        // Launching is idempotent per key, and keys cannot cross tasks.
+        let first = executor
+            .launch_experiment(
+                &work,
+                Lab::spec("sweep-1", "echo partial > lab-out.txt; exit 3"),
+            )
+            .unwrap();
+        let replay = executor
+            .launch_experiment(
+                &work,
+                Lab::spec("sweep-1", "echo partial > lab-out.txt; exit 3"),
+            )
+            .unwrap();
+        assert_eq!(first.id, replay.id);
+        // The key is bound to its command: a different one under it is refused.
+        assert!(
+            executor
+                .launch_experiment(&work, Lab::spec("sweep-1", "echo other"))
+                .is_err()
+        );
+        assert_eq!(first.task_id.as_deref(), Some(work.as_str()));
+
+        // It cannot be reported while the process runs or the result is unexamined.
+        assert!(matches!(
+            executor.report(&work, ReportStatus::Completed, "done", None),
+            Err(AgentWorkError::Invalid(_))
+        ));
+        let done = lab.settle(&first.id).await;
+        assert_eq!(done.exit_code, Some(3));
+        assert_eq!(done.analysis, AnalysisState::Pending);
+
+        // The finished experiment reaches the executor once, and the task
+        // waits for analysis; a second scan, or a restarted orchestrator,
+        // routes nothing again.
+        assert_eq!(r.orchestrator.route_experiments().unwrap(), 1);
+        assert_eq!(r.orchestrator.route_experiments().unwrap(), 0);
+        let restarted = Orchestrator::new(
+            r.f.agents.database(),
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.work),
+            Arc::clone(&r.f.research),
+        )
+        .unwrap();
+        assert_eq!(restarted.route_experiments().unwrap(), 0);
+        assert_eq!(lab.stage(&work), WorkStage::Analyzing);
+        let routes: Vec<_> = r
+            .orchestrator
+            .routes(&r.f.project_id, None, 50)
+            .unwrap()
+            .into_iter()
+            .filter(|route| route.kind == RouteKind::Experiment)
+            .collect();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].source_kind, RouteSource::Experiment);
+        assert!(
+            r.texts(&thread)
+                .iter()
+                .any(|(_, text)| text.contains("Sweep ratios"))
+        );
+
+        // A decision needs a rationale and, for a retry, the next experiment.
+        assert!(
+            executor
+                .decide(&work, Lab::decide("retry", &first.id, "retry-1"))
+                .is_err()
+        );
+        let mut retry = Lab::decide("retry", &first.id, "retry-1");
+        retry.launch = Some(Lab::spec("ignored", "echo fixed > lab-out.txt"));
+        let outcome = executor.decide(&work, retry.clone()).unwrap();
+        assert!(outcome.created);
+        let second_id = outcome.launched_experiment_id.clone().unwrap();
+        // The same decision again changes nothing and starts nothing.
+        let again = executor.decide(&work, retry).unwrap();
+        assert!(!again.created);
+        assert_eq!(
+            again.launched_experiment_id.as_deref(),
+            Some(second_id.as_str())
+        );
+        assert_eq!(
+            r.f.experiments
+                .experiments(&r.f.project_id, &r.f.research_id, &r.f.round_id)
+                .unwrap()
+                .into_iter()
+                .filter(|e| e.task_id.as_deref() == Some(work.as_str()))
+                .count(),
+            2
+        );
+        assert!(!outcome.analysis_owed);
+        assert_eq!(lab.stage(&work), WorkStage::Executing);
+
+        // The failed run is cited as evidence at what it was when analyzed.
+        let cited = r.work.results(&r.f.project_id, &work).unwrap();
+        assert!(
+            cited
+                .iter()
+                .any(|c| c.kind == "experiment" && c.ref_id == first.id && c.revision.is_some())
+        );
+
+        // The retry succeeds; concluding settles it and the task can be reported.
+        lab.settle(&second_id).await;
+        assert_eq!(r.orchestrator.route_experiments().unwrap(), 1);
+        assert_eq!(lab.stage(&work), WorkStage::Analyzing);
+        assert!(matches!(
+            executor.report(&work, ReportStatus::Completed, "done", None),
+            Err(AgentWorkError::Invalid(_))
+        ));
+        executor
+            .decide(&work, Lab::decide("conclude", &second_id, "conclude"))
+            .unwrap();
+        assert_eq!(lab.stage(&work), WorkStage::Executing);
+        let reported = executor
+            .report(&work, ReportStatus::Completed, "ratio 0.5 holds", None)
+            .unwrap();
+        assert_eq!(reported.item.stage, WorkStage::Review);
+
+        // A handoff mid-flow keeps the experiments and the evidence, and only
+        // the new holder can accept.
+        let successor = r.session("Successor");
+        coordinator
+            .handoff(&r.f.round_id, &successor, "rotating")
+            .unwrap();
+        assert!(matches!(
+            coordinator.review(&work, true, WorkOutcome::Supported, None),
+            Err(AgentWorkError::NotFound | AgentWorkError::NotCoordinator)
+        ));
+        let new = lab.agent(&successor);
+        let accepted = new
+            .review(&work, true, WorkOutcome::Supported, Some("both runs read"))
+            .unwrap();
+        assert_eq!(accepted.item.stage, WorkStage::Done);
+
+        // The decision reached the Thread and the question's log, once.
+        let notes = r.texts(&thread);
+        assert!(
+            notes
+                .iter()
+                .filter(|(_, text)| text.contains("accepted"))
+                .count()
+                >= 1
+        );
+        let entries =
+            r.f.research
+                .entries(&r.f.project_id, &r.f.research_id, 0, Some(50))
+                .unwrap();
+        assert!(entries.iter().any(|e| e.body.contains("Sweep ratios")));
+    }
+
+    struct Capture(std::sync::Mutex<Vec<String>>);
+    impl RouteSink for Capture {
+        fn deliver(&self, request: &DeliveryRequest<'_>) -> DeliveryOutcome {
+            self.0
+                .lock()
+                .unwrap()
+                .push(request.conversation_id.to_owned());
+            DeliveryOutcome::Delivered
+        }
+    }
+
+    #[tokio::test]
+    async fn a_valid_negative_result_completes_the_task_and_says_so() {
+        let lab = lab();
+        let r = &lab.r;
+        let thread = r.thread();
+        let (coordinator, executor, _, work) = lab.started(Some(&thread));
+        let run = executor
+            .launch_experiment(&work, Lab::spec("neg", "echo flat > lab-out.txt; exit 1"))
+            .unwrap();
+        lab.settle(&run.id).await;
+        r.orchestrator.route_experiments().unwrap();
+        // A negative result is concluded on its evidence, not retried for its exit code.
+        executor
+            .decide(&work, Lab::decide("conclude", &run.id, "negative"))
+            .unwrap();
+        executor
+            .report(
+                &work,
+                ReportStatus::Completed,
+                "pruning does not help",
+                None,
+            )
+            .unwrap();
+        let done = coordinator
+            .review(&work, true, WorkOutcome::Refuted, Some("clean ablation"))
+            .unwrap();
+        assert_eq!(
+            (done.item.stage, done.item.outcome),
+            (WorkStage::Done, WorkOutcome::Refuted)
+        );
+        assert_eq!(
+            r.texts(&thread)
+                .iter()
+                .filter(|(_, text)| text.contains("accepted as a valid negative result"))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn an_executor_cannot_move_a_pin_by_deciding_again() {
+        let lab = lab();
+        let r = &lab.r;
+        let (_, executor, _, work) = lab.started(None);
+        let run = executor
+            .launch_experiment(&work, Lab::spec("pin", "echo x > lab-out.txt"))
+            .unwrap();
+        lab.settle(&run.id).await;
+        r.orchestrator.route_experiments().unwrap();
+        executor
+            .decide(&work, Lab::decide("conclude", &run.id, "c"))
+            .unwrap();
+        let cited = r.work.results(&r.f.project_id, &work).unwrap();
+        let experiment = cited.iter().find(|c| c.kind == "experiment").unwrap();
+        // The evidence is moved out from under the citation (as a re-run would).
+        r.work
+            .repin_result(
+                &r.f.project_id,
+                &work,
+                &experiment.id,
+                Some("older-revision"),
+                &Actor::Executor {
+                    conversation_id: executor.caller.clone(),
+                },
+            )
+            .unwrap();
+        executor
+            .decide(&work, Lab::decide("conclude", &run.id, "c"))
+            .unwrap();
+        let after = r.work.results(&r.f.project_id, &work).unwrap();
+        assert_eq!(
+            after
+                .iter()
+                .find(|c| c.id == experiment.id)
+                .unwrap()
+                .revision
+                .as_deref(),
+            Some("older-revision"),
+            "only a person re-pins"
+        );
+        assert!(!lab.evidence.stale(&r.f.project_id, &after).is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_experiment_result_goes_to_whoever_executes_the_task_at_delivery() {
+        let lab = lab();
+        let r = &lab.r;
+        let (coordinator, executor, first_id, work) = lab.started(None);
+        let run = executor
+            .launch_experiment(&work, Lab::spec("late", "echo x > lab-out.txt"))
+            .unwrap();
+        lab.settle(&run.id).await;
+        executor
+            .report(&work, ReportStatus::Failed, "handing over", Some("moved"))
+            .unwrap();
+        r.orchestrator.route_experiments().unwrap();
+        // The task changes hands before the route is delivered.
+        let second_id = r.executor(&coordinator, "second");
+        coordinator.assign(&work, &second_id, "new owner").unwrap();
+        let sink = Capture(Default::default());
+        r.orchestrator.tick(&sink).unwrap();
+        let reached = sink.0.lock().unwrap().clone();
+        assert!(reached.contains(&second_id), "{reached:?}");
+        assert!(
+            !reached.contains(&first_id),
+            "the replaced Session is not told: {reached:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_question_is_shown_in_the_thread_and_the_log_and_open_questions_are_bounded() {
+        let lab = lab();
+        let r = &lab.r;
+        let thread = r.thread();
+        let (_, executor, _, work) = lab.started(Some(&thread));
+        for i in 0..5 {
+            executor
+                .request_decision(
+                    &work,
+                    &format!("q-{i}"),
+                    "Which heads?",
+                    &["a".into(), "b".into()],
+                    Some("a day"),
+                )
+                .unwrap();
+        }
+        // Replaying a key shows it once.
+        executor
+            .request_decision(
+                &work,
+                "q-0",
+                "Which heads?",
+                &["a".into(), "b".into()],
+                Some("a day"),
+            )
+            .unwrap();
+        let shown = r
+            .texts(&thread)
+            .into_iter()
+            .filter(|(_, text)| {
+                text.contains("needs a decision") && text.contains("Options: a / b")
+            })
+            .count();
+        assert_eq!(shown, 5);
+        assert!(
+            r.f.research
+                .entries(&r.f.project_id, &r.f.research_id, 0, Some(50))
+                .unwrap()
+                .iter()
+                .any(|entry| entry.body.starts_with("Unresolved:"))
+        );
+        assert!(
+            executor
+                .request_decision(&work, "q-6", "One more?", &[], None)
+                .is_err(),
+            "a task cannot flood the researcher"
+        );
+    }
+
+    #[tokio::test]
+    async fn experiments_wait_for_the_researcher_when_the_task_or_round_is_stopped() {
+        let lab = lab();
+        let r = &lab.r;
+        let (_, executor, _, work) = lab.started(None);
+        r.work
+            .set_condition(
+                &r.f.project_id,
+                &work,
+                WorkCondition::Paused,
+                Some("hold"),
+                &Actor::Researcher,
+            )
+            .unwrap();
+        assert!(
+            executor
+                .launch_experiment(&work, Lab::spec("p", "echo x"))
+                .is_err()
+        );
+        r.work
+            .set_condition(
+                &r.f.project_id,
+                &work,
+                WorkCondition::None,
+                None,
+                &Actor::Researcher,
+            )
+            .unwrap();
+        r.work
+            .set_policy(
+                &r.f.project_id,
+                &r.f.round_id,
+                0,
+                PolicyPatch {
+                    paused: Some(true),
+                    ..Default::default()
+                },
+                &Actor::Researcher,
+            )
+            .unwrap();
+        assert!(matches!(
+            executor.launch_experiment(&work, Lab::spec("p", "echo x")),
+            Err(AgentWorkError::Work(WorkError::RoundPaused))
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_task_never_stays_analyzing_after_nothing_is_owed_and_answers_are_never_lost() {
+        let lab = lab();
+        let r = &lab.r;
+        let (_, executor, _, work) = lab.started(None);
+        let run = executor
+            .launch_experiment(&work, Lab::spec("s", "echo x > lab-out.txt"))
+            .unwrap();
+        lab.settle(&run.id).await;
+        r.orchestrator.route_experiments().unwrap();
+        assert_eq!(lab.stage(&work), WorkStage::Analyzing);
+        // The decision committed but the stage move was lost (a crash).
+        r.f.experiments
+            .record_decision(
+                &r.f.project_id,
+                crate::experiment_store::NewDecision {
+                    experiment_id: run.id.clone(),
+                    member_id: executor.caller.clone(),
+                    kind: crate::experiment_store::DecisionKind::Conclude,
+                    decision_key: None,
+                    rationale: "done".into(),
+                    evidence: vec![],
+                    launched_experiment_id: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(lab.stage(&work), WorkStage::Analyzing);
+        r.orchestrator.route_experiments().unwrap();
+        assert_eq!(lab.stage(&work), WorkStage::Executing);
+
+        // An answer recorded without its route is routed by the next pass, once.
+        let asked = executor
+            .request_decision(&work, "q", "Go on?", &[], None)
+            .unwrap();
+        let answered = r
+            .work
+            .answer_decision(&r.f.project_id, &asked.id, "yes", "researcher")
+            .unwrap();
+        assert_eq!(r.orchestrator.route_answers().unwrap(), 1);
+        assert_eq!(r.orchestrator.route_answers().unwrap(), 0);
+        let _ = answered;
+    }
+
+    #[tokio::test]
+    async fn only_this_tasks_experiments_can_be_cited_and_live_records_are_not_pinned() {
+        let lab = lab();
+        let r = &lab.r;
+        r.work
+            .set_policy(
+                &r.f.project_id,
+                &r.f.round_id,
+                0,
+                PolicyPatch {
+                    max_executors: Some(4),
+                    max_parallel_attempts: Some(4),
+                    max_attempts: Some(6),
+                    ..Default::default()
+                },
+                &Actor::Researcher,
+            )
+            .unwrap();
+        let thread = r.thread();
+        let (coordinator, executor, _, work) = lab.started(Some(&thread));
+        let other = coordinator.create(r.task("Other", None)).unwrap();
+        let other_session = r.executor(&coordinator, "other");
+        coordinator
+            .assign(&other.item.id, &other_session, "")
+            .unwrap();
+        coordinator.start(&other.item.id, "o-1").unwrap();
+        let theirs = lab
+            .agent(&other_session)
+            .launch_experiment(&other.item.id, Lab::spec("t", "echo x"))
+            .unwrap();
+        assert!(
+            executor
+                .attach(&work, "experiment", &theirs.id, None, ResultRole::Evidence)
+                .is_err(),
+            "another task's experiment is not this task's evidence"
+        );
+        executor
+            .attach(&work, "thread", &thread.id, None, ResultRole::Evidence)
+            .unwrap();
+        let cited = r.work.results(&r.f.project_id, &work).unwrap();
+        assert_eq!(cited[0].revision, None, "a Thread changes with every reply");
+    }
+
+    #[tokio::test]
+    async fn evidence_that_changed_blocks_acceptance_until_it_is_looked_at() {
+        let lab = lab();
+        let r = &lab.r;
+        let (coordinator, executor, _, work) = lab.started(None);
+        let path =
+            r.f.workspace
+                .execution_path(&r.f.project_id, None)
+                .unwrap()
+                .join("notes.md");
+        std::fs::write(&path, "pruning helps").unwrap();
+        executor
+            .attach(&work, "file", "notes.md", None, ResultRole::Evidence)
+            .unwrap();
+        let pinned = r.work.results(&r.f.project_id, &work).unwrap();
+        assert!(
+            pinned[0].revision.is_some(),
+            "evidence is pinned when cited"
+        );
+        executor
+            .report(&work, ReportStatus::Completed, "see notes", None)
+            .unwrap();
+
+        std::fs::write(&path, "pruning hurts").unwrap();
+        let refused = coordinator.review(&work, true, WorkOutcome::Supported, None);
+        let Err(AgentWorkError::StaleEvidence(stale)) = refused else {
+            panic!("expected stale evidence, got {refused:?}");
+        };
+        assert_eq!(
+            (stale[0].ref_id.as_str(), stale[0].status),
+            ("notes.md", "changed")
+        );
+        let item = r.work.get(&r.f.project_id, &work).unwrap();
+        assert_eq!(item.stage, WorkStage::Review, "nothing was accepted");
+        assert!(
+            item.condition_reason
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("attention: "))
+        );
+
+        // A rejection does not depend on evidence; accepting needs a re-pin.
+        coordinator.repin(&work, &pinned[0].id).unwrap();
+        let accepted = coordinator
+            .review(&work, true, WorkOutcome::Supported, Some("re-read"))
+            .unwrap();
+        assert_eq!(accepted.item.stage, WorkStage::Done);
+
+        // Removed evidence is stale too.
+        std::fs::remove_file(&path).unwrap();
+        let results = r.work.results(&r.f.project_id, &work).unwrap();
+        assert_eq!(
+            lab.evidence.stale(&r.f.project_id, &results)[0].status,
+            "removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_limits_flag_the_task_for_the_researcher_and_stop_dispatch() {
+        let lab = lab();
+        let r = &lab.r;
+        r.work
+            .set_policy(
+                &r.f.project_id,
+                &r.f.round_id,
+                0,
+                PolicyPatch {
+                    max_attempts: Some(2),
+                    max_parallel_attempts: Some(2),
+                    ..Default::default()
+                },
+                &Actor::Researcher,
+            )
+            .unwrap();
+        let (coordinator, executor, _, work) = lab.started(None);
+        executor
+            .report(&work, ReportStatus::Failed, "crashed", Some("boom"))
+            .unwrap();
+        assert!(matches!(
+            coordinator.start(&work, "start-2"),
+            Err(AgentWorkError::Work(WorkError::BudgetExhausted(_)))
+        ));
+        let item = r.work.get(&r.f.project_id, &work).unwrap();
+        assert!(
+            item.condition_reason
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("attention: no more attempts"))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_launch_the_researcher_did_not_authorize_is_refused_and_surfaces_on_the_card() {
+        let lab = lab();
+        let r = &lab.r;
+        let (_, executor, _, work) = lab.started(None);
+        let denied = executor.launch_experiment(
+            &work,
+            LaunchSpec {
+                launch_key: "k".into(),
+                argv: vec!["rm".into(), "-rf".into(), "x".into()],
+                ..Default::default()
+            },
+        );
+        assert!(
+            matches!(&denied, Err(AgentWorkError::Experiment(text)) if text.contains("command_not_authorized")),
+            "{denied:?}"
+        );
+        let item = r.work.get(&r.f.project_id, &work).unwrap();
+        assert_eq!(item.condition, WorkCondition::NeedsInput);
+        assert!(
+            item.condition_reason.as_deref().is_some_and(
+                |reason| reason.starts_with("attention: an experiment could not start")
+            )
+        );
+        // Nothing ran and nothing was reserved.
+        assert!(
+            r.f.experiments
+                .experiments(&r.f.project_id, &r.f.research_id, &r.f.round_id)
+                .unwrap()
+                .iter()
+                .all(|e| e.task_id.as_deref() != Some(work.as_str()))
+        );
+        // Another task's Session cannot launch for this one.
+        let stranger = lab.agent(&r.session("Stranger"));
+        assert!(
+            stranger
+                .launch_experiment(&work, Lab::spec("k", "echo"))
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_researcher_is_asked_through_a_request_whose_answer_grants_nothing() {
+        let lab = lab();
+        let r = &lab.r;
+        let thread = r.thread();
+        let (_, executor, executor_id, work) = lab.started(Some(&thread));
+        let policy_before = r.work.policy(&r.f.project_id, &r.f.round_id).unwrap();
+
+        let asked: DecisionRequest = executor
+            .request_decision(
+                &work,
+                "q-1",
+                "Spend a second launch budget on 8 heads?",
+                &["yes".into(), "no".into()],
+                Some("one more day"),
+            )
+            .unwrap();
+        // Repeating the key returns the same request.
+        assert_eq!(
+            executor
+                .request_decision(
+                    &work,
+                    "q-1",
+                    "Spend a second launch budget on 8 heads?",
+                    &[],
+                    None
+                )
+                .unwrap()
+                .id,
+            asked.id
+        );
+        let waiting = r.work.get(&r.f.project_id, &work).unwrap();
+        assert_eq!(waiting.condition, WorkCondition::NeedsInput);
+
+        // Only an offered option answers it; the answer clears the flag and
+        // reaches the asker once, and no limit moves.
+        assert!(
+            r.work
+                .answer_decision(&r.f.project_id, &asked.id, "maybe", "researcher")
+                .is_err()
+        );
+        let answered = r
+            .work
+            .answer_decision(&r.f.project_id, &asked.id, "yes", "researcher")
+            .unwrap();
+        let route = r
+            .orchestrator
+            .route_decision_answer(&r.f.project_id, &answered)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            r.orchestrator
+                .route_decision_answer(&r.f.project_id, &answered)
+                .unwrap()
+                .unwrap()
+                .id,
+            route.id
+        );
+        assert_eq!(
+            r.work.get(&r.f.project_id, &work).unwrap().condition,
+            WorkCondition::None
+        );
+        assert_eq!(
+            r.work.policy(&r.f.project_id, &r.f.round_id).unwrap(),
+            policy_before,
+            "an answer is not an authorization"
+        );
+        let _ = executor_id;
+    }
+
+    #[tokio::test]
+    async fn the_brief_gathers_what_a_replacement_session_needs() {
+        let lab = lab();
+        let r = &lab.r;
+        let (_, executor, _, work) = lab.started(None);
+        let brief = executor.brief(&work).unwrap();
+        assert_eq!(brief.title, "Sweep ratios");
+        assert_eq!(brief.brief_revision, Some(1));
+        assert_eq!(brief.attempts.len(), 1);
+        assert!(brief.resources["policy"]["max_attempts"].is_number());
+        assert!(brief.resources["experiments"]["limits"]["max_launches"].is_number());
+        // A stranger sees nothing.
+        let stranger = lab.agent(&r.session("Stranger"));
+        assert!(matches!(
+            stranger.brief(&work),
+            Err(AgentWorkError::NotFound)
+        ));
+        assert!(
+            stranger
+                .launch_experiment(&work, Lab::spec("k", "echo"))
+                .is_err()
+        );
+    }
+}
