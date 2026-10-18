@@ -14,8 +14,8 @@ use super::{ResearchApiError, check_project};
 use crate::app_state::AppState;
 use crate::experiment_runner::{LogStream, LogTail, RunnerError};
 use crate::experiment_store::{
-    Envelope, EnvelopeLimits, EnvelopeState, Experiment, ExperimentError, ExperimentWait,
-    NewLaunch, ReconcileTruth,
+    Envelope, EnvelopeLimits, EnvelopeState, Experiment, ExperimentDecision, ExperimentError,
+    ExperimentWait, NewLaunch, ReconcileTruth,
 };
 use crate::research_store::{SourceAvailability, SourceRef};
 
@@ -121,6 +121,10 @@ pub(crate) struct ExecutionView {
     envelope: Option<Envelope>,
     experiments: Vec<ExperimentView>,
     waits: Vec<ExperimentWait>,
+    /// The Leader's recorded reasons, newest first.
+    decisions: Vec<ExperimentDecision>,
+    /// Stable codes for what would refuse another launch right now.
+    launch_blockers: Vec<&'static str>,
     /// Server time (unix seconds), so deadlines render consistently.
     now: i64,
 }
@@ -142,6 +146,15 @@ pub(crate) fn execution_view(
             .map(|experiment| experiment_view(state, experiment))
             .collect(),
         waits: state.experiments.waits(project_id, research_id, round_id)?,
+        decisions: state
+            .experiments
+            .decisions(project_id, research_id, round_id)?,
+        launch_blockers: state
+            .experiments
+            .launch_blockers(project_id, research_id, round_id)?
+            .into_iter()
+            .map(|blocker| blocker.code())
+            .collect(),
         now: state.experiments.now(),
     })
 }

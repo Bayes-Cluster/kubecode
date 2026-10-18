@@ -352,10 +352,34 @@ export type ExperimentWait = {
   created_at: string
   resolved_at: string | null
 }
+export type ExperimentDecisionKind =
+  | 'further_analysis' | 'repair' | 'retry' | 'follow_up' | 'external_wait'
+  | 'researcher_input' | 'conclude'
+/** The Leader's recorded reason for what happens after a result. */
+export type ExperimentDecision = {
+  id: string
+  experiment_id: string
+  member_id: string
+  kind: ExperimentDecisionKind
+  decision_key: string
+  rationale: string
+  evidence: ResearchSourceRef[]
+  /** The attempt this decision started (retry / follow_up). */
+  launched_experiment_id: string | null
+  created_at: string
+}
+/** Stable codes for what would refuse another launch right now. */
+export type LaunchBlocker =
+  | 'no_envelope' | 'envelope_paused' | 'envelope_closed' | 'deadline_passed'
+  | 'command_not_authorized' | 'launch_budget_exhausted' | 'concurrency_limit'
+  | 'no_progress' | 'team_not_active'
 export type ResearchExecution = {
   envelope: ExecutionEnvelope | null
   experiments: ExperimentView[]
   waits: ExperimentWait[]
+  /** The Leader's recorded reasons, newest first. */
+  decisions: ExperimentDecision[]
+  launch_blockers: LaunchBlocker[]
   /** Server time (unix seconds), so deadlines render consistently. */
   now: number
 }

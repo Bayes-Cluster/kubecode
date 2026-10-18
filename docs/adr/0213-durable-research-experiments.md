@@ -180,14 +180,40 @@ simply gone with no receipt is `unknown`, whatever time has passed.
 
 ### 7. Continuation
 
-(Defined with the Leader-decision work.) The Leader records a structured
-decision per finished experiment — further analysis, repair, explicit retry,
-follow-up, external wait, researcher input, or conclusion — with its
-rationale and evidence references. A decision is idempotent per experiment and
-kind; a follow-up launches with a key derived from the observation, so one
-observation can never fan out into duplicate launches. Scope or budget changes
-go through the existing user-input path and take effect only as an explicit
-envelope revision.
+The Leader remains the planner; the runtime owns the facts. `team_get_context`
+carries a `research.execution` section — the envelope and what is consumed,
+recent attempts with artifact availability, open waits, results still owed an
+analysis, recent decisions, the reasons another launch would be refused, and
+attention codes — all read from committed records, never from prompts.
+
+The Leader records a **decision** per finished experiment with
+`team_record_experiment_decision`: `further_analysis`, `repair`, `retry`,
+`follow_up`, `external_wait`, `researcher_input`, or `conclude`, with a
+rationale and validated evidence. Only the Leader decides, only about a
+finished experiment of its own Team.
+
+- Idempotent per `(experiment, kind, key)`: a repeated call returns the first
+  decision and starts nothing. `retry` and `follow_up` launch the next
+  experiment under a key derived from the observation, before the decision is
+  recorded, so one result can never fan out into duplicate launches; a refused
+  launch records nothing and leaves the result owed. Several follow-ups from
+  one result need distinct decision keys.
+- All kinds except `further_analysis` and `external_wait` settle the analysis
+  obligation in the decision's transaction, so completion is unblocked only by
+  an explicit decision — never by an exit code, a mailbox acknowledgement, or a
+  turn ending.
+- Limits are enforced at admission against the envelope (budget, concurrency,
+  deadline, no progress, paused or closed, Team active). A prompt cannot grant
+  an override, and each launch is revalidated when it is admitted, so an
+  intervening cancel or envelope change takes effect.
+- A change of scope, budget, or direction goes through `researcher_input`,
+  which reuses the existing user-input path and flags the Team. A reply that
+  grants the change has no effect by itself: more work is admitted only after
+  the researcher records an explicit envelope (or brief) revision.
+- A non-zero exit, a timeout, or a negative scientific result is evidence to
+  classify, not an automatic failure; `repair` records a blocker and an
+  explicit `retry` is a new attempt under the same policy.
+- Starting a new Team or changing the RQ is not a consequence of any result.
 
 ### 8. Consequences
 

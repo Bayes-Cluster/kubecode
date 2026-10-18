@@ -942,6 +942,16 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   everything from committed rows. A mailbox acknowledgement means the result
   was read, not analyzed: an acknowledged but unanalyzed result is re-raised a
   bounded number of times, then the Team is marked as needing attention.
+  **Continuation.** The Leader records a *decision* per finished experiment
+  (`further_analysis`, `repair`, `retry`, `follow_up`, `external_wait`,
+  `researcher_input`, `conclude`) with a rationale and evidence. Decisions are
+  idempotent per experiment, kind, and key; `retry` and `follow_up` admit the
+  next experiment under a key derived from the observation, and a refused launch
+  records nothing. Every kind except `further_analysis` and `external_wait`
+  settles the analysis obligation, which is the only thing that unblocks Team
+  completion. Limits are enforced by admission, not by prompt; scope or budget
+  changes go through the user-input path and take effect only as an explicit
+  envelope revision.
 
 ## Conversation reducer
 
