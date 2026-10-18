@@ -191,6 +191,8 @@ pub struct AgentRuntime {
     terminals: Option<Arc<TerminalManager>>,
     teams: Option<Arc<TeamStore>>,
     research: Option<Arc<crate::research_store::ResearchStore>>,
+    experiments: Option<Arc<crate::experiment_store::ExperimentStore>>,
+    experiment_runner: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
     adapters: AgentAdapterRegistry,
 }
@@ -314,6 +316,8 @@ impl AgentRuntime {
             terminals: None,
             teams: None,
             research: None,
+            experiments: None,
+            experiment_runner: None,
             team_mcp_http: None,
             adapters: AgentAdapterRegistry::new(),
         }
@@ -332,6 +336,24 @@ impl AgentRuntime {
     ) -> Self {
         self.research = Some(research);
         self
+    }
+
+    pub fn with_experiments(
+        mut self,
+        store: Arc<crate::experiment_store::ExperimentStore>,
+        runner: Arc<crate::experiment_runner::ExperimentRunner>,
+    ) -> Self {
+        self.experiments = Some(store);
+        self.experiment_runner = Some(runner);
+        self
+    }
+
+    pub fn experiment_store(&self) -> Option<Arc<crate::experiment_store::ExperimentStore>> {
+        self.experiments.clone()
+    }
+
+    pub fn experiment_runner(&self) -> Option<Arc<crate::experiment_runner::ExperimentRunner>> {
+        self.experiment_runner.clone()
     }
 
     pub fn research_store(&self) -> Option<Arc<crate::research_store::ResearchStore>> {
@@ -1108,6 +1130,11 @@ impl AgentRuntime {
             &format!("Removing teammate {}", member.name),
             None,
         );
+        // The leaving member's open waits no longer bind anyone; delivery
+        // routes the result to the Leader, and nothing is rerun.
+        if let Some(experiments) = &self.experiments {
+            let _ = experiments.reassign_waits_of_member(team_id, teammate_id);
+        }
         teams
             .remove_teammate(team_id, leader_member_id, teammate_id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
@@ -1155,9 +1182,19 @@ impl AgentRuntime {
         for member in &members {
             let _ = self.disconnect_conversation(&member.conversation_id).await;
         }
+        // Running experiments belong to the Team: stop their processes
+        // before the records that identify them are removed.
+        let stopped = self
+            .experiment_runner
+            .as_ref()
+            .map(|runner| runner.cancel_team(&team.id))
+            .unwrap_or_default();
         teams
             .delete_team(&team.id)
             .map_err(|error| RuntimeError::Acp(error.to_string()))?;
+        if let Some(runner) = &self.experiment_runner {
+            runner.forget(&stopped);
+        }
         for member in &members {
             if self.store.get_conversation(&member.conversation_id).is_ok() {
                 self.store.delete_conversation(&member.conversation_id)?;

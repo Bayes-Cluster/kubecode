@@ -37,6 +37,7 @@ struct ToolContext {
     runtime: AgentRuntime,
     teams: Arc<TeamStore>,
     research: Option<Arc<crate::research_store::ResearchStore>>,
+    runner: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
     member: TeamMember,
 }
 
@@ -81,6 +82,8 @@ impl TeamMcpServer {
                 "team_read_inbox",
             ],
             TeamRole::Discriminator => &[
+                "team_launch_experiment",
+                "team_cancel_experiment",
                 "team_publish_research",
                 "team_list_available_agents",
                 "team_propose_lineup",
@@ -205,6 +208,30 @@ struct SubmitVerdictInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CompleteTeamInput {
     final_summary: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LaunchExperimentInput {
+    /// Retry key for this launch. Repeating it returns the same attempt and
+    /// starts nothing; a deliberate retry needs a new key.
+    launch_key: String,
+    /// The command as separate tokens (no shell). It must start with a
+    /// command the researcher authorized in the round's execution envelope.
+    argv: Vec<String>,
+    /// Working directory, relative to your execution root.
+    cwd: Option<String>,
+    label: Option<String>,
+    /// Project-relative files to report on when the process ends.
+    #[serde(default)]
+    artifacts: Vec<String>,
+    task_id: Option<String>,
+    /// Runtime cap in seconds; limited by the envelope.
+    max_runtime_secs: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CancelExperimentInput {
+    experiment_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -1218,6 +1245,67 @@ impl TeamMcpServer {
     }
 
     #[tool(
+        description = "Launch a bounded local experiment inside the round's approved execution envelope and return immediately. The command must start with an argv prefix the researcher authorized; limits on launches, concurrent processes, runtime, and the deadline are enforced by the runtime and cannot be overridden. Launching does not wait: when the process ends the result is delivered to you. Repeating a launch_key returns the same attempt."
+    )]
+    async fn team_launch_experiment(
+        &self,
+        Parameters(input): Parameters<LaunchExperimentInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let (research, runner) = self.execution()?;
+        let team = self.context.member.team_id.clone();
+        let (project_id, round) = research
+            .round_for_team(&team)
+            .map_err(mcp_error)?
+            .ok_or_else(|| mcp_error("this Team is not part of a research round"))?;
+        let experiment = runner
+            .launch(
+                &project_id,
+                &round.research_id,
+                crate::experiment_store::NewLaunch {
+                    round_id: round.id,
+                    launch_key: input.launch_key,
+                    team_id: Some(team),
+                    task_id: input.task_id,
+                    owner_member_id: Some(self.context.member.id.clone()),
+                    label: input.label.unwrap_or_default(),
+                    argv: input.argv,
+                    cwd: input.cwd.unwrap_or_default(),
+                    artifacts: input.artifacts,
+                    sources: Vec::new(),
+                    max_runtime_secs: input.max_runtime_secs,
+                },
+            )
+            .map_err(launch_error)?;
+        json_output(&experiment_summary(&experiment))
+    }
+
+    #[tool(
+        description = "Cancel a running experiment of this Team. Its process group is stopped and the result is delivered as a cancelled experiment."
+    )]
+    async fn team_cancel_experiment(
+        &self,
+        Parameters(input): Parameters<CancelExperimentInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let (research, runner) = self.execution()?;
+        let team = self.context.member.team_id.clone();
+        let (project_id, _) = research
+            .round_for_team(&team)
+            .map_err(mcp_error)?
+            .ok_or_else(|| mcp_error("this Team is not part of a research round"))?;
+        let experiment = runner
+            .store()
+            .experiment(&project_id, &input.experiment_id)
+            .map_err(mcp_error)?;
+        if experiment.team_id.as_deref() != Some(team.as_str()) {
+            return Err(mcp_error("experiment not found"));
+        }
+        let cancelled = runner
+            .cancel(&project_id, &input.experiment_id)
+            .map_err(launch_error)?;
+        json_output(&experiment_summary(&cancelled))
+    }
+
+    #[tool(
         description = "Leader only: publish this Team's research outcome to its research question before calling team_complete. Record findings, attempted approaches (including failed ones), limitations, and open questions, each citing evidence sources (session, run, team, team_task, or Project-relative file). Unsupported claims are stored as attributed interpretations. Put anything that would change the approved direction in proposals; a researcher decides on them. Safe to retry. Publishing never resolves the research question."
     )]
     async fn team_publish_research(
@@ -1475,6 +1563,21 @@ impl TeamMcpServer {
 }
 
 impl TeamMcpServer {
+    fn execution(
+        &self,
+    ) -> Result<
+        (
+            Arc<crate::research_store::ResearchStore>,
+            Arc<crate::experiment_runner::ExperimentRunner>,
+        ),
+        McpError,
+    > {
+        match (&self.context.research, &self.context.runner) {
+            (Some(research), Some(runner)) => Ok((Arc::clone(research), Arc::clone(runner))),
+            _ => Err(mcp_error("experiment execution is not available")),
+        }
+    }
+
     fn require_leader(&self) -> Result<(), McpError> {
         if self.context.member.role == TeamRole::Leader {
             Ok(())
@@ -1693,10 +1796,12 @@ fn tool_context(
         .find(|member| member.conversation_id == conversation_id)
         .ok_or_else(|| RuntimeError::Acp("team member is missing for this conversation".into()))?;
     let research = runtime.research_store();
+    let runner = runtime.experiment_runner();
     Ok(Some(ToolContext {
         runtime,
         teams,
         research,
+        runner,
         member,
     }))
 }
@@ -1816,6 +1921,33 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
         "sources": sources,
         "previous_rounds": previous,
         "findings": findings,
+    })
+}
+
+/// A refused launch names its stable reason code, so a Leader can tell a
+/// spent budget (ask the researcher) from a typo (fix the command).
+fn launch_error(error: crate::experiment_runner::RunnerError) -> McpError {
+    use crate::experiment_runner::RunnerError;
+    use crate::experiment_store::ExperimentError;
+    match error {
+        RunnerError::Experiment(ExperimentError::Denied(denial)) => mcp_error(format!(
+            "launch refused: {}. Limits and authorized commands are set by the researcher; \
+             use team_request_user_input to ask for a change instead of retrying.",
+            denial.code()
+        )),
+        RunnerError::Workspace(_) => mcp_error("the working directory is not allowed"),
+        other => mcp_error(other),
+    }
+}
+
+fn experiment_summary(experiment: &crate::experiment_store::Experiment) -> serde_json::Value {
+    serde_json::json!({
+        "experiment_id": experiment.id,
+        "label": experiment.label,
+        "state": experiment.state,
+        "analysis": experiment.analysis,
+        "policy_revision": experiment.policy_revision,
+        "exit_code": experiment.exit_code,
     })
 }
 
@@ -1940,6 +2072,7 @@ mod research_context_tests {
             runtime: fixture.runtime.clone(),
             teams: Arc::clone(&fixture.teams),
             research: fixture.runtime.research_store(),
+            runner: None,
             member,
         }
     }
@@ -2285,5 +2418,147 @@ mod research_context_tests {
         let value = team_context(context(&fixture, member)).await;
         assert!(value["research"].is_null());
         assert_eq!(value["role"], "leader");
+    }
+}
+
+#[cfg(test)]
+mod experiment_tool_tests {
+    use super::*;
+    use crate::agent_runtime::AgentRuntime;
+    use crate::experiment_runner::ExperimentRunner;
+    use crate::experiment_store::testing::Fixture;
+    use crate::experiment_store::{EnvelopeLimits, ExperimentState};
+
+    fn server(fixture: &Fixture, member: TeamMember) -> TeamMcpServer {
+        let runner = ExperimentRunner::new(
+            Arc::clone(&fixture.experiments),
+            Arc::clone(&fixture.workspace),
+            Arc::clone(&fixture.teams),
+        );
+        let runtime = AgentRuntime::new(
+            Arc::clone(&fixture.workspace),
+            Arc::clone(&fixture.agents),
+            Vec::new(),
+        )
+        .with_team_store(Arc::clone(&fixture.teams))
+        .with_research_store(Arc::clone(&fixture.research))
+        .with_experiments(Arc::clone(&fixture.experiments), Arc::clone(&runner));
+        TeamMcpServer::new(ToolContext {
+            runtime,
+            teams: Arc::clone(&fixture.teams),
+            research: Some(Arc::clone(&fixture.research)),
+            runner: Some(runner),
+            member,
+        })
+    }
+
+    fn allow_shell(fixture: &Fixture) {
+        fixture
+            .experiments
+            .set_envelope(
+                &fixture.project_id,
+                &fixture.research_id,
+                &fixture.round_id,
+                Some(1),
+                EnvelopeLimits {
+                    max_launches: 5,
+                    max_concurrent: 2,
+                    deadline_at: None,
+                    max_runtime_secs: 30,
+                    max_no_progress: 3,
+                    allowed_commands: vec![vec!["sh".into(), "-c".into()]],
+                },
+                None,
+            )
+            .expect("envelope");
+    }
+
+    fn input(key: &str, argv: &[&str]) -> LaunchExperimentInput {
+        LaunchExperimentInput {
+            launch_key: key.into(),
+            argv: argv.iter().map(|token| (*token).to_owned()).collect(),
+            cwd: None,
+            label: Some("baseline".into()),
+            artifacts: Vec::new(),
+            task_id: None,
+            max_runtime_secs: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_member_launches_inside_the_envelope_and_replays_start_nothing() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let server = server(&fixture, fixture.teammate.clone());
+        let first = server
+            .team_launch_experiment(Parameters(input("k1", &["sh", "-c", "sleep 0.2"])))
+            .await
+            .expect("launch");
+        let replay = server
+            .team_launch_experiment(Parameters(input("k1", &["sh", "-c", "sleep 0.2"])))
+            .await
+            .expect("replay");
+        let id = |result: &CallToolResult| {
+            let text = result
+                .content
+                .iter()
+                .find_map(|c| c.as_text().map(|t| t.text.clone()))
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(&text).unwrap()
+        };
+        assert_eq!(id(&first)["experiment_id"], id(&replay)["experiment_id"]);
+        assert_eq!(id(&first)["state"], "running");
+        let stored = fixture
+            .experiments
+            .get(id(&first)["experiment_id"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            stored.owner_member_id.as_deref(),
+            Some(fixture.teammate.id.as_str())
+        );
+        assert_eq!(
+            stored.policy_revision, 2,
+            "admitted under the revision in force"
+        );
+        assert!(matches!(
+            stored.state,
+            ExperimentState::Running | ExperimentState::Exited
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_unauthorized_command_or_an_exhausted_budget_is_refused_with_its_reason() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let server = server(&fixture, fixture.leader.clone());
+        let refused = server
+            .team_launch_experiment(Parameters(input("k", &["rm", "-rf", "/"])))
+            .await
+            .expect_err("not authorized");
+        assert!(
+            refused.message.contains("command_not_authorized"),
+            "{refused:?}"
+        );
+        assert!(refused.message.contains("team_request_user_input"));
+        // Nothing was reserved by the refusal.
+        let envelope = fixture
+            .experiments
+            .envelope(&fixture.project_id, &fixture.research_id, &fixture.round_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(envelope.launches_reserved, 0);
+    }
+
+    #[tokio::test]
+    async fn a_member_cannot_cancel_another_teams_experiment() {
+        let fixture = Fixture::new();
+        allow_shell(&fixture);
+        let server = server(&fixture, fixture.leader.clone());
+        let missing = server
+            .team_cancel_experiment(Parameters(CancelExperimentInput {
+                experiment_id: "not-an-experiment".into(),
+            }))
+            .await;
+        assert!(missing.is_err());
     }
 }

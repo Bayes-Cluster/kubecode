@@ -26,6 +26,9 @@ use uuid::Uuid;
 use crate::agent_store::AgentStore;
 use crate::database::Database;
 
+/// The longest a wait may run past now (seven days).
+const MAX_WAIT_SECS: i64 = 7 * 24 * 3600;
+
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 pub struct ExperimentStore {
@@ -115,13 +118,27 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
            UNIQUE (experiment_id, kind)
          );",
+    )?;
+    crate::database::ensure_column(
+        connection,
+        "experiments",
+        "artifact_revisions_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    // A launch given back (never started) is not a failed attempt.
+    crate::database::ensure_column(
+        connection,
+        "experiments",
+        "refunded",
+        "INTEGER NOT NULL DEFAULT 0",
     )
 }
 
 const EXPERIMENT_SELECT: &str = "SELECT id, project_id, research_id, round_id, team_id, task_id,
         owner_member_id, launch_key, label, argv_json, cwd, artifacts_json, sources_json,
         policy_revision, max_runtime_secs, state, analysis, pid, start_ticks, boot_id,
-        exit_code, signal, reason, cancel_requested, created_at, launched_at, finished_at
+        exit_code, signal, reason, cancel_requested, created_at, launched_at, finished_at,
+        artifact_revisions_json
     FROM experiments";
 
 const WAIT_SELECT: &str = "SELECT id, experiment_id, team_id, task_id, attempt_id, owner_member_id,
@@ -437,6 +454,7 @@ impl ExperimentStore {
             tx.execute(
                 "UPDATE experiments
                  SET state = ?2, exit_code = ?3, signal = ?4, reason = ?5, analysis = 'pending',
+                     artifact_revisions_json = ?7,
                      finished_at = CASE WHEN ?6 THEN CURRENT_TIMESTAMP ELSE finished_at END
                  WHERE id = ?1",
                 params![
@@ -445,7 +463,8 @@ impl ExperimentStore {
                     outcome.exit_code,
                     outcome.signal,
                     reason,
-                    finished
+                    finished,
+                    serde_json::to_string(&outcome.artifact_revisions)?
                 ],
             )?;
             insert_event(tx, id, EventKind::Finished)?;
@@ -514,7 +533,7 @@ impl ExperimentStore {
                 ReconcileTruth::NotStarted => {
                     tx.execute(
                         "UPDATE experiments
-                         SET state = 'failed_to_start', analysis = 'none', reason = ?2,
+                         SET state = 'failed_to_start', analysis = 'none', reason = ?2, refunded = 1,
                              finished_at = CURRENT_TIMESTAMP
                          WHERE id = ?1",
                         params![id, reason],
@@ -538,6 +557,66 @@ impl ExperimentStore {
             }
             resolve_open_waits(tx, id)?;
             Ok((load_experiment(tx, id)?, Some(scope_of(tx, id)?)))
+        })
+    }
+
+    /// Records why a stop is under way (e.g. the runtime limit), so the
+    /// eventual outcome is attributed correctly even across a restart.
+    pub fn set_reason(&self, id: &str, reason: &str) -> Result<(), ExperimentError> {
+        self.write(|tx| {
+            tx.execute(
+                "UPDATE experiments SET reason = ?2 WHERE id = ?1
+                 AND state IN ('launching', 'running', 'cancelling')",
+                params![id, reason],
+            )?;
+            Ok(((), None))
+        })
+    }
+
+    /// Puts an experiment in a state without the usual transition (tests
+    /// simulating a crash at a boundary).
+    #[cfg(test)]
+    pub(crate) fn force_state_for_test(&self, id: &str, state: &str) {
+        self.connection()
+            .execute(
+                "UPDATE experiments SET state = ?2, pid = NULL, start_ticks = NULL, boot_id = NULL
+                 WHERE id = ?1",
+                params![id, state],
+            )
+            .expect("force state");
+    }
+
+    /// Looks an experiment up by id alone (the runner's own bookkeeping; API
+    /// callers use the Project-scoped `experiment`).
+    pub fn get(&self, id: &str) -> Result<Experiment, ExperimentError> {
+        load_experiment(&self.connection(), id)
+    }
+
+    /// A reservation that never reached `launching` provably never spawned a
+    /// process. It is closed and its launch is given back; the Leader is told
+    /// through the usual observation so it can decide on an explicit retry.
+    pub fn abandon_reserved(&self, id: &str, reason: &str) -> Result<bool, ExperimentError> {
+        self.write(|tx| {
+            let experiment = load_experiment(tx, id)?;
+            if experiment.state != ExperimentState::Reserved {
+                return Ok((false, None));
+            }
+            tx.execute(
+                "UPDATE experiments
+                 SET state = 'failed_to_start', analysis = 'pending', reason = ?2, refunded = 1,
+                     finished_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![id, reason],
+            )?;
+            tx.execute(
+                "UPDATE research_envelopes
+                 SET launches_reserved = MAX(launches_reserved - 1, 0)
+                 WHERE round_id = ?1",
+                [&experiment.round_id],
+            )?;
+            insert_event(tx, id, EventKind::Finished)?;
+            resolve_open_waits(tx, id)?;
+            Ok((true, Some(scope_of(tx, id)?)))
         })
     }
 
@@ -627,6 +706,23 @@ impl ExperimentStore {
             {
                 return Ok((open, None));
             }
+            // A finished experiment's result was already delivered; a repeat
+            // yield from the same member returns the wait it already made.
+            if let Some(existing) = tx
+                .query_row(
+                    &format!(
+                        "{WAIT_SELECT} WHERE experiment_id = ?1 AND owner_member_id = ?2
+                         ORDER BY created_at DESC, rowid DESC LIMIT 1"
+                    ),
+                    params![experiment_id, member_id],
+                    wait_from_row,
+                )
+                .optional()?
+                .transpose()?
+                && !experiment.state.is_active()
+            {
+                return Ok((existing, None));
+            }
             let attempt_id: Option<String> = tx
                 .query_row(
                     "SELECT id FROM team_task_attempts
@@ -638,7 +734,9 @@ impl ExperimentStore {
                 )
                 .optional()?;
             // A wait cannot outlive the process's own runtime cap by much.
-            let deadline = deadline_at.or(Some(
+            let deadline = deadline_at
+                .map(|at| at.clamp(now, now + MAX_WAIT_SECS))
+                .or(Some(
                 now + i64::from(experiment.max_runtime_secs) + 600,
             ));
             let finished = !experiment.state.is_active();
@@ -965,7 +1063,8 @@ fn check_team_scope(
 fn no_progress(tx: &Connection, round_id: &str, limit: u32) -> Result<bool, ExperimentError> {
     let mut statement = tx.prepare(
         "SELECT state, exit_code FROM experiments
-         WHERE round_id = ?1 AND state IN ('exited', 'timed_out', 'failed_to_start')
+         WHERE round_id = ?1 AND refunded = 0
+           AND state IN ('exited', 'timed_out', 'failed_to_start')
          ORDER BY finished_at DESC, rowid DESC LIMIT ?2",
     )?;
     let recent: Vec<(String, Option<i32>)> = statement
@@ -1113,6 +1212,7 @@ fn experiment_from_row(
         row.get::<_, Option<String>>(25)?,
         row.get::<_, Option<String>>(26)?,
     );
+    let artifact_revisions: String = row.get(27)?;
     Ok((|| {
         Ok(Experiment {
             id: base.0,
@@ -1144,6 +1244,7 @@ fn experiment_from_row(
             signal: tail.1,
             reason: tail.2,
             cancel_requested: tail.3,
+            artifact_revisions: serde_json::from_str(&artifact_revisions)?,
             created_at: tail.4,
             launched_at: tail.5,
             finished_at: tail.6,

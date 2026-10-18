@@ -6,6 +6,7 @@ use serde_json::json;
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
+use crate::experiment_runner::ExperimentRunner;
 use crate::experiment_store::ExperimentStore;
 use crate::git::GitService;
 use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
@@ -25,6 +26,7 @@ pub struct AppState {
     pub ilink: Arc<ILinkService>,
     pub research: Arc<ResearchStore>,
     pub experiments: Arc<ExperimentStore>,
+    pub experiment_runner: Arc<ExperimentRunner>,
     /// Serializes research round setup per round.
     pub research_locks: Arc<crate::research_api::KeyedLocks>,
     /// The running WeChat channel pipeline, once started.
@@ -55,10 +57,16 @@ impl AppState {
             ExperimentStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("experiment store"),
         );
+        let experiment_runner = ExperimentRunner::new(
+            Arc::clone(&experiments),
+            Arc::clone(&workspace),
+            Arc::clone(&teams),
+        );
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
                 .with_research_store(Arc::clone(&research))
+                .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
         );
         Self {
@@ -71,6 +79,7 @@ impl AppState {
             ilink,
             research,
             experiments,
+            experiment_runner,
             research_locks: Arc::default(),
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -127,6 +136,10 @@ impl AppState {
             )
             .with_team_store(Arc::clone(&self.teams))
             .with_research_store(Arc::clone(&self.research))
+            .with_experiments(
+                Arc::clone(&self.experiments),
+                Arc::clone(&self.experiment_runner),
+            )
             .with_terminal_manager(Arc::clone(&self.terminals)),
         );
         self.agents = agents;

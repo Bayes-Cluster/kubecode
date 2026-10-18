@@ -316,9 +316,28 @@ export type Experiment = {
   signal: number | null
   reason: string | null
   cancel_requested: boolean
+  artifact_revisions: Array<{ path: string; revision: string | null }>
   created_at: string
   launched_at: string | null
   finished_at: string | null
+}
+/** An experiment with its artifacts re-resolved against the files as they are now. */
+export type ExperimentView = Experiment & {
+  artifact_state: Array<{
+    path: string
+    revision: string | null
+    availability: ResearchSourceAvailability
+  }>
+}
+export type ExperimentLogTail = { text: string; total_bytes: number; truncated: boolean }
+export type LaunchExperimentRequest = {
+  /** Retry key: repeating it returns the same attempt and starts nothing. */
+  launch_key: string
+  argv: string[]
+  cwd?: string
+  label?: string
+  artifacts?: string[]
+  max_runtime_secs?: number
 }
 export type ExperimentWait = {
   id: string
@@ -335,7 +354,7 @@ export type ExperimentWait = {
 }
 export type ResearchExecution = {
   envelope: ExecutionEnvelope | null
-  experiments: Experiment[]
+  experiments: ExperimentView[]
   waits: ExperimentWait[]
   /** Server time (unix seconds), so deadlines render consistently. */
   now: number

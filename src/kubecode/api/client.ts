@@ -36,7 +36,9 @@ import type {
   CaptureResearchFindingsRequest,
   ExecutionEnvelope,
   ExecutionEnvelopeLimits,
-  Experiment,
+  ExperimentLogTail,
+  ExperimentView,
+  LaunchExperimentRequest,
   CaptureResearchFindingsResponse,
   ResearchBriefPatch,
   ResearchDetail,
@@ -435,6 +437,50 @@ export class KubecodeApi {
     })
   }
 
+  /** The researcher's own launch, inside the same envelope an Agent is held to. */
+  launchExperiment(
+    projectId: string,
+    researchId: string,
+    roundId: string,
+    request: LaunchExperimentRequest,
+  ): Promise<ExperimentView> {
+    return this.request(`${this.executionPath(projectId, researchId, roundId)}/experiments`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
+  /** Stops one experiment's process group; the cancelled result is delivered as usual. */
+  cancelExperiment(projectId: string, researchId: string, experimentId: string): Promise<ExperimentView> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/experiments/${encodeURIComponent(experimentId)}/cancel`,
+      { method: 'POST' },
+    )
+  }
+
+  /** Stops every running process of the round and closes its envelope. */
+  cancelResearchExecution(
+    projectId: string,
+    researchId: string,
+    roundId: string,
+  ): Promise<{ cancelled: number; envelope: ExecutionEnvelope }> {
+    return this.request(`${this.executionPath(projectId, researchId, roundId)}/cancel`, {
+      method: 'POST',
+    })
+  }
+
+  /** A bounded tail of the experiment's output. */
+  getExperimentLog(
+    projectId: string,
+    researchId: string,
+    experimentId: string,
+    stream: 'stdout' | 'stderr' = 'stdout',
+  ): Promise<ExperimentLogTail> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/experiments/${encodeURIComponent(experimentId)}/logs?${query({ stream })}`,
+    )
+  }
+
   /** States what really happened to an `unknown` experiment; nothing is relaunched. */
   reconcileExperiment(
     projectId: string,
@@ -442,7 +488,7 @@ export class KubecodeApi {
     experimentId: string,
     truth: 'not_started' | 'finished',
     exitCode?: number,
-  ): Promise<Experiment> {
+  ): Promise<ExperimentView> {
     return this.request(
       `${this.researchPath(projectId, researchId)}/experiments/${encodeURIComponent(experimentId)}/reconcile`,
       { method: 'POST', body: JSON.stringify({ truth, exit_code: exitCode }) },

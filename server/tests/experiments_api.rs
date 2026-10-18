@@ -5,6 +5,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -457,4 +458,152 @@ fn restart(first: &Env) -> Env {
         other_project_id: first.other_project_id.clone(),
         project_path: first.project_path.clone(),
     }
+}
+
+fn shell_limits() -> Value {
+    json!({
+        "max_launches": 5,
+        "max_concurrent": 2,
+        "deadline_at": null,
+        "max_runtime_secs": 30,
+        "max_no_progress": 3,
+        "allowed_commands": [["sh", "-c"]],
+    })
+}
+
+async fn wait_for_state(env: &Env, path: &str, id: &str, done: &[&str]) -> Value {
+    for _ in 0..400 {
+        let (_, view) = call(env, Method::GET, path, Value::Null).await;
+        if let Some(experiment) = view["experiments"]
+            .as_array()
+            .and_then(|list| list.iter().find(|e| e["id"] == json!(id)))
+            && done.contains(&experiment["state"].as_str().unwrap_or_default())
+        {
+            return experiment.clone();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("experiment {id} did not reach {done:?}");
+}
+
+#[tokio::test]
+async fn the_researcher_launches_inside_the_envelope_and_reads_logs_and_artifacts() {
+    let env = env(false);
+    let rq = create_rq(&env, "Launch").await;
+    let id = rq["id"].as_str().expect("id");
+    let (_, round) = start_round(&env, id, "r1", Some(shell_limits())).await;
+    let round_id = round["id"].as_str().expect("round");
+    let path = execution_path(&env, id, round_id);
+
+    let launch_path = format!("{path}/experiments");
+    let body = json!({
+        "launch_key": "baseline",
+        "argv": ["sh", "-c", "echo result > metrics.txt; echo hello"],
+        "artifacts": ["metrics.txt"],
+        "label": "baseline",
+    });
+    let (status, started) = call(&env, Method::POST, &launch_path, body.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    let experiment_id = started["id"].as_str().expect("experiment").to_owned();
+    assert_eq!(started["policy_revision"], 1);
+
+    // A replay of the same key returns the same attempt.
+    let (_, replay) = call(&env, Method::POST, &launch_path, body).await;
+    assert_eq!(replay["id"], json!(experiment_id));
+
+    let done = wait_for_state(&env, &path, &experiment_id, &["exited"]).await;
+    assert_eq!(done["exit_code"], 0);
+    assert_eq!(done["analysis"], "pending");
+    assert_eq!(done["artifact_state"][0]["path"], "metrics.txt");
+    assert_eq!(done["artifact_state"][0]["availability"], "available");
+    let (_, logs) = call(
+        &env,
+        Method::GET,
+        &format!(
+            "{}/{id}/experiments/{experiment_id}/logs?stream=stdout",
+            rq_path(&env)
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(logs["text"], "hello\n");
+
+    // Changing the artifact is reported, not hidden.
+    fs::write(env.project_path.join("metrics.txt"), "different").expect("edit");
+    let (_, view) = call(&env, Method::GET, &path, Value::Null).await;
+    assert_eq!(
+        view["experiments"][0]["artifact_state"][0]["availability"],
+        "changed"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_launch_reports_its_reason_and_unsafe_paths_are_bad_requests() {
+    let env = env(false);
+    let rq = create_rq(&env, "Refuse").await;
+    let id = rq["id"].as_str().expect("id");
+    let (_, round) = start_round(&env, id, "r1", Some(shell_limits())).await;
+    let path = format!(
+        "{}/experiments",
+        execution_path(&env, id, round["id"].as_str().expect("round"))
+    );
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"launch_key": "a", "argv": ["touch", "x"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        (body["code"].clone(), body["reason"].clone()),
+        (json!("launch_denied"), json!("command_not_authorized"))
+    );
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"launch_key": "b", "argv": ["sh", "-c", "true"], "cwd": "../outside"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+#[tokio::test]
+async fn cancelling_a_round_stops_its_processes_and_closes_its_authority() {
+    let env = env(false);
+    let rq = create_rq(&env, "Cancel").await;
+    let id = rq["id"].as_str().expect("id");
+    let (_, round) = start_round(&env, id, "r1", Some(shell_limits())).await;
+    let round_id = round["id"].as_str().expect("round");
+    let path = execution_path(&env, id, round_id);
+    let launch_path = format!("{path}/experiments");
+    let (_, started) = call(
+        &env,
+        Method::POST,
+        &launch_path,
+        json!({"launch_key": "long", "argv": ["sh", "-c", "sleep 60"]}),
+    )
+    .await;
+    let experiment_id = started["id"].as_str().expect("experiment").to_owned();
+    assert_eq!(started["state"], "running");
+
+    let (status, cancelled) =
+        call(&env, Method::POST, &format!("{path}/cancel"), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{cancelled}");
+    assert_eq!(cancelled["cancelled"], 1);
+    assert_eq!(cancelled["envelope"]["state"], "closed");
+    let done = wait_for_state(&env, &path, &experiment_id, &["cancelled"]).await;
+    assert_eq!(done["cancel_requested"], true);
+
+    // The round can no longer launch anything.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &launch_path,
+        json!({"launch_key": "again", "argv": ["sh", "-c", "true"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["reason"], "envelope_closed");
 }

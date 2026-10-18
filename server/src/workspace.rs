@@ -201,6 +201,41 @@ impl WorkspaceService {
             .join(format!("{terminal_id}.log")))
     }
 
+    /// The Runtime-owned directory of one experiment's pid file, logs, and
+    /// exit receipt. The id is strictly validated before a path is derived.
+    pub fn experiment_dir(&self, experiment_id: &str) -> Result<PathBuf, WorkspaceError> {
+        let valid = !experiment_id.is_empty()
+            && experiment_id.len() <= 64
+            && experiment_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !valid {
+            return Err(WorkspaceError::InvalidPath(experiment_id.to_owned()));
+        }
+        Ok(self.state_root.join("experiments").join(experiment_id))
+    }
+
+    /// A working directory for an experiment: `relative` under the Session
+    /// execution root (the Project, or the Session's worktree). It must stay
+    /// inside that root, traverse no symlink out of it, and be a directory.
+    pub fn resolve_execution_cwd(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<PathBuf, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        let root = self.execution_path(project_id, workspace_path)?;
+        let relative = normalize_relative(relative, true)?;
+        let candidate = root.join(&relative).canonicalize()?;
+        if !candidate.starts_with(&root) || !candidate.is_dir() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+        Ok(candidate)
+    }
+
     pub fn append_terminal_transcript(
         &self,
         terminal_id: &str,
@@ -1039,6 +1074,48 @@ impl WorkspaceService {
         if bytes.len() as u64 > MAX_ASSET_BYTES {
             return Err(WorkspaceError::AssetTooLarge);
         }
+        Ok(revision(&bytes))
+    }
+
+    /// A content revision for a file under an execution root (the Project, or
+    /// a Session's worktree), used for experiment artifacts. A file larger
+    /// than the hashing cap is identified by its size and modification time
+    /// instead of being reported as missing.
+    pub fn execution_file_revision(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        if relative.contains('\0') {
+            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
+        }
+        let root = self.execution_path(project_id, workspace_path)?;
+        let relative = normalize_relative(relative, false)?;
+        let mut candidate = root;
+        for component in relative.components() {
+            candidate.push(component.as_os_str());
+            if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
+                return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+            }
+        }
+        let metadata = fs::symlink_metadata(&candidate)?;
+        if !metadata.is_file() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+        if metadata.len() > MAX_ASSET_BYTES {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            return Ok(format!("large:{}:{modified}", metadata.len()));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&candidate)?
+            .take(MAX_ASSET_BYTES + 1)
+            .read_to_end(&mut bytes)?;
         Ok(revision(&bytes))
     }
 
