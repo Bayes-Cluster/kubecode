@@ -932,6 +932,16 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   slot and leaves that state only by an explicit reconcile. A *wait* records who
   yields on which experiment until when; an open wait makes a report-less turn a
   legitimate yield. Pausing stops future launches and leaves running work alone.
+  **Delivery.** A terminal observation, the resolution of the experiment's open
+  waits, the analysis obligation, and the mailbox message to the responsible
+  member (the last waiter, else the owner, else the Leader whenever that member
+  is gone) commit in one transaction, keyed by `(experiment, event kind)`, so a
+  duplicate observation delivers nothing. The wake is a hint after commit: the
+  existing member wake starts an idle owner and leaves a busy one alone, a
+  paused Team keeps the message pending, and the 30-second supervisor re-checks
+  everything from committed rows. A mailbox acknowledgement means the result
+  was read, not analyzed: an acknowledged but unanalyzed result is re-raised a
+  bounded number of times, then the Team is marked as needing attention.
 
 ## Conversation reducer
 

@@ -16,7 +16,7 @@ mod tests;
 
 pub use models::*;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::json;
@@ -31,10 +31,16 @@ const MAX_WAIT_SECS: i64 = 7 * 24 * 3600;
 
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
+type WakeHook = Arc<dyn Fn(&str) + Send + Sync>;
+
 pub struct ExperimentStore {
     database: Arc<Database>,
     agents: Arc<AgentStore>,
     clock: Clock,
+    /// Teams with a delivery committed in the current write; woken after
+    /// commit. A hint only: the committed message is authoritative.
+    wakes: Mutex<Vec<String>>,
+    hook: Mutex<Option<WakeHook>>,
 }
 
 /// Creates the execution tables. `TeamStore` calls this too: completing a
@@ -115,8 +121,10 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            id            TEXT PRIMARY KEY,
            experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
            kind          TEXT NOT NULL,
+           -- What the event is about beyond the kind: the wait that expired.
+           subject       TEXT NOT NULL DEFAULT '',
            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-           UNIQUE (experiment_id, kind)
+           UNIQUE (experiment_id, kind, subject)
          );",
     )?;
     crate::database::ensure_column(
@@ -125,6 +133,16 @@ pub(crate) fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
         "artifact_revisions_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
+    // Delivery: the mailbox row an event produced, and how often an
+    // unanalyzed result has been re-raised.
+    crate::database::ensure_column(connection, "experiment_events", "message_id", "TEXT")?;
+    crate::database::ensure_column(
+        connection,
+        "experiments",
+        "reminders",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    crate::database::ensure_column(connection, "experiments", "reminded_at", "INTEGER")?;
     // A launch given back (never started) is not a failed attempt.
     crate::database::ensure_column(
         connection,
@@ -158,7 +176,15 @@ impl ExperimentStore {
             database,
             agents,
             clock: Arc::new(system_now),
+            wakes: Mutex::default(),
+            hook: Mutex::default(),
         })
+    }
+
+    /// Registers what happens after a delivery commits (normally: wake the
+    /// recipient through the Team runtime). Called with the Team id.
+    pub fn set_delivery_hook(&self, hook: impl Fn(&str) + Send + Sync + 'static) {
+        *self.hook.lock().expect("hook mutex poisoned") = Some(Arc::new(hook));
     }
 
     /// Replaces the clock (unix seconds), so deadlines are testable without
@@ -467,7 +493,7 @@ impl ExperimentStore {
                     serde_json::to_string(&outcome.artifact_revisions)?
                 ],
             )?;
-            insert_event(tx, id, EventKind::Finished)?;
+            self.deliver(tx, id, EventKind::Finished)?;
             resolve_open_waits(tx, id)?;
             Ok((true, Some(scope_of(tx, id)?)))
         })
@@ -495,7 +521,7 @@ impl ExperimentStore {
                          WHERE id = ?1",
                         [id],
                     )?;
-                    insert_event(tx, id, EventKind::Finished)?;
+                    self.deliver(tx, id, EventKind::Finished)?;
                     resolve_open_waits(tx, id)?;
                 }
                 ExperimentState::Launching | ExperimentState::Running => {
@@ -556,6 +582,7 @@ impl ExperimentStore {
                 }
             }
             resolve_open_waits(tx, id)?;
+            self.deliver(tx, id, EventKind::Reconciled)?;
             Ok((load_experiment(tx, id)?, Some(scope_of(tx, id)?)))
         })
     }
@@ -614,7 +641,7 @@ impl ExperimentStore {
                  WHERE round_id = ?1",
                 [&experiment.round_id],
             )?;
-            insert_event(tx, id, EventKind::Finished)?;
+            self.deliver(tx, id, EventKind::Finished)?;
             resolve_open_waits(tx, id)?;
             Ok((true, Some(scope_of(tx, id)?)))
         })
@@ -667,6 +694,19 @@ impl ExperimentStore {
             if experiment.project_id != project_id
                 || experiment.team_id.as_deref() != Some(team_id)
             {
+                return Err(ExperimentError::NotFound);
+            }
+            // Only the experiment's owner (or the Leader) may wait on it: a
+            // wait redirects the result, so it is not open to any teammate.
+            let is_leader: bool = tx
+                .query_row(
+                    "SELECT 1 FROM teams WHERE id = ?1 AND leader_member_id = ?2",
+                    params![team_id, member_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !is_leader && experiment.owner_member_id.as_deref() != Some(member_id) {
                 return Err(ExperimentError::NotFound);
             }
             let member_in_team: bool = tx
@@ -793,7 +833,12 @@ impl ExperimentStore {
                 [&id],
                 wait_from_row,
             )??;
-            insert_event(&tx, &wait.experiment_id, EventKind::WaitExpired)?;
+            self.deliver_about(
+                &tx,
+                &wait.experiment_id,
+                EventKind::WaitExpired,
+                Some(&wait),
+            )?;
             cursor = Some(append_research_event(
                 &tx,
                 &scope_of(&tx, &wait.experiment_id)?,
@@ -805,7 +850,70 @@ impl ExperimentStore {
         if let Some(cursor) = cursor {
             self.agents.workspace_event_bus().publish_committed(cursor);
         }
+        self.fire_wakes();
         Ok(expired)
+    }
+
+    /// Re-raises results that were read but never analyzed, a bounded number
+    /// of times. A mailbox acknowledgement means the event was read, not that
+    /// the experiment was analyzed, so the obligation stays until an explicit
+    /// decision. Past the bound the result is reported as exhausted so the
+    /// Team can be marked as needing attention instead of waking forever.
+    pub fn remind_unanalyzed(
+        &self,
+        after_secs: i64,
+        max_reminders: u32,
+    ) -> Result<ReminderOutcome, ExperimentError> {
+        let now = self.now();
+        self.write(|tx| {
+            let due: Vec<(String, String, u32, String)> = {
+                let mut statement = tx.prepare(
+                    "SELECT e.id, e.team_id, e.reminders, ev.id
+                     FROM experiments e
+                     JOIN teams t ON t.id = e.team_id AND t.status = 'active'
+                     JOIN experiment_events ev ON ev.experiment_id = e.id AND ev.kind = 'finished'
+                     LEFT JOIN team_messages m ON m.id = ev.message_id
+                     WHERE e.analysis = 'pending'
+                       AND (m.id IS NULL OR m.delivery_status = 'acknowledged')
+                       AND e.reminders <= ?3
+                       AND COALESCE(e.reminded_at, CAST(strftime('%s', COALESCE(e.finished_at, e.created_at)) AS INTEGER))
+                           <= ?1 - ?2
+                     ORDER BY e.created_at, e.rowid",
+                )?;
+                statement
+                    .query_map(params![now, after_secs, max_reminders], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    })?
+                    .collect::<Result<_, _>>()?
+            };
+            let mut outcome = ReminderOutcome::default();
+            for (experiment_id, team_id, reminders, event_id) in due {
+                if reminders >= max_reminders {
+                    // Reported once: past the bound the experiment leaves the
+                    // reminder cycle (the Team is flagged by the caller).
+                    tx.execute(
+                        "UPDATE experiments SET reminders = ?2 WHERE id = ?1",
+                        params![experiment_id, max_reminders + 1],
+                    )?;
+                    outcome.exhausted.push((team_id, experiment_id));
+                    continue;
+                }
+                let experiment = load_experiment(tx, &experiment_id)?;
+                let body = format!("Reminder {}: {}", reminders + 1, describe(&experiment, EventKind::Finished));
+                let message_id = enqueue_to_leader(tx, &experiment, &body)?;
+                tx.execute(
+                    "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
+                    params![event_id, message_id],
+                )?;
+                tx.execute(
+                    "UPDATE experiments SET reminders = reminders + 1, reminded_at = ?2 WHERE id = ?1",
+                    params![experiment_id, now],
+                )?;
+                self.note_wake(&team_id);
+                outcome.reminded.push(experiment_id);
+            }
+            Ok((outcome, None))
+        })
     }
 
     /// A member that leaves the Team cannot keep an obligation: its open waits
@@ -934,7 +1042,14 @@ impl ExperimentStore {
     ) -> Result<T, ExperimentError> {
         let mut connection = self.connection();
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (value, scope) = operation(&transaction)?;
+        let (value, scope) = match operation(&transaction) {
+            Ok(done) => done,
+            Err(error) => {
+                // Nothing committed, so nothing is owed a wake.
+                self.wakes.lock().expect("wake mutex poisoned").clear();
+                return Err(error);
+            }
+        };
         let cursor = match scope {
             Some(scope) => Some(append_research_event(&transaction, &scope)?),
             None => None,
@@ -944,7 +1059,100 @@ impl ExperimentStore {
         if let Some(cursor) = cursor {
             self.agents.workspace_event_bus().publish_committed(cursor);
         }
+        self.fire_wakes();
         Ok(value)
+    }
+
+    fn note_wake(&self, team_id: &str) {
+        let mut wakes = self.wakes.lock().expect("wake mutex poisoned");
+        if !wakes.iter().any(|queued| queued == team_id) {
+            wakes.push(team_id.to_owned());
+        }
+    }
+
+    fn fire_wakes(&self) {
+        let teams: Vec<String> =
+            std::mem::take(&mut *self.wakes.lock().expect("wake mutex poisoned"));
+        if teams.is_empty() {
+            return;
+        }
+        let hook = self.hook.lock().expect("hook mutex poisoned").clone();
+        if let Some(hook) = hook {
+            for team in teams {
+                hook(&team);
+            }
+        }
+    }
+
+    /// Records an event once per (experiment, kind) and, if it is new and the
+    /// experiment belongs to a Team, enqueues the mailbox message for the
+    /// responsible member in the same transaction. A duplicate event does
+    /// neither, so repeated observations converge.
+    fn deliver(
+        &self,
+        tx: &Connection,
+        experiment_id: &str,
+        kind: EventKind,
+    ) -> Result<(), ExperimentError> {
+        self.deliver_about(tx, experiment_id, kind, None)
+    }
+
+    /// As `deliver`, for an event that concerns one wait: a second member's
+    /// wait expiring is its own event, told to that wait's owner.
+    fn deliver_about(
+        &self,
+        tx: &Connection,
+        experiment_id: &str,
+        kind: EventKind,
+        wait: Option<&ExperimentWait>,
+    ) -> Result<(), ExperimentError> {
+        let experiment = load_experiment(tx, experiment_id)?;
+        let event_id = Uuid::new_v4().to_string();
+        let inserted = tx.execute(
+            "INSERT OR IGNORE INTO experiment_events (id, experiment_id, kind, subject)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                event_id,
+                experiment_id,
+                kind.as_str(),
+                wait.map(|wait| wait.id.as_str()).unwrap_or("")
+            ],
+        )?;
+        if inserted == 0 {
+            return Ok(());
+        }
+        let Some(team_id) = &experiment.team_id else {
+            return Ok(());
+        };
+        let body = describe(&experiment, kind);
+        let message_id = enqueue_message(
+            tx,
+            &experiment,
+            &body,
+            wait.map(|wait| wait.owner_member_id.as_str()),
+        )?;
+        tx.execute(
+            "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
+            params![event_id, message_id],
+        )?;
+        // Only the Leader can decide what a result means. When it went to
+        // someone else, the Leader is told too, so it is never found out only
+        // by a completion refusal.
+        if kind == EventKind::Finished && recipient_of(tx, &message_id)? != leader_of(tx, team_id)?
+        {
+            let copy = enqueue_to_leader(
+                tx,
+                &experiment,
+                &format!("{body} (Its owner has also been told.)"),
+            )?;
+            // Reminders follow the message that reaches the decider.
+            tx.execute(
+                "UPDATE experiment_events SET message_id = ?2 WHERE id = ?1",
+                params![event_id, copy],
+            )?;
+        }
+        self.note_wake(team_id);
+        Ok(())
     }
 }
 
@@ -1089,16 +1297,151 @@ fn request_hash(launch: &NewLaunch) -> String {
     hex::encode(Sha256::digest(canonical.to_string().as_bytes()))
 }
 
-fn insert_event(
+/// Who is told about an experiment: the member who last waited on it, else
+/// its owner, else the Leader — and the Leader whenever that member is gone.
+fn leader_of(tx: &Connection, team_id: &str) -> Result<String, ExperimentError> {
+    Ok(tx.query_row(
+        "SELECT leader_member_id FROM teams WHERE id = ?1",
+        [team_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn recipient_of(tx: &Connection, message_id: &str) -> Result<String, ExperimentError> {
+    Ok(tx.query_row(
+        "SELECT to_member_id FROM team_messages WHERE id = ?1",
+        [message_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn insert_message(
     tx: &Connection,
-    experiment_id: &str,
-    kind: EventKind,
-) -> Result<(), ExperimentError> {
+    team_id: &str,
+    from: &str,
+    to: &str,
+    task_id: Option<&str>,
+    body: &str,
+) -> Result<String, ExperimentError> {
+    let message_id = Uuid::new_v4().to_string();
     tx.execute(
-        "INSERT OR IGNORE INTO experiment_events (id, experiment_id, kind) VALUES (?1, ?2, ?3)",
-        params![Uuid::new_v4().to_string(), experiment_id, kind.as_str()],
+        "INSERT INTO team_messages (id, team_id, from_member_id, to_member_id, kind, task_id, body)
+         VALUES (?1, ?2, ?3, ?4, 'system', ?5, ?6)",
+        params![message_id, team_id, from, to, task_id, body],
     )?;
-    Ok(())
+    Ok(message_id)
+}
+
+/// A message to the Team's Leader, whatever the experiment's owner.
+fn enqueue_to_leader(
+    tx: &Connection,
+    experiment: &Experiment,
+    body: &str,
+) -> Result<String, ExperimentError> {
+    let team_id = experiment
+        .team_id
+        .as_deref()
+        .ok_or(ExperimentError::NotFound)?;
+    let leader = leader_of(tx, team_id)?;
+    insert_message(
+        tx,
+        team_id,
+        &leader,
+        &leader,
+        experiment.task_id.as_deref(),
+        body,
+    )
+}
+
+/// Who is told about an experiment: `hint` if given (the owner of the wait an
+/// event concerns), else the member who last waited on it, else its owner,
+/// else the Leader — and the Leader whenever that member is gone.
+fn enqueue_message(
+    tx: &Connection,
+    experiment: &Experiment,
+    body: &str,
+    hint: Option<&str>,
+) -> Result<String, ExperimentError> {
+    let team_id = experiment
+        .team_id
+        .as_deref()
+        .ok_or(ExperimentError::NotFound)?;
+    let leader = leader_of(tx, team_id)?;
+    let latest_wait: Option<(String, Option<String>)> = tx
+        .query_row(
+            "SELECT owner_member_id, task_id FROM experiment_waits
+             WHERE experiment_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            [&experiment.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let task_id = experiment
+        .task_id
+        .clone()
+        .or_else(|| latest_wait.as_ref().and_then(|(_, task)| task.clone()));
+    let candidate = hint
+        .map(str::to_owned)
+        .or_else(|| latest_wait.map(|(member, _)| member))
+        .or_else(|| experiment.owner_member_id.clone());
+    let recipient = match candidate {
+        Some(member) => {
+            let present: bool = tx
+                .query_row(
+                    "SELECT 1 FROM team_members WHERE id = ?1 AND team_id = ?2",
+                    params![member, team_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if present { member } else { leader.clone() }
+        }
+        None => leader.clone(),
+    };
+    insert_message(tx, team_id, &leader, &recipient, task_id.as_deref(), body)
+}
+
+fn describe(experiment: &Experiment, kind: EventKind) -> String {
+    // The label is Agent-supplied and lands in another member's prompt: keep
+    // it to one short plain line so it cannot pose as an instruction.
+    let label: String = experiment
+        .label
+        .chars()
+        .map(|c| if c.is_control() || c == '"' { ' ' } else { c })
+        .take(80)
+        .collect();
+    let name = if label.trim().is_empty() {
+        experiment.id.as_str()
+    } else {
+        label.trim()
+    };
+    match kind {
+        EventKind::Finished if experiment.state == ExperimentState::Unknown => format!(
+            "Experiment \"{name}\" has an unknown outcome: its process could not be accounted for. \
+             Do not assume it succeeded and do not rerun it; ask the researcher to reconcile it."
+        ),
+        EventKind::Finished => {
+            let code = experiment
+                .exit_code
+                .map(|code| format!(" (exit code {code})"))
+                .unwrap_or_default();
+            format!(
+                "Experiment \"{name}\" ended: {}{code}. It is waiting for your analysis: review its \
+                 logs and artifacts, publish what you learned, then continue or report. Until it is \
+                 analyzed the Team cannot complete.",
+                experiment.state.as_str()
+            )
+        }
+        EventKind::WaitExpired => format!(
+            "Your wait on experiment \"{name}\" expired while it was {}. The experiment itself is \
+             unchanged; check on it and decide what to do.",
+            experiment.state.as_str()
+        ),
+        EventKind::Reconciled => format!(
+            "Experiment \"{name}\" was reconciled by the researcher: {}. Analyze the outcome if one \
+             was recorded.",
+            experiment.state.as_str()
+        ),
+    }
 }
 
 fn resolve_open_waits(tx: &Connection, experiment_id: &str) -> Result<(), ExperimentError> {

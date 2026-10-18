@@ -29,7 +29,7 @@ use crate::teams::{
 };
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
-const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since. Before team_complete the Leader calls team_publish_research to record findings, failed approaches, limitations, open questions, and proposals; earlier findings in the research section are attributed records to build on, not established fact, and evidence marked changed or removed no longer proves what it did.";
+const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since. Before team_complete the Leader calls team_publish_research to record findings, failed approaches, limitations, open questions, and proposals; earlier findings in the research section are attributed records to build on, not established fact, and evidence marked changed or removed no longer proves what it did. When the round has an execution envelope, launch long work with team_launch_experiment, then call team_yield_for_experiment and end your turn instead of waiting: the runtime delivers the result to your inbox, and an experiment stays pending analysis until you analyze it. Launch limits and authorized commands are the researcher's; never retry a refused launch, ask for a change instead.";
 static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -83,6 +83,7 @@ impl TeamMcpServer {
             ],
             TeamRole::Discriminator => &[
                 "team_launch_experiment",
+                "team_yield_for_experiment",
                 "team_cancel_experiment",
                 "team_publish_research",
                 "team_list_available_agents",
@@ -227,6 +228,16 @@ struct LaunchExperimentInput {
     task_id: Option<String>,
     /// Runtime cap in seconds; limited by the envelope.
     max_runtime_secs: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct YieldInput {
+    experiment_id: String,
+    /// What you will do with the result, so whoever picks this up knows.
+    expected_follow_up: Option<String>,
+    /// Longest you are willing to wait before being asked to check, in seconds.
+    wait_secs: Option<i64>,
+    task_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1277,6 +1288,46 @@ impl TeamMcpServer {
             )
             .map_err(launch_error)?;
         json_output(&experiment_summary(&experiment))
+    }
+
+    #[tool(
+        description = "Yield on a running experiment instead of keeping your turn open. Records that you are waiting, then end your turn: ending a turn with an open wait is not a missing report, and you are woken with the result (or with an expiry notice) as a mailbox message. An experiment stays pending analysis until you analyze it; a mailbox acknowledgement does not satisfy that."
+    )]
+    async fn team_yield_for_experiment(
+        &self,
+        Parameters(input): Parameters<YieldInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let (research, runner) = self.execution()?;
+        let team_id = self.context.member.team_id.clone();
+        let (project_id, _) = research
+            .round_for_team(&team_id)
+            .map_err(mcp_error)?
+            .ok_or_else(|| mcp_error("this Team is not part of a research round"))?;
+        let store = runner.store();
+        let deadline = input
+            .wait_secs
+            .map(|secs| store.now() + secs.clamp(1, 86_400));
+        let wait = store
+            .register_wait(
+                &project_id,
+                &team_id,
+                &self.context.member.id,
+                &input.experiment_id,
+                input.task_id.as_deref(),
+                input.expected_follow_up.as_deref().unwrap_or_default(),
+                deadline,
+            )
+            .map_err(mcp_error)?;
+        json_output(&serde_json::json!({
+            "wait_id": wait.id,
+            "state": wait.state,
+            "deadline_at": wait.deadline_at,
+            "next": if wait.state == crate::experiment_store::WaitState::Open {
+                "End your turn now; the result will be delivered to you."
+            } else {
+                "The experiment already ended; its result has been delivered to your inbox."
+            },
+        }))
     }
 
     #[tool(

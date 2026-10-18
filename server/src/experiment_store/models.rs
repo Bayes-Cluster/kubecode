@@ -80,6 +80,7 @@ text_enum!(WaitState {
 text_enum!(EventKind {
     Finished => "finished",
     WaitExpired => "wait_expired",
+    Reconciled => "reconciled",
 });
 
 // What the researcher says really happened to an `unknown` experiment.
@@ -369,4 +370,13 @@ pub struct ExperimentEvent {
     pub experiment_id: String,
     pub kind: EventKind,
     pub created_at: String,
+}
+
+/// What one reminder pass did.
+#[derive(Debug, Default)]
+pub struct ReminderOutcome {
+    /// Experiments whose result was re-raised.
+    pub reminded: Vec<String>,
+    /// `(team_id, experiment_id)` pairs that used up their reminders.
+    pub exhausted: Vec<(String, String)>,
 }
