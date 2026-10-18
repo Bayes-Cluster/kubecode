@@ -1039,6 +1039,12 @@ done"#,
         "{session_new}"
     );
     assert!(!session_new.contains("\"url\":\"acp:"), "{session_new}");
+    // Every Session also gets the read-only context server (ADR 0214).
+    assert!(session_new.contains("kubecode-context"), "{session_new}");
+    assert!(
+        session_new.contains("/api/v1/context-mcp/"),
+        "{session_new}"
+    );
 
     let leader_id = snapshot["leader_conversation"]["id"]
         .as_str()
@@ -1395,6 +1401,7 @@ done"#,
         .expect("session/resume request after restart");
     assert!(resume.contains("kubecode-team"), "{resume}");
     assert!(resume.contains("/api/v1/team-mcp/"), "{resume}");
+    assert!(resume.contains("/api/v1/context-mcp/"), "{resume}");
 
     let (status, solo) = request(
         &router,

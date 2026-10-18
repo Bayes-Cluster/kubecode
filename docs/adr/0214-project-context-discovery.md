@@ -119,6 +119,15 @@ TypeScript union, a lookup and read arm in `ProjectContext`, and tests for
 Project scoping and for changed/removed reporting. Consumers must treat an
 unknown kind as unsupported, never as a different kind.
 
+## Validation status
+
+Deterministic fixtures cover the reader, the HTTP adapter, the MCP transport
+(initialize, tool listing, a tool call), tool scoping, passivity, and round
+delivery for a Solo Session and a Team member. **No real Claude Code, Codex, or
+OpenCode run has called the context tools or honored a pinned brief**; whether
+each provider surfaces the server's instructions and uses the tools well is
+unvalidated and is recorded as an open gap on the milestone.
+
 ## Consequences
 
 Discovery quality is bounded by title/summary text rather than semantic

@@ -469,7 +469,7 @@ async fn reading_has_no_execution_side_effects() {
             ("experiment", experiment.id.clone()),
             ("session", prior.id.clone()),
         ] {
-            let _ = server
+            server
                 .context_read(Parameters(ReadInput {
                     kind: kind.into(),
                     id,
@@ -477,9 +477,10 @@ async fn reading_has_no_execution_side_effects() {
                     detail: Some("evidence".into()),
                     cursor: None,
                 }))
-                .await;
+                .await
+                .unwrap_or_else(|error| panic!("{kind} read failed: {error:?}"));
         }
-        let _ = server
+        server
             .context_resolve(Parameters(ResolveInput {
                 refs: vec![RefInput {
                     kind: "session".into(),
@@ -487,7 +488,8 @@ async fn reading_has_no_execution_side_effects() {
                     revision: None,
                 }],
             }))
-            .await;
+            .await
+            .expect("resolve");
     }
     assert_eq!(before, snapshot(&rig));
 }
@@ -695,4 +697,209 @@ async fn the_advertised_url_serves_the_tools_and_a_wrong_token_is_refused() {
     )
     .await;
     assert!(called.contains("Pruning"), "{called}");
+}
+
+fn publish_as(
+    rig: &Rig,
+    key: &str,
+    author: crate::research_store::AuthorKind,
+    statements: &[String],
+    evidence: Vec<crate::research_store::SourceRef>,
+) {
+    use crate::research_store::{FindingKind, NewFinding, NewPublication, Producer};
+    rig.f
+        .research
+        .publish(
+            &rig.f.project_id,
+            &rig.f.research_id,
+            NewPublication {
+                key: key.into(),
+                author_kind: author,
+                author_ref: Some("tester".into()),
+                producer: Producer::default(),
+                round_id: Some(rig.f.round_id.clone()),
+                findings: statements
+                    .iter()
+                    .map(|statement| NewFinding {
+                        kind: FindingKind::Finding,
+                        statement: statement.clone(),
+                        evidence: evidence.clone(),
+                    })
+                    .collect(),
+                proposals: Vec::new(),
+            },
+        )
+        .expect("publish");
+}
+
+#[tokio::test]
+async fn delivery_carries_attributed_findings_and_earlier_rounds() {
+    use crate::research_store::AuthorKind;
+    let rig = rig();
+    publish_as(
+        &rig,
+        "a",
+        AuthorKind::Agent,
+        &["Agent claim".into()],
+        Vec::new(),
+    );
+    publish_as(
+        &rig,
+        "b",
+        AuthorKind::Researcher,
+        &["Researcher note".into()],
+        Vec::new(),
+    );
+    let (solo, _) = rig.solo_round();
+    let server = server_for(&rig.runtime, &solo.id).unwrap();
+    let delivery = payload(server.context_round().await)["research"].clone();
+    let findings = delivery["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 2);
+    let by_statement = |statement: &str| {
+        findings
+            .iter()
+            .find(|f| f["statement"] == statement)
+            .unwrap_or_else(|| panic!("{statement} missing"))
+            .clone()
+    };
+    assert_eq!(by_statement("Agent claim")["author_kind"], "agent");
+    assert_eq!(by_statement("Researcher note")["author_kind"], "researcher");
+    assert_eq!(by_statement("Agent claim")["brief_revision"], 1);
+    // The Team round that came first is visible as prior-round context, and
+    // a fresh Agent can follow it to the Leader's Session.
+    let earlier = &delivery["previous_rounds"][0];
+    assert_eq!(earlier["round"], 1);
+    assert_eq!(earlier["team_id"], rig.f.team.id);
+    assert_eq!(earlier["team_title"], "Team");
+    assert!(earlier["session_id"].is_string());
+    assert!(delivery["execution"].is_object());
+}
+
+#[tokio::test]
+async fn round_delivery_stays_bounded_however_much_history_exists() {
+    use crate::research_store::{AuthorKind, SourceKind, SourceRef};
+    use crate::team_mcp::{
+        CONTEXT_FINDING_CHARS, CONTEXT_FINDINGS, PREVIOUS_ROUNDS, PREVIOUS_SUMMARY_CHARS,
+    };
+    let rig = rig();
+    let evidence: Vec<_> = (0..10)
+        .map(|n| SourceRef {
+            kind: SourceKind::Session,
+            id: format!("missing-{n}"),
+            revision: None,
+        })
+        .collect();
+    let long = |n: usize| format!("claim-{n:02} {}", "x".repeat(3_900));
+    // Two publications of 15 findings each: more than the delivery shows.
+    for (key, offset) in [("p1", 0usize), ("p2", 15)] {
+        let statements: Vec<String> = (offset..offset + 15).map(long).collect();
+        publish_as(&rig, key, AuthorKind::Agent, &statements, evidence.clone());
+    }
+    {
+        let database = rig.f.agents.database();
+        database
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE teams SET final_summary = ?1 WHERE id = ?2",
+                rusqlite::params!["s".repeat(10_000), rig.f.team.id],
+            )
+            .unwrap();
+    }
+    for n in 0..8 {
+        rig.f
+            .research
+            .begin_round(
+                &rig.f.project_id,
+                &rig.f.research_id,
+                NewRound {
+                    kind: RoundKind::Solo,
+                    idempotency_key: &format!("older-{n}"),
+                    expected_revision: 1,
+                    request: json!({"instruction": "earlier"}),
+                    sources: Vec::new(),
+                },
+            )
+            .unwrap();
+    }
+    let (solo, solo_round) = rig.solo_round();
+    assert!(solo_round.round > PREVIOUS_ROUNDS as u64 + 1);
+    let server = server_for(&rig.runtime, &solo.id).unwrap();
+    let text = serde_json::to_string(&payload(server.context_round().await)).unwrap();
+    let delivery: Value = serde_json::from_str(&text).unwrap();
+    let delivery = &delivery["research"];
+
+    let findings = delivery["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), CONTEXT_FINDINGS);
+    assert!(
+        findings[0]["statement"]
+            .as_str()
+            .unwrap()
+            .starts_with("claim-29"),
+        "newest first"
+    );
+    for finding in findings {
+        assert!(finding["statement"].as_str().unwrap().chars().count() <= CONTEXT_FINDING_CHARS);
+        assert!(finding["evidence"].as_array().unwrap().len() <= 10);
+        assert_eq!(finding["evidence"][0]["availability"], "removed");
+    }
+    let previous = delivery["previous_rounds"].as_array().unwrap();
+    assert_eq!(previous.len(), PREVIOUS_ROUNDS);
+    assert!(
+        previous[0]["round"].as_u64() > previous[1]["round"].as_u64(),
+        "newest first"
+    );
+    for round in previous {
+        if let Some(summary) = round["final_summary"].as_str() {
+            assert!(summary.chars().count() <= PREVIOUS_SUMMARY_CHARS);
+        }
+    }
+    assert!(text.len() < 96 * 1024, "delivery is {} bytes", text.len());
+}
+
+#[tokio::test]
+async fn a_session_whose_team_has_no_round_falls_back_to_its_own_solo_round() {
+    let rig = rig();
+    // A Team with no research round, whose leader also owns a Solo round.
+    let leader = rig
+        .f
+        .agents
+        .create_conversation(&rig.f.project_id, AgentId::OpenCode, Some("promoted"))
+        .unwrap();
+    let (round, _) = rig
+        .f
+        .research
+        .begin_round(
+            &rig.f.project_id,
+            &rig.f.research_id,
+            NewRound {
+                kind: RoundKind::Solo,
+                idempotency_key: "promoted",
+                expected_revision: 1,
+                request: json!({"instruction": "x"}),
+                sources: Vec::new(),
+            },
+        )
+        .unwrap();
+    rig.f
+        .research
+        .round_set_session(&rig.f.project_id, &rig.f.research_id, &round.id, &leader.id)
+        .unwrap();
+    let team = rig
+        .f
+        .teams
+        .create_team(crate::teams::NewTeam {
+            project_id: &rig.f.project_id,
+            leader_conversation_id: &leader.id,
+            agent_session_id: &leader.agent_session_id,
+            leader_name: "Lead",
+            title: Some("No round"),
+            workspace: crate::teams::TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .unwrap();
+    assert!(rig.f.research.round_for_team(&team.id).unwrap().is_none());
+    let server = server_for(&rig.runtime, &leader.id).unwrap();
+    let delivery = payload(server.context_round().await)["research"].clone();
+    assert_eq!(delivery["instruction"], "x");
 }

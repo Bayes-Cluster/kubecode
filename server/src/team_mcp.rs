@@ -2019,12 +2019,12 @@ fn tool_context(
 }
 
 /// Longest earlier-round summary shown to a member.
-const PREVIOUS_SUMMARY_CHARS: usize = 2_000;
+pub(crate) const PREVIOUS_SUMMARY_CHARS: usize = 2_000;
 /// Earlier rounds shown, newest first.
-const PREVIOUS_ROUNDS: usize = 5;
+pub(crate) const PREVIOUS_ROUNDS: usize = 5;
 /// Earlier findings shown, newest first, each bounded.
-const CONTEXT_FINDINGS: usize = 20;
-const CONTEXT_FINDING_CHARS: usize = 1_000;
+pub(crate) const CONTEXT_FINDINGS: usize = 20;
+pub(crate) const CONTEXT_FINDING_CHARS: usize = 1_000;
 
 /// The research context of the Team's round, or `null` for a Team that is not
 /// part of one. The brief is the immutable revision the round consumed — not
@@ -2103,6 +2103,7 @@ pub(crate) fn round_delivery(
                 "brief_revision": earlier.brief_revision,
                 "kind": earlier.kind,
                 "team_id": earlier.team_id,
+                "session_id": earlier.session_id,
                 "team_title": earlier_team.as_ref().map(|team| team.title.clone()),
                 "team_status": earlier_team.as_ref().map(|team| team.status),
                 "final_summary": earlier_team

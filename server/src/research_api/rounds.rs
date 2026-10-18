@@ -351,8 +351,8 @@ fn preflight(
 
 /// Where to find earlier work, delivered with every round so a fresh Agent
 /// retrieves detail on demand instead of inheriting transcripts (ADR 0214).
-const CONTEXT_GUIDANCE: &str = "\nEarlier Project work: the kubecode-context tools (context_round, context_search, context_read, context_resolve) are read-only. Call context_round for earlier rounds and findings, and context_search then context_read to find and read earlier Sessions, experiments, and evidence only as needed. A source marked changed or removed no longer proves what it once did.\n";
-const CONTEXT_GUIDANCE_SHORT: &str = "Earlier Project work, other Sessions, and experiments can be searched and read on demand with the read-only kubecode-context tools.";
+const CONTEXT_GUIDANCE: &str = "\nEarlier Project work: if this Session has the kubecode-context tools (context_round, context_search, context_read, context_resolve), they are read-only. Call context_round for earlier rounds, findings, and the current availability of the sources above, and context_search then context_read to find and read earlier Sessions, experiments, and evidence only as needed. If you do not have them, work from the brief and sources above. A source marked changed or removed no longer proves what it once did.\n";
+const CONTEXT_GUIDANCE_SHORT: &str = "Earlier Project work, other Sessions, and experiments can be searched and read on demand with the read-only kubecode-context tools (context_round, context_search, context_read, context_resolve).";
 
 /// The pinned brief rendered as bounded text for a Solo prompt. The text is
 /// fixed at admission, so a later brief edit cannot rewrite queued work.
@@ -790,4 +790,98 @@ async fn resume_round(
     let round = drive_round(&state, &project_id, &research_id, &round_id).await?;
     let current = state.research.get(&project_id, &research_id)?.revision;
     Ok(Json(round_view(&state, &project_id, round, current)))
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::*;
+    use crate::research_store::{AuthorKind, ResearchBrief, RoundKind, RoundPhase};
+
+    fn pinned() -> (ResearchRound, BriefRevision) {
+        let brief = ResearchBrief {
+            title: "Pruning".into(),
+            question: "Does it hold?".into(),
+            hypotheses: vec!["H1".into()],
+            ..Default::default()
+        };
+        (
+            ResearchRound {
+                id: "round-1".into(),
+                research_id: "r1".into(),
+                round: 2,
+                brief_revision: 3,
+                kind: RoundKind::Solo,
+                phase: RoundPhase::Created,
+                session_id: None,
+                team_id: None,
+                request: serde_json::json!({}),
+                sources: vec![crate::research_store::SourceRef {
+                    kind: crate::research_store::SourceKind::Session,
+                    id: "s1".into(),
+                    revision: None,
+                }],
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+            BriefRevision {
+                research_id: "r1".into(),
+                revision: 3,
+                brief,
+                author_kind: AuthorKind::Researcher,
+                author_ref: None,
+                note: None,
+                created_at: String::new(),
+            },
+        )
+    }
+
+    const TOOLS: [&str; 4] = [
+        "context_round",
+        "context_search",
+        "context_read",
+        "context_resolve",
+    ];
+
+    #[test]
+    fn the_solo_prompt_pins_the_brief_and_points_to_the_context_tools() {
+        let (round, brief) = pinned();
+        let text = render_context(&round, &brief, "Try structured pruning");
+        assert!(text.contains("brief revision 3"));
+        assert!(text.contains("Question: Does it hold?"));
+        assert!(text.contains("- H1"));
+        assert!(text.contains("session s1"));
+        assert!(text.contains("Try structured pruning"));
+        for tool in TOOLS {
+            assert!(text.contains(tool), "{tool} missing from the Solo prompt");
+        }
+        assert!(
+            text.contains("If you do not have them"),
+            "an Agent without the tools must not be told they exist"
+        );
+    }
+
+    #[test]
+    fn a_rendered_prompt_is_fixed_at_admission() {
+        let (round, brief) = pinned();
+        let before = render_context(&round, &brief, "go");
+        let mut edited = brief.clone();
+        edited.revision = 4;
+        edited.brief.question = "A different question?".into();
+        // The prompt is a pure function of the pinned revision it was given.
+        assert_eq!(before, render_context(&round, &brief, "go"));
+        assert!(!before.contains("A different question?"));
+        assert_ne!(before, render_context(&round, &edited, "go"));
+    }
+
+    #[test]
+    fn the_team_goal_names_the_pinned_revision_and_the_context_tools() {
+        let (round, brief) = pinned();
+        let goal = team_goal(&round, &brief, "Lead the sweep");
+        assert!(goal.starts_with("Lead the sweep"));
+        assert!(goal.contains("brief revision 3"));
+        assert!(goal.contains("team_get_context"));
+        for tool in TOOLS {
+            assert!(goal.contains(tool), "{tool} missing from the Team goal");
+        }
+    }
 }

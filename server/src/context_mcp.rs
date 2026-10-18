@@ -250,11 +250,11 @@ fn round_for_caller(
     let research = runtime.research_store()?;
     if let Some(teams) = runtime.team_store()
         && let Ok(Some(team)) = teams.team_for_conversation(conversation_id)
+        && let Ok(Some((owner, round))) = research.round_for_team(&team.id)
     {
-        return match research.round_for_team(&team.id) {
-            Ok(Some((owner, round))) if owner == project_id => Some(round),
-            _ => None,
-        };
+        // A Team's round; a Session whose Team has none falls through to its
+        // own Solo round below.
+        return (owner == project_id).then_some(round);
     }
     match research.round_for_session(conversation_id) {
         Ok(Some((owner, round))) if owner == project_id => Some(round),
