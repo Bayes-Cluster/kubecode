@@ -74,6 +74,10 @@ impl Evidence {
     /// `None` when it does not exist here.
     pub fn source_ref(&self, project_id: &str, kind: &str, id: &str) -> Option<SourceRef> {
         let kind = SourceKind::parse(kind)?;
+        // A run cannot be checked from here, so it is not accepted as evidence.
+        if kind == SourceKind::Run {
+            return None;
+        }
         let mut source = SourceRef {
             kind,
             id: id.to_owned(),

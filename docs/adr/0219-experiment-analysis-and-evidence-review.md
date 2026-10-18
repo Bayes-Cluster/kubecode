@@ -40,8 +40,15 @@ analysis. The executor records what the result means with `work_decide`,
 using the decision kinds of ADR 0213 (further analysis, repair, retry,
 follow-up, external wait, researcher input, conclude), a rationale, and
 evidence. A retry or follow-up starts the next experiment under a launch key
-derived from the observation (`decision:{experiment}:{kind}:{digest}`), so one
-result cannot fan out into duplicates and a refused launch records nothing.
+derived from the experiment, the kind, and the decision key
+(`decision:{experiment}:{kind}:{digest}`), so repeating a decision starts
+nothing twice and a refused launch records nothing. Distinct decision keys are
+distinct decisions; the envelope's launch and concurrency limits bound them.
+Launching and deciding are refused while the task is paused or blocked, the
+round is paused, or the task is not executing or analyzing. The stage follows
+the obligation in both directions: the orchestrator also returns an
+`analyzing` task to `executing` when no experiment owes analysis, so a crash
+between a decision and the stage move cannot strand it.
 When no experiment of the task owes analysis the task returns to `executing`.
 A Session cannot report an attempt as completed while a process of the task
 runs or a finished result has no decision; a failed or cancelled report is
@@ -54,16 +61,26 @@ content revision, an experiment's state and analysis at decision time, its
 artifacts' recorded revisions). Accepting work, by the researcher or by a
 coordinator, refuses evidence that changed or was removed since: the answer
 names the stale references, the task is flagged for attention, and nothing is
-accepted. A person looks at the change and **re-pins** (`repin` command or
-`work_repin`), which moves the pin to the present and clears the flag; earlier
-reviews keep the revision they saw. Rejecting never depends on evidence.
+accepted. The researcher, or the round's coordinator (the delegated reviewer), looks at
+the change and **re-pins** (`repin` command or `work_repin`), which moves the
+pin to the present and clears the evidence flag once nothing cited is stale;
+earlier reviews keep the revision they saw. The gate guarantees the change is
+noticed and decided on deliberately, not that a person decided. An executor
+never moves a pin. Rejecting, and accepting a plan, do not depend on evidence.
+Only content-addressed kinds (files, artifacts, experiments, findings,
+imports) are pinned; a Thread or task changes constantly without invalidating
+what cites it. A file over the asset size limit cannot be fingerprinted and is
+cited unpinned, which is an acknowledged gap.
 
 ### 4. Questions to the researcher
 
 A Session asks a bounded question about a task (`work_request_decision`, also
 the effect of a `researcher_input` decision). It is a durable request with
-options and an impact; the task is marked as needing input until every open
-request is answered, without overriding a condition someone else set. The
+options and an impact (at most five open per task); it is shown once in the
+originating Thread and noted as unresolved in the question's log. The task is
+marked as needing input until every open request is answered, without
+overriding a condition someone else set. An answer recorded but not yet routed
+(a crash between the two writes) is routed by the next orchestrator pass. The
 researcher answers in the inspector. The answer settles that question only: it
 is routed back to the asker and the Thread once, and never changes a limit,
 brief, or approval. Limits change only as an explicit revision by the
@@ -98,8 +115,7 @@ coordinator or executor therefore reads the same picture as the original.
 Native tasks run the same experiment loop a Team does, with the same limits.
 The analysis obligation is enforced on the executing Session, not on the
 researcher. A pilot with real agents is a measurement, not a gate: the protocol
-is recorded in `docs/guides/research.md` and the first real-agent results are
-not claimed here. Experiments launched by a Team keep ADR 0213's mailbox
+is recorded at the end of this ADR and no real-agent results are claimed here. Experiments launched by a Team keep ADR 0213's mailbox
 delivery unchanged; unifying the two delivery paths is future work.
 
 ## Pilot protocol (not yet run)

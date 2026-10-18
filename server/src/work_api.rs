@@ -972,7 +972,8 @@ async fn command(
                         WorkOutcome::parse(value).ok_or(ApiError::BadRequest("unknown outcome"))?
                     }
                 };
-                if accept {
+                let reviewing = work.get(&project_id, &work_id)?.review_kind;
+                if accept && reviewing != Some(crate::work_store::ReviewKind::Plan) {
                     let results = work.results(&project_id, &work_id)?;
                     let stale = evidence_of(&blocking_state).stale(&project_id, &results);
                     if !stale.is_empty() {
@@ -996,8 +997,10 @@ async fn command(
                 )?;
                 // The conversation and the question's log learn what was
                 // decided; a failure here never undoes the review.
-                if let Some(review) = work.reviews(&project_id, &work_id)?.last() {
-                    let item = work.get(&project_id, &work_id)?;
+                if let (Ok(reviews), Ok(item)) =
+                    (work.reviews(&project_id, &work_id), work.get(&project_id, &work_id))
+                    && let Some(review) = reviews.last()
+                {
                     let _ = blocking_state
                         .orchestrator
                         .publish_review(&project_id, &item, review);
@@ -1014,8 +1017,17 @@ async fn command(
                     &result.kind,
                     &result.ref_id,
                 );
-                work.repin_result(&project_id, &work_id, &result_id, current.as_deref(), ctx)?;
-                work.clear_attention(&project_id, &work_id)?;
+                let current = current.ok_or(ApiError::BadRequest(
+                    "that evidence has no current version to accept",
+                ))?;
+                work.repin_result(&project_id, &work_id, &result_id, Some(&current), ctx)?;
+                let remaining = work.results(&project_id, &work_id)?;
+                if evidence_of(&blocking_state)
+                    .stale(&project_id, &remaining)
+                    .is_empty()
+                {
+                    work.clear_attention(&project_id, &work_id, "evidence")?;
+                }
             }
             Command::Close {
                 lifecycle,

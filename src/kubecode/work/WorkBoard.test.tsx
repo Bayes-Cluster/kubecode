@@ -553,10 +553,13 @@ describe('WorkBoard analysis and evidence', () => {
   it('explains a refused acceptance when evidence changed under the researcher', async () => {
     const card = workCard({ id: 'w1', stage: 'review', state_revision: 4 }, { executor, assignment })
     const workCommand = vi.fn().mockRejectedValue(new ApiError('work_evidence_stale', 'x', 409))
-    open(detailOf(card), { workCommand })
+    const { workDetail } = open(detailOf(card), { workCommand })
     fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const initial = workDetail.mock.calls.length
     fireEvent.click(await screen.findByRole('button', { name: 'kubecode.work.command.accept' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.work.error.evidenceStale')
+    // The inspector reloads so the changed evidence and its re-pin control appear.
+    await waitFor(() => expect(workDetail.mock.calls.length).toBeGreaterThan(initial))
   })
 
   it('answers a question with an offered option, and says the answer grants nothing', async () => {
@@ -579,7 +582,7 @@ describe('WorkBoard analysis and evidence', () => {
     expect(send).toBeDisabled()
     expect(inspector).toHaveTextContent('kubecode.work.question.note')
     expect(inspector).toHaveTextContent('kubecode.work.question.answered:{"answer":"wiki"}')
-    fireEvent.change(within(inspector).getByLabelText('kubecode.work.question.choose'), { target: { value: 'yes' } })
+    fireEvent.change(within(inspector).getByLabelText('Spend more budget? — kubecode.work.question.choose'), { target: { value: 'yes' } })
     fireEvent.click(send)
     await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
   })

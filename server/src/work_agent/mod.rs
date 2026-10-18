@@ -483,11 +483,12 @@ impl WorkAgent {
         outcome: WorkOutcome,
         reason: Option<&str>,
     ) -> Result<WorkSummary, AgentWorkError> {
-        let (_, role) = self.visible(work_id)?;
+        let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
-        if accept {
+        // Evidence matters to what a result claims, not to a plan.
+        if accept && summary.item.review_kind != Some(ReviewKind::Plan) {
             self.refuse_stale_evidence(work_id)?;
         }
         self.work.review(
@@ -618,9 +619,27 @@ impl WorkAgent {
             .map(|attempt| attempt.id.clone());
         // Evidence is pinned to the revision it has now, so a later change is
         // detectable. (Experiments are pinned when they are analyzed.)
+        // Only content-addressed kinds are pinned: a Thread, a task, or a
+        // Session changes all the time without invalidating what cites it.
+        // (Evidence over the asset size limit cannot be fingerprinted and is
+        // cited unpinned.)
+        if matches!(kind, "experiment" | "artifact") {
+            let experiment = ref_id.split_once('/').map_or(ref_id, |(id, _)| id);
+            let owned = self.experiments.as_ref().is_some_and(|runner| {
+                runner
+                    .store()
+                    .experiment(&self.project_id, experiment)
+                    .is_ok_and(|e| e.task_id.as_deref() == Some(work_id))
+            });
+            if !owned {
+                return Err(invalid("cite only experiments that belong to this task"));
+            }
+        }
         let pinned = match (revision, &self.evidence) {
             (Some(revision), _) => Some(revision.to_owned()),
-            (None, Some(evidence)) if kind != "experiment" => {
+            (None, Some(evidence))
+                if matches!(kind, "file" | "artifact" | "finding" | "import") =>
+            {
                 evidence.current_revision(&self.project_id, kind, ref_id)
             }
             _ => None,

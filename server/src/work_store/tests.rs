@@ -2316,7 +2316,11 @@ fn a_question_flags_the_task_until_answered_and_an_attention_flag_never_override
             .flag_attention(r.project(), &item.id, "limit")
             .unwrap()
     );
-    assert!(!r.work.clear_attention(r.project(), &item.id).unwrap());
+    assert!(
+        !r.work
+            .clear_attention(r.project(), &item.id, "limit")
+            .unwrap()
+    );
     assert_eq!(
         r.work
             .get(r.project(), &item.id)
@@ -2339,5 +2343,15 @@ fn a_question_flags_the_task_until_answered_and_an_attention_flag_never_override
             .flag_attention(r.project(), &item.id, "limit")
             .unwrap()
     );
-    assert!(r.work.clear_attention(r.project(), &item.id).unwrap());
+    // Another cause's flag is not this one's to clear.
+    assert!(
+        !r.work
+            .clear_attention(r.project(), &item.id, "evidence")
+            .unwrap()
+    );
+    assert!(
+        r.work
+            .clear_attention(r.project(), &item.id, "limit")
+            .unwrap()
+    );
 }

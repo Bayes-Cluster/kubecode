@@ -33,7 +33,7 @@ impl Orchestrator {
                         x.reason
                  FROM experiment_events e JOIN experiments x ON x.id = e.experiment_id
                  WHERE e.kind IN ('finished', 'reconciled') AND x.team_id IS NULL
-                   AND x.task_id IS NOT NULL
+                   AND x.task_id IS NOT NULL AND x.state != 'unknown'
                    AND NOT EXISTS (SELECT 1 FROM message_routes r
                                    WHERE r.source_kind = 'experiment' AND r.source_id = x.id)
                  GROUP BY x.id ORDER BY MIN(e.rowid) LIMIT ?1",
@@ -54,92 +54,164 @@ impl Orchestrator {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let mut routed = 0;
+        let mut failure = None;
         for experiment in finished {
-            let item = match self.work.get(&experiment.project_id, &experiment.task_id) {
-                Ok(item)
-                    if item.origin == crate::work_store::WorkOrigin::Native
-                        && item.lifecycle == crate::work_store::WorkLifecycle::Active =>
-                {
-                    item
+            // One experiment that cannot be routed never blocks the others.
+            match self.route_finished(&experiment) {
+                Ok(true) => routed += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    failure.get_or_insert(error);
                 }
-                // Closed or gone: nothing to tell; remember it was looked at.
-                _ => {
-                    self.mark_seen(&experiment)?;
-                    continue;
-                }
-            };
-            let executor = self
-                .work
-                .assignments(&experiment.project_id, &item.id)?
-                .into_iter()
-                .find(|assignment| assignment.ended_at.is_none())
-                .map(|assignment| assignment.conversation_id);
-            let target = match executor {
-                Some(session_id) => Target::Session { session_id },
-                None => Target::Coordinator {
-                    round_id: experiment.round_id.clone(),
-                },
-            };
-            let origin = self.origin_of(&experiment.project_id, &item)?;
-            let label = if experiment.label.trim().is_empty() {
-                experiment.experiment_id.clone()
-            } else {
-                clip(&experiment.label.replace(['\n', '\r'], " "), 80)
-            };
-            let exit = experiment
-                .exit_code
-                .map(|code| format!(" (exit code {code})"))
-                .unwrap_or_default();
-            let ended = format!("{}{exit}", experiment.state);
-            let body = format!(
-                "An experiment of task {} ({}) ended: {ended}.\n\n{}\n\nIt is owed analysis. Read \
-                 its logs and artifacts with kubecode-context, then record what you decide with \
-                 work_decide: retry, repair, follow_up, further_analysis, external_wait, \
-                 researcher_input, or conclude. A valid negative result is evidence, not a \
-                 failure; never conclude by exit code alone.",
-                item.id,
-                clip(&item.title, 120),
-                quoted(
-                    "experiment label and reason",
-                    &format!(
-                        "{label}{}",
-                        experiment
-                            .reason
-                            .as_deref()
-                            .map(|reason| format!("\n{}", clip(reason, 300)))
-                            .unwrap_or_default()
-                    )
-                ),
-            );
-            self.create_route(NewRoute {
-                project_id: &experiment.project_id,
-                kind: RouteKind::Experiment,
-                source_kind: SourceKind::Experiment,
-                source_id: &experiment.experiment_id,
-                target,
-                channel_id: origin.as_ref().map(|(channel, _)| channel.as_str()),
-                thread_id: origin.as_ref().and_then(|(_, thread)| thread.as_deref()),
-                work_id: Some(&item.id),
-                body: &body,
-            })?;
-            self.work
-                .analysis_started(&experiment.project_id, &item.id)?;
-            if let Some((channel_id, thread_id)) = &origin {
-                self.note(
-                    &experiment.project_id,
-                    channel_id,
-                    thread_id.as_deref(),
-                    &format!("experiment:{}", experiment.experiment_id),
-                    &format!(
-                        "An experiment of \"{}\" ended: {ended}. It is being analyzed.",
-                        clip(&item.title, 120)
-                    ),
-                )?;
             }
-            self.wake();
-            routed += 1;
+        }
+        // A crash between creating a route and moving the task leaves the
+        // route in place; the stage follows the experiment's own obligation.
+        if let Err(error) = self.reconcile_analysis() {
+            failure.get_or_insert(error);
+        }
+        if routed == 0
+            && let Some(error) = failure
+        {
+            return Err(error);
         }
         Ok(routed)
+    }
+
+    /// Routes one ended experiment. `false` when there was nothing to tell.
+    fn route_finished(&self, experiment: &Finished) -> Result<bool, OrchestratorError> {
+        let item = match self.work.get(&experiment.project_id, &experiment.task_id) {
+            Ok(item)
+                if item.origin == crate::work_store::WorkOrigin::Native
+                    && item.lifecycle == crate::work_store::WorkLifecycle::Active =>
+            {
+                item
+            }
+            // Closed or gone: nothing to tell; remember it was looked at.
+            Ok(_) | Err(crate::work_store::WorkError::NotFound) => {
+                self.mark_seen(experiment)?;
+                return Ok(false);
+            }
+            // A storage hiccup is retried by the next pass, not remembered.
+            Err(error) => return Err(error.into()),
+        };
+        let executor = self
+            .work
+            .assignments(&experiment.project_id, &item.id)?
+            .into_iter()
+            .find(|assignment| assignment.ended_at.is_none())
+            .map(|assignment| assignment.conversation_id);
+        let target = match executor {
+            Some(session_id) => Target::Session { session_id },
+            None => Target::Coordinator {
+                round_id: experiment.round_id.clone(),
+            },
+        };
+        let origin = self.origin_of(&experiment.project_id, &item)?;
+        let label = if experiment.label.trim().is_empty() {
+            experiment.experiment_id.clone()
+        } else {
+            clip(&experiment.label.replace(['\n', '\r'], " "), 80)
+        };
+        let exit = experiment
+            .exit_code
+            .map(|code| format!(" (exit code {code})"))
+            .unwrap_or_default();
+        let ended = format!("{}{exit}", experiment.state);
+        let body = format!(
+            "An experiment of task {} ({}) ended: {ended}.\n\n{}\n\nIt is owed analysis. Read \
+             its logs and artifacts with kubecode-context, then record what you decide with \
+             work_decide: retry, repair, follow_up, further_analysis, external_wait, \
+             researcher_input, or conclude. A valid negative result is evidence, not a \
+             failure; never conclude by exit code alone.",
+            item.id,
+            clip(&item.title, 120),
+            quoted(
+                "experiment label and reason",
+                &format!(
+                    "{label}{}",
+                    experiment
+                        .reason
+                        .as_deref()
+                        .map(|reason| format!("\n{}", clip(reason, 300)))
+                        .unwrap_or_default()
+                )
+            ),
+        );
+        self.create_route(NewRoute {
+            project_id: &experiment.project_id,
+            kind: RouteKind::Experiment,
+            source_kind: SourceKind::Experiment,
+            source_id: &experiment.experiment_id,
+            target,
+            channel_id: origin.as_ref().map(|(channel, _)| channel.as_str()),
+            thread_id: origin.as_ref().and_then(|(_, thread)| thread.as_deref()),
+            work_id: Some(&item.id),
+            body: &body,
+        })?;
+        let owed: bool = self.connection().query_row(
+            "SELECT analysis = 'pending' FROM experiments WHERE id = ?1",
+            [&experiment.experiment_id],
+            |row| row.get(0),
+        )?;
+        if owed {
+            self.work
+                .analysis_started(&experiment.project_id, &item.id)?;
+        }
+        if let Some((channel_id, thread_id)) = &origin {
+            self.note(
+                &experiment.project_id,
+                channel_id,
+                thread_id.as_deref(),
+                &format!("experiment:{}", experiment.experiment_id),
+                &format!(
+                    "An experiment of \"{}\" ended: {ended}. It is being analyzed.",
+                    clip(&item.title, 120)
+                ),
+            )?;
+        }
+        self.wake();
+        Ok(true)
+    }
+
+    /// Tasks with an ended experiment that still owes analysis are `analyzing`,
+    /// whatever happened between routing and the stage move. Idempotent.
+    fn reconcile_analysis(&self) -> Result<(), OrchestratorError> {
+        let owed: Vec<(String, String)> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT DISTINCT project_id, task_id FROM experiments
+                 WHERE team_id IS NULL AND task_id IS NOT NULL AND analysis = 'pending'
+                   AND state NOT IN ('reserved', 'launching', 'running')
+                 LIMIT ?1",
+            )?;
+            statement
+                .query_map([BATCH as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for (project_id, task_id) in owed {
+            self.work.analysis_started(&project_id, &task_id)?;
+        }
+        // And back: nothing owed any more (a reconcile found it never ran, or
+        // a decision committed before the stage moved) returns the task to its
+        // executor.
+        let settled: Vec<(String, String)> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT w.project_id, w.id FROM work_items w
+                 WHERE w.stage = 'analyzing' AND w.origin = 'native'
+                   AND NOT EXISTS (SELECT 1 FROM experiments x
+                                   WHERE x.task_id = w.id AND x.analysis = 'pending')
+                 LIMIT ?1",
+            )?;
+            statement
+                .query_map([BATCH as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for (project_id, task_id) in settled {
+            self.work.analysis_resolved(&project_id, &task_id)?;
+        }
+        Ok(())
     }
 
     /// Remembers that an ended experiment was looked at and needs no route, so
@@ -158,6 +230,108 @@ impl Orchestrator {
                 experiment.task_id,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Answers that were recorded but never routed (a crash between the two
+    /// writes) are routed now. Closed tasks are remembered and left alone.
+    pub fn route_answers(&self) -> Result<usize, OrchestratorError> {
+        let pending: Vec<(String, String)> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT d.project_id, d.id FROM decision_requests d
+                 WHERE d.state = 'answered'
+                   AND NOT EXISTS (SELECT 1 FROM message_routes r
+                                   WHERE r.source_kind = 'decision' AND r.source_id = d.id)
+                 LIMIT ?1",
+            )?;
+            statement
+                .query_map([BATCH as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut routed = 0;
+        for (project_id, request_id) in pending {
+            let request = self.work.decision_request(&project_id, &request_id)?;
+            let open = self
+                .work
+                .get(&project_id, &request.work_id)
+                .is_ok_and(|item| item.lifecycle == crate::work_store::WorkLifecycle::Active);
+            if open {
+                self.route_decision_answer(&project_id, &request)?;
+                routed += 1;
+            } else {
+                self.connection().execute(
+                    "INSERT OR IGNORE INTO message_routes
+                       (id, project_id, kind, source_kind, source_id, target_kind, target_key,
+                        target_ref, work_id, body, state, last_error)
+                     VALUES (?1, ?2, 'decision', 'decision', ?3, 'session', 'skipped', '', ?4,
+                             'skipped', 'failed', 'the task is closed')",
+                    params![
+                        Uuid::new_v4().to_string(),
+                        project_id,
+                        request.id,
+                        request.work_id
+                    ],
+                )?;
+            }
+        }
+        Ok(routed)
+    }
+
+    /// Shows a question put to the researcher where the work came from, with
+    /// its options and what depends on it, and records it as unresolved in the
+    /// question's log. Once per request; never blocks the request itself.
+    pub fn announce_question(
+        &self,
+        project_id: &str,
+        request: &DecisionRequest,
+    ) -> Result<(), OrchestratorError> {
+        let item = self.work.get(project_id, &request.work_id)?;
+        let options = if request.options.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " Options: {}.",
+                request
+                    .options
+                    .iter()
+                    .map(|option| clip(option, 80))
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            )
+        };
+        let impact = request
+            .impact
+            .as_deref()
+            .map(|impact| format!(" If this changes: {}.", clip(impact, 200)))
+            .unwrap_or_default();
+        let text = format!(
+            "A Session needs a decision about \"{}\": {}{options}{impact}",
+            clip(&item.title, 120),
+            clip(&request.question, 400)
+        );
+        if let Some((channel_id, thread_id)) = self.origin_of(project_id, &item)? {
+            self.note(
+                project_id,
+                &channel_id,
+                thread_id.as_deref(),
+                &format!("question:{}", request.id),
+                &text,
+            )?;
+        }
+        if let Some(research_id) = &item.research_id {
+            let _ = self.research.add_entry(
+                project_id,
+                research_id,
+                NewEntry {
+                    kind: EntryKind::Note,
+                    author_kind: ResearchAuthor::System,
+                    author_ref: None,
+                    body: format!("Unresolved: {text}"),
+                    client_request_id: Some(format!("question:{}", request.id)),
+                },
+            );
+        }
         Ok(())
     }
 

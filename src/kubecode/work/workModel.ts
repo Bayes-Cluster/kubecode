@@ -95,7 +95,9 @@ export function workErrorMessage(cause: unknown, t: Translator): string {
 
 export function isStale(cause: unknown): boolean {
   return cause instanceof ApiError
-    && (cause.code === 'work_state_conflict' || cause.code === 'work_revision_conflict')
+    && (cause.code === 'work_state_conflict'
+      || cause.code === 'work_revision_conflict'
+      || cause.code === 'work_evidence_stale')
 }
 
 /**

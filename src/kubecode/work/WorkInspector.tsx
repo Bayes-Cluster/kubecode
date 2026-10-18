@@ -336,7 +336,7 @@ export function WorkInspector({
                   <div className="kubecode-work-command-row">
                     {request.options.length > 0 ? (
                       <select
-                        aria-label={t('kubecode.work.question.choose')}
+                        aria-label={`${request.question} — ${t('kubecode.work.question.choose')}`}
                         className="kubecode-channel-select"
                         value={answers[request.id] ?? ''}
                         onChange={(event) => setAnswers((current) => ({ ...current, [request.id]: event.target.value }))}
@@ -348,7 +348,7 @@ export function WorkInspector({
                       </select>
                     ) : (
                       <Textarea
-                        aria-label={t('kubecode.work.question.placeholder')}
+                        aria-label={`${request.question} — ${t('kubecode.work.question.placeholder')}`}
                         placeholder={t('kubecode.work.question.placeholder')}
                         rows={2}
                         value={answers[request.id] ?? ''}

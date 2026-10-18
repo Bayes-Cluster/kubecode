@@ -10,7 +10,8 @@ use crate::experiment_store::{
     AnalysisState, DecisionKind, Experiment, ExperimentError, NewDecision, NewLaunch,
 };
 use crate::work_store::{
-    DecisionRequest, NewResult, ResultRole, WorkLifecycle, WorkOrigin, WorkStage, WorkSummary,
+    DecisionRequest, NewResult, ResultRole, WorkCondition, WorkError, WorkLifecycle, WorkOrigin,
+    WorkStage, WorkSummary,
 };
 
 /// Longest key a caller may supply; the stored key adds a task prefix.
@@ -76,6 +77,8 @@ pub struct TaskBrief {
     pub experiments: Vec<serde_json::Value>,
     pub decisions: Vec<serde_json::Value>,
     pub resources: serde_json::Value,
+    /// Questions put to the researcher, with their answers once given.
+    pub decision_requests: Vec<serde_json::Value>,
     pub stale_evidence: Vec<super::StaleEvidence>,
 }
 
@@ -120,6 +123,33 @@ impl WorkAgent {
             return Err(invalid("the task is not active"));
         }
         Ok(summary)
+    }
+
+    /// The task may run or analyze experiments now: it is executing (or
+    /// analyzing), not paused or blocked by someone, and the round is not paused.
+    fn require_runnable(&self, summary: &WorkSummary) -> Result<(), AgentWorkError> {
+        if !matches!(
+            summary.item.stage,
+            WorkStage::Executing | WorkStage::Analyzing
+        ) {
+            return Err(invalid(
+                "experiments run while the task is executing, not before or after",
+            ));
+        }
+        if matches!(
+            summary.item.condition,
+            WorkCondition::Paused | WorkCondition::Blocked
+        ) {
+            return Err(invalid(
+                "the task is paused or blocked; the researcher resumes it",
+            ));
+        }
+        if let Some(round_id) = summary.item.round_id.as_deref()
+            && self.work.policy(&self.project_id, round_id)?.paused
+        {
+            return Err(WorkError::RoundPaused.into());
+        }
+        Ok(())
     }
 
     fn research_of(&self, summary: &WorkSummary) -> Result<(String, String), AgentWorkError> {
@@ -219,6 +249,7 @@ impl WorkAgent {
                 "launch while the task is executing; decide on the finished experiment first",
             ));
         }
+        self.require_runnable(&summary)?;
         let key = spec.launch_key.trim();
         if key.is_empty()
             || key.chars().count() > MAX_CALLER_KEY_CHARS
@@ -243,6 +274,7 @@ impl WorkAgent {
         input: DecisionInput,
     ) -> Result<DecisionOutcome, AgentWorkError> {
         let summary = self.executing(work_id)?;
+        self.require_runnable(&summary)?;
         let runner = self.runner()?.clone();
         let store = runner.store().clone();
         let kind = DecisionKind::parse(&input.kind)
@@ -350,6 +382,9 @@ impl WorkAgent {
                     None,
                     thread,
                 )?;
+                let _ = self
+                    .orchestrator
+                    .announce_question(&self.project_id, &asked);
                 request = Some(asked);
             }
         }
@@ -408,9 +443,10 @@ impl WorkAgent {
                 },
                 &actor,
             )?;
-            // A result cited earlier keeps its old pin; this analysis is the
-            // observation the decision rests on.
-            if result.revision != current {
+            // A result cited earlier keeps the pin it has: moving a pin is a
+            // person's act (repin), never the executor's. Only a reference
+            // that was cited without one is pinned now.
+            if result.revision.is_none() && current.is_some() {
                 self.work.repin_result(
                     &self.project_id,
                     &summary.item.id,
@@ -485,15 +521,24 @@ impl WorkAgent {
         let current = self
             .evidence
             .as_ref()
-            .and_then(|e| e.current_revision(&self.project_id, &result.kind, &result.ref_id));
-        self.work.repin_result(
-            &self.project_id,
-            work_id,
-            result_id,
-            current.as_deref(),
-            &actor,
-        )?;
-        self.work.clear_attention(&self.project_id, work_id)?;
+            .and_then(|e| e.current_revision(&self.project_id, &result.kind, &result.ref_id))
+            .ok_or_else(|| {
+                invalid(
+                    "that evidence has no current version to accept (it is gone or cannot be read)",
+                )
+            })?;
+        self.work
+            .repin_result(&self.project_id, work_id, result_id, Some(&current), &actor)?;
+        // The evidence flag goes only once nothing cited is stale any more.
+        let remaining = self.work.results(&self.project_id, work_id)?;
+        let still_stale = self
+            .evidence
+            .as_ref()
+            .is_some_and(|e| !e.stale(&self.project_id, &remaining).is_empty());
+        if !still_stale {
+            self.work
+                .clear_attention(&self.project_id, work_id, "evidence")?;
+        }
         Ok(self.work.summary(&self.project_id, work_id)?)
     }
 
@@ -524,6 +569,10 @@ impl WorkAgent {
             impact,
             thread,
         )?;
+        // Once per request however often the command is replayed.
+        let _ = self
+            .orchestrator
+            .announce_question(&self.project_id, &request);
         Ok(request)
     }
 
@@ -649,6 +698,18 @@ impl WorkAgent {
                 .collect(),
             decisions,
             resources,
+            decision_requests: self
+                .work
+                .decision_requests(&self.project_id, work_id)?
+                .into_iter()
+                .take(BRIEF_ITEMS)
+                .map(|r| {
+                    serde_json::json!({
+                        "id": r.id, "question": r.question, "options": r.options,
+                        "state": r.state, "answer": r.answer,
+                    })
+                })
+                .collect(),
             stale_evidence: stale,
         })
     }

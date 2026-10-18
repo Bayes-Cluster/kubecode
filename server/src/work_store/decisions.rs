@@ -13,6 +13,8 @@ use super::*;
 
 const MAX_QUESTION_CHARS: usize = 1_000;
 const MAX_OPTIONS: usize = 6;
+/// Open questions one task may have at a time.
+const MAX_OPEN_REQUESTS: i64 = 5;
 const MAX_OPTION_CHARS: usize = 200;
 const MAX_IMPACT_CHARS: usize = 1_000;
 const MAX_KEY_CHARS: usize = 128;
@@ -124,6 +126,16 @@ impl WorkStore {
                 .optional()?
             {
                 return Ok(((existing, false), None));
+            }
+            let open: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM decision_requests WHERE work_id = ?1 AND state = 'open'",
+                [work_id],
+                |row| row.get(0),
+            )?;
+            if open >= MAX_OPEN_REQUESTS {
+                return Err(WorkError::Invalid(
+                    "this task already has 5 open questions; wait for answers",
+                ));
             }
             let id = new_id();
             tx.execute(
@@ -348,10 +360,13 @@ impl WorkStore {
     }
 
     /// Clears an attention flag the server raised once its reason is gone.
+    /// Only a flag whose reason mentions `about` is cleared, so resolving one
+    /// cause never hides another.
     pub(crate) fn clear_attention(
         &self,
         project_id: &str,
         work_id: &str,
+        about: &str,
     ) -> Result<bool, WorkError> {
         self.write(|tx| {
             let changed = tx.execute(
@@ -359,7 +374,7 @@ impl WorkStore {
                    updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?1 AND project_id = ?2 AND condition = 'needs_input'
                    AND condition_reason LIKE ?3",
-                params![work_id, project_id, format!("{ATTENTION_PREFIX}%")],
+                params![work_id, project_id, format!("{ATTENTION_PREFIX}%{about}%")],
             )?;
             Ok((
                 changed > 0,
