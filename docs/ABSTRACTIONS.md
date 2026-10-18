@@ -1017,6 +1017,29 @@ against an older brief is flagged stale. It can be cited by a round or a
 reference, and a bounded *discussion packet* can be exported after the researcher
 previews exactly what leaves the workspace.
 
+## Work item
+
+A **work item** is the canonical task of a Workspace (a Project). It belongs to
+the Project and, once approved, to a research round; never to a Team or a
+Session. Five facets never share a field: `stage` (planned, ready, executing,
+analyzing, review, done), `condition` (none, waiting, blocked, paused,
+needs_input), `lifecycle` (active, canceled, abandoned, superseded, with the
+reason), `acceptance` (pending, accepted, rejected), and `outcome` (unknown,
+supported, refuted, inconclusive). A process that exited, an accepted task, a
+valid negative result, and a resolved question are different facts.
+
+Plan changes carry the revision they were made against and are refused when
+stale. Dependencies decide *eligibility* (a planned item whose dependencies are
+all accepted becomes ready); authorization and capacity are still checked at
+dispatch. Attempts, assignments, and result references are separate records: a
+task can acquire a new executing Session without becoming a new task or losing
+an attempt. A round has one effective **coordinator** at an **epoch**; a handoff
+increments the epoch, and every coordinator-gated command re-reads the persisted
+holder and epoch, so the old coordinator is refused at once while tasks,
+attempts, and waits stay. Work may exist before a round (a candidate) but cannot
+be executed without an approved one. `WorkSummary` is the one shape every view of
+the board reads.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

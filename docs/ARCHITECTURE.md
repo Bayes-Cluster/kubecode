@@ -180,6 +180,17 @@ the brief (`import_id` on the brief edit), `import` as a round source and as a
 context reference kind, and a bounded, previewable discussion packet. Importing
 and exporting never start work.
 
+Workspace-owned research work (ADR 0215) is a sixth feature store on the same
+SQLite owner. `server/src/work_store/` owns work items (the canonical task),
+attempts, assignments, result references, and each round's fenced coordinator,
+all scoped by Project (the Workspace). Legacy Team tasks are mirrored into it
+with their ids: triggers on the Team tables queue the owning Team in the same
+transaction as the legacy write, and `WorkStore::reconcile` applies the queue
+before any work read or write and at startup, so the mirror is resumable and
+never stale to a reader. The Team store stays the only writer of legacy items;
+native items are changed only through the work store's revision-checked,
+coordinator-fenced commands. Deleting a Team never deletes its work.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

@@ -14,6 +14,7 @@ use crate::project_context::ProjectContext;
 use crate::research_store::ResearchStore;
 use crate::teams::{Team, TeamRole, TeamStore};
 use crate::terminal::{TerminalEventSink, TerminalLifecycleEvent, TerminalManager};
+use crate::work_store::WorkStore;
 use crate::workspace::WorkspaceService;
 
 #[derive(Clone)]
@@ -27,6 +28,8 @@ pub struct AppState {
     pub ilink: Arc<ILinkService>,
     pub research: Arc<ResearchStore>,
     pub experiments: Arc<ExperimentStore>,
+    /// Workspace-owned research work (ADR 0215).
+    pub work: Arc<WorkStore>,
     pub experiment_runner: Arc<ExperimentRunner>,
     /// Read-only discovery over the stores above (ADR 0214).
     pub context: Arc<ProjectContext>,
@@ -65,6 +68,10 @@ impl AppState {
             ExperimentStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("experiment store"),
         );
+        let work = Arc::new(
+            WorkStore::from_database(agent_store.database(), Arc::clone(&agent_store))
+                .expect("work store"),
+        );
         let experiment_runner = ExperimentRunner::new(
             Arc::clone(&experiments),
             Arc::clone(&workspace),
@@ -95,6 +102,7 @@ impl AppState {
             ilink,
             research,
             experiments,
+            work,
             experiment_runner,
             context,
             research_locks: Arc::default(),
