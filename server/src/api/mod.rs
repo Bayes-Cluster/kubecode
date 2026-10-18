@@ -368,6 +368,7 @@ fn client_api_router(state: AppState) -> Router {
         .route("/projects/{project_id}/asset", get(read_asset))
         .merge(crate::team_api::routes())
         .merge(crate::research_api::routes())
+        .merge(crate::context_api::routes())
         .merge(crate::api::ilink::routes())
         .with_state(state)
 }

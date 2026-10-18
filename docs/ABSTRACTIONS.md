@@ -953,6 +953,28 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   changes go through the user-input path and take effect only as an explicit
   envelope revision.
 
+## Project context reference
+
+A **context reference** is `{ kind, id, revision? }` and points at an existing
+object in one Project: a research question, round, finding, Session, Session
+turn (`conversation_id/run_id`), Team, task, experiment, or experiment artifact
+(`experiment_id/path`). The `revision` is a *fingerprint*, not a snapshot: it
+detects that something changed, it cannot restore old content, so the reader
+reports `available`, `changed`, or `removed` and never invents the old bytes.
+A **live** reference (no revision) reads the current state; a **pinned**
+reference (a revision recorded when something cited it) reads the pinned brief
+revision when the owner keeps one and otherwise says what changed.
+
+`ProjectContext` is the single reader. `search` returns metadata only
+(reference, title, a short summary, provenance, availability); `read` returns
+sections at `summary`, `content`, or `evidence` detail plus related references
+and plain-language notes; `resolve` reports availability and the current
+revision for up to 32 references. Authorization is the Project: a record in
+another Project is indistinguishable from a missing one, hidden snapshots and
+subagent threads are not Sessions, and a turn still running is readable but
+marked partial. Reading is passive and never writes. A finding read carries its
+basis: it is an Agent's recorded claim, not a verified result.
+
 ## Conversation reducer
 
 One pure reducer applies Agent Chat conversation events regardless of their

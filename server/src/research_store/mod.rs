@@ -942,6 +942,27 @@ impl ResearchStore {
         load_round(&connection, id, round_id)
     }
 
+    /// A round looked up by id alone, inside a Project. A round of another
+    /// Project is reported as not found.
+    pub fn round_by_id(
+        &self,
+        project_id: &str,
+        round_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        let connection = self.connection();
+        let research_id: Option<String> = connection
+            .query_row(
+                "SELECT r.research_id FROM research_rounds r
+                 JOIN research_questions q ON q.id = r.research_id
+                 WHERE r.id = ?1 AND q.project_id = ?2",
+                params![round_id, project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let research_id = research_id.ok_or(ResearchError::RoundNotFound)?;
+        load_round(&connection, &research_id, round_id)
+    }
+
     /// The round (and Project) that created or owns a Team, if any.
     pub fn round_for_team(
         &self,

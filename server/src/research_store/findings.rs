@@ -180,6 +180,26 @@ impl ResearchStore {
         load_findings(&connection, id, None)
     }
 
+    /// One finding, looked up by id inside a Project. A finding in another
+    /// Project is reported as not found.
+    pub fn finding(&self, project_id: &str, finding_id: &str) -> Result<Finding, ResearchError> {
+        let connection = self.connection();
+        let research_id: Option<String> = connection
+            .query_row(
+                "SELECT f.research_id FROM research_findings f
+                 JOIN research_questions q ON q.id = f.research_id
+                 WHERE f.id = ?1 AND q.project_id = ?2",
+                params![finding_id, project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let research_id = research_id.ok_or(ResearchError::NotFound)?;
+        load_findings(&connection, &research_id, None)?
+            .into_iter()
+            .find(|finding| finding.id == finding_id)
+            .ok_or(ResearchError::NotFound)
+    }
+
     /// Completed Teams linked to the question, newest first, with whether
     /// their results have been recorded, declined, or are still pending.
     pub fn outcomes(

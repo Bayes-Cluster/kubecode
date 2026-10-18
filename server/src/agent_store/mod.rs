@@ -8,6 +8,7 @@ mod permissions;
 mod prompt_queue;
 mod revisions;
 mod runs;
+mod turns;
 
 pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventBus};
 pub use ilink::{
@@ -20,6 +21,7 @@ pub use models::{
     IlinkAccountStatus, PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint,
     RunStatus, SessionEvent, StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
 };
+pub use turns::TurnText;
 
 use std::path::Path;
 use std::sync::Arc;
