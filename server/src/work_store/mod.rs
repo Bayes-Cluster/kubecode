@@ -42,6 +42,7 @@ pub(crate) enum Change {
     Attempt,
     Result,
     Coordinator,
+    Policy,
     Synced,
 }
 
@@ -58,6 +59,7 @@ impl Change {
             Self::Attempt => "attempt",
             Self::Result => "result",
             Self::Coordinator => "coordinator",
+            Self::Policy => "policy",
             Self::Synced => "synced",
         }
     }
@@ -191,6 +193,27 @@ pub fn ensure_schema(connection: &Connection) -> Result<(), WorkError> {
            previous_holder TEXT,
            reason          TEXT NOT NULL,
            at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE IF NOT EXISTS round_policies (
+           round_id              TEXT PRIMARY KEY,
+           project_id            TEXT NOT NULL,
+           max_executors         INTEGER NOT NULL,
+           max_parallel_attempts INTEGER NOT NULL,
+           max_attempts          INTEGER NOT NULL,
+           paused                INTEGER NOT NULL DEFAULT 0,
+           revision              INTEGER NOT NULL DEFAULT 1,
+           updated_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         -- Sessions a coordinator created for executing a round's work, keyed by the
+         -- coordinator's request so a retry returns the same Session.
+         CREATE TABLE IF NOT EXISTS round_executors (
+           round_id    TEXT NOT NULL,
+           project_id  TEXT NOT NULL,
+           request_key TEXT NOT NULL,
+           session_id  TEXT NOT NULL DEFAULT '',
+           created_by  TEXT NOT NULL,
+           created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (round_id, request_key)
          );
          CREATE TABLE IF NOT EXISTS work_sync_queue (
            team_id TEXT PRIMARY KEY
@@ -446,6 +469,119 @@ impl WorkStore {
         let connection = self.connection();
         load_item(&connection, project_id, id)?;
         results_of(&connection, id)
+    }
+
+    /// The round's execution policy: the stored one, or the defaults.
+    pub fn policy(&self, project_id: &str, round_id: &str) -> Result<RoundPolicy, WorkError> {
+        let connection = self.connection();
+        load_policy(&connection, project_id, round_id)
+    }
+
+    /// What the round has used so far.
+    pub fn round_stats(&self, project_id: &str, round_id: &str) -> Result<RoundStats, WorkError> {
+        self.reconcile()?;
+        let connection = self.connection();
+        round_stats(&connection, project_id, round_id)
+    }
+
+    /// Reserves the creation of an executor Session for a request. `Ok(None)`
+    /// means this caller should create it; `Some(id)` is the Session an
+    /// earlier call already made. At most `limit` executors per round.
+    pub fn reserve_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        request_key: &str,
+        created_by: &str,
+        limit: u32,
+    ) -> Result<Option<String>, WorkError> {
+        let connection = self.connection();
+        if let Some(existing) = connection
+            .query_row(
+                "SELECT session_id FROM round_executors
+                 WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3",
+                params![round_id, project_id, request_key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .filter(|session| !session.is_empty())
+        {
+            return Ok(Some(existing));
+        }
+        let made: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM round_executors WHERE round_id = ?1 AND project_id = ?2
+               AND request_key != ?3",
+            params![round_id, project_id, request_key],
+            |row| row.get(0),
+        )?;
+        if made as u32 >= limit {
+            return Err(WorkError::BudgetExhausted("executor Sessions"));
+        }
+        connection.execute(
+            "INSERT OR IGNORE INTO round_executors (round_id, project_id, request_key, created_by)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![round_id, project_id, request_key, created_by],
+        )?;
+        Ok(None)
+    }
+
+    /// Records the Session made for a reservation. Returns the Session that
+    /// owns the request: this one, or one a concurrent caller recorded first.
+    pub fn record_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        request_key: &str,
+        session_id: &str,
+    ) -> Result<String, WorkError> {
+        let connection = self.connection();
+        connection.execute(
+            "UPDATE round_executors SET session_id = ?4
+             WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3 AND session_id = ''",
+            params![round_id, project_id, request_key, session_id],
+        )?;
+        Ok(connection.query_row(
+            "SELECT session_id FROM round_executors
+             WHERE round_id = ?1 AND project_id = ?2 AND request_key = ?3",
+            params![round_id, project_id, request_key],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Whether the coordinator made this Session for the round.
+    pub fn is_round_executor(
+        &self,
+        project_id: &str,
+        round_id: &str,
+        session_id: &str,
+    ) -> Result<bool, WorkError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT 1 FROM round_executors
+                 WHERE round_id = ?1 AND project_id = ?2 AND session_id = ?3",
+                params![round_id, project_id, session_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// The rounds this Session currently coordinates in the Project.
+    pub fn coordinated_rounds(
+        &self,
+        project_id: &str,
+        conversation_id: &str,
+    ) -> Result<Vec<String>, WorkError> {
+        self.reconcile()?;
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT round_id FROM round_coordinators
+             WHERE project_id = ?1 AND holder = ?2 ORDER BY since, round_id",
+        )?;
+        Ok(statement
+            .query_map(params![project_id, conversation_id], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?)
     }
 
     pub fn coordinator(
@@ -784,3 +920,65 @@ pub(crate) fn new_id() -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The stored policy, or the defaults (revision 0) for a round without one.
+pub(crate) fn load_policy(
+    connection: &Connection,
+    project_id: &str,
+    round_id: &str,
+) -> Result<RoundPolicy, WorkError> {
+    Ok(connection
+        .query_row(
+            "SELECT round_id, max_executors, max_parallel_attempts, max_attempts, paused, revision
+             FROM round_policies WHERE round_id = ?1 AND project_id = ?2",
+            params![round_id, project_id],
+            |row| {
+                Ok(RoundPolicy {
+                    round_id: row.get(0)?,
+                    max_executors: row.get::<_, i64>(1)? as u32,
+                    max_parallel_attempts: row.get::<_, i64>(2)? as u32,
+                    max_attempts: row.get::<_, i64>(3)? as u32,
+                    paused: row.get(4)?,
+                    revision: row.get::<_, i64>(5)? as u64,
+                })
+            },
+        )
+        .optional()?
+        .unwrap_or_else(|| RoundPolicy {
+            round_id: round_id.to_owned(),
+            max_executors: DEFAULT_MAX_EXECUTORS,
+            max_parallel_attempts: DEFAULT_MAX_PARALLEL_ATTEMPTS,
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
+            paused: false,
+            revision: 0,
+        }))
+}
+
+pub(crate) fn round_stats(
+    connection: &Connection,
+    project_id: &str,
+    round_id: &str,
+) -> Result<RoundStats, WorkError> {
+    let executors: i64 = connection.query_row(
+        "SELECT COUNT(DISTINCT a.conversation_id) FROM work_assignments a
+         JOIN work_items w ON w.id = a.task_id
+         WHERE w.project_id = ?1 AND w.round_id = ?2 AND a.ended_at IS NULL
+           AND w.lifecycle = 'active'",
+        params![project_id, round_id],
+        |row| row.get(0),
+    )?;
+    let (open, total): (i64, i64) = connection.query_row(
+        "SELECT COALESCE(SUM(CASE WHEN t.status IN ('queued', 'running', 'needs_report',
+                                                    'result_submitted') THEN 1 ELSE 0 END), 0),
+                COUNT(t.id)
+         FROM work_attempts t JOIN work_items w ON w.id = t.task_id
+         WHERE w.project_id = ?1 AND w.round_id = ?2",
+        params![project_id, round_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok(RoundStats {
+        executors: executors as u32,
+        open_attempts: open as u32,
+        total_attempts: total as u32,
+    })
+}

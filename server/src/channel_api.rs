@@ -205,6 +205,11 @@ async fn post_message(
             client_message_id: request.client_message_id.as_deref(),
         },
     )?;
+    if created && message.intent != Intent::Say {
+        // An intent is recorded; the orchestrator routes it without waiting
+        // for its next scheduled pass.
+        state.orchestrator.wake();
+    }
     Ok(created_or_ok(created, message))
 }
 

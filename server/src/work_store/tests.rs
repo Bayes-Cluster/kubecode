@@ -2006,3 +2006,241 @@ fn reserved_and_oversized_inputs_are_refused() {
     assert!(add("session_turn", &format!("{session}/..")).is_err());
     assert!(add("session_turn", &format!("{session}/turn-1")).is_ok());
 }
+
+// -- Round limits (ADR 0217) --------------------------------------------------------------------------
+
+fn start(r: &Rig, item: &WorkItem, key: &str) -> Result<Attempt, WorkError> {
+    r.work
+        .begin_attempt(r.project(), &item.id, Some(key), &r.coordinator())
+}
+
+#[test]
+fn only_the_researcher_sets_limits_and_stale_or_unbounded_edits_are_refused() {
+    let r = rig();
+    let round = r.f.round_id.clone();
+    assert_eq!(
+        r.work.policy(r.project(), &round).unwrap(),
+        RoundPolicy {
+            round_id: round.clone(),
+            max_executors: DEFAULT_MAX_EXECUTORS,
+            max_parallel_attempts: DEFAULT_MAX_PARALLEL_ATTEMPTS,
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
+            paused: false,
+            revision: 0,
+        }
+    );
+    // A coordinator cannot widen what the researcher authorized.
+    assert!(matches!(
+        r.work.set_policy(
+            r.project(),
+            &round,
+            0,
+            PolicyPatch {
+                max_attempts: Some(500),
+                ..Default::default()
+            },
+            &r.coordinator()
+        ),
+        Err(WorkError::Invalid(_))
+    ));
+    let set = r
+        .work
+        .set_policy(
+            r.project(),
+            &round,
+            0,
+            PolicyPatch {
+                max_executors: Some(2),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert_eq!((set.max_executors, set.revision), (2, 1));
+    assert!(matches!(
+        r.work.set_policy(
+            r.project(),
+            &round,
+            0,
+            PolicyPatch {
+                paused: Some(true),
+                ..Default::default()
+            },
+            &Actor::Researcher
+        ),
+        Err(WorkError::Stale { current: 1 })
+    ));
+    for bad in [0, MAX_POLICY_LIMIT + 1] {
+        assert!(
+            r.work
+                .set_policy(
+                    r.project(),
+                    &round,
+                    1,
+                    PolicyPatch {
+                        max_attempts: Some(bad),
+                        ..Default::default()
+                    },
+                    &Actor::Researcher
+                )
+                .is_err()
+        );
+    }
+    // Repeating the current values changes nothing.
+    let same = r
+        .work
+        .set_policy(
+            r.project(),
+            &round,
+            1,
+            PolicyPatch {
+                max_executors: Some(2),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert_eq!(same.revision, 1);
+    // Another Project's round reads like a missing one.
+    let other = r.f.workspace.create_project(".", "beta").unwrap();
+    assert!(
+        r.work
+            .set_policy(
+                &other.id,
+                &round,
+                0,
+                PolicyPatch::default(),
+                &Actor::Researcher
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn a_round_grows_from_one_executor_to_several_until_its_executor_limit() {
+    let r = rig();
+    r.work
+        .set_policy(
+            r.project(),
+            &r.f.round_id,
+            0,
+            PolicyPatch {
+                max_executors: Some(3),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    // The round already has its Team's teammate executing the mirrored task
+    // (one slot), so of three native tasks two get a new executor.
+    let (a, first) = r.assigned("one");
+    let (b, _second) = r.assigned("two");
+    let c = r.native("three");
+    let third = r.session("third");
+    let blocked = r
+        .work
+        .assign(r.project(), &c.id, &third, None, "", &r.coordinator());
+    assert!(
+        matches!(blocked, Err(WorkError::BudgetExhausted("executors"))),
+        "{blocked:?}"
+    );
+    // A Session already executing in the round can take more work.
+    r.work
+        .assign(r.project(), &c.id, &first, None, "", &r.coordinator())
+        .unwrap();
+    // Releasing an executor frees its slot.
+    r.work
+        .close(
+            r.project(),
+            &b.id,
+            r.work.get(r.project(), &b.id).unwrap().revision,
+            Closure {
+                lifecycle: WorkLifecycle::Canceled,
+                reason: "not needed",
+                superseded_by: None,
+            },
+            &r.coordinator(),
+        )
+        .unwrap();
+    let d = r.native("four");
+    r.work
+        .assign(r.project(), &d.id, &third, None, "", &r.coordinator())
+        .unwrap();
+    let _ = a;
+}
+
+#[test]
+fn attempts_stop_at_the_parallel_total_and_pause_limits() {
+    let r = rig();
+    let set = |patch: PolicyPatch| {
+        let revision = r.work.policy(r.project(), &r.f.round_id).unwrap().revision;
+        r.work
+            .set_policy(
+                r.project(),
+                &r.f.round_id,
+                revision,
+                patch,
+                &Actor::Researcher,
+            )
+            .unwrap()
+    };
+    // The mirrored legacy task has one attempt open and counted already.
+    set(PolicyPatch {
+        max_parallel_attempts: Some(2),
+        max_attempts: Some(4),
+        max_executors: Some(5),
+        ..Default::default()
+    });
+    let (a, _) = r.assigned("a");
+    let (b, _) = r.assigned("b");
+    let first = start(&r, &a, "a-1").unwrap();
+    // Only one attempt may be open; a replay of the same dispatch is not a second.
+    assert!(matches!(
+        start(&r, &b, "b-1"),
+        Err(WorkError::BudgetExhausted("parallel attempts"))
+    ));
+    assert_eq!(start(&r, &a, "a-1").unwrap().id, first.id);
+    // Finishing frees the slot; the total budget then runs out, retries included.
+    r.work
+        .finish_attempt(
+            r.project(),
+            &first.id,
+            AttemptOutcome::Cancelled,
+            &r.coordinator(),
+        )
+        .unwrap();
+    let second = start(&r, &b, "b-1").unwrap();
+    r.work
+        .finish_attempt(
+            r.project(),
+            &second.id,
+            AttemptOutcome::Cancelled,
+            &r.coordinator(),
+        )
+        .unwrap();
+    let third = start(&r, &a, "a-2").unwrap();
+    r.work
+        .finish_attempt(
+            r.project(),
+            &third.id,
+            AttemptOutcome::Cancelled,
+            &r.coordinator(),
+        )
+        .unwrap();
+    assert!(matches!(
+        start(&r, &a, "a-3"),
+        Err(WorkError::BudgetExhausted("attempts"))
+    ));
+    // Pausing stops new launches without touching history; resuming is the researcher's.
+    set(PolicyPatch {
+        max_attempts: Some(10),
+        paused: Some(true),
+        ..Default::default()
+    });
+    assert!(matches!(start(&r, &a, "a-3"), Err(WorkError::RoundPaused)));
+    set(PolicyPatch {
+        paused: Some(false),
+        ..Default::default()
+    });
+    assert!(start(&r, &a, "a-3").is_ok());
+}

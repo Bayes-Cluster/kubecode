@@ -1,0 +1,177 @@
+//! Researcher-facing routes of the orchestrator (ADR 0217): what a round may
+//! spend on execution, and where the conversation's requests have gone. Only
+//! the researcher (the browser) can set limits; an agent has no such command.
+
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{Json, Router};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::app_state::AppState;
+use crate::orchestrator::{OrchestratorError, Route, RouteState};
+use crate::work_store::{Actor, PolicyPatch, RoundPolicy, RoundStats, WorkError};
+use crate::workspace::WorkspaceError;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/projects/{project_id}/rounds/{round_id}/execution-policy",
+            get(get_policy).put(set_policy),
+        )
+        .route("/projects/{project_id}/routes", get(list_routes))
+}
+
+enum ApiError {
+    Work(WorkError),
+    Orchestrator(OrchestratorError),
+    Workspace(WorkspaceError),
+    RoundNotFound,
+}
+
+impl From<WorkError> for ApiError {
+    fn from(error: WorkError) -> Self {
+        Self::Work(error)
+    }
+}
+
+impl From<OrchestratorError> for ApiError {
+    fn from(error: OrchestratorError) -> Self {
+        Self::Orchestrator(error)
+    }
+}
+
+impl From<WorkspaceError> for ApiError {
+    fn from(error: WorkspaceError) -> Self {
+        Self::Workspace(error)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let mut extra = serde_json::Map::new();
+        let (status, code, message) = match self {
+            Self::RoundNotFound => (
+                StatusCode::NOT_FOUND,
+                "round_not_found",
+                "round not found".to_owned(),
+            ),
+            Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
+                StatusCode::NOT_FOUND,
+                "not_found",
+                format!("project not found: {id}"),
+            ),
+            Self::Workspace(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                error.to_string(),
+            ),
+            Self::Work(WorkError::Stale { current }) => {
+                extra.insert("current_revision".into(), json!(current));
+                (
+                    StatusCode::CONFLICT,
+                    "policy_revision_conflict",
+                    format!("the limits changed (current revision {current})"),
+                )
+            }
+            Self::Work(WorkError::Invalid(reason)) => {
+                (StatusCode::BAD_REQUEST, "invalid_policy", reason.to_owned())
+            }
+            Self::Work(WorkError::Database(_) | WorkError::Json(_))
+            | Self::Orchestrator(OrchestratorError::Database(_)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                "orchestration storage failed".to_owned(),
+            ),
+            Self::Work(error) => (StatusCode::CONFLICT, "work_state", error.to_string()),
+            Self::Orchestrator(error) => (
+                StatusCode::BAD_REQUEST,
+                "invalid_routing",
+                error.to_string(),
+            ),
+        };
+        extra.insert("code".into(), json!(code));
+        extra.insert("message".into(), json!(message));
+        (status, Json(serde_json::Value::Object(extra))).into_response()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct PolicyResponse {
+    policy: RoundPolicy,
+    used: RoundStats,
+}
+
+fn check_round(state: &AppState, project_id: &str, round_id: &str) -> Result<(), ApiError> {
+    state.workspace.project_path(project_id)?;
+    state
+        .research
+        .round_by_id(project_id, round_id)
+        .map(|_| ())
+        .map_err(|_| ApiError::RoundNotFound)
+}
+
+fn view(state: &AppState, project_id: &str, round_id: &str) -> Result<PolicyResponse, ApiError> {
+    Ok(PolicyResponse {
+        policy: state.work.policy(project_id, round_id)?,
+        used: state.work.round_stats(project_id, round_id)?,
+    })
+}
+
+async fn get_policy(
+    State(state): State<AppState>,
+    Path((project_id, round_id)): Path<(String, String)>,
+) -> Result<Json<PolicyResponse>, ApiError> {
+    check_round(&state, &project_id, &round_id)?;
+    Ok(Json(view(&state, &project_id, &round_id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetPolicyRequest {
+    expected_revision: u64,
+    #[serde(flatten)]
+    patch: PolicyPatch,
+}
+
+async fn set_policy(
+    State(state): State<AppState>,
+    Path((project_id, round_id)): Path<(String, String)>,
+    Json(request): Json<SetPolicyRequest>,
+) -> Result<Json<PolicyResponse>, ApiError> {
+    check_round(&state, &project_id, &round_id)?;
+    state.work.set_policy(
+        &project_id,
+        &round_id,
+        request.expected_revision,
+        request.patch,
+        &Actor::Researcher,
+    )?;
+    Ok(Json(view(&state, &project_id, &round_id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct RoutesQuery {
+    state: Option<String>,
+    limit: Option<usize>,
+}
+
+async fn list_routes(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Query(query): Query<RoutesQuery>,
+) -> Result<Json<Vec<Route>>, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let filter = match query.state.as_deref() {
+        None => None,
+        Some(value) => Some(RouteState::parse(value).ok_or(ApiError::Orchestrator(
+            OrchestratorError::Invalid("state must be pending, delivered, or failed"),
+        ))?),
+    };
+    Ok(Json(state.orchestrator.routes(
+        &project_id,
+        filter,
+        query.limit.unwrap_or(50),
+    )?))
+}

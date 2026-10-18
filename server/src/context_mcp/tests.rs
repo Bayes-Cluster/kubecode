@@ -568,10 +568,10 @@ fn context_servers_are_advertised_to_every_session_and_alongside_the_team_server
             .collect()
     };
     let solo = rig.prior_session();
-    assert_eq!(names(&solo.id), vec!["kubecode-context"]);
+    assert_eq!(names(&solo.id), vec!["kubecode-context", "kubecode-work"]);
     assert_eq!(
         names(&rig.f.teammate.conversation_id),
-        vec!["kubecode-team", "kubecode-context"]
+        vec!["kubecode-team", "kubecode-context", "kubecode-work"]
     );
     assert!(names("does-not-exist").is_empty());
     // Without the HTTP origin there is nothing to advertise.

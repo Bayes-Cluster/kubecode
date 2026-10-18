@@ -185,6 +185,10 @@ fn team_mcp_router(state: AppState) -> Router {
             "/context-mcp/{token}/{conversation_id}",
             axum::routing::any(crate::context_mcp::handle_http),
         )
+        .route(
+            "/work-mcp/{token}/{conversation_id}",
+            axum::routing::any(crate::work_mcp::handle_http),
+        )
         .with_state(state)
 }
 
@@ -372,6 +376,7 @@ fn client_api_router(state: AppState) -> Router {
         .route("/projects/{project_id}/asset", get(read_asset))
         .merge(crate::team_api::routes())
         .merge(crate::channel_api::routes())
+        .merge(crate::orchestrator_api::routes())
         .merge(crate::research_api::routes())
         .merge(crate::context_api::routes())
         .merge(crate::api::ilink::routes())
