@@ -1252,7 +1252,7 @@ fn a_long_import_is_readable_in_full_one_section_at_a_time() {
     }
     assert!(pages >= 4, "{pages}");
     // Every character of the import was delivered exactly once, in order.
-    assert_eq!(seen.trim(), text.trim());
+    assert_eq!(seen, text.trim());
     assert!(seen.contains("results only hold below sparsity 0.7"));
     // A bad or out-of-range cursor is refused, not guessed.
     assert!(matches!(
@@ -1269,4 +1269,64 @@ fn a_long_import_is_readable_in_full_one_section_at_a_time() {
             .read(&w.f.project_id, &reference, Detail::Content, Some(&beyond)),
         Err(ContextError::Invalid(_))
     ));
+}
+
+#[test]
+fn paged_import_text_keeps_every_boundary_character() {
+    use crate::research_store::{ImportOrigin, NewImport};
+    let w = world();
+    // Page boundaries land on a newline followed by an indent, on trailing
+    // spaces, and on a blank line: all of it is structure in Markdown or code.
+    let first = format!("{}\n", "a".repeat(SECTION_CHARS - 1));
+    let second = format!("    indented();\n{}   ", "b".repeat(SECTION_CHARS - 30));
+    let third = format!("\n\n    - nested item\n{}", "c".repeat(100));
+    let text = format!("{first}{second}{third}");
+    let (import, _) =
+        w.f.research
+            .import_source(
+                &w.f.project_id,
+                &w.f.research_id,
+                NewImport {
+                    origin: ImportOrigin::Markdown,
+                    label: "Boundary whitespace",
+                    content: &text,
+                    based_on_revision: 1,
+                    client_request_id: None,
+                },
+            )
+            .unwrap();
+    let reference = ContextRef::new(ContextKind::Import, &import.id);
+    let mut joined = String::new();
+    let mut cursor: Option<String> = None;
+    let mut starts_with_space = 0;
+    let mut ends_with_space = 0;
+    loop {
+        let doc = w
+            .context
+            .read(
+                &w.f.project_id,
+                &reference,
+                Detail::Content,
+                cursor.as_deref(),
+            )
+            .unwrap();
+        let section = doc
+            .sections
+            .iter()
+            .find(|s| s.heading.starts_with("Imported text"))
+            .unwrap();
+        starts_with_space += usize::from(section.text.starts_with(char::is_whitespace));
+        ends_with_space += usize::from(section.text.ends_with(char::is_whitespace));
+        joined.push_str(&section.text);
+        match doc.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    // Character for character: nothing at a page edge was trimmed away.
+    assert_eq!(joined, text);
+    assert!(
+        starts_with_space >= 1 && ends_with_space >= 1,
+        "the fixture must exercise page edges"
+    );
 }

@@ -674,6 +674,21 @@ impl ContextDocument {
         });
     }
 
+    /// A section whose text is kept exactly as given. Paged text must not be
+    /// trimmed: the whitespace at a page boundary (a newline, an indent) is
+    /// part of the text, and dropping it would corrupt Markdown and code.
+    fn section_verbatim(&mut self, heading: &str, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let (text, truncated) = clip(text, SECTION_CHARS);
+        self.sections.push(Section {
+            heading: heading.to_owned(),
+            text,
+            truncated,
+        });
+    }
+
     fn list(&mut self, heading: &str, lines: &[String]) {
         self.section(heading, &lines.join("\n"));
     }
@@ -1226,7 +1241,7 @@ impl ProjectContext {
             }
             let end = (start + SECTION_CHARS).min(total);
             let part: String = content.chars().skip(start).take(end - start).collect();
-            doc.section(
+            doc.section_verbatim(
                 &format!(
                     "Imported text (characters {}–{} of {total})",
                     start + 1,
