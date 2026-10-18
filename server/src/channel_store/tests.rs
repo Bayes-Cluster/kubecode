@@ -363,21 +363,28 @@ fn two_questions_share_a_channel_with_their_own_threads_and_links_keep_the_conve
         .link_thread(r.project(), &pruning.id, 2, None, None)
         .unwrap();
     assert_eq!((unlinked.research_id, unlinked.revision), (None, 3));
-    assert!(
-        r.channels
-            .messages(
-                r.project(),
-                &channel.id,
-                MessageQuery {
-                    scope: Scope::Thread(&pruning.id),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-            .messages
-            .len()
-            >= 3
+    let kept = r
+        .channels
+        .messages(
+            r.project(),
+            &channel.id,
+            MessageQuery {
+                scope: Scope::Thread(&pruning.id),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .messages;
+    // The root, then one system note per link change (link, unlink), in order.
+    assert_eq!(
+        kept.iter().map(|m| m.kind).collect::<Vec<_>>(),
+        vec![
+            MessageKind::Message,
+            MessageKind::System,
+            MessageKind::System
+        ]
     );
+    assert!(kept.windows(2).all(|pair| pair[0].seq < pair[1].seq));
 }
 
 #[test]
@@ -621,4 +628,66 @@ fn events_announce_ids_and_change_words_never_message_text() {
             .iter()
             .any(|payload| payload.contains("\"message\""))
     );
+}
+
+#[test]
+fn reusing_a_client_id_with_other_references_is_a_different_message_and_links_are_not_replies() {
+    let r = rig();
+    let channel = r.channel();
+    let rq = ContextRef::new(ContextKind::Research, &r.f.research_id);
+    let first = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "see this",
+                client_message_id: Some("same"),
+                references: std::slice::from_ref(&rq),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    assert!(matches!(
+        r.channels.post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "see this",
+                client_message_id: Some("same"),
+                ..Default::default()
+            }
+        ),
+        Err(ChannelError::KeyReuse)
+    ));
+    let (thread, _) = r
+        .channels
+        .start_thread(r.project(), &channel.id, &first.id, None, None)
+        .unwrap();
+    r.channels
+        .link_thread(r.project(), &thread.id, 1, Some(&r.f.research_id), None)
+        .unwrap();
+    // The system message that records the link is not a reply.
+    assert_eq!(
+        r.channels
+            .thread(r.project(), &thread.id)
+            .unwrap()
+            .reply_count,
+        0
+    );
+    // Oversized pointers are refused.
+    let long = ContextRef::at(ContextKind::Research, &r.f.research_id, "r".repeat(200));
+    assert!(matches!(
+        r.channels.post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "x",
+                references: &[long],
+                ..Default::default()
+            }
+        ),
+        Err(ChannelError::Invalid(_))
+    ));
 }

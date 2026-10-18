@@ -1708,7 +1708,9 @@ impl ProjectContext {
         Ok(())
     }
 
-    /// Messages as `#seq author: text`, oldest first, with who wrote each.
+    /// Messages as `#seq author: text`, oldest first, with who wrote each. A
+    /// body's own line breaks are indented so no message can pose as another
+    /// author's line.
     fn message_lines(&self, project_id: &str, messages: &[Message]) -> Vec<String> {
         messages
             .iter()
@@ -1725,15 +1727,26 @@ impl ProjectContext {
                                 .ok()
                                 .flatten()
                         })
-                        .map(|conversation| format!("agent {}", conversation.title))
+                        .map(|conversation| {
+                            let title: String = conversation
+                                .title
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            format!("agent {title}")
+                        })
                         .unwrap_or_else(|| "agent".to_owned()),
                 };
                 let (text, _) = clip(&message.body, 1_500);
+                let text = text.replace('\n', "\n    ");
                 format!("#{} {author}: {text}", message.seq)
             })
             .collect()
     }
 
+    /// One page of a scope's messages that fits a section: the newest that fit
+    /// are shown, and the cursor starts at the oldest one shown, so nothing is
+    /// cut from view and older messages stay reachable.
     fn read_messages(
         &self,
         project_id: &str,
@@ -1760,11 +1773,21 @@ impl ProjectContext {
             )
             .map_err(source_error)?;
         let lines = self.message_lines(project_id, &page.messages);
-        doc.section_verbatim("Messages (oldest first)", &lines.join("\n"));
-        if page.has_more
-            && let Some(first) = page.messages.first()
-        {
-            doc.next_cursor = Some(encode_cursor(first.seq as usize));
+        let mut budget = SECTION_CHARS;
+        let mut shown = 0;
+        for line in lines.iter().rev() {
+            let cost = line.chars().count() + 1;
+            if cost > budget && shown > 0 {
+                break;
+            }
+            budget = budget.saturating_sub(cost);
+            shown += 1;
+        }
+        let first_shown = lines.len() - shown;
+        doc.section_verbatim("Messages (oldest first)", &lines[first_shown..].join("\n"));
+        let older = first_shown > 0 || page.has_more;
+        if older && let Some(oldest) = page.messages.get(first_shown) {
+            doc.next_cursor = Some(encode_cursor(oldest.seq as usize));
             doc.note("Older messages exist; read again with next_cursor for them.");
         }
         Ok(())

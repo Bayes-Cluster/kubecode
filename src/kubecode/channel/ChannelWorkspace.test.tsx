@@ -89,14 +89,16 @@ function server(initial: ChannelMessage[] = []) {
       threads.push(thread)
       return thread
     }),
+    listResearchRounds: vi.fn(async () => [{ id: 'round-1', research_id: 'r1', round: 1 }]),
     linkChannelThread: vi.fn(async (
-      _p: string, id: string, revision: number, researchId: string | null,
+      _p: string, id: string, revision: number, researchId: string | null, roundId: string | null = null,
     ) => {
       const thread = threads.find((item) => item.id === id)!
       if (thread.revision !== revision) {
         throw new ApiError('thread_revision_conflict', 'changed', 409)
       }
       thread.research_id = researchId
+      thread.round_id = roundId
       thread.revision += 1
       return thread
     }),
@@ -213,7 +215,7 @@ describe('ChannelWorkspace', () => {
 
     fireEvent.change(within(pane).getByLabelText('kubecode.channel.linkLabel'), { target: { value: 'r1' } })
     fireEvent.click(within(pane).getByRole('button', { name: 'kubecode.channel.link' }))
-    await waitFor(() => expect(s.calls.linkChannelThread).toHaveBeenCalledWith('p1', 't1', 1, 'r1'))
+    await waitFor(() => expect(s.calls.linkChannelThread).toHaveBeenCalledWith('p1', 't1', 1, 'r1', null))
     expect(await within(pane).findByText('kubecode.channel.linkedTo:{"title":"Pruning"}')).toBeInTheDocument()
   })
 
@@ -275,5 +277,85 @@ describe('ChannelWorkspace', () => {
         t={t}
       />,
     )
+  })
+})
+
+describe('ChannelWorkspace details', () => {
+  it('edits after a failed send become a new message instead of reusing a stuck id', async () => {
+    const s = server()
+    view(s)
+    await screen.findByText('kubecode.channel.empty')
+    const box = screen.getByLabelText('kubecode.channel.composerPlaceholder')
+    fireEvent.change(box, { target: { value: 'first draft' } })
+    s.failNext(1)
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
+    await screen.findByRole('alert')
+    // An unchanged retry replays the same id; an edited draft gets a fresh one.
+    fireEvent.change(box, { target: { value: 'first draft, edited' } })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
+    await screen.findByText('first draft, edited')
+    expect(s.posted[1].clientMessageId).not.toBe(s.posted[0].clientMessageId)
+  })
+
+  it('links a thread to one round of its question', async () => {
+    const s = server([server().message(1, 'Topic')])
+    view(s)
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.channel.reply' }))
+    const pane = await screen.findByRole('complementary', { name: 'kubecode.channel.thread' })
+    fireEvent.change(within(pane).getByLabelText('kubecode.channel.linkLabel'), { target: { value: 'r1' } })
+    fireEvent.change(await within(pane).findByLabelText('kubecode.channel.roundLabel'), { target: { value: 'round-1' } })
+    fireEvent.click(within(pane).getByRole('button', { name: 'kubecode.channel.link' }))
+    await waitFor(() => expect(s.calls.linkChannelThread).toHaveBeenCalledWith('p1', 't1', 1, 'r1', 'round-1'))
+  })
+
+  it('opens research questions, Sessions, and Threads from reference chips', async () => {
+    const reference = (kind: 'research' | 'session', id: string) => ({ kind, id })
+    const s = server([
+      server().message(1, 'See these', {
+        references: [reference('research', 'r1'), reference('session', 's9')],
+      }),
+    ])
+    const onOpenResearch = vi.fn()
+    const onOpenSession = vi.fn()
+    render(
+      <ChannelWorkspace
+        api={s.api}
+        connectionState="live"
+        conversations={[]}
+        events={[]}
+        onClose={vi.fn()}
+        onOpenResearch={onOpenResearch}
+        onOpenSession={onOpenSession}
+        projectId="p1"
+        research={[question]}
+        t={t}
+      />,
+    )
+    await screen.findByText('See these')
+    fireEvent.click(screen.getByRole('button', { name: /kubecode.projectWorkKindResearch/ }))
+    fireEvent.click(screen.getByRole('button', { name: /projectWorkKindSession(?!Turn)/ }))
+    expect(onOpenResearch).toHaveBeenCalledWith('r1')
+    expect(onOpenSession).toHaveBeenCalledWith('s9')
+  })
+
+  it('opens a requested thread on arrival', async () => {
+    const s = server([server().message(1, 'Root')])
+    await s.api.startChannelThread('p1', 'c1', 'm1')
+    render(
+      <ChannelWorkspace
+        api={s.api}
+        connectionState="live"
+        conversations={[]}
+        events={[]}
+        initialThreadId="t1"
+        onClose={vi.fn()}
+        onOpenResearch={vi.fn()}
+        onOpenSession={vi.fn()}
+        projectId="p1"
+        research={[question]}
+        t={t}
+      />,
+    )
+    expect(await screen.findByRole('complementary', { name: 'kubecode.channel.thread' })).toBeInTheDocument()
   })
 })

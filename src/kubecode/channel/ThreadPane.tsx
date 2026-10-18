@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -11,6 +11,7 @@ import type {
   KubecodeApi,
   NewChannelMessage,
   ProjectContextRef,
+  ResearchRound,
   ResearchSummary,
   WorkspaceEvent,
 } from '../api'
@@ -22,6 +23,7 @@ import { MessageList } from './MessageList'
 import { useMessageFeed } from './useChannel'
 
 const NOT_LINKED = '__none__'
+const WHOLE_QUESTION = ''
 
 type ThreadPaneProps = {
   api: KubecodeApi
@@ -63,16 +65,38 @@ export function ThreadPane({
     connectionState,
   )
   const [choice, setChoice] = useState<string | null>(null)
+  const [roundChoice, setRoundChoice] = useState<string | null>(null)
+  const [rounds, setRounds] = useState<{ researchId: string; rounds: ResearchRound[] } | null>(null)
   const link = useAction(t)
   const selected = choice ?? thread.research_id ?? NOT_LINKED
   const linked = research.find((item) => item.id === thread.research_id)
+  const chosenResearch = selected === NOT_LINKED ? null : selected
+  const selectedRound = roundChoice ?? (
+    chosenResearch === thread.research_id ? thread.round_id ?? WHOLE_QUESTION : WHOLE_QUESTION
+  )
+  const roundOptions = rounds && rounds.researchId === chosenResearch ? rounds.rounds : []
   const candidates = research.filter((item) => !item.archived || item.id === thread.research_id)
+
+  useEffect(() => {
+    if (!chosenResearch || typeof api.listResearchRounds !== 'function') return
+    let cancelled = false
+    api.listResearchRounds(thread.project_id, chosenResearch)
+      .then((loaded) => { if (!cancelled) setRounds({ researchId: chosenResearch, rounds: loaded }) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [api, thread.project_id, chosenResearch])
 
   const apply = async () => {
     const researchId = selected === NOT_LINKED ? null : selected
     const done = await link.run(async () => {
       try {
-        await api.linkChannelThread(thread.project_id, thread.id, thread.revision, researchId)
+        await api.linkChannelThread(
+          thread.project_id,
+          thread.id,
+          thread.revision,
+          researchId,
+          researchId && selectedRound !== WHOLE_QUESTION ? selectedRound : null,
+        )
       } catch (cause) {
         if (cause instanceof ApiError && cause.code === 'thread_revision_conflict') {
           onThreadChanged()
@@ -84,6 +108,7 @@ export function ThreadPane({
     })
     if (done) {
       setChoice(null)
+      setRoundChoice(null)
       onThreadChanged()
       feed.reload()
     }
@@ -130,8 +155,26 @@ export function ThreadPane({
             <option key={item.id} value={item.id}>{item.title}</option>
           ))}
         </select>
+        {chosenResearch && roundOptions.length > 0 && (
+          <select
+            aria-label={t('kubecode.channel.roundLabel')}
+            className="kubecode-channel-select"
+            value={selectedRound}
+            onChange={(event) => setRoundChoice(event.target.value)}
+          >
+            <option value={WHOLE_QUESTION}>{t('kubecode.channel.noRound')}</option>
+            {roundOptions.map((round) => (
+              <option key={round.id} value={round.id}>
+                {t('kubecode.channel.roundOption', { round: round.round })}
+              </option>
+            ))}
+          </select>
+        )}
         <Button
-          disabled={link.busy || selected === (thread.research_id ?? NOT_LINKED)}
+          disabled={link.busy || (
+            selected === (thread.research_id ?? NOT_LINKED)
+            && (chosenResearch === null || selectedRound === (thread.round_id ?? WHOLE_QUESTION))
+          )}
           size="sm"
           variant="outline"
           onClick={() => void apply()}

@@ -117,7 +117,7 @@ const MESSAGE_SELECT: &str = "SELECT id, project_id, channel_id, thread_id, seq,
 
 const THREAD_SELECT: &str = "SELECT t.id, t.project_id, t.channel_id, t.root_message_id, t.title,
         t.research_id, t.round_id, t.revision,
-        (SELECT COUNT(*) FROM channel_messages m WHERE m.thread_id = t.id),
+        (SELECT COUNT(*) FROM channel_messages m WHERE m.thread_id = t.id AND m.kind = 'message'),
         COALESCE((SELECT MAX(m.seq) FROM channel_messages m WHERE m.thread_id = t.id),
                  (SELECT r.seq FROM channel_messages r WHERE r.id = t.root_message_id), 0),
         t.created_by, t.created_at, t.updated_at
@@ -267,8 +267,15 @@ fn validate_reference(
     project_id: &str,
     reference: &ContextRef,
 ) -> Result<(), ChannelError> {
-    if reference.id.chars().count() > MAX_ID_CHARS {
-        return Err(ChannelError::Invalid("a reference id is too long"));
+    if reference.id.chars().count() > MAX_ID_CHARS
+        || reference
+            .revision
+            .as_deref()
+            .is_some_and(|revision| revision.chars().count() > 128)
+    {
+        return Err(ChannelError::Invalid(
+            "a reference id or revision is too long",
+        ));
     }
     let found = match reference.kind {
         ContextKind::Thread => tx
@@ -287,8 +294,16 @@ fn validate_reference(
             )
             .optional()?
             .is_some(),
-        kind => crate::work_store::validate_reference(tx, project_id, kind.as_str(), &reference.id)
-            .is_ok(),
+        kind => match crate::work_store::validate_reference(
+            tx,
+            project_id,
+            kind.as_str(),
+            &reference.id,
+        ) {
+            Ok(()) => true,
+            Err(crate::work_store::WorkError::Database(error)) => return Err(error.into()),
+            Err(_) => false,
+        },
     };
     if !found {
         return Err(ChannelError::Invalid(
@@ -481,7 +496,9 @@ impl ChannelStore {
                 let same = existing.body == body
                     && existing.thread_id.as_deref() == new.thread_id
                     && existing.author_kind == author_kind
-                    && existing.intent == intent;
+                    && existing.intent == intent
+                    && existing.mentions == new.mentions
+                    && existing.references == new.references;
                 if !same {
                     return Err(ChannelError::KeyReuse);
                 }
@@ -499,6 +516,9 @@ impl ChannelStore {
                 return Err(ChannelError::Invalid("the author Session was not found"));
             }
             for mention in new.mentions {
+                if mention.session_id.chars().count() > MAX_ID_CHARS {
+                    return Err(ChannelError::Invalid("a mention is too long"));
+                }
                 if !session_in_project(tx, project_id, &mention.session_id)? {
                     return Err(ChannelError::Invalid("a mentioned Session was not found"));
                 }

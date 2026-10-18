@@ -140,7 +140,8 @@ pub(crate) fn validate_reference(
     ref_id: &str,
 ) -> Result<(), WorkError> {
     const EXPERIMENT: &str = "SELECT 1 FROM experiments WHERE id = ?1 AND project_id = ?2";
-    const CONVERSATION: &str = "SELECT 1 FROM conversations WHERE id = ?1 AND project_id = ?2";
+    const CONVERSATION: &str =
+        "SELECT 1 FROM conversations WHERE id = ?1 AND project_id = ?2 AND internal_revision = 0";
     let found = match kind {
         "experiment" => exists_in_project(tx, EXPERIMENT, project_id, ref_id)?,
         // `experiment_id/path`

@@ -58,7 +58,9 @@ export function MessageComposer({
   const [askSession, setAskSession] = useState('')
   const [references, setReferences] = useState<ProjectContextItem[]>([])
   const [picker, setPicker] = useState(false)
-  const clientId = useRef(newClientMessageId())
+  // The id of the last attempt and the draft it carried: a retry of the same
+  // draft replays the same message, an edited draft is a new message.
+  const attempt = useRef<{ id: string; signature: string } | null>(null)
   const action = useAction(t)
   const asking = intent === 'ask'
   const ready = body.trim().length > 0 && (!asking || askSession !== '')
@@ -66,6 +68,16 @@ export function MessageComposer({
   const send = async () => {
     if (!ready || action.busy) return
     const draft = { body, intent, askSession, references }
+    const signature = JSON.stringify([
+      draft.body.trim(),
+      draft.intent,
+      draft.intent === 'ask' ? draft.askSession : '',
+      draft.references.map((item) => `${item.ref.kind}:${item.ref.id}`),
+    ])
+    const id = attempt.current?.signature === signature
+      ? attempt.current.id
+      : newClientMessageId()
+    attempt.current = { id, signature }
     // Clear at once so what the researcher types next is never lost to the
     // completion of this send; put the draft back if it fails and nothing new
     // has been typed. The client id stays until the send succeeds, so a retry
@@ -77,7 +89,7 @@ export function MessageComposer({
     const sent = await action.run(() => onSend({
       body: draft.body.trim(),
       threadId,
-      clientMessageId: clientId.current,
+      clientMessageId: id,
       intent: draft.intent,
       mentions: draft.intent === 'ask' ? [{ session_id: draft.askSession }] : [],
       references: draft.references.map((item): ProjectContextRef => ({
@@ -87,9 +99,9 @@ export function MessageComposer({
       })),
     }))
     if (sent) {
-      clientId.current = newClientMessageId()
+      attempt.current = null
     } else {
-      setBody((current) => (current === '' ? draft.body : current))
+      setBody((current) => (current === '' ? draft.body : `${draft.body}\n${current}`))
       setReferences((current) => (current.length === 0 ? draft.references : current))
       setIntent(draft.intent)
       setAskSession(draft.askSession)
@@ -180,7 +192,7 @@ export function MessageComposer({
           {action.busy ? t('kubecode.channel.sending') : t('kubecode.channel.send')}
         </Button>
       </div>
-      {intent === 'request' && (
+      {intent !== 'say' && (
         <p className="kubecode-research-muted">{t('kubecode.channel.intent.requestHint')}</p>
       )}
       {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}

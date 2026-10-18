@@ -397,7 +397,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         navigatorSearchRef={navigatorSearchRef}
         onContextOpenChange={setContextOpen}
         onNavigatorQueryChange={setNavigatorQuery}
-        onOpenSession={selection.openSession}
+        onOpenSession={(nextProjectId, nextConversationId) => {
+          showSessions()
+          selection.openSession(nextProjectId, nextConversationId)
+        }}
         onRetryConnection={reconciliation.retry}
         onSessionSidebarOpenChange={setSessionSidebarOpen}
         onTerminalOpenChange={setTerminalOpen}
@@ -536,6 +539,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   showSessions()
                   selection.openSession(projectId, nextConversationId)
                 }}
+                onOpenThread={(threadId) => {
+                  setResearchSelection(null)
+                  setChannelSelection({ projectId, threadId })
+                }}
                 projectId={projectId}
                 researchId={researchId}
                 t={t}
@@ -640,7 +647,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           untitledSession: t('kubecode.untitledSession'),
         }}
         events={reconciliation.workspaceEvents}
-        onOpenSession={selection.openSession}
+        onOpenSession={(nextProjectId, nextConversationId) => {
+          showSessions()
+          selection.openSession(nextProjectId, nextConversationId)
+        }}
         preferences={notifications}
         projects={projects}
       />

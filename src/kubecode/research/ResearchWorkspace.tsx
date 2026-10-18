@@ -18,6 +18,7 @@ import { ResearchExportPanel } from './ResearchExportPanel'
 import { ResearchImportPanel } from './ResearchImportPanel'
 import { ResearchFindingsPanel } from './ResearchFindingsPanel'
 import { ResearchRoundsPanel } from './ResearchRoundsPanel'
+import { ResearchThreadsPanel } from './ResearchThreadsPanel'
 import { useAction } from './useAction'
 import { useResearchBundle, useResearchImports } from './useResearch'
 
@@ -30,6 +31,8 @@ export type ResearchWorkspaceProps = {
   onClose: () => void
   onConversationCreated: (conversation: Conversation) => void
   onOpenSession: (conversationId: string) => void
+  /** Opens a Workspace-conversation Thread; omitted when there is no conversation surface. */
+  onOpenThread?: (threadId: string) => void
   projectId: string
   researchId: string
   t: Translator
@@ -53,6 +56,7 @@ export function ResearchWorkspace({
   onClose,
   onConversationCreated,
   onOpenSession,
+  onOpenThread,
   projectId,
   researchId,
   t,
@@ -157,6 +161,17 @@ export function ResearchWorkspace({
             onOpenSession={onOpenSession}
             t={t}
           />
+          {onOpenThread && (
+            <ResearchThreadsPanel
+              api={api}
+              connectionState={connectionState}
+              events={events}
+              onOpenThread={onOpenThread}
+              projectId={projectId}
+              researchId={researchId}
+              t={t}
+            />
+          )}
           <ResearchImportPanel
             api={api}
             detail={detail}
