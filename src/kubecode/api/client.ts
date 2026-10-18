@@ -4,6 +4,10 @@ import type {
   AgentRun,
   AgentSessionState,
   AgentEvent,
+  Channel,
+  ChannelMessage,
+  ChannelMessagePage,
+  ChannelThread,
   ComposerContextKind,
   ComposerContextRegistration,
   ComposerContextSelector,
@@ -18,6 +22,7 @@ import type {
   GitDiffResult,
   GitMutation,
   GitStatus,
+  NewChannelMessage,
   Project,
   ProjectContextDetail,
   ProjectContextDocument,
@@ -303,6 +308,92 @@ export class KubecodeApi {
 
   ilinkRemoveQuickPrompt(slot: number): Promise<void> {
     return this.request(`/ilink/quick-prompts/${slot}`, { method: 'DELETE' })
+  }
+
+  listChannels(projectId: string): Promise<Channel[]> {
+    return this.request(`${this.projectPath(projectId)}/channels`)
+  }
+
+  listChannelMessages(
+    projectId: string,
+    channelId: string,
+    options: { threadId?: string | null; beforeSeq?: number; afterSeq?: number; limit?: number } = {},
+  ): Promise<ChannelMessagePage> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/messages?${query({
+        thread_id: options.threadId ?? undefined,
+        before_seq: options.beforeSeq,
+        after_seq: options.afterSeq,
+        limit: options.limit,
+      })}`,
+    )
+  }
+
+  /** Posts as the researcher; the server sets attribution. A repeated client id replays. */
+  postChannelMessage(
+    projectId: string,
+    channelId: string,
+    message: NewChannelMessage,
+  ): Promise<ChannelMessage> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          body: message.body,
+          thread_id: message.threadId ?? undefined,
+          client_message_id: message.clientMessageId,
+          intent: message.intent,
+          mentions: message.mentions,
+          references: message.references,
+        }),
+      },
+    )
+  }
+
+  listChannelThreads(
+    projectId: string,
+    channelId: string,
+    researchId?: string,
+  ): Promise<ChannelThread[]> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/threads?${query({
+        research_id: researchId,
+      })}`,
+    )
+  }
+
+  startChannelThread(
+    projectId: string,
+    channelId: string,
+    rootMessageId: string,
+    title?: string,
+  ): Promise<ChannelThread> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/threads`,
+      { method: 'POST', body: JSON.stringify({ root_message_id: rootMessageId, title }) },
+    )
+  }
+
+  /** Links a Thread to a question (and round), or unlinks it with nulls. Revision-checked. */
+  linkChannelThread(
+    projectId: string,
+    threadId: string,
+    expectedRevision: number,
+    researchId: string | null,
+    roundId: string | null = null,
+  ): Promise<ChannelThread> {
+    return this.request(
+      `${this.projectPath(projectId)}/threads/${encodeURIComponent(threadId)}/link`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          expected_revision: expectedRevision,
+          research_id: researchId,
+          round_id: roundId,
+        }),
+      },
+    )
   }
 
   listResearch(projectId: string, includeArchived = false): Promise<ResearchSummary[]> {

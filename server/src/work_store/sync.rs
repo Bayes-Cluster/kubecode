@@ -270,10 +270,14 @@ pub(crate) fn drain_team(tx: &Transaction<'_>, team_id: &str) -> Result<(), Work
            AND task_id IN (SELECT id FROM work_items WHERE team_id = ?1 AND origin = 'legacy_team')",
         [team_id],
     )?;
-    // The Team's experiments are the work's evidence: detach them from the Team
-    // so deleting it does not cascade them away.
+    // Experiments of a Team that ran in the Project's own tree are the work's
+    // evidence: detach them so deleting the Team does not cascade them away.
+    // A Team with a private worktree took its artifacts with it; those
+    // experiments go with the Team and references to them read as removed.
     tx.execute(
-        "UPDATE experiments SET team_id = NULL WHERE team_id = ?1",
+        "UPDATE experiments SET team_id = NULL
+         WHERE team_id = ?1
+           AND team_id IN (SELECT id FROM teams WHERE workspace_path IS NULL)",
         [team_id],
     )?;
     tx.execute(

@@ -60,3 +60,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0213](0213-durable-research-experiments.md) | Durable research experiments, waits, and execution envelopes |
 | [0214](0214-project-context-discovery.md) | Project context discovery, references, and research handoff |
 | [0215](0215-workspace-owned-research-work.md) | Workspace-owned research work, fenced coordination, and one Kanban projection |
+| [0216](0216-workspace-conversation-and-research-threads.md) | Shared Workspace conversation with research Threads |

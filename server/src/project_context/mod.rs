@@ -15,9 +15,11 @@ use base64::Engine as _;
 use sha2::{Digest, Sha256};
 
 use crate::agent_store::{AgentStore, Conversation};
+use crate::channel_store::{AuthorKind, ChannelStore, Message, MessageQuery, Scope, Thread};
 use crate::experiment_store::{Experiment, ExperimentStore};
 use crate::research_store::{Finding, LinkKind, ResearchRound, ResearchStore};
 use crate::teams::{Team, TeamStore};
+use crate::work_store::{WorkFilter, WorkStore, WorkSummary};
 use crate::workspace::WorkspaceService;
 
 /// Bytes of an artifact or log shown in one read.
@@ -28,6 +30,8 @@ pub struct ProjectContext {
     teams: Arc<TeamStore>,
     research: Arc<ResearchStore>,
     experiments: Arc<ExperimentStore>,
+    work: Arc<WorkStore>,
+    channels: Arc<ChannelStore>,
     workspace: Arc<WorkspaceService>,
 }
 
@@ -78,6 +82,8 @@ impl ProjectContext {
         teams: Arc<TeamStore>,
         research: Arc<ResearchStore>,
         experiments: Arc<ExperimentStore>,
+        work: Arc<WorkStore>,
+        channels: Arc<ChannelStore>,
         workspace: Arc<WorkspaceService>,
     ) -> Self {
         Self {
@@ -85,6 +91,8 @@ impl ProjectContext {
             teams,
             research,
             experiments,
+            work,
+            channels,
             workspace,
         }
     }
@@ -285,6 +293,39 @@ impl ProjectContext {
                     tasks.reverse();
                     for task in cap(tasks, truncated) {
                         out.push(self.task_item(team, &task));
+                    }
+                }
+            }
+        }
+        if wanted(ContextKind::Work) {
+            let filter = WorkFilter {
+                include_closed: true,
+                ..WorkFilter::default()
+            };
+            for summary in cap(
+                self.work.list(project_id, &filter).map_err(source_error)?,
+                truncated,
+            ) {
+                out.push(self.work_item(&summary));
+            }
+        }
+        if wanted(ContextKind::Channel) || wanted(ContextKind::Thread) {
+            for channel in self
+                .channels
+                .existing_channels(project_id)
+                .map_err(source_error)?
+            {
+                if wanted(ContextKind::Channel) {
+                    out.push(self.channel_item(&channel));
+                }
+                if wanted(ContextKind::Thread) {
+                    for thread in cap(
+                        self.channels
+                            .threads(project_id, &channel.id, None)
+                            .map_err(source_error)?,
+                        truncated,
+                    ) {
+                        out.push(self.thread_item(&thread));
                     }
                 }
             }
@@ -494,6 +535,84 @@ impl ProjectContext {
                 parent: Some(ContextRef::new(ContextKind::Team, &team.id)),
                 state: state_label(&task.status),
                 ..Provenance::default()
+            },
+            availability: Availability::Available,
+        }
+    }
+
+    fn work_item(&self, summary: &WorkSummary) -> ContextItem {
+        let item = &summary.item;
+        let parent = match (&item.round_id, &item.research_id) {
+            (Some(round), _) => Some(ContextRef::new(ContextKind::Round, round)),
+            (None, Some(research)) => Some(ContextRef::new(ContextKind::Research, research)),
+            _ => None,
+        };
+        ContextItem {
+            reference: ContextRef::at(ContextKind::Work, &item.id, item.state_revision.to_string()),
+            title: item.title.clone(),
+            summary: summarize(&item.description),
+            provenance: Provenance {
+                author: Some("agent".into()),
+                updated_at: Some(item.updated_at.clone()),
+                research_id: item.research_id.clone(),
+                parent,
+                state: Some(format!(
+                    "{} / {}",
+                    item.stage.as_str(),
+                    item.lifecycle.as_str()
+                )),
+            },
+            availability: Availability::Available,
+        }
+    }
+
+    fn channel_item(&self, channel: &crate::channel_store::Channel) -> ContextItem {
+        ContextItem {
+            reference: ContextRef::at(
+                ContextKind::Channel,
+                &channel.id,
+                channel.last_seq.to_string(),
+            ),
+            title: channel.name.clone(),
+            summary: format!("Workspace channel with {} messages", channel.last_seq),
+            provenance: Provenance {
+                author: Some("researcher".into()),
+                updated_at: Some(channel.created_at.clone()),
+                state: channel.is_default.then(|| "default".to_owned()),
+                ..Provenance::default()
+            },
+            availability: Availability::Available,
+        }
+    }
+
+    /// A Thread's revision changes with every reply and every link change.
+    fn thread_item(&self, thread: &Thread) -> ContextItem {
+        ContextItem {
+            reference: ContextRef::at(
+                ContextKind::Thread,
+                &thread.id,
+                digest(&[&thread.last_seq.to_string(), &thread.revision.to_string()]),
+            ),
+            title: thread.title.clone(),
+            summary: format!(
+                "Thread with {} replies{}",
+                thread.reply_count,
+                if thread.research_id.is_some() {
+                    ", linked to a research question"
+                } else {
+                    ""
+                }
+            ),
+            provenance: Provenance {
+                author: Some("researcher".into()),
+                updated_at: Some(thread.updated_at.clone()),
+                research_id: thread.research_id.clone(),
+                parent: Some(ContextRef::new(ContextKind::Channel, &thread.channel_id)),
+                state: Some(if thread.research_id.is_some() {
+                    "linked".into()
+                } else {
+                    "open".into()
+                }),
             },
             availability: Availability::Available,
         }
@@ -778,6 +897,21 @@ impl ProjectContext {
                 .experiment(project_id, id)?
                 .map(|e| self.experiment_item(&e)),
             ContextKind::Artifact => self.artifact_lookup(project_id, id)?,
+            ContextKind::Work => match self.work.summary(project_id, id) {
+                Ok(summary) => Some(self.work_item(&summary)),
+                Err(crate::work_store::WorkError::NotFound) => None,
+                Err(error) => return Err(source_error(error)),
+            },
+            ContextKind::Thread => match self.channels.thread(project_id, id) {
+                Ok(thread) => Some(self.thread_item(&thread)),
+                Err(crate::channel_store::ChannelError::ThreadNotFound) => None,
+                Err(error) => return Err(source_error(error)),
+            },
+            ContextKind::Channel => match self.channels.channel(project_id, id) {
+                Ok(channel) => Some(self.channel_item(&channel)),
+                Err(crate::channel_store::ChannelError::NotFound) => None,
+                Err(error) => return Err(source_error(error)),
+            },
         })
     }
 
@@ -1008,6 +1142,13 @@ impl ProjectContext {
                 depth,
                 &mut doc,
             )?,
+            ContextKind::Work => self.read_work(project_id, &reference.id, depth, &mut doc)?,
+            ContextKind::Thread => {
+                self.read_thread(project_id, &reference.id, depth, cursor, &mut doc)?
+            }
+            ContextKind::Channel => {
+                self.read_channel(project_id, &reference.id, depth, cursor, &mut doc)?
+            }
         }
         doc.bound();
         Ok(doc)
@@ -1487,6 +1628,244 @@ impl ProjectContext {
             }
             doc.list("Owned paths", &task.owned_paths);
             doc.list("Depends on", &task.dependencies);
+        }
+        Ok(())
+    }
+
+    fn read_work(
+        &self,
+        project_id: &str,
+        id: &str,
+        depth: u8,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let summary = self
+            .work
+            .summary(project_id, id)
+            .map_err(|error| match error {
+                crate::work_store::WorkError::NotFound => ContextError::NotFound,
+                other => source_error(other),
+            })?;
+        let item = &summary.item;
+        doc.section(
+            "State",
+            &format!(
+                "stage: {}\ncondition: {}{}\nlifecycle: {}\nacceptance: {}\noutcome: {}",
+                item.stage.as_str(),
+                item.condition.as_str(),
+                item.condition_reason
+                    .as_deref()
+                    .map(|reason| format!(" ({reason})"))
+                    .unwrap_or_default(),
+                item.lifecycle.as_str(),
+                item.acceptance.as_str(),
+                item.outcome.as_str(),
+            ),
+        );
+        if let Some(round) = &item.round_id
+            && let Ok(Some(round_item)) =
+                self.lookup(project_id, &ContextRef::new(ContextKind::Round, round))
+        {
+            doc.related.push(round_item);
+        }
+        if depth >= 1 {
+            doc.section("Description", &item.description);
+            if let Some(plan) = &item.plan {
+                doc.section("Plan", plan);
+            }
+            if let Some(result) = &item.result {
+                doc.section("Result", result);
+            }
+            let results: Vec<String> = summary
+                .results
+                .iter()
+                .map(|result| format!("{} {}:{}", result.role.as_str(), result.kind, result.ref_id))
+                .collect();
+            doc.list("Evidence and results", &results);
+        }
+        if depth >= 2 {
+            if let Some(verification) = &item.verification {
+                doc.section("Verification", verification);
+            }
+            doc.list(
+                "Depends on",
+                &summary
+                    .dependency_states
+                    .iter()
+                    .map(|dependency| format!("{} ({})", dependency.id, dependency.stage.as_str()))
+                    .collect::<Vec<_>>(),
+            );
+            if let Ok(attempts) = self.work.attempts(project_id, id) {
+                doc.list(
+                    "Attempts",
+                    &attempts
+                        .iter()
+                        .map(|attempt| format!("{} [{}]", attempt.id, attempt.status.as_str()))
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Messages as `#seq author: text`, oldest first, with who wrote each. A
+    /// body's own line breaks are indented so no message can pose as another
+    /// author's line.
+    fn message_lines(&self, project_id: &str, messages: &[Message]) -> Vec<String> {
+        messages
+            .iter()
+            .map(|message| {
+                let author = match message.author_kind {
+                    AuthorKind::Researcher => "researcher".to_owned(),
+                    AuthorKind::System => "system".to_owned(),
+                    AuthorKind::Agent => message
+                        .author_ref
+                        .as_deref()
+                        .and_then(|session| {
+                            self.agents
+                                .visible_conversation(project_id, session)
+                                .ok()
+                                .flatten()
+                        })
+                        .map(|conversation| {
+                            let title: String = conversation
+                                .title
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            format!("agent {title}")
+                        })
+                        .unwrap_or_else(|| "agent".to_owned()),
+                };
+                let (text, _) = clip(&message.body, 1_500);
+                let text = text.replace('\n', "\n    ");
+                format!("#{} {author}: {text}", message.seq)
+            })
+            .collect()
+    }
+
+    /// One page of a scope's messages that fits a section: the newest that fit
+    /// are shown, and the cursor starts at the oldest one shown, so nothing is
+    /// cut from view and older messages stay reachable.
+    fn read_messages(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        scope: Scope<'_>,
+        cursor: Option<&str>,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let before_seq = match cursor {
+            Some(_) => Some(decode_cursor(cursor)? as u64),
+            None => None,
+        };
+        let page = self
+            .channels
+            .messages(
+                project_id,
+                channel_id,
+                MessageQuery {
+                    scope,
+                    before_seq,
+                    after_seq: None,
+                    limit: Some(TURN_PAGE * 2),
+                },
+            )
+            .map_err(source_error)?;
+        let lines = self.message_lines(project_id, &page.messages);
+        let mut budget = SECTION_CHARS;
+        let mut shown = 0;
+        for line in lines.iter().rev() {
+            let cost = line.chars().count() + 1;
+            if cost > budget && shown > 0 {
+                break;
+            }
+            budget = budget.saturating_sub(cost);
+            shown += 1;
+        }
+        let first_shown = lines.len() - shown;
+        doc.section_verbatim("Messages (oldest first)", &lines[first_shown..].join("\n"));
+        let older = first_shown > 0 || page.has_more;
+        if older && let Some(oldest) = page.messages.get(first_shown) {
+            doc.next_cursor = Some(encode_cursor(oldest.seq as usize));
+            doc.note("Older messages exist; read again with next_cursor for them.");
+        }
+        Ok(())
+    }
+
+    fn read_thread(
+        &self,
+        project_id: &str,
+        id: &str,
+        depth: u8,
+        cursor: Option<&str>,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let thread = self
+            .channels
+            .thread(project_id, id)
+            .map_err(|error| match error {
+                crate::channel_store::ChannelError::ThreadNotFound => ContextError::NotFound,
+                other => source_error(other),
+            })?;
+        doc.note(
+            "Workspace conversation: attributed discussion, not verified findings and not an approved change to any brief.",
+        );
+        match &thread.research_id {
+            Some(research_id) => {
+                if let Ok(question) = self.research.get(project_id, research_id) {
+                    doc.related.push(self.research_item(
+                        &question.id,
+                        &question.brief.title,
+                        &question.brief.question,
+                        question.revision,
+                        &question.updated_at,
+                        state_label(&question.status),
+                    ));
+                }
+            }
+            None => doc.note("This Thread is not linked to a research question."),
+        }
+        if depth >= 1 {
+            self.read_messages(
+                project_id,
+                &thread.channel_id,
+                Scope::Thread(id),
+                cursor,
+                doc,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn read_channel(
+        &self,
+        project_id: &str,
+        id: &str,
+        depth: u8,
+        cursor: Option<&str>,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        self.channels
+            .channel(project_id, id)
+            .map_err(|error| match error {
+                crate::channel_store::ChannelError::NotFound => ContextError::NotFound,
+                other => source_error(other),
+            })?;
+        doc.note(
+            "Workspace conversation: a channel can hold several research topics. Read a Thread for one topic's context.",
+        );
+        for thread in self
+            .channels
+            .threads(project_id, id, None)
+            .map_err(source_error)?
+            .iter()
+            .take(10)
+        {
+            doc.related.push(self.thread_item(thread));
+        }
+        if depth >= 1 {
+            self.read_messages(project_id, id, Scope::Channel, cursor, doc)?;
         }
         Ok(())
     }

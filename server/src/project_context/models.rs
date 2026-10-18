@@ -58,6 +58,9 @@ text_enum!(ContextKind {
     Import => "import",
     Experiment => "experiment",
     Artifact => "artifact",
+    Work => "work",
+    Thread => "thread",
+    Channel => "channel",
 });
 
 text_enum!(Detail {

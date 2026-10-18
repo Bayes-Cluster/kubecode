@@ -1,0 +1,279 @@
+//! Workspace conversation routes (ADR 0216). Every handler first validates the
+//! Project from the route; the store scopes every lookup by it. The browser
+//! authors `researcher` messages only: authorship is never taken from the
+//! request body, and nothing here starts an Agent.
+
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, put};
+use axum::{Json, Router};
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::app_state::AppState;
+use crate::channel_store::{
+    AuthorKind, Channel, ChannelError, ContextRef, Intent, Mention, Message, MessagePage,
+    MessageQuery, NewMessage, Scope, Thread,
+};
+use crate::workspace::WorkspaceError;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/projects/{project_id}/channels", get(list_channels))
+        .route(
+            "/projects/{project_id}/channels/{channel_id}/messages",
+            get(list_messages).post(post_message),
+        )
+        .route(
+            "/projects/{project_id}/channels/{channel_id}/threads",
+            get(list_threads).post(start_thread),
+        )
+        .route(
+            "/projects/{project_id}/threads/{thread_id}",
+            get(get_thread),
+        )
+        .route(
+            "/projects/{project_id}/threads/{thread_id}/link",
+            put(link_thread),
+        )
+}
+
+enum ChannelApiError {
+    Channel(ChannelError),
+    Workspace(WorkspaceError),
+}
+
+impl From<ChannelError> for ChannelApiError {
+    fn from(error: ChannelError) -> Self {
+        Self::Channel(error)
+    }
+}
+
+impl From<WorkspaceError> for ChannelApiError {
+    fn from(error: WorkspaceError) -> Self {
+        Self::Workspace(error)
+    }
+}
+
+impl IntoResponse for ChannelApiError {
+    fn into_response(self) -> Response {
+        let mut extra = serde_json::Map::new();
+        let (status, code, message) = match self {
+            Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
+                StatusCode::NOT_FOUND,
+                "not_found",
+                format!("project not found: {id}"),
+            ),
+            Self::Workspace(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                error.to_string(),
+            ),
+            Self::Channel(error) => match error {
+                ChannelError::NotFound => (
+                    StatusCode::NOT_FOUND,
+                    "channel_not_found",
+                    error.to_string(),
+                ),
+                ChannelError::MessageNotFound => (
+                    StatusCode::NOT_FOUND,
+                    "message_not_found",
+                    error.to_string(),
+                ),
+                ChannelError::ThreadNotFound => {
+                    (StatusCode::NOT_FOUND, "thread_not_found", error.to_string())
+                }
+                ChannelError::Invalid(_) => (
+                    StatusCode::BAD_REQUEST,
+                    "invalid_conversation",
+                    error.to_string(),
+                ),
+                ChannelError::NoIntent => (
+                    StatusCode::BAD_REQUEST,
+                    "message_has_no_intent",
+                    error.to_string(),
+                ),
+                ChannelError::KeyReuse => (
+                    StatusCode::CONFLICT,
+                    "message_key_reused",
+                    error.to_string(),
+                ),
+                ChannelError::Stale { current } => {
+                    extra.insert("current_revision".into(), json!(current));
+                    (
+                        StatusCode::CONFLICT,
+                        "thread_revision_conflict",
+                        error.to_string(),
+                    )
+                }
+                ChannelError::Database(_) | ChannelError::Json(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "conversation storage failed".to_owned(),
+                ),
+            },
+        };
+        extra.insert("code".into(), json!(code));
+        extra.insert("message".into(), json!(message));
+        (status, Json(serde_json::Value::Object(extra))).into_response()
+    }
+}
+
+fn check_project(state: &AppState, project_id: &str) -> Result<(), ChannelApiError> {
+    state.workspace.project_path(project_id)?;
+    Ok(())
+}
+
+/// Created, or the stored record on a replay.
+fn created_or_ok<T: serde::Serialize>(created: bool, value: T) -> Response {
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    (status, Json(value)).into_response()
+}
+
+async fn list_channels(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<Vec<Channel>>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    Ok(Json(state.channels.channels(&project_id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct MessagesQuery {
+    thread_id: Option<String>,
+    before_seq: Option<u64>,
+    after_seq: Option<u64>,
+    limit: Option<usize>,
+}
+
+async fn list_messages(
+    State(state): State<AppState>,
+    Path((project_id, channel_id)): Path<(String, String)>,
+    Query(query): Query<MessagesQuery>,
+) -> Result<Json<MessagePage>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    let scope = match query.thread_id.as_deref() {
+        Some(thread_id) => Scope::Thread(thread_id),
+        None => Scope::Channel,
+    };
+    Ok(Json(state.channels.messages(
+        &project_id,
+        &channel_id,
+        MessageQuery {
+            scope,
+            before_seq: query.before_seq,
+            after_seq: query.after_seq,
+            limit: query.limit,
+        },
+    )?))
+}
+
+#[derive(Debug, Deserialize)]
+struct PostMessageRequest {
+    body: String,
+    thread_id: Option<String>,
+    client_message_id: Option<String>,
+    intent: Option<Intent>,
+    #[serde(default)]
+    mentions: Vec<Mention>,
+    #[serde(default)]
+    references: Vec<ContextRef>,
+}
+
+async fn post_message(
+    State(state): State<AppState>,
+    Path((project_id, channel_id)): Path<(String, String)>,
+    Json(request): Json<PostMessageRequest>,
+) -> Result<Response, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    let (message, created): (Message, bool) = state.channels.post(
+        &project_id,
+        &channel_id,
+        NewMessage {
+            thread_id: request.thread_id.as_deref(),
+            body: &request.body,
+            author_kind: Some(AuthorKind::Researcher),
+            author_ref: None,
+            intent: request.intent,
+            mentions: &request.mentions,
+            references: &request.references,
+            client_message_id: request.client_message_id.as_deref(),
+        },
+    )?;
+    Ok(created_or_ok(created, message))
+}
+
+#[derive(Debug, Deserialize)]
+struct ThreadsQuery {
+    research_id: Option<String>,
+}
+
+async fn list_threads(
+    State(state): State<AppState>,
+    Path((project_id, channel_id)): Path<(String, String)>,
+    Query(query): Query<ThreadsQuery>,
+) -> Result<Json<Vec<Thread>>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    Ok(Json(state.channels.threads(
+        &project_id,
+        &channel_id,
+        query.research_id.as_deref(),
+    )?))
+}
+
+#[derive(Debug, Deserialize)]
+struct StartThreadRequest {
+    root_message_id: String,
+    title: Option<String>,
+}
+
+async fn start_thread(
+    State(state): State<AppState>,
+    Path((project_id, channel_id)): Path<(String, String)>,
+    Json(request): Json<StartThreadRequest>,
+) -> Result<Response, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    let (thread, created) = state.channels.start_thread(
+        &project_id,
+        &channel_id,
+        &request.root_message_id,
+        request.title.as_deref(),
+        Some("researcher"),
+    )?;
+    Ok(created_or_ok(created, thread))
+}
+
+async fn get_thread(
+    State(state): State<AppState>,
+    Path((project_id, thread_id)): Path<(String, String)>,
+) -> Result<Json<Thread>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    Ok(Json(state.channels.thread(&project_id, &thread_id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct LinkThreadRequest {
+    expected_revision: u64,
+    research_id: Option<String>,
+    round_id: Option<String>,
+}
+
+async fn link_thread(
+    State(state): State<AppState>,
+    Path((project_id, thread_id)): Path<(String, String)>,
+    Json(request): Json<LinkThreadRequest>,
+) -> Result<Json<Thread>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    Ok(Json(state.channels.link_thread(
+        &project_id,
+        &thread_id,
+        request.expected_revision,
+        request.research_id.as_deref(),
+        request.round_id.as_deref(),
+    )?))
+}

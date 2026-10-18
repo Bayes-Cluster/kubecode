@@ -29,7 +29,7 @@ const LINK_EVENT_PREFIXES = ['session_', 'team_']
  * stream after it dropped (the server replays from the cursor, but a restart
  * or lost cursor is only repaired by reading the authoritative records again).
  */
-function useRefreshTick(
+export function useRefreshTick(
   events: WorkspaceEvent[],
   connectionState: WorkspaceConnectionState,
   matches: (event: WorkspaceEvent) => boolean,

@@ -15,6 +15,9 @@ import {
   type RankedCommandPaletteItem,
 } from '../commandPalette'
 import { ContextWorkbench } from '../ContextWorkbench'
+import { ChannelNavigator } from '../channel/ChannelNavigator'
+import { ChannelWorkspace } from '../channel/ChannelWorkspace'
+import { useChannelThreads, useDefaultChannel } from '../channel/useChannel'
 import { NewResearchDialog } from '../research/NewResearchDialog'
 import { ResearchNavigator } from '../research/ResearchNavigator'
 import { ResearchWorkspace } from '../research/ResearchWorkspace'
@@ -71,6 +74,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [sessionDialog, setSessionDialog] = useState(false)
   const [researchDialog, setResearchDialog] = useState(false)
   const [researchSelection, setResearchSelection] = useState<{ projectId: string; researchId: string } | null>(null)
+  const [channelSelection, setChannelSelection] = useState<{ projectId: string; threadId: string | null } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
@@ -147,6 +151,22 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const researchId = researchSelection && researchSelection.projectId === projectId
     ? researchSelection.researchId
     : null
+  const channelView = channelSelection && channelSelection.projectId === projectId
+    ? channelSelection
+    : null
+  const defaultChannel = useDefaultChannel(api, projectId)
+  const channelThreads = useChannelThreads(
+    api,
+    projectId,
+    defaultChannel.channel?.id ?? null,
+    reconciliation.workspaceEvents,
+    reconciliation.connectionState,
+  )
+  /** Back to the Session surface: neither research nor the conversation is shown. */
+  const showSessions = useCallback(() => {
+    setResearchSelection(null)
+    setChannelSelection(null)
+  }, [])
 
   const selection = useProjectSelection(api, t, {
     projectId,
@@ -294,11 +314,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [])
 
   const handleConversationCreated = useCallback((created: Conversation) => {
-    setResearchSelection(null)
+    showSessions()
     setConversations((current) => upsertConversation(current, created))
     setAllConversations((current) => upsertConversation(current, created))
     setConversationId(created.id)
-  }, [])
+  }, [showSessions])
 
   const handleConversationRemoved = useCallback((removedId: string) => {
     setConversations((current) => {
@@ -377,7 +397,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         navigatorSearchRef={navigatorSearchRef}
         onContextOpenChange={setContextOpen}
         onNavigatorQueryChange={setNavigatorQuery}
-        onOpenSession={selection.openSession}
+        onOpenSession={(nextProjectId, nextConversationId) => {
+          showSessions()
+          selection.openSession(nextProjectId, nextConversationId)
+        }}
         onRetryConnection={reconciliation.retry}
         onSessionSidebarOpenChange={setSessionSidebarOpen}
         onTerminalOpenChange={setTerminalOpen}
@@ -426,7 +449,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               projects.find((candidate) => candidate.id === nextProjectId),
             )}
             onProjectSelect={(nextProjectId) => {
-              setResearchSelection(null)
+              showSessions()
               selection.selectProject(nextProjectId)
             }}
             onProjectToggle={selection.toggleProjectExpanded}
@@ -438,22 +461,40 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             }}
             onResize={resizeSessionSidebar}
             onSelect={(nextProjectId, nextConversationId) => {
-              setResearchSelection(null)
+              showSessions()
               selection.openSession(nextProjectId, nextConversationId)
             }}
             projects={projects}
             projectRuns={reconciliation.projectRuns}
             query={navigatorQuery}
             researchSection={projectId ? (
-              <ResearchNavigator
-                activeResearchId={researchId}
-                items={research.items}
-                onNew={() => setResearchDialog(true)}
-                onReload={research.reload}
-                onSelect={(nextResearchId) => setResearchSelection({ projectId, researchId: nextResearchId })}
-                status={research.status}
-                t={t}
-              />
+              <>
+                <ChannelNavigator
+                  active={channelView !== null}
+                  onOpen={() => {
+                    setResearchSelection(null)
+                    setChannelSelection({ projectId, threadId: null })
+                  }}
+                  onOpenThread={(threadId) => {
+                    setResearchSelection(null)
+                    setChannelSelection({ projectId, threadId })
+                  }}
+                  t={t}
+                  threads={channelThreads.threads}
+                />
+                <ResearchNavigator
+                  activeResearchId={researchId}
+                  items={research.items}
+                  onNew={() => setResearchDialog(true)}
+                  onReload={research.reload}
+                  onSelect={(nextResearchId) => {
+                    setChannelSelection(null)
+                    setResearchSelection({ projectId, researchId: nextResearchId })
+                  }}
+                  status={research.status}
+                  t={t}
+                />
+              </>
             ) : null}
             t={t}
             teams={teams}
@@ -463,7 +504,28 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
         <div className="kubecode-main-stack" ref={mainStackRef}>
           <div className="kubecode-session-context-row">
-            {researchId && projectId ? (
+            {channelView && projectId ? (
+              <ChannelWorkspace
+                api={api}
+                connectionState={reconciliation.connectionState}
+                conversations={sessionCatalog}
+                events={reconciliation.workspaceEvents}
+                initialThreadId={channelView.threadId}
+                key={`${projectId}:${channelView.threadId ?? ''}`}
+                onClose={showSessions}
+                onOpenResearch={(nextResearchId) => {
+                  setChannelSelection(null)
+                  setResearchSelection({ projectId, researchId: nextResearchId })
+                }}
+                onOpenSession={(nextConversationId) => {
+                  showSessions()
+                  selection.openSession(projectId, nextConversationId)
+                }}
+                projectId={projectId}
+                research={research.items}
+                t={t}
+              />
+            ) : researchId && projectId ? (
               <ResearchWorkspace
                 agents={agents}
                 api={api}
@@ -471,11 +533,15 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 conversations={sessionCatalog}
                 events={reconciliation.workspaceEvents}
                 key={researchId}
-                onClose={() => setResearchSelection(null)}
+                onClose={showSessions}
                 onConversationCreated={handleConversationCreated}
                 onOpenSession={(nextConversationId) => {
-                  setResearchSelection(null)
+                  showSessions()
                   selection.openSession(projectId, nextConversationId)
+                }}
+                onOpenThread={(threadId) => {
+                  setResearchSelection(null)
+                  setChannelSelection({ projectId, threadId })
                 }}
                 projectId={projectId}
                 researchId={researchId}
@@ -581,7 +647,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           untitledSession: t('kubecode.untitledSession'),
         }}
         events={reconciliation.workspaceEvents}
-        onOpenSession={selection.openSession}
+        onOpenSession={(nextProjectId, nextConversationId) => {
+          showSessions()
+          selection.openSession(nextProjectId, nextConversationId)
+        }}
         preferences={notifications}
         projects={projects}
       />
@@ -655,7 +724,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         open={researchDialog}
         onCreated={(created) => {
           research.reload()
-          if (projectId) setResearchSelection({ projectId, researchId: created.id })
+          if (projectId) {
+            setChannelSelection(null)
+            setResearchSelection({ projectId, researchId: created.id })
+          }
         }}
         onOpenChange={setResearchDialog}
         projectId={projectId}
