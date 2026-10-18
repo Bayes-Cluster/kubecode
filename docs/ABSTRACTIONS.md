@@ -1231,3 +1231,16 @@ Sessions, attempts open at once, attempts ever started, and whether it is
 paused. Only the researcher sets them. They are enforced where work is
 assigned and attempts begin, so no command path can exceed them. See ADR 0217.
 
+## Work board
+
+The **work board** is the one Kanban of a Workspace: a server-composed
+projection of the canonical work records, filtered but never duplicated.
+Research question, round, Thread, Team, and Agent views are filters over the
+same cards. A card shows the stage (where the work is) separately from the
+condition (why it is not moving: waiting, blocked, paused, needs input) and
+from its lifecycle (closed work keeps its reason in its own lane). Retries are
+attempts under one card. A drag expresses a supported command (start, accept,
+request changes, close) and cannot complete work or bypass a check; commands
+carry the state revision the card was shown at and are refused if it moved on.
+See ADR 0218.
+

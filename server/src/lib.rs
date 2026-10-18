@@ -30,6 +30,7 @@ pub mod team_store;
 pub mod teams;
 pub mod terminal;
 pub mod work_agent;
+pub mod work_api;
 pub mod work_mcp;
 pub mod work_store;
 pub mod workspace;

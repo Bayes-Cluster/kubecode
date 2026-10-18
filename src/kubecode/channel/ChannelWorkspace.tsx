@@ -30,6 +30,8 @@ export type ChannelWorkspaceProps = {
   onClose: () => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
+  /** Opens the one work board filtered to what came from a Thread. */
+  onOpenWork?: (filter: { thread_id: string }) => void
   projectId: string
   research: ResearchSummary[]
   t: Translator
@@ -49,6 +51,7 @@ export function ChannelWorkspace({
   onClose,
   onOpenResearch,
   onOpenSession,
+  onOpenWork,
   projectId,
   research,
   t,
@@ -154,6 +157,7 @@ export function ChannelWorkspace({
           thread={thread}
           onClose={() => setThreadId(null)}
           onOpenReference={openReference}
+          onOpenWork={onOpenWork}
           onThreadChanged={reloadThreads}
         />
       )}

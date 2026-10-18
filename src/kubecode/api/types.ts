@@ -1092,3 +1092,183 @@ export type NewChannelMessage = {
   mentions?: ChannelMention[]
   references?: ProjectContextRef[]
 }
+
+/** The Workspace work board (ADR 0218): one projection of the canonical work records. */
+export type WorkStage = 'planned' | 'ready' | 'executing' | 'analyzing' | 'review' | 'done'
+export type WorkCondition = 'none' | 'waiting' | 'blocked' | 'paused' | 'needs_input'
+export type WorkLifecycle = 'active' | 'canceled' | 'abandoned' | 'superseded'
+export type WorkAcceptance = 'pending' | 'accepted' | 'rejected'
+export type WorkOutcome = 'unknown' | 'supported' | 'refuted' | 'inconclusive'
+export type WorkOrigin = 'native' | 'legacy_team'
+export type WorkAttemptStatus =
+  | 'queued'
+  | 'running'
+  | 'needs_report'
+  | 'result_submitted'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+export type WorkItem = {
+  id: string
+  project_id: string
+  research_id: string | null
+  round_id: string | null
+  team_id: string | null
+  origin: WorkOrigin
+  kind: string
+  title: string
+  description: string
+  plan: string | null
+  result: string | null
+  verification: string | null
+  stage: WorkStage
+  condition: WorkCondition
+  condition_reason: string | null
+  review_kind: 'plan' | 'result' | 'code' | 'validity' | 'evidence' | null
+  lifecycle: WorkLifecycle
+  closed_reason: string | null
+  superseded_by: string | null
+  acceptance: WorkAcceptance
+  outcome: WorkOutcome
+  priority: number
+  /** Bumped by plan and dependency changes. */
+  revision: number
+  /** Bumped by every change; commands are refused if it moved on. */
+  state_revision: number
+  derived_from: { kind: string; id: string } | null
+  dependencies: string[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+export type WorkAttempt = {
+  id: string
+  task_id: string
+  assignment_id: string | null
+  conversation_id: string | null
+  run_id: string | null
+  status: WorkAttemptStatus
+  failure_kind: string | null
+  error: string | null
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+export type WorkAssignment = {
+  id: string
+  task_id: string
+  conversation_id: string
+  member_id: string | null
+  assigned_by: string | null
+  started_at: string
+  ended_at: string | null
+  end_reason: string | null
+}
+export type WorkResultRef = {
+  id: string
+  task_id: string
+  attempt_id: string | null
+  role: 'result' | 'evidence' | 'artifact'
+  kind: string
+  ref_id: string
+  revision: string | null
+  created_at: string
+}
+export type WorkDependencyState = {
+  id: string
+  title: string
+  stage: WorkStage
+  lifecycle: WorkLifecycle
+  acceptance: WorkAcceptance
+}
+export type WorkBlocker =
+  | { kind: 'dependency'; work_id: string; title: string; closed: boolean }
+  | { kind: 'condition'; condition: WorkCondition; reason: string | null }
+export type WorkRouteState = 'pending' | 'delivered' | 'failed'
+export type WorkCard = {
+  item: WorkItem
+  assignment: WorkAssignment | null
+  latest_attempt: WorkAttempt | null
+  attempt_count: number
+  results: WorkResultRef[]
+  dependency_states: WorkDependencyState[]
+  supersedes: string[]
+  experiment_count: number
+  last_activity_at: string
+  research: { id: string; title: string } | null
+  round: { id: string; number: number } | null
+  team: { id: string; title: string } | null
+  executor: { session_id: string; title: string; agent_id: AgentId | null } | null
+  origin_thread: { id: string; title: string } | null
+  blockers: WorkBlocker[]
+  /** `native` work is commanded here; `legacy_team` work is commanded through its Team. */
+  operable: 'native' | 'legacy_team'
+  delivery: { kind: string; state: WorkRouteState; last_error: string | null } | null
+}
+export type WorkBoard = {
+  cards: WorkCard[]
+  stages: Array<{ stage: WorkStage; count: number }>
+  conditions: Array<{ condition: WorkCondition; count: number }>
+  total: number
+  truncated: boolean
+  closed: WorkCard[]
+}
+export type WorkReview = {
+  id: string
+  task_id: string
+  kind: string
+  accepted: boolean
+  outcome: WorkOutcome
+  reviewer: string
+  reason: string | null
+  inputs: string[]
+  created_at: string
+}
+export type WorkRouteBrief = {
+  id: string
+  kind: string
+  state: WorkRouteState
+  attempts: number
+  last_error: string | null
+  created_at: string
+  delivered_at: string | null
+}
+export type WorkDetail = WorkCard & {
+  attempts: WorkAttempt[]
+  assignments: WorkAssignment[]
+  reviews: WorkReview[]
+  routes: WorkRouteBrief[]
+  experiments: Array<{
+    id: string
+    label: string
+    state: string
+    analysis: string
+    exit_code: number | null
+    created_at: string
+  }>
+}
+/** Narrows the one board; no filter creates another. */
+export type WorkBoardFilter = {
+  research_id?: string
+  round_id?: string
+  team_id?: string
+  conversation_id?: string
+  thread_id?: string
+  condition?: WorkCondition
+  origin?: WorkOrigin
+  include_closed?: boolean
+}
+export type WorkCommand =
+  | { command: 'start'; request_key: string }
+  | { command: 'assign'; session_id: string; reason?: string }
+  | { command: 'pause'; reason?: string }
+  | { command: 'resume' }
+  | { command: 'prioritize'; priority: number; expected_revision: number }
+  | { command: 'review'; accept: boolean; outcome?: WorkOutcome; reason?: string }
+  | {
+    command: 'close'
+    lifecycle: Exclude<WorkLifecycle, 'active'>
+    reason: string
+    expected_revision: number
+    superseded_by?: string
+  }

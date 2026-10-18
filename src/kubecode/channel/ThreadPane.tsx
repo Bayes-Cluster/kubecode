@@ -32,6 +32,7 @@ type ThreadPaneProps = {
   events: WorkspaceEvent[]
   onClose: () => void
   onOpenReference: (reference: ProjectContextRef) => void
+  onOpenWork?: (filter: { thread_id: string }) => void
   onThreadChanged: () => void
   research: ResearchSummary[]
   sessions: Conversation[]
@@ -50,6 +51,7 @@ export function ThreadPane({
   events,
   onClose,
   onOpenReference,
+  onOpenWork,
   onThreadChanged,
   research,
   sessions,
@@ -188,6 +190,11 @@ export function ThreadPane({
             onClick={() => onOpenReference({ kind: 'research', id: linked.id })}
           >
             {t('kubecode.channel.openResearch')}
+          </Button>
+        )}
+        {onOpenWork && (
+          <Button size="sm" variant="ghost" onClick={() => onOpenWork({ thread_id: thread.id })}>
+            {t('kubecode.channel.openWork')}
           </Button>
         )}
       </div>

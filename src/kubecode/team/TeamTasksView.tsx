@@ -8,7 +8,6 @@ import {
   Trash2
 } from 'lucide-react'
 
-import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -26,9 +25,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { TranslationKey, Translator } from '@/lib/i18n'
+import type { Translator } from '@/lib/i18n'
 
-import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask } from '../api'
+import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask, WorkBoardFilter } from '../api'
+import { WorkBoard } from '../work/WorkBoard'
 
 export function TeamTasksView({
   api,
@@ -51,14 +51,19 @@ export function TeamTasksView({
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'tasks' | 'activity' | 'dependencies'>('tasks')
-  const conversations = useMemo(
-    () => new Map((snapshot.conversations ?? []).map((conversation) => [conversation.id, conversation])),
-    [snapshot.conversations],
-  )
   const tasks = useMemo(() => snapshot.tasks ?? [], [snapshot.tasks])
   const activity = useMemo(() => snapshot.activity ?? [], [snapshot.activity])
-  const tasksByColumn = useMemo(() => groupTasks(tasks), [tasks])
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null
+  // The Team's board is the Workspace's one board under a Team scope; it
+  // refetches when this snapshot changes.
+  const [boardFilter, setBoardFilter] = useState<WorkBoardFilter>({})
+  const refreshKey = useMemo(
+    () => JSON.stringify([
+      tasks.map((task) => [task.id, task.status, task.assignee_member_id]),
+      (snapshot.task_attempts ?? []).length,
+    ]),
+    [tasks, snapshot.task_attempts],
+  )
 
   return (
     <>
@@ -80,32 +85,27 @@ export function TeamTasksView({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="tasks">
-            <div className="kubecode-team-board">
-              {TASK_COLUMNS.map((column) => (
-                <section
-                  data-column={column.id}
-                  data-testid={`team-board-column-${column.id}`}
-                  key={column.id}
-                >
-                  <header>
-                    <span><i />{t(column.label)}</span>
-                    <small>{tasksByColumn[column.id].length}</small>
-                  </header>
-                  <div>
-                    {tasksByColumn[column.id].map((task) => (
-                      <TaskCard
-                        conversations={conversations}
-                        key={task.id}
-                        members={snapshot.members}
-                        onSelectMember={onSelectMember}
-                        onSelectTask={setSelectedTaskId}
-                        task={task}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
+            <WorkBoard
+              api={api}
+              connectionState="live"
+              conversations={snapshot.conversations ?? []}
+              embedded
+              events={[]}
+              filter={boardFilter}
+              projectId={snapshot.team.project_id}
+              refreshKey={refreshKey}
+              research={[]}
+              scope={{ team_id: snapshot.team.id }}
+              t={t}
+              onFilterChange={setBoardFilter}
+              onOpenCard={(card) => {
+                // Team work is changed through its Team: open the Team's dialog.
+                if (card.operable !== 'legacy_team') return false
+                setSelectedTaskId(card.item.id)
+                return true
+              }}
+              onOpenSession={onSelectMember}
+            />
           </TabsContent>
           <TabsContent value="activity">
             <ol className="kubecode-team-activity-list">
@@ -355,78 +355,4 @@ function TaskInspector({
       </Dialog>
     </>
   )
-}
-
-function TaskCard({
-  conversations,
-  members,
-  onSelectMember,
-  onSelectTask,
-  task,
-}: {
-  conversations: Map<string, TeamSnapshot['conversations'][number]>
-  members: TeamMember[]
-  onSelectMember: (conversationId: string) => void
-  onSelectTask: (taskId: string) => void
-  task: TeamTask
-}) {
-  const assignee = members.find((member) => member.id === task.assignee_member_id)
-  const conversation = assignee ? conversations.get(assignee.conversation_id) : undefined
-  return (
-    <article
-      className="kubecode-team-task-card"
-      data-status={task.status}
-      data-testid={`team-task-card-${task.id}`}
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelectTask(task.id)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') onSelectTask(task.id)
-      }}
-    >
-      <strong>{task.title}</strong>
-      <footer>
-        {assignee && conversation ? (
-          <Button
-            aria-label={assignee.name}
-            size="sm"
-            variant="ghost"
-            onClick={(event) => {
-              event.stopPropagation()
-              onSelectMember(assignee.conversation_id)
-            }}
-          >
-            <AiAgentIcon agent={conversation.agent_id} size={14} />
-            <span>{assignee.name}</span>
-          </Button>
-        ) : <span>—</span>}
-      </footer>
-    </article>
-  )
-}
-
-const TASK_COLUMNS = [
-  { id: 'backlog', label: 'kubecode.teamBacklog' },
-  { id: 'ready', label: 'kubecode.teamReady' },
-  { id: 'in_progress', label: 'kubecode.teamInProgress' },
-  { id: 'review', label: 'kubecode.teamReview' },
-  { id: 'done', label: 'kubecode.teamDone' },
-] as const satisfies ReadonlyArray<{ id: TaskColumn; label: TranslationKey }>
-
-type TaskColumn = 'backlog' | 'ready' | 'in_progress' | 'review' | 'done'
-
-function groupTasks(tasks: TeamTask[]): Record<TaskColumn, TeamTask[]> {
-  const grouped: Record<TaskColumn, TeamTask[]> = {
-    backlog: [], ready: [], in_progress: [], review: [], done: [],
-  }
-  for (const task of tasks) grouped[taskColumn(task.status)].push(task)
-  return grouped
-}
-
-function taskColumn(status: string): TaskColumn {
-  if (status === 'blocked' || status === 'cancelled') return 'backlog'
-  if (status === 'pending') return 'ready'
-  if (status === 'in_progress' || status === 'changes_requested') return 'in_progress'
-  if (status === 'plan_review' || status === 'result_review') return 'review'
-  return 'done'
 }
