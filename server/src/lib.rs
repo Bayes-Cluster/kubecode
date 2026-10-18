@@ -25,4 +25,5 @@ pub mod team_mcp;
 pub mod team_store;
 pub mod teams;
 pub mod terminal;
+pub mod work_store;
 pub mod workspace;
