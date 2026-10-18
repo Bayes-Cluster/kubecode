@@ -6,6 +6,7 @@ use serde_json::json;
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
+use crate::experiment_store::ExperimentStore;
 use crate::git::GitService;
 use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
 use crate::research_store::ResearchStore;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub teams: Arc<TeamStore>,
     pub ilink: Arc<ILinkService>,
     pub research: Arc<ResearchStore>,
+    pub experiments: Arc<ExperimentStore>,
     /// Serializes research round setup per round.
     pub research_locks: Arc<crate::research_api::KeyedLocks>,
     /// The running WeChat channel pipeline, once started.
@@ -49,6 +51,10 @@ impl AppState {
             ResearchStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("research store"),
         );
+        let experiments = Arc::new(
+            ExperimentStore::from_database(agent_store.database(), Arc::clone(&agent_store))
+                .expect("experiment store"),
+        );
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
@@ -64,6 +70,7 @@ impl AppState {
             teams,
             ilink,
             research,
+            experiments,
             research_locks: Arc::default(),
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         }

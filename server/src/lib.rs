@@ -8,6 +8,7 @@ pub mod composer_catalog;
 pub mod config;
 pub mod database;
 pub mod doctor;
+pub mod experiment_store;
 pub mod git;
 pub mod ilink;
 pub mod project_watcher;

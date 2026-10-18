@@ -917,6 +917,21 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
   round). Saving, editing, or posting never starts an Agent; only the explicit
   round action does. Carried-forward evidence excludes sources that are changed
   or removed.
+- **Execution (ADR 0213).** A round has at most one *execution envelope*, set
+  only by the researcher: launch and concurrent-process limits, a deadline, a
+  per-process runtime cap, a no-progress limit, and an allow-list of argv
+  prefixes. It is the authorization for server-launched processes: without it,
+  or for a command outside it, nothing launches. Envelope revisions are
+  immutable and edits are checked against the revision the researcher saw; an
+  attempt keeps the revision it was admitted under. An *experiment* is one
+  launch attempt: admission reserves its budget in the same transaction as its
+  row, a repeated launch key returns the same attempt, and the states
+  `reserved → launching → running → exited | timed_out | cancelled |
+  failed_to_start`, plus `unknown`, are separate from the *analysis* axis
+  (`none → pending → analyzed`). An uncertain process (`unknown`) keeps its
+  slot and leaves that state only by an explicit reconcile. A *wait* records who
+  yields on which experiment until when; an open wait makes a report-less turn a
+  legitimate yield. Pausing stops future launches and leaves running work alone.
 
 ## Conversation reducer
 

@@ -576,6 +576,22 @@ impl TeamStore {
             .map_err(TeamError::from)
     }
 
+    /// Whether the member has registered a wait that is still open (ADR 0213
+    /// section 5). Ending a turn without a result is then a legitimate yield,
+    /// not a missing report.
+    pub fn member_has_open_wait(&self, team_id: &str, member_id: &str) -> Result<bool, TeamError> {
+        let database = self.database.lock().expect("team database mutex poisoned");
+        Ok(database
+            .query_row(
+                "SELECT 1 FROM experiment_waits
+                 WHERE team_id = ?1 AND owner_member_id = ?2 AND state = 'open' LIMIT 1",
+                params![team_id, member_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     pub fn mark_attempt_needs_report(
         &self,
         member_id: &str,

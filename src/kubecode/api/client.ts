@@ -34,10 +34,14 @@ import type {
   StructuredComposerRunRequest,
   ResearchBrief,
   CaptureResearchFindingsRequest,
+  ExecutionEnvelope,
+  ExecutionEnvelopeLimits,
+  Experiment,
   CaptureResearchFindingsResponse,
   ResearchBriefPatch,
   ResearchDetail,
   ResearchEntry,
+  ResearchExecution,
   ResearchFinding,
   ResearchLinkKind,
   ResearchLinkRole,
@@ -398,6 +402,50 @@ export class KubecodeApi {
     return this.request(
       `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}/resume`,
       { method: 'POST' },
+    )
+  }
+
+  getResearchExecution(projectId: string, researchId: string, roundId: string): Promise<ResearchExecution> {
+    return this.request(this.executionPath(projectId, researchId, roundId))
+  }
+
+  /** Creates (no revision) or revises the round's envelope; 409 on a stale revision. */
+  setResearchEnvelope(
+    projectId: string,
+    researchId: string,
+    roundId: string,
+    limits: ExecutionEnvelopeLimits,
+    expectedRevision?: number,
+  ): Promise<ExecutionEnvelope> {
+    return this.request(`${this.executionPath(projectId, researchId, roundId)}/envelope`, {
+      method: 'PUT',
+      body: JSON.stringify({ limits, expected_revision: expectedRevision }),
+    })
+  }
+
+  /** Pause stops future launches only; running processes are not touched. */
+  setResearchExecutionState(
+    projectId: string,
+    researchId: string,
+    roundId: string,
+    action: 'pause' | 'resume',
+  ): Promise<ExecutionEnvelope> {
+    return this.request(`${this.executionPath(projectId, researchId, roundId)}/${action}`, {
+      method: 'POST',
+    })
+  }
+
+  /** States what really happened to an `unknown` experiment; nothing is relaunched. */
+  reconcileExperiment(
+    projectId: string,
+    researchId: string,
+    experimentId: string,
+    truth: 'not_started' | 'finished',
+    exitCode?: number,
+  ): Promise<Experiment> {
+    return this.request(
+      `${this.researchPath(projectId, researchId)}/experiments/${encodeURIComponent(experimentId)}/reconcile`,
+      { method: 'POST', body: JSON.stringify({ truth, exit_code: exitCode }) },
     )
   }
 
@@ -996,6 +1044,10 @@ export class KubecodeApi {
 
   private projectPath(projectId: string): string {
     return `/projects/${encodeURIComponent(projectId)}`
+  }
+
+  private executionPath(projectId: string, researchId: string, roundId: string): string {
+    return `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}/execution`
   }
 
   private researchPath(projectId: string, researchId: string): string {

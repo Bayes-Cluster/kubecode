@@ -11,6 +11,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+mod execution;
 mod findings;
 mod rounds;
 pub(crate) mod sources;
@@ -21,6 +22,7 @@ use crate::agent_runtime::RuntimeError;
 use crate::agent_store::{ConversationRelationship, StoreError};
 use crate::agents::AgentId;
 use crate::app_state::AppState;
+use crate::experiment_store::ExperimentError;
 use crate::research_store::{
     AuthorKind, BriefPatch, BriefRevision, EntryKind, LinkKind, LinkRole, NewEntry, ResearchBrief,
     ResearchEntry, ResearchError, ResearchLink, ResearchQuestion, ResearchStatus, ResearchSummary,
@@ -33,6 +35,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(rounds::routes())
         .merge(findings::routes())
+        .merge(execution::routes())
         .route(
             "/projects/{project_id}/research",
             get(list_research).post(create_research),
@@ -448,6 +451,13 @@ pub(super) enum ResearchApiError {
     Store(StoreError),
     Runtime(RuntimeError),
     Team(TeamApiError),
+    Experiment(ExperimentError),
+}
+
+impl From<ExperimentError> for ResearchApiError {
+    fn from(error: ExperimentError) -> Self {
+        Self::Experiment(error)
+    }
 }
 
 impl From<StoreError> for ResearchApiError {
@@ -491,6 +501,41 @@ impl IntoResponse for ResearchApiError {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
             Self::Team(error) => return error.into_response(),
+            Self::Experiment(error) => match &error {
+                ExperimentError::NotFound => (
+                    StatusCode::NOT_FOUND,
+                    "experiment_not_found",
+                    error.to_string(),
+                ),
+                ExperimentError::Invalid(_) => (
+                    StatusCode::BAD_REQUEST,
+                    "invalid_execution",
+                    error.to_string(),
+                ),
+                ExperimentError::Denied(denial) => {
+                    extra.insert("reason".into(), json!(denial.code()));
+                    (StatusCode::CONFLICT, "launch_denied", error.to_string())
+                }
+                ExperimentError::KeyReuse => {
+                    (StatusCode::CONFLICT, "launch_key_reused", error.to_string())
+                }
+                ExperimentError::EnvelopeConflict { current } => {
+                    extra.insert("current_revision".into(), json!(current));
+                    (
+                        StatusCode::CONFLICT,
+                        "envelope_revision_conflict",
+                        error.to_string(),
+                    )
+                }
+                ExperimentError::State(_) => {
+                    (StatusCode::CONFLICT, "experiment_state", error.to_string())
+                }
+                ExperimentError::Database(_) | ExperimentError::Json(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "execution storage failed".to_owned(),
+                ),
+            },
             Self::Store(error) => (StatusCode::BAD_REQUEST, "session_error", error.to_string()),
             Self::Runtime(error) => (StatusCode::BAD_GATEWAY, "agent_error", error.to_string()),
             Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
