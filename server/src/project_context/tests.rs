@@ -238,11 +238,22 @@ fn search_pages_to_exhaustion_without_gaps_or_duplicates() {
 fn a_capped_search_keeps_the_newest_candidates_and_says_so() {
     let w = world();
     for n in 0..(SCAN_CAP + 5) {
+        let session =
+            w.f.agents
+                .create_conversation(
+                    &w.f.project_id,
+                    AgentId::OpenCode,
+                    Some(&format!("bulk-{n:03}")),
+                )
+                .unwrap();
+        // created_at has one-second resolution; make the order explicit.
         w.f.agents
-            .create_conversation(
-                &w.f.project_id,
-                AgentId::OpenCode,
-                Some(&format!("bulk-{n:03}")),
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE conversations SET created_at = datetime('2030-01-01', ?1) WHERE id = ?2",
+                rusqlite::params![format!("+{n} seconds"), session.id],
             )
             .unwrap();
     }
