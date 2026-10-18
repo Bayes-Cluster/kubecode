@@ -127,6 +127,24 @@ transitions consult these tables in their own transactions: completion is
 blocked while an experiment is active, an analysis is pending, or a wait is
 open, and a turn that ends with a registered wait is not a missing report.
 
+Project context discovery (ADR 0214) is a read-only service, not a store.
+`server/src/project_context/` composes the research, Session, Team, and
+experiment stores and `WorkspaceService` in `AppState` and answers `search`,
+`read`, and `resolve` over typed references (`research`, `round`, `finding`,
+`session`, `session_turn`, `team`, `team_task`, `experiment`, `artifact`). It
+keeps no data and no index, so an answer can never drift from its owner; every
+call takes the Project first and treats another Project's record as missing.
+`server/src/context_api/` exposes it under
+`/api/v1/projects/{project_id}/context/{search,read,resolve}`. Reads are
+bounded (summaries of 280 characters, sections of 8 KiB, page cap of 50, a
+200-candidate scan per owner flagged `truncated`), progressive
+(`summary` → `content` → `evidence`), and passive: they never start an Agent,
+assign work, approve a brief, or grant execution. Artifacts are read as bounded
+UTF-8 text through `WorkspaceService::read_execution_text` under the execution
+root of the Team that ran the experiment, with no symlink traversal.
+`AgentStore::read_turn_text` gives cross-Session turn reads a bounded view of
+the canonical event log without copying it.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

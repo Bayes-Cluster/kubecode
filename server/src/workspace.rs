@@ -1119,6 +1119,43 @@ impl WorkspaceService {
         Ok(revision(&bytes))
     }
 
+    /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
+    /// Project, or a Team's worktree), for read-only context (ADR 0214). The
+    /// path must stay inside the root and pass through no symlink. Returns the
+    /// text, whether it was cut, and the file's current revision (the same
+    /// value `execution_file_revision` yields).
+    pub fn read_execution_text(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+        max_bytes: usize,
+    ) -> Result<(String, bool, String), WorkspaceError> {
+        let revision = self.execution_file_revision(project_id, workspace_path, relative)?;
+        let root = self.execution_path(project_id, workspace_path)?;
+        let target = root.join(normalize_relative(relative, false)?);
+        let mut bytes = Vec::new();
+        fs::File::open(&target)?
+            .take(max_bytes as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        let truncated = bytes.len() > max_bytes;
+        bytes.truncate(max_bytes);
+        // A cut can land inside a character; drop the partial tail only.
+        let text = match String::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(error) => {
+                let valid = error.utf8_error().valid_up_to();
+                let bytes = error.into_bytes();
+                if truncated && bytes.len() - valid < 4 {
+                    String::from_utf8_lossy(&bytes[..valid]).into_owned()
+                } else {
+                    return Err(WorkspaceError::UnsupportedText);
+                }
+            }
+        };
+        Ok((text, truncated, revision))
+    }
+
     pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
         let (_, target) = self.existing_entry(project_id, relative)?;
         let file = fs::File::open(&target)?;

@@ -910,3 +910,53 @@ export type TerminalInfo = {
   exit_code: number | null
   signal: string | null
 }
+
+export type ProjectContextKind =
+  | 'research'
+  | 'round'
+  | 'finding'
+  | 'session'
+  | 'session_turn'
+  | 'team'
+  | 'team_task'
+  | 'experiment'
+  | 'artifact'
+export type ProjectContextDetail = 'summary' | 'content' | 'evidence'
+/** A typed pointer; `revision` is a change fingerprint, not a snapshot. */
+export type ProjectContextRef = { kind: ProjectContextKind; id: string; revision?: string | null }
+export type ProjectContextProvenance = {
+  author: string | null
+  updated_at: string | null
+  research_id: string | null
+  parent: ProjectContextRef | null
+  state: string | null
+}
+export type ProjectContextItem = {
+  ref: ProjectContextRef
+  title: string
+  summary: string
+  provenance: ProjectContextProvenance
+  availability: ResearchSourceAvailability
+}
+export type ProjectContextPage = {
+  items: ProjectContextItem[]
+  next_cursor: string | null
+  truncated: boolean
+}
+export type ProjectContextSection = { heading: string; text: string; truncated: boolean }
+export type ProjectContextDocument = {
+  ref: ProjectContextRef
+  detail: ProjectContextDetail
+  title: string
+  availability: ResearchSourceAvailability
+  provenance: ProjectContextProvenance
+  sections: ProjectContextSection[]
+  related: ProjectContextItem[]
+  next_cursor: string | null
+  notes: string[]
+}
+export type ProjectContextResolved = {
+  ref: ProjectContextRef
+  availability: ResearchSourceAvailability
+  current_revision: string | null
+}

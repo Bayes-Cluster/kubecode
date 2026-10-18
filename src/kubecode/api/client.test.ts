@@ -1017,6 +1017,41 @@ describe('Kubecode API client', () => {
     })
   })
 
+  describe('project context', () => {
+    const ok = (body: unknown) => new Response(JSON.stringify(body))
+
+    it('searches below the base path with encoded filters', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({ items: [], next_cursor: null, truncated: false }))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/user/alice/kubecode')
+
+      await api.searchProjectContext('p/1')
+      await api.searchProjectContext('p/1', { query: 'weight decay', kinds: ['research', 'finding'], limit: 5, cursor: 'c=' })
+
+      expect(fetch.mock.calls[0][0]).toBe('/user/alice/kubecode/api/v1/projects/p%2F1/context/search')
+      expect(fetch.mock.calls[1][0]).toBe(
+        '/user/alice/kubecode/api/v1/projects/p%2F1/context/search?q=weight+decay&kinds=research%2Cfinding&limit=5&cursor=c%3D',
+      )
+    })
+
+    it('reads a reference at a detail level and resolves in one POST', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok([]))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('')
+
+      await api.readProjectContext('p', { kind: 'artifact', id: 'e1/out dir/a.txt', revision: 'abc' }, 'content')
+      await api.resolveProjectContext('p', [{ kind: 'session', id: 's1' }])
+
+      expect(fetch.mock.calls[0][0]).toBe(
+        '/api/v1/projects/p/context/read?kind=artifact&id=e1%2Fout+dir%2Fa.txt&revision=abc&detail=content',
+      )
+      const [url, init] = fetch.mock.calls[1]
+      expect(url).toBe('/api/v1/projects/p/context/resolve')
+      expect(init.method).toBe('POST')
+      expect(JSON.parse(init.body)).toEqual({ refs: [{ kind: 'session', id: 's1' }] })
+    })
+  })
+
   describe('research', () => {
     const ok = (body: unknown) => new Response(JSON.stringify(body))
 

@@ -19,6 +19,12 @@ import type {
   GitMutation,
   GitStatus,
   Project,
+  ProjectContextDetail,
+  ProjectContextDocument,
+  ProjectContextKind,
+  ProjectContextPage,
+  ProjectContextRef,
+  ProjectContextResolved,
   PromptQueueItem,
   RunAdmission,
   ProviderSessionInfo,
@@ -405,6 +411,39 @@ export class KubecodeApi {
       `${this.researchPath(projectId, researchId)}/rounds/${encodeURIComponent(roundId)}/resume`,
       { method: 'POST' },
     )
+  }
+
+  /** Read-only discovery over a Project's research, Sessions, Teams, and experiments. */
+  searchProjectContext(
+    projectId: string,
+    options: { query?: string; kinds?: ProjectContextKind[]; limit?: number; cursor?: string } = {},
+  ): Promise<ProjectContextPage> {
+    const params = query({
+      q: options.query || undefined,
+      kinds: options.kinds?.length ? options.kinds.join(',') : undefined,
+      limit: options.limit,
+      cursor: options.cursor,
+    })
+    return this.request(`${this.projectPath(projectId)}/context/search${params ? `?${params}` : ''}`)
+  }
+
+  /** A progressive read: summary first, then content, then evidence. */
+  readProjectContext(
+    projectId: string,
+    ref: ProjectContextRef,
+    detail: ProjectContextDetail = 'summary',
+    cursor?: string,
+  ): Promise<ProjectContextDocument> {
+    const params = query({ kind: ref.kind, id: ref.id, revision: ref.revision ?? undefined, detail, cursor })
+    return this.request(`${this.projectPath(projectId)}/context/read?${params}`)
+  }
+
+  /** Current availability and revision of up to 32 references. */
+  resolveProjectContext(projectId: string, refs: ProjectContextRef[]): Promise<ProjectContextResolved[]> {
+    return this.request(`${this.projectPath(projectId)}/context/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ refs }),
+    })
   }
 
   getResearchExecution(projectId: string, researchId: string, roundId: string): Promise<ResearchExecution> {

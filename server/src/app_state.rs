@@ -10,6 +10,7 @@ use crate::experiment_runner::ExperimentRunner;
 use crate::experiment_store::ExperimentStore;
 use crate::git::GitService;
 use crate::ilink::{ChannelBridge, ChannelBridgeConfig, ILinkService, IlinkServiceConfig};
+use crate::project_context::ProjectContext;
 use crate::research_store::ResearchStore;
 use crate::teams::{Team, TeamRole, TeamStore};
 use crate::terminal::{TerminalEventSink, TerminalLifecycleEvent, TerminalManager};
@@ -27,6 +28,8 @@ pub struct AppState {
     pub research: Arc<ResearchStore>,
     pub experiments: Arc<ExperimentStore>,
     pub experiment_runner: Arc<ExperimentRunner>,
+    /// Read-only discovery over the stores above (ADR 0214).
+    pub context: Arc<ProjectContext>,
     /// Serializes research round setup per round.
     pub research_locks: Arc<crate::research_api::KeyedLocks>,
     /// The running WeChat channel pipeline, once started.
@@ -67,6 +70,13 @@ impl AppState {
             Arc::clone(&workspace),
             Arc::clone(&teams),
         );
+        let context = Arc::new(ProjectContext::new(
+            Arc::clone(&agent_store),
+            Arc::clone(&teams),
+            Arc::clone(&research),
+            Arc::clone(&experiments),
+            Arc::clone(&workspace),
+        ));
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
@@ -85,6 +95,7 @@ impl AppState {
             research,
             experiments,
             experiment_runner,
+            context,
             research_locks: Arc::default(),
             ilink_bridge: Arc::new(tokio::sync::Mutex::new(None)),
         };
