@@ -75,7 +75,18 @@ question's "open on the work board", the Team view) and the board converges on
 stream. A task added by the researcher without a round is a candidate: it is
 visible and plannable, and cannot run until it belongs to an approved round.
 
-Not covered here: the experiment and analysis views inside the inspector beyond
-counts, state, and the pending-analysis mark (ADR for #190); editing a task's
-plan text from the board; round limits have an API (ADR 0217) but no control
-on the board yet; and the board is not paged beyond its 200-card window.
+Not covered here, and recorded as gaps: the inspector shows the facts the work
+store holds (requirements, plan, result, dependencies, attempts, experiments
+by state and the pending-analysis mark, evidence references, reviews with the
+inputs they saw, and deliveries). It does not yet open pinned sources, logs,
+artifacts or diffs, show analysis detail or decisions, or reuse the research
+and experiment detail components; those arrive with experiment analysis and
+evidence review (#190), whose records the inspector extends additively. A card
+shows the objective, the executor, counts, blockers, and the latest progress
+(the result, else the newest attempt's state); it does not yet link new work
+that arose from a finding. The Thread filter matches work derived from a
+Thread; round and Thread pickers in the filter bar are reached through the
+entry points. Round limits have an API (ADR 0217) but no control on the board.
+Columns are fixed (an empty Analyzing column stays but takes little room), the
+board is not paged beyond its 200-card window, and a Session removed after an
+assignment is shown as removed while its assignment record remains.

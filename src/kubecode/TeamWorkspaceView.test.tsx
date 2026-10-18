@@ -52,7 +52,7 @@ describe('TeamWorkspaceView', () => {
             workCard({ id: 'task-1', title: 'Explore parser', origin: 'legacy_team', stage: 'ready', team_id: 'team-1' },
               { operable: 'legacy_team' }),
             workCard({ id: 'task-2', title: 'Review parser', origin: 'legacy_team', stage: 'review', team_id: 'team-1' },
-              { operable: 'legacy_team', executor: { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code' } }),
+              { operable: 'legacy_team', executor: { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code', available: true } }),
           ])),
         }) as KubecodeApi}
         onSelectMember={selectMember}

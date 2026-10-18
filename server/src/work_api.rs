@@ -27,6 +27,7 @@ use crate::work_store::{
 use crate::workspace::WorkspaceError;
 
 const BOARD_LIMIT: usize = 200;
+const MAX_OFFSET: usize = 100_000;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -44,6 +45,8 @@ enum ApiError {
     Orchestrator(OrchestratorError),
     Workspace(WorkspaceError),
     BadRequest(&'static str),
+    /// Pausing would erase a condition someone else set (needs input, blocked, waiting).
+    ConditionInUse,
 }
 
 impl From<WorkError> for ApiError {
@@ -73,25 +76,39 @@ impl IntoResponse for ApiError {
                 "invalid_work_request",
                 reason.to_owned(),
             ),
+            Self::ConditionInUse => (
+                StatusCode::CONFLICT,
+                "work_condition_in_use",
+                "the work has a condition set by someone else; resolve it first".to_owned(),
+            ),
             Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
                 StatusCode::NOT_FOUND,
                 "not_found",
                 format!("project not found: {id}"),
             ),
-            Self::Workspace(error) => (
+            Self::Workspace(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
-                error.to_string(),
+                "workspace storage failed".to_owned(),
             ),
-            Self::Orchestrator(OrchestratorError::Database(_)) => (
+            // A work error wrapped by routing keeps its own meaning.
+            Self::Orchestrator(OrchestratorError::Work(error)) => {
+                return Self::Work(error).into_response();
+            }
+            Self::Orchestrator(OrchestratorError::NotFound) => (
+                StatusCode::NOT_FOUND,
+                "work_not_found",
+                "work not found".to_owned(),
+            ),
+            Self::Orchestrator(OrchestratorError::Invalid(reason)) => (
+                StatusCode::BAD_REQUEST,
+                "invalid_work_request",
+                reason.to_owned(),
+            ),
+            Self::Orchestrator(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
                 "work storage failed".to_owned(),
-            ),
-            Self::Orchestrator(error) => (
-                StatusCode::BAD_REQUEST,
-                "invalid_work_request",
-                error.to_string(),
             ),
             Self::Work(error) => match error {
                 WorkError::NotFound => (StatusCode::NOT_FOUND, "work_not_found", error.to_string()),
@@ -166,6 +183,8 @@ struct ExecutorRef {
     session_id: String,
     title: String,
     agent_id: Option<AgentId>,
+    /// False when the assigned Session was removed or is not visible any more.
+    available: bool,
 }
 
 /// Why a card is not moving, as structured facts the browser words and styles.
@@ -308,6 +327,15 @@ impl<'a> Resolver<'a> {
                         session_id: conversation.id,
                         title: conversation.title,
                         agent_id: Some(conversation.agent_id),
+                        available: true,
+                    })
+                    .or_else(|| {
+                        Some(ExecutorRef {
+                            session_id: id.to_owned(),
+                            title: String::new(),
+                            agent_id: None,
+                            available: false,
+                        })
                     })
             })
             .as_ref()
@@ -315,22 +343,18 @@ impl<'a> Resolver<'a> {
                 session_id: r.session_id.clone(),
                 title: r.title.clone(),
                 agent_id: r.agent_id,
+                available: r.available,
             })
     }
 
     fn origin_thread(&mut self, summary: &WorkSummary) -> Option<NamedRef> {
         let derived = summary.item.derived_from.as_ref()?;
-        let thread_id = match derived.kind.as_str() {
-            "thread" => derived.id.clone(),
-            "message" => {
-                self.state
-                    .channels
-                    .message(self.project_id, &derived.id)
-                    .ok()?
-                    .thread_id?
-            }
-            _ => return None,
-        };
+        // The Thread filter matches work derived from a Thread, so only that kind
+        // is shown as a Thread (the same set under every entry point).
+        if derived.kind != "thread" {
+            return None;
+        }
+        let thread_id = derived.id.clone();
         self.threads
             .entry(thread_id.clone())
             .or_insert_with(|| {
@@ -462,7 +486,7 @@ fn filter_of(query: &BoardQuery) -> Result<WorkFilter, ApiError> {
         only_closed: false,
         derived_from_id: query.thread_id.clone(),
         limit: Some(query.limit.unwrap_or(BOARD_LIMIT).clamp(1, BOARD_LIMIT)),
-        offset: query.offset,
+        offset: query.offset.min(MAX_OFFSET),
     })
 }
 
@@ -490,6 +514,8 @@ struct BoardResponse {
     truncated: bool,
     /// Canceled, abandoned, and superseded work under the same filter.
     closed: Vec<Card>,
+    /// More closed work matches than the lane holds.
+    closed_truncated: bool,
 }
 
 async fn board(
@@ -510,7 +536,16 @@ async fn board(
     let response = tokio::task::spawn_blocking(move || -> Result<BoardResponse, ApiError> {
         let counts: WorkCounts = work.counts(&project, &active_filter)?;
         let summaries = work.list(&project, &active_filter)?;
-        let truncated = counts.total > summaries.len() + active_filter.offset;
+        // `counts` spans every stage; a stage filter narrows what is shown.
+        let total = match active_filter.stage {
+            Some(stage) => counts
+                .by_stage
+                .iter()
+                .find(|(candidate, _)| *candidate == stage)
+                .map_or(0, |(_, count)| *count),
+            None => counts.total,
+        };
+        let truncated = total > summaries.len().saturating_add(active_filter.offset);
         let mut resolver = Resolver::new(&blocking_state, &project);
         let cards = summaries.into_iter().map(|s| resolver.card(s)).collect();
         let mut conditions = Vec::new();
@@ -535,23 +570,25 @@ async fn board(
                 count: total,
             });
         }
-        let closed = if query.include_closed {
-            work.list(
-                &project,
-                &WorkFilter {
-                    only_closed: true,
-                    stage: None,
-                    condition: None,
-                    limit: Some(BOARD_LIMIT),
-                    offset: 0,
-                    ..filter.clone()
-                },
-            )?
-            .into_iter()
-            .map(|s| resolver.card(s))
-            .collect()
+        let (closed, closed_truncated) = if query.include_closed {
+            let closed_filter = WorkFilter {
+                only_closed: true,
+                stage: None,
+                condition: None,
+                limit: Some(BOARD_LIMIT),
+                offset: 0,
+                ..filter.clone()
+            };
+            let closed_total: usize = work.counts(&project, &closed_filter)?.total;
+            let cards: Vec<Card> = work
+                .list(&project, &closed_filter)?
+                .into_iter()
+                .map(|s| resolver.card(s))
+                .collect();
+            let truncated = closed_total > cards.len();
+            (cards, truncated)
         } else {
-            Vec::new()
+            (Vec::new(), false)
         };
         Ok(BoardResponse {
             cards,
@@ -561,8 +598,9 @@ async fn board(
                 .map(|(stage, count)| StageCount { stage, count })
                 .collect(),
             conditions,
-            total: counts.total,
+            total,
             truncated,
+            closed_truncated,
             closed,
         })
     })
@@ -775,6 +813,35 @@ async fn command(
                 )?;
             }
             Command::Assign { session_id, reason } => {
+                // Only a standalone, live Session of this Project can execute work:
+                // not an archived chat, a Team member, or a subagent thread.
+                let usable = blocking_state
+                    .agent_runtime
+                    .store_ref()
+                    .visible_conversation(&project_id, &session_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|conversation| {
+                        !conversation.archived
+                            && !matches!(
+                                conversation.relationship,
+                                Some(
+                                    crate::agent_store::ConversationRelationship::TeamMember
+                                        | crate::agent_store::ConversationRelationship::Subagent
+                                )
+                            )
+                    });
+                let in_team = blocking_state
+                    .teams
+                    .team_for_conversation(&session_id)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if !usable || in_team {
+                    return Err(ApiError::BadRequest(
+                        "choose a standalone Session of this Project",
+                    ));
+                }
                 work.assign(
                     &project_id,
                     &work_id,
@@ -785,6 +852,15 @@ async fn command(
                 )?;
             }
             Command::Pause { reason } => {
+                // Pausing would erase a flag someone else raised (needs input,
+                // blocked, waiting) when it is resumed.
+                let current = work.get(&project_id, &work_id)?;
+                if !matches!(
+                    current.condition,
+                    WorkCondition::None | WorkCondition::Paused
+                ) {
+                    return Err(ApiError::ConditionInUse);
+                }
                 work.set_condition(
                     &project_id,
                     &work_id,
@@ -800,13 +876,6 @@ async fn command(
                 priority,
                 expected_revision,
             } => {
-                let current = work.get(&project_id, &work_id)?;
-                if current.state_revision != request.expected_state_revision {
-                    return Err(WorkError::StaleState {
-                        current: current.state_revision,
-                    }
-                    .into());
-                }
                 work.update_plan(
                     &project_id,
                     &work_id,
@@ -815,7 +884,7 @@ async fn command(
                         priority: Some(priority),
                         ..Default::default()
                     },
-                    &actor,
+                    ctx,
                 )?;
             }
             Command::Review {

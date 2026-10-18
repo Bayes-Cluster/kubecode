@@ -548,3 +548,279 @@ async fn the_researcher_adds_tasks_that_replay_safely_and_candidates_cannot_run(
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+// -- Review regressions ---------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn legacy_team_work_shows_with_its_attribution_and_is_never_commanded_from_here() {
+    use kubecode_server::teams::{
+        MemberWorkspaceMode, NewTeam, NewTeamTask, NewTeammate, StartTeam, TeamMode, TeamWorkspace,
+    };
+    let env = env();
+    let leader = env
+        .agents
+        .create_conversation(&env.project_id, AgentId::OpenCode, Some("Lead"))
+        .unwrap();
+    let team = env
+        .state
+        .teams
+        .create_team(NewTeam {
+            project_id: &env.project_id,
+            leader_conversation_id: &leader.id,
+            agent_session_id: &leader.agent_session_id,
+            leader_name: "Lead",
+            title: Some("Compiler team"),
+            workspace: TeamWorkspace::Shared,
+            workspace_path: None,
+        })
+        .unwrap();
+    let lead = env.state.teams.list_members(&team.id).unwrap().remove(0);
+    env.state
+        .teams
+        .start_team(StartTeam {
+            team_id: &team.id,
+            leader_member_id: &lead.id,
+            goal: "g",
+            acceptance_criteria: &["done".to_owned()],
+            allowed_agent_ids: &["opencode".to_owned()],
+            mode: TeamMode::Standard,
+            max_teammates: 2,
+            max_parallel_runs: 1,
+            max_review_rounds: 1,
+        })
+        .unwrap();
+    env.state.teams.activate_team(&team.id).unwrap();
+    let worker = env
+        .agents
+        .create_conversation(&env.project_id, AgentId::OpenCode, Some("Worker"))
+        .unwrap();
+    let teammate = env
+        .state
+        .teams
+        .add_teammate(NewTeammate {
+            team_id: &team.id,
+            caller_member_id: &lead.id,
+            conversation_id: &worker.id,
+            name: "worker",
+            workspace_mode: MemberWorkspaceMode::Shared,
+            base_tree: None,
+        })
+        .unwrap();
+    let task = env
+        .state
+        .teams
+        .create_task(NewTeamTask {
+            team_id: &team.id,
+            creator_member_id: &lead.id,
+            title: "Port the parser",
+            description: "d",
+            dependencies: &[],
+            owned_paths: &[],
+            requires_plan_approval: false,
+            mutates_files: false,
+        })
+        .unwrap();
+    env.state
+        .teams
+        .delegate_task(&task.id, &lead.id, &teammate.id)
+        .unwrap();
+
+    // The Team's task is a card on the one board with its attribution.
+    let board = env.board(&format!("team_id={}", team.id)).await;
+    assert_eq!(board["cards"].as_array().unwrap().len(), 1);
+    let card = &board["cards"][0];
+    assert_eq!(card["item"]["id"], task.id.as_str());
+    assert_eq!(card["operable"], "legacy_team");
+    assert_eq!(card["team"]["title"], "Compiler team");
+    assert_eq!(card["executor"]["title"], "Worker");
+    assert_eq!(env.board("origin=legacy_team").await["total"], 1);
+    assert_eq!(env.board("origin=native").await["total"], 0);
+    // Every command is refused as Team-owned, not applied.
+    let revision = card["item"]["state_revision"].as_u64().unwrap();
+    for body in [
+        json!({"command": "pause", "expected_state_revision": revision}),
+        json!({"command": "assign", "session_id": env.session("Other"), "expected_state_revision": revision}),
+        json!({"command": "close", "lifecycle": "canceled", "reason": "x",
+               "expected_revision": card["item"]["revision"], "expected_state_revision": revision}),
+    ] {
+        let (status, error) = env.run(&task.id, body).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{error}");
+        assert_eq!(error["code"], "work_legacy_owned");
+    }
+    // A Team member's Session is not assignable to native work either.
+    let native = env.task("Native", None);
+    let current = env.card(&native).await["item"]["state_revision"].clone();
+    let (status, error) = env
+        .run(&native, json!({"command": "assign", "session_id": worker.id, "expected_state_revision": current}))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    assert_eq!(error["code"], "invalid_work_request");
+}
+
+#[tokio::test]
+async fn counts_conditions_truncation_blockers_and_closed_agents_are_reported_truthfully() {
+    let env = env();
+    let first = env.task("First", None);
+    let second = env
+        .state
+        .work
+        .create(
+            &env.project_id,
+            NewWork {
+                title: "Second",
+                round_id: Some(&env.round_id),
+                dependencies: std::slice::from_ref(&first),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap()
+        .0
+        .id;
+    let card = env.card(&second).await;
+    assert_eq!(card["item"]["stage"], "planned");
+    assert_eq!(card["blockers"][0]["kind"], "dependency");
+    assert_eq!(card["blockers"][0]["title"], "First");
+
+    let board = env.board("").await;
+    let count = |stage: &str| {
+        board["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["stage"] == stage)
+            .map_or(0, |entry| entry["count"].as_u64().unwrap())
+    };
+    assert_eq!(
+        (
+            count("planned"),
+            count("ready"),
+            board["total"].as_u64().unwrap()
+        ),
+        (1, 1, 2)
+    );
+    // A stage filter reports that stage's total, so it is not "truncated" by other stages.
+    let ready = env.board("stage=ready&limit=1").await;
+    assert_eq!(ready["total"], 1);
+    assert_eq!(ready["truncated"], false);
+    let paged = env.board("limit=1").await;
+    assert_eq!(
+        (paged["total"].as_u64(), paged["truncated"].as_bool()),
+        (Some(2), Some(true))
+    );
+    // A huge offset is bounded, not an overflow.
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!(
+            "/projects/{}/work/board?offset=18446744073709551615",
+            env.project_id
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Conditions are counted apart from stages; pausing only works on unflagged work.
+    let revision = env.card(&first).await["item"]["state_revision"].clone();
+    let (status, paused) = env
+        .run(
+            &first,
+            json!({"command": "pause", "expected_state_revision": revision}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{paused}");
+    let conditions = env.board("").await["conditions"].clone();
+    assert!(
+        conditions
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["condition"] == "paused" && c["count"] == 1)
+    );
+    env.state
+        .work
+        .set_condition(
+            &env.project_id,
+            &second,
+            kubecode_server::work_store::WorkCondition::NeedsInput,
+            Some("which dataset?"),
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let flagged = env.card(&second).await["item"]["state_revision"].clone();
+    let (status, error) = env
+        .run(
+            &second,
+            json!({"command": "pause", "expected_state_revision": flagged}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "work_condition_in_use");
+
+    // Under an Agent filter, closed work still shows with the Agent that held it.
+    let executor = env.session("Worker");
+    let third = env.task("Third", None);
+    let revision = env.card(&third).await["item"]["state_revision"].clone();
+    env.run(
+        &third,
+        json!({"command": "assign", "session_id": executor, "expected_state_revision": revision}),
+    )
+    .await;
+    let card = env.card(&third).await;
+    env.run(
+        &third,
+        json!({"command": "close", "lifecycle": "canceled", "reason": "dropped",
+                           "expected_revision": card["item"]["revision"],
+                           "expected_state_revision": card["item"]["state_revision"]}),
+    )
+    .await;
+    let filtered = env
+        .board(&format!("conversation_id={executor}&include_closed=true"))
+        .await;
+    assert_eq!(filtered["cards"].as_array().unwrap().len(), 0);
+    assert_eq!(filtered["closed"][0]["item"]["id"], third.as_str());
+    assert_eq!(filtered["closed_truncated"], false);
+    // A removed executor is shown as removed, not as no one.
+    let ghost = env.session("Ghost");
+    let fourth = env.task("Fourth", None);
+    let revision = env.card(&fourth).await["item"]["state_revision"].clone();
+    env.run(
+        &fourth,
+        json!({"command": "assign", "session_id": ghost, "expected_state_revision": revision}),
+    )
+    .await;
+    env.agents.delete_conversation(&ghost).unwrap();
+    let after = env.card(&fourth).await;
+    assert_eq!(after["executor"]["available"], false);
+    assert!(after["assignment"].is_object());
+}
+
+#[tokio::test]
+async fn a_priority_change_is_refused_if_the_card_moved_after_it_was_read() {
+    let env = env();
+    let task = env.task("Moving", None);
+    let card = env.card(&task).await;
+    // The card moves (an agent or the researcher paused it) after the browser read it.
+    env.state
+        .work
+        .set_condition(
+            &env.project_id,
+            &task,
+            kubecode_server::work_store::WorkCondition::Waiting,
+            Some("x"),
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let (status, error) = env
+        .run(
+            &task,
+            json!({"command": "prioritize", "priority": 4,
+                           "expected_revision": card["item"]["revision"],
+                           "expected_state_revision": card["item"]["state_revision"]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "work_state_conflict");
+    assert_eq!(env.card(&task).await["item"]["priority"], 0);
+}

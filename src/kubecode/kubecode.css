@@ -3923,12 +3923,17 @@ button.kubecode-channel-reference:disabled { cursor: default; }
 .kubecode-work-chip[data-condition='needs_input'] { color: var(--feedback-warning-text); }
 
 .kubecode-work-columns {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(200px, 1fr));
+  display: flex;
   min-height: 360px;
   overflow-x: auto;
 }
-.kubecode-work-column,
+.kubecode-work-column {
+  border-right: 1px solid var(--border-subtle);
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+/* A stage nothing is in stays on the board but takes little room. */
+.kubecode-work-column[data-empty='true'][data-column='analyzing'] { flex: 0 0 120px; min-width: 120px; }
 .kubecode-work-closed {
   border-right: 1px solid var(--border-subtle);
   min-width: 0;
@@ -4001,6 +4006,8 @@ button.kubecode-channel-reference:disabled { cursor: default; }
   overflow-wrap: anywhere;
 }
 .kubecode-work-card-context,
+.kubecode-work-card-objective,
+.kubecode-work-card-progress,
 .kubecode-work-card-blocker { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .kubecode-work-card-blocker { align-items: center; display: inline-flex; gap: 4px; }
 .kubecode-work-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -4059,7 +4066,7 @@ button.kubecode-channel-reference:disabled { cursor: default; }
 @media (max-width: 900px) {
   .kubecode-work-board { flex-direction: column; overflow-y: auto; }
   .kubecode-work-inspector { border-left: 0; border-top: 1px solid var(--border-subtle); flex: 0 0 auto; }
-  .kubecode-work-columns { grid-template-columns: repeat(6, minmax(220px, 80vw)); }
+  .kubecode-work-column { flex-basis: 80vw; }
 }
 
 .kubecode-work-header { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }

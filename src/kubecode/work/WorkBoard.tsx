@@ -18,12 +18,13 @@ import type {
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { WorkCardView } from './WorkCardView'
-import { type InspectorForm, WorkInspector } from './WorkInspector'
+import { type FormRequest, WorkInspector } from './WorkInspector'
 import {
   ATTENTION_CONDITIONS,
   CONDITION_LABELS,
   filterIsEmpty,
   moveRequest,
+  StartKeys,
   STAGE_LABELS,
   WORK_STAGES,
   workErrorMessage,
@@ -82,7 +83,7 @@ export function WorkBoard({
   t,
 }: WorkBoardProps) {
   const effective = useMemo(() => ({ ...filter, ...scope }), [filter, scope])
-  const { board, reload, status } = useWorkBoard(
+  const { board, refreshFailed, reload, status } = useWorkBoard(
     api,
     projectId,
     effective,
@@ -91,11 +92,11 @@ export function WorkBoard({
     refreshKey,
   )
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [form, setForm] = useState<InspectorForm>(null)
+  const [formRequest, setFormRequest] = useState<FormRequest>({ form: null, nonce: 0 })
   const [dragging, setDragging] = useState<WorkCard | null>(null)
   const [dropTarget, setDropTarget] = useState<WorkStage | 'closed' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const startKeys = useRef(new Map<string, string>())
+  const startKeys = useRef(new StartKeys(newClientMessageId))
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDescription, setNewDescription] = useState('')
@@ -125,9 +126,9 @@ export function WorkBoard({
     onFilterChange(merged)
   }
 
-  const open = (card: WorkCard, nextForm: InspectorForm = null) => {
+  const open = (card: WorkCard, nextForm: FormRequest['form'] = null) => {
     if (onOpenCard?.(card) === true) return
-    setForm(nextForm)
+    setFormRequest((current) => ({ form: nextForm, nonce: current.nonce + 1 }))
     setSelectedId(card.item.id)
   }
 
@@ -136,12 +137,7 @@ export function WorkBoard({
     setDragging(null)
     setDropTarget(null)
     if (!card) return
-    let key = startKeys.current.get(card.item.id)
-    if (!key) {
-      key = newClientMessageId()
-      startKeys.current.set(card.item.id, key)
-    }
-    const request = moveRequest(card, to, key)
+    const request = moveRequest(card, to, startKeys.current.keyFor(card))
     if (request.type === 'unsupported') {
       setNotice(t('kubecode.work.moveUnsupported'))
       return
@@ -153,7 +149,7 @@ export function WorkBoard({
     }
     try {
       await api.workCommand(projectId, card.item.id, card.item.state_revision, request.command)
-      startKeys.current.delete(card.item.id)
+      startKeys.current.done(card)
     } catch (cause) {
       setNotice(workErrorMessage(cause, t))
     }
@@ -312,6 +308,12 @@ export function WorkBoard({
             <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
           </p>
         )}
+        {refreshFailed && (
+          <p className="kubecode-research-error" role="alert">
+            {t('kubecode.work.refreshFailed')}{' '}
+            <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
+          </p>
+        )}
         {board?.truncated && (
           <p className="kubecode-research-notice" role="status">
             {t('kubecode.work.truncated', { shown: board.cards.length, total: board.total })}
@@ -389,7 +391,7 @@ export function WorkBoard({
           >
             <header>
               <span>{t('kubecode.work.closedLane')}</span>
-              <small>{closedCards.length}</small>
+              <small>{board?.closed_truncated ? `${closedCards.length}+` : closedCards.length}</small>
             </header>
             <div>
               {closedCards.map((card) => (
@@ -414,7 +416,11 @@ export function WorkBoard({
           api={api}
           connectionState={connectionState}
           events={events}
-          initialForm={form}
+          formRequest={formRequest}
+          replacements={(board?.cards ?? [])
+            .filter((candidate) => candidate.item.id !== selectedId && candidate.operable === 'native')
+            .map((candidate) => ({ id: candidate.item.id, title: candidate.item.title }))}
+          startKeys={startKeys.current}
           key={selectedId}
           projectId={projectId}
           refreshKey={refreshKey}
@@ -424,7 +430,7 @@ export function WorkBoard({
           onChanged={reload}
           onClose={() => {
             setSelectedId(null)
-            setForm(null)
+            setFormRequest((current) => ({ form: null, nonce: current.nonce + 1 }))
           }}
           onOpenResearch={onOpenResearch}
           onOpenSession={onOpenSession}

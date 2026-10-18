@@ -64,6 +64,9 @@ export function WorkCardView({
       }}
     >
       <strong>{item.title}</strong>
+      {item.description && (
+        <small className="kubecode-work-card-objective">{clip(item.description, 110)}</small>
+      )}
       {card.research && (
         <small className="kubecode-work-card-context">
           {card.research.title}
@@ -122,11 +125,21 @@ export function WorkCardView({
       {item.condition_reason && condition && (
         <small className="kubecode-work-card-blocker">{item.condition_reason}</small>
       )}
+      {closed && item.closed_reason && (
+        <small className="kubecode-work-card-blocker">
+          {t('kubecode.work.closedReason', { reason: item.closed_reason })}
+        </small>
+      )}
+      {progress(card, t) && (
+        <small className="kubecode-work-card-progress">{progress(card, t)}</small>
+      )}
       <footer>
         {card.executor ? (
           <span className="kubecode-work-card-agent">
             {card.executor.agent_id && <AiAgentIcon agent={card.executor.agent_id} size={14} />}
-            <span>{card.executor.title}</span>
+            <span>
+              {card.executor.available ? card.executor.title : t('kubecode.work.executorRemoved')}
+            </span>
           </span>
         ) : (
           <span className="kubecode-work-card-agent">{t('kubecode.work.unassigned')}</span>
@@ -151,4 +164,19 @@ export function WorkCardView({
       </footer>
     </article>
   )
+}
+
+function clip(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+}
+
+/** The latest meaningful progress: the result if there is one, else the newest attempt's state. */
+function progress(card: WorkCard, t: Translator): string | null {
+  if (card.item.result) return clip(card.item.result, 110)
+  const attempt = card.latest_attempt
+  if (!attempt) return null
+  return t('kubecode.work.latestAttempt', {
+    status: t(`kubecode.work.attemptStatus.${attempt.status}` as 'kubecode.work.attemptStatus.queued'),
+  })
 }

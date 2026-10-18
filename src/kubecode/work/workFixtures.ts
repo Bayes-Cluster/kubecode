@@ -43,7 +43,9 @@ export function boardOf(cards: WorkCard[], closed: WorkCard[] = []): WorkBoard {
     condition,
     count: cards.filter((card) => card.item.condition === condition).length,
   }))
-  return { cards, stages, conditions, total: cards.length, truncated: false, closed }
+  return {
+    cards, stages, conditions, total: cards.length, truncated: false, closed, closed_truncated: false,
+  }
 }
 
 export function detailOf(card: WorkCard, extra: Partial<WorkDetail> = {}): WorkDetail {

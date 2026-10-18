@@ -6,7 +6,7 @@ import type {
 } from '../api'
 import { ApiError } from '../api'
 import { WorkBoard } from './WorkBoard'
-import { moveRequest } from './workModel'
+import { moveRequest, StartKeys } from './workModel'
 import { boardOf, detailOf, workApi, workCard } from './workFixtures'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
@@ -22,7 +22,7 @@ const sessions = [
   { id: 's2', project_id: 'p1', title: 'Analyst', archived: false, team_id: null, relationship: null },
 ] as unknown as Conversation[]
 
-const executor = { session_id: 's1', title: 'Pruner', agent_id: 'opencode' as const }
+const executor = { session_id: 's1', title: 'Pruner', agent_id: 'opencode' as const, available: true }
 const assignment = {
   id: 'a1', task_id: 'w1', conversation_id: 's1', member_id: null, assigned_by: null,
   started_at: '', ended_at: null, end_reason: null,
@@ -367,5 +367,145 @@ describe('WorkBoard new task', () => {
     // From a Thread's board the task is born of that Thread.
     expect(createWork.mock.calls[1][1]).toMatchObject({ title: 'Try dropout', threadId: 't1' })
     expect(await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })).toBeInTheDocument()
+  })
+})
+
+describe('StartKeys', () => {
+  it('keeps one key per card and attempt until the start succeeds, then rotates', () => {
+    let n = 0
+    const keys = new StartKeys(() => `key-${++n}`)
+    const card = workCard({ id: 'w1' }, { attempt_count: 0 })
+    expect(keys.keyFor(card)).toBe('key-1')
+    expect(keys.keyFor(card)).toBe('key-1')
+    keys.done(card)
+    expect(keys.keyFor(card)).toBe('key-2')
+    // Once an attempt has run, the next start is a new request even if the old key was kept.
+    const retried = workCard({ id: 'w1' }, { attempt_count: 1 })
+    expect(keys.keyFor(retried)).toBe('key-3')
+    expect(keys.keyFor(workCard({ id: 'other' }))).toBe('key-4')
+  })
+})
+
+describe('WorkBoard review regressions', () => {
+  it('shows a closed card with the reason it was closed and a removed executor plainly', async () => {
+    const closed = workCard({ id: 'gone', title: 'Dropped', lifecycle: 'canceled', closed_reason: 'plan B won' })
+    const removed = workCard({ id: 'orphan', title: 'Orphaned', stage: 'ready' }, {
+      assignment, executor: { ...executor, title: '', available: false },
+    })
+    view(
+      workApi({ workBoard: vi.fn().mockResolvedValue(boardOf([removed], [closed])) }),
+      { filter: { include_closed: true } },
+    )
+    const lane = await screen.findByTestId('work-closed-lane')
+    expect(within(lane).getByText(/kubecode.work.closedReason.*plan B won/)).toBeInTheDocument()
+    expect(within(screen.getByTestId('work-card-orphan')).getByText('kubecode.work.executorRemoved')).toBeInTheDocument()
+  })
+
+  it('shows the objective and the latest progress on the card', async () => {
+    const card = workCard(
+      { id: 'w1', title: 'Sweep', description: 'Try a few pruning ratios and compare accuracy' },
+      { latest_attempt: { id: 'a', task_id: 'w1', assignment_id: null, conversation_id: null, run_id: null,
+        status: 'running', failure_kind: null, error: null, created_at: '', updated_at: '', completed_at: null } },
+    )
+    view(workApi({ workBoard: vi.fn().mockResolvedValue(boardOf([card])) }))
+    const shown = await screen.findByTestId('work-card-w1')
+    expect(shown).toHaveTextContent('Try a few pruning ratios')
+    expect(shown).toHaveTextContent('kubecode.work.latestAttempt')
+    expect(shown).toHaveTextContent('kubecode.work.attemptStatus.running')
+  })
+
+  it('opens the accept form for Review to Done and the request-changes form for Review to Executing', async () => {
+    const review = workCard({ id: 'rev', title: 'Review one', stage: 'review' }, { executor, assignment })
+    const workBoard = vi.fn().mockResolvedValue(boardOf([review]))
+    const workDetail = vi.fn().mockResolvedValue(detailOf(review))
+    view(workApi({ workBoard, workDetail, workCommand: vi.fn() }))
+    await screen.findByText('Review one')
+    const drag = (column: string) => {
+      const data = { setData: vi.fn(), effectAllowed: '' }
+      fireEvent.dragStart(screen.getByTestId('work-card-rev'), { dataTransfer: data })
+      fireEvent.drop(screen.getByTestId(`work-column-${column}`), { dataTransfer: data })
+    }
+    drag('done')
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    await within(inspector).findByRole('button', { name: 'kubecode.work.command.accept' })
+    expect(within(inspector).queryByRole('button', { name: 'kubecode.work.command.reject' })).not.toBeInTheDocument()
+    drag('executing')
+    await waitFor(() => expect(within(screen.getByRole('complementary', { name: 'kubecode.work.inspector' }))
+      .queryByRole('button', { name: 'kubecode.work.command.accept' })).not.toBeInTheDocument())
+    expect(within(screen.getByRole('complementary', { name: 'kubecode.work.inspector' }))
+      .getByRole('button', { name: 'kubecode.work.command.reject' })).toBeInTheDocument()
+  })
+
+  it('does not offer pause over a condition someone else raised, and supersedes with a replacement', async () => {
+    const flagged = workCard({ id: 'flag', title: 'Needs you', stage: 'executing', condition: 'needs_input' }, { executor, assignment })
+    const other = workCard({ id: 'other', title: 'The replacement', stage: 'ready' })
+    const workCommand = vi.fn().mockResolvedValue(flagged)
+    const workBoard = vi.fn().mockResolvedValue(boardOf([flagged, other]))
+    const workDetail = vi.fn().mockImplementation(async (_p: string, id: string) => detailOf(id === 'flag' ? flagged : other))
+    view(workApi({ workBoard, workDetail, workCommand }))
+    fireEvent.click(await screen.findByTestId('work-card-flag'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    await within(inspector).findByRole('button', { name: 'kubecode.work.command.cancel' })
+    expect(within(inspector).queryByRole('button', { name: 'kubecode.work.command.pause' })).not.toBeInTheDocument()
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.command.cancel' }))
+    fireEvent.change(within(inspector).getByRole('textbox', { name: 'kubecode.work.review.reason' }), { target: { value: 'replaced' } })
+    fireEvent.change(within(inspector).getByLabelText('kubecode.work.command.chooseReplacement'), { target: { value: 'other' } })
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.lifecycle.superseded' }))
+    await waitFor(() => expect(workCommand).toHaveBeenCalledWith('p1', 'flag', 3, {
+      command: 'close', lifecycle: 'superseded', reason: 'replaced', expected_revision: 1, superseded_by: 'other',
+    }))
+  })
+
+  it('reopens the drag-requested form after it was cancelled and keeps one refetch per event burst', async () => {
+    const ready = workCard({ id: 'bare', title: 'Bare one', stage: 'ready' })
+    const workBoard = vi.fn().mockResolvedValue(boardOf([ready]))
+    const workDetail = vi.fn().mockResolvedValue(detailOf(ready))
+    const v = view(workApi({ workBoard, workDetail, workCommand: vi.fn() }))
+    await screen.findByText('Bare one')
+    const drag = () => {
+      const data = { setData: vi.fn(), effectAllowed: '' }
+      fireEvent.dragStart(screen.getByTestId('work-card-bare'), { dataTransfer: data })
+      fireEvent.drop(screen.getByTestId('work-column-executing'), { dataTransfer: data })
+    }
+    drag()
+    expect(await screen.findByRole('combobox', { name: 'kubecode.work.command.chooseSession' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.work.closeInspector' }))
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'kubecode.work.inspector' })).not.toBeInTheDocument())
+    drag()
+    expect(await screen.findByRole('combobox', { name: 'kubecode.work.command.chooseSession' })).toBeInTheDocument()
+
+    // Several events at once are one refetch.
+    const before = workBoard.mock.calls.length
+    await act(async () => v.update([workEvent(5), workEvent(6), workEvent(7)]))
+    await waitFor(() => expect(workBoard.mock.calls.length).toBeGreaterThan(before))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(workBoard.mock.calls.length).toBe(before + 1)
+  })
+
+  it('says so when a refresh fails after the board loaded', async () => {
+    const workBoard = vi.fn().mockResolvedValue(boardOf([workCard({ id: 'w1', title: 'One' })]))
+    const v = view(workApi({ workBoard }))
+    await screen.findByText('One')
+    workBoard.mockRejectedValue(new Error('down'))
+    await act(async () => v.update([workEvent(9)]))
+    expect(await screen.findByText(/kubecode.work.refreshFailed/)).toBeInTheDocument()
+    expect(screen.getByText('One')).toBeInTheDocument()
+  })
+
+  it('ignores a slow response that arrives after a newer one', async () => {
+    const slow: { resolve?: (board: ReturnType<typeof boardOf>) => void } = {}
+    const workBoard = vi.fn()
+      .mockResolvedValueOnce(boardOf([workCard({ id: 'w1', title: 'First' })]))
+      .mockImplementationOnce(() => new Promise((resolve) => { slow.resolve = resolve }))
+      .mockResolvedValue(boardOf([workCard({ id: 'w1', title: 'Newest' })]))
+    const v = view(workApi({ workBoard }))
+    await screen.findByText('First')
+    await act(async () => v.update([workEvent(2)]))
+    await waitFor(() => expect(workBoard).toHaveBeenCalledTimes(2))
+    await act(async () => v.update([workEvent(2), workEvent(3)]))
+    expect(await screen.findByText('Newest')).toBeInTheDocument()
+    await act(async () => slow.resolve?.(boardOf([workCard({ id: 'w1', title: 'Stale' })])))
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument()
+    expect(screen.getByText('Newest')).toBeInTheDocument()
   })
 })

@@ -6,6 +6,8 @@ import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 
 export type WorkLoadStatus = 'loading' | 'ready' | 'error'
 
+const EVENT_DEBOUNCE_MS = 120
+
 function matchesWork(event: WorkspaceEvent, projectId: string | null): boolean {
   return (event.kind === 'work_updated' || event.kind === 'orchestration_updated')
     && event.project_id === projectId
@@ -33,17 +35,30 @@ export function useWorkBoard(
   const matches = useCallback((event: WorkspaceEvent) => matchesWork(event, projectId), [projectId])
   const tick = useRefreshTick(events, connectionState, matches)
   const ticket = useRef(0)
+  const lastTick = useRef(tick)
 
   useEffect(() => {
     if (!scope || !projectId || typeof api.workBoard !== 'function') return
-    const mine = ++ticket.current
-    api.workBoard(projectId, JSON.parse(filterKey) as WorkBoardFilter).then((board) => {
-      if (mine !== ticket.current) return
-      setLoaded({ scope, board })
-      setFailedScope(null)
-    }).catch(() => {
-      if (mine === ticket.current) setFailedScope(scope)
-    })
+    // A burst of events is one refetch; the first load, a filter change, and
+    // an explicit reload are immediate.
+    const eventDriven = lastTick.current !== tick
+    lastTick.current = tick
+    const run = () => {
+      const mine = ++ticket.current
+      api.workBoard(projectId, JSON.parse(filterKey) as WorkBoardFilter).then((board) => {
+        if (mine !== ticket.current) return
+        setLoaded({ scope, board })
+        setFailedScope(null)
+      }).catch(() => {
+        if (mine === ticket.current) setFailedScope(scope)
+      })
+    }
+    if (!eventDriven) {
+      run()
+      return
+    }
+    const timer = setTimeout(run, EVENT_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   }, [api, projectId, scope, filterKey, tick, manual, refreshKey])
 
   const current = loaded && loaded.scope === scope ? loaded.board : null
@@ -54,6 +69,8 @@ export function useWorkBoard(
   return {
     board: current,
     status,
+    /** A refetch failed; the board shown may be out of date. */
+    refreshFailed: Boolean(current) && failedScope === scope,
     reload: useCallback(() => setManual((value) => value + 1), []),
   }
 }

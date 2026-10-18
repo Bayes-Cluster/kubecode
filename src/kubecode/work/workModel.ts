@@ -85,6 +85,7 @@ export function workErrorMessage(cause: unknown, t: Translator): string {
       case 'work_budget_exhausted': return t('kubecode.work.error.budget')
       case 'work_round_paused': return t('kubecode.work.error.roundPaused')
       case 'work_not_assigned': return t('kubecode.work.error.notAssigned')
+      case 'work_condition_in_use': return t('kubecode.work.error.conditionInUse')
       default: return cause.message || t('kubecode.error')
     }
   }
@@ -94,4 +95,33 @@ export function workErrorMessage(cause: unknown, t: Translator): string {
 export function isStale(cause: unknown): boolean {
   return cause instanceof ApiError
     && (cause.code === 'work_state_conflict' || cause.code === 'work_revision_conflict')
+}
+
+/**
+ * One request key per start of a card until it succeeds, so a retry after a
+ * lost response starts nothing twice. The key is tied to how many attempts the
+ * card has had: once an attempt ran, the next start is a new request.
+ */
+export class StartKeys {
+  private readonly keys = new Map<string, string>()
+
+  private readonly create: () => string
+
+  constructor(create: () => string) {
+    this.create = create
+  }
+
+  keyFor(card: Pick<WorkCard, 'item' | 'attempt_count'>): string {
+    const slot = `${card.item.id}:${card.attempt_count}`
+    let key = this.keys.get(slot)
+    if (!key) {
+      key = this.create()
+      this.keys.set(slot, key)
+    }
+    return key
+  }
+
+  done(card: Pick<WorkCard, 'item' | 'attempt_count'>) {
+    this.keys.delete(`${card.item.id}:${card.attempt_count}`)
+  }
 }

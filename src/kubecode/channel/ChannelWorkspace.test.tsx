@@ -359,3 +359,29 @@ describe('ChannelWorkspace details', () => {
     expect(await screen.findByRole('complementary', { name: 'kubecode.channel.thread' })).toBeInTheDocument()
   })
 })
+
+describe('ChannelWorkspace work entry', () => {
+  it('opens the one work board filtered to a Thread from its pane', async () => {
+    const s = server([server().message(1, 'Topic')])
+    const onOpenWork = vi.fn()
+    render(
+      <ChannelWorkspace
+        api={s.api}
+        connectionState="live"
+        conversations={[]}
+        events={[]}
+        onClose={vi.fn()}
+        onOpenResearch={vi.fn()}
+        onOpenSession={vi.fn()}
+        onOpenWork={onOpenWork}
+        projectId="p1"
+        research={[question]}
+        t={t}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.channel.reply' }))
+    const pane = await screen.findByRole('complementary', { name: 'kubecode.channel.thread' })
+    fireEvent.click(within(pane).getByRole('button', { name: 'kubecode.channel.openWork' }))
+    expect(onOpenWork).toHaveBeenCalledWith({ thread_id: 't1' })
+  })
+})

@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,7 +13,6 @@ import type {
   WorkOutcome,
   WorkspaceEvent,
 } from '../api'
-import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import {
   CONDITION_LABELS,
@@ -21,18 +20,24 @@ import {
   isStale,
   LIFECYCLE_LABELS,
   STAGE_LABELS,
+  type StartKeys,
   workErrorMessage,
 } from './workModel'
 import { useWorkDetail } from './useWorkBoard'
 
 export type InspectorForm = 'assign' | 'accept' | 'reject' | 'close' | null
 
+/** A form a drag asked for; the nonce makes asking again reopen a closed one. */
+export type FormRequest = { form: InspectorForm; nonce: number }
+
 export type WorkInspectorProps = {
   api: KubecodeApi
   connectionState: WorkspaceConnectionState
   events: WorkspaceEvent[]
-  /** A form a drag asked for. */
-  initialForm?: InspectorForm
+  formRequest?: FormRequest
+  /** Other active work a task can be superseded by. */
+  replacements?: Array<{ id: string; title: string }>
+  startKeys: StartKeys
   onChanged: () => void
   onClose: () => void
   onOpenResearch?: (researchId: string) => void
@@ -58,7 +63,9 @@ export function WorkInspector({
   api,
   connectionState,
   events,
-  initialForm = null,
+  formRequest,
+  replacements = [],
+  startKeys,
   onChanged,
   onClose,
   onOpenResearch,
@@ -79,21 +86,19 @@ export function WorkInspector({
     connectionState,
     refreshKey,
   )
-  const [form, setForm] = useState<InspectorForm>(initialForm)
+  const [form, setForm] = useState<InspectorForm>(formRequest?.form ?? null)
   const [reason, setReason] = useState('')
+  const [replacement, setReplacement] = useState('')
   const [outcome, setOutcome] = useState<WorkOutcome>('unknown')
   const [sessionId, setSessionId] = useState('')
   const [priority, setPriority] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // One request key per start attempt of this card until it succeeds, so a
-  // retry after a lost response starts nothing twice.
-  const startKey = useRef(newClientMessageId())
-
   useEffect(() => {
-    setForm(initialForm)
+    setForm(formRequest?.form ?? null)
+    setReason('')
     setError(null)
-  }, [workId, initialForm])
+  }, [workId, formRequest])
 
   if (!detail) {
     return (
@@ -118,7 +123,7 @@ export function WorkInspector({
     setError(null)
     try {
       await api.workCommand(projectId, item.id, item.state_revision, command)
-      if (command.command === 'start') startKey.current = newClientMessageId()
+      if (command.command === 'start') startKeys.done(detail)
       setForm(null)
       setReason('')
       onChanged()
@@ -331,9 +336,9 @@ export function WorkInspector({
           <div className="kubecode-work-command-row">
             {(item.stage === 'ready' || item.stage === 'executing') && detail.assignment && !openAttempt && (
               <Button
-                disabled={busy}
+                disabled={busy || detail.executor?.available === false}
                 size="sm"
-                onClick={() => void run({ command: 'start', request_key: startKey.current })}
+                onClick={() => void run({ command: 'start', request_key: startKeys.keyFor(detail) })}
               >
                 {t('kubecode.work.command.start')}
               </Button>
@@ -342,12 +347,12 @@ export function WorkInspector({
               <Button disabled={busy} size="sm" variant="outline" onClick={() => void run({ command: 'resume' })}>
                 {t('kubecode.work.command.resume')}
               </Button>
-            ) : item.stage !== 'done' && (
+            ) : item.stage !== 'done' && item.condition === 'none' && (
               <Button
                 disabled={busy}
                 size="sm"
                 variant="outline"
-                onClick={() => void run({ command: 'pause', reason: reason.trim() || undefined })}
+                onClick={() => void run({ command: 'pause' })}
               >
                 {t('kubecode.work.command.pause')}
               </Button>
@@ -406,25 +411,29 @@ export function WorkInspector({
                 <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />
               </label>
               <div className="kubecode-work-command-row">
-                <Button
-                  disabled={busy}
-                  size="sm"
-                  onClick={() => void run({
-                    command: 'review', accept: true, outcome, reason: reason.trim() || undefined,
-                  })}
-                >
-                  {t('kubecode.work.command.accept')}
-                </Button>
-                <Button
-                  disabled={busy}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void run({
-                    command: 'review', accept: false, reason: reason.trim() || undefined,
-                  })}
-                >
-                  {t('kubecode.work.command.reject')}
-                </Button>
+                {form !== 'reject' && (
+                  <Button
+                    disabled={busy}
+                    size="sm"
+                    onClick={() => void run({
+                      command: 'review', accept: true, outcome, reason: reason.trim() || undefined,
+                    })}
+                  >
+                    {t('kubecode.work.command.accept')}
+                  </Button>
+                )}
+                {form !== 'accept' && (
+                  <Button
+                    disabled={busy}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void run({
+                      command: 'review', accept: false, reason: reason.trim() || undefined,
+                    })}
+                  >
+                    {t('kubecode.work.command.reject')}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -450,6 +459,35 @@ export function WorkInspector({
                   </Button>
                 ))}
               </div>
+              {replacements.length > 0 && (
+                <div className="kubecode-work-command-row">
+                  <select
+                    aria-label={t('kubecode.work.command.chooseReplacement')}
+                    className="kubecode-channel-select"
+                    value={replacement}
+                    onChange={(event) => setReplacement(event.target.value)}
+                  >
+                    <option value="">{t('kubecode.work.command.chooseReplacement')}</option>
+                    {replacements.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>{candidate.title}</option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={busy || reason.trim() === '' || replacement === ''}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void run({
+                      command: 'close',
+                      lifecycle: 'superseded',
+                      reason: reason.trim(),
+                      expected_revision: item.revision,
+                      superseded_by: replacement,
+                    })}
+                  >
+                    {t(LIFECYCLE_LABELS.superseded)}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

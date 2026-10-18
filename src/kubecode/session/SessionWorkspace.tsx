@@ -641,6 +641,7 @@ export function AgentSessionWorkspace({
           {teamView === 'team' && (
             <TeamWorkspaceView
               api={api}
+              events={workspaceEvents}
               onSelectMember={(conversationId) => {
                 setTeamView('chat')
                 onSelectTeamMember?.(conversationId)

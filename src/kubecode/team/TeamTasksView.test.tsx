@@ -55,7 +55,7 @@ function teamApi(extra: Record<string, unknown> = {}, source: TeamSnapshot = sna
     {
       operable: 'legacy_team',
       executor: task.assignee_member_id
-        ? { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code' }
+        ? { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code', available: true }
         : null,
     },
   ))

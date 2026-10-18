@@ -640,20 +640,23 @@ impl WorkStore {
     /// Authority is checked before the revision, so a stale or foreign caller
     /// learns nothing about the item. A stale revision is refused with the
     /// current one, so two planners can never silently overwrite each other.
-    pub fn update_plan(
+    pub fn update_plan<'a>(
         &self,
         project_id: &str,
         id: &str,
         expected_revision: u64,
         patch: PlanPatch,
-        actor: &Actor,
+        ctx: impl Into<Ctx<'a>>,
     ) -> Result<WorkItem, WorkError> {
+        let ctx = ctx.into();
+        let actor = ctx.actor;
         self.write(|tx| {
             let item = load_item(tx, project_id, id)?;
             native(&item)?;
             active(&item)?;
             authorize(tx, &item, actor, Need::Coordination)?;
             expect_revision(&item, expected_revision)?;
+            expect_state(&item, &ctx)?;
             if item.stage == WorkStage::Done {
                 return Err(WorkError::Closed("done"));
             }

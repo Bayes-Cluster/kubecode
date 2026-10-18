@@ -27,12 +27,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Translator } from '@/lib/i18n'
 
-import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask, WorkBoardFilter } from '../api'
+import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask, WorkBoardFilter, WorkspaceEvent } from '../api'
 import { WorkBoard } from '../work/WorkBoard'
 
 export function TeamTasksView({
   api,
   busyAction,
+  events,
   onSelectMember,
   onSnapshotChange,
   setBusyAction,
@@ -42,6 +43,7 @@ export function TeamTasksView({
 }: {
   api: KubecodeApi
   busyAction: string | null
+  events: WorkspaceEvent[]
   onSelectMember: (conversationId: string) => void
   onSnapshotChange: (snapshot: TeamSnapshot) => void
   setBusyAction: (value: string | null) => void
@@ -90,7 +92,7 @@ export function TeamTasksView({
               connectionState="live"
               conversations={snapshot.conversations ?? []}
               embedded
-              events={[]}
+              events={events}
               filter={boardFilter}
               projectId={snapshot.team.project_id}
               refreshKey={refreshKey}

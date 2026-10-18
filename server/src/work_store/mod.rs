@@ -642,10 +642,11 @@ const FILTER_SQL: &str = "project_id = ?1
        AND (?6 OR lifecycle = 'active')
        AND (?7 IS NULL OR EXISTS (
              SELECT 1 FROM work_assignments a
-             WHERE a.task_id = work_items.id AND a.ended_at IS NULL AND a.conversation_id = ?7))
+             WHERE a.task_id = work_items.id AND a.conversation_id = ?7
+               AND (a.ended_at IS NULL OR work_items.lifecycle != 'active')))
        AND (?8 IS NULL OR condition = ?8)
        AND (?11 IS NULL OR origin = ?11)
-       AND (?12 IS NULL OR derived_from_id = ?12)
+       AND (?12 IS NULL OR (derived_from_kind = 'thread' AND derived_from_id = ?12))
        AND (NOT ?13 OR lifecycle != 'active')";
 
 // -- Row mapping -------------------------------------------------------------------------------------------

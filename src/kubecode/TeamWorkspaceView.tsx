@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import type { Translator } from '@/lib/i18n'
 
-import type { KubecodeApi, TeamSnapshot } from './api'
+import type { KubecodeApi, TeamSnapshot, WorkspaceEvent } from './api'
 import { TeamProposalView } from './team/TeamProposalView'
 import { TeamSetup } from './team/TeamSetupView'
 import { TeamStatusView } from './team/TeamStatusView'
@@ -22,12 +22,15 @@ import { useTeamLifecycleEvents } from './team/teamLifecycle'
 
 export function TeamWorkspaceView({
   api,
+  events = [],
   onSelectMember,
   onSnapshotChange,
   snapshot,
   t,
 }: {
   api: KubecodeApi
+  /** Workspace events, so the Team's board follows work changes made elsewhere. */
+  events?: WorkspaceEvent[]
   onSelectMember: (conversationId: string) => void
   onSnapshotChange: (snapshot: TeamSnapshot) => void
   snapshot: TeamSnapshot
@@ -108,6 +111,7 @@ export function TeamWorkspaceView({
       <TeamTasksView
         api={api}
         busyAction={busyAction}
+        events={events}
         onSelectMember={onSelectMember}
         onSnapshotChange={onSnapshotChange}
         setBusyAction={setBusyAction}

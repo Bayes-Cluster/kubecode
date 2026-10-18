@@ -1198,7 +1198,13 @@ export type WorkCard = {
   research: { id: string; title: string } | null
   round: { id: string; number: number } | null
   team: { id: string; title: string } | null
-  executor: { session_id: string; title: string; agent_id: AgentId | null } | null
+  executor: {
+    session_id: string
+    title: string
+    agent_id: AgentId | null
+    /** False when the assigned Session was removed or is no longer visible. */
+    available: boolean
+  } | null
   origin_thread: { id: string; title: string } | null
   blockers: WorkBlocker[]
   /** `native` work is commanded here; `legacy_team` work is commanded through its Team. */
@@ -1212,6 +1218,7 @@ export type WorkBoard = {
   total: number
   truncated: boolean
   closed: WorkCard[]
+  closed_truncated: boolean
 }
 export type WorkReview = {
   id: string
