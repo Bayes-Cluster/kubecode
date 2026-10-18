@@ -969,7 +969,9 @@ impl ProjectContext {
         match reference.kind {
             ContextKind::Research => self.read_research(project_id, reference, depth, &mut doc)?,
             ContextKind::Round => self.read_round(project_id, &reference.id, depth, &mut doc)?,
-            ContextKind::Import => self.read_import(project_id, &reference.id, depth, &mut doc)?,
+            ContextKind::Import => {
+                self.read_import(project_id, &reference.id, depth, cursor, &mut doc)?
+            }
             ContextKind::Finding => {
                 self.read_finding(project_id, &reference.id, depth, &mut doc)?
             }
@@ -1185,6 +1187,7 @@ impl ProjectContext {
         project_id: &str,
         id: &str,
         depth: u8,
+        cursor: Option<&str>,
         doc: &mut ContextDocument,
     ) -> Result<(), ContextError> {
         let (import, content) = self
@@ -1211,12 +1214,35 @@ impl ProjectContext {
             ));
         }
         if depth >= 1 {
-            doc.section("Imported text", &content);
+            // An import can be 64 KiB; read it a section at a time. The cursor
+            // is a character offset, so every part of a long discussion is
+            // reachable, not only its first section.
+            let total = content.chars().count();
+            let start = decode_cursor(cursor)?;
+            if start > total {
+                return Err(ContextError::Invalid(
+                    "the cursor is past the end of the text",
+                ));
+            }
+            let end = (start + SECTION_CHARS).min(total);
+            let part: String = content.chars().skip(start).take(end - start).collect();
+            doc.section(
+                &format!(
+                    "Imported text (characters {}–{} of {total})",
+                    start + 1,
+                    end
+                ),
+                &part,
+            );
+            if end < total {
+                doc.next_cursor = Some(encode_cursor(end));
+                doc.note("The imported text continues; read again with next_cursor for the rest.");
+            }
         }
         if depth >= 2 {
             let lines: Vec<String> = crate::research_store::extract_candidates(&content)
                 .iter()
-                .take(RELATED_CAP * 2)
+                .take(crate::research_store::MAX_IMPORT_CANDIDATES)
                 .map(|candidate| {
                     format!(
                         "{} (line {}): {}",

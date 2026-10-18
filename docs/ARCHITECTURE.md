@@ -153,7 +153,11 @@ the read-only credential every Session holds cannot open the Team server or
 another conversation's route). It has four passive tools — `context_round`,
 `context_search`, `context_read`, `context_resolve` — and the caller's Project
 is derived from its Session, never from an argument. Hidden revision snapshots
-and unknown conversations get no tools. A Team member whose Agent cannot reach
+and unknown conversations get no tools. Each conversation also has its own MCP
+session manager, so an `mcp-session-id` issued to one conversation is unknown
+to every other conversation's URL. `context_round` binds the caller's *current
+run* to its round (a Solo round's prompt is admitted as `research:{round_id}`),
+so a later round queued on the same Session never replaces the one being worked. A Team member whose Agent cannot reach
 an HTTP MCP URL receives the server in-process as before; a Solo Session on such
 an Agent has no context tools and relies on the round prompt. Solo and Team
 rounds share one delivery: `team_mcp::round_delivery` builds the pinned brief

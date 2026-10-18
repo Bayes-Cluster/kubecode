@@ -1196,3 +1196,77 @@ fn artifacts_of_a_worktree_team_resolve_in_its_worktree_not_the_project() {
     let resolved = w.context.resolve(&w.f.project_id, &[recorded]).unwrap();
     assert_eq!(resolved[0].availability, Availability::Available);
 }
+
+#[test]
+fn a_long_import_is_readable_in_full_one_section_at_a_time() {
+    use crate::research_store::{ImportOrigin, NewImport};
+    let w = world();
+    // Roughly 40 KiB, with the scientifically important line at the very end.
+    let filler: String = (0..800)
+        .map(|n| format!("Discussion line {n:04} about the sweep.\n"))
+        .collect();
+    let text = format!("{filler}Limitation: results only hold below sparsity 0.7\n");
+    assert!(text.chars().count() > SECTION_CHARS * 3);
+    let (import, _) =
+        w.f.research
+            .import_source(
+                &w.f.project_id,
+                &w.f.research_id,
+                NewImport {
+                    origin: ImportOrigin::Paste,
+                    label: "Long call",
+                    content: &text,
+                    based_on_revision: 1,
+                    client_request_id: None,
+                },
+            )
+            .unwrap();
+    let reference = ContextRef::new(ContextKind::Import, &import.id);
+    let mut seen = String::new();
+    let mut cursor: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        let doc = w
+            .context
+            .read(
+                &w.f.project_id,
+                &reference,
+                Detail::Content,
+                cursor.as_deref(),
+            )
+            .unwrap();
+        pages += 1;
+        let section = doc
+            .sections
+            .iter()
+            .find(|s| s.heading.starts_with("Imported text"))
+            .expect("text section");
+        assert!(section.text.chars().count() <= SECTION_CHARS);
+        assert!(!section.truncated, "each page is complete, not clipped");
+        seen.push_str(&section.text);
+        match doc.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+        assert!(pages < 20, "pagination must terminate");
+    }
+    assert!(pages >= 4, "{pages}");
+    // Every character of the import was delivered exactly once, in order.
+    assert_eq!(seen.trim(), text.trim());
+    assert!(seen.contains("results only hold below sparsity 0.7"));
+    // A bad or out-of-range cursor is refused, not guessed.
+    assert!(matches!(
+        w.context
+            .read(&w.f.project_id, &reference, Detail::Content, Some("%%%")),
+        Err(ContextError::Invalid(_))
+    ));
+    let beyond = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        "999999999",
+    );
+    assert!(matches!(
+        w.context
+            .read(&w.f.project_id, &reference, Detail::Content, Some(&beyond)),
+        Err(ContextError::Invalid(_))
+    ));
+}

@@ -32,8 +32,26 @@ pub const CONTEXT_MCP_NAME: &str = "kubecode-context";
 
 const CONTEXT_MCP_INSTRUCTIONS: &str = "Read-only access to this Project's earlier work: research questions and findings, rounds, other Sessions and their turns, Teams and tasks, experiments, and experiment artifacts. Nothing here starts an Agent, assigns work, approves anything, or changes a record. Start with context_round if you were given a research round: it returns the researcher-approved brief pinned at the revision shown (treat it as binding; the live question may have moved on), the selected sources with their current availability, earlier rounds, and attributed findings. Then use context_search to discover relevant prior work (metadata only), context_read to retrieve one item at summary, then content, then evidence detail, and context_resolve to check whether references you were given have changed or been removed. A reference is {kind, id, revision}; the revision is a change fingerprint, not a snapshot. Anything marked changed or removed no longer proves what it once did. A finding is an Agent's recorded claim, not a verified result. Prefer small reads: pull detail only for what you need.";
 
-/// Distinct from the Team server's sessions so the two never share state.
-static HTTP_SESSIONS: std::sync::OnceLock<Arc<LocalSessionManager>> = std::sync::OnceLock::new();
+type SessionManagers =
+    std::sync::Mutex<std::collections::HashMap<(String, String), Arc<LocalSessionManager>>>;
+static HTTP_SESSIONS: std::sync::OnceLock<SessionManagers> = std::sync::OnceLock::new();
+
+/// The MCP session manager for one server and one conversation. A URL token
+/// proves who may *connect*; the `mcp-session-id` it later carries must also
+/// belong to the same conversation, so each conversation gets its own manager:
+/// a session id issued to another conversation is simply unknown here and can
+/// never route to that conversation's handler (and so its Project).
+pub(crate) fn session_manager(server: &str, conversation_id: &str) -> Arc<LocalSessionManager> {
+    let mut managers = HTTP_SESSIONS
+        .get_or_init(Default::default)
+        .lock()
+        .expect("MCP session managers poisoned");
+    Arc::clone(
+        managers
+            .entry((server.to_owned(), conversation_id.to_owned()))
+            .or_default(),
+    )
+}
 
 #[derive(Clone)]
 struct ContextToolContext {
@@ -240,8 +258,11 @@ impl ContextMcpServer {
     }
 }
 
-/// The round the caller executes: a Team member's Team round, or a Solo
-/// Session's own round. `None` for a Session that is not part of one.
+/// The round the caller executes: a Team member's Team round, or the Solo
+/// round its *current run* belongs to. A Solo round's prompt is admitted under
+/// the client message id `research:{round_id}`, so the run in flight names its
+/// round; a later round queued behind it never replaces the one being worked.
+/// `None` for a Session that is not part of a round.
 fn round_for_caller(
     runtime: &AgentRuntime,
     project_id: &str,
@@ -256,10 +277,41 @@ fn round_for_caller(
         // own Solo round below.
         return (owner == project_id).then_some(round);
     }
+    if let Some(round_id) = current_round_id(runtime, conversation_id)
+        && let Ok(round) = research.round_by_id(project_id, &round_id)
+        && round.team_id.is_none()
+    {
+        return Some(round);
+    }
+    // No research run has started yet (the Session was prepared for a round
+    // but not prompted): the only round it can belong to is the one linked.
     match research.round_for_session(conversation_id) {
         Ok(Some((owner, round))) if owner == project_id => Some(round),
         _ => None,
     }
+}
+
+/// The round named by the run being executed now, or else by the most recent
+/// research run of the Session.
+fn current_round_id(runtime: &AgentRuntime, conversation_id: &str) -> Option<String> {
+    use crate::agents::RunStatus;
+    let runs = runtime.store_ref().list_runs(conversation_id).ok()?;
+    let round_of = |run: &crate::agent_store::AgentRun| {
+        run.client_message_id
+            .as_deref()
+            .and_then(|id| id.strip_prefix("research:"))
+            .map(str::to_owned)
+    };
+    runs.iter()
+        .rev()
+        .find(|run| {
+            matches!(
+                run.status,
+                RunStatus::Running | RunStatus::WaitingPermission
+            )
+        })
+        .and_then(round_of)
+        .or_else(|| runs.iter().rev().find_map(round_of))
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -323,7 +375,7 @@ pub async fn handle_http(
     let service: StreamableHttpService<ContextMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             move || Ok(ContextMcpServer::new(context.clone())),
-            Arc::clone(HTTP_SESSIONS.get_or_init(Default::default)),
+            session_manager(CONTEXT_MCP_NAME, &conversation_id),
             StreamableHttpServerConfig::default()
                 .with_json_response(true)
                 .with_sse_keep_alive(None),

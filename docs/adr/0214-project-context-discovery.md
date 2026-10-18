@@ -106,6 +106,18 @@ delivery function), typed Composer references that carry
 discussion import/export. Each is specified with the work that adds it; the
 semantics above are shared so identity, provenance, and scope cannot drift.
 
+### 5a. MCP session binding and round binding
+
+A URL token proves who may connect, but the MCP session id a client later
+carries must belong to the same conversation: each conversation has its own
+session manager, so a session id issued to another conversation (another
+Project) cannot be replayed against a different URL. The research round an
+Agent is working is the round named by its current run
+(`research:{round_id}`), not the highest-numbered round of its Session, so a
+queued later round cannot change a running round's pinned direction. An
+imported discussion is read a section at a time through the reader's cursor, so
+all 64 KiB are reachable.
+
 ### 6. Non-goals
 
 A vector database, automatic transcript sharing, an embedded browser, remote

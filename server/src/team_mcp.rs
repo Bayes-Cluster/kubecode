@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use agent_client_protocol::mcp_server::McpServer;
 use agent_client_protocol::{Agent, RunWithConnectionTo};
@@ -30,7 +30,6 @@ use crate::teams::{
 
 const TEAM_MCP_NAME: &str = "kubecode-team";
 const TEAM_MCP_INSTRUCTIONS: &str = "You are a member of a persistent Kubecode Team. Begin with team_get_context. The Leader plans, creates concrete tasks, configures teammates within the user's Agent and concurrency budget, reviews permissions/plans/results, integrates or edits accepted work when needed, synthesizes the final answer, and calls team_complete. The Leader is never a concrete task assignee. If a semantic decision genuinely requires the user, the Leader calls team_request_user_input; Kubecode pauses scheduling until the answer returns through the durable mailbox. Teammates claim or receive concrete tasks and must submit plans/results through Team tools. A YOLO Discriminator is an independent read-only evaluator: it never implements fixes and only submits a verdict. Every member owns an independent durable ACP transcript. Native provider subagents remain inside their owning Session. In YOLO, Kubecode owns the provider-native permission mode; do not pass mode or a mode session_option when spawning or configuring members. Model, effort, fast mode, and other non-permission session_options remain configurable. Use Agent-native option IDs exactly as advertised and never invent model IDs. When team_get_context includes a research section, its brief is the researcher-approved direction pinned at the revision shown; treat its hypotheses, constraints, and evaluation criteria as binding, use its source references to retrieve further evidence on demand, and do not assume the live research question has not changed since. Before team_complete the Leader calls team_publish_research to record findings, failed approaches, limitations, open questions, and proposals; earlier findings in the research section are attributed records to build on, not established fact, and evidence marked changed or removed no longer proves what it did. When the round has an execution envelope, launch long work with team_launch_experiment, then call team_yield_for_experiment and end your turn instead of waiting: the runtime delivers the result to your inbox, and an experiment stays pending analysis until you analyze it. Launch limits and authorized commands are the researcher's; never retry a refused launch, ask for a change instead.";
-static HTTP_SESSIONS: OnceLock<Arc<LocalSessionManager>> = OnceLock::new();
 
 #[derive(Clone)]
 struct ToolContext {
@@ -1993,7 +1992,7 @@ pub async fn handle_http(
     let service: StreamableHttpService<TeamMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             move || Ok(TeamMcpServer::new(context.clone())),
-            Arc::clone(HTTP_SESSIONS.get_or_init(Default::default)),
+            crate::context_mcp::session_manager(TEAM_MCP_NAME, &conversation_id),
             StreamableHttpServerConfig::default()
                 .with_json_response(true)
                 .with_sse_keep_alive(None),
