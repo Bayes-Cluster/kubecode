@@ -3,7 +3,7 @@
 //! stage, the round coordinator's holder and epoch, the open assignment. Nothing
 //! is trusted from a cached role or an earlier read.
 
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::*;
 
@@ -120,7 +120,7 @@ fn session_in_project(
 
 /// Whether a query keyed by `(id, project_id)` finds a row.
 fn exists_in_project(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     sql: &str,
     project_id: &str,
     id: &str,
@@ -133,8 +133,8 @@ fn exists_in_project(
 
 /// A reference to a record is accepted only if the record exists in this
 /// Project; another Project's record reads exactly like a missing one.
-fn validate_reference(
-    tx: &Transaction<'_>,
+pub(crate) fn validate_reference(
+    tx: &Connection,
     project_id: &str,
     kind: &str,
     ref_id: &str,

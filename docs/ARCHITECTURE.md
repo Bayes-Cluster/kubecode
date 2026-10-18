@@ -196,6 +196,22 @@ work, attempts, and results outlive the Team. Each command commits a
 content-free `work_updated` workspace event, and every item carries a
 state revision so a stale card is refused rather than applied.
 
+The Workspace conversation (ADR 0216) is a seventh feature store,
+`server/src/channel_store/`, with routes in `server/src/channel_api.rs`. A
+Project has one default channel (created on first read); messages are
+immutable, attributed, sequenced per channel, and idempotent per client message
+id; a Thread is rooted at a top-level message and can be linked, revision-
+checked, to a research question without moving any message. A message may
+carry an intent (`ask`, `request`) that a consumer claims exactly once by
+message id. References and mentions are validated against the same Project.
+Each write commits a content-free `channel_updated` event. `ProjectContext`
+reads `thread`, `channel`, and `work` sources, bounded and attributed, so an
+agent handed one Thread sees that topic and not the rest of the channel. The
+browser surface is `src/kubecode/channel/`: the navigator entry sits above the
+research list, the main pane swaps to `ChannelWorkspace` (timeline, composer,
+Thread pane), and feeds converge on `channel_updated` events by sequence
+number.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

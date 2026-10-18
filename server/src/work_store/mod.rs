@@ -12,6 +12,7 @@ mod commands;
 mod models;
 mod sync;
 
+pub(crate) use commands::validate_reference;
 pub use models::*;
 
 use std::sync::Arc;

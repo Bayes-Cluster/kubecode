@@ -88,7 +88,7 @@ describe('ComposerProjectWorkPicker', () => {
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Teams' }))
     await waitFor(() => expect(api.searchProjectContext).toHaveBeenLastCalledWith('project-1', {
-      query: 'weight decay', kinds: ['team', 'team_task'], limit: 20,
+      query: 'weight decay', kinds: ['team', 'team_task', 'work'], limit: 20,
     }))
     expect(screen.getByRole('button', { name: 'Teams' })).toHaveAttribute('aria-pressed', 'true')
   })

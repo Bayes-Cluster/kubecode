@@ -933,6 +933,9 @@ export type ProjectContextKind =
   | 'team_task'
   | 'experiment'
   | 'artifact'
+  | 'work'
+  | 'thread'
+  | 'channel'
 export type ProjectContextDetail = 'summary' | 'content' | 'evidence'
 /** A typed pointer; `revision` is a change fingerprint, not a snapshot. */
 export type ProjectContextRef = { kind: ProjectContextKind; id: string; revision?: string | null }
@@ -1032,4 +1035,60 @@ export type ResearchExportPacket = {
   markdown: string
   total_bytes: number
   truncated: boolean
+}
+
+/** The Workspace conversation (ADR 0216): channels, messages, and Threads. */
+export type ChannelAuthorKind = 'researcher' | 'agent' | 'system'
+export type ChannelMessageKind = 'message' | 'system'
+/** What a message asks for; recorded only, never acted on by saving it. */
+export type ChannelIntent = 'say' | 'ask' | 'request'
+export type Channel = {
+  id: string
+  project_id: string
+  name: string
+  is_default: boolean
+  last_seq: number
+  created_at: string
+}
+export type ChannelMention = { session_id: string }
+export type ChannelMessage = {
+  id: string
+  project_id: string
+  channel_id: string
+  thread_id: string | null
+  seq: number
+  kind: ChannelMessageKind
+  author_kind: ChannelAuthorKind
+  author_ref: string | null
+  body: string
+  intent: ChannelIntent
+  mentions: ChannelMention[]
+  references: ProjectContextRef[]
+  client_message_id: string | null
+  intent_claimed_by: string | null
+  created_at: string
+}
+export type ChannelMessagePage = { messages: ChannelMessage[]; has_more: boolean }
+export type ChannelThread = {
+  id: string
+  project_id: string
+  channel_id: string
+  root_message_id: string
+  title: string
+  research_id: string | null
+  round_id: string | null
+  revision: number
+  reply_count: number
+  last_seq: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+export type NewChannelMessage = {
+  body: string
+  threadId?: string | null
+  clientMessageId?: string
+  intent?: ChannelIntent
+  mentions?: ChannelMention[]
+  references?: ProjectContextRef[]
 }

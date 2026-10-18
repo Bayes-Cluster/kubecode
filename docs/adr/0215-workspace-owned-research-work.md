@@ -128,8 +128,11 @@ task's experiments as evidence references, are mirrored too.
 Deleting a Team mirrors its last changes and *re-owns* its work in the same
 transaction: items become native (operable through the work store), runs that
 can no longer report are cancelled, a submitted result is kept as completed
-work, the old assignments end, and the Team's experiments are detached from
-the Team (they are the work's evidence and must not cascade away with it). The Team's rows then cascade away; the work
+work, the old assignments end, and the experiments of a Team that ran in
+the Project's own tree are detached from the Team (they are the work's evidence
+and must not cascade away with it). A Team with a private worktree takes its
+artifacts with it: its experiments go too, and references to them read as
+removed. The Team's rows then cascade away; the work
 items, attempts, assignments, results, and coordinator history stay. Active
 Teams therefore finish unchanged, and new work created natively is owned by the
 work store from the start.

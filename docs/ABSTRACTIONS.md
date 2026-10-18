@@ -1191,3 +1191,23 @@ tokens defined per color scheme; they never alias `--accent-*`, so workbench
 theme variants cannot retint file icons. Icon renderers emit the icon as the
 root `<svg>` element because workbench CSS sizes icons through descendant
 `svg` selectors.
+
+## Channel, message, and Thread
+
+A **channel** is a Project-scoped conversation; every Project has one default
+channel, and a channel's identity grants no execution authority and does not
+bind its messages to one research question. A **message** is immutable and
+attributed (`researcher`, `agent` with the writing Session, or `system`), has a
+per-channel sequence number, mentions Sessions, and references existing
+records by id and revision (nothing is copied). Messages are idempotent per
+client message id. A **Thread** is rooted at one top-level message, keeps its
+own replies, and may be linked to a research question (and one of its rounds);
+linking records a system message in the Thread and never moves or deletes a
+message, so two questions can share a channel with separate discussions.
+
+A message **intent** (`say`, `ask`, `request`) is a recorded request, not an
+action. A consumer claims it by message id with one conditional write; a
+duplicate delivery or a restarted consumer sees `already claimed` and does
+nothing. Only the researcher can author a `request`. Channel messages are
+distinct from provider transcripts (one per Session) and from the delivery
+mailbox between Team members. See ADR 0216.

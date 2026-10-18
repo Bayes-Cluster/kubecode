@@ -6,6 +6,7 @@ use serde_json::json;
 use crate::agent_discovery::{AgentCatalog, AgentDescriptor};
 use crate::agent_runtime::{AgentRuntime, RuntimeError};
 use crate::agents::{AgentStore, RunStatus};
+use crate::channel_store::ChannelStore;
 use crate::experiment_runner::ExperimentRunner;
 use crate::experiment_store::ExperimentStore;
 use crate::git::GitService;
@@ -30,6 +31,8 @@ pub struct AppState {
     pub experiments: Arc<ExperimentStore>,
     /// Workspace-owned research work (ADR 0215).
     pub work: Arc<WorkStore>,
+    /// The Workspace conversation (ADR 0216).
+    pub channels: Arc<ChannelStore>,
     pub experiment_runner: Arc<ExperimentRunner>,
     /// Read-only discovery over the stores above (ADR 0214).
     pub context: Arc<ProjectContext>,
@@ -72,6 +75,10 @@ impl AppState {
             WorkStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("work store"),
         );
+        let channels = Arc::new(
+            ChannelStore::from_database(agent_store.database(), Arc::clone(&agent_store))
+                .expect("channel store"),
+        );
         let experiment_runner = ExperimentRunner::new(
             Arc::clone(&experiments),
             Arc::clone(&workspace),
@@ -82,6 +89,8 @@ impl AppState {
             Arc::clone(&teams),
             Arc::clone(&research),
             Arc::clone(&experiments),
+            Arc::clone(&work),
+            Arc::clone(&channels),
             Arc::clone(&workspace),
         ));
         let agent_runtime = Arc::new(
@@ -103,6 +112,7 @@ impl AppState {
             research,
             experiments,
             work,
+            channels,
             experiment_runner,
             context,
             research_locks: Arc::default(),

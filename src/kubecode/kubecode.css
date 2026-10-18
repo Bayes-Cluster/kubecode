@@ -3805,3 +3805,161 @@
 .kubecode-research-facts code {
   overflow-wrap: anywhere;
 }
+
+/* Workspace conversation (ADR 0216) */
+.kubecode-channel-nav {
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+
+.kubecode-channel-workspace {
+  background: var(--surface-app);
+  color: var(--text-primary);
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.kubecode-channel-main,
+.kubecode-channel-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.kubecode-channel-main { flex: 1 1 auto; }
+
+.kubecode-channel-thread {
+  border-left: 1px solid var(--border-subtle);
+  flex: 0 0 min(380px, 45%);
+}
+
+.kubecode-channel-thread > header {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.kubecode-channel-thread h3,
+.kubecode-channel-header h2 {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.kubecode-channel-header p,
+.kubecode-channel-thread > header p { margin: 0; }
+
+.kubecode-channel-link,
+.kubecode-channel-composer-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kubecode-channel-composer-row { justify-content: flex-end; }
+
+.kubecode-channel-select {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--kubecode-ui-font-small);
+  max-width: 100%;
+  min-height: 28px;
+  padding: 2px 6px;
+}
+
+.kubecode-channel-messages {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 120px;
+  overflow-y: auto;
+}
+
+.kubecode-channel-message {
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.kubecode-channel-message:hover { background: var(--surface-hover); }
+.kubecode-channel-message[data-kind='system'] { color: var(--text-secondary); font-style: italic; }
+
+.kubecode-channel-message > header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kubecode-channel-message time {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-tiny);
+}
+
+.kubecode-channel-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.kubecode-channel-mentions {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-small);
+  margin: 0;
+}
+
+.kubecode-channel-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kubecode-channel-reference {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  display: inline-flex;
+  font-size: var(--kubecode-ui-font-small);
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 8px;
+}
+
+button.kubecode-channel-reference { cursor: pointer; }
+button.kubecode-channel-reference:disabled { cursor: default; }
+.kubecode-channel-reference span { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
+.kubecode-channel-reference button { background: transparent; border: 0; cursor: pointer; display: inline-flex; padding: 0; }
+
+.kubecode-channel-thread-button { align-self: flex-start; }
+
+.kubecode-channel-composer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (max-width: 900px) {
+  .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }
+  .kubecode-channel-thread { border-left: 0; border-top: 1px solid var(--border-subtle); flex: 0 0 auto; }
+}
