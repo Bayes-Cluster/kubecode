@@ -1253,6 +1253,45 @@ export type WorkDetail = WorkCard & {
     exit_code: number | null
     created_at: string
   }>
+  /** What was decided about each finished experiment of the task. */
+  decisions: WorkExperimentDecision[]
+  /** Questions an agent put to the researcher, oldest first. */
+  decision_requests: WorkDecisionRequest[]
+  /** Cited evidence that no longer matches what was attached. */
+  stale_evidence: WorkStaleEvidence[]
+}
+export type WorkDecisionKind =
+  | 'further_analysis'
+  | 'repair'
+  | 'retry'
+  | 'follow_up'
+  | 'external_wait'
+  | 'researcher_input'
+  | 'conclude'
+export type WorkExperimentDecision = {
+  id: string
+  experiment_id: string
+  kind: WorkDecisionKind
+  rationale: string
+  launched_experiment_id: string | null
+  created_at: string
+}
+export type WorkDecisionRequest = {
+  id: string
+  work_id: string
+  question: string
+  options: string[]
+  impact: string | null
+  asked_by: string
+  state: 'open' | 'answered'
+  answer: string | null
+  created_at: string
+}
+export type WorkStaleEvidence = {
+  result_id: string
+  kind: string
+  ref_id: string
+  status: 'changed' | 'removed'
 }
 /** Narrows the one board; no filter creates another. */
 export type WorkBoardFilter = {
@@ -1272,6 +1311,7 @@ export type WorkCommand =
   | { command: 'resume' }
   | { command: 'prioritize'; priority: number; expected_revision: number }
   | { command: 'review'; accept: boolean; outcome?: WorkOutcome; reason?: string }
+  | { command: 'repin'; result_id: string }
   | {
     command: 'close'
     lifecycle: Exclude<WorkLifecycle, 'active'>

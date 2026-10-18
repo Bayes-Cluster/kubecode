@@ -19,6 +19,7 @@ use serde_json::json;
 use crate::agents::AgentId;
 use crate::app_state::AppState;
 use crate::orchestrator::{OrchestratorError, Route};
+use crate::work_agent::{Evidence, StaleEvidence};
 use crate::work_store::{
     Actor, Assignment, Attempt, Closure, Ctx, DependencyState, NewWork, PlanPatch, ResultRef,
     ReviewInput, ReviewRecord, WorkCondition, WorkCounts, WorkError, WorkFilter, WorkLifecycle,
@@ -38,6 +39,14 @@ pub fn routes() -> Router<AppState> {
             "/projects/{project_id}/work/{work_id}/commands",
             post(command),
         )
+        .route(
+            "/projects/{project_id}/work/{work_id}/decisions/{request_id}/answer",
+            post(answer_decision),
+        )
+}
+
+fn evidence_of(state: &AppState) -> Evidence {
+    Evidence::new(state.context.clone(), state.workspace.clone())
 }
 
 enum ApiError {
@@ -47,6 +56,8 @@ enum ApiError {
     BadRequest(&'static str),
     /// Pausing would erase a condition someone else set (needs input, blocked, waiting).
     ConditionInUse,
+    /// Cited evidence changed since it was attached.
+    StaleEvidence(Vec<StaleEvidence>),
 }
 
 impl From<WorkError> for ApiError {
@@ -76,6 +87,15 @@ impl IntoResponse for ApiError {
                 "invalid_work_request",
                 reason.to_owned(),
             ),
+            Self::StaleEvidence(stale) => {
+                extra.insert("stale".into(), json!(stale));
+                (
+                    StatusCode::CONFLICT,
+                    "work_evidence_stale",
+                    "cited evidence changed since it was attached; look at it and re-pin it first"
+                        .to_owned(),
+                )
+            }
             Self::ConditionInUse => (
                 StatusCode::CONFLICT,
                 "work_condition_in_use",
@@ -631,6 +651,22 @@ struct Detail {
     reviews: Vec<ReviewRecord>,
     routes: Vec<Route>,
     experiments: Vec<ExperimentBrief>,
+    /// What was decided about each finished experiment of this task.
+    decisions: Vec<DecisionBrief>,
+    /// Questions put to the researcher about this task, open ones first.
+    decision_requests: Vec<crate::work_store::DecisionRequest>,
+    /// Cited evidence that no longer matches what was attached.
+    stale_evidence: Vec<StaleEvidence>,
+}
+
+#[derive(Debug, Serialize)]
+struct DecisionBrief {
+    id: String,
+    experiment_id: String,
+    kind: crate::experiment_store::DecisionKind,
+    rationale: String,
+    launched_experiment_id: Option<String>,
+    created_at: String,
 }
 
 async fn detail(
@@ -659,6 +695,36 @@ async fn detail(
                 .collect(),
             _ => Vec::new(),
         };
+        let decisions = match (&summary.item.research_id, &summary.item.round_id) {
+            (Some(research_id), Some(round_id)) => blocking_state
+                .experiments
+                .decisions(&project_id, research_id, round_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|decision| {
+                    experiments
+                        .iter()
+                        .any(|experiment| experiment.id == decision.experiment_id)
+                })
+                .map(|decision| DecisionBrief {
+                    id: decision.id,
+                    experiment_id: decision.experiment_id,
+                    kind: decision.kind,
+                    rationale: decision.rationale,
+                    launched_experiment_id: decision.launched_experiment_id,
+                    created_at: decision.created_at,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let decision_requests = blocking_state
+            .work
+            .decision_requests(&project_id, &work_id)?;
+        let stale_evidence = if summary.item.lifecycle == WorkLifecycle::Active {
+            evidence_of(&blocking_state).stale(&project_id, &summary.results)
+        } else {
+            Vec::new()
+        };
         let attempts = blocking_state.work.attempts(&project_id, &work_id)?;
         let assignments = blocking_state.work.assignments(&project_id, &work_id)?;
         let results = summary.results.clone();
@@ -676,6 +742,9 @@ async fn detail(
             reviews,
             routes,
             experiments,
+            decisions,
+            decision_requests,
+            stale_evidence,
         })
     })
     .await
@@ -775,6 +844,11 @@ enum Command {
         outcome: Option<String>,
         #[serde(default)]
         reason: Option<String>,
+    },
+    /// Accepts the current state of one cited result as its evidence, after
+    /// the researcher has looked at what changed.
+    Repin {
+        result_id: String,
     },
     /// Cancels, abandons, or supersedes it, keeping its history.
     Close {
@@ -898,6 +972,18 @@ async fn command(
                         WorkOutcome::parse(value).ok_or(ApiError::BadRequest("unknown outcome"))?
                     }
                 };
+                if accept {
+                    let results = work.results(&project_id, &work_id)?;
+                    let stale = evidence_of(&blocking_state).stale(&project_id, &results);
+                    if !stale.is_empty() {
+                        let _ = work.flag_attention(
+                            &project_id,
+                            &work_id,
+                            "cited evidence changed since it was attached; review it before accepting",
+                        );
+                        return Err(ApiError::StaleEvidence(stale));
+                    }
+                }
                 work.review(
                     &project_id,
                     &work_id,
@@ -908,6 +994,28 @@ async fn command(
                     },
                     ctx,
                 )?;
+                // The conversation and the question's log learn what was
+                // decided; a failure here never undoes the review.
+                if let Some(review) = work.reviews(&project_id, &work_id)?.last() {
+                    let item = work.get(&project_id, &work_id)?;
+                    let _ = blocking_state
+                        .orchestrator
+                        .publish_review(&project_id, &item, review);
+                }
+            }
+            Command::Repin { result_id } => {
+                let results = work.results(&project_id, &work_id)?;
+                let result = results
+                    .iter()
+                    .find(|result| result.id == result_id)
+                    .ok_or(WorkError::NotFound)?;
+                let current = evidence_of(&blocking_state).current_revision(
+                    &project_id,
+                    &result.kind,
+                    &result.ref_id,
+                );
+                work.repin_result(&project_id, &work_id, &result_id, current.as_deref(), ctx)?;
+                work.clear_attention(&project_id, &work_id)?;
             }
             Command::Close {
                 lifecycle,
@@ -936,4 +1044,48 @@ async fn command(
     .await
     .map_err(|_| ApiError::BadRequest("the command could not be run"))??;
     Ok(Json(card))
+}
+
+// -- Decision requests ----------------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct AnswerRequest {
+    answer: String,
+}
+
+/// The researcher answers a question an agent put about a task. The answer
+/// decides that question and is routed back to the asker; it widens no limit
+/// and starts nothing (ADR 0219).
+async fn answer_decision(
+    State(state): State<AppState>,
+    Path((project_id, work_id, request_id)): Path<(String, String, String)>,
+    Json(request): Json<AnswerRequest>,
+) -> Result<Json<crate::work_store::DecisionRequest>, ApiError> {
+    check_project(&state, &project_id)?;
+    let blocking_state = state.clone();
+    let answered = tokio::task::spawn_blocking(move || -> Result<_, ApiError> {
+        let existing = blocking_state
+            .work
+            .decision_request(&project_id, &request_id)?;
+        if existing.work_id != work_id {
+            return Err(WorkError::NotFound.into());
+        }
+        let answered = blocking_state.work.answer_decision(
+            &project_id,
+            &request_id,
+            &request.answer,
+            "researcher",
+        )?;
+        // Routing is idempotent per request, so if it fails the researcher
+        // repeats the same answer: the answer is recorded once and the asker
+        // is told once.
+        blocking_state
+            .orchestrator
+            .route_decision_answer(&project_id, &answered)?;
+        blocking_state.orchestrator.wake();
+        Ok(answered)
+    })
+    .await
+    .map_err(|_| ApiError::BadRequest("the answer could not be recorded"))??;
+    Ok(Json(answered))
 }

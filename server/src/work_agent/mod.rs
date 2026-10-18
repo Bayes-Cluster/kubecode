@@ -24,8 +24,13 @@ use crate::work_store::{
     WorkFilter, WorkLifecycle, WorkOutcome, WorkStage, WorkStore, WorkSummary,
 };
 
+mod analysis;
+mod evidence;
 #[cfg(test)]
 mod tests;
+
+pub use analysis::{DecisionInput, LaunchSpec};
+pub use evidence::{Evidence, StaleEvidence};
 
 const LIST_LIMIT: usize = 100;
 
@@ -38,6 +43,12 @@ pub enum AgentWorkError {
     NotCoordinator,
     #[error("{0}")]
     Invalid(String),
+    /// An experiment was refused or could not run (a limit, an unauthorized command).
+    #[error("{0}")]
+    Experiment(String),
+    /// Cited evidence changed or was removed since it was pinned.
+    #[error("evidence changed since it was attached; look at it and re-pin it before accepting")]
+    StaleEvidence(Vec<StaleEvidence>),
     #[error(transparent)]
     Work(#[from] WorkError),
     #[error(transparent)]
@@ -100,6 +111,8 @@ pub struct WorkAgent {
     research: Arc<ResearchStore>,
     agents: Arc<AgentStore>,
     provider_available: Arc<dyn Fn(AgentId) -> bool + Send + Sync>,
+    experiments: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
+    evidence: Option<Evidence>,
 }
 
 impl WorkAgent {
@@ -123,7 +136,24 @@ impl WorkAgent {
             research,
             agents,
             provider_available,
+            experiments: None,
+            evidence: None,
         }
+    }
+
+    /// Lets this Session launch experiments for its tasks (ADR 0219).
+    pub fn with_experiments(
+        mut self,
+        runner: Arc<crate::experiment_runner::ExperimentRunner>,
+    ) -> Self {
+        self.experiments = Some(runner);
+        self
+    }
+
+    /// Lets commands pin evidence to the revision it has and refuse stale evidence.
+    pub fn with_evidence(mut self, evidence: Evidence) -> Self {
+        self.evidence = Some(evidence);
+        self
     }
 
     // -- Identity ------------------------------------------------------------------------------------
@@ -414,9 +444,24 @@ impl WorkAgent {
                 "a request_key is required so a replay starts nothing twice",
             ));
         }
-        let attempt =
-            self.work
-                .begin_attempt(&self.project_id, work_id, Some(request_key), &actor)?;
+        let attempt = match self.work.begin_attempt(
+            &self.project_id,
+            work_id,
+            Some(request_key),
+            &actor,
+        ) {
+            Ok(attempt) => attempt,
+            Err(error @ (WorkError::BudgetExhausted(_) | WorkError::RoundPaused)) => {
+                // Further dispatch stops, and the researcher is told on the card.
+                let _ = self.work.flag_attention(
+                    &self.project_id,
+                    work_id,
+                    &format!("no more attempts can start: {error}. Only the researcher can raise the limit."),
+                );
+                return Err(error.into());
+            }
+            Err(error) => return Err(error.into()),
+        };
         // The attempt names its own executor, even if the task moved since.
         let executor = attempt
             .conversation_id
@@ -442,6 +487,9 @@ impl WorkAgent {
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if accept {
+            self.refuse_stale_evidence(work_id)?;
+        }
         self.work.review(
             &self.project_id,
             work_id,
@@ -452,6 +500,7 @@ impl WorkAgent {
             },
             &actor,
         )?;
+        self.publish_latest_review(work_id)?;
         Ok(self.work.summary(&self.project_id, work_id)?)
     }
 
@@ -567,6 +616,15 @@ impl WorkAgent {
             .latest_attempt
             .as_ref()
             .map(|attempt| attempt.id.clone());
+        // Evidence is pinned to the revision it has now, so a later change is
+        // detectable. (Experiments are pinned when they are analyzed.)
+        let pinned = match (revision, &self.evidence) {
+            (Some(revision), _) => Some(revision.to_owned()),
+            (None, Some(evidence)) if kind != "experiment" => {
+                evidence.current_revision(&self.project_id, kind, ref_id)
+            }
+            _ => None,
+        };
         self.work.add_result(
             &self.project_id,
             work_id,
@@ -575,7 +633,7 @@ impl WorkAgent {
                 role,
                 kind,
                 ref_id,
-                revision,
+                revision: pinned.as_deref(),
             },
             &actor,
         )?;
@@ -614,6 +672,11 @@ impl WorkAgent {
             } else {
                 AgentWorkError::NotFound
             });
+        }
+        if status == ReportStatus::Completed {
+            // Reporting done while a process runs, or while a finished result
+            // has no decision, would put unexamined work in front of review.
+            self.refuse_unanalyzed(&summary)?;
         }
         let actor = self.executor_actor();
         let wanted = match status {

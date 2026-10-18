@@ -2244,3 +2244,100 @@ fn attempts_stop_at_the_parallel_total_and_pause_limits() {
     });
     assert!(start(&r, &a, "a-3").is_ok());
 }
+
+#[test]
+fn a_question_flags_the_task_until_answered_and_an_attention_flag_never_overrides_someone_elses() {
+    let r = rig();
+    let (item, asker) = r.assigned("Needs a call");
+    let (first, created) = r
+        .work
+        .request_decision(
+            r.project(),
+            &item.id,
+            "q",
+            &asker,
+            "Which?",
+            &["a".into(), "b".into()],
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(created);
+    let (again, created) = r
+        .work
+        .request_decision(
+            r.project(),
+            &item.id,
+            "q",
+            &asker,
+            "Which?",
+            &["a".into(), "b".into()],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!((again.id.as_str(), created), (first.id.as_str(), false));
+    let flagged = r.work.get(r.project(), &item.id).unwrap();
+    assert_eq!(flagged.condition, WorkCondition::NeedsInput);
+
+    // Two open questions: the flag stays until the last one is answered.
+    let (second, _) = r
+        .work
+        .request_decision(r.project(), &item.id, "q2", &asker, "And?", &[], None, None)
+        .unwrap();
+    r.work
+        .answer_decision(r.project(), &first.id, "a", "researcher")
+        .unwrap();
+    assert_eq!(
+        r.work.get(r.project(), &item.id).unwrap().condition,
+        WorkCondition::NeedsInput
+    );
+    r.work
+        .answer_decision(r.project(), &second.id, "free text", "researcher")
+        .unwrap();
+    assert_eq!(
+        r.work.get(r.project(), &item.id).unwrap().condition,
+        WorkCondition::None
+    );
+
+    // A server-raised flag does not replace one the researcher or an agent set,
+    // and clearing it leaves other conditions alone.
+    r.work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::Waiting,
+            Some("waiting on data"),
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert!(
+        !r.work
+            .flag_attention(r.project(), &item.id, "limit")
+            .unwrap()
+    );
+    assert!(!r.work.clear_attention(r.project(), &item.id).unwrap());
+    assert_eq!(
+        r.work
+            .get(r.project(), &item.id)
+            .unwrap()
+            .condition_reason
+            .as_deref(),
+        Some("waiting on data")
+    );
+    r.work
+        .set_condition(
+            r.project(),
+            &item.id,
+            WorkCondition::None,
+            None,
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert!(
+        r.work
+            .flag_attention(r.project(), &item.id, "limit")
+            .unwrap()
+    );
+    assert!(r.work.clear_attention(r.project(), &item.id).unwrap());
+}

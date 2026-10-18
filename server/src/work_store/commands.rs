@@ -1558,6 +1558,49 @@ impl WorkStore {
         })
     }
 
+    /// Re-pins a cited result to the revision it has now, on purpose: the
+    /// caller has looked at what changed and accepts it as the evidence. The
+    /// earlier revision stays in any review that saw it.
+    pub fn repin_result<'a>(
+        &self,
+        project_id: &str,
+        id: &str,
+        result_id: &str,
+        revision: Option<&str>,
+        ctx: impl Into<Ctx<'a>>,
+    ) -> Result<ResultRef, WorkError> {
+        let ctx = ctx.into();
+        if let Some(revision) = revision {
+            text_ok(revision, 128, "the reference revision is too long")?;
+        }
+        self.write(|tx| {
+            let item = load_item(tx, project_id, id)?;
+            native(&item)?;
+            active(&item)?;
+            authorize(tx, &item, ctx.actor, Need::Execution)?;
+            expect_state(&item, &ctx)?;
+            let changed = tx.execute(
+                "UPDATE work_results SET revision = ?3 WHERE id = ?1 AND task_id = ?2",
+                params![result_id, id, revision],
+            )?;
+            if changed == 0 {
+                return Err(WorkError::NotFound);
+            }
+            tx.execute(
+                "UPDATE work_items SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [id],
+            )?;
+            let stored = results_of(tx, id)?
+                .into_iter()
+                .find(|result| result.id == result_id)
+                .ok_or(WorkError::NotFound)?;
+            Ok((
+                stored,
+                Some((project_id.to_owned(), id.to_owned(), Change::Result)),
+            ))
+        })
+    }
+
     // -- Coordination ------------------------------------------------------------------------------
 
     /// Names the first coordinator of a round (epoch 1). Only the researcher

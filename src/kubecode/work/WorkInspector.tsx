@@ -94,6 +94,7 @@ export function WorkInspector({
   const [priority, setPriority] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   useEffect(() => {
     setForm(formRequest?.form ?? null)
     setReason('')
@@ -138,6 +139,21 @@ export function WorkInspector({
       setBusy(false)
     }
   }
+  const answer = async (requestId: string, text: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.answerWorkDecision(projectId, item.id, requestId, text)
+      setAnswers((current) => ({ ...current, [requestId]: '' }))
+      onChanged()
+      reload()
+    } catch (cause) {
+      setError(workErrorMessage(cause, t))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const staleIds = new Set(detail.stale_evidence.map((entry) => entry.result_id))
   const assignable = sessions.filter((session) => session.id !== detail.executor?.session_id)
 
   return (
@@ -219,6 +235,9 @@ export function WorkInspector({
       {item.condition_reason && item.condition !== 'none' && (
         <p className="kubecode-research-notice">{item.condition_reason}</p>
       )}
+      {item.stage === 'analyzing' && (
+        <p className="kubecode-research-notice" role="status">{t('kubecode.work.analysisWaiting')}</p>
+      )}
       {item.closed_reason && (
         <p className="kubecode-research-notice">
           {t('kubecode.work.closedReason', { reason: item.closed_reason })}
@@ -285,16 +304,108 @@ export function WorkInspector({
         </section>
       )}
 
+      {detail.decisions.length > 0 && (
+        <section>
+          <h4>{t('kubecode.work.field.decisions')}</h4>
+          <ul>
+            {detail.decisions.map((decision) => (
+              <li key={decision.id}>
+                <strong>{t(`kubecode.work.decisionKind.${decision.kind}` as 'kubecode.work.decisionKind.retry')}</strong>
+                {` — ${decision.rationale}`}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {detail.decision_requests.length > 0 && (
+        <section aria-label={t('kubecode.work.field.questions')}>
+          <h4>{t('kubecode.work.field.questions')}</h4>
+          <ul>
+            {detail.decision_requests.map((request) => (
+              <li key={request.id} data-state={request.state}>
+                <p>{request.question}</p>
+                {request.impact && (
+                  <small>{t('kubecode.work.question.impact', { impact: request.impact })}</small>
+                )}
+                {request.state === 'answered' ? (
+                  <p className="kubecode-research-muted">
+                    {t('kubecode.work.question.answered', { answer: request.answer ?? '' })}
+                  </p>
+                ) : (
+                  <div className="kubecode-work-command-row">
+                    {request.options.length > 0 ? (
+                      <select
+                        aria-label={t('kubecode.work.question.choose')}
+                        className="kubecode-channel-select"
+                        value={answers[request.id] ?? ''}
+                        onChange={(event) => setAnswers((current) => ({ ...current, [request.id]: event.target.value }))}
+                      >
+                        <option value="">{t('kubecode.work.question.choose')}</option>
+                        {request.options.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Textarea
+                        aria-label={t('kubecode.work.question.placeholder')}
+                        placeholder={t('kubecode.work.question.placeholder')}
+                        rows={2}
+                        value={answers[request.id] ?? ''}
+                        onChange={(event) => setAnswers((current) => ({ ...current, [request.id]: event.target.value }))}
+                      />
+                    )}
+                    <Button
+                      disabled={busy || (answers[request.id] ?? '').trim() === ''}
+                      size="sm"
+                      onClick={() => void answer(request.id, (answers[request.id] ?? '').trim())}
+                    >
+                      {t('kubecode.work.question.answer')}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <small className="kubecode-research-muted">{t('kubecode.work.question.note')}</small>
+        </section>
+      )}
+
       {detail.results.length > 0 && (
         <section>
           <h4>{t('kubecode.work.field.evidence')}</h4>
           <ul>
             {detail.results.map((result) => (
-              <li key={result.id}>
+              <li key={result.id} data-stale={staleIds.has(result.id) || undefined}>
                 {result.role} · {result.kind}: {result.ref_id}
+                {staleIds.has(result.id) && (
+                  <span className="kubecode-research-badge" data-tone="warn">
+                    {t(`kubecode.work.stale.${detail.stale_evidence.find((entry) => entry.result_id === result.id)?.status ?? 'changed'}` as 'kubecode.work.stale.changed')}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {detail.stale_evidence.length > 0 && (
+        <section aria-label={t('kubecode.work.stale.title')}>
+          <h4>{t('kubecode.work.stale.title')}</h4>
+          <p className="kubecode-research-notice">{t('kubecode.work.stale.hint')}</p>
+          {native && detail.stale_evidence.map((entry) => (
+            <div className="kubecode-work-command-row" key={entry.result_id}>
+              <span>{entry.kind}: {entry.ref_id}</span>
+              <Button
+                disabled={busy}
+                size="sm"
+                variant="outline"
+                onClick={() => void run({ command: 'repin', result_id: entry.result_id })}
+              >
+                {t('kubecode.work.command.repin')}
+              </Button>
+            </div>
+          ))}
         </section>
       )}
 

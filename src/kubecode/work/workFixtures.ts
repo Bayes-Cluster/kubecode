@@ -56,6 +56,9 @@ export function detailOf(card: WorkCard, extra: Partial<WorkDetail> = {}): WorkD
     reviews: [],
     routes: [],
     experiments: [],
+    decisions: [],
+    decision_requests: [],
+    stale_evidence: [],
     ...extra,
   }
 }

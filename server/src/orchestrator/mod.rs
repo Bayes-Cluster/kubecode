@@ -13,6 +13,7 @@
 //! Thread with no admitted round is answered, not acted on. One request that
 //! cannot be routed never blocks the others.
 
+mod analysis;
 mod models;
 mod sink;
 #[cfg(test)]
@@ -965,7 +966,9 @@ impl Orchestrator {
         sink: &dyn RouteSink,
     ) -> Result<(RoutingReport, DeliveryReport), OrchestratorError> {
         let routed = self.route_intents();
+        let experiments = self.route_experiments();
         let delivered = self.deliver_due(sink, now_secs());
+        experiments?;
         Ok((routed?, delivered?))
     }
 }

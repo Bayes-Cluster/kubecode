@@ -824,3 +824,204 @@ async fn a_priority_change_is_refused_if_the_card_moved_after_it_was_read() {
     assert_eq!(error["code"], "work_state_conflict");
     assert_eq!(env.card(&task).await["item"]["priority"], 0);
 }
+
+/// Gets a task to review with an executor-cited file as evidence.
+fn reviewed_task(env: &Env, evidence_path: &str) -> String {
+    use kubecode_server::work_store::{
+        AttemptOutcome, NewResult, ResultRole, ReviewKind, WorkStage,
+    };
+    let task = env.task("Cited", None);
+    let executor = env.session("Worker");
+    let actor = Actor::Executor {
+        conversation_id: executor.clone(),
+    };
+    let work = &env.state.work;
+    work.assign(
+        &env.project_id,
+        &task,
+        &executor,
+        None,
+        "",
+        &Actor::Researcher,
+    )
+    .expect("assign");
+    let attempt = work
+        .begin_attempt(&env.project_id, &task, Some("k"), &Actor::Researcher)
+        .expect("attempt");
+    work.bind_attempt_run(&env.project_id, &attempt.id, "run-1", &actor)
+        .expect("run");
+    let revision = env
+        .state
+        .workspace
+        .file_revision(&env.project_id, evidence_path)
+        .expect("revision");
+    work.add_result(
+        &env.project_id,
+        &task,
+        NewResult {
+            attempt_id: Some(&attempt.id),
+            role: ResultRole::Evidence,
+            kind: "file",
+            ref_id: evidence_path,
+            revision: Some(&revision),
+        },
+        &actor,
+    )
+    .expect("result");
+    work.finish_attempt(
+        &env.project_id,
+        &attempt.id,
+        AttemptOutcome::Completed,
+        &actor,
+    )
+    .expect("finish");
+    work.advance(
+        &env.project_id,
+        &task,
+        WorkStage::Executing,
+        WorkStage::Review,
+        Some(ReviewKind::Result),
+        &actor,
+    )
+    .expect("review");
+    task
+}
+
+#[tokio::test]
+async fn acceptance_is_refused_for_changed_evidence_until_the_researcher_re_pins_it() {
+    let env = env();
+    let root = env
+        .state
+        .workspace
+        .execution_path(&env.project_id, None)
+        .expect("root");
+    std::fs::write(root.join("notes.md"), "pruning helps").unwrap();
+    let task = reviewed_task(&env, "notes.md");
+    let detail = env.card(&task).await;
+    assert_eq!(detail["stale_evidence"].as_array().unwrap().len(), 0);
+
+    std::fs::write(root.join("notes.md"), "pruning hurts").unwrap();
+    let detail = env.card(&task).await;
+    assert_eq!(detail["stale_evidence"][0]["status"], "changed");
+    let result_id = detail["results"][0]["id"].as_str().unwrap().to_owned();
+    let revision = detail["item"]["state_revision"].as_u64().unwrap();
+    let (status, error) = env
+        .run(
+            &task,
+            json!({"command": "review", "accept": true, "outcome": "supported",
+                   "expected_state_revision": revision}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "work_evidence_stale");
+    assert_eq!(error["stale"][0]["ref_id"], "notes.md");
+    let after = env.card(&task).await;
+    assert_eq!(after["item"]["stage"], "review", "nothing was accepted");
+    assert_eq!(after["item"]["condition"], "needs_input");
+
+    // Looking at it and re-pinning clears the flag; then acceptance is possible.
+    let revision = after["item"]["state_revision"].as_u64().unwrap();
+    let (status, repinned) = env
+        .run(
+            &task,
+            json!({"command": "repin", "result_id": result_id, "expected_state_revision": revision}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{repinned}");
+    assert_eq!(repinned["item"]["condition"], "none");
+    let revision = repinned["item"]["state_revision"].as_u64().unwrap();
+    let (status, accepted) = env
+        .run(
+            &task,
+            json!({"command": "review", "accept": true, "outcome": "supported",
+                   "reason": "read again", "expected_state_revision": revision}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert_eq!(accepted["item"]["stage"], "done");
+    // The review reached the question's log.
+    let entries = env
+        .state
+        .research
+        .entries(&env.project_id, &env.research_id, 0, Some(20))
+        .unwrap();
+    assert!(entries.iter().any(|entry| entry.body.contains("Cited")));
+}
+
+#[tokio::test]
+async fn a_question_to_the_researcher_is_answered_once_and_the_answer_grants_nothing() {
+    let env = env();
+    let task = env.task("Needs a call", None);
+    let asker = env.session("Asker");
+    let (request, _) = env
+        .state
+        .work
+        .request_decision(
+            &env.project_id,
+            &task,
+            "q-1",
+            &asker,
+            "Use 8 heads?",
+            &["yes".to_owned(), "no".to_owned()],
+            None,
+            None,
+        )
+        .expect("request");
+    let detail = env.card(&task).await;
+    assert_eq!(detail["decision_requests"][0]["state"], "open");
+    assert_eq!(detail["item"]["condition"], "needs_input");
+    let policy_before = env
+        .state
+        .work
+        .policy(&env.project_id, &env.round_id)
+        .unwrap();
+    let path = format!(
+        "/projects/{}/work/{task}/decisions/{}/answer",
+        env.project_id, request.id
+    );
+
+    let (status, error) = call(&env, Method::POST, &path, json!({"answer": "maybe"})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    let (status, answered) = call(&env, Method::POST, &path, json!({"answer": "yes"})).await;
+    assert_eq!(status, StatusCode::OK, "{answered}");
+    assert_eq!(answered["state"], "answered");
+    // Repeating the same answer is fine; a different one is refused.
+    let (status, _) = call(&env, Method::POST, &path, json!({"answer": "yes"})).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&env, Method::POST, &path, json!({"answer": "no"})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let detail = env.card(&task).await;
+    assert_eq!(detail["item"]["condition"], "none");
+    let routes = env
+        .state
+        .orchestrator
+        .routes(&env.project_id, None, 20)
+        .unwrap()
+        .into_iter()
+        .filter(|route| route.kind.as_str() == "decision")
+        .count();
+    assert_eq!(routes, 1, "the asker is told once");
+    assert_eq!(
+        env.state
+            .work
+            .policy(&env.project_id, &env.round_id)
+            .unwrap(),
+        policy_before
+    );
+
+    // Another card, or another Project, cannot be used to answer it.
+    let other_task = env.task("Other", None);
+    let wrong_card = format!(
+        "/projects/{}/work/{other_task}/decisions/{}/answer",
+        env.project_id, request.id
+    );
+    let (status, _) = call(&env, Method::POST, &wrong_card, json!({"answer": "yes"})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let wrong_project = format!(
+        "/projects/{}/work/{task}/decisions/{}/answer",
+        env.other_project_id, request.id
+    );
+    let (status, _) = call(&env, Method::POST, &wrong_project, json!({"answer": "yes"})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
