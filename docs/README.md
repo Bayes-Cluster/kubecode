@@ -15,6 +15,7 @@ Kubecode. Architecture and ADRs are intended for contributors.
 5. [Terminal and TUI Sessions](guides/terminal.md)
 6. [Configuration](guides/configuration.md)
 7. [WeChat](guides/wechat.md)
+8. [Research questions and experiments](guides/research.md)
 8. [Troubleshooting](guides/troubleshooting.md)
 
 ## Developer documentation

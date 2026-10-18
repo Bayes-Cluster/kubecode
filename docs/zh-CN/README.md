@@ -15,6 +15,7 @@ Kubecode 是以 Standalone Linux 应用形式发布的可自托管浏览器 AI �
 5. [Terminal 与 TUI Session](guides/terminal.md)
 6. [配置](guides/configuration.md)
 7. [微信](guides/wechat.md)
+8. [研究问题与实验](guides/research.md)
 8. [故障排查](guides/troubleshooting.md)
 
 ## 开发者文档

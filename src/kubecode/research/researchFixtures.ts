@@ -1,5 +1,8 @@
 import type {
+  ExecutionEnvelope,
+  ExperimentView,
   KubecodeApi,
+  ResearchExecution,
   ResearchDetail,
   ResearchEntry,
   ResearchFinding,
@@ -78,6 +81,69 @@ export const roundFixture: ResearchRound = {
   updated_at: '',
 }
 
+export const envelopeFixture: ExecutionEnvelope = {
+  round_id: 'round-1',
+  research_id: 'rq-1',
+  revision: 2,
+  state: 'active',
+  limits: {
+    max_launches: 4,
+    max_concurrent: 2,
+    deadline_at: null,
+    max_runtime_secs: 1800,
+    max_no_progress: 3,
+    allowed_commands: [['python3', 'train.py'], ['bash', 'scripts/eval.sh']],
+  },
+  launches_reserved: 1,
+  created_at: '',
+  updated_at: '',
+}
+
+export function experimentFixture(overrides: Partial<ExperimentView> = {}): ExperimentView {
+  return {
+    id: 'x-1',
+    project_id: 'p1',
+    research_id: 'rq-1',
+    round_id: 'round-1',
+    team_id: 't-1',
+    task_id: null,
+    owner_member_id: 'member-1',
+    launch_key: 'baseline',
+    label: 'baseline',
+    argv: ['python3', 'train.py', '--lr', '0.1'],
+    cwd: '',
+    artifacts: ['metrics.json'],
+    sources: [],
+    policy_revision: 2,
+    max_runtime_secs: 1800,
+    state: 'exited',
+    analysis: 'pending',
+    identity: null,
+    exit_code: 0,
+    signal: null,
+    reason: null,
+    cancel_requested: false,
+    artifact_revisions: [{ path: 'metrics.json', revision: 'abc' }],
+    created_at: '',
+    launched_at: '',
+    finished_at: '',
+    artifact_state: [{ path: 'metrics.json', revision: 'abc', availability: 'changed' }],
+    ...overrides,
+  }
+}
+
+export function executionFixture(overrides: Partial<ResearchExecution> = {}): ResearchExecution {
+  return {
+    envelope: envelopeFixture,
+    experiments: [experimentFixture()],
+    waits: [],
+    decisions: [],
+    launch_blockers: [],
+    now: 1_800_000_000,
+    ...overrides,
+  }
+}
+
 export function fakeApi(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}) {
   const api = {
     listResearch: async () => [],
@@ -87,6 +153,7 @@ export function fakeApi(overrides: Partial<Record<keyof KubecodeApi, unknown>> =
     listResearchOutcomes: async (): Promise<ResearchOutcome[]> => [],
     listResearchProposals: async (): Promise<ResearchProposal[]> => [],
     listResearchRounds: async () => [roundFixture],
+    getResearchExecution: async () => executionFixture(),
     ...overrides,
   }
   return api as unknown as KubecodeApi

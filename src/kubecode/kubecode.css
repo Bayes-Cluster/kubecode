@@ -3645,3 +3645,149 @@
   .kubecode-research-row > button,
   .kubecode-research-row > [data-slot='select-trigger'] { flex: 1 1 140px; }
 }
+
+/* Research execution (ADR 0213) */
+.kubecode-research-execution {
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.kubecode-research-execution > header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kubecode-research-execution h4 {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-tiny);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.kubecode-research-envelope {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.kubecode-research-envelope legend {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-small);
+  padding: 0 4px;
+}
+
+.kubecode-research-envelope-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.kubecode-research-envelope label {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--kubecode-ui-font-small);
+  gap: 4px;
+}
+
+.kubecode-research-envelope label > span { color: var(--text-secondary); }
+
+.kubecode-research-facts {
+  display: grid;
+  gap: 6px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin: 0;
+}
+
+.kubecode-research-facts dt {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-tiny);
+}
+
+.kubecode-research-facts dd {
+  font-size: var(--kubecode-ui-font-small);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kubecode-research-attention {
+  background: var(--feedback-warning-bg);
+  border-radius: var(--radius-md);
+  color: var(--feedback-warning-text);
+  font-size: var(--kubecode-ui-font-small);
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.kubecode-research-confirm {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--kubecode-ui-font-small);
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.kubecode-research-confirm p { margin: 0; }
+.kubecode-research-confirm label { display: flex; flex-direction: column; gap: 4px; }
+
+.kubecode-research-decisions {
+  font-size: var(--kubecode-ui-font-small);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kubecode-research-logs {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.kubecode-research-logs h5 {
+  color: var(--text-secondary);
+  font-size: var(--kubecode-ui-font-tiny);
+  margin: 0 0 2px;
+}
+
+.kubecode-research-logs pre {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--kubecode-ui-font-tiny);
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.kubecode-research-check {
+  align-items: center;
+  display: flex;
+  flex-direction: row !important;
+  gap: 8px !important;
+}
+
+.kubecode-research-cards code,
+.kubecode-research-cards strong,
+.kubecode-research-decisions li,
+.kubecode-research-facts code {
+  overflow-wrap: anywhere;
+}

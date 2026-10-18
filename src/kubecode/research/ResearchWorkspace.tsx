@@ -171,7 +171,9 @@ export function ResearchWorkspace({
           <ResearchRoundsPanel
             agents={agents}
             api={api}
+            connectionState={connectionState}
             detail={detail}
+            events={events}
             findings={bundle.findings}
             onChanged={reload}
             onOpenSession={onOpenSession}
