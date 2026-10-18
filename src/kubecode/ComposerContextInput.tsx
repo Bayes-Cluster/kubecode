@@ -9,6 +9,7 @@ import type { ComposerCatalogSnapshot, GitDiffContextCandidate, KubecodeApi } fr
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities } from './composerCapabilities'
 import {
+  composerContextFallbackText,
   composerDraftFromEditorValue,
   composerDraftAllReferences,
   composerDraftPlainText,
@@ -312,7 +313,7 @@ export function ComposerContextInput({
   const sanitizePastedText = useCallback((value: string) => referencesRef.current.reduce(
     (text, reference) => text.replaceAll(
       `[[${reference.id}]]`,
-      'path' in reference ? `@${reference.path}` : `$${reference.name}`,
+      'path' in reference ? composerContextFallbackText(reference) : `$${reference.name}`,
     ),
     value,
   ), [])

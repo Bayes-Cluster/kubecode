@@ -274,9 +274,14 @@ pub(super) async fn register_composer_context(
             {
                 return Err(ComposerCatalogError::ContextStale.into());
             }
+            // A one-line display label: collapse whitespace and control characters.
             let title: String = item
                 .title
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
                 .chars()
+                .filter(|c| !c.is_control())
                 .take(MAX_PROJECT_CONTEXT_TITLE_CHARS)
                 .collect();
             store.register_composer_project_context(

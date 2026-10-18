@@ -7,6 +7,7 @@ import { ApiError, type AgentRun, type KubecodeApi } from '../api'
 import { useComposerController } from './useComposerController'
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { attachRunMessage } from './sessionModel'
+import { appendComposerText } from '../composerDraft'
 
 const t = createTranslator('en')
 
@@ -64,8 +65,15 @@ function queued(item: Partial<import('../api').PromptQueueItem> = {}): {
   }
 }
 
-function renderController(api: KubecodeApi, options: { active?: boolean; run?: AgentRun | null } = {}) {
-  const { active = false, run = null } = options
+function renderController(
+  api: KubecodeApi,
+  options: {
+    active?: boolean
+    catalog?: import('../api').ComposerCatalogSnapshot
+    run?: AgentRun | null
+  } = {},
+) {
+  const { active = false, catalog, run = null } = options
   const harness: Harness = { messages: [] }
   const reportError = vi.fn()
   const appendOptimisticMessage = (message: AiAgentMessage) => {
@@ -106,7 +114,7 @@ function renderController(api: KubecodeApi, options: { active?: boolean; run?: A
     removeOptimisticMessage,
     reportError,
     run,
-    sessionState: null,
+    sessionState: catalog ? ({ composer: { catalog } } as never) : null,
     setSideQuestions: vi.fn(),
     t,
     viewRevisionId: null,
@@ -386,6 +394,34 @@ describe('useComposerController optimistic send', () => {
           availability: 'available',
         },
       })
+    })
+
+    it('keeps the draft with its chips flagged for revalidation when a source moved on before send', async () => {
+      const api = makeApi()
+      api.registerComposerContext.mockResolvedValue(registration)
+      api.startStructuredRun = vi.fn().mockRejectedValue(
+        new ApiError('composer_context_stale', 'Referenced context changed', 409),
+      )
+      const { result, harness, reportError } = renderController(api, {
+        catalog: { conversation_id: 'conversation-1', revision: 4, items: [], contexts: [] },
+      })
+      await act(async () => {
+        result.current.insertComposerProjectContext(item('finding', 'f1'))
+      })
+      await act(async () => {
+        result.current.updateComposerDraft((draft) => appendComposerText(draft, 'Build on this'))
+      })
+      await act(async () => {
+        await result.current.send('Build on this')
+      })
+      expect(api.startStructuredRun).toHaveBeenCalledTimes(1)
+      // The failed attempt leaves no bubble, and the researcher keeps the draft.
+      expect(harness.messages).toHaveLength(0)
+      expect(reportError).toHaveBeenCalledTimes(1)
+      const chips = result.current.composerDraft.segments.filter((segment) => segment.kind === 'context')
+      expect(chips).toHaveLength(1)
+      expect(chips[0]).toMatchObject({ reference: { availability: 'stale', kind: 'project_context' } })
+      expect(JSON.stringify(result.current.composerDraft)).toContain('Build on this')
     })
 
     it('does not offer the current Session or its turns, and reports a failed registration', async () => {

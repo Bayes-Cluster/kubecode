@@ -51,6 +51,29 @@ export type ComposerReference = ComposerContextReference | ComposerCapabilityRef
 const CONTEXT_TOKEN_PATTERN = /\[\[([A-Za-z0-9._:-]+)\]\]/g
 export const MAX_COMPOSER_CONTEXT_REFERENCES = 32
 
+/**
+ * The readable text a context chip degrades to when it cannot stay a chip
+ * (copy, paste, overflow, or an unrecoverable draft). Project work has no path,
+ * so it uses its display name; the text is never trusted as an identity.
+ */
+export function composerContextFallbackText(
+  reference: Pick<ComposerContextReference, 'kind' | 'name' | 'path'>,
+): string {
+  return reference.kind === 'project_context' ? `@${reference.name}` : `@${reference.path}`
+}
+
+/** Marks every context chip stale so it is revalidated before it can be sent. */
+export function markComposerContextsStale(draft: ComposerDraft): ComposerDraft {
+  return {
+    ...draft,
+    segments: draft.segments.map((segment) => (
+      segment.kind === 'context'
+        ? { ...segment, reference: { ...segment.reference, availability: 'stale' as const } }
+        : segment
+    )),
+  }
+}
+
 export function textComposerDraft(text = ''): ComposerDraft {
   return { version: 2, segments: [{ kind: 'text', text }] }
 }
@@ -246,7 +269,7 @@ export function parseStoredComposerDraft(stored: string | null | undefined): Com
         })
         referenceCount += 1
       } else {
-        appendText(segments, `@${segment.reference.path}`)
+        appendText(segments, composerContextFallbackText(segment.reference))
       }
     } else if (segment.kind === 'capability' && isCapabilityReference(segment.reference)) {
       if (referenceCount < MAX_COMPOSER_CONTEXT_REFERENCES) {
@@ -259,8 +282,12 @@ export function parseStoredComposerDraft(stored: string | null | undefined): Com
         appendText(segments, `$${segment.reference.name}`)
       }
     } else if (segment.kind === 'context') {
-      const path = (segment.reference as { path?: unknown } | undefined)?.path
-      if (typeof path === 'string') appendText(segments, `@${path}`)
+      const loose = segment.reference as { kind?: unknown; name?: unknown; path?: unknown } | undefined
+      if (loose?.kind === 'project_context' && typeof loose.name === 'string') {
+        appendText(segments, `@${loose.name}`)
+      } else if (typeof loose?.path === 'string') {
+        appendText(segments, `@${loose.path}`)
+      }
     } else if (segment.kind === 'capability') {
       const name = (segment.reference as { name?: unknown } | undefined)?.name
       if (typeof name === 'string') appendText(segments, `$${name}`)
@@ -277,9 +304,7 @@ export function composerDraftPlainText(draft: ComposerDraft): string {
   return draft.segments.map((segment) => {
     if (segment.kind === 'text') return segment.text
     if (segment.kind === 'context') {
-      return segment.reference.kind === 'project_context'
-        ? `@${segment.reference.name}`
-        : `@${segment.reference.path}`
+      return composerContextFallbackText(segment.reference)
     }
     return `$${segment.reference.name}`
   }).join('')

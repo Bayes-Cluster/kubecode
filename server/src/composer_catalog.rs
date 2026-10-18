@@ -1163,6 +1163,8 @@ pub fn session_turn_source_revision(
 
 /// Bytes of one Project context reference injected into a prompt.
 pub const MAX_PROJECT_CONTEXT_BYTES: usize = 16 * 1024;
+/// Bytes of Project work across every reference in one prompt.
+pub const MAX_PROJECT_CONTEXT_TOTAL_BYTES: usize = 64 * 1024;
 /// Characters of a reference title kept for display.
 pub const MAX_PROJECT_CONTEXT_TITLE_CHARS: usize = 120;
 

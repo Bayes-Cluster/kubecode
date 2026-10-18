@@ -18,9 +18,11 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 200
 const PAGE_SIZE = 20
+const RELATED_REFERENCES = 12
 
 type ListState = {
   items: ProjectContextItem[]
+  loadMoreFailed: boolean
   nextCursor: string | null
   status: 'error' | 'loading' | 'ready'
 }
@@ -53,7 +55,9 @@ export function ComposerProjectWorkPicker({
 }: ComposerProjectWorkPickerProps) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ProjectWorkFilter>('all')
-  const [list, setList] = useState<ListState>({ items: [], nextCursor: null, status: 'loading' })
+  const [list, setList] = useState<ListState>({
+    items: [], loadMoreFailed: false, nextCursor: null, status: 'loading',
+  })
   const [activeIndex, setActiveIndex] = useState(0)
   const [preview, setPreview] = useState<PreviewState>({ status: 'closed' })
   const requestRef = useRef(0)
@@ -67,29 +71,44 @@ export function ComposerProjectWorkPicker({
   useEffect(() => {
     const request = ++requestRef.current
     const timer = window.setTimeout(() => {
-      setList((current) => ({ ...current, status: 'loading' }))
+      // A new search replaces what is listed: rows from the previous query or
+      // filter must not stay selectable while it loads.
+      setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'loading' })
+      setPreview({ status: 'closed' })
       api.searchProjectContext(projectId, { query: query.trim(), kinds, limit: PAGE_SIZE })
         .then((page) => {
           if (request !== requestRef.current) return
-          setList({ items: page.items, nextCursor: page.next_cursor, status: 'ready' })
+          setList({
+            items: page.items, loadMoreFailed: false, nextCursor: page.next_cursor, status: 'ready',
+          })
           setActiveIndex(0)
         })
         .catch(() => {
-          if (request === requestRef.current) setList({ items: [], nextCursor: null, status: 'error' })
+          if (request === requestRef.current) {
+            setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'error' })
+          }
         })
     }, SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      // Invalidate the in-flight request when the query changes or the picker
+      // unmounts, so a late response never lands in the wrong list.
+      requestRef.current += 1
+      previewRequestRef.current += 1
+    }
   }, [api, kinds, projectId, query])
 
   const rows = useMemo(
     () => list.items.filter((item) => !isOwnSessionReference(item.ref, conversationId)),
     [conversationId, list.items],
   )
+  const ready = list.status === 'ready'
   const selectable = (item: ProjectContextItem | undefined) => (
-    Boolean(item) && item?.availability === 'available'
+    ready && Boolean(item) && item?.availability === 'available'
   )
   const enabledIndexes = rows.flatMap((item, index) => (selectable(item) ? [index] : []))
   const current = selectable(rows[activeIndex]) ? activeIndex : enabledIndexes[0] ?? -1
+  const activeItem = current >= 0 ? rows[current] : undefined
 
   const loadMore = () => {
     if (!list.nextCursor) return
@@ -100,11 +119,15 @@ export function ComposerProjectWorkPicker({
       if (request !== requestRef.current) return
       setList((previous) => ({
         items: [...previous.items, ...page.items],
+        loadMoreFailed: false,
         nextCursor: page.next_cursor,
         status: 'ready',
       }))
     }).catch(() => {
-      if (request === requestRef.current) setList((previous) => ({ ...previous, status: 'error' }))
+      // Keep what is already listed; only the extra page failed.
+      if (request === requestRef.current) {
+        setList((previous) => ({ ...previous, loadMoreFailed: true }))
+      }
     })
   }
 
@@ -125,34 +148,46 @@ export function ComposerProjectWorkPicker({
   }
 
   const kindLabel = (ref: ProjectContextRef) => t(PROJECT_CONTEXT_KIND_LABELS[ref.kind])
+  const unavailableLabel = (item: ProjectContextItem) => t(
+    item.availability === 'removed' ? 'kubecode.projectWorkRemoved' : 'kubecode.projectWorkChanged',
+  )
+  const closePreview = () => setPreview({ status: 'closed' })
+  const hasList = ready && rows.length > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border p-2">
         <Input
-          aria-activedescendant={current >= 0 ? `${listboxId}-option-${current}` : undefined}
+          aria-activedescendant={hasList && current >= 0 ? `${listboxId}-option-${current}` : undefined}
           aria-autocomplete="list"
-          aria-controls={listboxId}
-          aria-expanded
+          aria-controls={hasList ? listboxId : undefined}
+          aria-expanded={hasList}
           aria-label={t('kubecode.searchProjectWork')}
           autoFocus
           className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
-            // IME composition must never select or move.
+            // IME composition must never select, move, or dismiss.
             if (event.nativeEvent.isComposing) return
-            if (event.key === 'ArrowDown') {
+            if (event.key === 'Escape' && preview.status !== 'closed') {
+              // Escape peels the preview layer first and keeps the menu open.
+              event.preventDefault()
+              event.stopPropagation()
+              closePreview()
+            } else if (event.key === 'ArrowDown') {
               event.preventDefault()
               move(1)
             } else if (event.key === 'ArrowUp') {
               event.preventDefault()
               move(-1)
-            } else if (event.key === 'ArrowRight' && rows[current] && query === '') {
+            } else if (event.key === 'ArrowRight' && activeItem && query === '') {
               event.preventDefault()
-              openPreview(rows[current])
-            } else if ((event.key === 'Enter' || event.key === 'Tab') && rows[current]) {
+              openPreview(activeItem)
+            } else if (
+              (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && activeItem
+            ) {
               event.preventDefault()
-              onSelect(rows[current])
+              onSelect(activeItem)
             }
           }}
           placeholder={t('kubecode.searchProjectWork')}
@@ -175,9 +210,27 @@ export function ComposerProjectWorkPicker({
           ))}
         </div>
       </div>
-      <p className="px-3 pt-2 text-xs text-muted-foreground">{t('kubecode.projectWorkReadOnly')}</p>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="project-work-results">
-        {list.status === 'loading' && rows.length === 0 ? (
+      <div className="flex items-center justify-between gap-2 px-3 pt-2">
+        <p className="min-w-0 text-xs text-muted-foreground">{t('kubecode.projectWorkReadOnly')}</p>
+        <Button
+          aria-label={t('kubecode.projectWorkPreviewSelected')}
+          className="h-7 shrink-0 gap-1 px-2 text-xs"
+          disabled={!activeItem}
+          onClick={() => activeItem && openPreview(activeItem)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <Eye aria-hidden size={14} />
+          {t('kubecode.projectWorkPreviewSelected')}
+        </Button>
+      </div>
+      <div
+        aria-busy={list.status === 'loading'}
+        className="min-h-0 flex-1 overflow-y-auto p-2"
+        data-testid="project-work-results"
+      >
+        {list.status === 'loading' ? (
           <p className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground" role="status">
             <Loader2 aria-hidden className="animate-spin" size={14} />
             {t('kubecode.loadingContext')}
@@ -199,62 +252,53 @@ export function ComposerProjectWorkPicker({
                   aria-disabled={!enabled}
                   aria-selected={index === current}
                   className={cn(
-                    'flex items-stretch gap-1 rounded-xl',
+                    'flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2',
                     index === current && 'bg-accent text-accent-foreground',
+                    !enabled && 'cursor-not-allowed opacity-60',
                   )}
                   id={`${listboxId}-option-${index}`}
                   key={`${item.ref.kind}:${item.ref.id}`}
+                  onClick={() => enabled && onSelect(item)}
                   onMouseEnter={() => enabled && setActiveIndex(index)}
                   role="option"
                 >
-                  <button
-                    className="flex min-w-0 flex-1 items-start gap-3 rounded-xl px-3 py-2 text-left disabled:opacity-60"
-                    disabled={!enabled}
-                    onClick={() => onSelect(item)}
-                    tabIndex={-1}
-                    type="button"
-                  >
-                    <FlaskConical aria-hidden className="mt-0.5 shrink-0" size={18} />
-                    <span className="min-w-0">
-                      <strong className="block truncate font-medium">{item.title}</strong>
-                      <small className="block truncate text-xs text-muted-foreground">
-                        {[
-                          kindLabel(item.ref),
-                          item.provenance.state,
-                          item.provenance.author,
-                          item.provenance.updated_at,
-                        ].filter(Boolean).join(' · ')}
+                  <FlaskConical aria-hidden className="mt-0.5 shrink-0" size={18} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">{item.title}</strong>
+                    <small className="block truncate text-xs text-muted-foreground">
+                      {[
+                        kindLabel(item.ref),
+                        item.ref.revision && t('kubecode.projectWorkRevision', {
+                          revision: item.ref.revision.slice(0, 8),
+                        }),
+                        item.provenance.state,
+                        item.provenance.author,
+                        item.provenance.updated_at,
+                      ].filter(Boolean).join(' · ')}
+                    </small>
+                    {item.summary && (
+                      <small className="line-clamp-2 block whitespace-normal text-sm font-normal text-muted-foreground">
+                        {item.summary}
                       </small>
-                      {item.summary && (
-                        <small className="line-clamp-2 block whitespace-normal text-sm font-normal text-muted-foreground">
-                          {item.summary}
-                        </small>
-                      )}
-                      {!enabled && (
-                        <small className="flex items-center gap-1 text-xs text-destructive">
-                          <CircleAlert aria-hidden size={12} />
-                          {t('kubecode.projectWorkUnavailable')}
-                        </small>
-                      )}
-                    </span>
-                  </button>
-                  <Button
-                    aria-label={t('kubecode.projectWorkPreviewItem', { title: item.title })}
-                    className="my-auto h-8 w-8 shrink-0"
-                    onClick={() => openPreview(item)}
-                    size="icon-sm"
-                    tabIndex={-1}
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Eye size={16} />
-                  </Button>
+                    )}
+                    {item.availability !== 'available' && (
+                      <small className="flex items-center gap-1 text-xs text-destructive">
+                        <CircleAlert aria-hidden size={12} />
+                        {unavailableLabel(item)}
+                      </small>
+                    )}
+                  </span>
                 </li>
               )
             })}
           </ul>
         )}
-        {list.nextCursor && list.status === 'ready' && (
+        {ready && list.loadMoreFailed && (
+          <p className="px-3 py-2 text-sm text-destructive" role="alert">
+            {t('kubecode.projectWorkLoadMoreFailed')}
+          </p>
+        )}
+        {ready && list.nextCursor && (
           <Button className="mt-1 w-full" onClick={loadMore} size="sm" type="button" variant="ghost">
             {t('kubecode.projectWorkLoadMore')}
           </Button>
@@ -264,53 +308,69 @@ export function ComposerProjectWorkPicker({
         <section
           aria-label={t('kubecode.projectWorkPreview')}
           className="max-h-56 overflow-y-auto border-t border-border p-3 text-sm"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              closePreview()
+            }
+          }}
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <strong className="min-w-0 truncate">{preview.target.title}</strong>
-            <Button
-              onClick={() => setPreview({ status: 'closed' })}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
+            <Button onClick={closePreview} size="sm" type="button" variant="ghost">
               {t('kubecode.projectWorkClosePreview')}
             </Button>
           </div>
-          {preview.status === 'loading' ? (
-            <p className="text-muted-foreground" role="status">{t('kubecode.loadingContext')}</p>
-          ) : preview.status === 'error' ? (
-            <p className="text-destructive" role="alert">{t('kubecode.projectWorkPreviewFailed')}</p>
-          ) : (
-            <>
-              {preview.document.sections.map((section) => (
-                <div className="mb-2" key={section.heading}>
-                  <h4 className="text-xs font-medium text-muted-foreground">{section.heading}</h4>
-                  <p className="whitespace-pre-wrap break-words">{section.text}</p>
-                </div>
-              ))}
-              {preview.document.notes.map((note) => (
-                <p className="text-xs text-muted-foreground" key={note}>{note}</p>
-              ))}
-              {preview.document.related.filter((related) => (
-                !isOwnSessionReference(related.ref, conversationId)
-                && related.availability === 'available'
-                && related.ref.kind === 'session_turn'
-              )).map((related) => (
-                <Button
-                  className="h-auto w-full justify-start px-2 py-1.5 text-left"
-                  key={`${related.ref.kind}:${related.ref.id}`}
-                  onClick={() => onSelect(related)}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <span className="min-w-0 truncate">
-                    {t('kubecode.projectWorkReferenceItem', { title: related.title })}
-                  </span>
-                </Button>
-              ))}
-            </>
-          )}
+          <div aria-live="polite">
+            {preview.status === 'loading' ? (
+              <p className="text-muted-foreground" role="status">{t('kubecode.loadingContext')}</p>
+            ) : preview.status === 'error' ? (
+              <p className="text-destructive" role="alert">{t('kubecode.projectWorkPreviewFailed')}</p>
+            ) : (
+              <>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {[
+                    kindLabel(preview.document.ref),
+                    preview.document.ref.revision && t('kubecode.projectWorkRevision', {
+                      revision: preview.document.ref.revision.slice(0, 8),
+                    }),
+                    preview.document.availability !== 'available'
+                      && unavailableLabel({ ...preview.target, availability: preview.document.availability }),
+                  ].filter(Boolean).join(' · ')}
+                </p>
+                {preview.document.sections.map((section, index) => (
+                  <div className="mb-2" key={`${index}:${section.heading}`}>
+                    <h4 className="text-xs font-medium text-muted-foreground">{section.heading}</h4>
+                    <p className="whitespace-pre-wrap break-words">{section.text}</p>
+                  </div>
+                ))}
+                {preview.document.notes.map((note, index) => (
+                  <p className="text-xs text-muted-foreground" key={`${index}:${note}`}>{note}</p>
+                ))}
+                {preview.document.related.filter((related) => (
+                  !isOwnSessionReference(related.ref, conversationId)
+                  && related.availability === 'available'
+                )).slice(0, RELATED_REFERENCES).map((related) => (
+                  <Button
+                    className="h-auto w-full justify-start px-2 py-1.5 text-left"
+                    key={`${related.ref.kind}:${related.ref.id}`}
+                    onClick={() => onSelect(related)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <span className="min-w-0 truncate">
+                      {t('kubecode.projectWorkReferenceItem', {
+                        kind: kindLabel(related.ref),
+                        title: related.title,
+                      })}
+                    </span>
+                  </Button>
+                ))}
+              </>
+            )}
+          </div>
         </section>
       )}
     </div>

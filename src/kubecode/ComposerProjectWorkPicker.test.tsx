@@ -101,13 +101,15 @@ describe('ComposerProjectWorkPicker', () => {
     ])
     const options = await screen.findAllByRole('option')
     expect(options[0]).toHaveAttribute('aria-disabled', 'true')
-    expect(options[0]).toHaveTextContent('Changed or removed since it was listed')
+    expect(options[0]).toHaveTextContent('Removed since it was listed')
+    expect(options[2]).toHaveTextContent('Changed since it was listed')
     // The first enabled row is active, and the arrows never land on disabled ones.
     expect(options[1]).toHaveAttribute('aria-selected', 'true')
     const input = screen.getByRole('combobox')
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(options[1]).toHaveAttribute('aria-selected', 'true')
-    fireEvent.click(within(options[2]).getAllByRole('button')[0])
+    fireEvent.click(options[2])
+    fireEvent.click(options[0])
     expect(onSelect).not.toHaveBeenCalled()
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ title: 'Fresh' }))
@@ -145,7 +147,7 @@ describe('ComposerProjectWorkPicker', () => {
       },
     )
     await screen.findByRole('option')
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Earlier sweep' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview selected' }))
     const preview = await screen.findByRole('region', { name: 'Project work preview' })
     expect(await within(preview).findByText('run-9 [completed] the sweep')).toBeInTheDocument()
     expect(within(preview).getByText('A turn is still running.')).toBeInTheDocument()
@@ -154,7 +156,7 @@ describe('ComposerProjectWorkPicker', () => {
     )
     // Previewing selected nothing.
     expect(onSelect).not.toHaveBeenCalled()
-    fireEvent.click(within(preview).getByRole('button', { name: 'Reference turn: Turn: the sweep' }))
+    fireEvent.click(within(preview).getByRole('button', { name: 'Reference Session turn: Turn: the sweep' }))
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({
       ref: { kind: 'session_turn', id: 'session-2/run-9', revision: '1' },
     }))
@@ -171,7 +173,7 @@ describe('ComposerProjectWorkPicker', () => {
       readProjectContext: vi.fn().mockRejectedValue(new Error('boom')),
     })
     await screen.findByRole('option')
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Pruning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview selected' }))
     expect(await screen.findByText('The preview could not be loaded.')).toBeInTheDocument()
   })
 
@@ -192,5 +194,94 @@ describe('ComposerProjectWorkPicker', () => {
   it('reports a search failure', async () => {
     setup([], { searchProjectContext: vi.fn().mockRejectedValue(new Error('down')) })
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not/i)
+  })
+
+  it('does not select on Shift+Tab, and previews with ArrowRight when the query is empty', async () => {
+    const { api, onSelect } = setup([item('research', 'r1', 'Pruning')])
+    await screen.findByRole('option')
+    const input = screen.getByRole('combobox')
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true })
+    expect(onSelect).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'ArrowRight' })
+    expect(await screen.findByRole('region', { name: 'Project work preview' })).toBeInTheDocument()
+    expect(api.readProjectContext).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('peels the preview with Escape before the surrounding menu sees it', async () => {
+    const outerEscapes = vi.fn()
+    const outer = (event: { key: string }) => {
+      if (event.key === 'Escape') outerEscapes()
+    }
+    const api = {
+      searchProjectContext: vi.fn().mockResolvedValue({
+        items: [item('research', 'r1', 'Pruning')], next_cursor: null, truncated: false,
+      }),
+      readProjectContext: vi.fn().mockResolvedValue({
+        ref: { kind: 'research', id: 'r1', revision: '1' }, detail: 'content', title: 'Pruning',
+        availability: 'available', provenance: {}, sections: [], related: [], next_cursor: null, notes: [],
+      }),
+    }
+    render(
+      <div onKeyDown={outer}>
+        <ComposerProjectWorkPicker
+          api={api as unknown as KubecodeApi}
+          conversationId="session-1"
+          onSelect={vi.fn()}
+          projectId="project-1"
+          t={createTranslator('en')}
+        />
+      </div>,
+    )
+    await screen.findByRole('option')
+    const input = screen.getByRole('combobox')
+    fireEvent.keyDown(input, { key: 'ArrowRight' })
+    await screen.findByRole('region', { name: 'Project work preview' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: 'Project work preview' })).not.toBeInTheDocument()
+    expect(outerEscapes).not.toHaveBeenCalled()
+    // With nothing left to peel, Escape reaches the menu.
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(outerEscapes).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces rows on a new search so stale rows are never selectable, and ignores a late response', async () => {
+    let resolveSlow: (page: unknown) => void = () => {}
+    const search = vi.fn()
+      .mockResolvedValueOnce({ items: [item('research', 'r1', 'Old row')], next_cursor: null, truncated: false })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve }))
+      .mockResolvedValueOnce({ items: [item('research', 'r3', 'Newest row')], next_cursor: null, truncated: false })
+    const { onSelect } = setup([], { searchProjectContext: search })
+    await screen.findByText('Old row')
+    const input = screen.getByRole('combobox')
+    fireEvent.change(input, { target: { value: 'slow' } })
+    await screen.findByRole('status')
+    expect(screen.queryByText('Old row')).not.toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSelect).not.toHaveBeenCalled()
+    fireEvent.change(input, { target: { value: 'fast' } })
+    await screen.findByText('Newest row')
+    // The slow, superseded response arrives last and must not replace the list.
+    resolveSlow({ items: [item('research', 'r2', 'Late row')], next_cursor: null, truncated: false })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByText('Late row')).not.toBeInTheDocument()
+    expect(screen.getByText('Newest row')).toBeInTheDocument()
+  })
+
+  it('keeps the loaded rows when only the next page fails', async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce({ items: [item('research', 'r1', 'First')], next_cursor: 'c1', truncated: false })
+      .mockRejectedValueOnce(new Error('down'))
+    setup([], { searchProjectContext: search })
+    await screen.findByText('First')
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByText('Could not load more results.')).toBeInTheDocument()
+    expect(screen.getByText('First')).toBeInTheDocument()
+  })
+
+  it('shows the revision and says whether a source changed or was removed', async () => {
+    setup([item('research', 'r1', 'Pruning', { ref: { kind: 'research', id: 'r1', revision: '4' } })])
+    const option = await screen.findByRole('option')
+    expect(option).toHaveTextContent('Revision 4')
   })
 })

@@ -53,6 +53,7 @@ import {
   composerDraftToStructuredSegments,
   createComposerCapabilityReference,
   createComposerContextReference,
+  markComposerContextsStale,
   parseStoredComposerDraft,
   serializeComposerDraft,
   textComposerDraft,
@@ -770,6 +771,15 @@ export function useComposerController({
         })
       }
     } catch (cause) {
+      if (cause instanceof ApiError && cause.code.startsWith('composer_context_')) {
+        // A referenced source moved on between selection and send. Nothing
+        // started, so the draft is kept with its chips flagged for revalidation
+        // instead of being lost.
+        removeOptimisticMessage(clientMessageId)
+        updateComposerDraft(() => markComposerContextsStale(draftSnapshot))
+        reportError(cause)
+        return
+      }
       if (cause instanceof ApiError) {
         // The server saw and rejected the request: keep the bubble as a failed
         // turn (ADR 0210 §1 generation failure) instead of silently undoing it.

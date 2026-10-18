@@ -128,6 +128,14 @@ OpenCode run has called the context tools or honored a pinned brief**; whether
 each provider surfaces the server's instructions and uses the tools well is
 unvalidated and is recorded as an open gap on the milestone.
 
+Known limits of the Composer references (#176): a Session with a running turn
+cannot queue or steer a prompt that carries any typed reference (an existing
+rule for every typed kind, because the queue stores plain text); the in-Composer
+preview is read-only and does not navigate to the object; section headings and
+notes in a preview are server-authored English; the persisted turn records the
+resolved reference text (kind, title, revision, author) rather than a typed
+chip.
+
 ## Consequences
 
 Discovery quality is bounded by title/summary text rather than semantic

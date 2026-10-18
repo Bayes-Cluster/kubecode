@@ -382,6 +382,7 @@ impl AgentRuntime {
             &selectors,
         )?;
         let mut preflight = Vec::with_capacity(records.len());
+        let mut project_context_bytes = 0usize;
         for (selector, record) in selectors.iter().zip(records) {
             let record = record.ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
             if record.kind != selector.context_kind {
@@ -463,6 +464,13 @@ impl AgentRuntime {
                         &record,
                     )?
                     .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                // One prompt may cite many references; keep the sum bounded
+                // (a repeated reference counts every time it is injected).
+                project_context_bytes += resolved.content.as_ref().map_or(0, String::len);
+                if project_context_bytes > crate::composer_catalog::MAX_PROJECT_CONTEXT_TOTAL_BYTES
+                {
+                    return Err(StoreError::Composer(ComposerCatalogError::ContextOverLimit).into());
+                }
                 preflight.push(resolved);
             } else {
                 let resolved = self

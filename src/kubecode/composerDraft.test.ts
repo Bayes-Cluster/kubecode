@@ -171,6 +171,36 @@ describe('typed Composer drafts', () => {
     expect(composerDraftReferences(validated)[0]?.availability).toBe('stale')
   })
 
+  it('degrades a Project-work chip to its readable name, never to the placeholder path', () => {
+    const chip = (n: number) => ({
+      kind: 'context' as const,
+      reference: createComposerContextReference({
+        catalogRevision: 5,
+        id: `ctx:pw:${n}`,
+        kind: 'project_context',
+        name: `Finding: claim ${n}`,
+        path: 'project-context',
+        summary: { kind: 'project_context', ref_kind: 'finding', revision: '1', title: `claim ${n}` },
+      }),
+    })
+    // Over the reference limit the overflow becomes text.
+    const overflow = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: Array.from({ length: MAX_COMPOSER_CONTEXT_REFERENCES + 1 }, (_, n) => chip(n)),
+    }))
+    const text = composerDraftPlainText(overflow)
+    expect(text).toContain(`@Finding: claim ${MAX_COMPOSER_CONTEXT_REFERENCES}`)
+    expect(text).not.toContain('project-context')
+    // A malformed reference (bad summary) also degrades to its name.
+    const broken = chip(1)
+    const malformed = parseStoredComposerDraft(JSON.stringify({
+      version: 2,
+      segments: [{ ...broken, reference: { ...broken.reference, summary: { kind: 'project_context' } } }],
+    }))
+    expect(composerDraftPlainText(malformed)).toBe('@Finding: claim 1')
+    expect(composerDraftHasStaleContext(malformed)).toBe(false)
+  })
+
   it('rejects a Project-work reference with a mismatched or malformed summary', () => {
     const base = {
       catalogRevision: 3, id: 'ctx:x', kind: 'project_context' as const,
