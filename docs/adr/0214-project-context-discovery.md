@@ -2,7 +2,7 @@
 type: ADR
 id: "0214"
 title: "Project context discovery, references, and research handoff"
-status: proposed
+status: accepted
 date: 2026-10-18
 ---
 
