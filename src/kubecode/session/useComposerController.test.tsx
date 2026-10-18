@@ -16,12 +16,14 @@ type Harness = {
 
 type ApiMock = KubecodeApi & {
   listRuns: ReturnType<typeof vi.fn>
+  registerComposerContext: ReturnType<typeof vi.fn>
   startPrompt: ReturnType<typeof vi.fn>
 }
 
 function makeApi(): ApiMock {
   return {
     listRuns: vi.fn().mockResolvedValue([]),
+    registerComposerContext: vi.fn(),
     startPrompt: vi.fn(),
   } as unknown as ApiMock
 }
@@ -65,6 +67,7 @@ function queued(item: Partial<import('../api').PromptQueueItem> = {}): {
 function renderController(api: KubecodeApi, options: { active?: boolean; run?: AgentRun | null } = {}) {
   const { active = false, run = null } = options
   const harness: Harness = { messages: [] }
+  const reportError = vi.fn()
   const appendOptimisticMessage = (message: AiAgentMessage) => {
     harness.messages = [...harness.messages, message]
   }
@@ -101,14 +104,14 @@ function renderController(api: KubecodeApi, options: { active?: boolean; run?: A
     onClearError: vi.fn(),
     projectId: 'project-1',
     removeOptimisticMessage,
-    reportError: vi.fn(),
+    reportError,
     run,
     sessionState: null,
     setSideQuestions: vi.fn(),
     t,
     viewRevisionId: null,
   }))
-  return { ...hook, harness }
+  return { ...hook, harness, reportError }
 }
 
 describe('useComposerController optimistic send', () => {
@@ -327,5 +330,80 @@ describe('useComposerController optimistic send', () => {
     expect(harness.messages).toHaveLength(1)
     expect(harness.messages[0]?.id).toBe('run-1')
     vi.unstubAllGlobals()
+  })
+
+  describe('Project work references', () => {
+    beforeEach(() => {
+      // Drafts persist per conversation; start each case clean.
+      window.sessionStorage.clear()
+    })
+
+    const item = (kind: 'finding' | 'session' | 'session_turn', id: string) => ({
+      ref: { kind, id, revision: '1' },
+      title: 'Accuracy holds',
+      summary: 'A private summary that must not travel',
+      provenance: {
+        author: 'agent', updated_at: null, research_id: null, parent: null, state: null,
+      },
+      availability: 'available' as const,
+    })
+    const registration = {
+      context: {
+        id: 'ctx:project-work:1',
+        kind: 'project_context',
+        display: 'Accuracy holds',
+        enabled: true,
+        disabled_reason: null,
+        summary: {
+          kind: 'project_context', ref_kind: 'finding', revision: '1', title: 'Accuracy holds',
+        },
+      },
+      catalog: { conversation_id: 'conversation-1', revision: 4, items: [], contexts: [] },
+    }
+
+    it('registers only the typed reference and adds the returned opaque chip to the draft', async () => {
+      const api = makeApi()
+      api.registerComposerContext.mockResolvedValue(registration)
+      const { result } = renderController(api)
+      await act(async () => {
+        result.current.insertComposerProjectContext(item('finding', 'f1'))
+      })
+      expect(api.registerComposerContext).toHaveBeenCalledWith('conversation-1', {
+        kind: 'project_context',
+        path: 'finding:f1',
+        source_revision: '1',
+      })
+      const body = JSON.stringify(api.registerComposerContext.mock.calls)
+      expect(body).not.toContain('private summary')
+      expect(body).not.toContain('Accuracy holds')
+      const chips = result.current.composerDraft.segments.filter((segment) => segment.kind === 'context')
+      expect(chips).toHaveLength(1)
+      expect(chips[0]).toMatchObject({
+        reference: {
+          id: 'ctx:project-work:1',
+          kind: 'project_context',
+          name: 'Finding: Accuracy holds',
+          availability: 'available',
+        },
+      })
+    })
+
+    it('does not offer the current Session or its turns, and reports a failed registration', async () => {
+      const api = makeApi()
+      api.registerComposerContext.mockRejectedValue(new ApiError('composer_context_stale', 'stale', 409))
+      const { result, reportError } = renderController(api)
+      await act(async () => {
+        result.current.insertComposerProjectContext(item('session', 'conversation-1'))
+        result.current.insertComposerProjectContext(item('session_turn', 'conversation-1/run-1'))
+      })
+      expect(api.registerComposerContext).not.toHaveBeenCalled()
+      await act(async () => {
+        result.current.insertComposerProjectContext(item('finding', 'f1'))
+      })
+      expect(reportError).toHaveBeenCalledTimes(1)
+      expect(
+        result.current.composerDraft.segments.filter((segment) => segment.kind === 'context'),
+      ).toHaveLength(0)
+    })
   })
 })

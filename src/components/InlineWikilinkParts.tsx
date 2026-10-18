@@ -12,6 +12,7 @@ import {
   GitCompare,
   MessageSquareMore,
   SquareTerminal,
+  FlaskConical,
   X,
   Zap,
 } from 'lucide-react'
@@ -64,12 +65,15 @@ export function InlineWikilinkChipView({
             ? SquareTerminal
             : contextReference.kind === 'session_turn'
               ? MessageSquareMore
-              : contextReference.kind === 'diagnostics' ? CircleAlert : File
+              : contextReference.kind === 'project_context'
+                ? FlaskConical
+                : contextReference.kind === 'diagnostics' ? CircleAlert : File
     const capabilityTitle = contextReference.kind === 'capability'
       ? [contextReference.name, contextReference.sourceLabel, contextReference.scopeLabel]
         .filter(Boolean).join(' · ')
       : contextReference.kind === 'terminal'
         || contextReference.kind === 'session_turn'
+        || contextReference.kind === 'project_context'
         || contextReference.kind === 'diagnostics'
         ? contextReference.name
         : contextReference.path

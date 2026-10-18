@@ -396,7 +396,8 @@ impl AgentRuntime {
                 }
                 crate::composer_catalog::ComposerContextKind::GitDiff
                 | crate::composer_catalog::ComposerContextKind::Terminal
-                | crate::composer_catalog::ComposerContextKind::SessionTurn => None,
+                | crate::composer_catalog::ComposerContextKind::SessionTurn
+                | crate::composer_catalog::ComposerContextKind::ProjectContext => None,
                 _ => return Err(StoreError::Composer(ComposerCatalogError::ItemUnsupported).into()),
             };
             if let Some(expected_kind) = expected_kind {
@@ -452,6 +453,15 @@ impl AgentRuntime {
             } else if record.kind == crate::composer_catalog::ComposerContextKind::Terminal {
                 let resolved = self
                     .resolve_terminal_composer_context(&conversation.id, &record)?
+                    .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
+                preflight.push(resolved);
+            } else if record.kind == crate::composer_catalog::ComposerContextKind::ProjectContext {
+                let resolved = self
+                    .resolve_project_context_composer_context(
+                        &conversation.id,
+                        &conversation.project_id,
+                        &record,
+                    )?
                     .ok_or(StoreError::Composer(ComposerCatalogError::ContextStale))?;
                 preflight.push(resolved);
             } else {

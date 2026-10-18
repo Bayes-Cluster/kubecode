@@ -162,6 +162,13 @@ bounded earlier rounds, attributed findings, and execution facts, and is served
 both by `team_get_context` and by `context_round`. A later brief edit never
 changes a running round's direction; the delivery reports `stale` instead.
 
+The Session Composer reaches the same reader through a `project_context`
+Composer kind (`composer_catalog.rs`, `api/composer.rs`, the preflight in
+`agent_runtime/dispatch.rs`): the picker in `ComposerProjectWorkPicker` searches
+and previews through `/context/search` and `/context/read`, and registration,
+validation, and dispatch re-resolve the typed reference server-side, so the
+browser never supplies authority or content.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

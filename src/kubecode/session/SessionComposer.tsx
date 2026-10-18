@@ -321,6 +321,7 @@ export function SessionComposer({
                   onCapability={composer.insertComposerCapability}
                   onGitDiff={composer.insertComposerGitDiff}
                   onInsert={composer.insertComposerText}
+                  onProjectContext={composer.insertComposerProjectContext}
                   onReference={composer.insertComposerContext}
                   onSessionTurnContext={composer.insertComposerSessionTurnContext}
                   onTerminalContext={composer.insertComposerTerminalContext}

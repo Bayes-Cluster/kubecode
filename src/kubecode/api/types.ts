@@ -760,7 +760,8 @@ export type AgentSessionState = {
 }
 export type ComposerItemKind = 'command' | 'skill' | 'plugin_action' | 'provider_app'
 export type ComposerContextKind =
-  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
+  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'project_context'
+  | 'diagnostics'
 export type ComposerGitDiffSummary = {
   kind: 'git_diff'
   scope: 'all' | 'file'
@@ -782,8 +783,18 @@ export type ComposerSessionTurnSummary = {
   line_count: number
   byte_count: number
 }
+/** Display data only: the reference is the opaque id; the server re-resolves it at dispatch. */
+export type ComposerProjectContextSummary = {
+  kind: 'project_context'
+  ref_kind: ProjectContextKind
+  revision: string
+  title: string
+}
 export type ComposerContextSummary =
-  ComposerGitDiffSummary | ComposerTerminalSummary | ComposerSessionTurnSummary
+  | ComposerGitDiffSummary
+  | ComposerTerminalSummary
+  | ComposerSessionTurnSummary
+  | ComposerProjectContextSummary
 export type ComposerCatalogItem = {
   id: string
   kind: ComposerItemKind

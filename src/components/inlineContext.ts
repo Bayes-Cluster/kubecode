@@ -1,5 +1,6 @@
 export type InlineContextKind =
-  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
+  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'project_context'
+  | 'diagnostics'
 export type InlineReferenceKind = InlineContextKind | 'capability'
 
 export type InlineContextSuggestion = {
@@ -29,6 +30,11 @@ export type InlineContextSuggestion = {
     role: 'user' | 'agent'
     line_count: number
     byte_count: number
+  } | {
+    kind: 'project_context'
+    ref_kind: string
+    revision: string
+    title: string
   }
 }
 

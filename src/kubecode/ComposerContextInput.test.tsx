@@ -635,6 +635,49 @@ describe('ComposerContextInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('restores a Project-work chip, validates it by opaque id, and blocks sending once the source changed', async () => {
+    const onSubmit = vi.fn()
+    const reference = createComposerContextReference({
+      availability: 'stale',
+      catalogRevision: 9,
+      id: 'ctx:project-work:1',
+      kind: 'project_context',
+      name: 'Finding: Accuracy holds',
+      path: 'project-context',
+      summary: {
+        kind: 'project_context', ref_kind: 'finding', revision: '1', title: 'Accuracy holds',
+      },
+    })
+    const validateComposerContexts = vi.fn().mockResolvedValue({
+      references: [{
+        id: 'ctx:project-work:1',
+        catalog_revision: 9,
+        context_kind: 'project_context',
+        available: false,
+      }],
+      catalog: { conversation_id: 'session-1', revision: 10, items: [], contexts: [] },
+    })
+    render(
+      <Harness
+        api={composerApi({ validateComposerContexts })}
+        blockStaleSubmit
+        initial={{ version: 2, segments: [{ kind: 'context', reference }] }}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const chip = await screen.findByTestId('composer-context-chip')
+    expect(chip).toHaveAttribute('data-context-kind', 'project_context')
+    expect(chip).toHaveTextContent('Finding: Accuracy holds')
+    await waitFor(() => expect(chip).toHaveAttribute('data-context-availability', 'stale'))
+    // Only the opaque id, revision, and kind are validated; no object id travels.
+    expect(validateComposerContexts).toHaveBeenCalledWith('session-1', [{
+      id: 'ctx:project-work:1', catalog_revision: 9, context_kind: 'project_context',
+    }])
+    fireEvent.keyDown(screen.getByTestId('agent-input'), { key: 'Enter' })
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('keeps a persisted available reference stale and blocks Enter when validation rejects', async () => {
     const onSubmit = vi.fn()
     const validateComposerContexts = vi.fn().mockRejectedValue(new Error('Session unavailable'))

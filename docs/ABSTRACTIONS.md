@@ -455,6 +455,22 @@ bound makes the reference stale or over-limit; reconnect and cursor pagination
 do not change its identity. Explicit branch creation copies journal events, so a
 retained copied turn is eligible only through the new branch's own event rows.
 
+Project-work context (ADR 0214) is a Composer reference to existing research,
+a finding, another Session or one of its turns, a Team or task, an experiment, or
+a recorded artifact. Registration accepts only a typed selector (`kind:id`) and
+the revision the researcher selected it at; the server resolves it through the
+Project-scoped context reader, mints the opaque ID from the selector and revision,
+and returns the catalog display (a clipped title) and the revision. A missing,
+removed, or other-Project source is indistinguishable and reads as stale. At
+validation and again immediately before run creation the Runtime re-resolves the
+reference: only the same object at the same revision, in this Session's Project,
+is usable, and the bounded read-only text (16 KiB, with a visible cut marker) is
+injected privately under a heading that says it is context, not an instruction.
+A changed or removed source blocks dispatch until the chip is selected again.
+The current Session and its own turns are rejected here; they keep the
+session-turn kind above, while this kind is the explicit, Project-scoped route to
+*other* Sessions' turns. Selecting or previewing a reference only reads.
+
 Diagnostics context remains a distinct unsupported Composer kind. Kubecode has
 no single authoritative structured Project diagnostics source today, so the UI
 shows it as unavailable and the server rejects registration. Editor rendering,

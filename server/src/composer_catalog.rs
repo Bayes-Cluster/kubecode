@@ -53,6 +53,10 @@ pub enum ComposerContextKind {
     GitDiff,
     Terminal,
     SessionTurn,
+    /// A typed reference to existing Project work (ADR 0214): research,
+    /// findings, other Sessions and turns, Teams, tasks, experiments, and
+    /// artifacts. Revalidated through the shared reader at dispatch.
+    ProjectContext,
     Diagnostics,
 }
 
@@ -101,6 +105,13 @@ pub enum ComposerContextSummary {
         line_count: usize,
         byte_count: usize,
     },
+    /// Display data only: the identity is the selector and `revision`, both
+    /// re-checked at dispatch; the title is never authority.
+    ProjectContext {
+        ref_kind: String,
+        revision: String,
+        title: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -147,6 +158,10 @@ impl ComposerContextRecord {
             display: match self.kind {
                 ComposerContextKind::Terminal => "terminal".to_owned(),
                 ComposerContextKind::SessionTurn => "session turn".to_owned(),
+                ComposerContextKind::ProjectContext => match &self.summary {
+                    Some(ComposerContextSummary::ProjectContext { title, .. }) => title.clone(),
+                    _ => self.path.clone(),
+                },
                 _ => self.path.clone(),
             },
             enabled: self.available,
@@ -1146,6 +1161,50 @@ pub fn session_turn_source_revision(
     hex::encode(digest.finalize())
 }
 
+/// Bytes of one Project context reference injected into a prompt.
+pub const MAX_PROJECT_CONTEXT_BYTES: usize = 16 * 1024;
+/// Characters of a reference title kept for display.
+pub const MAX_PROJECT_CONTEXT_TITLE_CHARS: usize = 120;
+
+/// `kind:id` — the selector of a Project context reference. The id may itself
+/// contain `:` or `/`, so only the first `:` separates the kind.
+pub fn project_context_selector(kind: &str, id: &str) -> String {
+    format!("{kind}:{id}")
+}
+
+pub fn parse_project_context_selector(
+    selector: &str,
+) -> Option<(crate::project_context::ContextKind, &str)> {
+    let (kind, id) = selector.split_once(':')?;
+    let kind = crate::project_context::ContextKind::parse(kind)?;
+    (!id.is_empty()).then_some((kind, id))
+}
+
+/// The fingerprint a reference was selected at, as a 64-hex digest.
+pub fn project_context_source_revision(selector: &str, revision: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"kubecode-project-context-v1\0");
+    for part in [selector, revision] {
+        digest.update(part.len().to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
+pub fn opaque_project_context_id(
+    project_id: &str,
+    conversation_id: &str,
+    selector: &str,
+    source_revision: &str,
+) -> String {
+    opaque_context_id(
+        project_id,
+        conversation_id,
+        ComposerContextKind::ProjectContext,
+        &format!("{selector}\0{source_revision}"),
+    )
+}
+
 pub fn context_kind_key(kind: ComposerContextKind) -> &'static str {
     match kind {
         ComposerContextKind::File => "file",
@@ -1153,6 +1212,7 @@ pub fn context_kind_key(kind: ComposerContextKind) -> &'static str {
         ComposerContextKind::GitDiff => "git_diff",
         ComposerContextKind::Terminal => "terminal",
         ComposerContextKind::SessionTurn => "session_turn",
+        ComposerContextKind::ProjectContext => "project_context",
         ComposerContextKind::Diagnostics => "diagnostics",
     }
 }
@@ -1164,6 +1224,7 @@ pub fn parse_context_kind(value: &str) -> Option<ComposerContextKind> {
         "git_diff" => Some(ComposerContextKind::GitDiff),
         "terminal" => Some(ComposerContextKind::Terminal),
         "session_turn" => Some(ComposerContextKind::SessionTurn),
+        "project_context" => Some(ComposerContextKind::ProjectContext),
         "diagnostics" => Some(ComposerContextKind::Diagnostics),
         _ => None,
     }

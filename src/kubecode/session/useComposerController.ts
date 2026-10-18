@@ -20,7 +20,7 @@ import type {
   SessionTurnContextSource,
   TerminalContextRequest,
 } from '../ComposerAddMenu'
-import type { Entry, GitDiffContextCandidate, KubecodeApi } from '../api'
+import type { Entry, GitDiffContextCandidate, KubecodeApi, ProjectContextItem } from '../api'
 import type {
   AgentDescriptor,
   AgentRun,
@@ -29,6 +29,11 @@ import type {
   Conversation,
 } from '../api'
 import type { RankedComposerCapability } from '../composerCapabilities'
+import {
+  PROJECT_CONTEXT_KIND_LABELS,
+  isOwnSessionReference,
+  projectContextSelector,
+} from '../projectContext'
 import {
   acpCommandCanDispatch,
   activeAcpCommand,
@@ -116,6 +121,7 @@ export type ComposerController = {
   insertComposerCapability: (capability: RankedComposerCapability) => void
   insertComposerContext: (entry: Entry) => void
   insertComposerGitDiff: (candidate: GitDiffContextCandidate) => void
+  insertComposerProjectContext: (item: ProjectContextItem) => void
   insertComposerSessionTurnContext: (turnRequest: SessionTurnContextRequest) => void
   insertComposerTerminalContext: (terminalRequest: TerminalContextRequest) => void
   insertComposerText: (text: string, kind: 'command') => void
@@ -585,6 +591,59 @@ export function useComposerController({
     })
   }
 
+  const insertComposerProjectContext = (item: ProjectContextItem) => {
+    if (!conversation || directTeammateChatDisabled || hardReadOnly || viewRevisionId) return
+    if (isOwnSessionReference(item.ref, conversation.id)) return
+    const targetConversationId = conversation.id
+    const request = ++menuContextRequestRef.current
+    setMenuContextPending(true)
+    // Only the typed reference is sent; the title and summary are display data
+    // and the server re-resolves the object inside this Project.
+    void api.registerComposerContext(targetConversationId, {
+      kind: 'project_context',
+      path: projectContextSelector(item.ref),
+      source_revision: item.ref.revision ?? undefined,
+    }).then((registration) => {
+      if (request !== menuContextRequestRef.current
+        || activeConversationIdRef.current !== targetConversationId
+        || registration.context.kind !== 'project_context'
+        || !registration.context.enabled
+        || registration.context.summary?.kind !== 'project_context') return
+      const summary = registration.context.summary
+      const name = t('kubecode.projectWorkContextName', {
+        kind: t(PROJECT_CONTEXT_KIND_LABELS[summary.ref_kind]),
+        title: summary.title,
+      })
+      onApplyComposerCatalog(registration.catalog)
+      updateComposerDraft((current) => appendComposerContext(
+        current,
+        createComposerContextReference({
+          catalogRevision: registration.catalog.revision,
+          id: registration.context.id,
+          kind: 'project_context',
+          name,
+          path: 'project-context',
+          summary,
+        }),
+      ))
+      window.requestAnimationFrame(() => inputRef.current?.focus())
+      trackEvent('kubecode_agent_context_inserted', {
+        agent_id: conversation.agent_id,
+        kind: 'project_context',
+      })
+    }).catch((cause) => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        reportError(cause)
+      }
+    }).finally(() => {
+      if (request === menuContextRequestRef.current
+        && activeConversationIdRef.current === targetConversationId) {
+        setMenuContextPending(false)
+      }
+    })
+  }
+
   const insertComposerCapability = (capability: RankedComposerCapability) => {
     if (!conversation || directTeammateChatDisabled || hardReadOnly || !capability.enabled) return
     const catalog = sessionState?.composer?.catalog
@@ -775,6 +834,7 @@ export function useComposerController({
     insertComposerCapability,
     insertComposerContext,
     insertComposerGitDiff,
+    insertComposerProjectContext,
     insertComposerSessionTurnContext,
     insertComposerTerminalContext,
     insertComposerText,

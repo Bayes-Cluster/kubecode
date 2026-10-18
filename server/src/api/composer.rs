@@ -15,10 +15,15 @@ use super::file_changed_payload;
 use crate::composer_catalog::{
     ComposerCatalogError, ComposerContextKind, ComposerContextSelector, ComposerContextSummary,
     ComposerGitDiffScope, ComposerPreflightContext, ComposerSessionTurnRole,
-    MAX_COMPOSER_VALIDATION_ROWS, opaque_git_diff_context_id, opaque_terminal_context_id,
+    MAX_COMPOSER_VALIDATION_ROWS, MAX_PROJECT_CONTEXT_TITLE_CHARS, opaque_git_diff_context_id,
+    opaque_terminal_context_id, parse_project_context_selector, project_context_selector,
     session_turn_selector,
 };
 use crate::git::GitError;
+use crate::project_context::{
+    ContextKind as ProjectContextKind, ContextRef as ProjectContextRef,
+    Detail as ProjectContextDetail,
+};
 use crate::terminal::TerminalContextCaptureKind;
 use crate::workspace::{EntryKind, WorkspaceError};
 
@@ -211,6 +216,80 @@ pub(super) async fn register_composer_context(
                 summary,
             )?
         }
+        ComposerContextKind::ProjectContext => {
+            if request.terminal_id.is_some()
+                || request.selected_text.is_some()
+                || request.turn_id.is_some()
+            {
+                return Err(ComposerCatalogError::InvalidDraft.into());
+            }
+            let (kind, id) = parse_project_context_selector(&request.path)
+                .ok_or(ComposerCatalogError::InvalidDraft)?;
+            // The current Session's own turns keep their dedicated contract.
+            let own = match kind {
+                ProjectContextKind::Session => id == conversation.id,
+                ProjectContextKind::SessionTurn => id.split('/').next() == Some(&conversation.id),
+                _ => false,
+            };
+            if own {
+                return Err(ComposerCatalogError::ItemUnsupported.into());
+            }
+            let reference = ProjectContextRef {
+                kind,
+                id: id.to_owned(),
+                revision: None,
+            };
+            let reader = Arc::clone(&state.context);
+            let project_id = conversation.project_id.clone();
+            let item = tokio::task::spawn_blocking(move || {
+                reader
+                    .resolve(&project_id, std::slice::from_ref(&reference))
+                    .and_then(|resolved| {
+                        let current = resolved
+                            .into_iter()
+                            .next()
+                            .and_then(|r| r.current_revision)
+                            .ok_or(crate::project_context::ContextError::NotFound)?;
+                        reader.read(
+                            &project_id,
+                            &ProjectContextRef {
+                                revision: Some(current),
+                                ..reference
+                            },
+                            ProjectContextDetail::Summary,
+                            None,
+                        )
+                    })
+            })
+            .await
+            .map_err(|error| ApiError::InvalidRequest(error.to_string()))?
+            // Missing, removed, or another Project's: all read as stale.
+            .map_err(|_| ComposerCatalogError::ContextStale)?;
+            let current_revision = item.reference.revision.clone().unwrap_or_default();
+            // Selecting against a revision that has since moved on is stale.
+            if request
+                .source_revision
+                .as_deref()
+                .is_some_and(|selected| selected != current_revision)
+            {
+                return Err(ComposerCatalogError::ContextStale.into());
+            }
+            let title: String = item
+                .title
+                .chars()
+                .take(MAX_PROJECT_CONTEXT_TITLE_CHARS)
+                .collect();
+            store.register_composer_project_context(
+                &conversation.id,
+                &conversation.project_id,
+                &project_context_selector(kind.as_str(), id),
+                ComposerContextSummary::ProjectContext {
+                    ref_kind: kind.as_str().to_owned(),
+                    revision: current_revision,
+                    title,
+                },
+            )?
+        }
         _ => return Err(ComposerCatalogError::ItemUnsupported.into()),
     };
     Ok((StatusCode::CREATED, Json(registration)))
@@ -358,6 +437,21 @@ pub(super) async fn validate_composer_contexts(
                     &conversation.project_id,
                     &record,
                 )?);
+            }
+            ComposerContextKind::ProjectContext => {
+                let runtime = state.agent_runtime.clone();
+                let conversation_id = conversation.id.clone();
+                let project_id = conversation.project_id.clone();
+                let resolved = tokio::task::spawn_blocking(move || {
+                    runtime.resolve_project_context_composer_context(
+                        &conversation_id,
+                        &project_id,
+                        &record,
+                    )
+                })
+                .await
+                .map_err(|error| ApiError::InvalidRequest(error.to_string()))??;
+                preflight.push(resolved);
             }
             _ => preflight.push(None),
         }

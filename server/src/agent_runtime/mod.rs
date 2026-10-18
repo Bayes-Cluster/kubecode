@@ -597,6 +597,100 @@ impl AgentRuntime {
         }))
     }
 
+    /// Re-resolves a Project context reference through the shared reader and
+    /// renders a bounded, read-only text for the prompt. The reference is
+    /// usable only if it is still the same object at the same revision it was
+    /// selected at, in this Session's Project, and is not this Session itself
+    /// (the current Session's turns have their own contract).
+    pub fn resolve_project_context_composer_context(
+        &self,
+        conversation_id: &str,
+        project_id: &str,
+        record: &ComposerContextRecord,
+    ) -> Result<Option<ComposerPreflightContext>, RuntimeError> {
+        use crate::composer_catalog::{
+            ComposerContextSummary, MAX_PROJECT_CONTEXT_BYTES, opaque_project_context_id,
+            parse_project_context_selector, project_context_source_revision,
+        };
+        use crate::project_context::{Availability, ContextKind, ContextRef, Detail};
+        let Some(reader) = self.project_context() else {
+            return Ok(None);
+        };
+        let Some((kind, id)) = parse_project_context_selector(&record.path) else {
+            return Ok(None);
+        };
+        let Some(ComposerContextSummary::ProjectContext { revision, .. }) = &record.summary else {
+            return Ok(None);
+        };
+        let source_revision = project_context_source_revision(&record.path, revision);
+        if record.source_revision.as_deref() != Some(source_revision.as_str())
+            || record.id
+                != opaque_project_context_id(
+                    project_id,
+                    conversation_id,
+                    &record.path,
+                    &source_revision,
+                )
+        {
+            return Ok(None);
+        }
+        // The current Session's own turns are referenced through the
+        // session-turn kind; a Project reference to it would bypass that.
+        let own = match kind {
+            ContextKind::Session => id == conversation_id,
+            ContextKind::SessionTurn => id.split('/').next() == Some(conversation_id),
+            _ => false,
+        };
+        if own {
+            return Ok(None);
+        }
+        let reference = ContextRef::at(kind, id, revision.clone());
+        let project_id = project_id.to_owned();
+        let document = {
+            let reader = Arc::clone(&reader);
+            match reader.resolve(&project_id, std::slice::from_ref(&reference)) {
+                Ok(resolved)
+                    if resolved.first().map(|r| r.availability)
+                        == Some(Availability::Available) => {}
+                Ok(_) => return Ok(None),
+                Err(error) => return Err(RuntimeError::Acp(error.to_string())),
+            }
+            match reader.read(&project_id, &reference, Detail::Content, None) {
+                Ok(document) => document,
+                Err(crate::project_context::ContextError::NotFound) => return Ok(None),
+                Err(error) => return Err(RuntimeError::Acp(error.to_string())),
+            }
+        };
+        if document.availability != Availability::Available {
+            return Ok(None);
+        }
+        let mut text = format!(
+            "{} {} (revision {revision})\n",
+            kind.as_str(),
+            document.title
+        );
+        for section in &document.sections {
+            text.push_str(&format!("{}:\n{}\n", section.heading, section.text));
+        }
+        for note in &document.notes {
+            text.push_str(&format!("Note: {note}\n"));
+        }
+        if text.len() > MAX_PROJECT_CONTEXT_BYTES {
+            let cut = (0..=MAX_PROJECT_CONTEXT_BYTES)
+                .rev()
+                .find(|index| text.is_char_boundary(*index))
+                .unwrap_or(0);
+            text.truncate(cut);
+            text.push_str("\n[cut at the reference size limit]\n");
+        }
+        Ok(Some(ComposerPreflightContext {
+            id: record.id.clone(),
+            kind: record.kind,
+            path: record.path.clone(),
+            content: Some(text),
+        }))
+    }
+
     fn terminal_execution_context_matches(
         &self,
         conversation: &crate::agents::Conversation,

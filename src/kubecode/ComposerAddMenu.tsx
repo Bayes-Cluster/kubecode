@@ -2,6 +2,7 @@ import {
   ChevronLeft,
   CircleAlert,
   File,
+  FlaskConical,
   GitCompare,
   MessageSquareMore,
   Plus,
@@ -15,10 +16,11 @@ import { Input } from '@/components/ui/input'
 import type { Translator } from '@/lib/i18n'
 
 import type {
-  ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi,
+  ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi, ProjectContextItem,
 } from './api'
 import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
+import { ComposerProjectWorkPicker } from './ComposerProjectWorkPicker'
 import { ProjectFilePicker } from './ProjectFilePicker'
 import type { TerminalContextSource } from './TerminalWorkspace'
 import { MaterialFileIcon } from './icons/material/materialIcons'
@@ -56,6 +58,7 @@ type ComposerAddMenuProps = {
   onInsert: (text: string, kind: 'command') => void
   onCapability?: (capability: RankedComposerCapability) => void
   onGitDiff?: (candidate: GitDiffContextCandidate) => void
+  onProjectContext?: (item: ProjectContextItem) => void
   onReference: (entry: Entry) => void
   onSessionTurnContext?: (request: SessionTurnContextRequest) => void
   onTerminalContext?: (request: TerminalContextRequest) => void
@@ -77,6 +80,7 @@ export function ComposerAddMenu({
   onInsert,
   onCapability,
   onGitDiff,
+  onProjectContext,
   onReference,
   onSessionTurnContext,
   onTerminalContext,
@@ -89,6 +93,7 @@ export function ComposerAddMenu({
   const [showFiles, setShowFiles] = useState(false)
   const [showGitDiffs, setShowGitDiffs] = useState(false)
   const [showSessionTurns, setShowSessionTurns] = useState(false)
+  const [showProjectWork, setShowProjectWork] = useState(false)
   const [showTerminals, setShowTerminals] = useState(false)
   const [gitDiffState, setGitDiffState] = useState<{
     candidates: GitDiffContextCandidate[]
@@ -147,6 +152,7 @@ export function ComposerAddMenu({
     setShowFiles(false)
     setShowGitDiffs(false)
     setShowSessionTurns(false)
+    setShowProjectWork(false)
     setShowTerminals(false)
     setSelectedCapabilityIndex(0)
   }
@@ -182,6 +188,7 @@ export function ComposerAddMenu({
           setShowFiles(false)
           setShowGitDiffs(false)
           setShowSessionTurns(false)
+          setShowProjectWork(false)
           setShowTerminals(false)
         }}
       >
@@ -274,6 +281,31 @@ export function ComposerAddMenu({
                   </Button>
                 ))}
               </div>
+            </>
+          ) : showProjectWork && onProjectContext ? (
+            <>
+              <div className="flex items-center border-b border-border px-2 py-1.5">
+                <Button
+                  className="min-w-0 justify-start gap-2"
+                  onClick={() => setShowProjectWork(false)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ChevronLeft size={16} />
+                  <span className="truncate">{t('kubecode.referenceProjectWork')}</span>
+                </Button>
+              </div>
+              <ComposerProjectWorkPicker
+                api={api}
+                conversationId={conversationId}
+                onSelect={(item) => {
+                  onProjectContext(item)
+                  close()
+                }}
+                projectId={projectId}
+                t={t}
+              />
             </>
           ) : showSessionTurns && onSessionTurnContext ? (
             <>
@@ -466,6 +498,22 @@ export function ComposerAddMenu({
                     </strong>
                     <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
                       {t('kubecode.chooseTerminalOutputReference')}
+                    </small>
+                  </span>
+                </Button>}
+                {onProjectContext && <Button
+                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  onClick={() => setShowProjectWork(true)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <FlaskConical className="shrink-0" size={20} />
+                  <span className="min-w-0">
+                    <strong className="block truncate font-medium">
+                      {t('kubecode.referenceProjectWork')}
+                    </strong>
+                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      {t('kubecode.chooseProjectWorkReference')}
                     </small>
                   </span>
                 </Button>}

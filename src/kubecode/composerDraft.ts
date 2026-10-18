@@ -1,3 +1,4 @@
+import { PROJECT_CONTEXT_KINDS } from './projectContext'
 import type {
   ComposerCatalogSnapshot,
   ComposerContextSummary,
@@ -7,7 +8,11 @@ import type {
 } from './api'
 
 export type ComposerContextKind =
-  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'diagnostics'
+  | 'file' | 'directory' | 'git_diff' | 'terminal' | 'session_turn' | 'project_context'
+  | 'diagnostics'
+const COMPOSER_CONTEXT_KINDS: ComposerContextKind[] = [
+  'file', 'directory', 'git_diff', 'terminal', 'session_turn', 'project_context', 'diagnostics',
+]
 export type ComposerReferenceAvailability = 'available' | 'stale' | 'unsupported'
 export type ComposerCapabilityItemKind = Exclude<ComposerItemKind, 'command'>
 
@@ -69,7 +74,7 @@ export function createComposerContextReference({
 }: Omit<ComposerContextReference, 'availability'> & {
   availability?: ComposerContextReference['availability']
 }): ComposerContextReference {
-  if (!isProjectRelativePath(path)) throw new Error('Composer context paths must be Project-relative')
+  if (!isContextPath(kind, path)) throw new Error('Composer context paths must be Project-relative')
   if (!Number.isSafeInteger(catalogRevision) || catalogRevision <= 0) {
     throw new Error('Composer contexts require a positive catalog revision')
   }
@@ -77,6 +82,13 @@ export function createComposerContextReference({
     throw new Error('Composer context summary does not match its kind')
   }
   return { availability, catalogRevision, id, kind, name, path, summary }
+}
+
+/** Project work has no filesystem path; its `path` is a display placeholder. */
+function isContextPath(kind: ComposerContextKind | undefined, path: unknown): path is string {
+  if (typeof path !== 'string') return false
+  if (kind === 'project_context') return path.length > 0 && path.length <= 64 && !/[\0\r\n]/.test(path)
+  return isProjectRelativePath(path)
 }
 
 function isOpaqueId(value: unknown): value is string {
@@ -92,12 +104,10 @@ function isContextReference(value: unknown): value is ComposerContextReference {
   const reference = value as Partial<ComposerContextReference>
   return isOpaqueId(reference.id)
     && isCatalogRevision(reference.catalogRevision)
-    && ['file', 'directory', 'git_diff', 'terminal', 'session_turn', 'diagnostics']
-      .includes(reference.kind ?? '')
+    && COMPOSER_CONTEXT_KINDS.includes(reference.kind as ComposerContextKind)
     && typeof reference.name === 'string'
     && reference.name.length > 0
-    && typeof reference.path === 'string'
-    && isProjectRelativePath(reference.path)
+    && isContextPath(reference.kind, reference.path)
     && isComposerContextSummary(reference.kind, reference.summary)
     && (reference.availability === 'available' || reference.availability === 'stale')
 }
@@ -106,7 +116,8 @@ function isComposerContextSummary(
   kind: ComposerContextKind | undefined,
   summary: unknown,
 ): summary is ComposerContextSummary | undefined {
-  if (kind !== 'git_diff' && kind !== 'terminal' && kind !== 'session_turn') {
+  if (kind !== 'git_diff' && kind !== 'terminal' && kind !== 'session_turn'
+    && kind !== 'project_context') {
     return summary === undefined
   }
   if (!summary || typeof summary !== 'object') return false
@@ -124,6 +135,13 @@ function isComposerContextSummary(
       && Number.isSafeInteger(candidate.line_count) && (candidate.line_count ?? -1) >= 0
       && Number.isSafeInteger(candidate.byte_count) && (candidate.byte_count ?? -1) >= 0
       && typeof candidate.truncated === 'boolean'
+  }
+  if (kind === 'project_context') {
+    return candidate.kind === 'project_context'
+      && typeof candidate.ref_kind === 'string'
+      && PROJECT_CONTEXT_KINDS.includes(candidate.ref_kind)
+      && typeof candidate.revision === 'string' && candidate.revision.length > 0
+      && typeof candidate.title === 'string'
   }
   return candidate.kind === 'session_turn'
     && (candidate.role === 'user' || candidate.role === 'agent')
@@ -258,7 +276,12 @@ export function serializeComposerDraft(draft: ComposerDraft): string {
 export function composerDraftPlainText(draft: ComposerDraft): string {
   return draft.segments.map((segment) => {
     if (segment.kind === 'text') return segment.text
-    return segment.kind === 'context' ? `@${segment.reference.path}` : `$${segment.reference.name}`
+    if (segment.kind === 'context') {
+      return segment.reference.kind === 'project_context'
+        ? `@${segment.reference.name}`
+        : `@${segment.reference.path}`
+    }
+    return `$${segment.reference.name}`
   }).join('')
 }
 
