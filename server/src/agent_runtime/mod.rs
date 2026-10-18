@@ -193,6 +193,7 @@ pub struct AgentRuntime {
     research: Option<Arc<crate::research_store::ResearchStore>>,
     experiments: Option<Arc<crate::experiment_store::ExperimentStore>>,
     experiment_runner: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
+    project_context: Option<Arc<crate::project_context::ProjectContext>>,
     team_mcp_http: Option<Arc<TeamMcpHttpConfig>>,
     adapters: AgentAdapterRegistry,
 }
@@ -318,6 +319,7 @@ impl AgentRuntime {
             research: None,
             experiments: None,
             experiment_runner: None,
+            project_context: None,
             team_mcp_http: None,
             adapters: AgentAdapterRegistry::new(),
         }
@@ -336,6 +338,19 @@ impl AgentRuntime {
     ) -> Self {
         self.research = Some(research);
         self
+    }
+
+    /// Gives every Session the read-only `kubecode-context` tools (ADR 0214).
+    pub fn with_project_context(
+        mut self,
+        context: Arc<crate::project_context::ProjectContext>,
+    ) -> Self {
+        self.project_context = Some(context);
+        self
+    }
+
+    pub fn project_context(&self) -> Option<Arc<crate::project_context::ProjectContext>> {
+        self.project_context.clone()
     }
 
     pub fn with_experiments(
@@ -413,6 +428,43 @@ impl AgentRuntime {
                 config.origin, config.token, conversation_id
             ),
         ))))
+    }
+
+    /// The read-only context server every Session may use. It needs the same
+    /// HTTP origin and token as the Team server and a reader; without them a
+    /// Session simply has no context tools.
+    fn context_mcp_http_server(&self, conversation_id: &str) -> Option<McpServer> {
+        let config = self.team_mcp_http.as_ref()?;
+        self.project_context.as_ref()?;
+        self.store
+            .get_conversation(conversation_id)
+            .ok()
+            .filter(|conversation| {
+                matches!(
+                    self.store
+                        .visible_conversation(&conversation.project_id, conversation_id),
+                    Ok(Some(_))
+                )
+            })?;
+        Some(McpServer::Http(McpServerHttp::new(
+            crate::context_mcp::CONTEXT_MCP_NAME,
+            format!(
+                "{}/api/v1/context-mcp/{}/{}",
+                config.origin, config.token, conversation_id
+            ),
+        )))
+    }
+
+    /// Every HTTP MCP server advertised to a Session: the Team server for a
+    /// member, and the read-only context server for all.
+    pub(crate) fn mcp_http_servers(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<McpServer>, RuntimeError> {
+        let mut servers = Vec::new();
+        servers.extend(self.team_mcp_http_server(conversation_id)?);
+        servers.extend(self.context_mcp_http_server(conversation_id));
+        Ok(servers)
     }
 
     pub fn workspace_service(&self) -> Arc<WorkspaceService> {

@@ -181,6 +181,10 @@ fn team_mcp_router(state: AppState) -> Router {
             "/team-mcp/{token}/{conversation_id}",
             axum::routing::any(crate::team_mcp::handle_http),
         )
+        .route(
+            "/context-mcp/{token}/{conversation_id}",
+            axum::routing::any(crate::context_mcp::handle_http),
+        )
         .with_state(state)
 }
 

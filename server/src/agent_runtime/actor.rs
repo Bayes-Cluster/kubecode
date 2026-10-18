@@ -626,14 +626,14 @@ async fn run_acp_session(
                 &initialization.agent_capabilities,
                 Some(&generation),
             )?;
-            let team_mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
+            let mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
                 runtime
-                    .team_mcp_http_server(&conversation_id)
+                    .mcp_http_servers(&conversation_id)
                     .map_err(|error| {
                         agent_client_protocol::Error::internal_error().data(error.to_string())
                     })?
             } else {
-                None
+                Vec::new()
             };
 
             let (session_id, _team_session) = if let Some(session_id) = provider_session_id {
@@ -642,7 +642,7 @@ async fn run_acp_session(
                     let response = connection
                         .send_request(
                             LoadSessionRequest::new(session_id.clone(), cwd.clone())
-                                .mcp_servers(team_mcp_http.clone().into_iter().collect()),
+                                .mcp_servers(mcp_http.clone()),
                         )
                         .block_task()
                         .await?;
@@ -669,7 +669,7 @@ async fn run_acp_session(
                         match connection
                             .send_request(
                                 ResumeSessionRequest::new(session_id.clone(), cwd.clone())
-                                    .mcp_servers(team_mcp_http.clone().into_iter().collect()),
+                                    .mcp_servers(mcp_http.clone()),
                             )
                             .block_task()
                             .await
@@ -701,7 +701,7 @@ async fn run_acp_session(
                             .send_request(LoadSessionRequest::new(
                                 session_id.clone(),
                                 cwd.clone(),
-                            ).mcp_servers(team_mcp_http.clone().into_iter().collect()))
+                            ).mcp_servers(mcp_http.clone()))
                             .block_task()
                             .await
                         {
@@ -726,7 +726,7 @@ async fn run_acp_session(
                                     ProviderSessionCreation {
                                         runtime: &runtime,
                                         conversation_id: &conversation_id,
-                                        team_mcp_http: team_mcp_http.clone(),
+                                        mcp_http: mcp_http.clone(),
                                         captured_responses: &captured_session_responses,
                                         startup_stage: &connection_stage,
                                         journal: &connection_journal,
@@ -745,7 +745,7 @@ async fn run_acp_session(
                     ProviderSessionCreation {
                         runtime: &runtime,
                         conversation_id: &conversation_id,
-                        team_mcp_http,
+                        mcp_http,
                         captured_responses: &captured_session_responses,
                         startup_stage: &connection_stage,
                         journal: &connection_journal,
@@ -1022,7 +1022,7 @@ type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 
 struct ProviderSessionCreation<'a> {
     runtime: &'a AgentRuntime,
-    team_mcp_http: Option<McpServer>,
+    mcp_http: Vec<McpServer>,
     conversation_id: &'a str,
     captured_responses: &'a SessionResponseCapture,
     startup_stage: &'a StartupStageCapture,
@@ -1043,7 +1043,7 @@ async fn create_provider_session(
 > {
     let ProviderSessionCreation {
         runtime,
-        team_mcp_http,
+        mcp_http,
         conversation_id,
         captured_responses,
         startup_stage,
@@ -1051,9 +1051,9 @@ async fn create_provider_session(
         generation,
     } = context;
     set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
-    if let Some(mcp_server) = team_mcp_http {
+    if !mcp_http.is_empty() {
         let response = connection
-            .send_request(NewSessionRequest::new(cwd).mcp_servers(vec![mcp_server]))
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(mcp_http))
             .block_task()
             .await?;
         let session_id = response.session_id.clone();
@@ -1071,12 +1071,20 @@ async fn create_provider_session(
     if let Some(mcp_server) = crate::team_mcp::build_team_mcp(runtime.clone(), conversation_id)
         .map_err(|error| agent_client_protocol::Error::internal_error().data(error.to_string()))?
     {
-        let active_session = connection
-            .build_session(&cwd)
-            .with_mcp_server(mcp_server)?
-            .block_task()
-            .start_session()
-            .await?;
+        let builder = connection.build_session(&cwd).with_mcp_server(mcp_server)?;
+        // A Team member also gets the read-only context tools in-process.
+        let active_session = if let Some(context_server) =
+            crate::context_mcp::build_context_mcp(runtime.clone(), conversation_id).map_err(
+                |error| agent_client_protocol::Error::internal_error().data(error.to_string()),
+            )? {
+            builder
+                .with_mcp_server(context_server)?
+                .block_task()
+                .start_session()
+                .await?
+        } else {
+            builder.block_task().start_session().await?
+        };
         let session_id = active_session.session_id().clone();
         let response = take_captured_session_response(captured_responses, &session_id)
             .unwrap_or_else(|| active_session.response());

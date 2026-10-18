@@ -349,6 +349,11 @@ fn preflight(
 
 // -- Orchestration -------------------------------------------------------------------------------------
 
+/// Where to find earlier work, delivered with every round so a fresh Agent
+/// retrieves detail on demand instead of inheriting transcripts (ADR 0214).
+const CONTEXT_GUIDANCE: &str = "\nEarlier Project work: the kubecode-context tools (context_round, context_search, context_read, context_resolve) are read-only. Call context_round for earlier rounds and findings, and context_search then context_read to find and read earlier Sessions, experiments, and evidence only as needed. A source marked changed or removed no longer proves what it once did.\n";
+const CONTEXT_GUIDANCE_SHORT: &str = "Earlier Project work, other Sessions, and experiments can be searched and read on demand with the read-only kubecode-context tools.";
+
 /// The pinned brief rendered as bounded text for a Solo prompt. The text is
 /// fixed at admission, so a later brief edit cannot rewrite queued work.
 fn render_context(round: &ResearchRound, brief: &BriefRevision, instruction: &str) -> String {
@@ -377,6 +382,7 @@ fn render_context(round: &ResearchRound, brief: &BriefRevision, instruction: &st
             text.push_str(&format!("- {} {}\n", source.kind.as_str(), source.id));
         }
     }
+    text.push_str(CONTEXT_GUIDANCE);
     text.push_str("\nResearcher's instruction:\n");
     text.push_str(if instruction.is_empty() {
         "Work toward answering the research question."
@@ -393,7 +399,7 @@ fn team_goal(round: &ResearchRound, brief: &BriefRevision, instruction: &str) ->
         instruction
     };
     format!(
-        "{lead}\n\nResearch round {} of \"{}\" — brief revision {}. Call team_get_context for the pinned research brief and source references.",
+        "{lead}\n\nResearch round {} of \"{}\" — brief revision {}. Call team_get_context for the pinned research brief and source references. {CONTEXT_GUIDANCE_SHORT}",
         round.round, brief.brief.title, brief.revision
     )
 }

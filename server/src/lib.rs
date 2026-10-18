@@ -7,6 +7,7 @@ pub mod app_state;
 pub mod composer_catalog;
 pub mod config;
 pub mod context_api;
+pub mod context_mcp;
 pub mod database;
 pub mod doctor;
 pub mod experiment_runner;

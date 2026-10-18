@@ -2032,23 +2032,42 @@ const CONTEXT_FINDING_CHARS: usize = 1_000;
 /// a bounded summary of earlier rounds so a new round can build on them
 /// (ADR 0212 §6).
 fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_json::Value {
-    use crate::research_api::sources::SourceResolver;
     let Some(research) = context.research.as_ref() else {
         return serde_json::Value::Null;
     };
     let Ok(Some((project_id, round))) = research.round_for_team(&team.id) else {
         return serde_json::Value::Null;
     };
+    round_delivery(&context.runtime, &project_id, &round)
+}
+
+/// The delivery of one research round to whoever executes it — a Team member
+/// through `team_get_context` or a Solo Session through `context_round`. One
+/// function builds both so Solo and Team cannot drift (ADR 0214): the pinned
+/// brief revision, the instruction, the selected sources with their current
+/// availability, bounded earlier rounds, attributed findings, and execution
+/// facts. Reading it changes nothing.
+pub(crate) fn round_delivery(
+    runtime: &AgentRuntime,
+    project_id: &str,
+    round: &crate::research_store::ResearchRound,
+) -> serde_json::Value {
+    use crate::research_api::sources::SourceResolver;
+    let (Some(research), Some(teams)) = (runtime.research_store(), runtime.team_store()) else {
+        return serde_json::Value::Null;
+    };
+    let project_id = project_id.to_owned();
+    let round = round.clone();
     let (Ok(question), Ok(brief)) = (
         research.get(&project_id, &round.research_id),
         research.revision(&project_id, &round.research_id, round.brief_revision),
     ) else {
         return serde_json::Value::Null;
     };
-    let workspace = context.runtime.workspace_service();
+    let workspace = runtime.workspace_service();
     let resolver = SourceResolver {
-        agents: context.runtime.store_ref(),
-        teams: &context.teams,
+        agents: runtime.store_ref(),
+        teams: &teams,
         workspace: &workspace,
     };
     let sources: Vec<_> = round
@@ -2078,7 +2097,7 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
             let earlier_team = earlier
                 .team_id
                 .as_deref()
-                .and_then(|id| context.teams.get_team(id).ok());
+                .and_then(|id| teams.get_team(id).ok());
             serde_json::json!({
                 "round": earlier.round,
                 "brief_revision": earlier.brief_revision,
@@ -2133,7 +2152,7 @@ fn research_context(context: &ToolContext, team: &crate::teams::Team) -> serde_j
         "sources": sources,
         "previous_rounds": previous,
         "findings": findings,
-        "execution": execution_context(context, &project_id, &round, &resolver),
+        "execution": execution_context(runtime, &project_id, &round, &resolver),
     })
 }
 
@@ -2180,12 +2199,12 @@ const CONTEXT_ATTEMPTS: usize = 20;
 /// owed an analysis, recent decisions, and the conditions that stop or need
 /// attention. Everything is read from committed records, never from prompts.
 fn execution_context(
-    context: &ToolContext,
+    runtime: &AgentRuntime,
     project_id: &str,
     round: &crate::research_store::ResearchRound,
     resolver: &crate::research_api::sources::SourceResolver<'_>,
 ) -> serde_json::Value {
-    let Some(runner) = context.runner.as_ref() else {
+    let Some(runner) = runtime.experiment_runner() else {
         return serde_json::Value::Null;
     };
     let store = runner.store();

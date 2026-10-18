@@ -81,6 +81,7 @@ impl AppState {
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
                 .with_research_store(Arc::clone(&research))
+                .with_project_context(Arc::clone(&context))
                 .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
         );
@@ -154,6 +155,7 @@ impl AppState {
             )
             .with_team_store(Arc::clone(&self.teams))
             .with_research_store(Arc::clone(&self.research))
+            .with_project_context(Arc::clone(&self.context))
             .with_experiments(
                 Arc::clone(&self.experiments),
                 Arc::clone(&self.experiment_runner),
