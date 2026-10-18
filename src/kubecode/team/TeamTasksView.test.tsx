@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TeamWorkspaceView } from '../TeamWorkspaceView'
 import type { KubecodeApi, TeamSnapshot } from '../api'
+import { boardOf, workApi, workCard } from '../work/workFixtures'
 
 const snapshot = {
   team: {
-    id: 'team-1', title: 'Compiler team', status: 'active', requested_mode: 'standard',
+    id: 'team-1', project_id: 'p1', title: 'Compiler team', status: 'active', requested_mode: 'standard',
     mode: 'standard', mode_fallback: null,
     member_management_policy: 'ask', max_parallel_runs: 3, max_teammates: 3,
     max_review_rounds: 3, current_review_round: 0, goal: 'Fix the compiler',
@@ -41,11 +42,31 @@ const snapshot = {
 
 const t = ((key: string) => key) as never
 
+/** The Team's tasks as the unified board shows them: same ids, legacy-owned. */
+function teamApi(extra: Record<string, unknown> = {}, source: TeamSnapshot = snapshot): KubecodeApi {
+  const cards = source.tasks.map((task) => workCard(
+    {
+      id: task.id,
+      title: task.title,
+      origin: 'legacy_team',
+      team_id: source.team.id,
+      stage: task.status === 'result_review' ? 'review' : task.status === 'pending' ? 'ready' : 'planned',
+    },
+    {
+      operable: 'legacy_team',
+      executor: task.assignee_member_id
+        ? { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code', available: true }
+        : null,
+    },
+  ))
+  return workApi({ workBoard: vi.fn().mockResolvedValue(boardOf(cards)), ...extra })
+}
+
 describe('TeamTasksView', () => {
-  it('keeps unassigned tasks visually explicit without rendering roster-only members', () => {
+  it('keeps unassigned tasks visually explicit without rendering roster-only members', async () => {
     render(
       <TeamWorkspaceView
-        api={{} as KubecodeApi}
+        api={teamApi()}
         onSelectMember={vi.fn()}
         onSnapshotChange={vi.fn()}
         snapshot={snapshot}
@@ -53,9 +74,9 @@ describe('TeamTasksView', () => {
       />,
     )
 
-    expect(screen.getByTestId('team-task-card-task-1')).toHaveTextContent('—')
+    expect(await screen.findByTestId('work-card-task-1')).toHaveTextContent('kubecode.work.unassigned')
     expect(screen.queryByText('Lead')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reviewer' })).toBeInTheDocument()
+    expect(await screen.findByTestId('work-card-task-2')).toHaveTextContent('Reviewer')
   })
 
   it('opens task details in a centered modal and can assign a teammate', async () => {
@@ -66,7 +87,7 @@ describe('TeamTasksView', () => {
     const assignTeamTask = vi.fn().mockResolvedValue(updated)
     render(
       <TeamWorkspaceView
-        api={{ assignTeamTask } as unknown as KubecodeApi}
+        api={teamApi({ assignTeamTask })}
         onSelectMember={vi.fn()}
         onSnapshotChange={vi.fn()}
         snapshot={snapshot}
@@ -74,7 +95,7 @@ describe('TeamTasksView', () => {
       />,
     )
 
-    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    fireEvent.click(await screen.findByTestId('work-card-task-1'))
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Explore parser')
     expect(dialog).toHaveClass('kubecode-team-task-dialog')
@@ -92,7 +113,7 @@ describe('TeamTasksView', () => {
     const cancelTeamTask = vi.fn().mockResolvedValue(snapshot)
     render(
       <TeamWorkspaceView
-        api={{ cancelTeamTask } as unknown as KubecodeApi}
+        api={teamApi({ cancelTeamTask })}
         onSelectMember={vi.fn()}
         onSnapshotChange={vi.fn()}
         snapshot={snapshot}
@@ -100,7 +121,7 @@ describe('TeamTasksView', () => {
       />,
     )
 
-    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    fireEvent.click(await screen.findByTestId('work-card-task-1'))
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamTaskCancel' }))
     expect(cancelTeamTask).not.toHaveBeenCalled()
     expect(screen.getByText('kubecode.teamTaskCancelDescription')).toBeInTheDocument()
@@ -119,7 +140,7 @@ describe('TeamTasksView', () => {
     const retryTeamTask = vi.fn().mockResolvedValue(snapshot)
     render(
       <TeamWorkspaceView
-        api={{ retryTeamTask } as unknown as KubecodeApi}
+        api={teamApi({ retryTeamTask })}
         onSelectMember={vi.fn()}
         onSnapshotChange={vi.fn()}
         snapshot={{
@@ -134,7 +155,7 @@ describe('TeamTasksView', () => {
       />,
     )
 
-    fireEvent.click(screen.getByTestId('team-task-card-task-1'))
+    fireEvent.click(await screen.findByTestId('work-card-task-1'))
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamTaskRetry' }))
 
     await waitFor(() => expect(retryTeamTask).toHaveBeenCalledWith('team-1', 'task-1'))

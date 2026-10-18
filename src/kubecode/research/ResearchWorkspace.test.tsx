@@ -125,6 +125,15 @@ describe('ResearchWorkspace', () => {
     expect(startResearchRound).not.toHaveBeenCalled()
   })
 
+  it('opens the one work board filtered to this question from its Work tab', async () => {
+    const onOpenBoard = vi.fn()
+    mount({ onOpenBoard })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.work')
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.work.openBoard' }))
+    expect(onOpenBoard).toHaveBeenCalledWith({ research_id: 'rq-1' })
+  })
+
   it('opens a linked discussion Session and reports a removed one', async () => {
     const detail = {
       ...detailFixture,

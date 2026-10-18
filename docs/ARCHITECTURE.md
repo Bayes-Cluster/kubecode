@@ -227,6 +227,18 @@ service, exposed to every Session as the `kubecode-work` MCP server
 (`server/src/work_mcp/`) with a per-server, per-conversation credential;
 `orchestrator_api` lets the researcher read and set limits and list routes.
 
+The Workspace work board (ADR 0218) is one server-composed projection,
+`server/src/work_api.rs`: `GET .../work/board` (cards, per-stage and
+per-condition counts, a closed lane, filters by question, round, Team, Agent,
+Thread, condition, and source), `GET .../work/{id}` for the inspector, `POST
+.../work` to add a task, and `POST .../work/{id}/commands` for the researcher's
+revision-checked commands (state revision, plus the plan revision where the
+store needs it). The browser surface is `src/kubecode/work/`: `WorkBoard`
+(columns, attention strip, closed lane, drag-to-command), `WorkInspector`, and
+`useWorkBoard`, which refetches on `work_updated` and `orchestration_updated`.
+The Team view's task tab renders the same board under a Team scope and keeps
+the Team's own dialog for Team-owned tasks.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

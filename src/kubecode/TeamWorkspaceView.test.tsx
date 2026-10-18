@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TeamWorkspaceView } from './TeamWorkspaceView'
 import type { KubecodeApi, TeamSnapshot } from './api'
+import { boardOf, workApi, workCard } from './work/workFixtures'
 
 const snapshot = {
   team: {
-    id: 'team-1', title: 'Compiler team', status: 'active', requested_mode: 'standard',
+    id: 'team-1', project_id: 'p1', title: 'Compiler team', status: 'active', requested_mode: 'standard',
     mode: 'standard', mode_fallback: null,
     member_management_policy: 'ask', max_parallel_runs: 3, max_teammates: 3,
     max_review_rounds: 3, current_review_round: 0, goal: 'Fix the compiler',
@@ -46,7 +47,14 @@ describe('TeamWorkspaceView', () => {
     const selectMember = vi.fn()
     render(
       <TeamWorkspaceView
-        api={{} as KubecodeApi}
+        api={workApi({
+          workBoard: vi.fn().mockResolvedValue(boardOf([
+            workCard({ id: 'task-1', title: 'Explore parser', origin: 'legacy_team', stage: 'ready', team_id: 'team-1' },
+              { operable: 'legacy_team' }),
+            workCard({ id: 'task-2', title: 'Review parser', origin: 'legacy_team', stage: 'review', team_id: 'team-1' },
+              { operable: 'legacy_team', executor: { session_id: 'reviewer', title: 'Reviewer', agent_id: 'claude_code', available: true } }),
+          ])),
+        }) as KubecodeApi}
         onSelectMember={selectMember}
         onSnapshotChange={vi.fn()}
         snapshot={snapshot}
@@ -55,16 +63,16 @@ describe('TeamWorkspaceView', () => {
     )
 
     expect(screen.getByText('1', { selector: '[data-metric="running"] strong' })).toBeInTheDocument()
-    expect(screen.getByText('Review parser')).toBeInTheDocument()
+    expect(await screen.findByText('Review parser')).toBeInTheDocument()
     expect(screen.queryByText('Explore', { exact: true })).not.toBeInTheDocument()
     expect(screen.queryByText('Review', { exact: true })).not.toBeInTheDocument()
     expect(screen.queryByTestId('team-member-rail')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId(/^team-board-column-/)).toHaveLength(5)
-    expect(within(screen.getByTestId('team-board-column-review')).getByText('1')).toBeInTheDocument()
+    expect(screen.getAllByTestId(/^work-column-/)).toHaveLength(6)
+    expect(within(screen.getByTestId('work-column-review')).getByText('1')).toBeInTheDocument()
     expect(screen.getByText('Reviewer needs permission')).toBeInTheDocument()
-    fireEvent.click(within(screen.getByTestId('team-task-card-task-2')).getByRole('button', {
-      name: 'Reviewer',
-    }))
+    // A Team's task opens the Team's own dialog, which reaches the assignee's Session.
+    fireEvent.click(screen.getByTestId('work-card-task-2'))
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.teamOpenSession' }))
     expect(selectMember).toHaveBeenCalledWith('reviewer')
     const activityTab = screen.getByRole('tab', { name: 'kubecode.teamActivity' })
     fireEvent.pointerDown(activityTab, { button: 0, ctrlKey: false, pointerType: 'mouse' })

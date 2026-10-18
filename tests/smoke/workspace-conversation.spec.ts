@@ -40,6 +40,8 @@ test('@smoke workspace conversation keeps a discussion, threads it, and links it
 
   // The discussion survives a reload.
   await page.reload()
+  // Other specs leave Projects behind; choose ours explicitly after the reload.
+  await page.getByRole('button', { name: projectName, exact: true }).click()
   await page.locator('.kubecode-channel-nav').getByRole('button', { name: 'General' }).click()
   await expect(page.getByText('Should we prune the attention heads?')).toBeVisible()
   await expect(page.getByText('Or quantize first?')).toBeVisible()

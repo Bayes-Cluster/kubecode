@@ -62,3 +62,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0215](0215-workspace-owned-research-work.md) | Workspace-owned research work, fenced coordination, and one Kanban projection |
 | [0216](0216-workspace-conversation-and-research-threads.md) | Shared Workspace conversation with research Threads |
 | [0217](0217-orchestrated-research-execution.md) | Orchestrated research execution: routes, round limits, and caller-bound work tools |
+| [0218](0218-single-workspace-work-board.md) | One Workspace work board over canonical work records |

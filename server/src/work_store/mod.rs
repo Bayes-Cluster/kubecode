@@ -345,12 +345,14 @@ impl WorkStore {
                 filter.round_id,
                 filter.team_id,
                 filter.stage.map(WorkStage::as_str),
-                filter.include_closed,
+                filter.include_closed || filter.only_closed,
                 filter.conversation_id,
                 filter.condition.map(WorkCondition::as_str),
                 limit as i64,
                 filter.offset as i64,
                 filter.origin.map(WorkOrigin::as_str),
+                filter.derived_from_id,
+                filter.only_closed,
             ],
             item_from_row,
         )?;
@@ -377,12 +379,14 @@ impl WorkStore {
                 filter.round_id,
                 filter.team_id,
                 Option::<&str>::None,
-                filter.include_closed,
+                filter.include_closed || filter.only_closed,
                 filter.conversation_id,
                 filter.condition.map(WorkCondition::as_str),
                 0_i64,
                 0_i64,
                 filter.origin.map(WorkOrigin::as_str),
+                filter.derived_from_id,
+                filter.only_closed,
             ],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)),
         )?;
@@ -638,9 +642,12 @@ const FILTER_SQL: &str = "project_id = ?1
        AND (?6 OR lifecycle = 'active')
        AND (?7 IS NULL OR EXISTS (
              SELECT 1 FROM work_assignments a
-             WHERE a.task_id = work_items.id AND a.ended_at IS NULL AND a.conversation_id = ?7))
+             WHERE a.task_id = work_items.id AND a.conversation_id = ?7
+               AND (a.ended_at IS NULL OR work_items.lifecycle != 'active')))
        AND (?8 IS NULL OR condition = ?8)
-       AND (?11 IS NULL OR origin = ?11)";
+       AND (?11 IS NULL OR origin = ?11)
+       AND (?12 IS NULL OR (derived_from_kind = 'thread' AND derived_from_id = ?12))
+       AND (NOT ?13 OR lifecycle != 'active')";
 
 // -- Row mapping -------------------------------------------------------------------------------------------
 

@@ -33,6 +33,8 @@ export type ResearchWorkspaceProps = {
   onOpenSession: (conversationId: string) => void
   /** Opens a Workspace-conversation Thread; omitted when there is no conversation surface. */
   onOpenThread?: (threadId: string) => void
+  /** Opens the one work board filtered to this question. */
+  onOpenBoard?: (filter: { research_id: string }) => void
   projectId: string
   researchId: string
   t: Translator
@@ -56,6 +58,7 @@ export function ResearchWorkspace({
   onClose,
   onConversationCreated,
   onOpenSession,
+  onOpenBoard,
   onOpenThread,
   projectId,
   researchId,
@@ -198,6 +201,13 @@ export function ResearchWorkspace({
           />
         </TabsContent>
         <TabsContent forceMount value="work" hidden={tab !== 'work'}>
+          {onOpenBoard && (
+            <p className="kubecode-research-muted">
+              <Button size="xs" variant="outline" onClick={() => onOpenBoard({ research_id: researchId })}>
+                {t('kubecode.work.openBoard')}
+              </Button>
+            </p>
+          )}
           <ResearchRoundsPanel
             agents={agents}
             api={api}

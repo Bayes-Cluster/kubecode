@@ -77,6 +77,11 @@ import type {
   TerminalInfo,
   TerminalKind,
   TextDocument,
+  WorkBoard,
+  WorkBoardFilter,
+  WorkCard,
+  WorkCommand,
+  WorkDetail,
   WorkspaceMigrationPreview,
   WorkspaceMigrationResolution,
   WorkspaceMigrationResult,
@@ -308,6 +313,56 @@ export class KubecodeApi {
 
   ilinkRemoveQuickPrompt(slot: number): Promise<void> {
     return this.request(`/ilink/quick-prompts/${slot}`, { method: 'DELETE' })
+  }
+
+  workBoard(projectId: string, filter: WorkBoardFilter = {}): Promise<WorkBoard> {
+    return this.request(`${this.projectPath(projectId)}/work/board?${query({
+      research_id: filter.research_id,
+      round_id: filter.round_id,
+      team_id: filter.team_id,
+      conversation_id: filter.conversation_id,
+      thread_id: filter.thread_id,
+      condition: filter.condition,
+      origin: filter.origin,
+      include_closed: filter.include_closed ? 'true' : undefined,
+    })}`)
+  }
+
+  /** Adds a task as the researcher; a repeated `clientRequestId` returns the same card. */
+  createWork(
+    projectId: string,
+    input: { title: string; description?: string; roundId?: string; threadId?: string; clientRequestId?: string },
+  ): Promise<WorkCard> {
+    return this.request(`${this.projectPath(projectId)}/work`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        round_id: input.roundId,
+        thread_id: input.threadId,
+        client_request_id: input.clientRequestId,
+      }),
+    })
+  }
+
+  workDetail(projectId: string, workId: string): Promise<WorkDetail> {
+    return this.request(`${this.projectPath(projectId)}/work/${encodeURIComponent(workId)}`)
+  }
+
+  /** A researcher command; refused if the card changed since `expectedStateRevision`. */
+  workCommand(
+    projectId: string,
+    workId: string,
+    expectedStateRevision: number,
+    command: WorkCommand,
+  ): Promise<WorkCard> {
+    return this.request(
+      `${this.projectPath(projectId)}/work/${encodeURIComponent(workId)}/commands`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ ...command, expected_state_revision: expectedStateRevision }),
+      },
+    )
   }
 
   listChannels(projectId: string): Promise<Channel[]> {

@@ -344,6 +344,10 @@ pub struct WorkFilter {
     pub origin: Option<WorkOrigin>,
     /// Include canceled, abandoned, and superseded work.
     pub include_closed: bool,
+    /// Only canceled, abandoned, and superseded work (implies `include_closed`).
+    pub only_closed: bool,
+    /// Work that came from this Thread or message.
+    pub derived_from_id: Option<String>,
     /// At most this many (default and ceiling 200); `offset` skips that many.
     pub limit: Option<usize>,
     pub offset: usize,
