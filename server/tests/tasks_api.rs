@@ -194,7 +194,9 @@ async fn a_task_reaches_the_one_board_only_through_the_researchers_words_to_the_
     .await;
     assert_eq!(drafts.as_array().unwrap().len(), 2);
 
-    // The researcher's instruction, in their words and without an @mention or a button.
+    // Two proposals are on the table; the manager shows the one in question again
+    // and the researcher answers it in their words, with no @mention and no button.
+    manager.task_show(&proposal.research_id).unwrap();
     let instruction = env
         .say("Yes, please add the pruning one to the board.")
         .await;
@@ -250,8 +252,14 @@ async fn a_task_reaches_the_one_board_only_through_the_researchers_words_to_the_
         &instruction,
         from_specialist.revision,
     );
+    // (A specialist's own proposal first has to be shown by the General Agent.)
     assert!(
-        matches!(replay, Err(AgentWorkError::Task(TaskError::MessageUsed))),
+        matches!(
+            replay,
+            Err(AgentWorkError::Task(
+                TaskError::Stale(_) | TaskError::MessageUsed
+            ))
+        ),
         "{replay:?}"
     );
 
@@ -409,7 +417,22 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
         from_thread: None,
         client_request_id: Some("w2"),
     });
-    assert!(late.is_err());
+    assert!(
+        matches!(&late, Err(AgentWorkError::Invalid(text)) if text.contains("awaiting the researcher's review")),
+        "{late:?}"
+    );
+    // Nor can existing work be reassigned, started, or given another executor meanwhile.
+    for result in [
+        manager
+            .assign_member(&work.item.id, "@analyst", "again")
+            .map(|_| ()),
+        manager.start(&work.item.id, "again").map(|_| ()),
+    ] {
+        assert!(
+            matches!(&result, Err(AgentWorkError::Invalid(text)) if text.contains("the Task is finished or awaiting")),
+            "{result:?}"
+        );
+    }
 
     // The evidence changed behind the review: accepting is refused until it is accepted anew.
     std::fs::write(root.join("notes.md"), "pruning helps after all").unwrap();
@@ -421,7 +444,7 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
         &env,
         Method::POST,
         &path,
-        json!({"accept": true, "outcome": "supported"}),
+        json!({"request_id": request.id, "accept": true, "outcome": "supported"}),
     )
     .await;
     assert_eq!(
@@ -458,13 +481,19 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // Sending it back needs a reason; a valid negative finding then completes it.
-    let (status, _) = call(&env, Method::POST, &path, json!({"accept": false})).await;
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": request.id, "accept": false}),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, accepted) = call(
         &env,
         Method::POST,
         &path,
-        json!({"accept": true, "outcome": "refuted", "reason": "clean ablation"}),
+        json!({"request_id": request.id, "accept": true, "outcome": "refuted", "reason": "clean ablation"}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{accepted}");
@@ -477,7 +506,13 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
         (Some("done"), Some("refuted"))
     );
     // Nothing else to review now.
-    let (status, again) = call(&env, Method::POST, &path, json!({"accept": true})).await;
+    let (status, again) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": request.id, "accept": true}),
+    )
+    .await;
     assert_eq!(
         (status, again["code"].as_str()),
         (StatusCode::CONFLICT, Some("task_state"))
@@ -492,5 +527,87 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
         from_thread: None,
         client_request_id: Some("w3"),
     });
-    assert!(after.is_err());
+    assert!(
+        matches!(&after, Err(AgentWorkError::Invalid(text)) if text.contains("finished or awaiting")),
+        "{after:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_manager_coordinates_many_tasks_and_a_stale_review_click_decides_nothing() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let mut rounds = Vec::new();
+    for title in ["Prune heads", "Quantize"] {
+        let proposal = manager
+            .task_propose(brief(title), Some(&title.replace(' ', "-")))
+            .unwrap();
+        let admit = env.say(&format!("Add {title} to the board")).await;
+        manager
+            .task_admit(&proposal.research_id, &admit, proposal.revision)
+            .unwrap();
+        let go = env.say(&format!("Go ahead with {title}")).await;
+        let started = manager.task_start(&proposal.research_id, &go).unwrap();
+        rounds.push((proposal.research_id, started.round_id.unwrap()));
+    }
+    // One manager, two Tasks, two rounds, both coordinated by it.
+    for (_, round) in &rounds {
+        assert_eq!(
+            env.state
+                .work
+                .coordinator(&env.project, round)
+                .unwrap()
+                .unwrap()
+                .holder,
+            env.general
+        );
+    }
+    assert_eq!(env.board(&env.project).await["total"], 2);
+
+    // A review the researcher is not looking at cannot be decided by an old click.
+    let (task, _) = &rounds[0];
+    let first = manager
+        .task_request_review(task, "First look", &[])
+        .unwrap();
+    let path = format!("/projects/{}/tasks/{task}/review", env.project);
+    let (status, sent_back) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": first.id, "accept": false, "reason": "more"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{sent_back}");
+    let second = manager
+        .task_request_review(task, "Second look", &[])
+        .unwrap();
+    let (status, stale) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": first.id, "accept": true, "outcome": "supported"}),
+    )
+    .await;
+    assert_eq!(
+        (status, stale["code"].as_str()),
+        (StatusCode::CONFLICT, Some("task_state")),
+        "{stale}"
+    );
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": second.id, "accept": true, "outcome": "supported"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    // A review of a Task that does not exist is a 404.
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/tasks/no-such/review", env.project),
+        json!({"request_id": "x", "accept": true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

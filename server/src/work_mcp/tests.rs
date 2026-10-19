@@ -814,6 +814,75 @@ async fn task_tools_are_the_managers_and_say_what_to_do_when_refused() {
     let list = payload(manager.task_list().await);
     assert_eq!(list["tasks"][0]["id"], id.as_str());
     assert_eq!(list["tasks"][0]["stage"], "ready");
+    // Execution needs its own, later instruction; review is asked for by the manager.
+    let early = refused(
+        manager
+            .task_start(Parameters(AuthorizedStepInput {
+                research_id: id.clone(),
+                message_id: said.id.clone(),
+                brief_revision: None,
+            }))
+            .await,
+    );
+    assert!(
+        early.contains("authorize") || early.contains("used"),
+        "{early}"
+    );
+    let go = rig
+        .state
+        .channels
+        .post(
+            &rig.f.project_id,
+            &channel.id,
+            NewMessage {
+                body: "Go ahead and run it",
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    let started = payload(
+        manager
+            .task_start(Parameters(AuthorizedStepInput {
+                research_id: id.clone(),
+                message_id: go.id.clone(),
+                brief_revision: None,
+            }))
+            .await,
+    );
+    assert_eq!(started["kind"], "execute");
+    assert!(started["round_id"].is_string());
+    let asked = payload(
+        manager
+            .task_request_review(Parameters(RequestReviewInput {
+                research_id: id.clone(),
+                summary: "Both ratios ran.".into(),
+                evidence: vec![],
+            }))
+            .await,
+    );
+    assert_eq!(asked["state"], "open");
+    let shown = payload(
+        manager
+            .task_show(Parameters(ShowInput {
+                research_id: id.clone(),
+            }))
+            .await,
+    );
+    assert_eq!(shown["research_id"], id.as_str());
+    let bad_evidence = refused(
+        manager
+            .task_request_review(Parameters(RequestReviewInput {
+                research_id: id.clone(),
+                summary: "x".into(),
+                evidence: vec!["nonsense".into()],
+            }))
+            .await,
+    );
+    assert!(
+        bad_evidence.contains("kind:id") || bad_evidence.contains("review"),
+        "{bad_evidence}"
+    );
     // An outsider cannot read the shared conversation through the tool.
     assert!(
         outsider

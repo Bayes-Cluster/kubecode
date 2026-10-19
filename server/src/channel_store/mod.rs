@@ -617,41 +617,58 @@ impl ChannelStore {
         Ok(MessagePage { messages, has_more })
     }
 
-    /// The sequence of the first agent- or system-written message in a channel
-    /// that cites exactly `kind:id` at `revision`. A proposal is "shown" when
-    /// such a message exists, and the channel's gapless order says what came
-    /// before an instruction.
-    pub fn first_citation_seq(
+    /// The first top-level proposal of a brief revision in a channel: its
+    /// sequence and the Session that wrote it. Proposals are posted by the
+    /// Task service under the key `proposal:{research}:{revision}` (or a later
+    /// `…:again:…` copy), so only they count as showing the proposal.
+    pub fn proposal_seq(
         &self,
         project_id: &str,
         channel_id: &str,
-        kind: ContextKind,
-        id: &str,
+        research_id: &str,
         revision: &str,
-    ) -> Result<Option<u64>, ChannelError> {
-        let connection = self.connection();
-        let mut statement = connection.prepare(
-            "SELECT seq, references_json FROM channel_messages
-             WHERE project_id = ?1 AND channel_id = ?2 AND author_kind IN ('agent', 'system')
-               AND references_json LIKE ?3 ORDER BY seq",
-        )?;
-        let pattern = format!("%{}%", id.replace(['%', '_'], ""));
-        let rows = statement
-            .query_map(params![project_id, channel_id, pattern], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        for (seq, json) in rows {
-            let references: Vec<ContextRef> = serde_json::from_str(&json).unwrap_or_default();
-            if references.iter().any(|reference| {
-                reference.kind == kind
-                    && reference.id == id
-                    && reference.revision.as_deref() == Some(revision)
-            }) {
-                return Ok(Some(seq as u64));
-            }
-        }
-        Ok(None)
+    ) -> Result<Option<(u64, Option<String>)>, ChannelError> {
+        let exact = format!("proposal:{research_id}:{revision}");
+        let again = format!("proposal:{research_id}:{revision}:again:%");
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT seq, author_ref FROM channel_messages
+                 WHERE project_id = ?1 AND channel_id = ?2 AND thread_id IS NULL
+                   AND author_kind = 'agent'
+                   AND (client_message_id = ?3 OR client_message_id LIKE ?4)
+                 ORDER BY seq LIMIT 1",
+                params![project_id, channel_id, exact, again],
+                |row| Ok((row.get::<_, i64>(0)? as u64, row.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// The research question and revision of the newest top-level proposal
+    /// posted before `before_seq`.
+    pub fn latest_proposal_before(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        before_seq: u64,
+    ) -> Result<Option<(String, String)>, ChannelError> {
+        let key: Option<String> = self
+            .connection()
+            .query_row(
+                "SELECT client_message_id FROM channel_messages
+                 WHERE project_id = ?1 AND channel_id = ?2 AND thread_id IS NULL
+                   AND author_kind = 'agent' AND client_message_id LIKE 'proposal:%'
+                   AND seq < ?3
+                 ORDER BY seq DESC LIMIT 1",
+                params![project_id, channel_id, before_seq as i64],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(key.and_then(|key| {
+            let mut parts = key.split(':');
+            let (_, id, revision) = (parts.next()?, parts.next()?, parts.next()?);
+            Some((id.to_owned(), revision.to_owned()))
+        }))
     }
 
     pub fn message(&self, project_id: &str, message_id: &str) -> Result<Message, ChannelError> {

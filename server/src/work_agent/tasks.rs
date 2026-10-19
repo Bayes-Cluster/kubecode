@@ -155,6 +155,23 @@ impl WorkAgent {
             .0)
     }
 
+    /// Shows a proposal again, when other proposals have been shown since or
+    /// the researcher's answer was unclear, so they can answer this one.
+    pub fn task_show(&self, research_id: &str) -> Result<Proposal, AgentWorkError> {
+        let message = self
+            .tasks()?
+            .show_again(&self.project_id, &self.caller, research_id)?;
+        let question = self
+            .research
+            .get(&self.project_id, research_id)
+            .map_err(|_| AgentWorkError::NotFound)?;
+        Ok(Proposal {
+            research_id: question.id,
+            revision: question.revision,
+            message_id: message.id,
+        })
+    }
+
     /// The board and the drafts, for any member.
     pub fn task_list(&self) -> Result<TaskList, AgentWorkError> {
         let tasks = self.tasks()?;

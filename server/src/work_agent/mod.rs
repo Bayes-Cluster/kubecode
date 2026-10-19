@@ -211,6 +211,26 @@ impl WorkAgent {
         self
     }
 
+    /// A Task that is finished, or waiting for the researcher's review, takes no
+    /// new work, assignments, attempts, executors, or experiments: iterating is
+    /// the researcher's decision (ADR 0221).
+    fn ensure_task_open(&self, round_id: &str) -> Result<(), AgentWorkError> {
+        if let Some(tasks) = &self.tasks
+            && let Ok(round) = self.research.round_by_id(&self.project_id, round_id)
+            && matches!(
+                tasks.stage(&self.project_id, &round.research_id),
+                Ok(Some(
+                    crate::task_store::TaskStage::Done | crate::task_store::TaskStage::Review
+                ))
+            )
+        {
+            return Err(invalid(
+                "the Task is finished or awaiting the researcher's review; they decide whether to iterate",
+            ));
+        }
+        Ok(())
+    }
+
     // -- Identity ------------------------------------------------------------------------------------
 
     /// Authority to coordinate `round_id`, from the persisted coordinator row
@@ -401,20 +421,7 @@ impl WorkAgent {
             .research
             .round_by_id(&self.project_id, &round_id)
             .map_err(|_| AgentWorkError::NotFound)?;
-        // A Task that is finished, or waiting for the researcher's review, takes
-        // no new work: iterating is the researcher's decision (ADR 0221).
-        if let Some(tasks) = &self.tasks
-            && matches!(
-                tasks.stage(&self.project_id, &round.research_id),
-                Ok(Some(
-                    crate::task_store::TaskStage::Done | crate::task_store::TaskStage::Review
-                ))
-            )
-        {
-            return Err(invalid(
-                "the Task is finished or awaiting the researcher's review; they decide whether to iterate",
-            ));
-        }
+        self.ensure_task_open(&round_id)?;
         // A task's discussion must be this round's: a Thread of another
         // question, of another round, or of no question at all is another
         // context and does not justify this round's work (nor does it gain the
@@ -491,6 +498,9 @@ impl WorkAgent {
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if let Some(round_id) = summary.item.round_id.as_deref() {
+            self.ensure_task_open(round_id)?;
+        }
         // A coordinator executes work itself or hands it to a Session it made
         // for the round. Other Sessions (the researcher's chats, Team members,
         // other work) are not its to direct.
@@ -531,6 +541,7 @@ impl WorkAgent {
     ) -> Result<String, AgentWorkError> {
         self.refuse_manager("create executor Sessions of its own")?;
         let round_id = self.coordinated(round_id)?;
+        self.ensure_task_open(&round_id)?;
         let key = request_key.trim();
         if key.is_empty() || key.chars().count() > 128 {
             return Err(invalid(
@@ -580,6 +591,9 @@ impl WorkAgent {
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if let Some(round_id) = summary.item.round_id.as_deref() {
+            self.ensure_task_open(round_id)?;
+        }
         if request_key.trim().is_empty() {
             return Err(invalid(
                 "a request_key is required so a replay starts nothing twice",

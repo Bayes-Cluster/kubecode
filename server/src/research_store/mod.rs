@@ -861,6 +861,45 @@ impl ResearchStore {
     /// Records the Leader or Solo Session. Idempotent for the same Session.
     /// A Solo round also links its Session as execution unless the Session is
     /// already linked to this question (its existing role is kept).
+    /// Gives a round the Session that coordinates it *without* linking that
+    /// Session to the question. The General Agent coordinates the rounds of
+    /// many Tasks, so it cannot be the exclusive link of one (ADR 0221).
+    pub fn round_set_shared_session(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+        session_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        self.write(|tx| {
+            load_question(tx, project_id, id)?;
+            let round = load_round(tx, id, round_id)?;
+            match round.session_id.as_deref() {
+                Some(existing) if existing == session_id => return Ok((round, None)),
+                Some(_) => {
+                    return Err(ResearchError::RoundState(
+                        "the round already has a different Session",
+                    ));
+                }
+                None => {}
+            }
+            if round.phase != RoundPhase::Created {
+                return Err(ResearchError::RoundState("the round has already advanced"));
+            }
+            tx.execute(
+                "UPDATE research_rounds
+                 SET session_id = ?2, phase = 'session_ready', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![round_id, session_id],
+            )?;
+            touch(tx, id)?;
+            Ok((
+                load_round(tx, id, round_id)?,
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
     pub fn round_set_session(
         &self,
         project_id: &str,

@@ -95,9 +95,34 @@ impl IntoResponse for ApiError {
                 "task_not_found",
                 "task not found".to_owned(),
             ),
+            Self::Work(WorkError::Database(_) | WorkError::Json(_)) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                "task storage failed".to_owned(),
+            ),
             Self::Work(error) => (StatusCode::CONFLICT, "work_state", error.to_string()),
             Self::Task(error) => match &error {
-                TaskError::NotFound => (StatusCode::NOT_FOUND, "task_not_found", error.to_string()),
+                TaskError::NotFound
+                | TaskError::Research(crate::research_store::ResearchError::NotFound) => {
+                    (StatusCode::NOT_FOUND, "task_not_found", error.to_string())
+                }
+                TaskError::Research(
+                    crate::research_store::ResearchError::Database(_)
+                    | crate::research_store::ResearchError::Json(_),
+                )
+                | TaskError::Channel(
+                    crate::channel_store::ChannelError::Database(_)
+                    | crate::channel_store::ChannelError::Json(_),
+                )
+                | TaskError::Work(WorkError::Database(_) | WorkError::Json(_))
+                | TaskError::Member(
+                    crate::member_store::MemberError::Database(_)
+                    | crate::member_store::MemberError::Json(_),
+                ) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "task storage failed".to_owned(),
+                ),
                 TaskError::Invalid(_) => (
                     StatusCode::BAD_REQUEST,
                     "invalid_task_request",
@@ -316,6 +341,8 @@ async fn detail(
 
 #[derive(Debug, Deserialize)]
 struct ReviewRequestBody {
+    /// The review request the researcher looked at; a newer one is not decided by an old click.
+    request_id: String,
     accept: bool,
     #[serde(default)]
     outcome: Option<String>,
@@ -348,6 +375,7 @@ async fn review(
         Ok(state.tasks.review(
             &project_id,
             &research_id,
+            &body.request_id,
             body.accept,
             outcome,
             body.reason.as_deref(),

@@ -293,15 +293,19 @@ member stores only the records of the researcher's authorization
 that decides the stage (ready, in progress, review, done). A Task's identity is
 its research question's id; the card is a read model (`TaskStore::card` /
 `board`) over the brief, rounds, internal work, decision requests, and roster.
-The General Agent proposes (`task_propose`, `task_revise`), and, given the id of
-the researcher's own message, admits (`task_admit`), approves a revised brief,
+The General Agent proposes (`task_propose`, `task_revise`, `task_show` to show one
+again), and, given the id of the researcher's own message, admits (`task_admit`), approves a revised brief,
 starts execution (`task_start`: a round pinned to the approved revision with
 the manager as coordinator, no limit or envelope set), and asks for review
 (`task_request_review`). `check_instruction` verifies in the service that the
-message is the researcher's, unquoted, in General, used once, and that a
-proposal citing exactly that brief revision preceded it (the channel's gapless
-sequence is the clock); proposing and revising post the proposal to General, so
-only something the researcher was shown can be authorized. `task_api.rs` serves
+message is the researcher's, unquoted, in General, used once across every step,
+newer than the Task's last stage change, and that the General Agent's top-level
+proposal of exactly that brief revision (key `proposal:{id}:{revision}`)
+preceded it and is the one the instruction names or the latest shown (the
+channel's gapless sequence is the clock); proposing and revising post the
+proposal to General, so only something the researcher was shown can be
+authorized. The manager coordinates many Tasks, so a Task round's Session is
+set without the exclusive research link (`round_set_shared_session`). `task_api.rs` serves
 `GET .../tasks/board`, `.../drafts`, `.../{id}` and the researcher's
 `POST .../review` (refused with `409 work_evidence_stale` while evidence the
 Task's work cites has changed) and `.../repin`; it has no admission endpoint.

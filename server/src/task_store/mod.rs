@@ -33,6 +33,11 @@ use crate::research_store::{
 };
 use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage, WorkStore};
 
+/// Drafts waiting at once, so a loop cannot flood General.
+const MAX_DRAFTS: usize = 50;
+/// The proposal shown in General is shortened to this; the Task shows all of it.
+const MAX_PROPOSAL_CHARS: usize = 8_000;
+
 pub struct TaskStore {
     database: Arc<Database>,
     agents: Arc<AgentStore>,
@@ -57,9 +62,10 @@ fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            round_id      TEXT,
            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
-         -- One instruction authorizes one thing of each kind, once.
+         -- One instruction authorizes one thing, once: not a second kind of step,
+         -- not another Task.
          CREATE UNIQUE INDEX IF NOT EXISTS task_authorizations_message
-           ON task_authorizations(kind, message_id) WHERE message_id IS NOT NULL;
+           ON task_authorizations(message_id) WHERE message_id IS NOT NULL;
          -- A Task is admitted once; a revision is approved once.
          CREATE UNIQUE INDEX IF NOT EXISTS task_authorizations_admit
            ON task_authorizations(research_id) WHERE kind = 'admit';
@@ -97,6 +103,9 @@ fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            research_id TEXT NOT NULL,
            kind        TEXT NOT NULL,
            ref_id      TEXT,
+           -- The newest General message when it happened: an instruction counts
+           -- for a step only if it came after the last stage change.
+           channel_seq INTEGER NOT NULL DEFAULT 0,
            created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
          CREATE INDEX IF NOT EXISTS task_events_task ON task_events(research_id, seq);",
@@ -219,41 +228,101 @@ impl TaskStore {
         kind: &str,
         reference: Option<&str>,
     ) -> Result<(), TaskError> {
+        let watermark: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(m.seq), 0) FROM channel_messages m
+             JOIN channels c ON c.id = m.channel_id
+             WHERE c.project_id = ?1 AND c.is_default = 1",
+            [project_id],
+            |row| row.get(0),
+        )?;
         tx.execute(
-            "INSERT INTO task_events (project_id, research_id, kind, ref_id) VALUES (?1, ?2, ?3, ?4)",
-            params![project_id, research_id, kind, reference],
+            "INSERT INTO task_events (project_id, research_id, kind, ref_id, channel_seq)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![project_id, research_id, kind, reference, watermark],
         )?;
         Ok(())
     }
 
+    /// A unique-index violation is a lost race with the same request, not a
+    /// storage fault.
+    fn lost_race(error: rusqlite::Error, what: &'static str) -> TaskError {
+        match error {
+            rusqlite::Error::SqliteFailure(failure, _)
+                if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                TaskError::State(what)
+            }
+            other => other.into(),
+        }
+    }
+
     // -- Existing records (ADR 0221 §6) ------------------------------------------------------------
 
-    /// A question whose round the researcher already started has an explicit
-    /// authorization on record; it is admitted with `legacy_round` origin and
-    /// no authorizing message. Nothing else is admitted retroactively.
-    /// Idempotent; also run when the boards are read, so a round started from
-    /// the research panel appears.
+    /// Questions whose round the researcher started from the research panel
+    /// have an explicit authorization on record: they are admitted with
+    /// `legacy_round` origin and no authorizing message, a question the
+    /// researcher resolved is Done, and a round started later on an admitted
+    /// Task moves it to In progress. Nothing else is admitted retroactively.
+    /// Idempotent; a cheap read when there is nothing to do.
     pub fn adopt_legacy(&self) -> Result<usize, TaskError> {
+        self.adopt(None)
+    }
+
+    fn adopt(&self, project: Option<&str>) -> Result<usize, TaskError> {
+        type Candidate = (String, String, String, i64, String);
+        let (candidates, unlogged): (Vec<Candidate>, Vec<(String, String, String)>) = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT q.project_id, q.id, r.id, r.brief_revision, q.status
+                 FROM research_questions q
+                 JOIN research_rounds r ON r.id =
+                      (SELECT id FROM research_rounds
+                       WHERE research_id = q.id AND phase = 'started' ORDER BY round LIMIT 1)
+                 WHERE q.archived = 0 AND (?1 IS NULL OR q.project_id = ?1)
+                   AND NOT EXISTS (SELECT 1 FROM task_authorizations a
+                                   WHERE a.research_id = q.id AND a.kind = 'admit')",
+            )?;
+            let candidates = statement
+                .query_map([project], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut statement = connection.prepare(
+                "SELECT a.project_id, a.research_id, r.id
+                 FROM research_rounds r
+                 JOIN task_authorizations a ON a.research_id = r.research_id AND a.kind = 'admit'
+                 WHERE r.phase = 'started' AND (?1 IS NULL OR a.project_id = ?1)
+                   AND NOT EXISTS (SELECT 1 FROM task_events e
+                                   WHERE e.research_id = r.research_id
+                                     AND e.kind = 'execution_authorized' AND e.ref_id = r.id)
+                 ORDER BY r.round",
+            )?;
+            let unlogged = statement
+                .query_map([project], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            (candidates, unlogged)
+        };
+        if candidates.is_empty() && unlogged.is_empty() {
+            return Ok(0);
+        }
+        let mut touched: Vec<(String, String)> = Vec::new();
         self.write(|tx| {
-            let candidates: Vec<(String, String, String, i64)> = {
-                let mut statement = tx.prepare(
-                    "SELECT q.project_id, q.id, r.id, r.brief_revision
-                     FROM research_questions q
-                     JOIN research_rounds r ON r.research_id = q.id AND r.phase = 'started'
-                     WHERE q.archived = 0
-                       AND NOT EXISTS (SELECT 1 FROM task_authorizations a
-                                       WHERE a.research_id = q.id AND a.kind = 'admit')
-                     GROUP BY q.id
-                     ORDER BY r.round",
-                )?;
-                statement
-                    .query_map([], |row| {
-                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-                    })?
-                    .collect::<Result<_, _>>()?
-            };
-            let mut adopted = 0;
-            for (project_id, research_id, round_id, revision) in &candidates {
+            for (project_id, research_id, round_id, revision, status) in &candidates {
+                let started: Vec<String> = {
+                    let mut statement = tx.prepare(
+                        "SELECT id FROM research_rounds
+                         WHERE research_id = ?1 AND phase = 'started' ORDER BY round",
+                    )?;
+                    statement
+                        .query_map([research_id], |row| row.get(0))?
+                        .collect::<Result<_, _>>()?
+                };
                 let digest: String = tx
                     .query_row(
                         "SELECT brief_json FROM research_brief_revisions
@@ -267,7 +336,7 @@ impl TaskStore {
                     .unwrap_or_default();
                 for kind in ["admit", "execute"] {
                     tx.execute(
-                        "INSERT INTO task_authorizations
+                        "INSERT OR IGNORE INTO task_authorizations
                            (id, project_id, research_id, kind, message_id, brief_revision,
                             scope_digest, acted_by, origin, round_id)
                          VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 'migration', 'legacy_round', ?7)",
@@ -283,20 +352,56 @@ impl TaskStore {
                     )?;
                 }
                 Self::log(tx, project_id, research_id, "admitted", None)?;
-                Self::log(
-                    tx,
-                    project_id,
-                    research_id,
-                    "execution_authorized",
-                    Some(round_id),
-                )?;
-                adopted += 1;
+                for started_round in &started {
+                    Self::log(
+                        tx,
+                        project_id,
+                        research_id,
+                        "execution_authorized",
+                        Some(started_round),
+                    )?;
+                }
+                // The researcher resolved it themselves: it is finished.
+                if status == "resolved" {
+                    Self::log(
+                        tx,
+                        project_id,
+                        research_id,
+                        "review_accepted",
+                        Some("legacy"),
+                    )?;
+                }
+                touched.push((project_id.clone(), research_id.clone()));
             }
-            Ok((
-                adopted,
-                (adopted > 0).then(|| (String::new(), "legacy".to_owned())),
-            ))
-        })
+            for (project_id, research_id, round_id) in &unlogged {
+                let logged: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM task_events
+                     WHERE research_id = ?1 AND kind = 'execution_authorized' AND ref_id = ?2",
+                    params![research_id, round_id],
+                    |row| row.get(0),
+                )?;
+                if logged == 0 {
+                    Self::log(
+                        tx,
+                        project_id,
+                        research_id,
+                        "execution_authorized",
+                        Some(round_id),
+                    )?;
+                    touched.push((project_id.clone(), research_id.clone()));
+                }
+            }
+            Ok(((), None))
+        })?;
+        // One event per Workspace so open boards refresh.
+        let mut announced: Vec<&String> = Vec::new();
+        for (project_id, research_id) in &touched {
+            if !announced.contains(&project_id) {
+                announced.push(project_id);
+                let _ = self.write(|_| Ok(((), Some((project_id.clone(), research_id.clone())))));
+            }
+        }
+        Ok(touched.len())
     }
 
     // -- Reads of the authorization records ------------------------------------------------------------
@@ -384,15 +489,25 @@ impl TaskStore {
             .collect::<Result<_, _>>()?)
     }
 
-    /// The stage: the last stage-affecting event decides. A question that was
-    /// never admitted has none (it is a draft).
+    /// The stage: an open review request means Review; otherwise the last
+    /// stage-affecting event decides. A question that was never admitted has
+    /// none (it is a draft).
     pub fn stage(
         &self,
         project_id: &str,
         research_id: &str,
     ) -> Result<Option<TaskStage>, TaskError> {
-        let last: Option<String> = self
-            .connection()
+        let connection = self.connection();
+        let open: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM task_review_requests
+             WHERE project_id = ?1 AND research_id = ?2 AND state = 'open'",
+            params![project_id, research_id],
+            |row| row.get(0),
+        )?;
+        if open > 0 {
+            return Ok(Some(TaskStage::Review));
+        }
+        let last: Option<String> = connection
             .query_row(
                 "SELECT kind FROM task_events
                  WHERE project_id = ?1 AND research_id = ?2
@@ -405,10 +520,27 @@ impl TaskStore {
             .optional()?;
         Ok(last.map(|kind| match kind.as_str() {
             "execution_authorized" | "review_returned" => TaskStage::InProgress,
-            "review_requested" => TaskStage::Review,
             "review_accepted" => TaskStage::Done,
             _ => TaskStage::Ready,
         }))
+    }
+
+    /// The newest General message at the time of the last stage change: an
+    /// instruction for the next step must be newer than this.
+    fn stage_watermark(&self, project_id: &str, research_id: &str) -> Result<u64, TaskError> {
+        let seq: Option<i64> = self
+            .connection()
+            .query_row(
+                "SELECT channel_seq FROM task_events
+                 WHERE project_id = ?1 AND research_id = ?2
+                   AND kind IN ('admitted', 'execution_authorized', 'review_requested',
+                                'review_returned', 'review_accepted')
+                 ORDER BY seq DESC LIMIT 1",
+                params![project_id, research_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(seq.unwrap_or(0) as u64)
     }
 
     // -- Proposals ----------------------------------------------------------------------------------------
@@ -431,6 +563,8 @@ impl TaskStore {
         if !brief.motivation.is_empty() {
             text.push_str(&format!("\n\nWhy: {}", brief.motivation));
         }
+        // A long brief is shortened in the message; the Task shows all of it.
+        let mut text: String = text.chars().take(MAX_PROPOSAL_CHARS).collect();
         text.push_str(&format!(
             "\n\n(Draft, revision {}. It is not on the board. Tell the General Agent in your own words to add it, or refine it first.)",
             question.revision
@@ -438,14 +572,17 @@ impl TaskStore {
         text
     }
 
-    /// Shows a brief revision to the researcher in General. A proposal is
-    /// displayed by construction, so an authorization can only name something
-    /// the researcher was shown (ADR 0221 §2).
+    /// Shows a brief revision to the researcher in General, as a top-level
+    /// message of the General Agent keyed `proposal:{id}:{revision}`. A
+    /// proposal is displayed by construction, and only such a message counts as
+    /// showing it (ADR 0221 §2). `again` posts a fresh copy, for when another
+    /// proposal has been shown since.
     fn show_proposal(
         &self,
         project_id: &str,
         caller: &str,
         question: &ResearchQuestion,
+        again: bool,
     ) -> Result<Message, TaskError> {
         let channel = self.channels.default_channel(project_id)?;
         let reference = ContextRef::at(
@@ -453,7 +590,16 @@ impl TaskStore {
             &question.id,
             question.revision.to_string(),
         );
-        let key = format!("proposal:{}:{}", question.id, question.revision);
+        let key = if again {
+            format!(
+                "proposal:{}:{}:again:{}",
+                question.id,
+                question.revision,
+                Uuid::new_v4().simple()
+            )
+        } else {
+            format!("proposal:{}:{}", question.id, question.revision)
+        };
         let (message, _) = self.channels.post(
             project_id,
             &channel.id,
@@ -485,6 +631,11 @@ impl TaskStore {
         if !active {
             return Err(TaskError::NotMember);
         }
+        if self.drafts(project_id)?.len() >= MAX_DRAFTS {
+            return Err(TaskError::Invalid(
+                "too many drafts are waiting; ask the researcher to add or discard some",
+            ));
+        }
         let (question, _) = self.research.create_authored(
             project_id,
             brief,
@@ -492,7 +643,7 @@ impl TaskStore {
             AuthorKind::Agent,
             Some(caller),
         )?;
-        let message = self.show_proposal(project_id, caller, &question)?;
+        let message = self.show_proposal(project_id, caller, &question, false)?;
         Ok((question, message))
     }
 
@@ -523,16 +674,41 @@ impl TaskStore {
             AuthorKind::Agent,
             Some(caller),
         )?;
-        let message = self.show_proposal(project_id, caller, &question)?;
+        let message = self.show_proposal(project_id, caller, &question, false)?;
         Ok((question, message))
+    }
+
+    /// Shows the current proposal again, after other proposals have been shown
+    /// or the brief was edited elsewhere, so the researcher can answer it.
+    pub fn show_again(
+        &self,
+        project_id: &str,
+        caller: &str,
+        research_id: &str,
+    ) -> Result<Message, TaskError> {
+        if !self.members.is_general(project_id, caller)? {
+            return Err(TaskError::NotManager);
+        }
+        let question = self
+            .research
+            .get(project_id, research_id)
+            .map_err(|error| match error {
+                crate::research_store::ResearchError::NotFound => TaskError::NotFound,
+                other => other.into(),
+            })?;
+        if self.stage(project_id, research_id)? == Some(TaskStage::Done) {
+            return Err(TaskError::State(
+                "a finished Task's brief is not shown again",
+            ));
+        }
+        self.show_proposal(project_id, caller, &question, true)
     }
 
     // -- Authorization ---------------------------------------------------------------------------------------
 
     /// Checks everything the server can know about an instruction: who wrote
-    /// it, where, whether it is the researcher's own words, and that it
-    /// followed the proposal it authorizes. The meaning of the words is the
-    /// General Agent's to judge (ADR 0221 §2).
+    /// it, where, and whether it is the researcher's own words. The meaning of
+    /// the words is the General Agent's to judge (ADR 0221 §2).
     fn check_instruction(
         &self,
         project_id: &str,
@@ -576,7 +752,11 @@ impl TaskStore {
         Ok((question, message))
     }
 
-    /// The proposal at this exact revision was shown before the instruction.
+    /// The instruction answers this proposal: the General Agent showed exactly
+    /// this brief revision before the instruction, and either the instruction
+    /// names the Task or this is the latest proposal shown before it. When
+    /// another proposal came after, which one the researcher meant is unclear
+    /// and the General Agent must show it again and ask.
     fn require_shown(
         &self,
         project_id: &str,
@@ -590,22 +770,50 @@ impl TaskStore {
             ));
         }
         let general = self.channels.default_channel(project_id)?;
-        let shown = self.channels.first_citation_seq(
+        let shown = self.channels.proposal_seq(
             project_id,
             &general.id,
-            ContextKind::Research,
             &question.id,
             &brief_revision.to_string(),
         )?;
         match shown {
-            Some(seq) if seq < message.seq => Ok(()),
-            Some(_) => Err(TaskError::Stale(
-                "the instruction came before the proposal at this revision was shown",
-            )),
-            None => Err(TaskError::Stale(
-                "this revision was never shown to the researcher",
-            )),
+            Some((seq, author)) if seq < message.seq => {
+                let by_manager = author
+                    .as_deref()
+                    .map(|session| self.members.was_general(project_id, session))
+                    .transpose()?
+                    .unwrap_or(false);
+                if !by_manager {
+                    return Err(TaskError::Stale(
+                        "the proposal was not shown by the General Agent",
+                    ));
+                }
+            }
+            Some(_) => {
+                return Err(TaskError::Stale(
+                    "the instruction came before the proposal at this revision was shown",
+                ));
+            }
+            None => {
+                return Err(TaskError::Stale(
+                    "this revision was never shown to the researcher",
+                ));
+            }
         }
+        let names_it = message.references.iter().any(|reference| {
+            reference.kind == ContextKind::Research && reference.id == question.id
+        });
+        if !names_it {
+            let latest =
+                self.channels
+                    .latest_proposal_before(project_id, &general.id, message.seq)?;
+            if latest != Some((question.id.clone(), brief_revision.to_string())) {
+                return Err(TaskError::Stale(
+                    "another proposal was shown more recently; show this one again, or ask which they meant",
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn insert_authorization(
@@ -616,6 +824,14 @@ impl TaskStore {
         message_id: &str,
         acted_by: &str,
     ) -> Result<Authorization, TaskError> {
+        let used: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM task_authorizations WHERE message_id = ?1",
+            [message_id],
+            |row| row.get(0),
+        )?;
+        if used > 0 {
+            return Err(TaskError::MessageUsed);
+        }
         let id = Uuid::new_v4().to_string();
         tx.execute(
             "INSERT INTO task_authorizations
@@ -632,7 +848,8 @@ impl TaskStore {
                 scope_digest(&question.brief),
                 acted_by
             ],
-        )?;
+        )
+        .map_err(|error| Self::lost_race(error, "that step was already authorized"))?;
         Ok(tx.query_row(
             &format!("{AUTH_SELECT} WHERE id = ?1"),
             [&id],
@@ -642,7 +859,8 @@ impl TaskStore {
 
     /// Puts a Task on the board because the researcher said so in
     /// `message_id`. Idempotent: the same authorization returns the same
-    /// record and board identity; anything else is refused (ADR 0221 §2).
+    /// record and board identity, however many callers race; anything else is
+    /// refused (ADR 0221 §2).
     pub fn admit(
         &self,
         project_id: &str,
@@ -653,23 +871,38 @@ impl TaskStore {
     ) -> Result<(Authorization, bool), TaskError> {
         let (question, message) =
             self.check_instruction(project_id, caller, research_id, message_id)?;
-        // A retry of the same authorized admission is the same admission.
         if let Some(existing) = self.admission(project_id, research_id)? {
             return if existing.message_id.as_deref() == Some(message_id) {
+                self.acknowledge(
+                    project_id,
+                    caller,
+                    &question,
+                    &message,
+                    "Added to the board",
+                    "admitted",
+                );
                 Ok((existing, false))
             } else {
                 Err(TaskError::State("the Task is already on the board"))
             };
         }
         self.require_shown(project_id, &question, brief_revision, &message)?;
-        let created = self.write(|tx| {
-            let used: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM task_authorizations WHERE kind = 'admit' AND message_id = ?1",
-                [message_id],
-                |row| row.get(0),
-            )?;
-            if used > 0 {
-                return Err(TaskError::MessageUsed);
+        let (record, created) = self.write(|tx| {
+            // The decisive check is made inside the transaction, so two callers
+            // racing with the same instruction get the same record.
+            if let Some(existing) = tx
+                .query_row(
+                    &format!("{AUTH_SELECT} WHERE research_id = ?1 AND kind = 'admit'"),
+                    [research_id],
+                    auth_from_row,
+                )
+                .optional()?
+            {
+                return if existing.message_id.as_deref() == Some(message_id) {
+                    Ok(((existing, false), None))
+                } else {
+                    Err(TaskError::State("the Task is already on the board"))
+                };
             }
             let record = Self::insert_authorization(
                 tx,
@@ -681,7 +914,7 @@ impl TaskStore {
             )?;
             Self::log(tx, project_id, research_id, "admitted", Some(message_id))?;
             Ok((
-                record,
+                (record, true),
                 Some((project_id.to_owned(), research_id.to_owned())),
             ))
         })?;
@@ -692,11 +925,13 @@ impl TaskStore {
             &message,
             "Added to the board",
             "admitted",
-        )?;
-        Ok((created, true))
+        );
+        Ok((record, created))
     }
 
-    /// The General Agent says what it did, where the researcher said it.
+    /// The General Agent says what it did, where the researcher said it. A
+    /// failure is logged, not raised: the step is recorded, and repeating the
+    /// same call posts the acknowledgement again (it is idempotent).
     fn acknowledge(
         &self,
         project_id: &str,
@@ -705,7 +940,7 @@ impl TaskStore {
         instruction: &Message,
         verb: &str,
         key: &str,
-    ) -> Result<(), TaskError> {
+    ) {
         let reference = ContextRef::at(
             ContextKind::Research,
             &question.id,
@@ -716,7 +951,7 @@ impl TaskStore {
             "{verb}: \"{}\" (brief revision {}), as you asked.",
             question.brief.title, question.revision
         );
-        self.channels.post(
+        if let Err(error) = self.channels.post(
             project_id,
             &instruction.channel_id,
             NewMessage {
@@ -728,8 +963,9 @@ impl TaskStore {
                 client_message_id: Some(&key),
                 ..Default::default()
             },
-        )?;
-        Ok(())
+        ) {
+            eprintln!("WARN: could not acknowledge a Task step in General: {error}");
+        }
     }
 
     /// Approves a revised brief of an admitted Task. Until then rounds keep the
@@ -747,26 +983,24 @@ impl TaskStore {
         if self.admission(project_id, research_id)?.is_none() {
             return Err(TaskError::State("the Task is not on the board yet"));
         }
-        if let Some(existing) = self
-            .authorizations(project_id, research_id)?
-            .into_iter()
-            .find(|a| a.kind != AuthorizationKind::Execute && a.brief_revision == brief_revision)
-        {
-            return if existing.message_id.as_deref() == Some(message_id) {
-                Ok((existing, false))
-            } else {
-                Err(TaskError::State("that revision is already approved"))
-            };
-        }
         self.require_shown(project_id, &question, brief_revision, &message)?;
-        let record = self.write(|tx| {
-            let used: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM task_authorizations WHERE kind = 'revise' AND message_id = ?1",
-                [message_id],
-                |row| row.get(0),
-            )?;
-            if used > 0 {
-                return Err(TaskError::MessageUsed);
+        let (record, created) = self.write(|tx| {
+            if let Some(existing) = tx
+                .query_row(
+                    &format!(
+                        "{AUTH_SELECT} WHERE research_id = ?1 AND kind IN ('admit', 'revise')
+                           AND brief_revision = ?2"
+                    ),
+                    params![research_id, brief_revision as i64],
+                    auth_from_row,
+                )
+                .optional()?
+            {
+                return if existing.message_id.as_deref() == Some(message_id) {
+                    Ok(((existing, false), None))
+                } else {
+                    Err(TaskError::State("that revision is already approved"))
+                };
             }
             let record = Self::insert_authorization(
                 tx,
@@ -776,7 +1010,10 @@ impl TaskStore {
                 message_id,
                 caller,
             )?;
-            Ok((record, Some((project_id.to_owned(), research_id.to_owned()))))
+            Ok((
+                (record, true),
+                Some((project_id.to_owned(), research_id.to_owned())),
+            ))
         })?;
         self.acknowledge(
             project_id,
@@ -785,14 +1022,17 @@ impl TaskStore {
             &message,
             "Approved the revised brief",
             "approved",
-        )?;
-        Ok((record, true))
+        );
+        Ok((record, created))
     }
 
     /// Lets an admitted Task execute because the researcher said so: starts a
     /// round pinned to the approved brief, with the General Agent as its
-    /// coordinator. Idempotent per instruction. Sets no limit and no
-    /// experiment envelope (ADR 0221 §3).
+    /// coordinator. Allowed from Ready, or from Done when the researcher asks to
+    /// iterate; never while a round is already running or under review. The
+    /// instruction must be newer than the last change of stage and is
+    /// idempotent per instruction. Sets no limit and no experiment envelope
+    /// (ADR 0221 §3).
     pub fn start_execution(
         &self,
         project_id: &str,
@@ -802,50 +1042,69 @@ impl TaskStore {
     ) -> Result<(Authorization, bool), TaskError> {
         let (question, message) =
             self.check_instruction(project_id, caller, research_id, message_id)?;
-        let admission = self
-            .admission(project_id, research_id)?
-            .ok_or(TaskError::State("the Task is not on the board yet"))?;
+        if self.admission(project_id, research_id)?.is_none() {
+            return Err(TaskError::State("the Task is not on the board yet"));
+        }
         let existing = self
             .authorizations(project_id, research_id)?
             .into_iter()
             .find(|a| {
                 a.kind == AuthorizationKind::Execute && a.message_id.as_deref() == Some(message_id)
             });
+        // Every call, retries included, is checked against the Task as it is now.
         let approved = self.approved_revision(project_id, research_id)?;
-        if existing.is_none() {
-            if self.stage(project_id, research_id)? == Some(TaskStage::Review) {
-                return Err(TaskError::State(
-                    "the Task is waiting for the researcher's review",
-                ));
+        if approved != question.revision {
+            return Err(TaskError::State(
+                "a revised brief is waiting for the researcher's approval",
+            ));
+        }
+        match &existing {
+            Some(record) if record.round_id.is_some() => {
+                // Finished earlier; only the acknowledgement may have been lost.
+                self.acknowledge(
+                    project_id,
+                    caller,
+                    &question,
+                    &message,
+                    "Started execution of",
+                    "started",
+                );
+                return Ok((record.clone(), false));
             }
-            if approved != question.revision {
-                return Err(TaskError::State(
-                    "a revised brief is waiting for the researcher's approval",
-                ));
-            }
-            // The instruction follows the admission it builds on (or is it).
-            if let Some(admitted_by) = admission.message_id.as_deref()
-                && let Ok(admitting) = self.channels.message(project_id, admitted_by)
-                && message.seq < admitting.seq
-            {
+            Some(record) if record.brief_revision != question.revision => {
                 return Err(TaskError::Stale(
-                    "the instruction came before the Task was admitted",
+                    "the brief changed after this instruction; ask the researcher again",
                 ));
+            }
+            Some(_) => {}
+            None => {
+                match self
+                    .stage(project_id, research_id)?
+                    .unwrap_or(TaskStage::Ready)
+                {
+                    TaskStage::Ready | TaskStage::Done => {}
+                    TaskStage::InProgress => {
+                        return Err(TaskError::State(
+                            "the Task is already executing; continue in its current round",
+                        ));
+                    }
+                    TaskStage::Review => {
+                        return Err(TaskError::State(
+                            "the Task is waiting for the researcher's review",
+                        ));
+                    }
+                }
+                if message.seq <= self.stage_watermark(project_id, research_id)? {
+                    return Err(TaskError::Stale(
+                        "the instruction came before the Task's last change; ask the researcher again",
+                    ));
+                }
             }
         }
         let (record, created) = match existing {
             Some(record) => (record, false),
             None => {
                 let record = self.write(|tx| {
-                    let used: i64 = tx.query_row(
-                        "SELECT COUNT(*) FROM task_authorizations
-                         WHERE kind = 'execute' AND message_id = ?1",
-                        [message_id],
-                        |row| row.get(0),
-                    )?;
-                    if used > 0 {
-                        return Err(TaskError::MessageUsed);
-                    }
                     let record = Self::insert_authorization(
                         tx,
                         project_id,
@@ -859,8 +1118,8 @@ impl TaskStore {
                 (record, true)
             }
         };
-        // The round steps are idempotent, so a crash after the record is
-        // finished by repeating the same instruction.
+        // The round steps are idempotent per instruction, so a crash after the
+        // record is finished by repeating it.
         let session = self
             .members
             .general(project_id)?
@@ -871,14 +1130,14 @@ impl TaskStore {
             research_id,
             NewRound {
                 kind: RoundKind::Solo,
-                idempotency_key: &format!("task-{}", record.id),
+                idempotency_key: &format!("task-exec-{message_id}"),
                 expected_revision: question.revision,
                 request: json!({"task": true, "authorized_by_message": message_id}),
                 sources: Vec::new(),
             },
         )?;
         self.research
-            .round_set_session(project_id, research_id, &round.id, &session)?;
+            .round_set_shared_session(project_id, research_id, &round.id, &session)?;
         self.research
             .round_mark_started(project_id, research_id, &round.id)?;
         if self.work.coordinator(project_id, &round.id)?.is_none() {
@@ -914,10 +1173,14 @@ impl TaskStore {
                 Some((project_id.to_owned(), research_id.to_owned())),
             ))
         })?;
-        // A question that was resolved and is iterated on is open again.
-        let _ = self
-            .research
-            .set_status(project_id, research_id, ResearchStatus::Open);
+        // An iterated question is open again; an old instruction replayed does not reopen it.
+        if created
+            && let Err(error) =
+                self.research
+                    .set_status(project_id, research_id, ResearchStatus::Open)
+        {
+            eprintln!("WARN: could not reopen an iterated question: {error}");
+        }
         self.acknowledge(
             project_id,
             caller,
@@ -925,14 +1188,15 @@ impl TaskStore {
             &message,
             "Started execution of",
             "started",
-        )?;
+        );
         Ok((finished, created))
     }
 
     // -- Review ----------------------------------------------------------------------------------------------
 
     /// The General Agent reports results and asks the researcher to review
-    /// (it does not review specialist work itself). One request is open at a time.
+    /// (it does not review specialist work itself). Only a Task that is
+    /// executing is reviewed; one request is open at a time.
     pub fn request_review(
         &self,
         project_id: &str,
@@ -950,8 +1214,17 @@ impl TaskStore {
                 "a summary of 1 to 4000 characters is required",
             ));
         }
-        if evidence.len() > MAX_EVIDENCE {
-            return Err(TaskError::Invalid("too much evidence on one request"));
+        if evidence.len() > MAX_EVIDENCE
+            || evidence.iter().any(|item| {
+                item.chars().count() > MAX_EVIDENCE_CHARS
+                    || item
+                        .split_once(':')
+                        .is_none_or(|(kind, id)| kind.is_empty() || id.is_empty())
+            })
+        {
+            return Err(TaskError::Invalid(
+                "evidence is cited as kind:id, at most 20 items",
+            ));
         }
         let question = self
             .research
@@ -983,6 +1256,20 @@ impl TaskStore {
                     Err(TaskError::State("a review is already open"))
                 };
             }
+            let last: Option<String> = tx
+                .query_row(
+                    "SELECT kind FROM task_events
+                     WHERE research_id = ?1
+                       AND kind IN ('admitted', 'execution_authorized', 'review_requested',
+                                    'review_returned', 'review_accepted')
+                     ORDER BY seq DESC LIMIT 1",
+                    [research_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if !matches!(last.as_deref(), Some("execution_authorized" | "review_returned")) {
+                return Err(TaskError::State("only a Task that is executing is reviewed"));
+            }
             let id = Uuid::new_v4().to_string();
             tx.execute(
                 "INSERT INTO task_review_requests
@@ -997,7 +1284,8 @@ impl TaskStore {
                     caller,
                     question.revision as i64
                 ],
-            )?;
+            )
+            .map_err(|error| Self::lost_race(error, "a review is already open"))?;
             Self::log(tx, project_id, research_id, "review_requested", Some(&id))?;
             let stored = tx.query_row(
                 &format!("{REQUEST_SELECT} WHERE id = ?1"),
@@ -1006,40 +1294,47 @@ impl TaskStore {
             )?;
             Ok(((stored, true), Some((project_id.to_owned(), research_id.to_owned()))))
         })?;
-        if created {
-            let channel = self.channels.default_channel(project_id)?;
-            let reference = ContextRef::at(
-                ContextKind::Research,
-                &question.id,
-                question.revision.to_string(),
-            );
-            let body = format!(
-                "Ready for your review: \"{}\".\n\n{summary}",
-                question.brief.title
-            );
-            self.channels.post(
-                project_id,
-                &channel.id,
-                NewMessage {
-                    body: &body,
-                    author_kind: Some(ChannelAuthor::Agent),
-                    author_ref: Some(caller),
-                    references: std::slice::from_ref(&reference),
-                    client_message_id: Some(&format!("review-request:{}", request.id)),
-                    ..Default::default()
-                },
-            )?;
+        // Posted again on a retry (it is idempotent), so a lost post is repaired.
+        match self.channels.default_channel(project_id) {
+            Ok(channel) => {
+                let reference = ContextRef::at(
+                    ContextKind::Research,
+                    &question.id,
+                    question.revision.to_string(),
+                );
+                let body = format!(
+                    "Ready for your review: \"{}\".\n\n{summary}",
+                    question.brief.title
+                );
+                if let Err(error) = self.channels.post(
+                    project_id,
+                    &channel.id,
+                    NewMessage {
+                        body: &body,
+                        author_kind: Some(ChannelAuthor::Agent),
+                        author_ref: Some(caller),
+                        references: std::slice::from_ref(&reference),
+                        client_message_id: Some(&format!("review-request:{}", request.id)),
+                        ..Default::default()
+                    },
+                ) {
+                    eprintln!("WARN: could not post a review request to General: {error}");
+                }
+            }
+            Err(error) => eprintln!("WARN: could not find General for a review request: {error}"),
         }
         Ok((request, created))
     }
 
     /// The researcher accepts the Task's results (with the scientific outcome
-    /// they judge) or sends it back with a reason. A well-supported negative
-    /// finding completes a Task.
+    /// they judge) or sends it back with a reason, naming the request they
+    /// looked at so a stale click cannot decide a newer one. A well-supported
+    /// negative finding completes a Task.
     pub fn review(
         &self,
         project_id: &str,
         research_id: &str,
+        request_id: &str,
         accept: bool,
         outcome: WorkOutcome,
         reason: Option<&str>,
@@ -1067,6 +1362,9 @@ impl TaskStore {
                 )
                 .optional()?
                 .ok_or(TaskError::State("there is nothing to review"))?;
+            if open.id != request_id {
+                return Err(TaskError::State("that review is no longer open; look at the current one"));
+            }
             let id = Uuid::new_v4().to_string();
             tx.execute(
                 "UPDATE task_review_requests SET state = ?2, resolved_at = CURRENT_TIMESTAMP
@@ -1116,6 +1414,7 @@ impl TaskStore {
             Ok((review, Some((project_id.to_owned(), research_id.to_owned()))))
         })?;
         // The record of the question keeps the decision; the conversation hears it.
+        // These follow the commit and are idempotent; a failure is logged.
         let verdict = if stored.accepted {
             match stored.outcome {
                 WorkOutcome::Refuted => "accepted as a valid negative result",
@@ -1130,7 +1429,7 @@ impl TaskStore {
             .map(|text| format!(" Reason: {text}"))
             .unwrap_or_default();
         let text = format!("Task \"{}\" was {verdict}.{detail}", question.brief.title);
-        let _ = self.research.add_entry(
+        if let Err(error) = self.research.add_entry(
             project_id,
             research_id,
             NewEntry {
@@ -1140,29 +1439,38 @@ impl TaskStore {
                 body: text.clone(),
                 client_request_id: Some(format!("task-review:{}", stored.id)),
             },
-        );
-        if stored.accepted {
-            let _ = self
-                .research
-                .set_status(project_id, research_id, ResearchStatus::Resolved);
+        ) {
+            eprintln!("WARN: could not record a Task review in the question's log: {error}");
         }
-        if let Ok(channel) = self.channels.default_channel(project_id) {
-            let reference = ContextRef::at(
-                ContextKind::Research,
-                &question.id,
-                question.revision.to_string(),
-            );
-            let _ = self.channels.post(
-                project_id,
-                &channel.id,
-                NewMessage {
-                    body: &text,
-                    author_kind: Some(ChannelAuthor::System),
-                    references: std::slice::from_ref(&reference),
-                    client_message_id: Some(&format!("task-review:{}", stored.id)),
-                    ..Default::default()
-                },
-            );
+        if stored.accepted
+            && let Err(error) =
+                self.research
+                    .set_status(project_id, research_id, ResearchStatus::Resolved)
+        {
+            eprintln!("WARN: could not resolve the question of an accepted Task: {error}");
+        }
+        match self.channels.default_channel(project_id) {
+            Ok(channel) => {
+                let reference = ContextRef::at(
+                    ContextKind::Research,
+                    &question.id,
+                    question.revision.to_string(),
+                );
+                if let Err(error) = self.channels.post(
+                    project_id,
+                    &channel.id,
+                    NewMessage {
+                        body: &text,
+                        author_kind: Some(ChannelAuthor::System),
+                        references: std::slice::from_ref(&reference),
+                        client_message_id: Some(&format!("task-review:{}", stored.id)),
+                        ..Default::default()
+                    },
+                ) {
+                    eprintln!("WARN: could not tell General about a Task review: {error}");
+                }
+            }
+            Err(error) => eprintln!("WARN: could not find General for a Task review: {error}"),
         }
         Ok(stored)
     }
@@ -1323,7 +1631,7 @@ impl TaskStore {
 
     /// The single board: every admitted Task of the Workspace, in its stage.
     pub fn board(&self, project_id: &str) -> Result<TaskBoard, TaskError> {
-        self.adopt_legacy()?;
+        self.adopt(Some(project_id))?;
         let mut cards = Vec::new();
         for summary in self.research.list(project_id, false)? {
             if let Some(card) = self.card(project_id, &summary.id)? {
@@ -1357,7 +1665,7 @@ impl TaskStore {
 
     /// Proposals that are not on the board.
     pub fn drafts(&self, project_id: &str) -> Result<Vec<Draft>, TaskError> {
-        self.adopt_legacy()?;
+        self.adopt(Some(project_id))?;
         let mut drafts = Vec::new();
         for summary in self.research.list(project_id, false)? {
             if self.admission(project_id, &summary.id)?.is_some() {

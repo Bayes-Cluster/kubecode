@@ -13,6 +13,7 @@ use crate::work_store::{WorkError, WorkOutcome};
 pub const MAX_SUMMARY_CHARS: usize = 4_000;
 pub const MAX_REASON_CHARS: usize = 1_000;
 pub const MAX_EVIDENCE: usize = 20;
+pub const MAX_EVIDENCE_CHARS: usize = 200;
 
 #[derive(Debug, Error)]
 pub enum TaskError {

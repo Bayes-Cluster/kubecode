@@ -123,8 +123,19 @@ fn work_error(error: AgentWorkError) -> McpError {
         AgentWorkError::Task(inner) => match inner {
             crate::task_store::TaskError::Database(_)
             | crate::task_store::TaskError::Json(_)
-            | crate::task_store::TaskError::Member(crate::member_store::MemberError::Database(_)) =>
-            {
+            | crate::task_store::TaskError::Research(
+                crate::research_store::ResearchError::Database(_)
+                | crate::research_store::ResearchError::Json(_),
+            )
+            | crate::task_store::TaskError::Channel(
+                crate::channel_store::ChannelError::Database(_)
+                | crate::channel_store::ChannelError::Json(_),
+            )
+            | crate::task_store::TaskError::Work(WorkError::Database(_) | WorkError::Json(_))
+            | crate::task_store::TaskError::Member(
+                crate::member_store::MemberError::Database(_)
+                | crate::member_store::MemberError::Json(_),
+            ) => {
                 eprintln!("WARN: task tool failed: {inner}");
                 McpError::internal_error("task storage failed", None)
             }
@@ -219,6 +230,11 @@ struct ReviseTaskInput {
     success_criteria: Option<Vec<String>>,
     #[serde(default)]
     note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ShowInput {
+    research_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -635,6 +651,19 @@ impl WorkMcpServer {
                     input.note.as_deref(),
                 )
             })
+            .await?;
+        json_output(&proposal)
+    }
+
+    #[tool(
+        description = "General Agent only: show a proposal in General again, for when other proposals were shown since or the researcher's answer did not make clear which Task they meant. Ask which one, then show it; an instruction counts for a proposal only if it names the Task or follows its latest showing."
+    )]
+    async fn task_show(
+        &self,
+        Parameters(input): Parameters<ShowInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let proposal = self
+            .run(move |agent| agent.task_show(&input.research_id))
             .await?;
         json_output(&proposal)
     }
