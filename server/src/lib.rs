@@ -16,6 +16,8 @@ pub mod experiment_runner;
 pub mod experiment_store;
 pub mod git;
 pub mod ilink;
+pub mod member_api;
+pub mod member_store;
 pub mod orchestrator;
 pub mod orchestrator_api;
 pub mod project_context;

@@ -1244,6 +1244,16 @@ request changes, close) and cannot complete work or bypass a check; commands
 carry the state revision the card was shown at and are refused if it moved on.
 See ADR 0218.
 
+## Members and the General Agent
+
+A **member** is a durable identity in a Workspace: the **General Agent** (the
+project manager, exactly one) or a **specialist** with a responsibility
+template. A member runs on **Sessions** — a public one for shared work and a
+separate private one for direct messages — that can be replaced without
+changing who the member is. The manager clarifies, plans, delegates, tracks,
+and reports; it cannot be assigned or perform specialist work, and this is
+enforced by the service, not by instructions. See ADR 0220.
+
 ## Analysis and evidence
 
 A task owns its **experiments**. A finished one owes an **analysis**: the

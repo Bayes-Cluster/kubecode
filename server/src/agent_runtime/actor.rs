@@ -343,7 +343,22 @@ async fn run_acp_session(
                         "kind": option.kind,
                     })).collect::<Vec<_>>(),
                 });
-                let outcome = if discriminator_request {
+                // The General Agent manages: native file-editing, deleting,
+                // moving, and command-execution tools are refused outright, not
+                // surfaced for approval (ADR 0220 §4). Its management tools are
+                // Kubecode's own, which this does not touch.
+                let manager_denied = super::permissions::denied_for_manager(
+                    request.tool_call.fields.kind,
+                ) && permission_runtime
+                    .work_services()
+                    .zip(permission_store.get_conversation(&permission_conversation_id).ok())
+                    .is_some_and(|(services, conversation)| {
+                        services
+                            .members
+                            .was_general(&conversation.project_id, &permission_conversation_id)
+                            .unwrap_or(false)
+                    });
+                let outcome = if discriminator_request || manager_denied {
                     RequestPermissionOutcome::Cancelled
                 } else if let Some(run_id) = run_id.as_deref()
                     && let Some(outcome) = remembered_permission_outcome(

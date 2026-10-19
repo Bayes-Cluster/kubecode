@@ -1319,3 +1319,47 @@ export type WorkCommand =
     expected_revision: number
     superseded_by?: string
   }
+
+// -- Workspace members (ADR 0220) ---------------------------------------------------------------
+export type MemberRole = 'general' | 'specialist'
+export type MemberTemplate = 'general' | 'analysis' | 'writing' | 'code_review' | 'custom'
+export type MemberState = 'active' | 'setup_required' | 'removed'
+/** What a member runs on: a provider, provider-reported configuration values, and instructions. */
+export type MemberSpec = {
+  agent_id: AgentId
+  config: Record<string, string>
+  instructions: string
+}
+export type Member = {
+  id: string
+  project_id: string
+  role: MemberRole
+  template: MemberTemplate
+  name: string
+  /** The `@handle` used to mention the member. */
+  handle: string
+  spec: MemberSpec
+  public_conversation_id: string | null
+  dm_conversation_id: string | null
+  state: MemberState
+  setup_error: string | null
+  /** `provider_unavailable` or `config_rejected`: the browser words these itself. */
+  setup_code: 'provider_unavailable' | 'config_rejected' | null
+  revision: number
+  created_at: string
+  updated_at: string
+  removed_at: string | null
+}
+export type MemberRoster = { members: Member[]; general_id: string | null }
+export type MemberDefaults = {
+  revision: number
+  general: MemberSpec
+  templates: Partial<Record<MemberTemplate, string>>
+}
+export type MemberInput = {
+  name: string
+  template?: MemberTemplate
+  spec?: MemberSpec
+  client_request_id?: string
+}
+export type MemberPatch = { name?: string; template?: MemberTemplate; spec?: MemberSpec }

@@ -121,3 +121,24 @@ round's envelope. On the work board:
   **Accept current version**.
 - Accepted and rejected reviews are posted back to the Thread the work came
   from, and accepted work adds an observation to the question's log.
+
+## Members and the General Agent
+
+Every Workspace has one **General Agent**, its project manager, created when
+the Workspace is created (an older Workspace gets it the first time you open
+**Settings > Members**). It clarifies goals with you, plans, delegates to
+specialists, follows up, and reports back. It does not run experiments, write
+code, analyze data, or do other specialist work, and it cannot be assigned
+such work, whatever its instructions say.
+
+In **Settings > Members** you can:
+
+- add specialists (analysis, writing, code review, or custom), edit them, and
+  remove them; removing a member keeps its history and is refused while it
+  still holds open work;
+- see when a member needs setup (for example its provider is not installed) and
+  retry after fixing it;
+- set the defaults new Workspaces start from: the General Agent's provider,
+  provider options such as the model, and its instructions. Defaults are saved
+  on the server, so every browser agrees, and they do not change existing
+  members.

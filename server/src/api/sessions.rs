@@ -148,6 +148,12 @@ fn conversation_summaries(
     state: &AppState,
     conversations: Vec<Conversation>,
 ) -> Result<Vec<ConversationSummary>, ApiError> {
+    // Workspace members' Sessions are roster details, not chats to browse.
+    let member_sessions = state.members.member_session_ids().unwrap_or_default();
+    let conversations: Vec<Conversation> = conversations
+        .into_iter()
+        .filter(|conversation| !member_sessions.contains(&conversation.id))
+        .collect();
     let project_ids = conversations
         .iter()
         .map(|conversation| conversation.project_id.clone())
@@ -187,6 +193,23 @@ pub(super) async fn delete_conversation(
     State(state): State<AppState>,
     Path(conversation_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    // A member's Session is part of the roster: removing the member (or
+    // replacing its Session) is how it goes away (ADR 0220).
+    if let Ok(conversation) = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)
+        && state
+            .members
+            .by_conversation(&conversation.project_id, &conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|resolved| resolved.current)
+    {
+        return Err(ApiError::InvalidRequest(
+            "this Session belongs to a Workspace member; remove the member or replace its Session instead".to_owned(),
+        ));
+    }
     if let Some(team) = state.teams.team_for_conversation(&conversation_id)? {
         let member = state
             .teams

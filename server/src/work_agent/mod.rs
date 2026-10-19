@@ -63,6 +63,19 @@ fn invalid(text: impl Into<String>) -> AgentWorkError {
     AgentWorkError::Invalid(text.into())
 }
 
+/// A roster entry as an agent sees it.
+#[derive(Clone, Debug, Serialize)]
+pub struct MemberView {
+    pub id: String,
+    pub handle: String,
+    pub name: String,
+    pub role: &'static str,
+    pub template: &'static str,
+    pub state: &'static str,
+    /// Work may be assigned to this member now.
+    pub assignable: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct PolicyView {
     pub round_id: String,
@@ -100,6 +113,7 @@ pub struct WorkServices {
     pub work: Arc<WorkStore>,
     pub channels: Arc<ChannelStore>,
     pub orchestrator: Arc<Orchestrator>,
+    pub members: Arc<crate::member_store::MemberStore>,
 }
 
 pub struct WorkAgent {
@@ -113,6 +127,7 @@ pub struct WorkAgent {
     provider_available: Arc<dyn Fn(AgentId) -> bool + Send + Sync>,
     experiments: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
     evidence: Option<Evidence>,
+    members: Option<Arc<crate::member_store::MemberStore>>,
 }
 
 impl WorkAgent {
@@ -138,7 +153,34 @@ impl WorkAgent {
             provider_available,
             experiments: None,
             evidence: None,
+            members: None,
         }
+    }
+
+    /// Lets commands read the Workspace roster: who the manager is and which
+    /// specialists work can go to (ADR 0220).
+    pub fn with_members(mut self, members: Arc<crate::member_store::MemberStore>) -> Self {
+        self.members = Some(members);
+        self
+    }
+
+    /// The manager manages: concrete execution commands are refused for it,
+    /// read from the roster on every call.
+    fn refuse_manager(&self, what: &str) -> Result<(), AgentWorkError> {
+        if let Some(members) = &self.members {
+            // Every Session the manager has had is bound by it, and an
+            // unreadable roster refuses rather than lets the call through.
+            match members.was_general(&self.project_id, &self.caller) {
+                Ok(false) => {}
+                Ok(true) => {
+                    return Err(invalid(format!(
+                        "the General Agent manages work and does not {what}; delegate it to a specialist member"
+                    )));
+                }
+                Err(_) => return Err(invalid("the member roster could not be read")),
+            }
+        }
+        Ok(())
     }
 
     /// Lets this Session launch experiments for its tasks (ADR 0219).
@@ -284,6 +326,55 @@ impl WorkAgent {
         Ok(out)
     }
 
+    /// The Workspace roster, as the manager needs it to delegate.
+    pub fn members(&self) -> Result<Vec<MemberView>, AgentWorkError> {
+        let Some(members) = &self.members else {
+            return Ok(Vec::new());
+        };
+        let roster = members
+            .list(&self.project_id, false)
+            .map_err(|error| invalid(error.to_string()))?;
+        Ok(roster
+            .into_iter()
+            .map(|member| MemberView {
+                assignable: member.role == crate::member_store::MemberRole::Specialist
+                    && member.state == crate::member_store::MemberState::Active,
+                id: member.id,
+                handle: member.handle,
+                name: member.name,
+                role: member.role.as_str(),
+                template: member.template.as_str(),
+                state: member.state.as_str(),
+            })
+            .collect())
+    }
+
+    /// Assigns work to a specialist member by `@handle` or id (its current
+    /// public Session), never to the manager.
+    pub fn assign_member(
+        &self,
+        work_id: &str,
+        member: &str,
+        reason: &str,
+    ) -> Result<WorkSummary, AgentWorkError> {
+        let members = self
+            .members
+            .as_ref()
+            .ok_or_else(|| invalid("members are not available"))?;
+        let found = members
+            .find(&self.project_id, member)
+            .map_err(|error| invalid(error.to_string()))?
+            .ok_or(AgentWorkError::NotFound)?;
+        if found.role != crate::member_store::MemberRole::Specialist {
+            return Err(invalid("work is assigned to specialist members"));
+        }
+        let session = found
+            .public_conversation_id
+            .filter(|_| found.state == crate::member_store::MemberState::Active)
+            .ok_or_else(|| invalid("that member is not ready (see its setup state)"))?;
+        self.assign_to(work_id, &session, Some(&found.id), reason)
+    }
+
     pub fn get(&self, work_id: &str) -> Result<WorkSummary, AgentWorkError> {
         Ok(self.visible(work_id)?.0)
     }
@@ -359,6 +450,16 @@ impl WorkAgent {
         session_id: &str,
         reason: &str,
     ) -> Result<WorkSummary, AgentWorkError> {
+        self.assign_to(work_id, session_id, None, reason)
+    }
+
+    fn assign_to(
+        &self,
+        work_id: &str,
+        session_id: &str,
+        member_id: Option<&str>,
+        reason: &str,
+    ) -> Result<WorkSummary, AgentWorkError> {
         let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
@@ -368,17 +469,29 @@ impl WorkAgent {
         // other work) are not its to direct.
         if session_id != self.caller {
             let round_id = summary.item.round_id.as_deref().unwrap_or_default();
-            if !self
-                .work
-                .is_round_executor(&self.project_id, round_id, session_id)?
+            let member_session = self.members.as_ref().is_some_and(|members| {
+                members
+                    .assignable_session(&self.project_id, session_id)
+                    .unwrap_or(false)
+            });
+            if !member_session
+                && !self
+                    .work
+                    .is_round_executor(&self.project_id, round_id, session_id)?
             {
                 return Err(invalid(
-                    "assign yourself or a Session you created with work_executor_create",
+                    "assign a specialist member (work_members lists them), yourself, or a Session you created with work_executor_create",
                 ));
             }
         }
-        self.work
-            .assign(&self.project_id, work_id, session_id, None, reason, &actor)?;
+        self.work.assign(
+            &self.project_id,
+            work_id,
+            session_id,
+            member_id,
+            reason,
+            &actor,
+        )?;
         Ok(self.work.summary(&self.project_id, work_id)?)
     }
 
@@ -389,6 +502,7 @@ impl WorkAgent {
         title: &str,
         request_key: &str,
     ) -> Result<String, AgentWorkError> {
+        self.refuse_manager("create executor Sessions of its own")?;
         let round_id = self.coordinated(round_id)?;
         let key = request_key.trim();
         if key.is_empty() || key.chars().count() > 128 {
@@ -672,6 +786,7 @@ impl WorkAgent {
         summary_text: &str,
         error: Option<&str>,
     ) -> Result<WorkSummary, AgentWorkError> {
+        self.refuse_manager("report on attempts")?;
         let summary =
             self.work
                 .summary(&self.project_id, work_id)

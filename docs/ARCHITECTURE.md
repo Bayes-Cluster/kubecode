@@ -262,6 +262,30 @@ artifacts), an artifact, a cited file, or any ProjectContext record in place
 (`src/kubecode/work/EvidenceViewer.tsx`), marking a record that changed or
 vanished since it was cited.
 
+Workspace members (ADR 0220): `server/src/member_store/` owns the roster — one
+General Agent per Workspace (a partial unique index plus an idempotent
+`ensure_general`, run at project creation and on the first roster read of an
+older Workspace) and specialists, each with a public Session and, later, a
+separate DM Session, plus a `member_sessions` history that keeps old Sessions
+attributed but without authority. Defaults are server state
+(`member_defaults`, revision-checked). Authority is enforced in services: the
+`AssignmentGuard` refuses the manager's and any DM Session's assignment in
+`WorkStore::assign` and refuses any Session but the General Agent's current one
+(or a non-member legacy Session) coordination in `assume_coordinator` /
+`handoff_coordinator` / round start; `WorkAgent` refuses every Session the
+manager has ever had the executor commands (`launch_experiment`, `decide`,
+`report`, `create_executor`), failing closed if the roster cannot be read; the
+runtime refuses the manager's native edit, delete, move, and execute tools
+outright (`denied_for_manager`); and assignment goes to a specialist member's
+current public Session (`work_members`, `work_assign` with a `member`).
+Replacing a member's Session (`POST .../members/{id}/session`, optionally with
+a new provider) is one transaction that refuses a member with open work and
+hands the old Session's rounds to the new one; a member's Session cannot be
+deleted through the Session API. `RuntimeSink` gives a member's Session its configuration values and
+role brief once per specification revision. `member_api.rs` serves the roster
+and defaults; the browser surface is `src/kubecode/members/` (`MemberRoster`,
+`MemberDefaultsPanel`, mounted in Settings > Members).
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

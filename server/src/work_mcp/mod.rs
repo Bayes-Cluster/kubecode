@@ -77,6 +77,7 @@ impl WorkMcpServer {
             self.runtime.store(),
             Arc::new(move |agent| runtime.agent_available(agent)),
         );
+        agent = agent.with_members(services.members);
         if let Some(runner) = self.runtime.experiment_runner() {
             agent = agent.with_experiments(runner);
         }
@@ -286,7 +287,12 @@ struct UpdateInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AssignInput {
     work_id: String,
+    /// A Session to assign (yourself, or one you created). Omit when naming a member.
+    #[serde(default)]
     session_id: String,
+    /// A specialist member by @handle or id (see work_members); preferred.
+    #[serde(default)]
+    member: Option<String>,
     #[serde(default)]
     reason: Option<String>,
 }
@@ -482,26 +488,39 @@ impl WorkMcpServer {
     }
 
     #[tool(
-        description = "Coordinator: make a Session the executor of a task. A new executor counts against the round's executor limit."
+        description = "Coordinator: assign a task to a specialist member (preferred: pass `member`, an @handle or id from work_members) or, for work you do yourself or a Session you created with work_executor_create, a `session_id`. The General Agent is never assignable. A new executor counts against the round's executor limit."
     )]
     async fn work_assign(
         &self,
         Parameters(input): Parameters<AssignInput>,
     ) -> Result<CallToolResult, McpError> {
         let summary = self
-            .run(move |agent| {
-                agent.assign(
+            .run(move |agent| match &input.member {
+                Some(member) => agent.assign_member(
+                    &input.work_id,
+                    member,
+                    input.reason.as_deref().unwrap_or_default(),
+                ),
+                None => agent.assign(
                     &input.work_id,
                     &input.session_id,
                     input.reason.as_deref().unwrap_or_default(),
-                )
+                ),
             })
             .await?;
         json_output(&summary)
     }
 
     #[tool(
-        description = "Coordinator: create a new Session for executing work with an installed provider (request_key makes a retry return the same Session). It is created idle at the default permission mode; you can assign work only to yourself or to Sessions you created this way."
+        description = "The Workspace roster: each member's @handle, name, role (general = the project manager, specialist), template, setup state, and whether work can be assigned to it now. Delegate concrete work to specialists; the General Agent is never assignable."
+    )]
+    async fn work_members(&self) -> Result<CallToolResult, McpError> {
+        let roster = self.run(move |agent| agent.members()).await?;
+        json_output(&roster)
+    }
+
+    #[tool(
+        description = "Coordinator: create a new Session for executing work with an installed provider (request_key makes a retry return the same Session). It is created idle at the default permission mode; you can assign it work with session_id. Prefer assigning to specialist members (work_members) where the Workspace has them; the General Agent does not create executors."
     )]
     async fn work_executor_create(
         &self,

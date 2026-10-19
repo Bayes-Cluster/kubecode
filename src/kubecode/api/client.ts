@@ -80,6 +80,12 @@ import type {
   WorkBoard,
   WorkBoardFilter,
   WorkCard,
+  Member,
+  MemberDefaults,
+  MemberInput,
+  MemberPatch,
+  MemberRoster,
+  MemberSpec,
   WorkCommand,
   WorkDecisionRequest,
   WorkDetail,
@@ -348,6 +354,56 @@ export class KubecodeApi {
 
   workDetail(projectId: string, workId: string): Promise<WorkDetail> {
     return this.request(`${this.projectPath(projectId)}/work/${encodeURIComponent(workId)}`)
+  }
+
+  /** The Workspace roster; the first read of an older Workspace gives it its General Agent. */
+  listMembers(projectId: string, includeRemoved = false): Promise<MemberRoster> {
+    return this.request(`${this.projectPath(projectId)}/members${includeRemoved ? '?include_removed=true' : ''}`)
+  }
+
+  createMember(projectId: string, input: MemberInput): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  updateMember(projectId: string, memberId: string, expectedRevision: number, patch: MemberPatch): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...patch, expected_revision: expectedRevision }),
+    })
+  }
+
+  removeMember(projectId: string, memberId: string): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    })
+  }
+
+  /** Gives a member a fresh Session (optionally another provider); its old Session loses its authority. */
+  replaceMemberSession(projectId: string, memberId: string, spec?: MemberSpec): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/session`, {
+      method: 'POST',
+      body: JSON.stringify(spec ? { spec } : {}),
+    })
+  }
+
+  retryMemberSetup(projectId: string, memberId: string): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/setup`, {
+      method: 'POST',
+    })
+  }
+
+  memberDefaults(): Promise<MemberDefaults> {
+    return this.request('/member-defaults')
+  }
+
+  saveMemberDefaults(expectedRevision: number, defaults: Pick<MemberDefaults, 'general' | 'templates'>): Promise<MemberDefaults> {
+    return this.request('/member-defaults', {
+      method: 'PUT',
+      body: JSON.stringify({ ...defaults, expected_revision: expectedRevision }),
+    })
   }
 
   /** Answers a question an agent put about a task; the answer grants nothing. */

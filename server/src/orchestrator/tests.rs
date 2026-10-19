@@ -1039,3 +1039,180 @@ fn the_production_sink_deduplicates_per_recipient_and_reports_failures() {
         DeliveryOutcome::Failed(_)
     ));
 }
+
+// -- Member delivery: configuration and role brief (ADR 0220) ---------------------------------------
+
+mod member_delivery {
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::agents::AgentId;
+    use crate::member_store::{MemberPatch, MemberSpec, MemberState, MemberStore};
+    use crate::orchestrator::{MemberDelivery, SessionConfigurator};
+
+    #[derive(Default)]
+    struct Fake {
+        calls: Mutex<Vec<(String, String, String)>>,
+        reject: Mutex<Option<String>>,
+    }
+
+    impl SessionConfigurator for Fake {
+        fn set(&self, conversation: &str, id: &str, value: &str) -> Result<(), String> {
+            self.calls.lock().unwrap().push((
+                conversation.to_owned(),
+                id.to_owned(),
+                value.to_owned(),
+            ));
+            match self.reject.lock().unwrap().as_deref() {
+                Some(rejected) if rejected == id => Err(format!("{id} is not offered")),
+                _ => Ok(()),
+            }
+        }
+    }
+
+    fn delivery(r: &Rig) -> (Arc<MemberStore>, Arc<Fake>, MemberDelivery) {
+        let members = Arc::new(
+            MemberStore::from_database(r.f.agents.database(), Arc::clone(&r.f.agents)).unwrap(),
+        );
+        let fake = Arc::new(Fake::default());
+        let delivery = MemberDelivery::new(Arc::clone(&members), fake.clone());
+        (members, fake, delivery)
+    }
+
+    #[test]
+    fn a_member_session_is_configured_and_briefed_once_per_revision_and_a_rejection_is_a_setup_problem()
+     {
+        let r = rig();
+        let (members, fake, delivery) = delivery(&r);
+        let mut defaults = members.defaults(AgentId::OpenCode).unwrap();
+        defaults
+            .general
+            .config
+            .insert("effort".into(), "high".into());
+        defaults
+            .general
+            .config
+            .insert("model".into(), "fast".into());
+        members.set_defaults(0, defaults).unwrap();
+        let general = members
+            .ensure_general(r.project(), &|_| true, AgentId::OpenCode)
+            .unwrap();
+        let session = general.public_conversation_id.clone().unwrap();
+
+        // Options are applied model-first, then the brief is owed, then nothing.
+        let first = delivery.prepare(&session).unwrap();
+        let order: Vec<String> = fake
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| c.1.clone())
+            .collect();
+        assert_eq!(order, ["model", "effort"]);
+        let text = MemberDelivery::message(&first, "hello");
+        assert!(
+            text.starts_with("[Role brief]") && text.ends_with("hello"),
+            "{text}"
+        );
+        delivery.commit(&first);
+        let second = delivery.prepare(&session).unwrap();
+        assert_eq!(MemberDelivery::message(&second, "again"), "again");
+        assert_eq!(fake.calls.lock().unwrap().len(), 2, "not applied twice");
+
+        // A new revision asks for both again.
+        members
+            .update(
+                r.project(),
+                &general.id,
+                general.revision,
+                MemberPatch {
+                    spec: Some(MemberSpec {
+                        instructions: "Be brief.".into(),
+                        ..general.spec.clone()
+                    }),
+                    ..Default::default()
+                },
+                &|_| true,
+            )
+            .unwrap();
+        let third = delivery.prepare(&session).unwrap();
+        assert!(MemberDelivery::message(&third, "x").contains("Be brief."));
+        assert_eq!(fake.calls.lock().unwrap().len(), 4);
+
+        // The provider rejects an option: the delivery is retried later and the
+        // roster shows what to fix; the brief is not marked as given.
+        let updated = members.get(r.project(), &general.id).unwrap();
+        members
+            .update(
+                r.project(),
+                &general.id,
+                updated.revision,
+                MemberPatch {
+                    spec: Some(MemberSpec {
+                        config: [("effort".to_owned(), "ultra".to_owned())].into(),
+                        ..updated.spec.clone()
+                    }),
+                    ..Default::default()
+                },
+                &|_| true,
+            )
+            .unwrap();
+        *fake.reject.lock().unwrap() = Some("effort".into());
+        let refused = delivery.prepare(&session);
+        assert!(
+            refused
+                .as_ref()
+                .err()
+                .unwrap()
+                .contains("effort is not offered")
+        );
+        let flagged = members.get(r.project(), &general.id).unwrap();
+        assert_eq!(flagged.state, MemberState::SetupRequired);
+        assert_eq!(flagged.setup_code.as_deref(), Some("config_rejected"));
+        // Fixed on the provider's side: the same delivery now goes through and heals the member.
+        *fake.reject.lock().unwrap() = None;
+        let healed = delivery.prepare(&session).unwrap();
+        delivery.commit(&healed);
+        assert_eq!(
+            members.get(r.project(), &general.id).unwrap().state,
+            MemberState::Active
+        );
+    }
+
+    #[test]
+    fn a_failure_on_a_private_session_does_not_make_the_member_unassignable() {
+        let r = rig();
+        let (members, fake, delivery) = delivery(&r);
+        let general = members
+            .ensure_general(r.project(), &|_| true, AgentId::OpenCode)
+            .unwrap();
+        let specialist = members
+            .create_specialist(
+                r.project(),
+                crate::member_store::NewMember {
+                    name: "Analyst".into(),
+                    spec: Some(MemberSpec {
+                        agent_id: AgentId::OpenCode,
+                        config: [("model".to_owned(), "x".to_owned())].into(),
+                        instructions: String::new(),
+                    }),
+                    ..Default::default()
+                },
+                &|_| true,
+                AgentId::OpenCode,
+            )
+            .unwrap();
+        let dm = members
+            .ensure_dm_session(r.project(), &specialist.id, &|_| true)
+            .unwrap()
+            .dm_conversation_id
+            .unwrap();
+        *fake.reject.lock().unwrap() = Some("model".into());
+        assert!(delivery.prepare(&dm).is_err());
+        assert_eq!(
+            members.get(r.project(), &specialist.id).unwrap().state,
+            MemberState::Active
+        );
+        let _ = general;
+    }
+}

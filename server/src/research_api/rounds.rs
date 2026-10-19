@@ -236,6 +236,15 @@ fn preflight(
             if conversation.project_id != project_id {
                 return Err(invalid("the Session could not be found in this Project"));
             }
+            if state
+                .work
+                .check_may_coordinate(project_id, session_id)
+                .is_err()
+            {
+                return Err(invalid(
+                    "that Session belongs to a member who does not coordinate rounds",
+                ));
+            }
             if conversation.read_only
                 || state
                     .teams
