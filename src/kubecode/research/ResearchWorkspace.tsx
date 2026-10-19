@@ -33,6 +33,8 @@ export type ResearchWorkspaceProps = {
   backLabel?: string
   /** What the researcher decides on, shown under the title (the Task inspector). */
   inspector?: ReactNode
+  /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
+  startsRounds?: boolean
   onClose: () => void
   onConversationCreated: (conversation: Conversation) => void
   onOpenSession: (conversationId: string) => void
@@ -63,6 +65,7 @@ export function ResearchWorkspace({
   onClose,
   backLabel,
   inspector,
+  startsRounds = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
@@ -227,6 +230,7 @@ export function ResearchWorkspace({
             onChanged={reload}
             onOpenSession={onOpenSession}
             rounds={bundle.rounds}
+            startsRounds={startsRounds}
             t={t}
             teams={teams}
           />

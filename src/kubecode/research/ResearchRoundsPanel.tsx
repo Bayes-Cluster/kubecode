@@ -63,6 +63,7 @@ export function ResearchRoundsPanel({
   onChanged,
   onOpenSession,
   rounds,
+  startsRounds = true,
   t,
   teams,
 }: {
@@ -77,6 +78,11 @@ export function ResearchRoundsPanel({
   onChanged: () => void
   onOpenSession: (conversationId: string) => void
   rounds: ResearchRound[]
+  /**
+   * Whether this surface can start a round. A Task's detail cannot: work starts
+   * when the researcher tells the General Agent to, so nothing here bypasses it.
+   */
+  startsRounds?: boolean
   t: Translator
   teams: TeamSnapshot[]
 }) {
@@ -151,7 +157,10 @@ export function ResearchRoundsPanel({
 
   return (
     <div className="kubecode-research-panel">
-      {!detail.archived && (
+      {!detail.archived && !startsRounds && (
+        <p className="kubecode-research-notice" role="status">{t('kubecode.task.startsInGeneral')}</p>
+      )}
+      {!detail.archived && startsRounds && (
         <form
           aria-label={t('kubecode.research.nextRound', { round: nextRound })}
           className="kubecode-research-section kubecode-research-form"

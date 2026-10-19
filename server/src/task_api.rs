@@ -367,8 +367,11 @@ async fn review(
             }
         };
         if body.accept {
+            // Evidence that changed must be looked at and re-pinned first. Evidence
+            // that no longer exists cannot be re-pinned: the interface makes the
+            // researcher acknowledge it, and it does not block the decision forever.
             let stale = stale_of(&state, &project_id, &research_id)?;
-            if !stale.is_empty() {
+            if stale.iter().any(|entry| entry.evidence.status == "changed") {
                 return Err(ApiError::StaleEvidence(stale));
             }
         }
@@ -390,6 +393,9 @@ async fn review(
 struct RepinBody {
     work_id: String,
     result_id: String,
+    /// The version the researcher looked at; if it has changed again, nothing is pinned.
+    #[serde(default)]
+    revision: Option<String>,
 }
 
 /// The researcher accepts the current version of one cited result, after
@@ -415,6 +421,15 @@ async fn repin(
             .ok_or(ApiError::BadRequest(
                 "that evidence has no current version to accept",
             ))?;
+        if let Some(looked_at) = body.revision.as_deref()
+            && looked_at != current
+        {
+            return Err(ApiError::StaleEvidence(stale_of(
+                &state,
+                &project_id,
+                &research_id,
+            )?));
+        }
         state.work.repin_result(
             &project_id,
             &body.work_id,

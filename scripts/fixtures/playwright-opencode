@@ -32,7 +32,7 @@ while IFS= read -r line; do
       # A prompt routed from the Workspace conversation is answered at once; the
       # long hold exists for the UI test that watches a run in progress.
       case "$line" in
-        *'General conversation'*) ;;
+        *'General conversation'*general_post*) ;;
         *) sleep 20 ;;
       esac
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"

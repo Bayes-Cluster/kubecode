@@ -19,6 +19,9 @@ pub struct StaleEvidence {
     pub ref_id: String,
     /// `changed` or `removed`.
     pub status: &'static str,
+    /// The revision it was attached at, and the one it has now (none if removed).
+    pub pinned: String,
+    pub current: Option<String>,
 }
 
 #[derive(Clone)]
@@ -55,7 +58,8 @@ impl Evidence {
             .iter()
             .filter_map(|result| {
                 let pinned = result.revision.as_deref()?;
-                let status = match self.current_revision(project_id, &result.kind, &result.ref_id) {
+                let now = self.current_revision(project_id, &result.kind, &result.ref_id);
+                let status = match &now {
                     None => "removed",
                     Some(current) if current != pinned => "changed",
                     Some(_) => return None,
@@ -65,6 +69,8 @@ impl Evidence {
                     kind: result.kind.clone(),
                     ref_id: result.ref_id.clone(),
                     status,
+                    pinned: pinned.to_owned(),
+                    current: now,
                 })
             })
             .collect()

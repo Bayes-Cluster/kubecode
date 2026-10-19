@@ -152,21 +152,41 @@ describe('TaskInspector', () => {
     }))
   })
 
-  it('refuses to accept while evidence changed, and re-pins only after it was looked at', async () => {
+  it('refuses to accept while evidence changed, and re-pins only after it was looked at, at the version looked at', async () => {
     const { api } = inspector(detail({
       stale_evidence: [
-        { work_id: 'w1', result_id: 'res1', kind: 'artifact', ref_id: 'results.csv', status: 'changed' },
-        { work_id: 'w1', result_id: 'res2', kind: 'artifact', ref_id: 'gone.csv', status: 'removed' },
+        { work_id: 'w1', result_id: 'res1', kind: 'artifact', ref_id: 'results.csv', status: 'changed', pinned: 'a', current: 'b' },
       ],
-    }))
+    }), { readProjectContext: vi.fn().mockResolvedValue({
+      ref: { kind: 'artifact', id: 'results.csv', revision: 'b' }, availability: 'changed', sections: [], notes: [], related: [],
+    }) })
     await screen.findByText('kubecode.task.staleEvidenceTitle')
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'supported' } })
     expect(screen.getByRole('button', { name: 'kubecode.task.acceptResults' })).toBeDisabled()
-    // Only a changed record can be accepted at its current version; a removed one cannot.
-    const accepts = screen.getAllByRole('button', { name: 'kubecode.task.acceptCurrent' })
-    expect(accepts).toHaveLength(1)
-    fireEvent.click(accepts[0])
-    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', 'w1', 'res1'))
+    // Accepting the current version is not possible before it was looked at.
+    const accept = screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })
+    expect(accept).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.lookAtIt' }))
+    expect(accept).toBeEnabled()
+    fireEvent.click(accept)
+    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', 'w1', 'res1', 'b'))
+  })
+
+  it('lets the researcher accept results when evidence no longer exists, only after saying they know', async () => {
+    const { api } = inspector(detail({
+      stale_evidence: [
+        { work_id: 'w1', result_id: 'res2', kind: 'artifact', ref_id: 'gone.csv', status: 'removed', pinned: 'a', current: null },
+      ],
+    }))
+    await screen.findByText('kubecode.task.staleEvidenceTitle')
+    expect(screen.queryByRole('button', { name: 'kubecode.task.acceptCurrent' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'refuted' } })
+    const accept = screen.getByRole('button', { name: 'kubecode.task.acceptResults' })
+    expect(accept).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(accept).toBeEnabled()
+    fireEvent.click(accept)
+    await waitFor(() => expect(api.reviewTask).toHaveBeenCalled())
   })
 
   it('reloads and says so when the server refuses an acceptance over changed evidence', async () => {

@@ -60,7 +60,9 @@ export function MessageItem({
   const sessionTitle = (id: string) => sessions.find((item) => item.id === id)?.title ?? id.slice(0, 8)
   // The General Agent's proposal of a Task revision (ADR 0221): shown as what it
   // is, with where the Task stands. Nothing here admits it; the researcher says so in words.
-  const proposal = /^proposal:[^:]+:(\d+)/.exec(message.client_message_id ?? '')
+  const proposal = message.author_kind === 'agent'
+    ? /^proposal:[^:]+:(\d+)/.exec(message.client_message_id ?? '')
+    : null
   const task = message.task_id ? research.find((item) => item.id === message.task_id) : undefined
   // Routing notes stay a quiet line; a note about a Task (its review outcome)
   // is a decision the researcher should see, so it is shown like any message.

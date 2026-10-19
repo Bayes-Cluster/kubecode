@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { expect, type APIRequestContext } from '@playwright/test'
@@ -30,7 +30,11 @@ function read(directory: string): Recorded[] {
     return []
   }
   const recorded: Recorded[] = []
-  for (const name of names.filter((entry) => /^session-\d+\.json$/.test(entry))) {
+  // Oldest process first, whatever order the directory lists them in.
+  const sessions = names
+    .filter((entry) => /^session-\d+\.json$/.test(entry))
+    .sort((a, b) => statSync(join(directory, a)).mtimeMs - statSync(join(directory, b)).mtimeMs)
+  for (const name of sessions) {
     const pid = /\d+/.exec(name)?.[0] ?? ''
     let session: { params?: { mcpServers?: Array<{ name: string; url?: string }> } }
     try {
@@ -76,7 +80,8 @@ export async function waitForPrompt(conversationId: string, matches: (text: stri
 }
 
 function urlOf(conversationId: string): string {
-  const entry = read(fixtureDirectory()).find((candidate) => candidate.conversationId === conversationId)
+  // The newest process serving the Session holds the credentials that work now.
+  const entry = read(fixtureDirectory()).reverse().find((candidate) => candidate.conversationId === conversationId)
   if (!entry) throw new Error('that member has not been prompted yet, so it has no tools')
   return entry.url
 }
@@ -101,6 +106,7 @@ function parseRpc(text: string): Rpc {
 /** One member acting through its own MCP endpoint. */
 export class MemberAgent {
   private session: string | null = null
+  private opened: string | null = null
   private counter = 0
 
   constructor(private readonly request: APIRequestContext, private readonly conversationId: string) {}
@@ -112,7 +118,11 @@ export class MemberAgent {
   }
 
   private async open() {
-    if (this.session) return
+    // A restarted process is a new MCP session on a new address.
+    const url = urlOf(this.conversationId)
+    if (this.session && this.opened === url) return
+    this.session = null
+    this.opened = url
     const response = await this.post({
       jsonrpc: '2.0',
       id: ++this.counter,

@@ -303,6 +303,14 @@ describe('ResearchWorkspace', () => {
     expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
   })
 
+  it('cannot start a round from a Task detail, and says where work starts', async () => {
+    mount({ startsRounds: false })
+    await screen.findByText('Does structured pruning keep accuracy?')
+    openTab('kubecode.research.tab.work')
+    expect(await screen.findByText('kubecode.task.startsInGeneral')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
+  })
+
   it('moves the question between open, resolved, and archived by explicit command', async () => {
     const setResearchState = vi.fn().mockResolvedValue(detailFixture)
     mount({ api: fakeApi({ setResearchState }) })

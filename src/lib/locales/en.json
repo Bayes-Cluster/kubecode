@@ -2330,5 +2330,9 @@
   "kubecode.task.proposalBadge": "Task proposal, revision {revision}",
   "kubecode.task.onBoard": "On the board",
   "kubecode.task.notOnBoardYet": "Not on the board yet",
-  "kubecode.task.proposalHint": "Ask for changes here, or tell the General Agent in your own words to add it to the board."
+  "kubecode.task.proposalHint": "Ask for changes here, or tell the General Agent in your own words to add it to the board.",
+  "kubecode.task.startsInGeneral": "Work on a Task starts when you tell the General Agent in General to carry on; it cannot be started from here.",
+  "kubecode.task.ackRemoved": "I know some evidence no longer exists, and I accept the results anyway.",
+  "kubecode.task.answerField": "Your answer",
+  "kubecode.task.lookFirst": "Look at it first"
 }

@@ -1,9 +1,9 @@
 import { writeFile } from 'node:fs/promises'
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { MemberAgent, waitForPrompt } from './agents'
-import { openGeneral, workspaceNav } from './shell'
+import { dropEvents, installControlledEvents, openGeneral, restoreEvents, workspaceNav } from './shell'
 
 /**
  * The Research Workspace end to end against the real Runtime under a non-root
@@ -39,7 +39,7 @@ async function boardCards(page: Page, stage: string) {
   return page.getByRole('region', { name: stage, exact: true }).getByTestId(/^task-card-/)
 }
 
-test('@smoke research workspace carries a Task from discussion to an accepted negative finding and iteration', async ({ page, request, context }) => {
+test('@smoke research workspace carries a Task from discussion to an accepted negative finding and iteration', async ({ page, request }) => {
   test.setTimeout(240_000)
   const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
   const workspaceUrl = requested.pathname === '/'
@@ -49,6 +49,9 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   const projectName = `kubecode-workspace-${Date.now()}`
   const projectPath = `/tmp/${projectName}`
 
+  let projectId: string | undefined
+  try {
+  await installControlledEvents(page)
   await page.goto(workspaceUrl)
   await page.getByRole('button', { name: 'Add project' }).click()
   await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
@@ -56,7 +59,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
   await writeFile(`${projectPath}/results.csv`, 'accuracy\n0.91\n')
   const projects = await (await request.get(`${api}/projects`)).json() as Array<{ id: string; name: string }>
-  const projectId = projects.find((candidate) => candidate.name === projectName)?.id
+  projectId = projects.find((candidate) => candidate.name === projectName)?.id
   if (!projectId) throw new Error('Project was not registered')
 
   // The Workspace has its General Agent; the researcher adds a specialist.
@@ -109,6 +112,17 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   })
   await expect(page.locator(`[data-message-id="${revised.message_id}"]`).getByText('Task proposal, revision 2')).toBeVisible()
 
+  // No control on the proposal, the board, or the Task detail can admit or start anything.
+  await expect(proposalMessage.getByRole('button', { name: /add to|admit|approve|confirm|start/i })).toHaveCount(0)
+  await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
+  await page.getByText('Proposals not on the board (1)').click()
+  await page.locator('.kubecode-task-drafts').getByRole('button', { name: /Structured pruning/ }).click()
+  const draftDetail = page.getByRole('complementary', { name: 'Task details' })
+  await expect(draftDetail.getByText(/This is a proposal and is not on the board/)).toBeVisible()
+  await expect(draftDetail.getByRole('button', { name: /^Start round/ })).toHaveCount(0)
+  await expect(draftDetail.getByRole('button', { name: /add to|admit|approve|confirm/i })).toHaveCount(0)
+  await openGeneral(page)
+
   // 4. Nothing authorizes yet. A specialist's words and a quoted line never do.
   await say(page, '@analyst are you ready to help with this?')
   await waitForPrompt(analystConversation as string, (text) => text.includes('ready to help'))
@@ -121,12 +135,12 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await waitForPrompt(generalConversation as string, (text) => text.includes('already approved'))
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: claim.message_id, brief_revision: revised.revision,
-  })).toContain('researcher')
+  })).toContain("only the researcher's own message authorizes")
   await say(page, '> Please add it to the Kanban.')
   const quoted = await lastResearcherMessage(manager, 'Please add it to the Kanban.')
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: quoted.id, brief_revision: revised.revision,
-  })).toMatch(/quot|instruction/i)
+  })).toContain('it only quotes other text')
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await expect(await boardCards(page, 'Ready')).toHaveCount(0)
   await openGeneral(page)
@@ -138,7 +152,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await manager.call('task_admit', { research_id: taskId, message_id: instruction.id, brief_revision: revised.revision })
   await expect(page.getByText(/Added to the board: "Structured pruning"/)).toBeVisible()
   // The instruction cannot be used again for another step.
-  expect(await manager.refused('task_start', { research_id: taskId, message_id: instruction.id })).toMatch(/ask the researcher again|already/i)
+  expect(await manager.refused('task_start', { research_id: taskId, message_id: instruction.id })).toContain('the instruction came before the Task')
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await expect(await boardCards(page, 'Ready')).toHaveCount(1)
   await expect(page.getByTestId(`task-card-${taskId}`)).toContainText('Structured pruning')
@@ -162,7 +176,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await waitForPrompt(generalConversation as string, (text) => text.includes('go ahead and start it'))
   const go = await lastResearcherMessage(manager, 'go ahead and start it')
   expect(await manager.refused('task_start', { research_id: taskId, message_id: go.id }))
-    .toMatch(/approval|revised/i)
+    .toContain('a revised brief is waiting for the researcher')
   await say(page, 'A single GPU is fine, I approve the new brief.')
   await waitForPrompt(generalConversation as string, (text) => text.includes('I approve the new brief'))
   const approval = await lastResearcherMessage(manager, 'I approve the new brief')
@@ -183,12 +197,18 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
     body: '@analyst please run the pruning sweep and report the accuracy.', mentions: ['analyst'], task: taskId,
   })
   expect(await manager.refused('work_report', { work_id: work.item.id, status: 'completed', summary: 'I ran it myself.' }))
-    .toContain('manages')
+    .toContain('the General Agent manages work and does not report on attempts')
+  expect(await manager.refused('work_executor_create', { agent: 'opencode', request_key: `exec-${Date.now()}` }))
+    .toContain('the General Agent manages work and does not create executor Sessions')
 
   // 8. The specialist works in public; the manager follows up.
   await waitForPrompt(analystConversation as string, (text) => text.includes('Pruning sweep') || text.includes('pruning sweep'))
   await analyst.call('general_post', {
     body: 'Started the sweep; first results are in results.csv.', mentions: ['general'], task: taskId,
+  })
+  // The specialist asks the researcher something; it is shown in the Task and answered there.
+  await analyst.call('work_request_decision', {
+    work_id: work.item.id, request_key: `q-${Date.now()}`, question: 'Which pruning ratio first?', options: ['0.3', '0.5'], impact: 'decides the sweep order',
   })
   await analyst.call('work_attach', { work_id: work.item.id, kind: 'file', id: 'results.csv', role: 'evidence' })
   await analyst.call('work_report', { work_id: work.item.id, status: 'completed', summary: 'Accuracy held at 0.91 across ratios.' })
@@ -196,6 +216,20 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await waitForPrompt(generalConversation as string, (text) => text.includes('Started the sweep'))
   await manager.call('general_post', { body: 'Thanks @analyst, I will ask for your review now.', mentions: ['analyst'], task: taskId })
   await expect(page.getByText('Thanks @analyst, I will ask for your review now.')).toBeVisible()
+
+  await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
+  await page.getByTestId(`task-card-${taskId}`).click()
+  const inProgress = page.getByRole('complementary', { name: 'Task details' })
+  await expect(inProgress.getByText('Pruning sweep', { exact: true })).toBeVisible()
+  await expect(inProgress.getByText('@analyst', { exact: false }).first()).toBeVisible()
+  await expect(inProgress.getByText('Project manager')).toBeVisible()
+  await expect(inProgress.getByText('Specialist')).toBeVisible()
+  const waitingOnYou = inProgress.getByRole('region', { name: 'Waiting on you' })
+  await expect(waitingOnYou.getByText('Which pruning ratio first?')).toBeVisible()
+  await waitingOnYou.getByRole('button', { name: '0.5', exact: true }).click()
+  await expect(inProgress.getByRole('region', { name: 'Waiting on you' })).toHaveCount(0)
+  await inProgress.getByRole('button', { name: 'Close details' }).first().click()
+  await openGeneral(page)
 
   // 9. The manager asks for review; it is on the board and in "Needs you".
   await manager.call('task_request_review', {
@@ -219,6 +253,9 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(review.getByText(/Some evidence changed after it was attached/)).toBeVisible()
   await review.getByLabel('What the result showed').selectOption({ label: 'Valid negative result' })
   await expect(review.getByRole('button', { name: 'Accept results' })).toBeDisabled()
+  // It cannot be accepted at its current version before it was looked at.
+  await expect(review.getByRole('button', { name: 'Accept the current version' })).toBeDisabled()
+  await review.getByRole('button', { name: 'Look at it' }).click()
   await review.getByRole('button', { name: 'Accept the current version' }).click()
   await expect(review.getByText(/Some evidence changed after it was attached/)).toHaveCount(0)
 
@@ -227,6 +264,9 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await review.getByRole('button', { name: 'Accept results' }).click()
   await expect(await boardCards(page, 'Done')).toHaveCount(1)
   await expect(page.getByTestId(`task-card-${taskId}`)).toBeVisible()
+  await page.getByTestId(`task-card-${taskId}`).click()
+  await expect(page.getByRole('complementary', { name: 'Task details' }).getByText('Valid negative result').first()).toBeVisible()
+  await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
   await openGeneral(page)
   await expect(page.getByRole('log', { name: 'Messages' }).getByText(/accepted/i).first()).toBeVisible()
 
@@ -241,10 +281,13 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
 
   // 13. A dropped connection converges: what was said meanwhile appears after reconnecting.
   await openGeneral(page)
-  await context.setOffline(true)
-  await manager.call('general_post', { body: 'Said while the browser was offline.', mentions: [], task: taskId })
-  await context.setOffline(false)
-  await expect(page.getByText('Said while the browser was offline.')).toBeVisible({ timeout: 30_000 })
+  await dropEvents(page)
+  await expect(page.getByRole('button', { name: /Runtime connection: Live/ })).toHaveCount(0, { timeout: 15_000 })
+  await manager.call('general_post', { body: 'Said while the browser was disconnected.', mentions: [], task: taskId })
+  await expect(page.getByText('Said while the browser was disconnected.')).toHaveCount(0)
+  await restoreEvents(page)
+  await expect(page.getByText('Said while the browser was disconnected.')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: /Runtime connection: Live/ })).toBeVisible({ timeout: 30_000 })
 
   // 14. The board stays one board and contained on a phone.
   await page.setViewportSize({ width: 390, height: 800 })
@@ -256,9 +299,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
     scrollWidth: document.documentElement.scrollWidth,
   }))
   expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  } finally {
+    // Projects are only unregistered; the temporary directory goes with the test.
+    if (projectId) await request.delete(`${api}/projects/${projectId}`)
+  }
 })
-
-async function cleanup(request: APIRequestContext, api: string, projectId: string) {
-  await request.delete(`${api}/projects/${projectId}`)
-}
-void cleanup

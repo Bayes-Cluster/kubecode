@@ -135,6 +135,7 @@ function Inspector({
       {openRequest && (
         <ReviewPanel
           api={api}
+          key={openRequest.id}
           detail={detail}
           projectId={projectId}
           request={openRequest}
@@ -236,7 +237,7 @@ function OpenQuestions({
               </div>
             )}
             <label>
-              <span className="sr-only">{t('kubecode.work.question.answer')}</span>
+              <span className="sr-only">{t('kubecode.task.answerField')}</span>
               <Textarea
                 rows={2}
                 value={answers[request.id] ?? ''}
@@ -277,11 +278,17 @@ function ReviewPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [looking, setLooking] = useState<EvidenceTarget | null>(null)
+  // Evidence that changed can be accepted at its current version only after it
+  // was looked at; evidence that is gone must be acknowledged instead.
+  const [looked, setLooked] = useState<Set<string>>(new Set())
+  const [ackRemoved, setAckRemoved] = useState(false)
   const stale = detail.stale_evidence
+  const changed = stale.filter((entry) => entry.status === 'changed')
+  const removed = stale.filter((entry) => entry.status === 'removed')
   const evidence = request.evidence.map((entry) => {
     const [kind, ...rest] = entry.split(':')
     return { entry, target: { kind, id: rest.join(':') } as EvidenceTarget }
-  })
+  }).filter((item, index, all) => all.findIndex((other) => other.entry === item.entry) === index)
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true)
@@ -312,7 +319,12 @@ function ReviewPanel({
         <ul aria-label={t('kubecode.task.evidence')} className="kubecode-task-evidence">
           {evidence.map(({ entry, target }) => (
             <li key={entry}>
-              <Button size="xs" variant="outline" onClick={() => setLooking(looking?.id === target.id ? null : target)}>
+              <Button
+                aria-expanded={looking?.kind === target.kind && looking?.id === target.id}
+                size="xs"
+                variant="outline"
+                onClick={() => setLooking(looking?.kind === target.kind && looking?.id === target.id ? null : target)}
+              >
                 {entry}
               </Button>
             </li>
@@ -323,21 +335,35 @@ function ReviewPanel({
         <EvidenceViewer api={api} key={`${looking.kind}:${looking.id}`} projectId={projectId} t={t} target={looking} />
       )}
       {stale.length > 0 && (
-        <div className="kubecode-research-notice" role="alert">
+        <div className="kubecode-research-notice" role="status">
           <p>{t('kubecode.task.staleEvidenceTitle')}</p>
           <ul>
             {stale.map((entry) => (
               <li key={`${entry.work_id}:${entry.result_id}`}>
-                <span>{entry.kind}:{entry.ref_id.slice(0, 12)} — {t(entry.status === 'removed' ? 'kubecode.task.evidenceRemoved' : 'kubecode.task.evidenceChanged')}</span>
-                <Button size="xs" variant="ghost" onClick={() => setLooking({ kind: entry.kind, id: entry.ref_id })}>
-                  {t('kubecode.task.lookAtIt')}
-                </Button>
+                <span title={`${entry.kind}:${entry.ref_id}`}>
+                  {entry.kind}:{entry.ref_id} — {t(entry.status === 'removed' ? 'kubecode.task.evidenceRemoved' : 'kubecode.task.evidenceChanged')}
+                </span>
                 {entry.status === 'changed' && (
                   <Button
-                    disabled={busy}
                     size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setLooking({ kind: entry.kind, id: entry.ref_id, revision: entry.current })
+                      setLooked(new Set(looked).add(entry.result_id))
+                    }}
+                  >
+                    {t('kubecode.task.lookAtIt')}
+                  </Button>
+                )}
+                {entry.status === 'changed' && (
+                  <Button
+                    disabled={busy || !looked.has(entry.result_id)}
+                    size="xs"
+                    title={looked.has(entry.result_id) ? undefined : t('kubecode.task.lookFirst')}
                     variant="outline"
-                    onClick={() => void run(() => api.repinTaskEvidence(projectId, detail.id, entry.work_id, entry.result_id))}
+                    onClick={() => void run(() => api.repinTaskEvidence(
+                      projectId, detail.id, entry.work_id, entry.result_id, entry.current,
+                    ))}
                   >
                     {t('kubecode.task.acceptCurrent')}
                   </Button>
@@ -346,6 +372,14 @@ function ReviewPanel({
             ))}
           </ul>
         </div>
+      )}
+      {removed.length > 0 && changed.length === 0 && (
+        <label className="kubecode-task-field">
+          <span>
+            <input checked={ackRemoved} type="checkbox" onChange={(event) => setAckRemoved(event.target.checked)} />
+            {' '}{t('kubecode.task.ackRemoved')}
+          </span>
+        </label>
       )}
       <label className="kubecode-task-field">
         <span>{t('kubecode.work.review.outcome')}</span>
@@ -370,7 +404,7 @@ function ReviewPanel({
       {error && <p className="kubecode-research-error" role="alert">{error}</p>}
       <div className="kubecode-work-command-row">
         <Button
-          disabled={busy || stale.length > 0 || outcome === 'unknown'}
+          disabled={busy || changed.length > 0 || (removed.length > 0 && !ackRemoved) || outcome === 'unknown'}
           size="sm"
           onClick={() => void run(() => api.reviewTask(projectId, detail.id, {
             requestId: request.id, accept: true, outcome, reason: reason.trim() || undefined,

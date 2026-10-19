@@ -531,10 +531,16 @@ export class KubecodeApi {
   }
 
   /** Accepts the current version of one cited result, after looking at what changed. */
-  repinTaskEvidence(projectId: string, researchId: string, workId: string, resultId: string): Promise<void> {
+  repinTaskEvidence(
+    projectId: string,
+    researchId: string,
+    workId: string,
+    resultId: string,
+    revision?: string | null,
+  ): Promise<void> {
     return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/repin`, {
       method: 'POST',
-      body: JSON.stringify({ work_id: workId, result_id: resultId }),
+      body: JSON.stringify({ work_id: workId, result_id: resultId, revision: revision ?? undefined }),
     })
   }
 

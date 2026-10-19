@@ -559,4 +559,19 @@ describe('ChannelWorkspace work entry', () => {
     v.rerender(props(null))
     await waitFor(() => expect(screen.queryByRole('complementary', { name: 'kubecode.channel.thread' })).not.toBeInTheDocument())
   })
+
+  it('shows the manager\'s proposal as a proposal with where it stands, and never a researcher-typed lookalike', async () => {
+    const s = server([
+      server().message(1, 'Proposal: prune heads', {
+        author_kind: 'agent', author_ref: 'sess-g', client_message_id: 'proposal:r1:2', task_id: 'r1',
+      }),
+      server().message(2, 'I typed this id myself', { client_message_id: 'proposal:r1:9', task_id: 'r1' }),
+    ])
+    view(s, { extra: { tasksOnBoard: new Set<string>() } })
+    await screen.findByText('Proposal: prune heads')
+    expect(screen.getAllByText('kubecode.task.proposalBadge:{"revision":2}')).toHaveLength(1)
+    expect(screen.queryByText('kubecode.task.proposalBadge:{"revision":9}')).not.toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.notOnBoardYet')).toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.proposalHint')).toBeInTheDocument()
+  })
 })

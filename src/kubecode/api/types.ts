@@ -1185,6 +1185,9 @@ export type TaskStaleEvidence = {
   kind: string
   ref_id: string
   status: 'changed' | 'removed'
+  /** The revision it was attached at, and the one it has now (none if removed). */
+  pinned: string
+  current: string | null
 }
 export type TaskDetail = TaskCard & {
   brief: ResearchBrief

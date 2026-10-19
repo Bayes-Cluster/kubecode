@@ -116,7 +116,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
 
   // The one board.
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
-  await expect(page.getByRole('region', { name: 'Work', exact: true }).last()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
   await expectUrl(page, '/board')
 
   // On a phone, the conversation and the Task are separate screens.

@@ -281,13 +281,18 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
         .task_admit(&task, &claim.id, proposal.revision)
         .unwrap_err()
         .to_string();
-    assert!(refused.contains("researcher"), "{refused}");
-    let quoted = researcher_says(&world, &channel, "> Please add it to the Kanban.").await;
     assert!(
-        manager
-            .task_admit(&task, quoted["id"].as_str().unwrap(), proposal.revision)
-            .is_err(),
-        "a quoted line is not an instruction"
+        refused.contains("only the researcher's own message authorizes"),
+        "{refused}"
+    );
+    let quoted = researcher_says(&world, &channel, "> Please add it to the Kanban.").await;
+    let quoted_refusal = manager
+        .task_admit(&task, quoted["id"].as_str().unwrap(), proposal.revision)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        quoted_refusal.contains("only quotes other text"),
+        "{quoted_refusal}"
     );
     assert_eq!(board(&world, &project).await["total"], 0);
 
@@ -309,9 +314,13 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
         admitted.id, replay.id,
         "the same instruction is the same admission"
     );
+    let reused = manager
+        .task_start(&task, &instruction_id)
+        .unwrap_err()
+        .to_string();
     assert!(
-        manager.task_start(&task, &instruction_id).is_err(),
-        "the words that added a Task cannot also start it"
+        reused.contains("already authorized") || reused.contains("came before"),
+        "the words that added a Task cannot also start it: {reused}"
     );
     let cards = board(&world, &project).await;
     assert_eq!(cards["total"], 1);
@@ -440,14 +449,43 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
     )
     .await;
     let stale = detail["stale_evidence"][0].clone();
+    assert_eq!(stale["status"], "changed");
+    // It changes again after the researcher looked: the version looked at is not pinned.
+    std::fs::write(world.path.join("results.csv"), "accuracy\n0.40\n").unwrap();
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/repin"),
+        json!({"work_id": stale["work_id"], "result_id": stale["result_id"], "revision": stale["current"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let (_, detail) = call(
+        &world,
+        Method::GET,
+        &format!("/projects/{project}/tasks/{task}"),
+        Value::Null,
+    )
+    .await;
+    let stale = detail["stale_evidence"][0].clone();
     let (status, _) = call(
         &world,
         Method::POST,
         &format!("/projects/{project}/tasks/{task}/repin"),
-        json!({"work_id": stale["work_id"], "result_id": stale["result_id"]}),
+        json!({"work_id": stale["work_id"], "result_id": stale["result_id"], "revision": stale["current"]}),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    // Evidence that no longer exists cannot be re-pinned; it does not block the decision forever.
+    std::fs::remove_file(world.path.join("results.csv")).unwrap();
+    let (_, detail) = call(
+        &world,
+        Method::GET,
+        &format!("/projects/{project}/tasks/{task}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(detail["stale_evidence"][0]["status"], "removed");
 
     // 9. A valid negative finding completes the Task.
     let (status, review) = call(
@@ -487,7 +525,14 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
     assert_eq!(status, StatusCode::NOT_FOUND);
     let other_general = public(&roster(&world, &other).await, "general");
     let outsider = member(&world, &other, &other_general);
-    assert!(outsider.task_admit(&task, &instruction_id, 1).is_err());
+    let foreign = outsider
+        .task_admit(&task, &instruction_id, 1)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        foreign.contains("not found") || foreign.contains("does not exist"),
+        "another Workspace cannot even see the Task or message: {foreign}"
+    );
 
     // 12. A private direct message reaches no shared surface and cannot publish.
     let analyst_id = analyst_member["id"].as_str().unwrap();
@@ -501,10 +546,15 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
     assert_eq!(status, StatusCode::OK, "{opened}");
     let dm = opened["dm_conversation_id"].as_str().unwrap().to_owned();
     let private = member(&world, &project, &dm);
-    assert!(private.general_post("leak", &[], None, None).is_err());
+    let leak = private
+        .general_post("leak", &[], None, None)
+        .unwrap_err()
+        .to_string();
+    assert!(leak.contains("private"), "{leak}");
+    let tasks = private.task_list().unwrap_err().to_string();
     assert!(
-        private.task_list().is_err(),
-        "a private Session has no Task commands"
+        tasks.contains("private"),
+        "a private Session has no Task commands: {tasks}"
     );
     let (status, _) = call(
         &world,
@@ -514,12 +564,29 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (_, found) = call(
+    let (status, found) = call(
         &world,
         Method::GET,
         &format!("/projects/{project}/context/search?kinds=session"),
         Value::Null,
     )
     .await;
-    assert!(!found.to_string().contains(&dm));
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert!(
+        found.to_string().contains(&analyst),
+        "the public Session is found, so the search works"
+    );
+    assert!(
+        !found.to_string().contains(&dm),
+        "the private Session is not"
+    );
+    // A review request that is not the open one cannot decide the Task.
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        json!({"request_id": "not-the-request", "accept": false, "reason": "no"}),
+    )
+    .await;
+    assert!(status.is_client_error(), "{status} {body}");
 }

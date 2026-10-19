@@ -523,6 +523,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         researchId={taskId}
         t={t}
         teams={teams}
+        startsRounds={false}
         inspector={(
           <TaskInspector
             api={api}
@@ -840,7 +841,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 focusMessageId={channelView.message ?? null}
                 initialThreadId={channelView.threadId}
                 key={projectId}
-                tasksOnBoard={tasksOnBoard}
+                tasksOnBoard={taskBoard.board ? tasksOnBoard : undefined}
                 onClose={showSessions}
                 onFilterChange={(filter) => patchChannel({ filter })}
                 onOpenResearch={(nextResearchId) => patchChannel({ task: nextResearchId })}
