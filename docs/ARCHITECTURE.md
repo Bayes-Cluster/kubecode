@@ -312,6 +312,19 @@ Task's work cites has changed) and `.../repin`; it has no admission endpoint.
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
+Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
+`tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
+`…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
+and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
+is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
+`ResearchWorkspace` in the detail pane and decides reviews through
+`POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
+chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
+`tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
+and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
+member through that Session's own MCP endpoint. The service-level counterpart is
+`server/tests/workspace_blueprint_acceptance.rs`.
+
 Workspace shell (ADR 0224): `app/WorkbenchShell.tsx` keeps one `ViewState`
 (research, channel, work, dm, resources, members) beside the selected Session,
 derives the current `WorkspaceRoute` from it, and `useWorkspaceRouteSync`

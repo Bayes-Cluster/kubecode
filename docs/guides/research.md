@@ -187,6 +187,25 @@ sharing the link all return to the same place. Files and Git open from the
 panel buttons in the title bar when you want them; they are not always on
 screen beside General or the board.
 
+## The Kanban and deciding on results
+
+**Kanban** shows only Tasks that are on the board, in four columns: Ready, In
+progress, Review, and Done. Why a Task is not moving (waiting, blocked, paused,
+needs input) is shown as a badge on its card, and a card says when its brief
+changed after you approved it. You do not add Tasks here: tell the General Agent
+in General, in your own words, to add a proposal. Proposals that are not on the
+board are listed under the columns.
+
+Open a card to see where the Task stands, your words that added it, the project
+manager and the specialists, questions waiting for you, and — when the General
+Agent asks for your review — the results with their evidence. Look at the
+evidence; if a file or result changed after it was attached, you are told, and
+you accept its current version before accepting the results. Choose what the
+result showed (a well-supported **negative result** is a valid outcome and
+completes the Task), or send it back with a reason. The outcome is posted back in
+General with a link to the Task. To keep going, tell the General Agent to carry on
+with the same Task; it stays one card.
+
 ## Who reads what you write in General
 
 - A message that names no one goes to the **General Agent**, the project
