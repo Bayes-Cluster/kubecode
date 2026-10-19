@@ -68,3 +68,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0221](0221-tasks-and-human-authorized-admission.md) | Tasks, and admission authorized by the researcher through the General Agent |
 | [0222](0222-shared-workspace-controls-and-composer.md) | Shared Workspace controls and one Composer for General and direct messages |
 | [0223](0223-general-conversation-routing-and-direct-messages.md) | One General conversation, routed to members, with private direct messages |
+| [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes |

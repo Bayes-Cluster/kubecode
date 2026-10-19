@@ -62,6 +62,7 @@ function server(initial: ChannelMessage[] = []) {
       const page = before.slice(-limit)
       return { messages: page, has_more: before.length > page.length }
     }),
+    getChannelMessage: vi.fn(async (_p: string, _c: string, id: string) => messages.find((m) => m.id === id)!),
     postChannelMessage: vi.fn(async (_p: string, _c: string, input: NewChannelMessage) => {
       posted.push(input)
       if (failNext > 0) {
@@ -122,7 +123,11 @@ const sessions: Conversation[] = []
 
 function view(
   s: ReturnType<typeof server>,
-  props: { events?: WorkspaceEvent[]; connection?: 'live' | 'reconnecting' } = {},
+  props: {
+    events?: WorkspaceEvent[]
+    connection?: 'live' | 'reconnecting'
+    extra?: Partial<React.ComponentProps<typeof ChannelWorkspace>>
+  } = {},
 ) {
   const ui = (events: WorkspaceEvent[]) => (
     <ChannelWorkspace
@@ -136,6 +141,7 @@ function view(
       projectId="p1"
       research={[question]}
       t={t}
+      {...props.extra}
     />
   )
   const result = render(ui(props.events ?? []))
@@ -477,5 +483,46 @@ describe('ChannelWorkspace work entry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
     expect(s.posted[0] ?? (await waitFor(() => { expect(s.posted.length).toBeGreaterThan(0); return s.posted[0] }))).toBeTruthy()
     expect(s.posted[0].references).toEqual([{ kind: 'research', id: 'r1', revision: null }])
+  })
+
+  it('opens the Task of a message beside the conversation and lands back on the message', async () => {
+    const s = server([{ ...server().message(1, 'about pruning'), task_id: 'r1' }])
+    const onOpenTask = vi.fn()
+    const v = view(s, { extra: { onOpenTask, focusMessageId: null } })
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.channel.taskChip:{"title":"Pruning"}' }))
+    expect(onOpenTask).toHaveBeenCalledWith('r1', 'm1')
+    // With the detail open it sits beside the conversation (the stylesheet shows one at a time on a phone).
+    v.rerender(
+      <ChannelWorkspace
+        api={s.api}
+        connectionState="live"
+        conversations={sessions}
+        detail={<aside aria-label="Task details">Pruning details</aside>}
+        events={[]}
+        focusMessageId="m1"
+        onClose={vi.fn()}
+        onOpenResearch={vi.fn()}
+        onOpenSession={vi.fn()}
+        projectId="p1"
+        research={[question]}
+        t={t}
+      />,
+    )
+    expect(screen.getByRole('complementary', { name: 'Task details' })).toBeInTheDocument()
+    expect(document.querySelector('.kubecode-channel-workspace')).toHaveAttribute('data-detail', 'true')
+  })
+
+  it('finds an old linked message, loads around it, and catches up to the latest', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    const many = Array.from({ length: 120 }, (_, index) => server().message(index + 1, `message ${index + 1}`))
+    const s = server(many)
+    view(s, { extra: { focusMessageId: 'm5' } })
+    await waitFor(() => expect(s.calls.getChannelMessage).toHaveBeenCalledWith('p1', 'c1', 'm5'))
+    const old = await screen.findByText('message 5')
+    expect(old).toBeInTheDocument()
+    await waitFor(() => expect(document.getElementById('message-m5')).toHaveFocus())
+    // The list is contiguous up to the newest message.
+    expect(await screen.findByText('message 120')).toBeInTheDocument()
+    expect(screen.getByText('message 60')).toBeInTheDocument()
   })
 })

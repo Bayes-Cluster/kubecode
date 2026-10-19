@@ -1255,6 +1255,17 @@ Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
 input as conditions. Rounds, internal work, attempts, and experiments live
 inside the Task. See ADR 0221.
 
+## Workspace views and routes
+
+The researcher's place is a **route**: a Project, a **view** (Sessions, General,
+Kanban, Resources, Members, a private conversation, or a legacy research
+workspace), and the ids that narrow it (a message, a Task, a filter, a member).
+Exactly one view fills the main pane; a Task, a member profile, or evidence
+opens in an on-demand **detail pane** beside its list (on a phone, instead of
+it). The route is written in the URL hash, so it survives a reload, Back, and a
+shared link under any base path. Files, Git, and the terminal are tools asked
+for beside these views, not a standing column. See ADR 0224.
+
 ## General routing and direct messages
 
 The server reads each top-level General message once and **routes** it: a

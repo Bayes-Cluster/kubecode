@@ -170,6 +170,23 @@ work stay inside the Task. When the General Agent reports results, you accept
 them (choosing the outcome; a well-supported negative finding completes a
 Task) or send the Task back with a reason.
 
+## Finding your way around
+
+The navigator leads with four places: **General** (the one conversation),
+**Kanban** (the one board of Tasks), **Resources** (what the Workspace has
+produced, previewed read-only), and **Members** (the agents). **Needs you**
+collects what is waiting for you — results to review and input an agent asked
+for — and each item opens the place to act. Sessions, Teams, Threads, and
+research questions are still there, below and under *History and execution*.
+
+Choosing a Task chip on a message, a card, or an item in *Needs you* opens the
+Task beside the list; closing it brings you back to the message you came from.
+On a phone the list and the detail are separate screens. The address bar always
+names where you are (everything after the `#`), so reloading, going Back, and
+sharing the link all return to the same place. Files and Git open from the
+panel buttons in the title bar when you want them; they are not always on
+screen beside General or the board.
+
 ## Who reads what you write in General
 
 - A message that names no one goes to the **General Agent**, the project

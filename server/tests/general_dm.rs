@@ -654,13 +654,37 @@ async fn a_message_can_be_read_by_id_only_in_its_own_conversation_and_project() 
     let path = |project: &str, channel: &str, id: &str| {
         format!("/projects/{project}/channels/{channel}/messages/{id}")
     };
-    let (status, found) = call(&env, Method::GET, &path(&env.project, &crew.channel, id), Value::Null).await;
+    let (status, found) = call(
+        &env,
+        Method::GET,
+        &path(&env.project, &crew.channel, id),
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{found}");
     assert_eq!(found["seq"], message["seq"]);
-    let (status, _) = call(&env, Method::GET, &path(&env.other_project, &crew.channel, id), Value::Null).await;
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &path(&env.other_project, &crew.channel, id),
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = call(&env, Method::GET, &path(&env.project, "another-channel", id), Value::Null).await;
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &path(&env.project, "another-channel", id),
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = call(&env, Method::GET, &path(&env.project, &crew.channel, "missing"), Value::Null).await;
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &path(&env.project, &crew.channel, "missing"),
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
