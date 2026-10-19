@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { Member } from '../api'
+import { DetailPane } from '../app/DetailPane'
 import { agentName } from '../session/sessionModel'
 import { STATE_LABELS, TEMPLATE_LABELS } from './memberModel'
 
@@ -23,7 +24,7 @@ export type MemberProfileProps = {
  */
 export function MemberProfile({ member, onClose, onOpenDm, t }: MemberProfileProps) {
   return (
-    <aside aria-label={member.name} className="kubecode-detail-pane">
+    <DetailPane label={member.name} onClose={onClose}>
       <header>
         <AiAgentIcon agent={member.spec.agent_id} size={18} />
         <h3>{member.name}</h3>
@@ -49,6 +50,6 @@ export function MemberProfile({ member, onClose, onOpenDm, t }: MemberProfilePro
           {t('kubecode.members.messagePrivately', { name: member.name })}
         </Button>
       )}
-    </aside>
+    </DetailPane>
   )
 }

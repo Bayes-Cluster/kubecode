@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useWorkspaceRouteSync } from './useWorkspaceRouteSync'
+import { APPLY_TIMEOUT_MS, useWorkspaceRouteSync } from './useWorkspaceRouteSync'
 import type { WorkspaceRoute } from './workspaceRoute'
 
 let setRoute: (route: WorkspaceRoute) => void = () => undefined
@@ -89,6 +89,42 @@ describe('useWorkspaceRouteSync', () => {
     window.history.replaceState(null, '', '/#/p/gone/general')
     render(<Probe delayed />)
     act(() => vi.advanceTimersByTime(5_000))
+    act(() => setRoute({ project: 'p1', view: 'board' }))
+    expect(window.location.hash).toBe('#/p/p1/board')
+  })
+
+  it('fills in the first Session of a Project without adding a history entry', () => {
+    render(<Probe />)
+    const before = window.history.length
+    act(() => setRoute({ project: 'p1', view: 'sessions', conversation: 'c-9' }))
+    expect(window.location.hash).toBe('#/p/p1/sessions/c/c-9')
+    expect(window.history.length).toBe(before)
+  })
+
+  it('applies one Back once, although the browser reports it as popstate and hashchange', () => {
+    render(<Probe delayed />)
+    act(() => {
+      window.history.replaceState(null, '', '#/p/p1/dm/m1')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(applied).toEqual([{ project: 'p1', view: 'dm', member: 'm1' }])
+  })
+
+  it('writes the place the researcher is in once an unreachable request times out', () => {
+    vi.useFakeTimers()
+    window.history.replaceState(null, '', '/#/p/p1/general')
+    render(<Probe delayed />)
+    // Nothing arrives; later navigation must not be swallowed for long.
+    act(() => vi.advanceTimersByTime(APPLY_TIMEOUT_MS + 100))
+    expect(window.location.hash).toBe('#/p/p1/sessions')
+  })
+
+  it('treats the requested view as reached even when the state carries fewer details', () => {
+    window.history.replaceState(null, '', '/#/p/p1/dm/m1?task=x')
+    render(<Probe delayed />)
+    act(() => setRoute({ project: 'p1', view: 'dm', member: 'm1' }))
+    expect(window.location.hash).toBe('#/p/p1/dm/m1')
     act(() => setRoute({ project: 'p1', view: 'board' }))
     expect(window.location.hash).toBe('#/p/p1/board')
   })

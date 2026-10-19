@@ -178,7 +178,7 @@ export function ComposerProjectWorkPicker({
           aria-controls={hasList ? listboxId : undefined}
           aria-expanded={hasList}
           aria-label={t('kubecode.searchProjectWork')}
-          autoFocus
+          autoFocus={!browsing}
           className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -199,7 +199,8 @@ export function ComposerProjectWorkPicker({
               event.preventDefault()
               openPreview(activeItem)
             } else if (
-              (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && activeItem
+              // Browsing is not attaching: there Tab keeps moving focus.
+              (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && !browsing)) && activeItem
             ) {
               event.preventDefault()
               choose(activeItem)

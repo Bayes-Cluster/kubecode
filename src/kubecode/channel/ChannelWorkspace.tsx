@@ -97,12 +97,20 @@ export function ChannelWorkspace({
     connectionState,
   )
   const [threadId, setThreadIdState] = useState<string | null>(initialThreadId)
+  // The route may open another Thread (Back, a link, the History list).
+  const [seenThread, setSeenThread] = useState(initialThreadId)
+  if (seenThread !== initialThreadId) {
+    setSeenThread(initialThreadId)
+    setThreadIdState(initialThreadId)
+  }
   const setThreadId = useCallback((next: string | null) => {
     setThreadIdState(next)
     onThreadChange?.(next)
   }, [onThreadChange])
   // A link to an old message: find where it is and load around it.
   const resolved = useRef<string | null>(null)
+  // A different scope (another filter) is a new feed: resolve the link again.
+  useEffect(() => { resolved.current = null }, [taskFilter, channel?.id])
   const { loadAround, messages: loaded, status: feedStatus } = feed
   useEffect(() => {
     if (!focusMessageId || !channel || feedStatus !== 'ready' || resolved.current === focusMessageId) return
@@ -201,8 +209,8 @@ export function ChannelWorkspace({
           sessions={sessions}
           t={t}
           threadByRoot={threadByRoot}
-          focusId={focusMessageId}
-          focusKey={`${focusMessageId ?? ''}:${detail ? 'detail' : 'list'}`}
+          // While a detail is open the reader is in it; coming back lands on the message again.
+          focusId={detail ? null : focusMessageId}
           onFilterTask={setTaskFilter}
           onOpenTask={onOpenTask}
           onOpenReference={openReference}

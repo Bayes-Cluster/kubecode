@@ -4,7 +4,8 @@ import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
-import type { Conversation, Member, TaskCard } from '../api'
+import type { Conversation, Member, TaskCard, TaskDraft } from '../api'
+import { STATE_LABELS } from '../members/memberModel'
 import type { WorkspaceView } from './workspaceRoute'
 
 export type WorkspaceNavProps = {
@@ -14,6 +15,8 @@ export type WorkspaceNavProps = {
   members: Member[]
   /** Tasks waiting for the researcher: results to review, input requested. */
   needsYouTasks: TaskCard[]
+  /** Proposals that are not on the board: the researcher decides whether to add them. */
+  needsYouDrafts: TaskDraft[]
   /** Sessions waiting for a permission answer. */
   needsYouSessions: Conversation[]
   t: Translator
@@ -21,6 +24,7 @@ export type WorkspaceNavProps = {
   onOpen: (view: Extract<WorkspaceView, 'general' | 'board' | 'resources' | 'members'>) => void
   onOpenDm: (member: Member) => void
   onOpenMember: (member: Member) => void
+  onOpenDraft: (draft: TaskDraft) => void
   onOpenSession: (conversation: Conversation) => void
   onOpenTask: (task: TaskCard) => void
 }
@@ -34,11 +38,13 @@ export type WorkspaceNavProps = {
 export function WorkspaceNav({
   active,
   members,
+  needsYouDrafts,
   needsYouSessions,
   needsYouTasks,
   onOpen,
   onOpenDm,
   onOpenMember,
+  onOpenDraft,
   onOpenSession,
   onOpenTask,
   t,
@@ -50,7 +56,7 @@ export function WorkspaceNav({
     { view: 'resources', icon: <Library aria-hidden size={14} />, label: t('kubecode.nav.resources') },
     { view: 'members', icon: <Users aria-hidden size={14} />, label: t('kubecode.nav.members') },
   ] as const
-  const waiting = needsYouTasks.length + needsYouSessions.length
+  const waiting = needsYouTasks.length + needsYouDrafts.length + needsYouSessions.length
   return (
     <section aria-label={t('kubecode.nav.workspace')} className="kubecode-workspace-nav">
       <ul className="kubecode-research-nav-list">
@@ -71,11 +77,11 @@ export function WorkspaceNav({
           </li>
         ))}
       </ul>
-      <details className="kubecode-needs-you" data-waiting={waiting > 0} open={waiting > 0 && waiting <= 3}>
+      <details className="kubecode-needs-you" data-waiting={waiting > 0} open={waiting > 0}>
         <summary>
           <BellRing aria-hidden size={14} />
           <span>{t('kubecode.nav.needsYou')}</span>
-          <StatusBadge tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
+          <StatusBadge title={t('kubecode.nav.needsYou')} tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
         </summary>
         {waiting === 0 && <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouNone')}</p>}
         <ul className="kubecode-research-nav-list">
@@ -91,6 +97,14 @@ export function WorkspaceNav({
               </button>
             </li>
           ))}
+          {needsYouDrafts.map((draft) => (
+            <li key={draft.id}>
+              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenDraft(draft)}>
+                <span className="kubecode-research-nav-title">{draft.title}</span>
+                <StatusBadge tone="info">{t('kubecode.nav.needsProposal')}</StatusBadge>
+              </button>
+            </li>
+          ))}
           {needsYouSessions.map((session) => (
             <li key={session.id}>
               <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenSession(session)}>
@@ -102,7 +116,7 @@ export function WorkspaceNav({
         </ul>
       </details>
       {members.length > 0 && (
-        <ul aria-label={t('kubecode.nav.members')} className="kubecode-nav-members">
+        <ul aria-label={t('kubecode.nav.roster')} className="kubecode-nav-members">
           {members.map((member) => (
             <li data-state={member.state} key={member.id}>
               <button
@@ -112,7 +126,7 @@ export function WorkspaceNav({
               >
                 <span className="kubecode-research-nav-title" title={member.name}>@{member.handle}</span>
                 {member.state !== 'active' && (
-                  <StatusBadge tone="warn">{t('kubecode.members.state.setup_required')}</StatusBadge>
+                  <StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge>
                 )}
               </button>
               {member.state === 'active' && (

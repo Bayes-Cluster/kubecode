@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Zasoby wygenerowane przez przestrzeń roboczą, dostępne tylko do odczytu i do cytowania. Wybierz wiersz, aby zobaczyć podgląd.",
   "kubecode.resources.open": "Otwórz",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Agenci",
+  "kubecode.nav.needsProposal": "Propozycja",
   "kubecode.channel.back": "Wróć do sesji",
   "kubecode.channel.messages": "Wiadomości",
   "kubecode.channel.empty": "Brak wiadomości. Rozpocznij dyskusję.",

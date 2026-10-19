@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Тое, што створана ў працоўнай прасторы і на што можна спасылацца, толькі для чытання. Абярыце радок, каб праглядзець яго.",
   "kubecode.resources.open": "Адкрыць",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Агенты",
+  "kubecode.nav.needsProposal": "Прапанова",
   "kubecode.channel.back": "Назад да сесій",
   "kubecode.channel.messages": "Паведамленні",
   "kubecode.channel.empty": "Паведамленняў пакуль няма. Пачніце абмеркаванне.",

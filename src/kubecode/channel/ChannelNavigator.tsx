@@ -19,15 +19,18 @@ export type ChannelNavigatorProps = {
 /** The Workspace conversation, above the research list and the Sessions. */
 export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, threadsOnly = false }: ChannelNavigatorProps) {
   return (
-    <section aria-label={t('kubecode.channel.title')} className="kubecode-channel-nav">
+    <section
+      aria-label={threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')}
+      className="kubecode-channel-nav"
+    >
       <div className="kubecode-navigator-tools">
-        <span>{t('kubecode.channel.title')}</span>
+        <span>{threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')}</span>
       </div>
       <ul className="kubecode-research-nav-list">
         {!threadsOnly && (
           <li>
             <button
-              aria-current={active ? 'true' : undefined}
+              aria-current={active ? 'page' : undefined}
               className="kubecode-research-nav-item"
               type="button"
               onClick={onOpen}

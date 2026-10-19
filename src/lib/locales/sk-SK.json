@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Čo pracovný priestor vytvoril a na čo sa môže odvolávať, iba na čítanie. Vyberte riadok a zobrazte náhľad.",
   "kubecode.resources.open": "Otvoriť",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Agenti",
+  "kubecode.nav.needsProposal": "Návrh",
   "kubecode.channel.back": "Späť na relácie",
   "kubecode.channel.messages": "Správy",
   "kubecode.channel.empty": "Zatiaľ žiadne správy. Začnite diskusiu.",

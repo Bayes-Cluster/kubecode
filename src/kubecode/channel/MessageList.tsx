@@ -25,8 +25,6 @@ type MessageListProps = {
   onOpenTask?: (taskId: string, messageId: string) => void
   /** A message to scroll to and focus once it is loaded (a link, or coming back from a Task). */
   focusId?: string | null
-  /** Changes when the reader should be brought back to `focusId` again. */
-  focusKey?: string
   research?: ResearchSummary[]
   sessions: Conversation[]
   t: Translator
@@ -43,7 +41,6 @@ export function MessageList({
   onFilterTask,
   onOpenTask,
   focusId = null,
-  focusKey = focusId ?? '',
   onReply,
   research,
   sessions,
@@ -74,10 +71,14 @@ export function MessageList({
   const landed = useRef<string | null>(null)
   const present = focusId !== null && feed.messages.some((message) => message.id === focusId)
   useEffect(() => {
-    if (!focusId || !present || landed.current === focusKey) return
-    landed.current = focusKey
+    if (!focusId) {
+      landed.current = null
+      return
+    }
+    if (!present || landed.current === focusId) return
+    landed.current = focusId
     jump(focusId)
-  }, [focusId, focusKey, present])
+  }, [focusId, present])
 
   return (
     <div

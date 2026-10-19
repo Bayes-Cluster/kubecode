@@ -17,3 +17,8 @@ export async function openHistory(page: Page) {
 export async function openGeneral(page: Page) {
   await workspaceNav(page).getByRole('button', { name: 'General' }).first().click()
 }
+
+/** Retries until the URL names the place, since the address is written after render. */
+export async function expectUrl(page: Page, fragment: string) {
+  await expect.poll(() => page.url()).toContain(fragment)
+}

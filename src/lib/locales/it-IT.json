@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Ciò che lo spazio di lavoro ha prodotto e può citare, in sola lettura. Scegli una riga per visualizzarne l'anteprima.",
   "kubecode.resources.open": "Apri",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Agenti",
+  "kubecode.nav.needsProposal": "Proposta",
   "kubecode.channel.back": "Torna alle Sessioni",
   "kubecode.channel.messages": "Messaggi",
   "kubecode.channel.empty": "Nessun messaggio. Avvia la discussione.",

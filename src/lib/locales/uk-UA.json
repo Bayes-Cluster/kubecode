@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Матеріали, створені робочим простором, які можна цитувати, лише для читання. Виберіть рядок, щоб переглянути.",
   "kubecode.resources.open": "Відкрити",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Агенти",
+  "kubecode.nav.needsProposal": "Пропозиція",
   "kubecode.channel.back": "Назад до сесій",
   "kubecode.channel.messages": "Повідомлення",
   "kubecode.channel.empty": "Повідомлень ще немає. Почніть обговорення.",

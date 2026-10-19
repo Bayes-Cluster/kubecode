@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Những gì không gian làm việc đã tạo ra và có thể trích dẫn, chỉ đọc. Chọn một dòng để xem trước.",
   "kubecode.resources.open": "Mở",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Tác nhân",
+  "kubecode.nav.needsProposal": "Đề xuất",
   "kubecode.channel.back": "Quay lại Phiên",
   "kubecode.channel.messages": "Tin nhắn",
   "kubecode.channel.empty": "Chưa có tin nhắn. Hãy bắt đầu thảo luận.",

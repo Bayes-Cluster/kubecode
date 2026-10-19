@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "Det som arbetsytan har producerat och kan citera, skrivskyddat. Välj en rad för att förhandsgranska den.",
   "kubecode.resources.open": "Öppna",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Agenter",
+  "kubecode.nav.needsProposal": "Förslag",
   "kubecode.channel.back": "Tillbaka till sessioner",
   "kubecode.channel.messages": "Meddelanden",
   "kubecode.channel.empty": "Inga meddelanden ännu. Starta diskussionen.",

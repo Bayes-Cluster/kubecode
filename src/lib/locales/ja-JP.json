@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "ワークスペースが作成し、引用可能な成果物を読み取り専用で表示します。行を選択するとプレビューできます。",
   "kubecode.resources.open": "開く",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "エージェント",
+  "kubecode.nav.needsProposal": "提案",
   "kubecode.channel.back": "セッションに戻る",
   "kubecode.channel.messages": "メッセージ",
   "kubecode.channel.empty": "メッセージはまだありません。ディスカッションを始めましょう。",

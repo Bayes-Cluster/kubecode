@@ -444,6 +444,7 @@ describe('ChannelWorkspace work entry', () => {
       server().message(1, 'the plan'),
       server().message(2, 'noted', { reply_to: 'm1' }),
       server().message(3, 'delivered to the manager', { author_kind: 'system' }),
+      server().message(5, 'Review outcome: accepted', { author_kind: 'system', task_id: 'r1' }),
       server().message(4, 'over to you', {
         author_kind: 'agent', author_ref: 'sess-a', mentions: [{ session_id: 'sess-b' }], hops: 1,
       }),
@@ -456,6 +457,9 @@ describe('ChannelWorkspace work entry', () => {
     const note = screen.getByTestId('message-3')
     expect(note.tagName).toBe('DETAILS')
     expect(note).not.toHaveAttribute('open')
+    // A decision about a Task is shown, not folded away.
+    expect(screen.getByTestId('message-5').tagName).toBe('ARTICLE')
+    expect(screen.getByText('Review outcome: accepted')).toBeVisible()
     // A hand-off says who it was handed to.
     expect(screen.getByText(/kubecode\.channel\.handedTo/)).toBeInTheDocument()
     // The citation names the cited message and jumps to it.
@@ -524,5 +528,35 @@ describe('ChannelWorkspace work entry', () => {
     // The list is contiguous up to the newest message.
     expect(await screen.findByText('message 120')).toBeInTheDocument()
     expect(screen.getByText('message 60')).toBeInTheDocument()
+  })
+
+  it('opens another Thread when the route says so, without remounting the conversation', async () => {
+    const s = server([server().message(1, 'a topic')])
+    s.threads.push({
+      id: 't1', project_id: 'p1', channel_id: 'c1', root_message_id: 'm1', title: 'a topic', research_id: null,
+      round_id: null, revision: 1, reply_count: 0, last_seq: 1, created_by: null, created_at: '', updated_at: '',
+    })
+    const v = view(s, { extra: { initialThreadId: null } })
+    await screen.findByText('a topic')
+    expect(screen.queryByRole('complementary', { name: 'kubecode.channel.thread' })).not.toBeInTheDocument()
+    const props = (initialThreadId: string | null) => (
+      <ChannelWorkspace
+        api={s.api}
+        connectionState="live"
+        conversations={sessions}
+        events={[]}
+        initialThreadId={initialThreadId}
+        onClose={vi.fn()}
+        onOpenResearch={vi.fn()}
+        onOpenSession={vi.fn()}
+        projectId="p1"
+        research={[question]}
+        t={t}
+      />
+    )
+    v.rerender(props('t1'))
+    expect(await screen.findByRole('complementary', { name: 'kubecode.channel.thread' })).toBeInTheDocument()
+    v.rerender(props(null))
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'kubecode.channel.thread' })).not.toBeInTheDocument())
   })
 })

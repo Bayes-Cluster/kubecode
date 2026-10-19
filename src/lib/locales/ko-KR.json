@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "워크스페이스가 생성했고 인용할 수 있는 산출물을 읽기 전용으로 보여 줍니다. 행을 선택하면 미리 볼 수 있습니다.",
   "kubecode.resources.open": "열기",
   "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "에이전트",
+  "kubecode.nav.needsProposal": "제안",
   "kubecode.channel.back": "세션으로 돌아가기",
   "kubecode.channel.messages": "메시지",
   "kubecode.channel.empty": "아직 메시지가 없습니다. 토론을 시작하세요.",

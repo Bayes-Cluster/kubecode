@@ -24,12 +24,13 @@ const task = (overrides: Partial<TaskCard>): TaskCard => ({
 
 function nav(overrides: Partial<WorkspaceNavProps> = {}) {
   const handlers = {
-    onOpen: vi.fn(), onOpenDm: vi.fn(), onOpenMember: vi.fn(), onOpenSession: vi.fn(), onOpenTask: vi.fn(),
+    onOpen: vi.fn(), onOpenDm: vi.fn(), onOpenDraft: vi.fn(), onOpenMember: vi.fn(), onOpenSession: vi.fn(), onOpenTask: vi.fn(),
   }
   render(
     <WorkspaceNav
       active="general"
       members={[member({}), member({ id: 'm2', name: 'Writer', handle: 'writer', state: 'setup_required' })]}
+      needsYouDrafts={[]}
       needsYouSessions={[]}
       needsYouTasks={[]}
       t={t}
@@ -82,5 +83,18 @@ describe('WorkspaceNav', () => {
     expect(screen.queryByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"Writer"}' }))
       .not.toBeInTheDocument()
     expect(screen.getByText('kubecode.members.state.setup_required')).toBeInTheDocument()
+  })
+
+  it('lists proposals that are not on the board as waiting for a decision', () => {
+    const handlers = nav({
+      needsYouDrafts: [{
+        id: 'd1', project_id: 'p1', title: 'Quantize first', question: '?', revision: 2,
+        proposed_by: 'agent', updated_at: '',
+      }],
+    })
+    expect(screen.getByText('kubecode.nav.needsYou').closest('summary')).toHaveTextContent('1')
+    fireEvent.click(screen.getByRole('button', { name: /Quantize first/ }))
+    expect(handlers.onOpenDraft).toHaveBeenCalledWith(expect.objectContaining({ id: 'd1' }))
+    expect(screen.getByText('kubecode.nav.needsProposal')).toBeInTheDocument()
   })
 })

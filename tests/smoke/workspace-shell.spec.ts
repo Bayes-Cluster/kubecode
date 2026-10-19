@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { openGeneral, workspaceNav } from './shell'
+import { expectUrl, openGeneral, workspaceNav } from './shell'
 
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => ({
@@ -76,7 +76,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   const detail = page.getByRole('complementary', { name: 'Task details' })
   await expect(detail).toBeVisible()
   await expect(detail.getByRole('heading', { name: 'Pruning heads' })).toBeVisible()
-  expect(page.url()).toContain(`/general/m/${message.id}?task=${question.id}`)
+  await expectUrl(page, `/general/m/${message.id}?task=${question.id}`)
   // The conversation stays beside it on a desktop screen.
   await expect(page.getByText('Later remark 2')).toBeVisible()
 
@@ -88,8 +88,8 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   // Closing the Task returns to the message it was opened from.
   await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
   await expect(page.getByRole('complementary', { name: 'Task details' })).toHaveCount(0)
-  expect(page.url()).toContain(`/general/m/${message.id}`)
-  expect(page.url()).not.toContain('task=')
+  await expectUrl(page, `/general/m/${message.id}`)
+  await expect(page).not.toHaveURL(/task=/)
   await expect(page.locator(`[data-message-id="${message.id}"]`)).toBeFocused()
 
   // Files and Git open on request.
@@ -101,7 +101,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   await workspaceNav(page).getByRole('button', { name: 'Resources' }).click()
   await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
   await expect(page.getByRole('option', { name: /Pruning heads/ })).toBeVisible()
-  expect(page.url()).toContain('/resources')
+  await expectUrl(page, '/resources')
 
   // Members: the roster, with the General Agent.
   await workspaceNav(page).getByRole('button', { name: 'Members' }).click()
@@ -117,7 +117,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   // The one board.
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await expect(page.getByRole('region', { name: 'Work', exact: true }).last()).toBeVisible()
-  expect(page.url()).toContain('/board')
+  await expectUrl(page, '/board')
 
   // On a phone, the conversation and the Task are separate screens.
   await page.setViewportSize({ width: 390, height: 800 })
@@ -134,4 +134,21 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   await phoneDetail.getByRole('button', { name: 'Close details' }).first().click()
   await expect(page.getByRole('log', { name: 'Messages' })).toBeVisible()
   await expectContained(page)
+
+  // Files and Git open on request and are dismissed again, as an overlay on a phone.
+  await page.getByRole('button', { name: 'Toggle context panel' }).click()
+  await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
+
+  // An agent's profile is a detail screen too, with a way back.
+  await page.getByRole('button', { name: 'Toggle sessions' }).click()
+  await workspaceNav(page).getByRole('button', { name: 'Members' }).click()
+  await expect(page.getByRole('heading', { name: 'Members', level: 2 })).toBeVisible()
+  await page.locator('.kubecode-members-view').getByRole('button', { name: 'General', exact: true }).click()
+  const profile = page.getByRole('complementary', { name: 'General' })
+  await expect(profile).toBeVisible()
+  await expectContained(page)
+  await profile.getByRole('button', { name: 'Close details' }).click()
+  await expect(page.getByRole('heading', { name: 'Members', level: 2 })).toBeVisible()
 })

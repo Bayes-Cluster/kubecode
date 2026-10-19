@@ -1758,6 +1758,8 @@
   "kubecode.resources.subtitle": "工作區已產生且可引用的內容，唯讀。選擇一列即可預覽。",
   "kubecode.resources.open": "開啟",
   "kubecode.nav.board": "看板",
+  "kubecode.nav.roster": "代理人",
+  "kubecode.nav.needsProposal": "提案",
   "kubecode.channel.back": "返回工作階段",
   "kubecode.channel.messages": "訊息",
   "kubecode.channel.empty": "尚無訊息。開始討論吧。",

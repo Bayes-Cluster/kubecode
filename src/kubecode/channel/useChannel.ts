@@ -166,11 +166,15 @@ export function useMessageFeed(
     ))
   }, [scope, taskId])
 
+  const scopeRef = useRef(scope)
+  useEffect(() => { scopeRef.current = scope }, [scope])
   const loadAround = useCallback((seq: number) => {
     if (!projectId || !channelId || !scope) return
     api.listChannelMessages(projectId, channelId, {
       threadId, taskId, beforeSeq: seq + AROUND, limit: PAGE,
     }).then((page) => {
+      // The reader may have changed the filter meanwhile.
+      if (scopeRef.current !== scope) return
       // The page ends just after the message; the catch-up that follows
       // reads everything newer, so the list is contiguous.
       setState({ scope, messages: page.messages, hasMore: page.has_more })
