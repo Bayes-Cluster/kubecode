@@ -115,6 +115,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     requestNotificationPermission,
   } = preferences
 
+  const projectIdRef = useRef(projectId)
+  useEffect(() => { projectIdRef.current = projectId }, [projectId])
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -849,6 +851,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         onOpenMemberDm={(member) => {
           if (!projectId) return
           void api.openMemberDm(projectId, member.id).then((opened) => {
+            // The researcher may have gone elsewhere while it opened.
+            if (projectIdRef.current !== projectId) return
             setResearchSelection(null)
             setChannelSelection(null)
             setWorkSelection(null)

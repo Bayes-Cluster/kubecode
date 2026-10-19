@@ -1,5 +1,5 @@
 import { Share2 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
@@ -59,6 +59,15 @@ export function DmPane({
   // One id per typed message, kept until it is delivered, so a retry after a
   // lost reply is the same message.
   const attempt = useRef<{ id: string; text: string } | null>(null)
+  const log = useRef<HTMLDivElement>(null)
+
+  // New turns, and the member's reply after a send, come into view.
+  const newest = turns.at(-1)
+  const newestAssistant = newest?.assistant
+  useEffect(() => {
+    const element = log.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [turns.length, newestAssistant])
 
   const send = async () => {
     const text = draft.trim()
@@ -106,7 +115,7 @@ export function DmPane({
           </Button>
         </header>
         {shared && <p className="kubecode-research-muted" role="status">{t('kubecode.dm.shared')}</p>}
-        <div aria-label={t('kubecode.channel.messages')} className="kubecode-channel-messages" role="log">
+        <div aria-label={t('kubecode.channel.messages')} className="kubecode-channel-messages" ref={log} role="log">
           {status === 'loading' && (
             <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
           )}

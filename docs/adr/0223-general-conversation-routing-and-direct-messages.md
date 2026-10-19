@@ -52,12 +52,17 @@ as an *agent hand-off*: the prompt fences the text as written by an agent and
 says it is a report, request, or suggestion — never the researcher's
 authorization — so a specialist's words cannot admit or widen a Task.
 
-Chains are bounded. Every message carries a hand-off depth: the researcher's
-message is 0; a member's hand-off is one deeper than the newest message routed
-to it within the hour (1 if none). The store refuses a depth above
-`MAX_HANDOFF_HOPS` (4) and the tool says to ask the researcher. A hand-off that
-cannot be delivered (the mention names a direct message, or no live member)
-leaves a system note in General rather than failing silently. A non-member
+Chains are bounded two ways. Every message carries a hand-off depth: the
+researcher's message is 0; a member's hand-off that answers a message routed to
+it (`reply_to`) is one deeper than that message, and otherwise one deeper than
+the newest message routed to it within the day (1 if none). The store refuses a
+depth above `MAX_HANDOFF_HOPS` (4) and the tool says to ask the researcher.
+Because depth is derived from routes the speaker can influence, a member is also
+held to 12 hand-offs per hour, so a loop is bounded however it is shaped. A message that
+cannot be delivered (a hand-off naming a direct message or no live member, or a
+researcher's remark when no project manager is available or the member it names
+needs setup) leaves a system note in General rather than failing silently, and
+a message addressed to an unavailable member is never handed to the manager. A non-member
 Session never speaks as a hand-off.
 
 ### 3. Tasks, citations, and filtering are views of one history
@@ -87,12 +92,18 @@ Audience isolation is enforced where records are read, not by convention:
   is therefore no agent-to-agent DM, and another member cannot retrieve DM
   content, including when the same agent serves both General and its DM: the
   two are different Sessions and only the public one can speak in General.
-- Members never learn a DM Session's id from the roster tools.
+- Members never learn a DM Session's id from the roster tools. The Task
+  commands (`task_propose`, `task_revise`, …), which post into General, and
+  `general_post` are refused for a DM Session, and `work_post` refuses to cite
+  one; an `ask` naming one is skipped by the orchestrator.
 
 ### 5. Sharing out of a DM is previewed, chosen, and confirmed
 
 The researcher picks up to six turns, may add a note and a Task, and the server
-composes the exact text. Confirming posts that text to General *as the
+composes the exact text. The member's words are quoted (`> `) so that, inside a
+researcher's message, they can never read as the researcher's instruction to the
+project manager (ADR 0221 ignores quoted lines); text too long for one message
+or a Task that does not exist is refused at the preview. Confirming posts that text to General *as the
 researcher's own message* (it then reaches the manager like any remark) and
 requires the digest of the previewed text: if the DM changed since the preview,
 the share is refused (`dm_share_stale`) and must be previewed again. The same

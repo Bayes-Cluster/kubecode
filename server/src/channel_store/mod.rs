@@ -122,6 +122,16 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(connection, "channel_messages", "routing", "TEXT")?;
+    // Messages written before Tasks were associated with them: the first
+    // research question a message references is its Task. Idempotent.
+    connection.execute(
+        "UPDATE channel_messages
+         SET task_id = (SELECT json_extract(value, '$.id')
+                        FROM json_each(channel_messages.references_json)
+                        WHERE json_extract(value, '$.kind') = 'research' LIMIT 1)
+         WHERE task_id IS NULL AND references_json != '[]'",
+        [],
+    )?;
     connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS channel_messages_pending
            ON channel_messages(created_at) WHERE routing = 'pending';
@@ -981,6 +991,19 @@ impl ChannelStore {
                 )),
             ))
         })
+    }
+
+    /// How many hand-offs (agent messages naming someone) this Session made in
+    /// the last hour: the bound on a chain however it is shaped.
+    pub fn recent_handoffs(&self, project_id: &str, session_id: &str) -> Result<u32, ChannelError> {
+        let count: i64 = self.connection().query_row(
+            "SELECT COUNT(*) FROM channel_messages
+             WHERE project_id = ?1 AND author_kind = 'agent' AND author_ref = ?2
+               AND mentions_json != '[]' AND created_at > datetime('now', '-1 hour')",
+            params![project_id, session_id],
+            |row| row.get(0),
+        )?;
+        Ok(count.max(0) as u32)
     }
 
     /// Messages the orchestrator has not read yet, oldest first.

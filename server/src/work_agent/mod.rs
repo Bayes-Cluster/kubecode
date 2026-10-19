@@ -6,6 +6,7 @@
 //! effect on the very next command. The MCP server (`work_mcp`) is a thin
 //! wrapper over this service so it can be exercised without a transport.
 
+use crate::project_context::ContextKind;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -946,6 +947,23 @@ impl WorkAgent {
         let (thread, asked) = self.thread_for(in_reply_to)?;
         if !asked && !self.may_speak_in(&thread)? {
             return Err(AgentWorkError::NotFound);
+        }
+        // A direct message is private: it is never cited in the shared record.
+        if let Some(members) = &self.members {
+            for reference in references {
+                let session = match reference.kind {
+                    ContextKind::Session => Some(reference.id.as_str()),
+                    ContextKind::SessionTurn => reference.id.split('/').next(),
+                    _ => None,
+                };
+                if let Some(session) = session
+                    && members
+                        .is_dm_session(&self.project_id, session)
+                        .map_err(|error| invalid(error.to_string()))?
+                {
+                    return Err(invalid("a direct message cannot be cited"));
+                }
+            }
         }
         // A repeated post of the same words by the same Session is one message.
         let digest = {

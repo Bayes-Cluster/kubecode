@@ -62,8 +62,10 @@ export function MessageItem({
         data-message-id={message.id}
         data-testid={`message-${message.seq}`}
       >
-        <summary>{t('kubecode.channel.activity')}</summary>
-        <p className="kubecode-channel-body">{message.body}</p>
+        <summary title={t('kubecode.channel.activity')}>
+          {message.body.length > 90 ? `${message.body.slice(0, 90)}…` : message.body}
+        </summary>
+        {message.body.length > 90 && <p className="kubecode-channel-body">{message.body}</p>}
       </details>
     )
   }
@@ -89,6 +91,7 @@ export function MessageItem({
       {message.reply_to && (
         <button
           className="kubecode-channel-citation"
+          disabled={!cited}
           type="button"
           onClick={() => onJump?.(message.reply_to as string)}
         >
@@ -113,14 +116,19 @@ export function MessageItem({
       )}
       {message.task_id && (
         <p className="kubecode-channel-task">
-          <button
-            className="kubecode-channel-reference"
-            disabled={!onFilterTask}
-            type="button"
-            onClick={() => onFilterTask?.(message.task_id as string)}
-          >
-            {t('kubecode.channel.taskChip', { title: task?.title ?? message.task_id.slice(0, 8) })}
-          </button>
+          {onFilterTask ? (
+            <button
+              className="kubecode-channel-reference"
+              type="button"
+              onClick={() => onFilterTask(message.task_id as string)}
+            >
+              {t('kubecode.channel.taskChip', { title: task?.title ?? message.task_id.slice(0, 8) })}
+            </button>
+          ) : (
+            <span className="kubecode-channel-reference">
+              {t('kubecode.channel.taskChip', { title: task?.title ?? message.task_id.slice(0, 8) })}
+            </span>
+          )}
         </p>
       )}
       {message.references.length > 0 && (

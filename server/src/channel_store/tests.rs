@@ -990,3 +990,45 @@ fn a_hand_off_chain_stops_at_the_bound() {
         Err(ChannelError::Invalid(_))
     ));
 }
+
+#[test]
+fn messages_written_before_tasks_were_associated_get_their_task_once() {
+    let r = rig();
+    let channel = r.channel();
+    let task = r.question("Pruning");
+    let (message, _) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "old",
+                references: &[ContextRef::new(ContextKind::Research, &task)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Make it look like a row from before the column existed, then reopen.
+    {
+        let connection = r.f.agents.database();
+        let connection = connection.lock().unwrap();
+        connection
+            .execute("UPDATE channel_messages SET task_id = NULL", [])
+            .unwrap();
+        ensure_schema(&connection).unwrap();
+        ensure_schema(&connection).unwrap();
+    }
+    let page = r
+        .channels
+        .messages(
+            r.project(),
+            &channel.id,
+            MessageQuery {
+                task: Some(&task),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert_eq!(page.messages[0].id, message.id);
+}

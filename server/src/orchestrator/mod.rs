@@ -33,7 +33,7 @@ use uuid::Uuid;
 use crate::agent_store::AgentStore;
 use crate::channel_store::{AuthorKind, ChannelStore, Claim, Intent, Message, NewMessage};
 use crate::database::Database;
-use crate::member_store::{Member, MemberStore};
+use crate::member_store::{Binding, Member, MemberStore};
 use crate::research_store::{ResearchError, ResearchStore, RoundPhase};
 use crate::work_store::{Actor, WorkItem, WorkStore};
 
@@ -369,7 +369,15 @@ impl Orchestrator {
     /// deeper than the newest message routed to it within the hour, or 1 when
     /// nothing was. A researcher's message is depth 0, so the first hand-off
     /// answering it is depth 1, and a chain stops at `MAX_HANDOFF_HOPS`.
-    pub fn next_hops(&self, project_id: &str, session_id: &str) -> Result<u8, OrchestratorError> {
+    pub fn next_hops(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        answering: Option<&str>,
+    ) -> Result<u8, OrchestratorError> {
+        // Answering a message that was routed to this Session is causal: one
+        // deeper than that message. Otherwise the newest message routed to it
+        // within the day sets the depth.
         let inbound: Option<i64> = self
             .connection()
             .query_row(
@@ -378,9 +386,10 @@ impl Orchestrator {
                  WHERE r.project_id = ?1 AND r.source_kind = 'message'
                    AND r.target_kind = 'session' AND r.target_ref = ?2
                    AND r.kind IN ('discussion', 'mention', 'agent_handoff')
-                   AND r.created_at > datetime('now', '-1 hour')
+                   AND (r.source_id = ?3
+                        OR (?3 IS NULL AND r.created_at > datetime('now', '-1 day')))
                  ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1",
-                params![project_id, session_id],
+                params![project_id, session_id, answering],
                 |row| row.get(0),
             )
             .optional()?;
@@ -472,7 +481,12 @@ impl Orchestrator {
                     self.channels
                         .mark_routed(&message.project_id, &message.id)?;
                 }
+                // Storage trouble is transient: the message stays unread and the
+                // next pass tries again, so it is never lost.
                 Err(OrchestratorError::Database(error)) => {
+                    eprintln!("WARN: could not route message {}: {error}", message.id);
+                }
+                Err(OrchestratorError::Member(error)) => {
                     eprintln!("WARN: could not route message {}: {error}", message.id);
                 }
                 Err(error) => {
@@ -511,19 +525,23 @@ impl Orchestrator {
                     targets.push(member)
                 }
                 Some(_) => {}
-                None if members.is_dm_session(project_id, &mention.session_id)? => {
-                    unreachable.push(
+                None => match members.by_conversation(project_id, &mention.session_id)? {
+                    Some(resolved) if resolved.binding == Binding::Dm => unreachable.push(
                         "a direct message is private to the researcher and one member".to_owned(),
-                    );
-                }
-                // A Session that is not a member keeps the older behavior: a
-                // mention records who was named and routes nothing.
-                None => {}
+                    ),
+                    Some(_) => unreachable
+                        .push("that member is not available (check Settings > Members)".to_owned()),
+                    // A Session that is not a member keeps the older behavior: a
+                    // mention records who was named and routes nothing.
+                    None => {}
+                },
             }
         }
         let kind = match message.author_kind {
             AuthorKind::Agent => RouteKind::AgentHandoff,
-            _ if targets.is_empty() => {
+            // Someone was named but cannot be reached: say so instead of
+            // handing the manager a message that was addressed to another.
+            _ if targets.is_empty() && unreachable.is_empty() => {
                 targets.extend(
                     members
                         .general(project_id)?
@@ -556,16 +574,27 @@ impl Orchestrator {
             })?;
             routed = true;
         }
-        if message.author_kind == AuthorKind::Agent && (!routed || !unreachable.is_empty()) {
-            let reason = unreachable
-                .first()
-                .map_or("no live member answers to that mention", String::as_str);
+        if !routed || !unreachable.is_empty() {
+            let (key, lead, fallback) = if message.author_kind == AuthorKind::Agent {
+                (
+                    "handoff-denied",
+                    "A hand-off was not delivered",
+                    "no live member answers to that mention",
+                )
+            } else {
+                (
+                    "route-denied",
+                    "Your message was not delivered to the member it names",
+                    "the project manager is not available yet (check Settings > Members)",
+                )
+            };
+            let reason = unreachable.first().map_or(fallback, String::as_str);
             self.note(
                 project_id,
                 &message.channel_id,
                 None,
-                &format!("handoff-denied:{}", message.id),
-                &format!("A hand-off was not delivered: {reason}."),
+                &format!("{key}:{}", message.id),
+                &format!("{lead}: {reason}."),
             )?;
         }
         Ok(routed)
@@ -622,6 +651,12 @@ impl Orchestrator {
         match message.intent {
             Intent::Ask => {
                 for mention in &message.mentions {
+                    // A direct message is private: it is never asked from General.
+                    if let Some(members) = &self.members
+                        && members.is_dm_session(&message.project_id, &mention.session_id)?
+                    {
+                        continue;
+                    }
                     self.create_route(NewRoute {
                         project_id: &message.project_id,
                         kind: RouteKind::Ask,

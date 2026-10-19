@@ -88,9 +88,14 @@ export function ChannelWorkspace({
 
   const send = useCallback(async (message: NewChannelMessage) => {
     if (!channel) return
-    const saved = await api.postChannelMessage(projectId, channel.id, message)
+    // Writing while looking at one Task is writing about it, so the message
+    // stays in view instead of vanishing from the filtered list.
+    const references = taskFilter && !message.references?.some((ref) => ref.kind === 'research' && ref.id === taskFilter)
+      ? [...(message.references ?? []), { kind: 'research' as const, id: taskFilter, revision: null }]
+      : message.references
+    const saved = await api.postChannelMessage(projectId, channel.id, { ...message, references })
     feed.append(saved)
-  }, [api, channel, feed, projectId])
+  }, [api, channel, feed, projectId, taskFilter])
 
   const openThread = (message: ChannelMessage) => {
     const existing = threadByRoot.get(message.id)
@@ -166,7 +171,8 @@ export function ChannelWorkspace({
             replyTo={replyTo && {
               id: replyTo.id,
               label: authorName(t, replyTo, sessions),
-              onClear: () => setReplyTo(null),
+              // Only the target this send was for: a newer choice stays.
+              onClear: () => setReplyTo((current) => (current?.id === replyTo.id ? null : current)),
             }}
             sessions={sessions}
             t={t}

@@ -30,6 +30,8 @@ const MAX_SHARED_TURNS: usize = 6;
 /// Longest text of one side of a turn that is shown or shared.
 const TURN_CHARS: usize = 3_000;
 const NOTE_CHARS: usize = 2_000;
+/// What General accepts in one message.
+const MAX_SHARE_CHARS: usize = 16_000;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -111,6 +113,11 @@ impl IntoResponse for DmError {
             Self::Channel(ChannelError::Invalid(message)) | Self::Invalid(message) => {
                 (StatusCode::BAD_REQUEST, "invalid_dm", message.to_owned())
             }
+            Self::Channel(ChannelError::KeyReuse) => (
+                StatusCode::CONFLICT,
+                "dm_key_reused",
+                "that client message id was used for different text".to_owned(),
+            ),
             Self::Stale => (
                 StatusCode::CONFLICT,
                 "dm_share_stale",
@@ -319,28 +326,51 @@ fn compose(
     dm: &str,
     request: &ShareRequest,
 ) -> Result<SharePreview, DmError> {
-    if request.run_ids.is_empty() {
+    let mut run_ids: Vec<&String> = Vec::new();
+    for run_id in &request.run_ids {
+        if !run_ids.contains(&run_id) {
+            run_ids.push(run_id);
+        }
+    }
+    if let Some(task) = request.task_id.as_deref() {
+        // A Task that does not exist is found now, not after the researcher confirmed.
+        state
+            .research
+            .get(project_id, task)
+            .map_err(|_| DmError::Invalid("that Task was not found"))?;
+    }
+    if run_ids.is_empty() {
         return Err(DmError::Invalid("choose at least one turn to share"));
     }
-    if request.run_ids.len() > MAX_SHARED_TURNS {
+    if run_ids.len() > MAX_SHARED_TURNS {
         return Err(DmError::Invalid("share at most six turns at once"));
     }
     let mut text = format!(
         "Shared from my private conversation with @{} (the excerpt below is what I chose to share):\n",
         member.handle
     );
-    for run_id in &request.run_ids {
+    for run_id in run_ids {
         let turn = state
             .agent_runtime
             .store_ref()
             .read_turn_text(dm, run_id, TURN_CHARS * 4)
             .map_err(|_| DmError::Storage)?
             .ok_or(DmError::Invalid("that turn is not in this direct message"))?;
+        // The member's words are quoted, as everything written by an agent is
+        // when it sits in a researcher's message: a quoted line is never read
+        // as the researcher's instruction to the project manager.
+        let reply = clip(&turn.assistant, TURN_CHARS);
+        let quoted = reply
+            .trim()
+            .lines()
+            .map(|line| format!("> {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         text.push_str(&format!(
-            "\nMe: {}\n@{}: {}\n",
+            "\nMe: {}\n@{} said:\n{}\n",
             clip(&without_brief(&turn.user), TURN_CHARS).trim(),
             member.handle,
-            clip(&turn.assistant, TURN_CHARS).trim()
+            quoted
         ));
     }
     if let Some(note) = request
@@ -351,6 +381,11 @@ fn compose(
     {
         text.push_str(&format!("\n{}", clip(note, NOTE_CHARS)));
     }
+    if text.chars().count() > MAX_SHARE_CHARS {
+        return Err(DmError::Invalid(
+            "that is too long to share at once; choose fewer turns",
+        ));
+    }
     let digest = hex::encode(Sha256::digest(
         format!(
             "{}\u{0}{}\u{0}{text}",
@@ -360,8 +395,6 @@ fn compose(
         .as_bytes(),
     ))[..32]
         .to_owned();
-    // Scoped to the project already; the task is validated when posted.
-    let _ = project_id;
     Ok(SharePreview {
         text,
         digest,

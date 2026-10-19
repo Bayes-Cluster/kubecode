@@ -143,7 +143,7 @@ describe('DmPane', () => {
     await within(dialog).findByText('EXACT TEXT')
     fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.shareConfirm' }))
     await waitFor(() => expect(api.shareDm).toHaveBeenCalledWith('p1', 'm1', {
-      runIds: ['run-1'], note: 'for everyone!', taskId: 'r1', digest: 'd1',
+      runIds: ['run-1'], note: 'for everyone!', taskId: 'r1', digest: 'd1', clientMessageId: expect.any(String),
     }))
     await waitFor(() => expect(onShared).toHaveBeenCalled())
     expect(await screen.findByText('kubecode.dm.shared')).toBeInTheDocument()
@@ -166,5 +166,37 @@ describe('DmPane', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('kubecode.dm.shareStale')
     expect(within(dialog).queryByText('EXACT TEXT')).not.toBeInTheDocument()
     expect(api.previewDmShare).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets the selection when closed, and a second share is a new message', async () => {
+    const share = vi.fn().mockResolvedValue({})
+    const { api } = setup({ shareDm: share })
+    await screen.findByText('is 0.91 enough?')
+    const open = async () => {
+      fireEvent.click(screen.getByRole('button', { name: /kubecode.dm.share$/ }))
+      return screen.findByRole('dialog')
+    }
+    let dialog = await open()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
+    await within(dialog).findByText('EXACT TEXT')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.members.cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    dialog = await open()
+    // Reopened: nothing chosen, no stale preview that could be confirmed.
+    expect(within(dialog).queryByText('EXACT TEXT')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' })).toBeDisabled()
+    // Share the same turn twice on purpose: two confirmations, two ids.
+    for (let round = 0; round < 2; round += 1) {
+      fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
+      await within(dialog).findByText('EXACT TEXT')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.shareConfirm' }))
+      await waitFor(() => expect(share).toHaveBeenCalledTimes(round + 1))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      if (round === 0) dialog = await open()
+    }
+    expect(share.mock.calls[0][2].clientMessageId).not.toBe(share.mock.calls[1][2].clientMessageId)
+    expect(api.previewDmShare).toHaveBeenCalledTimes(3)
   })
 })

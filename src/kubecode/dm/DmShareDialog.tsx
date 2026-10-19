@@ -14,6 +14,7 @@ import type { Translator } from '@/lib/i18n'
 import type { DmSharePreview, DmTurn, KubecodeApi, Member, ResearchSummary } from '../api'
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
+import { newClientMessageId } from '../session/sessionModel'
 
 /** Turns one share may carry (the server enforces the same bound). */
 const MAX_TURNS = 6
@@ -50,7 +51,9 @@ export function DmShareDialog({
   const [chosen, setChosen] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [taskId, setTaskId] = useState('')
-  const [preview, setPreview] = useState<DmSharePreview | null>(null)
+  // The preview remembers what it was made from; one id belongs to one
+  // confirmation, so a deliberate second share is a second message.
+  const [made, setMade] = useState<{ preview: DmSharePreview; key: string; clientMessageId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,11 +62,26 @@ export function DmShareDialog({
     note: note.trim() || undefined,
     taskId: taskId || null,
   })
+  // A preview counts only for exactly what is selected now (the turns on
+  // offer can change underneath a selection).
+  const current = JSON.stringify(request())
+  const preview = made && made.key === current ? made.preview : null
+
+  const close = (next: boolean) => {
+    if (!next) {
+      setChosen([])
+      setNote('')
+      setTaskId('')
+      setMade(null)
+      setError(null)
+    }
+    onOpenChange(next)
+  }
 
   const changed = (action: () => void) => {
     // Any change to what would be shared makes the previous preview stale.
     action()
-    setPreview(null)
+    setMade(null)
     setError(null)
   }
 
@@ -80,7 +98,7 @@ export function DmShareDialog({
       await action()
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'dm_share_stale') {
-        setPreview(null)
+        setMade(null)
         setError(t('kubecode.dm.shareStale'))
       } else {
         setError(errorMessage(cause, t('kubecode.error')))
@@ -91,7 +109,7 @@ export function DmShareDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('kubecode.dm.shareTitle', { name: member.name })}</DialogTitle>
@@ -142,12 +160,13 @@ export function DmShareDialog({
               disabled={busy}
               size="sm"
               onClick={() => void run(async () => {
-                await api.shareDm(projectId, member.id, { ...request(), digest: preview.digest })
+                await api.shareDm(projectId, member.id, {
+                  ...request(),
+                  digest: preview.digest,
+                  clientMessageId: made?.clientMessageId,
+                })
                 onShared()
-                onOpenChange(false)
-                setChosen([])
-                setNote('')
-                setPreview(null)
+                close(false)
               })}
             >
               {t('kubecode.dm.shareConfirm')}
@@ -157,13 +176,18 @@ export function DmShareDialog({
               disabled={busy || chosen.length === 0}
               size="sm"
               onClick={() => void run(async () => {
-                setPreview(await api.previewDmShare(projectId, member.id, request()))
+                const key = JSON.stringify(request())
+                setMade({
+                  preview: await api.previewDmShare(projectId, member.id, request()),
+                  key,
+                  clientMessageId: newClientMessageId(),
+                })
               })}
             >
               {t('kubecode.dm.sharePreviewAction')}
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button size="sm" variant="ghost" onClick={() => close(false)}>
             {t('kubecode.members.cancel')}
           </Button>
         </div>

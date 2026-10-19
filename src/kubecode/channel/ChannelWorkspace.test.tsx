@@ -466,4 +466,16 @@ describe('ChannelWorkspace work entry', () => {
     expect(s.posted[0].replyTo).toBe('m1')
     await waitFor(() => expect(screen.queryByText(/kubecode\.channel\.replyingTo/)).not.toBeInTheDocument())
   })
+
+  it('keeps what is written while looking at a Task about that Task, so it stays in view', async () => {
+    const s = server([{ ...server().message(1, 'about pruning'), task_id: 'r1' }])
+    view(s)
+    await screen.findByText('about pruning')
+    fireEvent.change(screen.getByLabelText('kubecode.channel.filterTask'), { target: { value: 'r1' } })
+    const box = screen.getByLabelText('kubecode.channel.composerPlaceholder')
+    fireEvent.change(box, { target: { value: 'one more thought' } })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
+    expect(s.posted[0] ?? (await waitFor(() => { expect(s.posted.length).toBeGreaterThan(0); return s.posted[0] }))).toBeTruthy()
+    expect(s.posted[0].references).toEqual([{ kind: 'research', id: 'r1', revision: null }])
+  })
 })

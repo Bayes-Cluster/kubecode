@@ -1022,3 +1022,79 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
     let private = rig.server(&dm);
     assert!(refused(private.general_post(Parameters(say("leak?", &[]))).await).contains("private"));
 }
+
+#[tokio::test]
+async fn a_private_session_cannot_publish_through_task_commands_and_hand_offs_are_rate_bounded() {
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let project = rig.f.project_id.clone();
+    let general = rig
+        .state
+        .members
+        .ensure_general(&project, available, AgentId::OpenCode)
+        .unwrap();
+    let analyst = rig
+        .state
+        .members
+        .create_specialist(
+            &project,
+            crate::member_store::NewMember {
+                name: "Analyst".into(),
+                spec: Some(crate::member_store::MemberSpec {
+                    agent_id: AgentId::OpenCode,
+                    config: Default::default(),
+                    instructions: String::new(),
+                }),
+                ..Default::default()
+            },
+            available,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let dm = rig
+        .state
+        .members
+        .ensure_dm_session(&project, &general.id, available)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let private = rig.server(&dm);
+    let refusal = refused(
+        private
+            .task_propose(Parameters(ProposeInput {
+                title: "Leak".into(),
+                question: "private content?".into(),
+                motivation: None,
+                hypotheses: vec![],
+                constraints: vec![],
+                success_criteria: vec![],
+                client_request_id: Some("leak".into()),
+            }))
+            .await,
+    );
+    assert!(refusal.contains("private"), "{refusal}");
+    let channel = rig.state.channels.default_channel(&project).unwrap();
+    assert!(
+        rig.state
+            .channels
+            .messages(&project, &channel.id, Default::default())
+            .unwrap()
+            .messages
+            .is_empty(),
+        "nothing from the private Session reached General"
+    );
+
+    // A member's hand-offs are bounded per hour however they are shaped.
+    let manager = rig.server(general.public_conversation_id.as_deref().unwrap());
+    let say = |n: usize| GeneralPostInput {
+        body: format!("please look at item {n}"),
+        mentions: vec![analyst.handle.clone()],
+        task: None,
+        reply_to: None,
+    };
+    for n in 0..12 {
+        payload(manager.general_post(Parameters(say(n))).await);
+    }
+    let limited = refused(manager.general_post(Parameters(say(12))).await);
+    assert!(limited.contains("too many hand-offs"), "{limited}");
+}

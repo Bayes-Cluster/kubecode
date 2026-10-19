@@ -1476,20 +1476,26 @@ mod conversation_routing {
         let analyst = public(&crew.analyst);
         // Nothing reached the analyst yet: its first hand-off is depth 1.
         assert_eq!(
-            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            crew.orchestrator
+                .next_hops(r.project(), &analyst, None)
+                .unwrap(),
             1
         );
         post(&r, None, "@analyst start", &[&crew.analyst], 0);
         crew.orchestrator.tick(&sink).unwrap();
         // A researcher's message is depth 0, so answering it is depth 1.
         assert_eq!(
-            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            crew.orchestrator
+                .next_hops(r.project(), &analyst, None)
+                .unwrap(),
             1
         );
         post(&r, Some(&crew.writer), "@analyst ping", &[&crew.analyst], 3);
         crew.orchestrator.tick(&sink).unwrap();
         assert_eq!(
-            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            crew.orchestrator
+                .next_hops(r.project(), &analyst, None)
+                .unwrap(),
             4
         );
         let too_deep = r.channels.post(
@@ -1558,5 +1564,96 @@ mod conversation_routing {
             "a non-member's message reaches no one: {to:?}"
         );
         assert!(r.channels.pending_routing(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_message_nobody_can_receive_is_answered_not_lost() {
+        let r = rig();
+        // A Workspace with no General Agent yet: nobody can receive the remark.
+        let members = Arc::new(
+            MemberStore::from_database(r.f.agents.database(), Arc::clone(&r.f.agents)).unwrap(),
+        );
+        let orchestrator = Orchestrator::new(
+            r.f.agents.database(),
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.work),
+            Arc::clone(&r.f.research),
+        )
+        .unwrap()
+        .with_members(members);
+        let sink = Recording::default();
+        post(&r, None, "is anyone there?", &[], 0);
+        orchestrator.tick(&sink).unwrap();
+        assert!(sink.deliveries().is_empty());
+        let notes = thread_texts_all(&r);
+        assert!(
+            notes.iter().any(|n| n.contains("not delivered")),
+            "the researcher is told: {notes:?}"
+        );
+    }
+
+    #[test]
+    fn naming_a_member_that_is_not_available_does_not_fall_back_to_the_manager() {
+        let r = rig();
+        let crew = crew(&r);
+        crew.members
+            .record_setup_error(&crew.analyst.id, "provider unavailable")
+            .unwrap();
+        let sink = Recording::default();
+        post(&r, None, "@analyst are you there?", &[&crew.analyst], 0);
+        crew.orchestrator.tick(&sink).unwrap();
+        assert!(
+            sink.deliveries().is_empty(),
+            "a message addressed to the analyst is not handed to the manager"
+        );
+        assert!(
+            thread_texts_all(&r)
+                .iter()
+                .any(|n| n.contains("not available")),
+        );
+    }
+
+    #[test]
+    fn answering_a_message_is_one_hop_deeper_than_that_message_whatever_else_arrived() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let analyst = public(&crew.analyst);
+        let deep = post(&r, Some(&crew.writer), "@analyst deep", &[&crew.analyst], 3);
+        crew.orchestrator.tick(&sink).unwrap();
+        // The researcher speaks to the analyst afterwards: unrelated to the chain.
+        post(&r, None, "@analyst by the way", &[&crew.analyst], 0);
+        crew.orchestrator.tick(&sink).unwrap();
+        assert_eq!(
+            crew.orchestrator
+                .next_hops(r.project(), &analyst, Some(&deep.id))
+                .unwrap(),
+            4,
+            "answering the deep message continues its chain"
+        );
+        assert_eq!(
+            crew.orchestrator
+                .next_hops(r.project(), &analyst, Some("not-routed-to-me"))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_direct_message_is_never_asked_from_general() {
+        let r = rig();
+        let crew = crew(&r);
+        let dm = crew
+            .members
+            .ensure_dm_session(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap()
+            .dm_conversation_id
+            .unwrap();
+        let thread = r.linked_thread(false);
+        r.ask(&thread, Intent::Ask, "ask-dm", Some(&dm));
+        let sink = Recording::default();
+        crew.orchestrator.tick(&sink).unwrap();
+        assert!(sink.deliveries().iter().all(|d| d.0 != dm));
     }
 }

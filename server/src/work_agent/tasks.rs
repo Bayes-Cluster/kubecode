@@ -46,6 +46,17 @@ pub struct TaskList {
 
 impl WorkAgent {
     fn tasks(&self) -> Result<&std::sync::Arc<crate::task_store::TaskStore>, AgentWorkError> {
+        // Task commands post into General. A direct-message Session is private
+        // and cannot publish there, whichever member it belongs to (ADR 0223).
+        if let Some(members) = &self.members
+            && members
+                .is_dm_session(&self.project_id, &self.caller)
+                .map_err(|error| invalid(error.to_string()))?
+        {
+            return Err(invalid(
+                "a direct message is private; Task commands belong to the public Session",
+            ));
+        }
         self.tasks
             .as_ref()
             .ok_or_else(|| invalid("Tasks are not available in this Workspace"))
@@ -267,6 +278,8 @@ impl From<TaskError> for AgentWorkError {
 
 /// Longest list of members one General message may name.
 const MAX_NAMED: usize = 4;
+/// Hand-offs one member may make in an hour, however the chain is shaped.
+const MAX_HANDOFFS_PER_HOUR: u32 = 12;
 
 impl WorkAgent {
     /// Posts into the General conversation as this member, visibly and
@@ -315,11 +328,22 @@ impl WorkAgent {
                 mentions.push(Mention { session_id });
             }
         }
+        let reply_to = reply_to.filter(|id| !id.trim().is_empty());
+        let task = task.filter(|id| !id.trim().is_empty());
         let hops = if mentions.is_empty() {
             0
         } else {
+            if self
+                .channels
+                .recent_handoffs(&self.project_id, &self.caller)?
+                >= MAX_HANDOFFS_PER_HOUR
+            {
+                return Err(invalid(
+                    "too many hand-offs in the last hour; ask the researcher to continue",
+                ));
+            }
             self.orchestrator
-                .next_hops(&self.project_id, &self.caller)?
+                .next_hops(&self.project_id, &self.caller, reply_to)?
         };
         let references: Vec<ContextRef> = task
             .map(|id| vec![ContextRef::new(ContextKind::Research, id)])
