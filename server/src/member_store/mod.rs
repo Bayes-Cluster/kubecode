@@ -343,6 +343,18 @@ impl MemberStore {
             .is_some_and(|resolved| resolved.member.role == MemberRole::General))
     }
 
+    /// Every Session any member has run on. The Sessions list leaves these
+    /// out: they are execution details of the roster, not chats the researcher
+    /// started (the conversation and DM surfaces show them in their own place).
+    pub fn member_session_ids(&self) -> Result<std::collections::HashSet<String>, MemberError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare("SELECT conversation_id FROM member_sessions")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<_, _>>()
+            .map_err(Into::into)
+    }
+
     /// A specialist member's current public Session: what work may be assigned to.
     pub fn assignable_session(
         &self,

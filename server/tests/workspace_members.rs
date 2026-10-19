@@ -677,3 +677,44 @@ async fn coordination_goes_to_the_general_agents_current_session_only() {
         replaced["public_conversation_id"].as_str()
     );
 }
+
+#[tokio::test]
+async fn the_sessions_list_leaves_out_member_sessions_but_keeps_the_researchers_chats() {
+    let env = env(true);
+    let (_, roster) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.project),
+        Value::Null,
+    )
+    .await;
+    let member_session = roster["members"][0]["public_conversation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let chat = env
+        .agents
+        .create_conversation(&env.project, AgentId::OpenCode, Some("My chat"))
+        .unwrap()
+        .id;
+    let (status, sessions) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/sessions", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{sessions}");
+    let ids: Vec<&str> = sessions
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [chat.as_str()],
+        "the General Agent's Session is not a chat to browse"
+    );
+    assert!(!ids.contains(&member_session.as_str()));
+}

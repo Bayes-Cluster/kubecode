@@ -148,6 +148,12 @@ fn conversation_summaries(
     state: &AppState,
     conversations: Vec<Conversation>,
 ) -> Result<Vec<ConversationSummary>, ApiError> {
+    // Workspace members' Sessions are roster details, not chats to browse.
+    let member_sessions = state.members.member_session_ids().unwrap_or_default();
+    let conversations: Vec<Conversation> = conversations
+        .into_iter()
+        .filter(|conversation| !member_sessions.contains(&conversation.id))
+        .collect();
     let project_ids = conversations
         .iter()
         .map(|conversation| conversation.project_id.clone())
