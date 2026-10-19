@@ -23,6 +23,7 @@ import {
   type StartKeys,
   workErrorMessage,
 } from './workModel'
+import { EvidenceViewer } from './EvidenceViewer'
 import { useWorkDetail } from './useWorkBoard'
 
 export type InspectorForm = 'assign' | 'accept' | 'reject' | 'close' | null
@@ -95,10 +96,12 @@ export function WorkInspector({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [opened, setOpened] = useState<string | null>(null)
   useEffect(() => {
     setForm(formRequest?.form ?? null)
     setReason('')
     setError(null)
+    setOpened(null)
   }, [workId, formRequest])
 
   if (!detail) {
@@ -294,12 +297,33 @@ export function WorkInspector({
         <section>
           <h4>{t('kubecode.work.field.experiments')}</h4>
           <ul>
-            {detail.experiments.map((experiment) => (
-              <li key={experiment.id}>
-                {experiment.label || experiment.id.slice(0, 8)} · {experiment.state}
-                {experiment.analysis === 'pending' ? ` · ${t('kubecode.work.analysisPending')}` : ''}
-              </li>
-            ))}
+            {detail.experiments.map((experiment) => {
+              const name = experiment.label || experiment.id.slice(0, 8)
+              const key = `experiment:${experiment.id}`
+              return (
+                <li key={experiment.id}>
+                  {name} · {experiment.state}
+                  {experiment.exit_code != null ? ` · ${t('kubecode.work.exitCode', { code: experiment.exit_code })}` : ''}
+                  {experiment.analysis === 'pending' ? ` · ${t('kubecode.work.analysisPending')}` : ''}
+                  {' '}
+                  <InspectButton
+                    label={name}
+                    open={opened === key}
+                    t={t}
+                    onToggle={() => setOpened(opened === key ? null : key)}
+                  />
+                  {opened === key && (
+                    <EvidenceViewer
+                      api={api}
+                      key={key}
+                      projectId={projectId}
+                      t={t}
+                      target={{ kind: 'experiment', id: experiment.id }}
+                    />
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}
@@ -378,6 +402,22 @@ export function WorkInspector({
             {detail.results.map((result) => (
               <li key={result.id} data-stale={staleIds.has(result.id) || undefined}>
                 {result.role} · {result.kind}: {result.ref_id}
+                {' '}
+                <InspectButton
+                  label={result.ref_id}
+                  open={opened === `result:${result.id}`}
+                  t={t}
+                  onToggle={() => setOpened(opened === `result:${result.id}` ? null : `result:${result.id}`)}
+                />
+                {opened === `result:${result.id}` && (
+                  <EvidenceViewer
+                    api={api}
+                    key={`${result.id}:${result.revision ?? ''}`}
+                    projectId={projectId}
+                    t={t}
+                    target={{ kind: result.kind, id: result.ref_id, revision: result.revision }}
+                  />
+                )}
                 {staleIds.has(result.id) && (
                   <span className="kubecode-research-badge" data-tone="warn">
                     {t(`kubecode.work.stale.${detail.stale_evidence.find((entry) => entry.result_id === result.id)?.status ?? 'changed'}` as 'kubecode.work.stale.changed')}
@@ -628,6 +668,22 @@ export function WorkInspector({
         </section>
       )}
     </aside>
+  )
+}
+
+function InspectButton({
+  label, onToggle, open, t,
+}: { label: string; onToggle: () => void; open: boolean; t: Translator }) {
+  return (
+    <Button
+      aria-expanded={open}
+      aria-label={`${open ? t('kubecode.work.evidence.hide') : t('kubecode.work.evidence.view')}: ${label}`}
+      size="xs"
+      variant="ghost"
+      onClick={onToggle}
+    >
+      {open ? t('kubecode.work.evidence.hide') : t('kubecode.work.evidence.view')}
+    </Button>
   )
 }
 

@@ -587,3 +587,86 @@ describe('WorkBoard analysis and evidence', () => {
     await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
   })
 })
+
+describe('WorkBoard evidence review', () => {
+  const card = workCard({ id: 'w1', stage: 'review' }, { executor, assignment })
+  const document = (title: string, text: string, extra: object = {}) => ({
+    ref: { kind: 'experiment', id: 'e1' }, detail: 'content', title, availability: 'available',
+    provenance: { author: null, updated_at: null, research_id: null, parent: null, state: null },
+    sections: [{ heading: 'Output', text, truncated: false }], related: [], next_cursor: null, notes: [],
+    ...extra,
+  })
+
+  function open(detail: ReturnType<typeof detailOf>, api: object) {
+    view(workApi({
+      workBoard: vi.fn().mockResolvedValue(boardOf([detail])),
+      workDetail: vi.fn().mockResolvedValue(detail),
+      ...api,
+    }))
+  }
+
+  it('opens an experiment from the card with its output and follows a related artifact', async () => {
+    const readProjectContext = vi.fn()
+      .mockResolvedValueOnce(document('baseline run', 'epoch 3 loss nan', {
+        related: [{
+          ref: { kind: 'artifact', id: 'e1/out.csv' }, title: 'out.csv', summary: '',
+          provenance: { author: null, updated_at: null, research_id: null, parent: null, state: null },
+          availability: 'available',
+        }],
+      }))
+      .mockResolvedValueOnce(document('out.csv', 'ratio,acc\n0.5,0.91'))
+    open(detailOf(card, {
+      experiments: [{ id: 'e1', label: 'baseline', state: 'exited', analysis: 'none', exit_code: 3, created_at: '' }],
+    }), { readProjectContext })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    expect(inspector).toHaveTextContent('kubecode.work.exitCode:{"code":3}')
+    fireEvent.click(await within(inspector).findByRole('button', { name: 'kubecode.work.evidence.view: baseline' }))
+    expect(await within(inspector).findByText('epoch 3 loss nan')).toBeInTheDocument()
+    expect(readProjectContext).toHaveBeenCalledWith('p1', { kind: 'experiment', id: 'e1' }, 'content')
+    fireEvent.click(within(inspector).getByRole('button', { name: 'out.csv' }))
+    expect(await within(inspector).findByText(/0\.5,0\.91/)).toBeInTheDocument()
+    expect(readProjectContext).toHaveBeenLastCalledWith('p1', { kind: 'artifact', id: 'e1/out.csv' }, 'content')
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.evidence.hide: baseline' }))
+    expect(within(inspector).queryByTestId('evidence-viewer')).not.toBeInTheDocument()
+  })
+
+  it('shows a cited file as it is now and says it changed since it was cited', async () => {
+    const readFile = vi.fn().mockResolvedValue({ path: 'notes.md', content: 'pruning hurts', revision: 'new-rev' })
+    open(detailOf(card, {
+      results: [{
+        id: 'x', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'file', ref_id: 'notes.md',
+        revision: 'old-rev', created_at: '',
+      }],
+    }), { readFile })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    fireEvent.click(await within(inspector).findByRole('button', { name: 'kubecode.work.evidence.view: notes.md' }))
+    expect(await within(inspector).findByText('pruning hurts')).toBeInTheDocument()
+    expect(readFile).toHaveBeenCalledWith('p1', 'notes.md')
+    expect(inspector).toHaveTextContent('kubecode.work.evidence.changed')
+    expect(inspector).toHaveTextContent('kubecode.work.evidence.pinned:{"revision":"old-rev"}')
+  })
+
+  it('says plainly when a cited record is gone or cannot be read, and pages long output', async () => {
+    const readProjectContext = vi.fn()
+      .mockRejectedValueOnce(new ApiError('not_found', 'gone', 404))
+      .mockResolvedValueOnce(document('long run', 'first page', { next_cursor: 'c2' }))
+      .mockResolvedValueOnce(document('long run', 'second page'))
+    open(detailOf(card, {
+      results: [
+        { id: 'a', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'finding', ref_id: 'f-gone', revision: null, created_at: '' },
+        { id: 'b', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'experiment', ref_id: 'e-long', revision: null, created_at: '' },
+      ],
+    }), { readProjectContext })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    fireEvent.click(await within(inspector).findByRole('button', { name: 'kubecode.work.evidence.view: f-gone' }))
+    expect(await within(inspector).findByRole('alert')).toHaveTextContent('kubecode.work.evidence.removed')
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.evidence.view: e-long' }))
+    expect(await within(inspector).findByText('first page')).toBeInTheDocument()
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.evidence.more' }))
+    expect(await within(inspector).findByText('second page')).toBeInTheDocument()
+    expect(within(inspector).getByText('first page')).toBeInTheDocument()
+  })
+})

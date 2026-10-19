@@ -327,6 +327,38 @@ impl WorkStore {
         })
     }
 
+    /// A dispatch could never be delivered: the attempt it carried, which never
+    /// began, is closed as failed so the task can be started again. A started
+    /// attempt, or one already closed, is left alone. Server-owned.
+    pub(crate) fn undelivered_attempt_failed(
+        &self,
+        project_id: &str,
+        attempt_id: &str,
+        reason: &str,
+    ) -> Result<Option<crate::work_store::Attempt>, WorkError> {
+        self.write(|tx| {
+            let attempt = load_attempt(tx, project_id, attempt_id)?;
+            if attempt.status != crate::work_store::AttemptStatus::Queued {
+                return Ok((None, None));
+            }
+            tx.execute(
+                "UPDATE work_attempts SET status = 'failed', failure_kind = 'dispatch_failed',
+                   error = ?2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'queued'",
+                params![attempt_id, flatten(reason, 200)],
+            )?;
+            tx.execute(
+                "UPDATE work_items SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [&attempt.task_id],
+            )?;
+            let closed = load_attempt(tx, project_id, attempt_id)?;
+            Ok((
+                Some(closed),
+                Some((project_id.to_owned(), attempt.task_id, Change::Attempt)),
+            ))
+        })
+    }
+
     /// Marks a task as needing a person's attention for a reason the server
     /// found (a limit reached, evidence that changed). It never overrides a
     /// condition someone else set. Returns whether it flagged the task.

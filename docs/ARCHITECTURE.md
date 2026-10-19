@@ -251,7 +251,16 @@ compares each cited reference's pinned revision with its current one; acceptance
 evidence with `409 work_evidence_stale`. `work_store/decisions.rs` holds
 `decision_requests` (answered at `POST .../work/{id}/decisions/{request}/answer`)
 and the server-owned analysis/attention transitions. Reviews are published to
-the Thread and the question's log by `Orchestrator::publish_review`.
+the Thread and the question's log by `Orchestrator::publish_review`. A dispatch
+route is held (not failed, no attempt used) while its task or round is paused
+or blocked, and a dispatch that fails for good closes its never-started attempt
+and tells the coordinator, so the task can be started again. A coordinator may
+answer the request that was routed to a round it holds now; the answer's Thread
+is linked to that round. Files over the hashing limit are fingerprinted by size
+and modification time. The inspector opens an experiment (output tail,
+artifacts), an artifact, a cited file, or any ProjectContext record in place
+(`src/kubecode/work/EvidenceViewer.tsx`), marking a record that changed or
+vanished since it was cited.
 
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
