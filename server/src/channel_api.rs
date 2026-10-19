@@ -26,6 +26,10 @@ pub fn routes() -> Router<AppState> {
             get(list_messages).post(post_message),
         )
         .route(
+            "/projects/{project_id}/channels/{channel_id}/messages/{message_id}",
+            get(get_message),
+        )
+        .route(
             "/projects/{project_id}/channels/{channel_id}/threads",
             get(list_threads).post(start_thread),
         )
@@ -176,6 +180,19 @@ async fn list_messages(
             task: query.task_id.as_deref(),
         },
     )?))
+}
+
+/// One message, so a link to it can land on it however old it is.
+async fn get_message(
+    State(state): State<AppState>,
+    Path((project_id, channel_id, message_id)): Path<(String, String, String)>,
+) -> Result<Json<Message>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    let message = state.channels.message(&project_id, &message_id)?;
+    if message.channel_id != channel_id {
+        return Err(ChannelError::MessageNotFound.into());
+    }
+    Ok(Json(message))
 }
 
 #[derive(Debug, Deserialize)]

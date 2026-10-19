@@ -21,6 +21,12 @@ type MessageListProps = {
   onOpenThread?: (message: ChannelMessage) => void
   onReply?: (message: ChannelMessage) => void
   onFilterTask?: (taskId: string) => void
+  /** Opens the Task a message is about. */
+  onOpenTask?: (taskId: string, messageId: string) => void
+  /** A message to scroll to and focus once it is loaded (a link, or coming back from a Task). */
+  focusId?: string | null
+  /** Changes when the reader should be brought back to `focusId` again. */
+  focusKey?: string
   research?: ResearchSummary[]
   sessions: Conversation[]
   t: Translator
@@ -35,6 +41,9 @@ export function MessageList({
   onOpenReference,
   onOpenThread,
   onFilterTask,
+  onOpenTask,
+  focusId = null,
+  focusKey = focusId ?? '',
   onReply,
   research,
   sessions,
@@ -60,6 +69,15 @@ export function MessageList({
     const element = scroller.current
     if (element && stuck.current) element.scrollTop = element.scrollHeight
   }, [newest])
+
+  // Land on a linked message once, when it is in the loaded page.
+  const landed = useRef<string | null>(null)
+  const present = focusId !== null && feed.messages.some((message) => message.id === focusId)
+  useEffect(() => {
+    if (!focusId || !present || landed.current === focusKey) return
+    landed.current = focusKey
+    jump(focusId)
+  }, [focusId, focusKey, present])
 
   return (
     <div
@@ -108,6 +126,7 @@ export function MessageList({
           thread={threadByRoot?.get(message.id)}
           onFilterTask={onFilterTask}
           onJump={jump}
+          onOpenTask={onOpenTask}
           onOpenReference={onOpenReference}
           onOpenThread={onOpenThread}
           onReply={onReply}

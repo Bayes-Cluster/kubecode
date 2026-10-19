@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 
 import { expect, test, type Page } from '@playwright/test'
+import { openHistory } from './shell'
 
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => {
@@ -43,6 +44,7 @@ test('@smoke research question carries context from discussion through a round t
     await writeFile(`${projectPath}/results.csv`, 'accuracy\n0.91\n')
 
     // Create: saving only records the question; nothing runs.
+    await openHistory(page)
     await page.getByRole('button', { name: 'New research question' }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('Title', { exact: true }).fill(title)
@@ -61,6 +63,7 @@ test('@smoke research question carries context from discussion through a round t
     // question is one click away.
     await page.getByRole('button', { name: 'Start discussion Session' }).click()
     await expect(page.getByRole('heading', { name: title })).toHaveCount(0)
+    await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await page.getByRole('tab', { name: 'Discussion' }).click()
     await expect(page.getByRole('button', { name: 'Open Session' })).toBeVisible()
@@ -96,6 +99,7 @@ test('@smoke research question carries context from discussion through a round t
     await expect(page.getByText('Brief revision 2').first()).toBeVisible()
 
     await page.reload()
+    await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await expect(page.getByRole('heading', { name: title })).toBeVisible()
     await expect(page.getByText('Brief revision 2').first()).toBeVisible()

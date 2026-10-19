@@ -37,6 +37,13 @@ type ComposerProjectWorkPickerProps = {
   api: KubecodeApi
   conversationId: string
   onSelect: (item: ProjectContextItem) => void
+  /**
+   * Browsing instead of attaching (the Resources view): choosing a row previews
+   * it, and the preview offers this action to go to the item itself.
+   */
+  onOpen?: (item: ProjectContextItem) => void
+  /** Whether an item has somewhere to go; the Open action is offered only then. */
+  canOpen?: (item: ProjectContextItem) => boolean
   projectId: string
   t: Translator
 }
@@ -49,6 +56,8 @@ type ComposerProjectWorkPickerProps = {
 export function ComposerProjectWorkPicker({
   api,
   conversationId,
+  canOpen,
+  onOpen,
   onSelect,
   projectId,
   t,
@@ -131,7 +140,13 @@ export function ComposerProjectWorkPicker({
     })
   }
 
-  const openPreview = (target: ProjectContextItem) => {
+  const browsing = onOpen !== undefined
+  const choose = (item: ProjectContextItem) => {
+    if (browsing) openPreview(item)
+    else onSelect(item)
+  }
+
+  function openPreview(target: ProjectContextItem) {
     const request = ++previewRequestRef.current
     setPreview({ status: 'loading', target })
     api.readProjectContext(projectId, target.ref, 'content').then((document) => {
@@ -187,7 +202,7 @@ export function ComposerProjectWorkPicker({
               (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && activeItem
             ) {
               event.preventDefault()
-              onSelect(activeItem)
+              choose(activeItem)
             }
           }}
           placeholder={t('kubecode.searchProjectWork')}
@@ -258,7 +273,7 @@ export function ComposerProjectWorkPicker({
                   )}
                   id={`${listboxId}-option-${index}`}
                   key={`${item.ref.kind}:${item.ref.id}`}
-                  onClick={() => enabled && onSelect(item)}
+                  onClick={() => enabled && choose(item)}
                   onMouseEnter={() => enabled && setActiveIndex(index)}
                   role="option"
                 >
@@ -318,6 +333,11 @@ export function ComposerProjectWorkPicker({
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <strong className="min-w-0 truncate">{preview.target.title}</strong>
+            {onOpen && canOpen?.(preview.target) !== false && (
+              <Button onClick={() => onOpen(preview.target)} size="sm" type="button" variant="outline">
+                {t('kubecode.resources.open')}
+              </Button>
+            )}
             <Button onClick={closePreview} size="sm" type="button" variant="ghost">
               {t('kubecode.projectWorkClosePreview')}
             </Button>
@@ -355,7 +375,7 @@ export function ComposerProjectWorkPicker({
                   <Button
                     className="h-auto w-full justify-start px-2 py-1.5 text-left"
                     key={`${related.ref.kind}:${related.ref.id}`}
-                    onClick={() => onSelect(related)}
+                    onClick={() => choose(related)}
                     size="sm"
                     type="button"
                     variant="ghost"

@@ -29,6 +29,8 @@ export type ResearchWorkspaceProps = {
   connectionState: WorkspaceConnectionState
   conversations: Conversation[]
   events: WorkspaceEvent[]
+  /** Replaces "Back to Sessions" where the workspace is a detail pane. */
+  backLabel?: string
   onClose: () => void
   onConversationCreated: (conversation: Conversation) => void
   onOpenSession: (conversationId: string) => void
@@ -57,6 +59,7 @@ export function ResearchWorkspace({
   conversations,
   events,
   onClose,
+  backLabel,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
@@ -81,7 +84,7 @@ export function ResearchWorkspace({
     return (
       <section className="kubecode-research-workspace" aria-busy={status === 'loading'}>
         <header className="kubecode-research-header">
-          <Button size="sm" variant="ghost" onClick={onClose}>{t('kubecode.research.back')}</Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
         </header>
         {status === 'loading' && <p className="kubecode-empty-small" role="status">{t('kubecode.research.loading')}</p>}
         {status === 'error' && (
@@ -108,7 +111,7 @@ export function ResearchWorkspace({
     <section className="kubecode-research-workspace" aria-label={detail.brief.title}>
       <header className="kubecode-research-header">
         <div>
-          <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.research.back')}</Button>
+          <Button size="xs" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
           <h2>{detail.brief.title}</h2>
           <div className="kubecode-research-header-meta">
             <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>

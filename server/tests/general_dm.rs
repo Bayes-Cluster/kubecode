@@ -644,3 +644,23 @@ async fn a_share_quotes_the_member_checks_the_task_and_the_size_before_the_resea
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["message"].as_str().unwrap().contains("too long"));
 }
+
+#[tokio::test]
+async fn a_message_can_be_read_by_id_only_in_its_own_conversation_and_project() {
+    let env = env();
+    let crew = crew(&env).await;
+    let message = say(&env, &crew, "find me later", &[]).await;
+    let id = message["id"].as_str().unwrap();
+    let path = |project: &str, channel: &str, id: &str| {
+        format!("/projects/{project}/channels/{channel}/messages/{id}")
+    };
+    let (status, found) = call(&env, Method::GET, &path(&env.project, &crew.channel, id), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(found["seq"], message["seq"]);
+    let (status, _) = call(&env, Method::GET, &path(&env.other_project, &crew.channel, id), Value::Null).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&env, Method::GET, &path(&env.project, "another-channel", id), Value::Null).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&env, Method::GET, &path(&env.project, &crew.channel, "missing"), Value::Null).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

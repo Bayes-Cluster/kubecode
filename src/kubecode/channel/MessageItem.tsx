@@ -35,6 +35,8 @@ export type MessageItemProps = {
   onJump?: (messageId: string) => void
   /** Shows only the messages about this Task. */
   onFilterTask?: (taskId: string) => void
+  /** Opens the Task in the detail pane; the message stays where it is. */
+  onOpenTask?: (taskId: string, messageId: string) => void
 }
 
 /** One immutable message: who wrote it, what it points at, and its Thread. */
@@ -42,6 +44,7 @@ export function MessageItem({
   cited = null,
   message,
   onFilterTask,
+  onOpenTask,
   onJump,
   onOpenReference,
   onOpenThread,
@@ -116,11 +119,15 @@ export function MessageItem({
       )}
       {message.task_id && (
         <p className="kubecode-channel-task">
-          {onFilterTask ? (
+          {onOpenTask || onFilterTask ? (
             <button
               className="kubecode-channel-reference"
               type="button"
-              onClick={() => onFilterTask(message.task_id as string)}
+              onClick={() => (
+                onOpenTask
+                  ? onOpenTask(message.task_id as string, message.id)
+                  : onFilterTask?.(message.task_id as string)
+              )}
             >
               {t('kubecode.channel.taskChip', { title: task?.title ?? message.task_id.slice(0, 8) })}
             </button>

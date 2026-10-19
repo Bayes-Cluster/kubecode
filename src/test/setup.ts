@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 
 // Stub fetch to prevent jsdom@28 + Node 22 undici incompatibility.
 // jsdom's JSDOMDispatcher passes an onError handler that Node 22's bundled
@@ -58,4 +58,10 @@ afterEach(() => {
   } else {
     globalThis.fetch = vi.fn(defaultFetchMock) as typeof globalThis.fetch
   }
+})
+
+// The workbench keeps its place in the URL hash; a test must not inherit the
+// place the previous test left behind.
+beforeEach(() => {
+  window.history.replaceState(null, '', '/')
 })
