@@ -35,6 +35,8 @@ export type MessageItemProps = {
   onJump?: (messageId: string) => void
   /** Shows only the messages about this Task. */
   onFilterTask?: (taskId: string) => void
+  /** Opens the Task in the detail pane; the message stays where it is. */
+  onOpenTask?: (taskId: string, messageId: string) => void
 }
 
 /** One immutable message: who wrote it, what it points at, and its Thread. */
@@ -42,6 +44,7 @@ export function MessageItem({
   cited = null,
   message,
   onFilterTask,
+  onOpenTask,
   onJump,
   onOpenReference,
   onOpenThread,
@@ -53,7 +56,9 @@ export function MessageItem({
 }: MessageItemProps) {
   const sessionTitle = (id: string) => sessions.find((item) => item.id === id)?.title ?? id.slice(0, 8)
   const task = message.task_id ? research.find((item) => item.id === message.task_id) : undefined
-  if (message.author_kind === 'system') {
+  // Routing notes stay a quiet line; a note about a Task (its review outcome)
+  // is a decision the researcher should see, so it is shown like any message.
+  if (message.author_kind === 'system' && !message.task_id) {
     // Routing notes and similar low-level activity stay out of the way until asked for.
     return (
       <details
@@ -116,11 +121,15 @@ export function MessageItem({
       )}
       {message.task_id && (
         <p className="kubecode-channel-task">
-          {onFilterTask ? (
+          {onOpenTask || onFilterTask ? (
             <button
               className="kubecode-channel-reference"
               type="button"
-              onClick={() => onFilterTask(message.task_id as string)}
+              onClick={() => (
+                onOpenTask
+                  ? onOpenTask(message.task_id as string, message.id)
+                  : onFilterTask?.(message.task_id as string)
+              )}
             >
               {t('kubecode.channel.taskChip', { title: task?.title ?? message.task_id.slice(0, 8) })}
             </button>

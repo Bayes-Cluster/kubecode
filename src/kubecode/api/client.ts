@@ -8,6 +8,8 @@ import type {
   ChannelMessage,
   ChannelMessagePage,
   DmShareRequest,
+  TaskBoard,
+  TaskDraft,
   DmSharePreview,
   DmTurn,
   ChannelThread,
@@ -485,6 +487,23 @@ export class KubecodeApi {
 
   listChannels(projectId: string): Promise<Channel[]> {
     return this.request(`${this.projectPath(projectId)}/channels`)
+  }
+
+  /** One message by id, so a link to it can land on it however old it is. */
+  getChannelMessage(projectId: string, channelId: string, messageId: string): Promise<ChannelMessage> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}`,
+    )
+  }
+
+  /** The Workspace's one board of admitted Tasks (ADR 0221). */
+  taskBoard(projectId: string): Promise<TaskBoard> {
+    return this.request(`${this.projectPath(projectId)}/tasks/board`)
+  }
+
+  /** Proposals that are not on the board. */
+  taskDrafts(projectId: string): Promise<TaskDraft[]> {
+    return this.request(`${this.projectPath(projectId)}/tasks/drafts`)
   }
 
   listChannelMessages(

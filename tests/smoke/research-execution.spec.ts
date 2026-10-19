@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openHistory } from './shell'
 
 async function expectContained(page: Page) {
   const sizes = await page.evaluate(() => {
@@ -76,6 +77,7 @@ test('@smoke research execution shows processes, controls launches, and never ca
     expect((await launch('long', 'sleep 120')).ok()).toBe(true)
 
     await page.reload()
+    await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await page.getByRole('tab', { name: 'Work' }).click()
     const section = page.locator('.kubecode-research-execution').first()
@@ -114,6 +116,7 @@ test('@smoke research execution shows processes, controls launches, and never ca
 
     // The view converges after a reload and stays usable at phone width.
     await page.reload()
+    await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await page.getByRole('tab', { name: 'Work' }).click()
     await expect(page.locator('.kubecode-research-execution').first().getByText('Closed', { exact: true })).toBeVisible()

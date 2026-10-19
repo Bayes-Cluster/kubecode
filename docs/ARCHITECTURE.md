@@ -312,6 +312,20 @@ Task's work cites has changed) and `.../repin`; it has no admission endpoint.
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
+Workspace shell (ADR 0224): `app/WorkbenchShell.tsx` keeps one `ViewState`
+(research, channel, work, dm, resources, members) beside the selected Session,
+derives the current `WorkspaceRoute` from it, and `useWorkspaceRouteSync`
+mirrors the route into the URL hash (`app/workspaceRoute.ts` parses strictly and
+formats ids and view names only). `app/WorkspaceNav.tsx` is the Workspace
+navigation (General, Kanban, Resources, Members, Needs you, roster) fed by
+`tasks/useTaskBoard.ts` (`GET …/tasks/board` and `…/drafts`) and `useMembers`;
+Threads and questions sit under a History disclosure. The detail area is a
+slot (`ChannelWorkspace detail`, `.kubecode-with-detail`) that shows a Task's
+research workspace or a `MemberProfile`; `ResourcesView` reuses the project
+context reader in a browsing mode. A route can name a message, read by id
+(`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
+it.
+
 General routing and direct messages (ADR 0223): `channel_store` marks a
 researcher's plain top-level remark, or an agent message that names someone, as
 pending and stores the Task it is about (`task_id`, from its research

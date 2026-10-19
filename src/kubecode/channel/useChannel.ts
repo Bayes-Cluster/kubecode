@@ -13,6 +13,8 @@ import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 export type ChannelLoadStatus = 'loading' | 'ready' | 'error'
 
 const PAGE = 50
+/** Messages shown after a linked-to message when landing on it. */
+const AROUND = 25
 const MAX_CATCH_UP_PAGES = 20
 
 function mergeMessages(current: ChannelMessage[], incoming: ChannelMessage[]): ChannelMessage[] {
@@ -55,6 +57,8 @@ export type MessageFeed = {
   loadOlder: () => void
   /** Shows a message the caller just saved without waiting for the event. */
   append: (message: ChannelMessage) => void
+  /** Reloads around a message (a link to an old one), then catches up to the latest. */
+  loadAround: (seq: number) => void
   reload: () => void
 }
 
@@ -162,6 +166,22 @@ export function useMessageFeed(
     ))
   }, [scope, taskId])
 
+  const scopeRef = useRef(scope)
+  useEffect(() => { scopeRef.current = scope }, [scope])
+  const loadAround = useCallback((seq: number) => {
+    if (!projectId || !channelId || !scope) return
+    api.listChannelMessages(projectId, channelId, {
+      threadId, taskId, beforeSeq: seq + AROUND, limit: PAGE,
+    }).then((page) => {
+      // The reader may have changed the filter meanwhile.
+      if (scopeRef.current !== scope) return
+      // The page ends just after the message; the catch-up that follows
+      // reads everything newer, so the list is contiguous.
+      setState({ scope, messages: page.messages, hasMore: page.has_more })
+      setManual((value) => value + 1)
+    }).catch(() => setFailedScope(scope))
+  }, [api, projectId, channelId, threadId, taskId, scope])
+
   const unsupported = typeof api.listChannelMessages !== 'function'
   const status: ChannelLoadStatus = current || unsupported
     ? 'ready'
@@ -173,6 +193,7 @@ export function useMessageFeed(
     loadingOlder,
     loadOlder,
     append,
+    loadAround,
     reload: useCallback(() => setManual((value) => value + 1), []),
   }
 }

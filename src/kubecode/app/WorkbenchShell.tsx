@@ -17,7 +17,11 @@ import {
 import { ContextWorkbench } from '../ContextWorkbench'
 import { ChannelNavigator } from '../channel/ChannelNavigator'
 import { WorkBoard } from '../work/WorkBoard'
-import { WorkNavigator } from '../work/WorkNavigator'
+import { MemberProfile } from '../members/MemberProfile'
+import { MembersView } from '../members/MembersView'
+import { useMembers } from '../members/useMembers'
+import { ResourcesView } from '../resources/ResourcesView'
+import { useTaskBoard } from '../tasks/useTaskBoard'
 import { ChannelWorkspace } from '../channel/ChannelWorkspace'
 import { DmPane } from '../dm/DmPane'
 import { useChannelThreads, useDefaultChannel } from '../channel/useChannel'
@@ -28,7 +32,7 @@ import { useResearchList } from '../research/useResearch'
 import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
-import { KubecodeApi, type AgentRun, type Conversation, type Member, type Project, type TeamSnapshot, type TerminalInfo, type WorkBoardFilter } from '../api'
+import { KubecodeApi, type AgentRun, type Conversation, type Member, type MemberDefaults, type Project, type TeamSnapshot, type TerminalInfo, type WorkBoardFilter } from '../api'
 import { TerminalWorkspace, type TerminalContextSource } from '../TerminalWorkspace'
 import { SystemMessageProvider } from '../SystemMessageNotice'
 import { WorkspaceNotificationBridge } from '../WorkspaceNotificationBridge'
@@ -46,6 +50,10 @@ import { NewSessionDialog } from './NewSessionDialog'
 import { ProjectDialog } from './ProjectDialog'
 import { ProjectNavigator } from './ProjectNavigator'
 import { SettingsDialog, type SettingsSection } from './SettingsDialog'
+import { DetailPane } from './DetailPane'
+import { WorkspaceNav } from './WorkspaceNav'
+import { useWorkspaceRouteSync } from './useWorkspaceRouteSync'
+import type { WorkspaceRoute } from './workspaceRoute'
 import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
 import { useWorkspaceBootstrap } from './useWorkspaceBootstrap'
@@ -56,6 +64,25 @@ import { WorkbenchTitlebar } from './WorkbenchTitlebar'
 import { mergeConversations, upsertConversation } from './sessionCatalog'
 
 const browserApi = new KubecodeApi()
+
+/** What the main pane shows besides the Sessions surface (ADR 0224). */
+type ViewState =
+  | { kind: 'research'; projectId: string; researchId: string }
+  | {
+    kind: 'channel'
+    projectId: string
+    threadId: string | null
+    /** A message to land on, and to come back to from the Task detail. */
+    message?: string | null
+    /** The Task open in the detail pane. */
+    task?: string | null
+    /** Show only the messages about this Task. */
+    filter?: string | null
+  }
+  | { kind: 'work'; projectId: string; filter: WorkBoardFilter; task?: string | null }
+  | { kind: 'dm'; projectId: string; member: Member }
+  | { kind: 'resources'; projectId: string }
+  | { kind: 'members'; projectId: string; memberId?: string | null }
 
 const focusSessionSearchTarget: { current: (() => void) | null } = { current: null }
 
@@ -76,10 +103,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [researchDialog, setResearchDialog] = useState(false)
-  const [researchSelection, setResearchSelection] = useState<{ projectId: string; researchId: string } | null>(null)
-  const [channelSelection, setChannelSelection] = useState<{ projectId: string; threadId: string | null } | null>(null)
-  const [dmSelection, setDmSelection] = useState<{ projectId: string; member: Member } | null>(null)
-  const [workSelection, setWorkSelection] = useState<{ projectId: string; filter: WorkBoardFilter } | null>(null)
+  // What the main pane shows besides the Sessions surface. One value, so two
+  // views can never both claim the pane.
+  const [viewState, setViewState] = useState<ViewState | null>(null)
+  const [memberDefaults, setMemberDefaults] = useState<MemberDefaults | null>(null)
+  // Files and Git are tools of the work in hand, not a permanent column of the
+  // research views: they open on request there.
+  const [researchToolsOpen, setResearchToolsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
@@ -97,6 +127,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [activeSessionPlan, setActiveSessionPlan] = useState<SessionPlanEntry[]>([])
   const [planRevealVersion, setPlanRevealVersion] = useState(0)
   const narrowLayout = useNarrowWorkbench()
+  // A view belongs to a Project; choosing another Project hides it.
+  const inProject = viewState && viewState.projectId === projectId ? viewState : null
+  // Files and Git are a column beside Sessions; beside the research views they
+  // open when asked for and are gone again when the view is left.
+  const contextVisible = inProject ? researchToolsOpen : contextOpen
+  const setContextVisible = useCallback((open: boolean | ((current: boolean) => boolean)) => {
+    if (inProject) setResearchToolsOpen(open)
+    else setContextOpen(open)
+  }, [inProject])
+
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
   const navigatorSearchRef = useRef<HTMLInputElement>(null)
@@ -153,22 +193,33 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     reconciliation.workspaceEvents,
     reconciliation.connectionState,
   )
-  // The selection belongs to a Project; choosing another Project clears it
-  // (and the Project check also covers selections made elsewhere).
-  const researchId = researchSelection && researchSelection.projectId === projectId
-    ? researchSelection.researchId
-    : null
-  const workView = workSelection && workSelection.projectId === projectId
-    ? workSelection
-    : null
-  const channelView = channelSelection && channelSelection.projectId === projectId
-    ? channelSelection
-    : null
-  // Choosing any other view replaces the private conversation on screen.
-  const dmView = dmSelection && dmSelection.projectId === projectId
-    && !researchId && !workView && !channelView
-    ? dmSelection
-    : null
+  const researchSelection = inProject?.kind === 'research' ? inProject : null
+  const channelSelection = inProject?.kind === 'channel' ? inProject : null
+  const workSelection = inProject?.kind === 'work' ? inProject : null
+  const dmSelection = inProject?.kind === 'dm' ? inProject : null
+  const resourcesSelection = inProject?.kind === 'resources' ? inProject : null
+  const membersSelection = inProject?.kind === 'members' ? inProject : null
+  const researchId = researchSelection?.researchId ?? null
+  const workView = workSelection
+  const channelView = channelSelection
+  const dmView = dmSelection
+  /** Each setter replaces whatever view was shown; `null` closes only its own. */
+  const setResearchSelection = useCallback((value: { projectId: string; researchId: string } | null) => {
+    setViewState((current) => value ? { kind: 'research', ...value } : current?.kind === 'research' ? null : current)
+  }, [])
+  const setChannelSelection = useCallback((value: Omit<Extract<ViewState, { kind: 'channel' }>, 'kind'> | null) => {
+    setViewState((current) => value ? { kind: 'channel', ...value } : current?.kind === 'channel' ? null : current)
+  }, [])
+  const setWorkSelection = useCallback((value: Omit<Extract<ViewState, { kind: 'work' }>, 'kind'> | null) => {
+    setViewState((current) => value ? { kind: 'work', ...value } : current?.kind === 'work' ? null : current)
+  }, [])
+  const setDmSelection = useCallback((value: { projectId: string; member: Member } | null) => {
+    setViewState((current) => value ? { kind: 'dm', ...value } : current?.kind === 'dm' ? null : current)
+  }, [])
+  /** Changes parts of the open General view from the latest state, never a stale copy. */
+  const patchChannel = useCallback((patch: Partial<Omit<Extract<ViewState, { kind: 'channel' }>, 'kind' | 'projectId'>>) => {
+    setViewState((current) => (current?.kind === 'channel' ? { ...current, ...patch } : current))
+  }, [])
   const defaultChannel = useDefaultChannel(api, projectId)
   const channelThreads = useChannelThreads(
     api,
@@ -177,13 +228,35 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     reconciliation.workspaceEvents,
     reconciliation.connectionState,
   )
-  /** Back to the Session surface: neither research nor the conversation is shown. */
-  const showSessions = useCallback(() => {
-    setResearchSelection(null)
-    setChannelSelection(null)
-    setWorkSelection(null)
-    setDmSelection(null)
-  }, [])
+  const roster = useMembers(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
+  /** The member whose profile is open; none while the roster loads or for an unknown id. */
+  const profileMember = membersSelection?.memberId
+    ? roster.roster?.members.find((member) => member.id === membersSelection.memberId) ?? null
+    : null
+  const taskBoard = useTaskBoard(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
+  /** Back to the Session surface: no research view is shown. */
+  const showSessions = useCallback(() => setViewState(null), [])
+  /** What waits for the researcher: results to review and requested input. */
+  const needsYouTasks = useMemo(
+    () => (taskBoard.board?.cards ?? []).filter((card) => (
+      card.stage === 'review' || card.condition === 'needs_input'
+    )),
+    [taskBoard.board],
+  )
+  /** Opens the private conversation with a member. */
+  const openDm = useCallback(async (member: Member) => {
+    if (!projectId) return
+    try {
+      const opened = await api.openMemberDm(projectId, member.id)
+      // The researcher may have gone elsewhere while it opened.
+      if (projectIdRef.current !== projectId) return
+      setViewState({ kind: 'dm', projectId, member: opened })
+      setSettingsOpen(false)
+      if (narrowLayout) setSessionSidebarOpen(false)
+    } catch (cause) {
+      setError(errorMessage(cause, t('kubecode.error')))
+    }
+  }, [api, narrowLayout, projectId, t])
 
   const selection = useProjectSelection(api, t, {
     projectId,
@@ -227,6 +300,79 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     () => sessionsRequiringInput(reconciliation.projectRuns, sessionCatalog),
     [reconciliation.projectRuns, sessionCatalog],
   )
+
+  // -- Where the researcher is, as a route (ADR 0224) -------------------------------------
+  const currentRoute = useMemo<WorkspaceRoute>(() => {
+    const view = inProject
+    const project = projectId
+    if (!view) return { project, view: 'sessions', conversation: conversationId ?? undefined }
+    switch (view.kind) {
+      case 'channel':
+        return {
+          project,
+          view: 'general',
+          message: view.message ?? undefined,
+          task: view.task ?? undefined,
+          filter: view.filter ?? undefined,
+          thread: view.threadId ?? undefined,
+        }
+      case 'work': return { project, view: 'board', task: view.task ?? undefined }
+      case 'dm': return { project, view: 'dm', member: view.member.id }
+      case 'resources': return { project, view: 'resources' }
+      case 'members': return { project, view: 'members', member: view.memberId ?? undefined }
+      default: return { project, view: 'question', question: view.researchId }
+    }
+  }, [conversationId, inProject, projectId])
+
+  const applyRoute = useCallback((route: WorkspaceRoute) => {
+    const target = route.project ?? projectIdRef.current
+    if (!target) return
+    if (target !== projectIdRef.current) {
+      if (!projects.some((item) => item.id === target)) return
+      selection.selectProject(target)
+    }
+    switch (route.view) {
+      case 'sessions':
+        setViewState(null)
+        if (route.conversation) selection.openSession(target, route.conversation)
+        break
+      case 'general':
+        setViewState({
+          kind: 'channel',
+          projectId: target,
+          threadId: route.thread ?? null,
+          message: route.message ?? null,
+          task: route.task ?? null,
+          filter: route.filter ?? null,
+        })
+        break
+      case 'board':
+        setViewState({ kind: 'work', projectId: target, filter: {}, task: route.task ?? null })
+        break
+      case 'resources':
+        setViewState({ kind: 'resources', projectId: target })
+        break
+      case 'members':
+        setViewState({ kind: 'members', projectId: target, memberId: route.member ?? null })
+        break
+      case 'question':
+        if (route.question) setViewState({ kind: 'research', projectId: target, researchId: route.question })
+        break
+      case 'dm':
+        if (route.member) {
+          void api.openMemberDm(target, route.member).then((opened) => {
+            if (projectIdRef.current !== target) return
+            setViewState({ kind: 'dm', projectId: target, member: opened })
+          }).catch((cause) => setError(errorMessage(cause, t('kubecode.error'))))
+        }
+        break
+    }
+  }, [api, projects, selection, t])
+  useWorkspaceRouteSync({
+    apply: applyRoute,
+    current: currentRoute,
+    ready: layoutHydrated && projectId !== null,
+  })
 
   useEffect(() => {
     if (!layoutHydrated) return
@@ -300,22 +446,29 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [])
 
   useEffect(() => {
-    if (!narrowLayout || (!sessionSidebarOpen && !contextOpen)) return
+    if (!narrowLayout || (!sessionSidebarOpen && !contextVisible)) return
     const closeOverlayPanels = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return
       setSessionSidebarOpen(false)
-      setContextOpen(false)
+      setContextVisible(false)
     }
     document.addEventListener('keydown', closeOverlayPanels)
     return () => document.removeEventListener('keydown', closeOverlayPanels)
-  }, [contextOpen, narrowLayout, sessionSidebarOpen])
+  }, [contextVisible, narrowLayout, sessionSidebarOpen, setContextVisible])
 
   useEffect(() => {
     // On narrow layouts, the navigator takes precedence if both overlays are open.
-    if (!narrowLayout || !sessionSidebarOpen || !contextOpen) return
+    if (!narrowLayout || !sessionSidebarOpen || !contextVisible) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setContextOpen(false)
-  }, [contextOpen, narrowLayout, sessionSidebarOpen])
+    setContextVisible(false)
+  }, [contextVisible, narrowLayout, sessionSidebarOpen, setContextVisible])
+
+  // The tools asked for beside the research views are gone again when the
+  // researcher leaves them for the Sessions surface.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (viewState === null) setResearchToolsOpen(false)
+  }, [viewState])
 
   const resizeSessionSidebar = useCallback((delta: number) => {
     setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
@@ -351,6 +504,32 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setAllConversations((current) => upsertConversation(current, updated))
   }, [])
 
+  /** A Task's research record as the detail pane: brief, work, findings, evidence. */
+  const taskPane = (taskId: string, close: () => void) => projectId ? (
+    <DetailPane key={taskId} label={t('kubecode.nav.taskDetail')} onClose={close}>
+      <ResearchWorkspace
+        agents={agents}
+        api={api}
+        backLabel={t('kubecode.nav.closeDetail')}
+        connectionState={reconciliation.connectionState}
+        conversations={sessionCatalog}
+        events={reconciliation.workspaceEvents}
+        projectId={projectId}
+        researchId={taskId}
+        t={t}
+        teams={teams}
+        onClose={close}
+        onConversationCreated={handleConversationCreated}
+        onOpenBoard={(filter) => setWorkSelection({ projectId, filter })}
+        onOpenSession={(nextConversationId) => {
+          showSessions()
+          selection.openSession(projectId, nextConversationId)
+        }}
+        onOpenThread={(threadId) => setChannelSelection({ projectId, threadId })}
+      />
+    </DetailPane>
+  ) : null
+
   const commandPaletteHostActions = createHostActionRegistry({
     addProject: () => setProjectDialog(true),
     focusSessionSearch: () => focusSessionSearchTarget.current?.(),
@@ -360,7 +539,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       setSettingsOpen(true)
     },
     toggleContext: () => {
-      setContextOpen((open) => {
+      setContextVisible((open) => {
         const nextOpen = togglePanel('context', open)
         if (narrowLayout && nextOpen) setSessionSidebarOpen(false)
         return nextOpen
@@ -369,7 +548,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     toggleNavigator: () => {
       setSessionSidebarOpen((open) => {
         const nextOpen = togglePanel('sessions', open)
-        if (narrowLayout && nextOpen) setContextOpen(false)
+        if (narrowLayout && nextOpen) setContextVisible(false)
         return nextOpen
       })
     },
@@ -404,7 +583,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       <WorkbenchTitlebar
         attentionSessions={attentionSessions}
         connectionState={reconciliation.connectionState}
-        contextOpen={contextOpen}
+        contextOpen={contextVisible}
         conversation={conversation}
         error={error}
         lastSuccessfulSyncAt={reconciliation.lastSuccessfulSyncAt}
@@ -412,7 +591,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         narrowLayout={narrowLayout}
         navigatorQuery={navigatorQuery}
         navigatorSearchRef={navigatorSearchRef}
-        onContextOpenChange={setContextOpen}
+        onContextOpenChange={setContextVisible}
         onNavigatorQueryChange={setNavigatorQuery}
         onOpenSession={(nextProjectId, nextConversationId) => {
           showSessions()
@@ -430,14 +609,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       />
 
       <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
-        {(sessionSidebarOpen || contextOpen) && (
+        {(sessionSidebarOpen || contextVisible) && (
           <button
             aria-label={t('kubecode.closeSidePanels')}
             className="kubecode-panel-backdrop"
             type="button"
             onClick={() => {
               setSessionSidebarOpen(false)
-              setContextOpen(false)
+              setContextVisible(false)
             }}
           />
         )}
@@ -486,43 +665,67 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             query={navigatorQuery}
             researchSection={projectId ? (
               <>
-                <ChannelNavigator
-                  active={channelView !== null}
-                  onOpen={() => {
-                    setResearchSelection(null)
-                    setWorkSelection(null)
-                    setChannelSelection({ projectId, threadId: null })
-                  }}
-                  onOpenThread={(threadId) => {
-                    setResearchSelection(null)
-                    setWorkSelection(null)
-                    setChannelSelection({ projectId, threadId })
-                  }}
+                <WorkspaceNav
+                  active={
+                    dmView ? 'dm'
+                      : channelView ? 'general'
+                        : workView ? 'board'
+                          : resourcesSelection ? 'resources'
+                            : membersSelection ? 'members'
+                              : researchId ? 'question' : 'sessions'
+                  }
+                  members={roster.roster?.members.filter((member) => member.state !== 'removed') ?? []}
+                  needsYouDrafts={taskBoard.drafts}
+                  needsYouSessions={attentionSessions.filter((item) => item.project_id === projectId)}
+                  needsYouTasks={needsYouTasks}
+                  taskCount={taskBoard.board?.total ?? 0}
                   t={t}
-                  threads={channelThreads.threads}
-                />
-                <WorkNavigator
-                  active={workView !== null}
-                  t={t}
-                  onOpen={() => {
-                    setResearchSelection(null)
-                    setChannelSelection(null)
-                    setWorkSelection({ projectId, filter: {} })
+                  onOpen={(view) => {
+                    if (view === 'general') setChannelSelection({ projectId, threadId: null })
+                    else if (view === 'board') setWorkSelection({ projectId, filter: {} })
+                    else if (view === 'resources') setViewState({ kind: 'resources', projectId })
+                    else setViewState({ kind: 'members', projectId })
+                    if (narrowLayout) setSessionSidebarOpen(false)
+                  }}
+                  onOpenDm={(member) => void openDm(member)}
+                  onOpenMember={(member) => {
+                    setViewState({ kind: 'members', projectId, memberId: member.id })
+                    if (narrowLayout) setSessionSidebarOpen(false)
+                  }}
+                  onOpenDraft={(draft) => {
+                    // A proposal is discussed where it was made: in General, with its detail beside it.
+                    setChannelSelection({ projectId, threadId: null, task: draft.id })
+                    if (narrowLayout) setSessionSidebarOpen(false)
+                  }}
+                  onOpenSession={(item) => {
+                    showSessions()
+                    selection.openSession(item.project_id, item.id)
+                  }}
+                  onOpenTask={(task) => {
+                    setWorkSelection({ projectId, filter: {}, task: task.id })
+                    if (narrowLayout) setSessionSidebarOpen(false)
                   }}
                 />
-                <ResearchNavigator
-                  activeResearchId={researchId}
-                  items={research.items}
-                  onNew={() => setResearchDialog(true)}
-                  onReload={research.reload}
-                  onSelect={(nextResearchId) => {
-                    setChannelSelection(null)
-                    setWorkSelection(null)
-                    setResearchSelection({ projectId, researchId: nextResearchId })
-                  }}
-                  status={research.status}
-                  t={t}
-                />
+                <details className="kubecode-history-nav" open={researchId !== null || Boolean(channelView?.threadId)}>
+                  <summary>{t('kubecode.nav.history')}</summary>
+                  <ChannelNavigator
+                    active={false}
+                    onOpen={() => setChannelSelection({ projectId, threadId: null })}
+                    onOpenThread={(threadId) => setChannelSelection({ projectId, threadId })}
+                    t={t}
+                    threads={channelThreads.threads}
+                    threadsOnly
+                  />
+                  <ResearchNavigator
+                    activeResearchId={researchId}
+                    items={research.items}
+                    onNew={() => setResearchDialog(true)}
+                    onReload={research.reload}
+                    onSelect={(nextResearchId) => setResearchSelection({ projectId, researchId: nextResearchId })}
+                    status={research.status}
+                    t={t}
+                  />
+                </details>
               </>
             ) : null}
             t={t}
@@ -534,37 +737,39 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         <div className="kubecode-main-stack" ref={mainStackRef}>
           <div className="kubecode-session-context-row">
             {workView && projectId ? (
-              <WorkBoard
-                api={api}
-                connectionState={reconciliation.connectionState}
-                conversations={sessionCatalog}
-                events={reconciliation.workspaceEvents}
-                filter={workView.filter}
-                key={projectId}
-                projectId={projectId}
-                research={research.items}
-                t={t}
-                onClose={showSessions}
-                onFilterChange={(filter) => setWorkSelection({ projectId, filter })}
-                onOpenResearch={(nextResearchId) => {
-                  setWorkSelection(null)
-                  setResearchSelection({ projectId, researchId: nextResearchId })
-                }}
-                onOpenSession={(nextConversationId) => {
-                  showSessions()
-                  selection.openSession(projectId, nextConversationId)
-                }}
-                onOpenTeam={(teamId) => {
-                  const team = teams.find((item) => item.team.id === teamId)
-                  if (!team) return
-                  showSessions()
-                  selection.openSession(projectId, team.leader_conversation.id)
-                }}
-                onOpenThread={(threadId) => {
-                  setWorkSelection(null)
-                  setChannelSelection({ projectId, threadId })
-                }}
-              />
+              <div className="kubecode-with-detail" data-detail={Boolean(workView.task)}>
+                <WorkBoard
+                  api={api}
+                  connectionState={reconciliation.connectionState}
+                  conversations={sessionCatalog}
+                  events={reconciliation.workspaceEvents}
+                  filter={workView.filter}
+                  key={projectId}
+                  projectId={projectId}
+                  research={research.items}
+                  t={t}
+                  onClose={showSessions}
+                  onFilterChange={(filter) => setWorkSelection({ projectId, filter, task: workView.task })}
+                  onOpenResearch={(nextResearchId) => setWorkSelection({
+                    projectId, filter: workView.filter, task: nextResearchId,
+                  })}
+                  onOpenSession={(nextConversationId) => {
+                    showSessions()
+                    selection.openSession(projectId, nextConversationId)
+                  }}
+                  onOpenTeam={(teamId) => {
+                    const team = teams.find((item) => item.team.id === teamId)
+                    if (!team) return
+                    showSessions()
+                    selection.openSession(projectId, team.leader_conversation.id)
+                  }}
+                  onOpenThread={(threadId) => setChannelSelection({ projectId, threadId })}
+                />
+                {workView.task && taskPane(
+                  workView.task,
+                  () => setWorkSelection({ projectId, filter: workView.filter, task: null }),
+                )}
+              </div>
             ) : dmView && projectId ? (
               <DmPane
                 api={api}
@@ -577,27 +782,74 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 t={t}
                 onClose={showSessions}
               />
+            ) : resourcesSelection && projectId ? (
+              <ResourcesView
+                api={api}
+                canOpen={(reference) => ['research', 'session', 'thread', 'channel', 'work'].includes(reference.kind)}
+                projectId={projectId}
+                t={t}
+                onClose={showSessions}
+                onOpen={(reference) => {
+                  if (reference.kind === 'research') {
+                    setChannelSelection({ projectId, threadId: null, task: reference.id })
+                  }
+                  else if (reference.kind === 'thread') setChannelSelection({ projectId, threadId: reference.id })
+                  else if (reference.kind === 'channel') setChannelSelection({ projectId, threadId: null })
+                  else if (reference.kind === 'work') setWorkSelection({ projectId, filter: {} })
+                  else if (reference.kind === 'session') {
+                    showSessions()
+                    selection.openSession(projectId, reference.id)
+                  }
+                }}
+              />
+            ) : membersSelection && projectId ? (
+              <div className="kubecode-with-detail" data-detail={profileMember !== null}>
+                <MembersView
+                  agents={agents}
+                  api={api}
+                  connectionState={reconciliation.connectionState}
+                  defaults={memberDefaults}
+                  events={reconciliation.workspaceEvents}
+                  projectId={projectId}
+                  t={t}
+                  onClose={showSessions}
+                  onDefaultsLoaded={setMemberDefaults}
+                  onOpenDm={(member) => void openDm(member)}
+                  onOpenMember={(member) => setViewState({ kind: 'members', projectId, memberId: member.id })}
+                />
+                {profileMember && (
+                  <MemberProfile
+                    member={profileMember}
+                    t={t}
+                    onClose={() => setViewState({ kind: 'members', projectId, memberId: null })}
+                    onOpenDm={(member) => void openDm(member)}
+                  />
+                )}
+              </div>
             ) : channelView && projectId ? (
               <ChannelWorkspace
                 api={api}
                 connectionState={reconciliation.connectionState}
                 conversations={sessionCatalog}
+                detail={channelView.task ? taskPane(
+                  channelView.task,
+                  () => patchChannel({ task: null }),
+                ) : null}
                 events={reconciliation.workspaceEvents}
+                filter={channelView.filter ?? null}
+                focusMessageId={channelView.message ?? null}
                 initialThreadId={channelView.threadId}
-                key={`${projectId}:${channelView.threadId ?? ''}`}
+                key={projectId}
                 onClose={showSessions}
-                onOpenResearch={(nextResearchId) => {
-                  setChannelSelection(null)
-                  setResearchSelection({ projectId, researchId: nextResearchId })
-                }}
+                onFilterChange={(filter) => patchChannel({ filter })}
+                onOpenResearch={(nextResearchId) => patchChannel({ task: nextResearchId })}
                 onOpenSession={(nextConversationId) => {
                   showSessions()
                   selection.openSession(projectId, nextConversationId)
                 }}
-                onOpenWork={(filter) => {
-                  setChannelSelection(null)
-                  setWorkSelection({ projectId, filter })
-                }}
+                onOpenTask={(taskId, messageId) => patchChannel({ task: taskId, message: messageId })}
+                onOpenWork={(filter) => setWorkSelection({ projectId, filter })}
+                onThreadChange={(threadId) => patchChannel({ threadId })}
                 projectId={projectId}
                 research={research.items}
                 t={t}
@@ -673,7 +925,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 key={conversationId ?? projectId ?? 'no-project'}
               />
             )}
-            {contextOpen && (
+            {contextVisible && (
               <>
                 <ResizeHandle onResize={resizeContext} />
                 <ContextWorkbench

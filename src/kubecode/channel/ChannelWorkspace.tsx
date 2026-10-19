@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
@@ -29,6 +29,20 @@ export type ChannelWorkspaceProps = {
   events: WorkspaceEvent[]
   /** A Thread to open on arrival (for example from a research question). */
   initialThreadId?: string | null
+  /**
+   * The Task detail (or any other detail) shown beside the conversation. On a
+   * narrow screen it replaces the conversation, with its own way back.
+   */
+  detail?: ReactNode
+  /** A message to land on, and to return to when the detail closes. */
+  focusMessageId?: string | null
+  /** Show only the messages about this Task (controlled by the route). */
+  filter?: string | null
+  onFilterChange?: (taskId: string | null) => void
+  /** Reports the open Thread so the route can name it. */
+  onThreadChange?: (threadId: string | null) => void
+  /** Opens a Task from a message's chip, in the detail pane. */
+  onOpenTask?: (taskId: string, messageId: string) => void
   onClose: () => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
@@ -50,6 +64,12 @@ export function ChannelWorkspace({
   conversations,
   events,
   initialThreadId = null,
+  detail = null,
+  focusMessageId = null,
+  filter,
+  onFilterChange,
+  onThreadChange,
+  onOpenTask,
   onClose,
   onOpenResearch,
   onOpenSession,
@@ -61,7 +81,12 @@ export function ChannelWorkspace({
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const mentionOptions = useMentionOptions(api, projectId, events, connectionState)
   // Showing only what is about one Task is a view of the same conversation.
-  const [taskFilter, setTaskFilter] = useState<string | null>(null)
+  const [localFilter, setLocalFilter] = useState<string | null>(null)
+  const taskFilter = filter !== undefined ? filter : localFilter
+  const setTaskFilter = useCallback((next: string | null) => {
+    setLocalFilter(next)
+    onFilterChange?.(next)
+  }, [onFilterChange])
   const [replyTo, setReplyTo] = useState<ChannelMessage | null>(null)
   const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState, taskFilter)
   const { reload: reloadThreads, threads } = useChannelThreads(
@@ -71,7 +96,30 @@ export function ChannelWorkspace({
     events,
     connectionState,
   )
-  const [threadId, setThreadId] = useState<string | null>(initialThreadId)
+  const [threadId, setThreadIdState] = useState<string | null>(initialThreadId)
+  // The route may open another Thread (Back, a link, the History list).
+  const [seenThread, setSeenThread] = useState(initialThreadId)
+  if (seenThread !== initialThreadId) {
+    setSeenThread(initialThreadId)
+    setThreadIdState(initialThreadId)
+  }
+  const setThreadId = useCallback((next: string | null) => {
+    setThreadIdState(next)
+    onThreadChange?.(next)
+  }, [onThreadChange])
+  // A link to an old message: find where it is and load around it.
+  const resolved = useRef<string | null>(null)
+  // A different scope (another filter) is a new feed: resolve the link again.
+  useEffect(() => { resolved.current = null }, [taskFilter, channel?.id])
+  const { loadAround, messages: loaded, status: feedStatus } = feed
+  useEffect(() => {
+    if (!focusMessageId || !channel || feedStatus !== 'ready' || resolved.current === focusMessageId) return
+    resolved.current = focusMessageId
+    if (loaded.some((message) => message.id === focusMessageId)) return
+    api.getChannelMessage(projectId, channel.id, focusMessageId)
+      .then((message) => loadAround(message.seq))
+      .catch(() => undefined)
+  }, [api, channel, feedStatus, focusMessageId, loadAround, loaded, projectId])
   const startThread = useAction(t)
   const sessions = useMemo(() => conversations.filter((item) => (
     item.project_id === projectId
@@ -118,7 +166,11 @@ export function ChannelWorkspace({
   }
 
   return (
-    <section aria-label={t('kubecode.channel.title')} className="kubecode-channel-workspace">
+    <section
+      aria-label={t('kubecode.channel.title')}
+      className="kubecode-channel-workspace"
+      data-detail={detail !== null}
+    >
       <div className="kubecode-channel-main">
         <header className="kubecode-channel-header">
           <div>
@@ -157,7 +209,10 @@ export function ChannelWorkspace({
           sessions={sessions}
           t={t}
           threadByRoot={threadByRoot}
+          // While a detail is open the reader is in it; coming back lands on the message again.
+          focusId={detail ? null : focusMessageId}
           onFilterTask={setTaskFilter}
+          onOpenTask={onOpenTask}
           onOpenReference={openReference}
           onOpenThread={openThread}
           onReply={setReplyTo}
@@ -180,7 +235,8 @@ export function ChannelWorkspace({
           />
         )}
       </div>
-      {channel && thread && (
+      {detail}
+      {channel && thread && !detail && (
         <ThreadPane
           api={api}
           channel={channel}

@@ -2265,5 +2265,22 @@
   "kubecode.dm.sharePreview": "Preview",
   "kubecode.dm.sharePreviewAction": "Preview",
   "kubecode.dm.shareConfirm": "Post to General",
-  "kubecode.dm.shareStale": "This conversation changed since the preview. Preview it again."
+  "kubecode.dm.shareStale": "This conversation changed since the preview. Preview it again.",
+  "kubecode.nav.workspace": "Workspace",
+  "kubecode.nav.resources": "Resources",
+  "kubecode.nav.members": "Members",
+  "kubecode.nav.back": "Back",
+  "kubecode.nav.history": "History and execution",
+  "kubecode.nav.needsYou": "Needs you",
+  "kubecode.nav.needsYouNone": "Nothing is waiting for you.",
+  "kubecode.nav.needsReview": "Review",
+  "kubecode.nav.needsInput": "Input needed",
+  "kubecode.nav.needsPermission": "Permission",
+  "kubecode.nav.taskDetail": "Task details",
+  "kubecode.nav.closeDetail": "Close details",
+  "kubecode.resources.subtitle": "What the Workspace has produced and can cite, read-only. Choose a row to preview it.",
+  "kubecode.resources.open": "Open",
+  "kubecode.nav.board": "Kanban",
+  "kubecode.nav.roster": "Agents",
+  "kubecode.nav.needsProposal": "Proposal"
 }

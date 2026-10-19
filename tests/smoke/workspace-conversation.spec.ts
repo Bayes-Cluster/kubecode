@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { openGeneral, openHistory } from './shell'
+
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
@@ -29,7 +31,7 @@ test('@smoke workspace conversation keeps a discussion, threads it, and links it
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
 
   // Start from the channel: no question exists yet.
-  await page.locator('.kubecode-channel-nav').getByRole('button', { name: 'General' }).click()
+  await openGeneral(page)
   await expect(page.getByText('No messages yet. Start the discussion.')).toBeVisible()
   await page.getByLabel('Message the Workspace').fill('Should we prune the attention heads?')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
@@ -42,7 +44,7 @@ test('@smoke workspace conversation keeps a discussion, threads it, and links it
   await page.reload()
   // Other specs leave Projects behind; choose ours explicitly after the reload.
   await page.getByRole('button', { name: projectName, exact: true }).click()
-  await page.locator('.kubecode-channel-nav').getByRole('button', { name: 'General' }).click()
+  await openGeneral(page)
   await expect(page.getByText('Should we prune the attention heads?')).toBeVisible()
   await expect(page.getByText('Or quantize first?')).toBeVisible()
 
@@ -55,12 +57,14 @@ test('@smoke workspace conversation keeps a discussion, threads it, and links it
   await expect(page.getByRole('log', { name: 'Messages' }).getByText('Start with magnitude pruning')).toHaveCount(0)
 
   // A question is created later, and the Thread is linked to it.
+  await openHistory(page)
   await page.getByRole('button', { name: 'New research question' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Title', { exact: true }).fill('Pruning heads')
   await dialog.getByLabel('Question', { exact: true }).fill('Does pruning heads keep accuracy?')
   await dialog.getByRole('button', { name: 'Create question' }).click()
   await expect(page.getByRole('heading', { name: 'Pruning heads' })).toBeVisible()
+  await openHistory(page)
   await page.locator('.kubecode-channel-nav').getByRole('button', { name: /Should we prune/ }).click()
   const reopened = page.getByRole('complementary', { name: 'Thread' })
   await reopened.getByLabel('Research question').selectOption({ label: 'Pruning heads' })

@@ -1101,6 +1101,43 @@ export type NewChannelMessage = {
   replyTo?: string | null
 }
 
+/** Tasks (ADR 0221): research questions on the board, read as one model. */
+export type TaskStage = 'ready' | 'in_progress' | 'review' | 'done'
+export type TaskCondition = 'none' | 'waiting' | 'blocked' | 'paused' | 'needs_input'
+export type TaskCard = {
+  /** The research question's id: the Task's one identity. */
+  id: string
+  project_id: string
+  title: string
+  question: string
+  stage: TaskStage
+  condition: TaskCondition
+  condition_reason: string | null
+  revision: number
+  approved_revision: number
+  admitted_at: string
+  origin: 'conversation' | 'legacy_round'
+  authorizing_message_id: string | null
+  participants: { member_id: string; name: string; handle: string; role: 'general' | 'specialist' }[]
+  open_questions: number
+  review_requested: boolean
+  updated_at: string
+}
+export type TaskBoard = {
+  cards: TaskCard[]
+  stages: { stage: TaskStage; count: number }[]
+  total: number
+}
+export type TaskDraft = {
+  id: string
+  project_id: string
+  title: string
+  question: string
+  revision: number
+  proposed_by: string
+  updated_at: string
+}
+
 /** A turn of the researcher's private conversation with a member (ADR 0223). */
 export type DmTurn = { run_id: string; user: string; assistant: string }
 /** Exactly what sharing from a private conversation would post to General. */

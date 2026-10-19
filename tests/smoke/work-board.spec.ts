@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openGeneral, workspaceNav } from './shell'
 
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => ({
@@ -29,7 +30,7 @@ test('@smoke work board is one board: scoped entry, same card, commands, closed 
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
 
   // Start in the conversation and open a Thread.
-  await page.locator('.kubecode-channel-nav').getByRole('button', { name: 'General' }).click()
+  await openGeneral(page)
   await page.getByLabel('Message the Workspace').fill('Should we try dropout?')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await page.getByTestId('message-1').getByRole('button', { name: 'Reply in thread' }).click()
@@ -78,7 +79,7 @@ test('@smoke work board is one board: scoped entry, same card, commands, closed 
   await page.reload()
   // Other specs leave Projects behind; choose ours explicitly after the reload.
   await page.getByRole('button', { name: projectName, exact: true }).click()
-  await page.locator('.kubecode-research-nav-item', { hasText: 'Work board' }).click()
+  await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await page.getByLabel('Show closed work').check()
   await expect(page.getByTestId('work-closed-lane')).toContainText('Try dropout 0.1')
   await page.setViewportSize({ width: 390, height: 800 })
