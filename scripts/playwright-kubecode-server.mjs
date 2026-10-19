@@ -53,6 +53,10 @@ const server = spawn(serverCommand, serverArguments, {
     KUBECODE_STATIC_DIR: 'dist',
     KUBECODE_WORKSPACE_ROOT: root,
     KUBECODE_OPENCODE_PATH: fakeOpenCode,
+    // Only the fixture provider exists for the browser tests: a message routed to a
+    // member must never start a real Claude Code or Codex, however the machine is set up.
+    KUBECODE_CLAUDE_PATH: join(root, 'no-such-claude'),
+    KUBECODE_CODEX_PATH: join(root, 'no-such-codex'),
     KUBECODE_PLAYWRIGHT_FIXTURE_DIR: fixtureDir,
   },
   stdio: 'inherit',
