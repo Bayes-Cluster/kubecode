@@ -41,6 +41,7 @@ function isViewKey(value: unknown): value is ViewKey {
   if (typeof value !== 'string') return false
   if (FIXED_VIEW_KEYS.includes(value)) return true
   const separator = value.indexOf(':')
+  if (separator <= 0) return false
   const prefix = value.slice(0, separator)
   return (prefix === 'dm' || prefix === 'question') && isRouteId(value.slice(separator + 1))
 }

@@ -143,6 +143,26 @@ describe('stored workspace locations', () => {
     expect(memory.workspaces.p1.views['question:q1']).toEqual({ place: { view: 'question', question: 'q1' }, inspector: [] })
   })
 
+  it('opens General when the stored current view key has no separator', () => {
+    for (const current of ['dm1', 'dmx', 'questionQ', 'question', 'dm', ':m1', 'dm:', 'question:']) {
+      const memory = readLocationMemory(stored({
+        lastProjectId: 'p1',
+        seq: 1,
+        workspaces: { p1: { current, at: 1, views: {} } },
+      }))
+      expect(memory.workspaces.p1.current, current).toBe('general')
+    }
+  })
+
+  it('drops a stored view whose key has no separator', () => {
+    const memory = readLocationMemory(stored({
+      lastProjectId: 'p1',
+      seq: 1,
+      workspaces: { p1: { current: 'general', at: 1, views: { dm1: '/p/p1/dm/m1', general: '/p/p1/general' } } },
+    }))
+    expect(Object.keys(memory.workspaces.p1.views)).toEqual(['general'])
+  })
+
   it('applies the limits on read', () => {
     const views: Record<string, string> = { general: '/p/p1/general' }
     for (let index = 0; index < MAX_REMEMBERED_VIEWS + 3; index += 1) views[`dm:m${index}`] = `/p/p1/dm/m${index}`
