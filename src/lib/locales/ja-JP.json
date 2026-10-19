@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "チームリーダーへの回答を入力",
   "kubecode.teamSubmitAnswer": "回答を送信",
   "kubecode.teamYoloNativePermission": "ネイティブ権限",
+  "kubecode.generalManagerMode": "General Agent は管理役のため、モードは固定です",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

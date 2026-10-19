@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "Uviadzicie adkaz dla kiraŭnika kamandy",
   "kubecode.teamSubmitAnswer": "Adpravić adkaz",
   "kubecode.teamYoloNativePermission": "Ułasny dazvoł",
+  "kubecode.generalManagerMode": "General Agent kiruje pracaj, tamu jaho režym zafiksavany",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

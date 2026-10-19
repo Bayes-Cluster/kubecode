@@ -134,6 +134,22 @@ impl MemberSpec {
         self.config = config;
         Ok(self)
     }
+
+    /// The General Agent manages, so its permission mode is set by that role
+    /// and never by its settings (ADR 0226).
+    pub fn checked_for_general(self) -> Result<Self, MemberError> {
+        if self.config.keys().any(|key| is_mode_key(key)) {
+            return Err(MemberError::Invalid(
+                "the General Agent's mode is set by its role",
+            ));
+        }
+        Ok(self)
+    }
+}
+
+/// A configuration value that would set a Session's permission mode.
+pub fn is_mode_key(key: &str) -> bool {
+    key.eq_ignore_ascii_case("mode")
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -211,7 +227,7 @@ impl MemberDefaults {
     }
 
     pub fn normalized(mut self) -> Result<Self, MemberError> {
-        self.general = self.general.normalized()?;
+        self.general = self.general.normalized()?.checked_for_general()?;
         for text in self.templates.values_mut() {
             *text = text.trim().to_owned();
             if text.chars().count() > MAX_INSTRUCTIONS_CHARS {

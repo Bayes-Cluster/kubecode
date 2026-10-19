@@ -761,3 +761,76 @@ fn a_rejected_configuration_is_a_setup_problem_that_clears_when_it_applies_and_a
         (MemberState::Active, None, None)
     );
 }
+
+#[test]
+fn the_general_agent_s_settings_cannot_carry_a_mode() {
+    let r = rig();
+    let general = r
+        .members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    let with_mode = MemberSpec {
+        agent_id: AgentId::OpenCode,
+        config: [("Mode".to_owned(), "agent-full-access".to_owned())].into(),
+        instructions: String::new(),
+    };
+    assert!(matches!(
+        r.members.update(
+            &r.f.project_id,
+            &general.id,
+            general.revision,
+            MemberPatch {
+                spec: Some(with_mode.clone()),
+                ..Default::default()
+            },
+            YES
+        ),
+        Err(MemberError::Invalid(_))
+    ));
+    let mut defaults = r.members.defaults(AgentId::OpenCode).unwrap();
+    defaults.general = with_mode.clone();
+    assert!(matches!(
+        r.members.set_defaults(0, defaults),
+        Err(MemberError::Invalid(_))
+    ));
+    // A specialist may set one.
+    let analyst = r
+        .members
+        .create_specialist(
+            &r.f.project_id,
+            NewMember {
+                name: "Analyst".into(),
+                spec: Some(with_mode.clone()),
+                ..Default::default()
+            },
+            YES,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    assert_eq!(analyst.spec.config.len(), 1);
+
+    // A setting stored before this rule is never applied to the manager.
+    let stored = MemberSpec {
+        config: [
+            ("mode".to_owned(), "agent-full-access".to_owned()),
+            ("model".to_owned(), "fast".to_owned()),
+        ]
+        .into(),
+        ..with_mode
+    };
+    r.f.agents
+        .database()
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE workspace_members SET spec_json = ?2, revision = revision + 1 WHERE id = ?1",
+            rusqlite::params![general.id, serde_json::to_string(&stored).unwrap()],
+        )
+        .unwrap();
+    let pending = r
+        .members
+        .pending_config(general.public_conversation_id.as_deref().unwrap())
+        .unwrap()
+        .expect("the model is still owed");
+    assert_eq!(pending.values, [("model".to_owned(), "fast".to_owned())]);
+}

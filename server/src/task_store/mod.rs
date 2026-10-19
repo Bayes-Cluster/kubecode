@@ -109,6 +109,14 @@ fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
          CREATE INDEX IF NOT EXISTS task_events_task ON task_events(research_id, seq);",
+    )?;
+    // The revision each piece of a review's evidence had when the review was
+    // asked for, so a change before the decision is caught (ADR 0226).
+    crate::database::ensure_column(
+        connection,
+        "task_review_requests",
+        "evidence_pins_json",
+        "TEXT NOT NULL DEFAULT '{}'",
     )
 }
 
@@ -134,7 +142,7 @@ fn auth_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Authorization> {
 }
 
 const REQUEST_SELECT: &str = "SELECT id, research_id, summary, evidence_json, requested_by,
-    brief_revision, state, created_at, resolved_at FROM task_review_requests";
+    brief_revision, state, created_at, resolved_at, evidence_pins_json FROM task_review_requests";
 
 fn request_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewRequest> {
     let evidence: String = row.get(3)?;
@@ -148,6 +156,7 @@ fn request_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewRequest> 
         state: row.get(6)?,
         created_at: row.get(7)?,
         resolved_at: row.get(8)?,
+        evidence_pins: serde_json::from_str(&row.get::<_, String>(9)?).unwrap_or_default(),
     })
 }
 
@@ -1197,6 +1206,45 @@ impl TaskStore {
     /// The General Agent reports results and asks the researcher to review
     /// (it does not review specialist work itself). Only a Task that is
     /// executing is reviewed; one request is open at a time.
+    /// The researcher accepts the current version of one piece of the open
+    /// review's own evidence, after looking at it: its pin moves to `revision`.
+    pub fn repin_review_evidence(
+        &self,
+        project_id: &str,
+        research_id: &str,
+        request_id: &str,
+        entry: &str,
+        revision: &str,
+    ) -> Result<(), TaskError> {
+        self.write(|tx| {
+            let request = tx
+                .query_row(
+                    &format!(
+                        "{REQUEST_SELECT} WHERE id = ?1 AND project_id = ?2 AND research_id = ?3"
+                    ),
+                    params![request_id, project_id, research_id],
+                    request_from_row,
+                )
+                .optional()?
+                .ok_or(TaskError::NotFound)?;
+            if request.state != "open" {
+                return Err(TaskError::State("that review was already decided"));
+            }
+            if !request.evidence.iter().any(|cited| cited == entry) {
+                return Err(TaskError::Invalid(
+                    "that evidence is not cited by the review",
+                ));
+            }
+            let mut pins = request.evidence_pins;
+            pins.insert(entry.to_owned(), revision.to_owned());
+            tx.execute(
+                "UPDATE task_review_requests SET evidence_pins_json = ?2 WHERE id = ?1",
+                params![request_id, serde_json::to_string(&pins)?],
+            )?;
+            Ok(((), Some((project_id.to_owned(), research_id.to_owned()))))
+        })
+    }
+
     pub fn request_review(
         &self,
         project_id: &str,
@@ -1204,6 +1252,7 @@ impl TaskStore {
         research_id: &str,
         summary: &str,
         evidence: &[String],
+        pins: &std::collections::BTreeMap<String, String>,
     ) -> Result<(ReviewRequest, bool), TaskError> {
         if !self.members.is_general(project_id, caller)? {
             return Err(TaskError::NotManager);
@@ -1273,8 +1322,9 @@ impl TaskStore {
             let id = Uuid::new_v4().to_string();
             tx.execute(
                 "INSERT INTO task_review_requests
-                   (id, project_id, research_id, summary, evidence_json, requested_by, brief_revision)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                   (id, project_id, research_id, summary, evidence_json, requested_by, brief_revision,
+                    evidence_pins_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     id,
                     project_id,
@@ -1282,7 +1332,8 @@ impl TaskStore {
                     summary,
                     serde_json::to_string(evidence)?,
                     caller,
-                    question.revision as i64
+                    question.revision as i64,
+                    serde_json::to_string(pins)?
                 ],
             )
             .map_err(|error| Self::lost_race(error, "a review is already open"))?;

@@ -1279,6 +1279,7 @@
   "kubecode.teamYoloDescription": "The Team runs autonomously and must pass an independent review.",
   "kubecode.teamYoloWarning": "YOLO automatically uses each Agent's maximum native permission profile. Model, effort, and performance settings remain under your control.",
   "kubecode.teamYoloNativePermission": "Native permission",
+  "kubecode.generalManagerMode": "The General Agent manages, so its mode is fixed",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

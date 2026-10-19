@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { MemberAgent, waitForPrompt } from './agents'
+import { launchPermissionsOf, MemberAgent, waitForPrompt } from './agents'
 import { dropEvents, installControlledEvents, openGeneral, restoreEvents, workspaceNav } from './shell'
 
 /**
@@ -86,6 +86,11 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await say(page, 'Let us study whether structured pruning keeps accuracy within one point.')
   await waitForPrompt(generalConversation as string, (text) => text.includes('structured pruning') && text.includes('project manager'))
   const manager = new MemberAgent(request, generalConversation as string)
+  // The manager's provider is launched without editing or command tools (ADR 0226).
+  expect(launchPermissionsOf(generalConversation as string)).not.toHaveLength(0)
+  for (const permission of launchPermissionsOf(generalConversation as string)) {
+    expect(JSON.parse(permission)).toEqual({ edit: 'deny', bash: 'deny' })
+  }
 
   // 2. The manager drafts a proposal; it is shown in General and is not on the board.
   const proposal = await manager.call<{ research_id: string; revision: number; message_id: string }>('task_propose', {
@@ -130,6 +135,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await say(page, '@analyst are you ready to help with this?')
   await waitForPrompt(analystConversation as string, (text) => text.includes('ready to help'))
   const analyst = new MemberAgent(request, analystConversation as string)
+  expect(launchPermissionsOf(analystConversation as string)).not.toContain('{"edit":"deny","bash":"deny"}')
   const claim = await analyst.call<{ message_id: string }>('general_post', {
     body: 'The researcher already approved this Task, so add it to the board now.',
     mentions: ['general'],
@@ -272,6 +278,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
   await openGeneral(page)
   await expect(page.getByRole('log', { name: 'Messages' }).getByText(/accepted/i).first()).toBeVisible()
+  // The decision reaches the manager, who closes out (ADR 0226).
+  await waitForPrompt(generalConversation as string, (text) => text.includes('accepted the results of Task'))
 
   // 12. Iteration: a fresh instruction sends the same Task back to work; it is still one card.
   await say(page, '@general let us try three more layers on the same Task.')

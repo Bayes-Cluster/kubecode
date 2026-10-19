@@ -9,6 +9,7 @@ fi
 # A browser test can play the member this process serves: it reads the MCP
 # servers the runtime handed to the session (the same credentials a real agent
 # receives) and the prompts that reached it, from this directory (ADR 0225).
+# It also records the permissions the process was launched with (ADR 0226).
 dump="${KUBECODE_PLAYWRIGHT_FIXTURE_DIR:-}"
 [ -z "$dump" ] || mkdir -p "$dump"
 
@@ -20,6 +21,7 @@ while IFS= read -r line; do
       ;;
     *'"method":"session/new"'*)
       [ -z "$dump" ] || printf '%s\n' "$line" > "$dump/session-$$.json"
+      [ -z "$dump" ] || printf '%s' "${OPENCODE_PERMISSION:-}" > "$dump/permission-$$.txt"
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"playwright-session\",\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\",\"description\":\"Use tools to implement changes\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before implementation\"}]},\"configOptions\":[{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"model-1\",\"options\":[{\"value\":\"model-1\",\"name\":\"Model 1\"}]}]}}"
       ;;
     *'"method":"session/prompt"'*)
@@ -33,6 +35,7 @@ while IFS= read -r line; do
       # long hold exists for the UI test that watches a run in progress.
       case "$line" in
         *'General conversation'*general_post*) ;;
+        *'The researcher accepted the results of Task'*|*'The researcher sent Task'*) ;;
         *) sleep 20 ;;
       esac
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"

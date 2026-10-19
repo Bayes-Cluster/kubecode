@@ -10,6 +10,7 @@ import {
   type KubecodeApi,
   type TaskDetail,
   type TaskReviewRequest,
+  type TaskStaleEvidence,
   type WorkOutcome,
   type WorkspaceEvent,
 } from '../api'
@@ -258,6 +259,32 @@ function OpenQuestions({
   )
 }
 
+type StaleGroup = {
+  key: string
+  kind: string
+  refId: string
+  status: TaskStaleEvidence['status']
+  current: string | null
+  entries: TaskStaleEvidence[]
+}
+
+/** One row per piece of evidence, however many pins of it are stale. */
+function groupStale(stale: TaskStaleEvidence[]): StaleGroup[] {
+  const groups = new Map<string, StaleGroup>()
+  for (const entry of stale) {
+    const key = `${entry.kind}:${entry.ref_id}`
+    const group = groups.get(key)
+    if (group) {
+      group.entries.push(entry)
+    } else {
+      groups.set(key, {
+        key, kind: entry.kind, refId: entry.ref_id, status: entry.status, current: entry.current, entries: [entry],
+      })
+    }
+  }
+  return [...groups.values()]
+}
+
 function ReviewPanel({
   api,
   detail,
@@ -278,11 +305,18 @@ function ReviewPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [looking, setLooking] = useState<EvidenceTarget | null>(null)
-  // Evidence that changed can be accepted at its current version only after it
-  // was looked at; evidence that is gone must be acknowledged instead.
-  const [looked, setLooked] = useState<Set<string>>(new Set())
+  // Evidence that changed can be accepted only at the version the researcher
+  // looked at; if it changes again, it must be looked at again. Evidence that
+  // is gone must be acknowledged instead. One piece of evidence may be pinned
+  // more than once (by the work and by the review); it is looked at once and
+  // accepting re-pins every pin of it.
+  const [looked, setLooked] = useState<Record<string, string>>({})
+  const lookedAtCurrent = (group: StaleGroup) => (
+    group.current !== null && looked[group.key] === group.current
+  )
   const [ackRemoved, setAckRemoved] = useState(false)
   const stale = detail.stale_evidence
+  const groups = groupStale(stale)
   const changed = stale.filter((entry) => entry.status === 'changed')
   const removed = stale.filter((entry) => entry.status === 'removed')
   const evidence = request.evidence.map((entry) => {
@@ -338,32 +372,37 @@ function ReviewPanel({
         <div className="kubecode-research-notice" role="status">
           <p>{t('kubecode.task.staleEvidenceTitle')}</p>
           <ul>
-            {stale.map((entry) => (
-              <li key={`${entry.work_id}:${entry.result_id}`}>
-                <span title={`${entry.kind}:${entry.ref_id}`}>
-                  {entry.kind}:{entry.ref_id} — {t(entry.status === 'removed' ? 'kubecode.task.evidenceRemoved' : 'kubecode.task.evidenceChanged')}
+            {groups.map((group) => (
+              <li key={group.key}>
+                <span title={group.key}>
+                  {group.key} — {t(group.status === 'removed' ? 'kubecode.task.evidenceRemoved' : 'kubecode.task.evidenceChanged')}
                 </span>
-                {entry.status === 'changed' && (
+                {group.status === 'changed' && (
                   <Button
                     size="xs"
                     variant="ghost"
                     onClick={() => {
-                      setLooking({ kind: entry.kind, id: entry.ref_id, revision: entry.current })
-                      setLooked(new Set(looked).add(entry.result_id))
+                      setLooking({ kind: group.kind, id: group.refId, revision: group.current })
+                      if (group.current) setLooked({ ...looked, [group.key]: group.current })
                     }}
                   >
                     {t('kubecode.task.lookAtIt')}
                   </Button>
                 )}
-                {entry.status === 'changed' && (
+                {group.status === 'changed' && (
                   <Button
-                    disabled={busy || !looked.has(entry.result_id)}
+                    disabled={busy || !lookedAtCurrent(group)}
                     size="xs"
-                    title={looked.has(entry.result_id) ? undefined : t('kubecode.task.lookFirst')}
+                    title={lookedAtCurrent(group) ? undefined : t('kubecode.task.lookFirst')}
                     variant="outline"
-                    onClick={() => void run(() => api.repinTaskEvidence(
-                      projectId, detail.id, entry.work_id, entry.result_id, entry.current,
-                    ))}
+                    onClick={() => {
+                      const revision = looked[group.key]
+                      void run(async () => {
+                        for (const entry of group.entries) {
+                          await api.repinTaskEvidence(projectId, detail.id, entry, revision)
+                        }
+                      })
+                    }}
                   >
                     {t('kubecode.task.acceptCurrent')}
                   </Button>

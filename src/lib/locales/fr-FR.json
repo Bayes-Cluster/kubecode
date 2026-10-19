@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "Saisissez votre réponse pour le responsable de l’équipe",
   "kubecode.teamSubmitAnswer": "Envoyer la réponse",
   "kubecode.teamYoloNativePermission": "Autorisation native",
+  "kubecode.generalManagerMode": "Le General Agent coordonne, son mode est donc fixe",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

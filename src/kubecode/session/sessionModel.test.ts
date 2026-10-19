@@ -6,6 +6,8 @@ import {
   attachRunMessage,
   failOptimisticMessage,
   messageFromRun,
+  nativeModeLockMessage,
+  nativeModeLockReason,
   newClientMessageId,
   optimisticUserMessage,
   rollbackOptimisticMessage,
@@ -98,5 +100,20 @@ describe('newClientMessageId', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('nativeModeLockReason', () => {
+  it("keeps the General Agent's mode locked and says why", () => {
+    const reason = nativeModeLockReason({
+      active: false,
+      agentId: 'codex',
+      conversation: { read_only: false, team_role: null } as unknown as Parameters<typeof nativeModeLockReason>[0]['conversation'],
+      serverAccess: { can_change: false, reason: 'general_manager' },
+      team: null,
+      viewRevisionId: null,
+    })
+    expect(reason).toBe('general_manager')
+    expect(nativeModeLockMessage(reason, (key) => key)).toBe('kubecode.generalManagerMode')
   })
 })

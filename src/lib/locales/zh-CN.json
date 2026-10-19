@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "输入给 Team Leader 的回答",
   "kubecode.teamSubmitAnswer": "发送回答",
   "kubecode.teamYoloNativePermission": "原生权限",
+  "kubecode.generalManagerMode": "General Agent 负责管理，因此其模式固定",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

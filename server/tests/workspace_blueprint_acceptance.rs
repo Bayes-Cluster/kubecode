@@ -590,3 +590,297 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
     .await;
     assert!(status.is_client_error(), "{status} {body}");
 }
+
+/// A Task taken to the researcher's review: proposed, admitted, started, worked
+/// by the specialist with `results.csv` attached, and sent for review citing
+/// `review_evidence`. Returns the manager's Session, the Task, and the request.
+async fn at_review(
+    world: &World,
+    review_evidence: &[&str],
+) -> (String, String, Result<String, String>) {
+    let project = world.project.clone();
+    let general = public(&roster(world, &project).await, "general");
+    let (status, _) = call(
+        world,
+        Method::POST,
+        &format!("/projects/{project}/members"),
+        json!({"name": "Analyst", "template": "analysis"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let analyst = public(&roster(world, &project).await, "analyst");
+    let (_, channels) = call(
+        world,
+        Method::GET,
+        &format!("/projects/{project}/channels"),
+        Value::Null,
+    )
+    .await;
+    let channel = channels[0]["id"].as_str().unwrap().to_owned();
+    std::fs::write(world.path.join("results.csv"), "accuracy\n0.91\n").unwrap();
+    let manager = member(world, &project, &general);
+    let proposal = manager
+        .task_propose(
+            ResearchBrief {
+                title: "Structured pruning".into(),
+                question: "Does it keep accuracy?".into(),
+                ..Default::default()
+            },
+            Some("p1"),
+        )
+        .unwrap();
+    let task = proposal.research_id.clone();
+    let add = researcher_says(world, &channel, "Please add it to the Kanban.").await;
+    manager
+        .task_admit(&task, add["id"].as_str().unwrap(), proposal.revision)
+        .unwrap();
+    let go = researcher_says(world, &channel, "Go ahead.").await;
+    manager
+        .task_start(&task, go["id"].as_str().unwrap())
+        .unwrap();
+    let work = manager
+        .create(NewTask {
+            round_id: None,
+            title: "Sweep",
+            description: "Sweep ratios",
+            plan: None,
+            depends_on: &[],
+            from_thread: None,
+            client_request_id: Some("w1"),
+        })
+        .unwrap();
+    manager
+        .assign_member(&work.item.id, "@analyst", "analysis")
+        .unwrap();
+    manager.start(&work.item.id, "s1").unwrap();
+    world
+        .agents
+        .start_run(&analyst, &project, "run", PermissionMode::Safe)
+        .unwrap();
+    let specialist = member(world, &project, &analyst);
+    specialist
+        .attach(
+            &work.item.id,
+            "file",
+            "results.csv",
+            None,
+            ResultRole::Evidence,
+        )
+        .unwrap();
+    specialist
+        .report(
+            &work.item.id,
+            ReportStatus::Completed,
+            "Held at 0.91.",
+            None,
+        )
+        .unwrap();
+    let evidence: Vec<String> = review_evidence
+        .iter()
+        .map(|entry| (*entry).to_owned())
+        .collect();
+    if let Err(error) = manager.task_request_review(&task, "Accuracy held at 0.91.", &evidence) {
+        return (general, task, Err(error.to_string()));
+    }
+    let (_, detail) = call(
+        world,
+        Method::GET,
+        &format!("/projects/{project}/tasks/{task}"),
+        Value::Null,
+    )
+    .await;
+    let request = detail["review_requests"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (general, task, Ok(request))
+}
+
+#[tokio::test]
+async fn a_task_sent_back_reaches_the_manager_with_the_researchers_reasons() {
+    let world = world();
+    let project = world.project.clone();
+    let (general, task, request) = at_review(&world, &["file:results.csv"]).await;
+    let request = request.unwrap();
+    // Everything routed so far is delivered; only the decision is new.
+    world
+        .state
+        .orchestrator
+        .tick(&Recording::default())
+        .unwrap();
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        json!({"request_id": request, "accept": false, "reason": "Repeat the sweep on CIFAR-100 before concluding."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        board(&world, &project).await["cards"][0]["stage"],
+        "in_progress"
+    );
+    let sink = Recording::default();
+    world.state.orchestrator.tick(&sink).unwrap();
+    world.state.orchestrator.tick(&sink).unwrap();
+    let to_manager: Vec<String> = sink
+        .to()
+        .into_iter()
+        .filter(|(to, _)| *to == general)
+        .map(|(_, body)| body)
+        .collect();
+    assert_eq!(
+        to_manager.len(),
+        1,
+        "the manager hears it exactly once: {to_manager:?}"
+    );
+    assert!(
+        to_manager[0].contains("Repeat the sweep on CIFAR-100"),
+        "{}",
+        to_manager[0]
+    );
+    assert!(to_manager[0].contains("sent"), "{}", to_manager[0]);
+}
+
+#[tokio::test]
+async fn evidence_cited_only_in_the_review_request_is_pinned_and_guards_acceptance() {
+    let world = world();
+    let project = world.project.clone();
+    std::fs::write(world.path.join("notes.md"), "pruning held").unwrap();
+    let (_, task, request) = at_review(&world, &["file:notes.md"]).await;
+    let request = request.unwrap();
+    // The cited file changes to the opposite conclusion after the review was requested.
+    std::fs::write(world.path.join("notes.md"), "pruning failed").unwrap();
+    let accept = json!({"request_id": request, "accept": true, "outcome": "supported"});
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        accept.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "work_evidence_stale");
+    let (_, detail) = call(
+        &world,
+        Method::GET,
+        &format!("/projects/{project}/tasks/{task}"),
+        Value::Null,
+    )
+    .await;
+    let stale = detail["stale_evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["ref_id"] == "notes.md")
+        .cloned()
+        .expect("the review's own evidence is listed as changed");
+    assert_eq!(stale["request_id"], request.as_str());
+    // Accepting a version needs the version that was looked at.
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/repin"),
+        json!({"request_id": stale["request_id"], "result_id": stale["result_id"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/repin"),
+        json!({
+            "request_id": stale["request_id"], "result_id": stale["result_id"],
+            "work_id": stale["work_id"], "revision": stale["current"],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        accept,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn a_review_cannot_cite_evidence_that_does_not_exist() {
+    let world = world();
+    let (_, _, request) = at_review(&world, &["file:never-written.csv"]).await;
+    let refused = request.unwrap_err();
+    assert!(refused.contains("never-written.csv"), "{refused}");
+}
+
+#[tokio::test]
+async fn an_accepted_task_reaches_the_manager_once_to_close_it_out() {
+    let world = world();
+    let project = world.project.clone();
+    let (general, task, request) = at_review(&world, &["file:results.csv"]).await;
+    let request = request.unwrap();
+    world
+        .state
+        .orchestrator
+        .tick(&Recording::default())
+        .unwrap();
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        json!({"request_id": request, "accept": true, "outcome": "refuted"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let sink = Recording::default();
+    world.state.orchestrator.tick(&sink).unwrap();
+    world.state.orchestrator.tick(&sink).unwrap();
+    let to_manager: Vec<String> = sink
+        .to()
+        .into_iter()
+        .filter(|(to, _)| *to == general)
+        .map(|(_, body)| body)
+        .collect();
+    assert_eq!(to_manager.len(), 1, "{to_manager:?}");
+    assert!(
+        to_manager[0].contains("accepted the results") && to_manager[0].contains("refuted"),
+        "{}",
+        to_manager[0]
+    );
+}
+
+#[tokio::test]
+async fn evidence_cited_only_in_the_review_that_was_removed_is_acknowledged_not_blocking() {
+    let world = world();
+    let project = world.project.clone();
+    std::fs::write(world.path.join("notes.md"), "pruning held").unwrap();
+    let (_, task, request) = at_review(&world, &["file:notes.md"]).await;
+    let request = request.unwrap();
+    std::fs::remove_file(world.path.join("notes.md")).unwrap();
+    let (_, detail) = call(
+        &world,
+        Method::GET,
+        &format!("/projects/{project}/tasks/{task}"),
+        Value::Null,
+    )
+    .await;
+    let gone = detail["stale_evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["ref_id"] == "notes.md")
+        .cloned()
+        .expect("the removed evidence is listed");
+    assert_eq!(gone["status"], "removed");
+    assert_eq!(gone["request_id"], request.as_str());
+    // There is no version to accept; the researcher acknowledges it and decides.
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/review"),
+        json!({"request_id": request, "accept": true, "outcome": "inconclusive"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}

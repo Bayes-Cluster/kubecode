@@ -542,6 +542,7 @@ export function nativeModeLockMessage(
 ): string {
   const keys = {
     active_run: 'kubecode.running',
+    general_manager: 'kubecode.generalManagerMode',
     read_only: 'kubecode.readOnlySubagent',
     team_discriminator: 'kubecode.readOnlySubagent',
     team_teammate: 'kubecode.teamLeader',

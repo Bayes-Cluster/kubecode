@@ -14,6 +14,8 @@ use crate::agents::AgentId;
 use super::{AgentPermissionProfile, RuntimeError};
 
 const OPENCODE_MAXIMUM_PERMISSION: &str = r#"{"*":"allow"}"#;
+/// The General Agent's OpenCode: editing and shell commands are denied from launch.
+const OPENCODE_MANAGER_PERMISSION: &str = r#"{"edit":"deny","bash":"deny"}"#;
 
 type AcpDebugCallback = Arc<dyn Fn(&str, LineDirection) + Send + Sync + 'static>;
 
@@ -167,13 +169,16 @@ pub(super) fn acp_agent(
             )],
         ),
         AgentId::OpenCode => {
-            let environment = if permission_profile == AgentPermissionProfile::Maximum {
-                vec![EnvVariable::new(
+            let environment = match permission_profile {
+                AgentPermissionProfile::Maximum => vec![EnvVariable::new(
                     "OPENCODE_PERMISSION",
                     OPENCODE_MAXIMUM_PERMISSION,
-                )]
-            } else {
-                Vec::new()
+                )],
+                AgentPermissionProfile::Manager => vec![EnvVariable::new(
+                    "OPENCODE_PERMISSION",
+                    OPENCODE_MANAGER_PERMISSION,
+                )],
+                _ => Vec::new(),
             };
             (
                 "OpenCode",
@@ -276,6 +281,33 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(&permission.value).expect("permission JSON"),
             json!({"*": "allow"}),
+        );
+    }
+
+    #[test]
+    fn a_manager_opencode_session_cannot_edit_or_run_commands_from_launch() {
+        let descriptor = AgentDescriptor {
+            id: AgentId::OpenCode,
+            available: true,
+            version: Some("test".into()),
+            executable: "/opt/bin/opencode".into(),
+            error: None,
+        };
+        let manager = acp_agent(
+            AgentId::OpenCode,
+            &descriptor,
+            AgentPermissionProfile::Manager,
+            Path::new("/workspace/project"),
+        )
+        .expect("manager ACP agent");
+        let permission = manager
+            .environment
+            .iter()
+            .find(|variable| variable.name == "OPENCODE_PERMISSION")
+            .expect("the manager's provider is restricted when it starts");
+        assert_eq!(
+            serde_json::from_str::<Value>(&permission.value).expect("permission JSON"),
+            json!({"edit": "deny", "bash": "deny"}),
         );
     }
 

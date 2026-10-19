@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "Skriv ditt svar till teamledaren",
   "kubecode.teamSubmitAnswer": "Skicka svar",
   "kubecode.teamYoloNativePermission": "Inbyggd behörighet",
+  "kubecode.generalManagerMode": "General Agent samordnar, så dess läge är fast",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

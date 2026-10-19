@@ -137,6 +137,9 @@ pub struct ReviewRequest {
     pub state: String,
     pub created_at: String,
     pub resolved_at: Option<String>,
+    /// The revision each cited `kind:id` had when the review was asked for.
+    #[serde(default)]
+    pub evidence_pins: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

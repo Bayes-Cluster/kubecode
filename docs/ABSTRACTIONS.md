@@ -1264,7 +1264,10 @@ who authorized it and who works on it, what waits on the researcher, and the
 review the manager asked for: its evidence, any that changed since it was
 attached (acceptance waits until it is looked at), and the researcher's decision
 — accept with what the result showed (a valid negative result completes the
-Task) or send back with a reason. See ADR 0225.
+Task) or send back with a reason. Evidence the review request cites is pinned
+too, and changed evidence is accepted only at the version the researcher looked
+at. The decision is routed to the manager, so a Task sent back is replanned.
+See ADRs 0225 and 0226.
 
 ## Workspace views and routes
 
@@ -1309,7 +1312,9 @@ template. A member runs on **Sessions** — a public one for shared work and a
 separate private one for direct messages — that can be replaced without
 changing who the member is. The manager clarifies, plans, delegates, tracks,
 and reports; it cannot be assigned or perform specialist work, and this is
-enforced by the service, not by instructions. See ADR 0220.
+enforced by the service, not by instructions: its Sessions start with the
+**Manager** permission profile, which withdraws editing and command tools at
+the provider's launch. See ADRs 0220 and 0226.
 
 ## Analysis and evidence
 

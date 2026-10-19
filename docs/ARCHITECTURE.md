@@ -308,7 +308,11 @@ authorized. The manager coordinates many Tasks, so a Task round's Session is
 set without the exclusive research link (`round_set_shared_session`). `task_api.rs` serves
 `GET .../tasks/board`, `.../drafts`, `.../{id}` and the researcher's
 `POST .../review` (refused with `409 work_evidence_stale` while evidence the
-Task's work cites has changed) and `.../repin`; it has no admission endpoint.
+Task's work or its open review request cites has changed) and `.../repin`
+(by `work_id` or by `request_id`, bound to the looked-at `revision`); it has no
+admission endpoint. A review request pins each `kind:id` it cites
+(`task_review_requests.evidence_pins_json`). Recording a decision creates a
+`task_review` route to the General Agent's public Session (ADR 0226).
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
@@ -809,6 +813,16 @@ also persists whether Kubecode applied a native permission profile and its
 prior mode, allowing completion or fallback to restore permissions after a
 server restart. Model, effort, fast mode, and other Agent settings are not part
 of the Team permission policy.
+
+The General Agent's Sessions use the Manager permission profile (ADR 0226):
+Claude Code sessions are created, loaded, and resumed with
+`_meta.claudeCode.options.disallowedTools` withdrawing its edit and shell tools,
+Codex runs in `read-only` mode, and OpenCode starts with
+`OPENCODE_PERMISSION='{"edit":"deny","bash":"deny"}'`. `AgentRuntime` refuses
+mode changes on manager Sessions (`RuntimeError::ManagerModeLocked`; the session
+API reports `general_manager`), the member store refuses a `mode` setting for
+the General Agent, and the permission handler refuses a manager's edit or
+command request and never answers its other requests from always-allow memory.
 
 Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool

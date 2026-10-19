@@ -45,6 +45,8 @@ text_enum!(RouteKind {
     Mention => "mention",
     // A member's visible hand-off to another member in General.
     AgentHandoff => "agent_handoff",
+    // The researcher's decision on a Task's results, for the project manager.
+    TaskReview => "task_review",
 });
 
 // Where a route's payload came from.
@@ -54,6 +56,7 @@ text_enum!(SourceKind {
     Work => "work",
     Experiment => "experiment",
     Decision => "decision",
+    Review => "review",
 });
 
 // `delivered` is receipt of the event by the Session. It is not task

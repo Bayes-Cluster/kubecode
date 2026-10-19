@@ -867,6 +867,7 @@ export type SideQuestionAccepted = {
 }
 export type NativeModeLockReason =
   | 'active_run'
+  | 'general_manager'
   | 'read_only'
   | 'team_discriminator'
   | 'team_teammate'
@@ -1180,7 +1181,10 @@ export type TaskInternalWork = {
   assignee: { member_id: string; name: string; handle: string; role: string } | null
 }
 export type TaskStaleEvidence = {
+  /** The internal work it is attached to; empty for the review's own evidence. */
   work_id: string
+  /** The open review whose own evidence this is; `result_id` is then the cited `kind:id`. */
+  request_id?: string
   result_id: string
   kind: string
   ref_id: string
