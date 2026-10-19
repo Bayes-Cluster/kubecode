@@ -250,6 +250,25 @@ impl ResearchStore {
         brief: ResearchBrief,
         client_request_id: Option<&str>,
     ) -> Result<(ResearchQuestion, bool), ResearchError> {
+        self.create_authored(
+            project_id,
+            brief,
+            client_request_id,
+            AuthorKind::Researcher,
+            None,
+        )
+    }
+
+    /// Like [`create`](Self::create), recording who wrote the first revision:
+    /// a proposal drafted by an agent is attributed to it, not to the researcher.
+    pub fn create_authored(
+        &self,
+        project_id: &str,
+        brief: ResearchBrief,
+        client_request_id: Option<&str>,
+        author_kind: AuthorKind,
+        author_ref: Option<&str>,
+    ) -> Result<(ResearchQuestion, bool), ResearchError> {
         let brief = brief.normalized()?;
         let request_id = normalize_client_request_id(client_request_id)?;
         self.write(|tx| {
@@ -275,9 +294,9 @@ impl ResearchStore {
             )?;
             tx.execute(
                 "INSERT INTO research_brief_revisions
-                   (research_id, revision, brief_json, author_kind)
-                 VALUES (?1, 1, ?2, 'researcher')",
-                params![id, brief_json],
+                   (research_id, revision, brief_json, author_kind, author_ref)
+                 VALUES (?1, 1, ?2, ?3, ?4)",
+                params![id, brief_json, author_kind.as_str(), author_ref],
             )?;
             let question = load_question(tx, project_id, &id)?;
             Ok((
@@ -335,6 +354,29 @@ impl ResearchStore {
         patch: &BriefPatch,
         note: Option<&str>,
     ) -> Result<(ResearchQuestion, bool), ResearchError> {
+        self.update_brief_authored(
+            project_id,
+            id,
+            expected_revision,
+            patch,
+            note,
+            AuthorKind::Researcher,
+            None,
+        )
+    }
+
+    /// Like [`update_brief`](Self::update_brief), recording the author of the revision.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_brief_authored(
+        &self,
+        project_id: &str,
+        id: &str,
+        expected_revision: u64,
+        patch: &BriefPatch,
+        note: Option<&str>,
+        author_kind: AuthorKind,
+        author_ref: Option<&str>,
+    ) -> Result<(ResearchQuestion, bool), ResearchError> {
         let note = note
             .map(str::trim)
             .filter(|note| !note.is_empty())
@@ -369,9 +411,16 @@ impl ResearchStore {
             )?;
             tx.execute(
                 "INSERT INTO research_brief_revisions
-                   (research_id, revision, brief_json, author_kind, note)
-                 VALUES (?1, ?2, ?3, 'researcher', ?4)",
-                params![id, revision as i64, brief_json, note],
+                   (research_id, revision, brief_json, author_kind, author_ref, note)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    id,
+                    revision as i64,
+                    brief_json,
+                    author_kind.as_str(),
+                    author_ref,
+                    note
+                ],
             )?;
             let question = load_question(tx, project_id, id)?;
             Ok((

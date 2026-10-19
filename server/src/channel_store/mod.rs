@@ -567,6 +567,7 @@ impl ChannelStore {
         let limit = query.limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
         let (scope_sql, thread_param): (&str, Option<String>) = match query.scope {
             Scope::Channel => ("thread_id IS NULL AND ?2 IS NULL", None),
+            Scope::All => ("?2 IS NULL", None),
             Scope::Thread(thread_id) => {
                 let thread = load_thread(&connection, project_id, thread_id)?;
                 if thread.channel_id != channel_id {
@@ -614,6 +615,43 @@ impl ChannelStore {
             None => false,
         };
         Ok(MessagePage { messages, has_more })
+    }
+
+    /// The sequence of the first agent- or system-written message in a channel
+    /// that cites exactly `kind:id` at `revision`. A proposal is "shown" when
+    /// such a message exists, and the channel's gapless order says what came
+    /// before an instruction.
+    pub fn first_citation_seq(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        kind: ContextKind,
+        id: &str,
+        revision: &str,
+    ) -> Result<Option<u64>, ChannelError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT seq, references_json FROM channel_messages
+             WHERE project_id = ?1 AND channel_id = ?2 AND author_kind IN ('agent', 'system')
+               AND references_json LIKE ?3 ORDER BY seq",
+        )?;
+        let pattern = format!("%{}%", id.replace(['%', '_'], ""));
+        let rows = statement
+            .query_map(params![project_id, channel_id, pattern], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (seq, json) in rows {
+            let references: Vec<ContextRef> = serde_json::from_str(&json).unwrap_or_default();
+            if references.iter().any(|reference| {
+                reference.kind == kind
+                    && reference.id == id
+                    && reference.revision.as_deref() == Some(revision)
+            }) {
+                return Ok(Some(seq as u64));
+            }
+        }
+        Ok(None)
     }
 
     pub fn message(&self, project_id: &str, message_id: &str) -> Result<Message, ChannelError> {

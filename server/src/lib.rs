@@ -25,6 +25,8 @@ pub mod project_watcher;
 pub mod research_api;
 pub mod research_store;
 pub mod shared_media;
+pub mod task_api;
+pub mod task_store;
 pub mod team_api;
 pub mod team_coordinator;
 pub mod team_mcp;

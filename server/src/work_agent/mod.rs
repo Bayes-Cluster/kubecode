@@ -26,11 +26,13 @@ use crate::work_store::{
 
 mod analysis;
 mod evidence;
+mod tasks;
 #[cfg(test)]
 mod tests;
 
 pub use analysis::{DecisionInput, LaunchSpec};
 pub use evidence::{Evidence, StaleEvidence};
+pub use tasks::{GeneralMessage, Proposal, TaskList};
 
 const LIST_LIMIT: usize = 100;
 
@@ -49,6 +51,8 @@ pub enum AgentWorkError {
     /// Cited evidence changed or was removed since it was pinned.
     #[error("evidence changed since it was attached; look at it and re-pin it before accepting")]
     StaleEvidence(Vec<StaleEvidence>),
+    #[error(transparent)]
+    Task(crate::task_store::TaskError),
     #[error(transparent)]
     Work(#[from] WorkError),
     #[error(transparent)]
@@ -114,6 +118,7 @@ pub struct WorkServices {
     pub channels: Arc<ChannelStore>,
     pub orchestrator: Arc<Orchestrator>,
     pub members: Arc<crate::member_store::MemberStore>,
+    pub tasks: Arc<crate::task_store::TaskStore>,
 }
 
 pub struct WorkAgent {
@@ -128,6 +133,7 @@ pub struct WorkAgent {
     experiments: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
     evidence: Option<Evidence>,
     members: Option<Arc<crate::member_store::MemberStore>>,
+    tasks: Option<Arc<crate::task_store::TaskStore>>,
 }
 
 impl WorkAgent {
@@ -154,7 +160,14 @@ impl WorkAgent {
             experiments: None,
             evidence: None,
             members: None,
+            tasks: None,
         }
+    }
+
+    /// Lets members propose, refine, admit, and hand over Tasks (ADR 0221).
+    pub fn with_tasks(mut self, tasks: Arc<crate::task_store::TaskStore>) -> Self {
+        self.tasks = Some(tasks);
+        self
     }
 
     /// Lets commands read the Workspace roster: who the manager is and which
@@ -388,6 +401,20 @@ impl WorkAgent {
             .research
             .round_by_id(&self.project_id, &round_id)
             .map_err(|_| AgentWorkError::NotFound)?;
+        // A Task that is finished, or waiting for the researcher's review, takes
+        // no new work: iterating is the researcher's decision (ADR 0221).
+        if let Some(tasks) = &self.tasks
+            && matches!(
+                tasks.stage(&self.project_id, &round.research_id),
+                Ok(Some(
+                    crate::task_store::TaskStage::Done | crate::task_store::TaskStage::Review
+                ))
+            )
+        {
+            return Err(invalid(
+                "the Task is finished or awaiting the researcher's review; they decide whether to iterate",
+            ));
+        }
         // A task's discussion must be this round's: a Thread of another
         // question, of another round, or of no question at all is another
         // context and does not justify this round's work (nor does it gain the

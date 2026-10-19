@@ -61,6 +61,10 @@ The instruction text itself is interpreted by the General Agent; the server
 verifies provenance and freshness, not wording, and an @mention alone is
 neither required nor sufficient.
 
+The server never reads the researcher's wording; the only message ids it
+accepts are those of the researcher's own messages in General, which any member
+can list with `general_recent`.
+
 Proposals are displayed by construction: proposing or revising a brief posts a
 message in General that cites the question and its revision, so condition 3
 cannot be satisfied by a brief the researcher never saw.

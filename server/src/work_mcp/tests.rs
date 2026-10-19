@@ -729,3 +729,96 @@ async fn the_roster_is_a_tool_and_work_goes_to_specialist_members_by_handle() {
     );
     assert!(unknown.contains("not found"), "{unknown}");
 }
+
+#[tokio::test]
+async fn task_tools_are_the_managers_and_say_what_to_do_when_refused() {
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let general = rig
+        .state
+        .members
+        .ensure_general(&rig.f.project_id, available, AgentId::OpenCode)
+        .unwrap()
+        .public_conversation_id
+        .unwrap();
+    let manager = rig.server(&general);
+    let outsider = rig.leader();
+    let propose = |title: &str| ProposeInput {
+        title: title.into(),
+        question: "Does it hold?".into(),
+        motivation: None,
+        hypotheses: vec![],
+        constraints: vec![],
+        success_criteria: vec!["within a point".into()],
+        client_request_id: Some(title.replace(' ', "-")),
+    };
+    // A Session that is not a member cannot even draft.
+    let message = refused(outsider.task_propose(Parameters(propose("Nope"))).await);
+    assert!(message.contains("Workspace member"), "{message}");
+
+    let proposal = payload(
+        manager
+            .task_propose(Parameters(propose("Prune heads")))
+            .await,
+    );
+    let id = proposal["research_id"].as_str().unwrap().to_owned();
+    let step = |message: &str, revision: Option<u64>| AuthorizedStepInput {
+        research_id: id.clone(),
+        message_id: message.to_owned(),
+        brief_revision: revision,
+    };
+    // The revision they were shown is required.
+    let missing = refused(manager.task_admit(Parameters(step("m", None))).await);
+    assert!(missing.contains("brief_revision"), "{missing}");
+    // The manager's own message is not the researcher's.
+    let own = proposal["message_id"].as_str().unwrap();
+    let by_agent = refused(manager.task_admit(Parameters(step(own, Some(1)))).await);
+    assert!(by_agent.contains("researcher"), "{by_agent}");
+    // The researcher speaks; the instruction is visible to the manager and admits.
+    let channel = rig
+        .state
+        .channels
+        .default_channel(&rig.f.project_id)
+        .unwrap();
+    let said = rig
+        .state
+        .channels
+        .post(
+            &rig.f.project_id,
+            &channel.id,
+            NewMessage {
+                body: "Add it please",
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    let recent = payload(
+        manager
+            .general_recent(Parameters(RecentInput::default()))
+            .await,
+    );
+    assert!(
+        recent
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == said.id.as_str() && m["author"] == "researcher")
+    );
+    let admitted = payload(
+        manager
+            .task_admit(Parameters(step(&said.id, Some(1))))
+            .await,
+    );
+    assert_eq!(admitted["kind"], "admit");
+    let list = payload(manager.task_list().await);
+    assert_eq!(list["tasks"][0]["id"], id.as_str());
+    assert_eq!(list["tasks"][0]["stage"], "ready");
+    // An outsider cannot read the shared conversation through the tool.
+    assert!(
+        outsider
+            .general_recent(Parameters(RecentInput::default()))
+            .await
+            .is_err()
+    );
+}
