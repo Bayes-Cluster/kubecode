@@ -9,7 +9,10 @@ import type {
   ChannelMessagePage,
   DmShareRequest,
   TaskBoard,
+  TaskDetail,
   TaskDraft,
+  TaskReviewRecord,
+  WorkOutcome,
   DmSharePreview,
   DmTurn,
   ChannelThread,
@@ -499,6 +502,40 @@ export class KubecodeApi {
   /** The Workspace's one board of admitted Tasks (ADR 0221). */
   taskBoard(projectId: string): Promise<TaskBoard> {
     return this.request(`${this.projectPath(projectId)}/tasks/board`)
+  }
+
+  /** One Task: its card, brief, provenance, internal work, review, and stale evidence. */
+  taskDetail(projectId: string, researchId: string): Promise<TaskDetail> {
+    return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}`)
+  }
+
+  /**
+   * The researcher's decision on a Task's results: accept (choosing the
+   * scientific outcome; a well-supported negative result completes a Task) or
+   * send back. Refused with `work_evidence_stale` while cited evidence changed.
+   */
+  reviewTask(
+    projectId: string,
+    researchId: string,
+    decision: { requestId: string; accept: boolean; outcome?: WorkOutcome; reason?: string },
+  ): Promise<TaskReviewRecord> {
+    return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/review`, {
+      method: 'POST',
+      body: JSON.stringify({
+        request_id: decision.requestId,
+        accept: decision.accept,
+        outcome: decision.outcome,
+        reason: decision.reason,
+      }),
+    })
+  }
+
+  /** Accepts the current version of one cited result, after looking at what changed. */
+  repinTaskEvidence(projectId: string, researchId: string, workId: string, resultId: string): Promise<void> {
+    return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/repin`, {
+      method: 'POST',
+      body: JSON.stringify({ work_id: workId, result_id: resultId }),
+    })
   }
 
   /** Proposals that are not on the board. */

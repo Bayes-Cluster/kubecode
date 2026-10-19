@@ -6,22 +6,35 @@ if [ "${1:-}" = "--version" ]; then
   exit 0
 fi
 
+# A browser test can play the member this process serves: it reads the MCP
+# servers the runtime handed to the session (the same credentials a real agent
+# receives) and the prompts that reached it, from this directory (ADR 0225).
+dump="${KUBECODE_PLAYWRIGHT_FIXTURE_DIR:-}"
+[ -z "$dump" ] || mkdir -p "$dump"
+
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+      printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"mcpCapabilities\":{\"http\":true}},\"authMethods\":[]}}"
       ;;
     *'"method":"session/new"'*)
+      [ -z "$dump" ] || printf '%s\n' "$line" > "$dump/session-$$.json"
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"playwright-session\",\"modes\":{\"currentModeId\":\"build\",\"availableModes\":[{\"id\":\"build\",\"name\":\"Build\",\"description\":\"Use tools to implement changes\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before implementation\"}]},\"configOptions\":[{\"id\":\"model\",\"name\":\"Model\",\"type\":\"select\",\"currentValue\":\"model-1\",\"options\":[{\"value\":\"model-1\",\"name\":\"Model 1\"}]}]}}"
       ;;
     *'"method":"session/prompt"'*)
+      [ -z "$dump" ] || printf '%s\n' "$line" >> "$dump/prompts-$$.jsonl"
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"playwright-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Smoke Agent is ready"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"playwright-session","update":{"sessionUpdate":"usage_update","used":1234,"size":8000}}}'
       # Hold the run open so the UI's "running" session status is observable
       # even when the browser renders the chunk slowly (loaded CI runners can
       # take >2s from chunk emission to first paint).
-      sleep 20
+      # A prompt routed from the Workspace conversation is answered at once; the
+      # long hold exists for the UI test that watches a run in progress.
+      case "$line" in
+        *'General conversation'*) ;;
+        *) sleep 20 ;;
+      esac
       printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"stopReason\":\"end_turn\"}}"
       ;;
   esac

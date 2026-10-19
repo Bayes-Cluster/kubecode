@@ -4096,6 +4096,92 @@ button.kubecode-channel-reference:disabled { cursor: default; }
   padding: 12px 16px;
 }
 
+/* -- The one Kanban of Tasks and the Task inspector (ADR 0225) ------------- */
+.kubecode-task-board {
+  background: var(--surface-app);
+  color: var(--text-primary);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px 16px;
+}
+
+.kubecode-task-columns {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.kubecode-task-column { min-width: 0; }
+.kubecode-task-column h3 {
+  align-items: center;
+  display: flex;
+  font-size: var(--kubecode-ui-font-small);
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.kubecode-task-column ul,
+.kubecode-task-drafts ul { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; }
+
+.kubecode-task-card {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.kubecode-task-card[aria-current='true'] { border-color: var(--text-primary); }
+.kubecode-task-card small { color: var(--text-secondary); overflow-wrap: anywhere; }
+.kubecode-task-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.kubecode-task-inspector {
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+
+.kubecode-task-inspector h4 { font-size: var(--kubecode-ui-font-small); margin: 4px 0 0; }
+.kubecode-task-inspector-status { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+.kubecode-task-provenance,
+.kubecode-task-participants { margin: 0; }
+.kubecode-task-provenance q { display: block; margin: 2px 0; overflow-wrap: anywhere; }
+.kubecode-task-participants { display: flex; flex-wrap: wrap; gap: 10px; }
+.kubecode-task-work,
+.kubecode-task-reviews,
+.kubecode-task-evidence,
+.kubecode-task-questions ul { display: flex; flex-direction: column; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.kubecode-task-evidence { flex-direction: row; }
+.kubecode-task-review,
+.kubecode-task-questions {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.kubecode-task-field { display: flex; flex-direction: column; gap: 2px; }
+.kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+
+@media (max-width: 980px) {
+  .kubecode-task-columns { grid-template-columns: 1fr; }
+}
+
 /* Narrow screens show a list or its detail, never both side by side. */
 @media (max-width: 980px) {
   .kubecode-with-detail[data-detail='true'] > :first-child { display: none; }

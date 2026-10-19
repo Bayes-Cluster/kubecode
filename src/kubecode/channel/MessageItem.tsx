@@ -37,6 +37,8 @@ export type MessageItemProps = {
   onFilterTask?: (taskId: string) => void
   /** Opens the Task in the detail pane; the message stays where it is. */
   onOpenTask?: (taskId: string, messageId: string) => void
+  /** Whether a Task is on the board, to say so on its proposal. */
+  onBoard?: (taskId: string) => boolean
 }
 
 /** One immutable message: who wrote it, what it points at, and its Thread. */
@@ -45,6 +47,7 @@ export function MessageItem({
   message,
   onFilterTask,
   onOpenTask,
+  onBoard,
   onJump,
   onOpenReference,
   onOpenThread,
@@ -55,6 +58,9 @@ export function MessageItem({
   thread,
 }: MessageItemProps) {
   const sessionTitle = (id: string) => sessions.find((item) => item.id === id)?.title ?? id.slice(0, 8)
+  // The General Agent's proposal of a Task revision (ADR 0221): shown as what it
+  // is, with where the Task stands. Nothing here admits it; the researcher says so in words.
+  const proposal = /^proposal:[^:]+:(\d+)/.exec(message.client_message_id ?? '')
   const task = message.task_id ? research.find((item) => item.id === message.task_id) : undefined
   // Routing notes stay a quiet line; a note about a Task (its review outcome)
   // is a decision the researcher should see, so it is shown like any message.
@@ -109,7 +115,20 @@ export function MessageItem({
             : t('kubecode.channel.citationMissing')}
         </button>
       )}
+      {proposal && (
+        <p className="kubecode-channel-proposal">
+          <StatusBadge tone="info">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</StatusBadge>
+          {message.task_id && onBoard && (
+            <StatusBadge tone={onBoard(message.task_id) ? 'ok' : 'muted'}>
+              {onBoard(message.task_id) ? t('kubecode.task.onBoard') : t('kubecode.task.notOnBoardYet')}
+            </StatusBadge>
+          )}
+        </p>
+      )}
       <p className="kubecode-channel-body">{message.body}</p>
+      {proposal && message.task_id && onBoard && !onBoard(message.task_id) && (
+        <p className="kubecode-research-muted">{t('kubecode.task.proposalHint')}</p>
+      )}
       {message.mentions.length > 0 && (
         <p className="kubecode-channel-mentions">
           {message.author_kind === 'agent'
