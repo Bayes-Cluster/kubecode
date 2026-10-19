@@ -2,7 +2,7 @@
 type: ADR
 id: "0217"
 title: "Orchestrated research execution: routes, round limits, and caller-bound work tools"
-status: proposed
+status: accepted
 date: 2026-10-18
 ---
 

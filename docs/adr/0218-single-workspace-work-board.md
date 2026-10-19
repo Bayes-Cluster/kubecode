@@ -2,7 +2,7 @@
 type: ADR
 id: "0218"
 title: "One Workspace work board over canonical work records"
-status: proposed
+status: accepted
 date: 2026-10-19
 supersedes: "0177 and 0186 where they make the Team board the place research tasks are shown and commanded"
 ---

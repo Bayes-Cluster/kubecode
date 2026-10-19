@@ -2,7 +2,7 @@
 type: ADR
 id: "0215"
 title: "Workspace-owned research work, fenced coordination, and one Kanban projection"
-status: proposed
+status: accepted
 date: 2026-10-18
 supersedes: "0177 and 0186 where they make the Team and its fixed Leader the owner of research tasks and authority"
 ---
