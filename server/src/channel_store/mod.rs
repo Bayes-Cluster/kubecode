@@ -21,7 +21,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::agent_store::AgentStore;
-use crate::database::Database;
+use crate::database::{Database, ensure_column};
 use crate::project_context::ContextKind;
 
 pub struct ChannelStore {
@@ -110,12 +110,24 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            ON channel_threads(channel_id);
          CREATE INDEX IF NOT EXISTS channel_threads_research
            ON channel_threads(research_id);",
+    )?;
+    // Conversation routing (ADR 0223): a Task association, a citation, the
+    // hand-off depth, and whether the orchestrator still has to read the message.
+    ensure_column(connection, "channel_messages", "task_id", "TEXT")?;
+    ensure_column(connection, "channel_messages", "reply_to", "TEXT")?;
+    ensure_column(connection, "channel_messages", "hops", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(connection, "channel_messages", "routing", "TEXT")?;
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS channel_messages_pending
+           ON channel_messages(created_at) WHERE routing = 'pending';
+         CREATE INDEX IF NOT EXISTS channel_messages_task
+           ON channel_messages(channel_id, task_id, seq) WHERE task_id IS NOT NULL;",
     )
 }
 
 const MESSAGE_SELECT: &str = "SELECT id, project_id, channel_id, thread_id, seq, kind, author_kind,
         author_ref, body, intent, mentions_json, references_json, client_message_id,
-        intent_claimed_by, created_at
+        intent_claimed_by, created_at, task_id, reply_to, hops
     FROM channel_messages";
 
 const THREAD_SELECT: &str = "SELECT t.id, t.project_id, t.channel_id, t.root_message_id, t.title,
@@ -156,6 +168,9 @@ fn message_from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
         client_message_id: row.get(12)?,
         intent_claimed_by: row.get(13)?,
         created_at: row.get(14)?,
+        task_id: row.get(15)?,
+        reply_to: row.get(16)?,
+        hops: row.get::<_, i64>(17)?.clamp(0, i64::from(u8::MAX)) as u8,
     })
 }
 
@@ -482,6 +497,11 @@ impl ChannelStore {
             }
             _ => {}
         }
+        if new.hops > MAX_HANDOFF_HOPS {
+            return Err(ChannelError::Invalid(
+                "this hand-off chain is too long; ask the researcher to continue it",
+            ));
+        }
         let request = client_id(new.client_message_id)?;
         self.write(|tx| {
             load_channel(tx, project_id, channel_id)?;
@@ -502,7 +522,8 @@ impl ChannelStore {
                     && existing.author_ref.as_deref() == new.author_ref
                     && existing.intent == intent
                     && existing.mentions == new.mentions
-                    && existing.references == new.references;
+                    && existing.references == new.references
+                    && existing.reply_to.as_deref() == new.reply_to;
                 if !same {
                     return Err(ChannelError::KeyReuse);
                 }
@@ -530,6 +551,30 @@ impl ChannelStore {
             for reference in new.references {
                 validate_reference(tx, project_id, reference)?;
             }
+            if let Some(cited) = new.reply_to {
+                let same_channel = tx
+                    .query_row(
+                        "SELECT 1 FROM channel_messages
+                         WHERE id = ?1 AND project_id = ?2 AND channel_id = ?3",
+                        params![cited, project_id, channel_id],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
+                if !same_channel {
+                    return Err(ChannelError::Invalid(
+                        "the message being replied to was not found in this conversation",
+                    ));
+                }
+            }
+            // The conversation's own messages are read by the orchestrator once:
+            // a researcher's remark, or an agent hand-off that names someone.
+            let routed = new.thread_id.is_none()
+                && match author_kind {
+                    AuthorKind::Researcher => intent == Intent::Say,
+                    AuthorKind::Agent => !new.mentions.is_empty(),
+                    AuthorKind::System => false,
+                };
             let message = insert_message(
                 tx,
                 project_id,
@@ -543,6 +588,11 @@ impl ChannelStore {
                 new.mentions,
                 new.references,
                 request.as_deref(),
+                Extras {
+                    reply_to: new.reply_to,
+                    hops: new.hops,
+                    routing: routed.then_some("pending"),
+                },
             )?;
             let change = (
                 project_id.to_owned(),
@@ -579,13 +629,16 @@ impl ChannelStore {
                 )
             }
         };
-        let base = format!("{MESSAGE_SELECT} WHERE channel_id = ?1 AND {scope_sql}");
+        let task = query.task.map(str::to_owned);
+        let base = format!(
+            "{MESSAGE_SELECT} WHERE channel_id = ?1 AND {scope_sql} AND (?5 IS NULL OR task_id = ?5)"
+        );
         let mut messages = if let Some(after) = query.after_seq {
             let mut statement =
                 connection.prepare(&format!("{base} AND seq > ?3 ORDER BY seq ASC LIMIT ?4"))?;
             statement
                 .query_map(
-                    params![channel_id, thread_param, after as i64, limit as i64],
+                    params![channel_id, thread_param, after as i64, limit as i64, task],
                     message_from_row,
                 )?
                 .collect::<Result<Vec<_>, _>>()?
@@ -595,7 +648,7 @@ impl ChannelStore {
                 connection.prepare(&format!("{base} AND seq < ?3 ORDER BY seq DESC LIMIT ?4"))?;
             let mut rows = statement
                 .query_map(
-                    params![channel_id, thread_param, before, limit as i64],
+                    params![channel_id, thread_param, before, limit as i64, task],
                     message_from_row,
                 )?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -606,8 +659,8 @@ impl ChannelStore {
         let has_more = match messages.first() {
             Some(first) => connection
                 .query_row(
-                    &format!("SELECT 1 FROM channel_messages WHERE channel_id = ?1 AND {scope_sql} AND seq < ?3 LIMIT 1"),
-                    params![channel_id, thread_param, first.seq as i64],
+                    &format!("SELECT 1 FROM channel_messages WHERE channel_id = ?1 AND {scope_sql} AND (?4 IS NULL OR task_id = ?4) AND seq < ?3 LIMIT 1"),
+                    params![channel_id, thread_param, first.seq as i64, task],
                     |_| Ok(()),
                 )
                 .optional()?
@@ -868,6 +921,7 @@ impl ChannelStore {
                 &[],
                 &references,
                 None,
+                Extras::default(),
             )?;
             Ok((
                 load_thread(tx, project_id, thread_id)?,
@@ -924,6 +978,28 @@ impl ChannelStore {
         })
     }
 
+    /// Messages the orchestrator has not read yet, oldest first.
+    pub fn pending_routing(&self, limit: usize) -> Result<Vec<Message>, ChannelError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(&format!(
+            "{MESSAGE_SELECT} WHERE routing = 'pending' ORDER BY created_at, seq LIMIT ?1"
+        ))?;
+        Ok(statement
+            .query_map([limit.clamp(1, MAX_PAGE) as i64], message_from_row)?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Records that a message was read. Routes are written first, so a crash
+    /// before this repeats the pass and finds the routes already there.
+    pub fn mark_routed(&self, project_id: &str, message_id: &str) -> Result<(), ChannelError> {
+        self.connection().execute(
+            "UPDATE channel_messages SET routing = 'done'
+             WHERE id = ?1 AND project_id = ?2 AND routing = 'pending'",
+            params![message_id, project_id],
+        )?;
+        Ok(())
+    }
+
     /// Unclaimed intents of every Project, oldest first (for the orchestrator).
     pub fn all_unclaimed_intents(&self, limit: usize) -> Result<Vec<Message>, ChannelError> {
         let connection = self.connection();
@@ -957,6 +1033,15 @@ impl ChannelStore {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// What a message carries beyond its text: the citation, the hand-off depth,
+/// and whether the orchestrator must still read it.
+#[derive(Clone, Copy, Default)]
+struct Extras<'a> {
+    reply_to: Option<&'a str>,
+    hops: u8,
+    routing: Option<&'a str>,
+}
+
 fn insert_message(
     tx: &Transaction<'_>,
     project_id: &str,
@@ -970,7 +1055,12 @@ fn insert_message(
     mentions: &[Mention],
     references: &[ContextRef],
     client_message_id: Option<&str>,
+    extras: Extras<'_>,
 ) -> Result<Message, ChannelError> {
+    let task_id = references
+        .iter()
+        .find(|reference| reference.kind == ContextKind::Research)
+        .map(|reference| reference.id.as_str());
     let seq: i64 = tx.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM channel_messages WHERE channel_id = ?1",
         [channel_id],
@@ -980,8 +1070,9 @@ fn insert_message(
     tx.execute(
         "INSERT INTO channel_messages
            (id, project_id, channel_id, thread_id, seq, kind, author_kind, author_ref, body,
-            intent, mentions_json, references_json, client_message_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            intent, mentions_json, references_json, client_message_id,
+            task_id, reply_to, hops, routing)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             id,
             project_id,
@@ -996,6 +1087,10 @@ fn insert_message(
             serde_json::to_string(mentions)?,
             serde_json::to_string(references)?,
             client_message_id,
+            task_id,
+            extras.reply_to,
+            i64::from(extras.hops),
+            extras.routing,
         ],
     )?;
     load_message(tx, project_id, &id)

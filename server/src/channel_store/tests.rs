@@ -141,6 +141,7 @@ fn pages_scroll_back_and_catch_up_without_gaps_or_repeats() {
                     before_seq: before,
                     after_seq: after,
                     limit: Some(2),
+                    task: None,
                 },
             )
             .unwrap()
@@ -688,6 +689,287 @@ fn reusing_a_client_id_with_other_references_is_a_different_message_and_links_ar
                 ..Default::default()
             }
         ),
+        Err(ChannelError::Invalid(_))
+    ));
+}
+
+// -- Conversation routing, Task association, citations (ADR 0223) -----------------------------
+
+#[test]
+fn a_message_about_a_task_is_filtered_without_a_second_history() {
+    let r = rig();
+    let channel = r.channel();
+    let pruning = r.question("Pruning");
+    let quant = r.question("Quantization");
+    let post = |body: &str, task: Option<&str>| {
+        let references: Vec<ContextRef> = task
+            .map(|id| vec![ContextRef::new(ContextKind::Research, id)])
+            .unwrap_or_default();
+        r.channels
+            .post(
+                r.project(),
+                &channel.id,
+                NewMessage {
+                    body,
+                    references: &references,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0
+    };
+    let first = post("about pruning", Some(&pruning));
+    post("about quantization", Some(&quant));
+    post("no task", None);
+    post("pruning again", Some(&pruning));
+    assert_eq!(first.task_id.as_deref(), Some(pruning.as_str()));
+
+    let all = r
+        .channels
+        .messages(
+            r.project(),
+            &channel.id,
+            MessageQuery {
+                scope: Scope::All,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .messages;
+    let filtered = r
+        .channels
+        .messages(
+            r.project(),
+            &channel.id,
+            MessageQuery {
+                scope: Scope::All,
+                task: Some(&pruning),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .messages;
+    assert_eq!(
+        filtered.iter().map(|m| m.body.as_str()).collect::<Vec<_>>(),
+        ["about pruning", "pruning again"]
+    );
+    // The same records, not copies: ids and sequence numbers are the General ones.
+    for message in &filtered {
+        assert!(all.iter().any(|m| m.id == message.id && m.seq == message.seq));
+    }
+    assert_eq!(r.channels.messages(r.project(), &channel.id, MessageQuery::default()).unwrap().messages.len(), 4);
+    // Paging a filtered view keeps the filter.
+    let page = r
+        .channels
+        .messages(
+            r.project(),
+            &channel.id,
+            MessageQuery {
+                scope: Scope::All,
+                task: Some(&pruning),
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert!(page.has_more);
+}
+
+#[test]
+fn a_reply_cites_a_message_of_this_conversation_only() {
+    let r = rig();
+    let channel = r.channel();
+    let original = r.say(&channel, "the plan");
+    let reply = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "agreed",
+                reply_to: Some(&original.id),
+                client_message_id: Some("reply-1"),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    assert_eq!(reply.reply_to.as_deref(), Some(original.id.as_str()));
+    // A replay of the same words citing something else is a different message.
+    let other = r.say(&channel, "another");
+    assert!(matches!(
+        r.channels.post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "agreed",
+                reply_to: Some(&other.id),
+                client_message_id: Some("reply-1"),
+                ..Default::default()
+            },
+        ),
+        Err(ChannelError::KeyReuse)
+    ));
+    let other_project = r.f.workspace.create_project(".", "beta").unwrap();
+    let theirs = r.channels.default_channel(&other_project.id).unwrap();
+    let foreign = r
+        .channels
+        .post(
+            &other_project.id,
+            &theirs.id,
+            NewMessage {
+                body: "elsewhere",
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    assert!(matches!(
+        r.channels.post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "cites a stranger",
+                reply_to: Some(&foreign.id),
+                ..Default::default()
+            },
+        ),
+        Err(ChannelError::Invalid(_))
+    ));
+}
+
+#[test]
+fn only_conversation_messages_are_read_by_the_orchestrator_and_only_once() {
+    let r = rig();
+    let channel = r.channel();
+    let agent = r.session("Analyst");
+    let peer = r.session("Writer");
+    let remark = r.say(&channel, "what next?");
+    let (root, _) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "topic",
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let (thread, _) = r
+        .channels
+        .start_thread(r.project(), &channel.id, &root.id, None, None)
+        .unwrap();
+    r.channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                thread_id: Some(&thread.id),
+                body: "in a thread",
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let silent = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "a status line",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&agent),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    let handoff = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "over to you",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&agent),
+                mentions: &[Mention {
+                    session_id: peer.clone(),
+                }],
+                hops: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    let pending: Vec<String> = r
+        .channels
+        .pending_routing(50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.id)
+        .collect();
+    assert!(pending.contains(&remark.id) && pending.contains(&root.id));
+    assert!(pending.contains(&handoff.id));
+    assert!(!pending.contains(&silent.id), "an agent line that names no one is not routed");
+    assert_eq!(pending.len(), 3, "a Thread reply is not conversation chatter");
+    r.channels.mark_routed(r.project(), &remark.id).unwrap();
+    r.channels.mark_routed(r.project(), &remark.id).unwrap();
+    assert_eq!(r.channels.pending_routing(50).unwrap().len(), 2);
+    // A replay of the same remark does not queue it again.
+    let (replayed, created) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "keyed",
+                client_message_id: Some("k1"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(created);
+    r.channels.mark_routed(r.project(), &replayed.id).unwrap();
+    let (_, created) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "keyed",
+                client_message_id: Some("k1"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!created);
+    assert_eq!(r.channels.pending_routing(50).unwrap().len(), 2);
+}
+
+#[test]
+fn a_hand_off_chain_stops_at_the_bound() {
+    let r = rig();
+    let channel = r.channel();
+    let agent = r.session("Analyst");
+    let attempt = |hops: u8| {
+        r.channels.post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "pass it on",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&agent),
+                hops,
+                ..Default::default()
+            },
+        )
+    };
+    assert!(attempt(MAX_HANDOFF_HOPS).is_ok());
+    assert!(matches!(
+        attempt(MAX_HANDOFF_HOPS + 1),
         Err(ChannelError::Invalid(_))
     ));
 }

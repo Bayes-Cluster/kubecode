@@ -39,6 +39,12 @@ text_enum!(RouteKind {
     Handoff => "handoff",
     Experiment => "experiment",
     Decision => "decision",
+    // A researcher's remark in General that names no member: the project manager.
+    Discussion => "discussion",
+    // A researcher's remark that names a member.
+    Mention => "mention",
+    // A member's visible hand-off to another member in General.
+    AgentHandoff => "agent_handoff",
 });
 
 // Where a route's payload came from.
@@ -168,6 +174,8 @@ pub enum OrchestratorError {
     Invalid(&'static str),
     #[error(transparent)]
     Channel(#[from] crate::channel_store::ChannelError),
+    #[error(transparent)]
+    Member(#[from] crate::member_store::MemberError),
     #[error(transparent)]
     Work(#[from] crate::work_store::WorkError),
     #[error(transparent)]

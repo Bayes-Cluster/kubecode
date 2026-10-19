@@ -891,3 +891,125 @@ async fn task_tools_are_the_managers_and_say_what_to_do_when_refused() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let project = rig.f.project_id.clone();
+    let general = rig
+        .state
+        .members
+        .ensure_general(&project, available, AgentId::OpenCode)
+        .unwrap();
+    let analyst = rig
+        .state
+        .members
+        .create_specialist(
+            &project,
+            crate::member_store::NewMember {
+                name: "Analyst".into(),
+                spec: Some(crate::member_store::MemberSpec {
+                    agent_id: AgentId::OpenCode,
+                    config: Default::default(),
+                    instructions: String::new(),
+                }),
+                ..Default::default()
+            },
+            available,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let manager = rig.server(general.public_conversation_id.as_deref().unwrap());
+    let say = |body: &str, mentions: &[&str]| GeneralPostInput {
+        body: body.into(),
+        mentions: mentions.iter().map(|m| (*m).to_owned()).collect(),
+        task: None,
+        reply_to: None,
+    };
+
+    // A hand-off names a member; it is stored attributed, with depth, and queued
+    // for the orchestrator.
+    let first = payload(
+        manager
+            .general_post(Parameters(say("@analyst please run the sweep", &["@Analyst"])))
+            .await,
+    );
+    let stored = rig
+        .state
+        .channels
+        .message(&project, first["message_id"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(stored.author_kind, crate::channel_store::AuthorKind::Agent);
+    assert_eq!(stored.thread_id, None, "General, not a Thread");
+    assert_eq!(stored.hops, 1);
+    assert_eq!(
+        stored.mentions[0].session_id,
+        analyst.public_conversation_id.clone().unwrap()
+    );
+    assert!(
+        rig.state
+            .channels
+            .pending_routing(10)
+            .unwrap()
+            .iter()
+            .any(|m| m.id == stored.id)
+    );
+    // The same words with nothing said since are one message; later, a new one.
+    let again = payload(
+        manager
+            .general_post(Parameters(say("@analyst please run the sweep", &["analyst"])))
+            .await,
+    );
+    assert_eq!(again["message_id"], first["message_id"]);
+    let channel = rig.state.channels.default_channel(&project).unwrap();
+    rig.state
+        .channels
+        .post(
+            &project,
+            &channel.id,
+            NewMessage {
+                body: "ok",
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let later = payload(
+        manager
+            .general_post(Parameters(say("@analyst please run the sweep", &["analyst"])))
+            .await,
+    );
+    assert_ne!(later["message_id"], first["message_id"]);
+
+    // Unknown names, too many names, and Sessions that are not public member
+    // Sessions are refused with a reason.
+    assert!(
+        refused(manager.general_post(Parameters(say("hi", &["nobody"]))).await)
+            .contains("no member answers")
+    );
+    assert!(
+        refused(
+            manager
+                .general_post(Parameters(say("hi", &["a", "b", "c", "d", "e"])))
+                .await
+        )
+        .contains("at most four")
+    );
+    let outsider = rig.leader();
+    assert!(
+        refused(outsider.general_post(Parameters(say("hi", &[]))).await)
+            .contains("public Session")
+    );
+    let dm = rig
+        .state
+        .members
+        .ensure_dm_session(&project, &analyst.id, available)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let private = rig.server(&dm);
+    assert!(
+        refused(private.general_post(Parameters(say("leak?", &[]))).await)
+            .contains("private")
+    );
+}

@@ -59,6 +59,10 @@ pub const DEFAULT_PAGE: usize = 50;
 pub const MAX_PAGE: usize = 200;
 pub const MAX_THREADS: usize = 500;
 pub const DEFAULT_CHANNEL_NAME: &str = "general";
+/// How many agent-to-agent hand-offs may follow one researcher message. A
+/// hand-off made while answering a hand-off is one hop deeper; past this the
+/// chain stops and the researcher is asked.
+pub const MAX_HANDOFF_HOPS: u8 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Channel {
@@ -97,6 +101,13 @@ pub struct Message {
     /// Who consumed the intent, once someone did.
     pub intent_claimed_by: Option<String>,
     pub created_at: String,
+    /// The Task (research question) the message is about: the first research
+    /// question it references. Filtering by it adds no second history.
+    pub task_id: Option<String>,
+    /// The earlier message this one cites, in the same channel.
+    pub reply_to: Option<String>,
+    /// Hand-off depth: 0 for the researcher's own message.
+    pub hops: u8,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -109,6 +120,10 @@ pub struct NewMessage<'a> {
     pub mentions: &'a [Mention],
     pub references: &'a [ContextRef],
     pub client_message_id: Option<&'a str>,
+    /// An earlier message of the channel this one answers or cites.
+    pub reply_to: Option<&'a str>,
+    /// Hand-off depth of an agent message (see `MAX_HANDOFF_HOPS`).
+    pub hops: u8,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -150,6 +165,8 @@ pub struct MessageQuery<'a> {
     /// Messages newer than this sequence number (catching up).
     pub after_seq: Option<u64>,
     pub limit: Option<usize>,
+    /// Only messages about this Task: a filter over the one history.
+    pub task: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

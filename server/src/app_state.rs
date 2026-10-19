@@ -115,22 +115,26 @@ impl AppState {
                 Arc::clone(&work),
                 Arc::clone(&research),
             )
-            .expect("orchestrator"),
+            .expect("orchestrator")
+            .with_members(Arc::clone(&members)),
         );
         let experiment_runner = ExperimentRunner::new(
             Arc::clone(&experiments),
             Arc::clone(&workspace),
             Arc::clone(&teams),
         );
-        let context = Arc::new(ProjectContext::new(
-            Arc::clone(&agent_store),
-            Arc::clone(&teams),
-            Arc::clone(&research),
-            Arc::clone(&experiments),
-            Arc::clone(&work),
-            Arc::clone(&channels),
-            Arc::clone(&workspace),
-        ));
+        let context = Arc::new(
+            ProjectContext::new(
+                Arc::clone(&agent_store),
+                Arc::clone(&teams),
+                Arc::clone(&research),
+                Arc::clone(&experiments),
+                Arc::clone(&work),
+                Arc::clone(&channels),
+                Arc::clone(&workspace),
+            )
+            .with_members(Arc::clone(&members)),
+        );
         let agent_runtime = Arc::new(
             AgentRuntime::with_catalog(Arc::clone(&workspace), agent_store, Arc::clone(&agents))
                 .with_team_store(Arc::clone(&teams))
