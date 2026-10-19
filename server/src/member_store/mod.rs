@@ -42,6 +42,7 @@ fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            dm_conversation_id     TEXT,
            state                  TEXT NOT NULL DEFAULT 'setup_required',
            setup_error            TEXT,
+           setup_code             TEXT,
            revision               INTEGER NOT NULL DEFAULT 1,
            briefed_public         INTEGER NOT NULL DEFAULT 0,
            briefed_dm             INTEGER NOT NULL DEFAULT 0,
@@ -82,8 +83,8 @@ fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 const SELECT: &str = "SELECT id, project_id, role, template, name, handle, spec_json,
-    public_conversation_id, dm_conversation_id, state, setup_error, revision, created_at,
-    updated_at, removed_at FROM workspace_members";
+    public_conversation_id, dm_conversation_id, state, setup_error, setup_code, revision,
+    created_at, updated_at, removed_at FROM workspace_members";
 
 fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Member, MemberError>> {
     let spec: String = row.get(6)?;
@@ -104,10 +105,11 @@ fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Member, MemberEr
             dm_conversation_id: row.get(8)?,
             state: MemberState::parse(&state).ok_or(MemberError::Invalid("stored state"))?,
             setup_error: row.get(10)?,
-            revision: row.get::<_, i64>(11)? as u64,
-            created_at: row.get(12)?,
-            updated_at: row.get(13)?,
-            removed_at: row.get(14)?,
+            setup_code: row.get(11)?,
+            revision: row.get::<_, i64>(12)? as u64,
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
+            removed_at: row.get(15)?,
         })
     };
     Ok(build())
@@ -252,7 +254,7 @@ impl MemberStore {
         let connection = self.connection();
         let mut statement = connection.prepare(&format!(
             "{SELECT} WHERE project_id = ?1 AND (?2 OR state != 'removed')
-             ORDER BY role = 'general' DESC, created_at, rowid"
+             ORDER BY role = 'general' DESC, created_at, rowid LIMIT 500"
         ))?;
         statement
             .query_map(params![project_id, include_removed], from_row)?
@@ -322,9 +324,23 @@ impl MemberStore {
             .map(|resolved| resolved.member.role))
     }
 
-    /// Whether `conversation_id` is the General Agent's Session (either binding).
+    /// Whether `conversation_id` is the General Agent's *current* Session
+    /// (either binding): the Session that holds the manager's authority.
     pub fn is_general(&self, project_id: &str, conversation_id: &str) -> Result<bool, MemberError> {
         Ok(self.active_role(project_id, conversation_id)? == Some(MemberRole::General))
+    }
+
+    /// Whether `conversation_id` is, or ever was, the General Agent's Session.
+    /// The manager boundary applies to all of them: a replaced Session does not
+    /// become an executor by being replaced.
+    pub fn was_general(
+        &self,
+        project_id: &str,
+        conversation_id: &str,
+    ) -> Result<bool, MemberError> {
+        Ok(self
+            .by_conversation(project_id, conversation_id)?
+            .is_some_and(|resolved| resolved.member.role == MemberRole::General))
     }
 
     /// A specialist member's current public Session: what work may be assigned to.
@@ -380,13 +396,28 @@ impl MemberStore {
             if let Some(id) = existing {
                 // A manager still waiting on setup follows the defaults, so
                 // fixing the defaults and retrying is the recovery path.
-                let adopted = tx.execute(
-                    "UPDATE workspace_members SET spec_json = ?2, revision = revision + 1,
-                       updated_at = CURRENT_TIMESTAMP
+                // (Only while nobody edited it: revision 1 is the created spec.)
+                let current: String = tx
+                    .query_row(
+                        "SELECT spec_json FROM workspace_members
                      WHERE id = ?1 AND state = 'setup_required' AND public_conversation_id IS NULL
-                       AND spec_json != ?2",
-                    params![id, serde_json::to_string(&spec)?],
-                )?;
+                       AND revision = 1",
+                        [&id],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or_default();
+                let differs = !current.is_empty()
+                    && serde_json::from_str::<MemberSpec>(&current).ok().as_ref() != Some(&spec);
+                let adopted = if differs {
+                    tx.execute(
+                        "UPDATE workspace_members SET spec_json = ?2, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ?1",
+                        params![id, serde_json::to_string(&spec)?],
+                    )?
+                } else {
+                    0
+                };
                 return Ok((
                     id.clone(),
                     (adopted > 0).then(|| (project_id.to_owned(), id)),
@@ -418,7 +449,7 @@ impl MemberStore {
         }
         if member.public_conversation_id.is_some() {
             if member.state != MemberState::Active {
-                self.set_state(member_id, MemberState::Active, None)?;
+                self.set_state(member_id, MemberState::Active, None, None)?;
             }
             return self.get(project_id, member_id);
         }
@@ -430,6 +461,7 @@ impl MemberStore {
                     "{} is not installed or available on this server",
                     member.spec.agent_id.as_str()
                 )),
+                Some("provider_unavailable"),
             )?;
             return self.get(project_id, member_id);
         }
@@ -440,7 +472,7 @@ impl MemberStore {
         let bound = self.write(|tx| {
             let changed = tx.execute(
                 "UPDATE workspace_members SET public_conversation_id = ?2, state = 'active',
-                   setup_error = NULL, updated_at = CURRENT_TIMESTAMP
+                   setup_error = NULL, setup_code = NULL, updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?1 AND public_conversation_id IS NULL AND state != 'removed'",
                 params![member_id, conversation.id],
             )?;
@@ -468,6 +500,7 @@ impl MemberStore {
         member_id: &str,
         state: MemberState,
         error: Option<String>,
+        code: Option<&str>,
     ) -> Result<(), MemberError> {
         self.write(|tx| {
             let project_id: String = tx.query_row(
@@ -476,9 +509,9 @@ impl MemberStore {
                 |row| row.get(0),
             )?;
             tx.execute(
-                "UPDATE workspace_members SET state = ?2, setup_error = ?3,
+                "UPDATE workspace_members SET state = ?2, setup_error = ?3, setup_code = ?4,
                    updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND state != 'removed'",
-                params![member_id, state.as_str(), error],
+                params![member_id, state.as_str(), error, code],
             )?;
             Ok(((), Some((project_id, member_id.to_owned()))))
         })
@@ -526,6 +559,14 @@ impl MemberStore {
             .map(str::trim)
             .filter(|key| !key.is_empty())
             .map(str::to_owned);
+        if request.as_deref().is_some_and(|key| {
+            key.chars().count() > 128
+                || !key
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+        }) {
+            return Err(MemberError::Invalid("invalid client request id"));
+        }
         let id = self.write(|tx| {
             if let Some(key) = &request
                 && let Some(existing) = tx
@@ -666,8 +707,7 @@ impl MemberStore {
     }
 
     /// Open assignments held by the member's current Sessions.
-    fn holds_work(&self, member: &Member) -> Result<(bool, bool), MemberError> {
-        let connection = self.connection();
+    fn holds_work(connection: &Connection, member: &Member) -> Result<(bool, bool), MemberError> {
         let present: i64 = connection.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'work_assignments'",
             [],
@@ -707,17 +747,20 @@ impl MemberStore {
     /// history, and every record that cites it. Refused while it holds open
     /// work.
     pub fn remove(&self, project_id: &str, member_id: &str) -> Result<Member, MemberError> {
-        let member = self.get(project_id, member_id)?;
-        if member.role == MemberRole::General {
-            return Err(MemberError::GeneralProtected);
-        }
-        if member.state == MemberState::Removed {
-            return Ok(member);
-        }
-        if self.holds_work(&member)?.0 {
-            return Err(MemberError::HoldsWork);
-        }
         self.write(|tx| {
+            let member = load(tx, member_id)?;
+            if member.project_id != project_id {
+                return Err(MemberError::NotFound);
+            }
+            if member.role == MemberRole::General {
+                return Err(MemberError::GeneralProtected);
+            }
+            if member.state == MemberState::Removed {
+                return Ok(((), None));
+            }
+            if Self::holds_work(tx, &member)?.0 {
+                return Err(MemberError::HoldsWork);
+            }
             tx.execute(
                 "UPDATE workspace_members SET state = 'removed', removed_at = CURRENT_TIMESTAMP,
                    revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
@@ -733,33 +776,33 @@ impl MemberStore {
         self.get(project_id, member_id)
     }
 
-    /// Gives a member a fresh Session for a binding, keeping its id. The old
-    /// Session stays attributed to the member but loses all authority.
-    /// Refused while the member holds open work.
+    /// Gives a member a fresh Session for a binding, keeping its id, and
+    /// optionally a new specification (a provider change is made this way).
+    /// The old Session stays attributed to the member but loses all authority.
+    /// Refused while the member holds open work; the checks and the swap are
+    /// one transaction, so work cannot be assigned in between.
     pub fn replace_session(
         &self,
         project_id: &str,
         member_id: &str,
         binding: Binding,
+        spec: Option<MemberSpec>,
         available: &dyn Fn(AgentId) -> bool,
     ) -> Result<Member, MemberError> {
         let member = self.get(project_id, member_id)?;
         if member.state == MemberState::Removed {
             return Err(MemberError::Removed);
         }
-        let (open, running) = self.holds_work(&member)?;
-        if running {
-            return Err(MemberError::Running);
-        }
-        if open {
-            return Err(MemberError::HoldsWork);
-        }
-        if !available(member.spec.agent_id) {
+        let spec = match spec {
+            Some(spec) => spec.normalized()?,
+            None => member.spec.clone(),
+        };
+        if !available(spec.agent_id) {
             return Err(MemberError::Invalid("that provider is not available"));
         }
         let conversation = self
             .agents
-            .create_conversation(project_id, member.spec.agent_id, Some(&member.name))
+            .create_conversation(project_id, spec.agent_id, Some(&member.name))
             .map_err(|error| MemberError::Session(error.to_string()))?;
         let column = match binding {
             Binding::Public => "public_conversation_id",
@@ -769,7 +812,18 @@ impl MemberStore {
             Binding::Public => "public",
             Binding::Dm => "dm",
         };
-        self.write(|tx| {
+        let swapped = self.write(|tx| {
+            let live = load(tx, member_id)?;
+            if live.state == MemberState::Removed {
+                return Err(MemberError::Removed);
+            }
+            let (open, running) = Self::holds_work(tx, &live)?;
+            if running {
+                return Err(MemberError::Running);
+            }
+            if open {
+                return Err(MemberError::HoldsWork);
+            }
             tx.execute(
                 "UPDATE member_sessions SET ended_at = CURRENT_TIMESTAMP
                  WHERE member_id = ?1 AND binding = ?2 AND ended_at IS NULL",
@@ -778,10 +832,13 @@ impl MemberStore {
             tx.execute(
                 &format!(
                     "UPDATE workspace_members SET {column} = ?2, briefed_{name} = 0,
-                       applied_{name} = 0, state = 'active', setup_error = NULL,
-                       updated_at = CURRENT_TIMESTAMP WHERE id = ?1"
+                       applied_{name} = 0, spec_json = ?3,
+                       revision = revision + CASE WHEN spec_json != ?3 THEN 1 ELSE 0 END,
+                       state = 'active', setup_error = NULL, setup_code = NULL,
+                       updated_at = CURRENT_TIMESTAMP
+                     WHERE id = ?1 AND state != 'removed'"
                 ),
-                params![member_id, conversation.id],
+                params![member_id, conversation.id, serde_json::to_string(&spec)?],
             )?;
             tx.execute(
                 "INSERT INTO member_sessions (member_id, conversation_id, binding)
@@ -789,7 +846,12 @@ impl MemberStore {
                 params![member_id, conversation.id, name],
             )?;
             Ok(((), Some((project_id.to_owned(), member_id.to_owned()))))
-        })?;
+        });
+        if let Err(error) = swapped {
+            // The refused swap leaves nothing behind.
+            let _ = self.agents.delete_conversation(&conversation.id);
+            return Err(error);
+        }
         self.get(project_id, member_id)
     }
 
@@ -939,28 +1001,48 @@ impl MemberStore {
         } else {
             "applied_public"
         };
-        self.connection().execute(
-            &format!(
-                "UPDATE workspace_members SET {column} = MAX({column}, ?2), setup_error = NULL,
-                   state = CASE WHEN state = 'setup_required' AND public_conversation_id IS NOT NULL
-                                THEN 'active' ELSE state END WHERE id = ?1"
-            ),
-            params![pending.member_id, pending.revision as i64],
-        )?;
-        Ok(())
+        self.write(|tx| {
+            let project_id: String = tx.query_row(
+                "SELECT project_id FROM workspace_members WHERE id = ?1",
+                [&pending.member_id],
+                |row| row.get(0),
+            )?;
+            let recovered = tx.execute(
+                &format!(
+                    "UPDATE workspace_members SET {column} = MAX({column}, ?2)
+                     WHERE id = ?1"
+                ),
+                params![pending.member_id, pending.revision as i64],
+            )?;
+            // A configuration that now applies clears an earlier rejection.
+            let cleared = tx.execute(
+                "UPDATE workspace_members SET setup_error = NULL, setup_code = NULL, state = 'active',
+                   updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND state = 'setup_required' AND setup_code = 'config_rejected'
+                   AND public_conversation_id IS NOT NULL",
+                [&pending.member_id],
+            )?;
+            let _ = recovered;
+            Ok((
+                (),
+                (cleared > 0).then(|| (project_id, pending.member_id.clone())),
+            ))
+        })
     }
 
     /// Records that applying the configuration failed, so the roster shows it.
     pub fn record_setup_error(&self, member_id: &str, error: &str) -> Result<(), MemberError> {
-        let reason: String = error.chars().take(300).collect();
-        let project_id: String = self.connection().query_row(
-            "SELECT project_id FROM workspace_members WHERE id = ?1",
-            [member_id],
-            |row| row.get(0),
-        )?;
-        self.set_state(member_id, MemberState::SetupRequired, Some(reason))?;
-        let _ = project_id;
-        Ok(())
+        let reason: String = error
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .take(300)
+            .collect();
+        self.set_state(
+            member_id,
+            MemberState::SetupRequired,
+            Some(reason),
+            Some("config_rejected"),
+        )
     }
 }
 
@@ -1022,6 +1104,24 @@ fn brief_text(member: &Member, binding: &str) -> String {
 }
 
 impl crate::work_store::AssignmentGuard for MemberStore {
+    /// Coordinating is management: the General Agent's current Session, or a
+    /// Session that is not a member at all (legacy rounds). A specialist's, a
+    /// private DM, or a replaced Session never coordinates.
+    fn may_coordinate(&self, project_id: &str, conversation_id: &str) -> Result<(), &'static str> {
+        match self.by_conversation(project_id, conversation_id) {
+            Ok(Some(resolved))
+                if resolved.current
+                    && resolved.binding == Binding::Public
+                    && resolved.member.role == MemberRole::General =>
+            {
+                Ok(())
+            }
+            Ok(Some(_)) => Err("only the General Agent's current Session coordinates a round"),
+            Ok(None) => Ok(()),
+            Err(_) => Err("the member roster could not be read"),
+        }
+    }
+
     /// The manager manages and a private Session serves one human; neither
     /// executes shared work. Sessions that are not members (legacy Sessions,
     /// executors made for a round) are not this rule's concern.

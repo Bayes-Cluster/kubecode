@@ -38,6 +38,8 @@ pub struct WorkStore {
 /// store's transaction because it reads another store.
 pub trait AssignmentGuard: Send + Sync {
     fn may_execute(&self, project_id: &str, conversation_id: &str) -> Result<(), &'static str>;
+    /// Whether a Session may hold a round's coordination.
+    fn may_coordinate(&self, project_id: &str, conversation_id: &str) -> Result<(), &'static str>;
 }
 
 /// What changed, for the content-free `work_updated` event payload.
@@ -294,6 +296,19 @@ impl WorkStore {
         match self.guard.get() {
             Some(guard) => guard
                 .may_execute(project_id, conversation_id)
+                .map_err(WorkError::Invalid),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn check_may_coordinate(
+        &self,
+        project_id: &str,
+        conversation_id: &str,
+    ) -> Result<(), WorkError> {
+        match self.guard.get() {
+            Some(guard) => guard
+                .may_coordinate(project_id, conversation_id)
                 .map_err(WorkError::Invalid),
             None => Ok(()),
         }

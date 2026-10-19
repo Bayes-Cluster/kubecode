@@ -1619,6 +1619,7 @@ impl WorkStore {
                 "only the researcher seats the first coordinator",
             ));
         }
+        self.check_may_coordinate(project_id, holder)?;
         self.write(|tx| {
             round_research(tx, project_id, round_id)?;
             session_in_project(tx, project_id, holder)?;
@@ -1666,6 +1667,7 @@ impl WorkStore {
             return Err(WorkError::Invalid("a reason is required"));
         }
         text_ok(reason, MAX_REASON_CHARS, "the reason is too long")?;
+        self.check_may_coordinate(project_id, to_holder)?;
         self.write(|tx| {
             round_research(tx, project_id, round_id)?;
             let current = coordinator_of(tx, project_id, round_id)?.ok_or(WorkError::NoCoordinator)?;

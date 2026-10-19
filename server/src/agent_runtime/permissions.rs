@@ -128,6 +128,15 @@ pub struct SideQuestionAccepted {
     pub status: &'static str,
 }
 
+/// Native tools the General Agent may not use: it manages, so editing,
+/// deleting, moving, and executing are refused outright (ADR 0220 §4).
+pub(super) fn denied_for_manager(kind: Option<ToolKind>) -> bool {
+    matches!(
+        kind,
+        Some(ToolKind::Edit | ToolKind::Delete | ToolKind::Move | ToolKind::Execute)
+    )
+}
+
 pub(super) fn default_native_permission_mode(agent_id: AgentId) -> Option<&'static str> {
     // Delegates to the per-agent adapter seam (#104); the fn name is kept
     // for call-site stability.
@@ -803,6 +812,29 @@ mod tests {
             selected_option(receiver.await.expect("permission outcome")),
             "allow_once"
         );
+    }
+
+    #[test]
+    fn the_manager_is_refused_native_edit_delete_move_and_execute_but_not_reading_or_its_own_tools()
+    {
+        for kind in [
+            ToolKind::Edit,
+            ToolKind::Delete,
+            ToolKind::Move,
+            ToolKind::Execute,
+        ] {
+            assert!(denied_for_manager(Some(kind)), "{kind:?}");
+        }
+        for kind in [
+            ToolKind::Read,
+            ToolKind::Search,
+            ToolKind::Fetch,
+            ToolKind::Think,
+            ToolKind::Other,
+        ] {
+            assert!(!denied_for_manager(Some(kind)), "{kind:?}");
+        }
+        assert!(!denied_for_manager(None));
     }
 
     fn selected_option(outcome: RequestPermissionOutcome) -> String {

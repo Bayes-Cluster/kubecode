@@ -1343,6 +1343,8 @@ export type Member = {
   dm_conversation_id: string | null
   state: MemberState
   setup_error: string | null
+  /** `provider_unavailable` or `config_rejected`: the browser words these itself. */
+  setup_code: 'provider_unavailable' | 'config_rejected' | null
   revision: number
   created_at: string
   updated_at: string

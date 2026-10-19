@@ -20,7 +20,9 @@ mod sink;
 mod tests;
 
 pub use models::*;
-pub use sink::RuntimeSink;
+pub use sink::{
+    MemberDelivery, Prepared, RuntimeSink, SessionConfigurator, runtime_member_delivery,
+};
 
 use std::sync::Arc;
 

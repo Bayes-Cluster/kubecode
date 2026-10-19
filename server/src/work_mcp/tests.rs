@@ -634,3 +634,98 @@ async fn experiments_decisions_and_the_brief_are_tools_bound_to_the_executing_se
     );
     assert!(repin.contains("coordinate"), "{repin}");
 }
+
+#[tokio::test]
+async fn the_roster_is_a_tool_and_work_goes_to_specialist_members_by_handle() {
+    let rig = rig();
+    let leader = rig.leader();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    rig.state
+        .members
+        .ensure_general(&rig.f.project_id, available, AgentId::OpenCode)
+        .unwrap();
+    let analyst = rig
+        .state
+        .members
+        .create_specialist(
+            &rig.f.project_id,
+            crate::member_store::NewMember {
+                name: "Analyst".into(),
+                template: Some(crate::member_store::MemberTemplate::Analysis),
+                ..Default::default()
+            },
+            available,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let roster = payload(leader.work_members().await);
+    let handles: Vec<(&str, bool)> = roster
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["handle"].as_str().unwrap(),
+                m["assignable"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(handles, [("general", false), ("analyst", true)]);
+
+    let task = payload(
+        leader
+            .work_create(Parameters(CreateInput {
+                round_id: None,
+                title: "Sweep".into(),
+                description: "Try ratios".into(),
+                plan: None,
+                depends_on: vec![],
+                from_thread: None,
+                client_request_id: "c-m".into(),
+            }))
+            .await,
+    );
+    let work_id = task["item"]["id"].as_str().unwrap().to_owned();
+    let assign = |member: &str| AssignInput {
+        work_id: work_id.clone(),
+        session_id: String::new(),
+        member: Some(member.to_owned()),
+        reason: None,
+    };
+    let to_general = refused(leader.work_assign(Parameters(assign("@general"))).await);
+    assert!(to_general.contains("specialist members"), "{to_general}");
+    let assigned = payload(leader.work_assign(Parameters(assign("@analyst"))).await);
+    assert_eq!(
+        assigned["assignment"]["conversation_id"].as_str(),
+        analyst.public_conversation_id.as_deref()
+    );
+    assert_eq!(
+        assigned["assignment"]["member_id"].as_str(),
+        Some(analyst.id.as_str())
+    );
+    // The member is gone from the roster once removed; work cannot go to it.
+    let other = payload(
+        leader
+            .work_create(Parameters(CreateInput {
+                round_id: None,
+                title: "Second".into(),
+                description: "More".into(),
+                plan: None,
+                depends_on: vec![],
+                from_thread: None,
+                client_request_id: "c-m2".into(),
+            }))
+            .await,
+    );
+    let unknown = refused(
+        leader
+            .work_assign(Parameters(AssignInput {
+                work_id: other["item"]["id"].as_str().unwrap().to_owned(),
+                session_id: String::new(),
+                member: Some("@nobody".into()),
+                reason: None,
+            }))
+            .await,
+    );
+    assert!(unknown.contains("not found"), "{unknown}");
+}

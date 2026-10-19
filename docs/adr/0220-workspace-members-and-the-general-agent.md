@@ -77,10 +77,29 @@ progress, and reports and escalates to the human. It is refused, in the
 service and the tool layer, from: being assigned work, launching or analyzing
 experiments, attaching evidence or reporting an attempt as an executor, and
 reviewing as a specialist. These checks read the member role from persisted
-state on every call, so a prompt, a configured instruction, or a message from
-another agent cannot lift them, and no other agent can grant the manager
-authority. Specialists may report and propose; their reports inform the
+state on every call (and apply to every Session the manager has had, failing
+closed if the roster cannot be read), so a prompt, a configured instruction, or
+a message from another agent cannot lift them, and no other agent can grant the
+manager authority. The same rule keeps coordination with the manager: only the
+General Agent's current Session, or a Session that is not a member, can hold a
+round's coordination; a specialist's, a private, or a replaced Session cannot.
+The provider's own tools are bounded too: the runtime refuses the manager's
+native edit, delete, move, and command-execution permission requests outright
+instead of surfacing them for approval, while its read, search, and Kubecode
+management tools are untouched. The manager does not create executor Sessions
+of its own: it delegates to the roster. Specialists may report and propose; their reports inform the
 manager but do not carry human authority.
+
+### 4a. Configuration is checked when it is applied
+
+Configuration values are provider-reported option ids, so they cannot be
+validated against a static catalog when saved. They are applied to the Session
+before its next prompt after the specification changes; a rejected value marks
+a public member `setup_required` with the code `config_rejected` (a private
+Session's failure does not make the member unassignable for shared work), and
+the roster shows it until the value applies. Retrying setup applies pending
+values at once so the reason appears in the roster, not on the next delivery.
+The browser words setup codes in its own language.
 
 ### 5. Existing Workspaces
 

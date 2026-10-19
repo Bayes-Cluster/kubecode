@@ -256,38 +256,85 @@ async fn retry_setup(
     check_project(&state, &project_id)?;
     let member = tokio::task::spawn_blocking(move || -> Result<Member, ApiError> {
         let runtime = std::sync::Arc::clone(&state.agent_runtime);
-        let available = move |agent| runtime.agent_available(agent);
+        let available = {
+            let runtime = std::sync::Arc::clone(&runtime);
+            move |agent| runtime.agent_available(agent)
+        };
         let member = state.members.get(&project_id, &member_id)?;
         // A waiting manager follows the current defaults before it retries.
-        if member.role == crate::member_store::MemberRole::General {
-            return Ok(state.members.ensure_general(
-                &project_id,
-                &available,
-                fallback_provider(&state),
-            )?);
+        let member = if member.role == crate::member_store::MemberRole::General {
+            state
+                .members
+                .ensure_general(&project_id, &available, fallback_provider(&state))?
+        } else {
+            state
+                .members
+                .finish_setup(&project_id, &member_id, &available)?
+        };
+        // A Session that exists is tried with its configuration now, so a
+        // rejected value is reported here instead of on the next delivery.
+        if let Some(session) = member.public_conversation_id.as_deref() {
+            let delivery = crate::orchestrator::runtime_member_delivery(
+                runtime,
+                std::sync::Arc::clone(&state.members),
+            );
+            let _ = delivery.apply_config(session);
         }
-        Ok(state
-            .members
-            .finish_setup(&project_id, &member_id, &available)?)
+        Ok(state.members.get(&project_id, &member_id)?)
     })
     .await
     .map_err(|_| MemberError::Invalid("setup could not be retried"))??;
     Ok(Json(member))
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct ReplaceRequest {
+    /// A new specification (a provider change is made by replacing the Session).
+    spec: Option<MemberSpec>,
+}
+
 async fn replace_session(
     State(state): State<AppState>,
     Path((project_id, member_id)): Path<(String, String)>,
+    body: Option<Json<ReplaceRequest>>,
 ) -> Result<Json<Member>, ApiError> {
     check_project(&state, &project_id)?;
+    let request = body.map(|Json(request)| request).unwrap_or_default();
     let member = tokio::task::spawn_blocking(move || -> Result<Member, ApiError> {
         let runtime = std::sync::Arc::clone(&state.agent_runtime);
-        Ok(state.members.replace_session(
+        let before = state.members.get(&project_id, &member_id)?;
+        let member = state.members.replace_session(
             &project_id,
             &member_id,
             Binding::Public,
+            request.spec,
             &move |agent| runtime.agent_available(agent),
-        )?)
+        )?;
+        // Rounds the old Session coordinated move with the member to its new
+        // Session, so replacing a manager's Session does not strand them.
+        if let (Some(old), Some(new)) = (
+            before.public_conversation_id.as_deref(),
+            member.public_conversation_id.as_deref(),
+        ) && old != new
+        {
+            for round in state
+                .work
+                .coordinated_rounds(&project_id, old)
+                .unwrap_or_default()
+            {
+                if let Ok(Some(current)) = state.work.coordinator(&project_id, &round) {
+                    let _ = state.work.handoff_coordinator(
+                        &project_id,
+                        &round,
+                        current.epoch,
+                        new,
+                        "the project manager's Session was replaced",
+                        &crate::work_store::Actor::Researcher,
+                    );
+                }
+            }
+        }
+        Ok(member)
     })
     .await
     .map_err(|_| MemberError::Invalid("the Session could not be replaced"))??;

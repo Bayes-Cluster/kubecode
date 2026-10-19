@@ -32,13 +32,14 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null)
 
-  const adopt = (defaults: MemberDefaults) => {
+  const adopt = (defaults: MemberDefaults, keepEdits = false) => {
     setSaved(defaults)
+    onLoaded?.(defaults)
+    if (keepEdits) return
     setAgentId(defaults.general.agent_id)
     setRows(configRows(defaults.general.config))
     setInstructions(defaults.general.instructions)
     setTemplates(defaults.templates)
-    onLoaded?.(defaults)
   }
 
   useEffect(() => {
@@ -54,9 +55,23 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
 
   if (!saved) {
     return (
-      <p className="kubecode-research-muted" role={loadFailed ? 'alert' : 'status'}>
-        {loadFailed ? t('kubecode.members.defaults.loadFailed') : t('kubecode.members.loading')}
-      </p>
+      <div>
+        <p className="kubecode-research-muted" role={loadFailed ? 'alert' : 'status'}>
+          {loadFailed ? t('kubecode.members.defaults.loadFailed') : t('kubecode.members.loading')}
+        </p>
+        {loadFailed && (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setLoadFailed(false)
+              api.memberDefaults().then(adopt, () => setLoadFailed(true))
+            }}
+          >
+            {t('kubecode.members.retryLoad')}
+          </Button>
+        )}
+      </div>
     )
   }
 
@@ -73,7 +88,9 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
     } catch (cause) {
       setMessage({ tone: 'error', text: memberErrorMessage(cause, t) })
       if (isMemberStale(cause)) {
-        api.memberDefaults().then(adopt, () => undefined)
+        // Take the newer revision but keep what was typed; saving again is
+        // a deliberate overwrite.
+        api.memberDefaults().then((latest) => adopt(latest, true), () => undefined)
       }
     } finally {
       setBusy(false)
@@ -104,19 +121,19 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
         {rows.map((row, index) => (
           <div className="kubecode-work-command-row" key={index}>
             <input
-              aria-label={t('kubecode.members.defaults.configKey')}
+              aria-label={`${t('kubecode.members.defaults.configKey')} ${index + 1}`}
               className="kubecode-channel-select"
               value={row.key}
               onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, key: event.target.value } : r))}
             />
             <input
-              aria-label={t('kubecode.members.defaults.configValue')}
+              aria-label={`${t('kubecode.members.defaults.configValue')} ${index + 1}`}
               className="kubecode-channel-select"
               value={row.value}
               onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, value: event.target.value } : r))}
             />
             <Button
-              aria-label={t('kubecode.members.defaults.removeConfig')}
+              aria-label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
               size="icon-xs"
               variant="ghost"
               onClick={() => setRows(rows.filter((_, i) => i !== index))}

@@ -6,12 +6,57 @@ use crate::experiment_store::testing::Fixture;
 struct Rig {
     f: Fixture,
     members: MemberStore,
+    work: crate::work_store::WorkStore,
 }
 
 fn rig() -> Rig {
     let f = Fixture::new();
     let members = MemberStore::from_database(f.agents.database(), Arc::clone(&f.agents)).unwrap();
-    Rig { f, members }
+    let work =
+        crate::work_store::WorkStore::from_database(f.agents.database(), Arc::clone(&f.agents))
+            .unwrap();
+    Rig { f, members, work }
+}
+
+impl Rig {
+    /// A native task in the Fixture's round, assigned to `session`.
+    fn assigned_to(&self, session: &str) -> String {
+        use crate::work_store::{Actor, CoordinatorAuth, NewWork};
+        let current = self
+            .work
+            .coordinator(&self.f.project_id, &self.f.round_id)
+            .unwrap()
+            .expect("the Leader coordinates the round");
+        let coordinator = Actor::Coordinator(CoordinatorAuth {
+            round_id: self.f.round_id.clone(),
+            holder: current.holder,
+            epoch: current.epoch,
+        });
+        let (item, _) = self
+            .work
+            .create(
+                &self.f.project_id,
+                NewWork {
+                    title: "Task",
+                    description: "do it",
+                    round_id: Some(&self.f.round_id),
+                    ..Default::default()
+                },
+                &coordinator,
+            )
+            .unwrap();
+        self.work
+            .assign(
+                &self.f.project_id,
+                &item.id,
+                session,
+                None,
+                "",
+                &coordinator,
+            )
+            .unwrap();
+        item.id
+    }
 }
 
 const YES: &dyn Fn(AgentId) -> bool = &|_| true;
@@ -316,7 +361,7 @@ fn authority_is_read_from_the_roster_and_old_sessions_lose_it() {
     // A replaced Session keeps its attribution and loses its authority.
     let replaced = r
         .members
-        .replace_session(&r.f.project_id, &general.id, Binding::Public, YES)
+        .replace_session(&r.f.project_id, &general.id, Binding::Public, None, YES)
         .unwrap();
     assert_ne!(
         replaced.public_conversation_id.as_deref(),
@@ -439,4 +484,280 @@ fn handles_are_ascii_slugs() {
     assert_eq!(handle_for("  Écrivain 2 "), "crivain-2");
     assert_eq!(handle_for("??"), "");
     assert_eq!(handle_for(&"a".repeat(80)).len(), MAX_HANDLE_CHARS);
+}
+
+#[test]
+fn removal_and_replacement_are_refused_while_the_member_holds_work_or_runs_an_attempt() {
+    let r = rig();
+    r.members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    let analyst = r
+        .members
+        .create_specialist(
+            &r.f.project_id,
+            NewMember {
+                name: "Analyst".into(),
+                template: Some(MemberTemplate::Analysis),
+                ..Default::default()
+            },
+            YES,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let session = analyst.public_conversation_id.clone().unwrap();
+    let work = r.assigned_to(&session);
+
+    let held = r.members.remove(&r.f.project_id, &analyst.id);
+    assert!(matches!(held, Err(MemberError::HoldsWork)), "{held:?}");
+    let before = conversations(&r);
+    assert!(matches!(
+        r.members
+            .replace_session(&r.f.project_id, &analyst.id, Binding::Public, None, YES),
+        Err(MemberError::HoldsWork)
+    ));
+    assert_eq!(
+        conversations(&r),
+        before,
+        "a refused replacement leaves no Session behind"
+    );
+
+    // A running attempt is named as such.
+    let attempt = r
+        .work
+        .begin_attempt(
+            &r.f.project_id,
+            &work,
+            Some("k"),
+            &crate::work_store::Actor::Researcher,
+        )
+        .unwrap();
+    assert!(matches!(
+        r.members
+            .replace_session(&r.f.project_id, &analyst.id, Binding::Public, None, YES),
+        Err(MemberError::Running)
+    ));
+
+    // Once the work ends, the member can go, with its history intact.
+    r.work
+        .finish_attempt(
+            &r.f.project_id,
+            &attempt.id,
+            crate::work_store::AttemptOutcome::Failed {
+                kind: None,
+                error: None,
+            },
+            &crate::work_store::Actor::Executor {
+                conversation_id: session.clone(),
+            },
+        )
+        .unwrap();
+    let current = r.work.get(&r.f.project_id, &work).unwrap();
+    r.work
+        .close(
+            &r.f.project_id,
+            &work,
+            current.revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "done",
+                superseded_by: None,
+            },
+            &crate::work_store::Actor::Researcher,
+        )
+        .unwrap();
+    let removed = r.members.remove(&r.f.project_id, &analyst.id).unwrap();
+    assert_eq!(removed.state, MemberState::Removed);
+}
+
+#[test]
+fn a_member_is_limited_and_a_replacement_can_change_the_provider_and_the_old_session_stays_bound_by_the_boundary()
+ {
+    let r = rig();
+    let general = r
+        .members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    let old = general.public_conversation_id.clone().unwrap();
+    let replaced = r
+        .members
+        .replace_session(
+            &r.f.project_id,
+            &general.id,
+            Binding::Public,
+            Some(MemberSpec {
+                agent_id: AgentId::Codex,
+                ..general.spec.clone()
+            }),
+            YES,
+        )
+        .unwrap();
+    assert_eq!(replaced.spec.agent_id, AgentId::Codex);
+    assert_eq!(replaced.revision, general.revision + 1);
+    assert_ne!(
+        replaced.public_conversation_id.as_deref(),
+        Some(old.as_str())
+    );
+    // The replaced Session lost the manager's authority but is still bound by its limits.
+    assert!(!r.members.is_general(&r.f.project_id, &old).unwrap());
+    assert!(r.members.was_general(&r.f.project_id, &old).unwrap());
+    // It cannot coordinate or be assigned; the new one can coordinate.
+    use crate::work_store::AssignmentGuard;
+    assert!(r.members.may_coordinate(&r.f.project_id, &old).is_err());
+    assert!(r.members.may_execute(&r.f.project_id, &old).is_err());
+    assert!(
+        r.members
+            .may_coordinate(
+                &r.f.project_id,
+                replaced.public_conversation_id.as_deref().unwrap()
+            )
+            .is_ok()
+    );
+    assert!(
+        r.members
+            .may_coordinate(&r.f.project_id, "legacy-session")
+            .is_ok()
+    );
+    // A provider that is not available is refused and leaves no Session behind.
+    let count = conversations(&r);
+    assert!(
+        r.members
+            .replace_session(&r.f.project_id, &general.id, Binding::Public, None, NO)
+            .is_err()
+    );
+    assert_eq!(conversations(&r), count);
+}
+
+#[test]
+fn a_specialist_and_a_private_session_never_coordinate_and_the_member_limit_holds() {
+    use crate::work_store::AssignmentGuard;
+    let r = rig();
+    r.members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    let analyst = r
+        .members
+        .create_specialist(
+            &r.f.project_id,
+            NewMember {
+                name: "Analyst".into(),
+                ..Default::default()
+            },
+            YES,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let with_dm = r
+        .members
+        .ensure_dm_session(&r.f.project_id, &analyst.id, YES)
+        .unwrap();
+    assert!(
+        r.members
+            .may_coordinate(
+                &r.f.project_id,
+                analyst.public_conversation_id.as_deref().unwrap()
+            )
+            .is_err()
+    );
+    assert!(
+        r.members
+            .may_coordinate(
+                &r.f.project_id,
+                with_dm.dm_conversation_id.as_deref().unwrap()
+            )
+            .is_err()
+    );
+    for index in 0..(MAX_MEMBERS - 2) {
+        r.members
+            .create_specialist(
+                &r.f.project_id,
+                NewMember {
+                    name: format!("Member {index}"),
+                    ..Default::default()
+                },
+                YES,
+                AgentId::OpenCode,
+            )
+            .unwrap();
+    }
+    let over = r.members.create_specialist(
+        &r.f.project_id,
+        NewMember {
+            name: "One too many".into(),
+            ..Default::default()
+        },
+        YES,
+        AgentId::OpenCode,
+    );
+    assert!(matches!(over, Err(MemberError::TooMany)), "{over:?}");
+}
+
+#[test]
+fn a_rejected_configuration_is_a_setup_problem_that_clears_when_it_applies_and_an_edited_manager_keeps_its_edit()
+ {
+    let r = rig();
+    let waiting = r
+        .members
+        .ensure_general(&r.f.project_id, NO, AgentId::OpenCode)
+        .unwrap();
+    // The researcher fixes the waiting manager by hand; the defaults do not overwrite that.
+    let edited = r
+        .members
+        .update(
+            &r.f.project_id,
+            &waiting.id,
+            waiting.revision,
+            MemberPatch {
+                spec: Some(MemberSpec {
+                    agent_id: AgentId::Codex,
+                    ..waiting.spec.clone()
+                }),
+                ..Default::default()
+            },
+            NO,
+        )
+        .unwrap();
+    let again = r
+        .members
+        .ensure_general(&r.f.project_id, NO, AgentId::OpenCode)
+        .unwrap();
+    assert_eq!(again.spec.agent_id, AgentId::Codex, "{edited:?}");
+    assert_eq!(again.setup_code.as_deref(), Some("provider_unavailable"));
+
+    let ready = r
+        .members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    assert_eq!(ready.state, MemberState::Active);
+    r.members
+        .record_setup_error(&ready.id, "could not set model to x: no such model\nstack")
+        .unwrap();
+    let flagged = r.members.get(&r.f.project_id, &ready.id).unwrap();
+    assert_eq!(flagged.state, MemberState::SetupRequired);
+    assert_eq!(flagged.setup_code.as_deref(), Some("config_rejected"));
+    assert!(!flagged.setup_error.as_deref().unwrap().contains('\n'));
+    // A configuration that later applies clears it.
+    r.members
+        .update(
+            &r.f.project_id,
+            &ready.id,
+            flagged.revision,
+            MemberPatch {
+                spec: Some(MemberSpec {
+                    config: [("model".to_owned(), "fast".to_owned())].into(),
+                    ..flagged.spec.clone()
+                }),
+                ..Default::default()
+            },
+            YES,
+        )
+        .unwrap();
+    let session = flagged.public_conversation_id.clone().unwrap();
+    let pending = r.members.pending_config(&session).unwrap().unwrap();
+    r.members.mark_config_applied(&pending).unwrap();
+    let healed = r.members.get(&r.f.project_id, &ready.id).unwrap();
+    assert_eq!(
+        (healed.state, healed.setup_error, healed.setup_code),
+        (MemberState::Active, None, None)
+    );
 }

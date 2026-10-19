@@ -85,6 +85,7 @@ import type {
   MemberInput,
   MemberPatch,
   MemberRoster,
+  MemberSpec,
   WorkCommand,
   WorkDecisionRequest,
   WorkDetail,
@@ -377,6 +378,14 @@ export class KubecodeApi {
   removeMember(projectId: string, memberId: string): Promise<Member> {
     return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}`, {
       method: 'DELETE',
+    })
+  }
+
+  /** Gives a member a fresh Session (optionally another provider); its old Session loses its authority. */
+  replaceMemberSession(projectId: string, memberId: string, spec?: MemberSpec): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/session`, {
+      method: 'POST',
+      body: JSON.stringify(spec ? { spec } : {}),
     })
   }
 

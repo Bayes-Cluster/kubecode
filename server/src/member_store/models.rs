@@ -150,6 +150,9 @@ pub struct Member {
     pub dm_conversation_id: Option<String>,
     pub state: MemberState,
     pub setup_error: Option<String>,
+    /// Why setup is needed, as a code the browser words in its own language:
+    /// `provider_unavailable` (with the provider in `spec`) or `config_rejected`.
+    pub setup_code: Option<String>,
     /// Bumped by every change to the name, template, or specification.
     pub revision: u64,
     pub created_at: String,

@@ -488,7 +488,7 @@ impl WorkMcpServer {
     }
 
     #[tool(
-        description = "Coordinator: make a Session the executor of a task. A new executor counts against the round's executor limit."
+        description = "Coordinator: assign a task to a specialist member (preferred: pass `member`, an @handle or id from work_members) or, for work you do yourself or a Session you created with work_executor_create, a `session_id`. The General Agent is never assignable. A new executor counts against the round's executor limit."
     )]
     async fn work_assign(
         &self,
@@ -520,7 +520,7 @@ impl WorkMcpServer {
     }
 
     #[tool(
-        description = "Coordinator: create a new Session for executing work with an installed provider (request_key makes a retry return the same Session). It is created idle at the default permission mode; you can assign work only to yourself or to Sessions you created this way."
+        description = "Coordinator: create a new Session for executing work with an installed provider (request_key makes a retry return the same Session). It is created idle at the default permission mode; you can assign it work with session_id. Prefer assigning to specialist members (work_members) where the Workspace has them; the General Agent does not create executors."
     )]
     async fn work_executor_create(
         &self,

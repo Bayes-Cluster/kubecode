@@ -19,7 +19,7 @@ function member(overrides: Partial<Member> = {}): Member {
   return {
     id: 'm-general', project_id: 'p1', role: 'general', template: 'general', name: 'General',
     handle: 'general', spec: { agent_id: 'opencode', config: {}, instructions: 'Manage.' },
-    public_conversation_id: 's1', dm_conversation_id: null, state: 'active', setup_error: null,
+    public_conversation_id: 's1', dm_conversation_id: null, state: 'active', setup_error: null, setup_code: null,
     revision: 1, created_at: '', updated_at: '', removed_at: null,
     ...overrides,
   }
@@ -105,6 +105,9 @@ describe('MemberRoster', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.save' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.error.nameTaken')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.remove: Analyst' }))
+    // Removing asks once more before it does anything.
+    expect(removeMember).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.confirmRemove: Analyst' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('kubecode.members.error.holdsWork'))
   })
 
@@ -113,11 +116,16 @@ describe('MemberRoster', () => {
     roster(api({
       retryMemberSetup,
       listMembers: vi.fn().mockResolvedValue({
-        members: [member({ state: 'setup_required', public_conversation_id: null, setup_error: 'claude_code is not installed' })],
+        members: [member({
+          state: 'setup_required', public_conversation_id: null,
+          setup_error: 'opencode is not installed or available on this server', setup_code: 'provider_unavailable',
+        })],
         general_id: 'm-general',
       }),
     }))
-    expect(await screen.findByText('claude_code is not installed')).toBeInTheDocument()
+    // The reason is worded in the browser's language from the code, not shown as server text.
+    expect(await screen.findByText(/kubecode.members.setup.providerUnavailable/)).toBeInTheDocument()
+    expect(screen.queryByText(/not installed or available on this server/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.retrySetup: General' }))
     await waitFor(() => expect(retryMemberSetup).toHaveBeenCalledWith('p1', 'm-general'))
   })
@@ -146,6 +154,68 @@ describe('MemberRoster', () => {
   })
 })
 
+describe('MemberRoster review regressions', () => {
+  it('replaces a Session with the chosen provider and explains what that does', async () => {
+    const replaceMemberSession = vi.fn().mockResolvedValue(member())
+    roster(api({ replaceMemberSession }))
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.members.replaceSession: General' }))
+    const form = screen.getByRole('form', { name: 'kubecode.members.replaceSession' })
+    expect(within(form).getByText('kubecode.members.replaceHelp')).toBeInTheDocument()
+    fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.replaceConfirm' }))
+    await waitFor(() => expect(replaceMemberSession).toHaveBeenCalledWith('p1', 'm-general', {
+      agent_id: 'opencode', config: {}, instructions: 'Manage.',
+    }))
+  })
+
+  it('keeps one request id for a retried add and drops a form built from a stale revision', async () => {
+    const createMember = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(member({ id: 'm-b', role: 'specialist', name: 'Writer' }))
+    const updateMember = vi.fn().mockRejectedValue(new ApiError('member_revision_conflict', 'x', 409))
+    const listMembers = vi.fn().mockResolvedValue({ members: [member({ revision: 2 })], general_id: 'm-general' })
+    roster(api({ createMember, updateMember, listMembers }))
+    fireEvent.click(await screen.findByRole('button', { name: /kubecode.members.add/ }))
+    let form = screen.getByRole('form', { name: 'kubecode.members.add' })
+    fireEvent.change(within(form).getByLabelText('kubecode.members.name'), { target: { value: 'Writer' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    form = screen.getByRole('form', { name: 'kubecode.members.add' })
+    fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.save' }))
+    await waitFor(() => expect(createMember).toHaveBeenCalledTimes(2))
+    expect(createMember.mock.calls[0][1].client_request_id).toBe(createMember.mock.calls[1][1].client_request_id)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.members.edit: General' }))
+    form = screen.getByRole('form', { name: 'kubecode.members.edit' })
+    fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.error.stale')
+    // The stale form is gone and the roster was read again.
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'kubecode.members.edit' })).not.toBeInTheDocument())
+    expect(listMembers.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('does not overwrite instructions the researcher edited when the template changes', async () => {
+    roster(api())
+    fireEvent.click(await screen.findByRole('button', { name: /kubecode.members.add/ }))
+    const form = screen.getByRole('form', { name: 'kubecode.members.add' })
+    const instructions = within(form).getByLabelText('kubecode.members.instructions')
+    fireEvent.change(within(form).getByLabelText('kubecode.members.role'), { target: { value: 'writing' } })
+    expect(instructions).toHaveValue('Write.')
+    fireEvent.change(instructions, { target: { value: 'My own words' } })
+    fireEvent.change(within(form).getByLabelText('kubecode.members.role'), { target: { value: 'code_review' } })
+    expect(instructions).toHaveValue('My own words')
+  })
+
+  it('offers to try again when the roster cannot be loaded and says when a refresh failed', async () => {
+    const listMembers = vi.fn()
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValue({ members: [member()], general_id: 'm-general' })
+    roster(api({ listMembers }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.loadFailed')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.retryLoad' }))
+    expect(await screen.findByText('General')).toBeInTheDocument()
+  })
+})
+
 describe('MemberDefaultsPanel', () => {
   it('edits the server defaults with their revision and says a stale save was refused', async () => {
     const saveMemberDefaults = vi.fn()
@@ -156,7 +226,7 @@ describe('MemberDefaultsPanel', () => {
     fireEvent.change(await screen.findByLabelText('kubecode.members.defaults.generalInstructions'), {
       target: { value: 'New instructions' },
     })
-    fireEvent.change(screen.getByLabelText('kubecode.members.defaults.configValue'), { target: { value: 'slow' } })
+    fireEvent.change(screen.getByLabelText('kubecode.members.defaults.configValue 1'), { target: { value: 'slow' } })
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.save' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.error.stale')
     expect(saveMemberDefaults.mock.calls[0][0]).toBe(2)
@@ -166,6 +236,8 @@ describe('MemberDefaultsPanel', () => {
       instructions: 'New instructions',
     })
     await waitFor(() => expect(memberDefaults).toHaveBeenCalledTimes(2))
+    // What was typed is kept; the next save uses the newer revision.
+    expect(screen.getByLabelText('kubecode.members.defaults.generalInstructions')).toHaveValue('New instructions')
   })
 
   it('does not offer an option row without a key and value, and keeps the manager boundary visible', async () => {

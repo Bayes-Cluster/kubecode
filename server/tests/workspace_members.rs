@@ -393,27 +393,45 @@ async fn the_manager_manages_and_cannot_execute_and_specialists_are_assigned_by_
         matches!(itself, Err(AgentWorkError::Work(WorkError::Invalid(text))) if text.contains("manages")),
         "{itself:?}"
     );
+    let to_manager = manager.assign_member(&task.item.id, "@general", "");
     assert!(
-        manager
-            .assign_member(&task.item.id, "@general", "")
-            .is_err()
+        matches!(&to_manager, Err(AgentWorkError::Invalid(text)) if text.contains("specialist members")),
+        "{to_manager:?}"
     );
-    assert!(matches!(
-        manager.launch_experiment(
-            &task.item.id,
-            LaunchSpec {
-                launch_key: "k".into(),
-                argv: vec!["echo".into()],
-                ..Default::default()
-            }
-        ),
-        Err(AgentWorkError::Invalid(_))
+    let boundary = |result: Result<(), AgentWorkError>| match result {
+        Err(AgentWorkError::Invalid(text)) => text.contains("General Agent manages"),
+        _ => false,
+    };
+    assert!(boundary(
+        manager
+            .launch_experiment(
+                &task.item.id,
+                LaunchSpec {
+                    launch_key: "k".into(),
+                    argv: vec!["echo".into()],
+                    ..Default::default()
+                }
+            )
+            .map(|_| ())
     ));
-    assert!(
+    assert!(boundary(
         manager
             .report(&task.item.id, ReportStatus::Completed, "done", None)
-            .is_err()
-    );
+            .map(|_| ())
+    ));
+    assert!(boundary(
+        manager
+            .create_executor(None, "opencode", "Side", "k-side")
+            .map(|_| ())
+    ));
+    // The same calls by a specialist are not stopped by that rule (negative
+    // control): they fail, if at all, for their own reasons.
+    let specialist = agent(&analyst_session);
+    assert!(!boundary(
+        specialist
+            .report(&task.item.id, ReportStatus::Completed, "done", None)
+            .map(|_| ())
+    ));
 
     // It delegates to the specialist, by handle.
     let assigned = manager
@@ -489,5 +507,173 @@ async fn the_manager_manages_and_cannot_execute_and_specialists_are_assigned_by_
         manager
             .assign_member(&other.item.id, "@analyst", "")
             .is_err()
+    );
+}
+
+#[tokio::test]
+async fn a_members_session_cannot_be_deleted_and_replacing_it_can_change_the_provider() {
+    let env = env(true);
+    let (_, roster) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.project),
+        Value::Null,
+    )
+    .await;
+    let general = roster["members"][0].clone();
+    let session = general["public_conversation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Deleting a member's Session through the Session API is refused.
+    let (status, refused) = call(
+        &env,
+        Method::DELETE,
+        &format!("/sessions/{session}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert!(env.agents.get_conversation(&session).is_ok());
+
+    // Replacing the Session keeps the member and the old Session is no longer its own.
+    let path = format!(
+        "/projects/{}/members/{}/session",
+        env.project,
+        general["id"].as_str().unwrap()
+    );
+    let (status, replaced) = call(&env, Method::POST, &path, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    assert_eq!(replaced["id"], general["id"]);
+    assert_ne!(
+        replaced["public_conversation_id"],
+        general["public_conversation_id"]
+    );
+    assert!(
+        !env.state
+            .members
+            .is_general(&env.project, &session)
+            .unwrap()
+    );
+    assert!(
+        env.state
+            .members
+            .was_general(&env.project, &session)
+            .unwrap()
+    );
+    // A provider that is not available is refused with nothing left behind.
+    let (status, bad) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"spec": {"agent_id": "codex", "config": {}, "instructions": ""}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+}
+
+#[tokio::test]
+async fn coordination_goes_to_the_general_agents_current_session_only() {
+    let env = env(true);
+    let (_, roster) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.project),
+        Value::Null,
+    )
+    .await;
+    let manager_session = roster["members"][0]["public_conversation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, analyst) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/members", env.project),
+        json!({"name": "Analyst"}),
+    )
+    .await;
+    let specialist_session = analyst["public_conversation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (question, _) = env
+        .state
+        .research
+        .create(
+            &env.project,
+            ResearchBrief {
+                title: "Q".into(),
+                question: "?".into(),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    let (round, _) = env
+        .state
+        .research
+        .begin_round(
+            &env.project,
+            &question.id,
+            NewRound {
+                kind: RoundKind::Solo,
+                idempotency_key: "r1",
+                expected_revision: 1,
+                request: json!({}),
+                sources: Vec::new(),
+            },
+        )
+        .unwrap();
+    let denied = env.state.work.assume_coordinator(
+        &env.project,
+        &round.id,
+        &specialist_session,
+        &Actor::Researcher,
+    );
+    assert!(
+        matches!(denied, Err(WorkError::Invalid(text)) if text.contains("General Agent")),
+        "{denied:?}"
+    );
+    env.state
+        .work
+        .assume_coordinator(
+            &env.project,
+            &round.id,
+            &manager_session,
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let handed = env.state.work.handoff_coordinator(
+        &env.project,
+        &round.id,
+        1,
+        &specialist_session,
+        "to the specialist",
+        &Actor::Researcher,
+    );
+    assert!(
+        handed.is_err(),
+        "a specialist does not take over coordination"
+    );
+    // Replacing the manager's Session carries its rounds to the new one.
+    let path = format!(
+        "/projects/{}/members/{}/session",
+        env.project,
+        roster["members"][0]["id"].as_str().unwrap()
+    );
+    let (status, replaced) = call(&env, Method::POST, &path, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    let holder = env
+        .state
+        .work
+        .coordinator(&env.project, &round.id)
+        .unwrap()
+        .unwrap()
+        .holder;
+    assert_eq!(
+        Some(holder.as_str()),
+        replaced["public_conversation_id"].as_str()
     );
 }

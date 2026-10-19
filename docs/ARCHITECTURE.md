@@ -270,10 +270,18 @@ separate DM Session, plus a `member_sessions` history that keeps old Sessions
 attributed but without authority. Defaults are server state
 (`member_defaults`, revision-checked). Authority is enforced in services: the
 `AssignmentGuard` refuses the manager's and any DM Session's assignment in
-`WorkStore::assign`, `WorkAgent` refuses the manager every executor command
-(`launch_experiment`, `decide`, `report`), and assignment goes to a specialist
-member's current public Session (`work_members`, `work_assign` with a
-`member`). `RuntimeSink` gives a member's Session its configuration values and
+`WorkStore::assign` and refuses any Session but the General Agent's current one
+(or a non-member legacy Session) coordination in `assume_coordinator` /
+`handoff_coordinator` / round start; `WorkAgent` refuses every Session the
+manager has ever had the executor commands (`launch_experiment`, `decide`,
+`report`, `create_executor`), failing closed if the roster cannot be read; the
+runtime refuses the manager's native edit, delete, move, and execute tools
+outright (`denied_for_manager`); and assignment goes to a specialist member's
+current public Session (`work_members`, `work_assign` with a `member`).
+Replacing a member's Session (`POST .../members/{id}/session`, optionally with
+a new provider) is one transaction that refuses a member with open work and
+hands the old Session's rounds to the new one; a member's Session cannot be
+deleted through the Session API. `RuntimeSink` gives a member's Session its configuration values and
 role brief once per specification revision. `member_api.rs` serves the roster
 and defaults; the browser surface is `src/kubecode/members/` (`MemberRoster`,
 `MemberDefaultsPanel`, mounted in Settings > Members).

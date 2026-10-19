@@ -167,14 +167,18 @@ impl WorkAgent {
     /// The manager manages: concrete execution commands are refused for it,
     /// read from the roster on every call.
     fn refuse_manager(&self, what: &str) -> Result<(), AgentWorkError> {
-        if let Some(members) = &self.members
-            && members
-                .is_general(&self.project_id, &self.caller)
-                .unwrap_or(false)
-        {
-            return Err(invalid(format!(
-                "the General Agent manages work and does not {what}; delegate it to a specialist member"
-            )));
+        if let Some(members) = &self.members {
+            // Every Session the manager has had is bound by it, and an
+            // unreadable roster refuses rather than lets the call through.
+            match members.was_general(&self.project_id, &self.caller) {
+                Ok(false) => {}
+                Ok(true) => {
+                    return Err(invalid(format!(
+                        "the General Agent manages work and does not {what}; delegate it to a specialist member"
+                    )));
+                }
+                Err(_) => return Err(invalid("the member roster could not be read")),
+            }
         }
         Ok(())
     }
@@ -368,7 +372,7 @@ impl WorkAgent {
             .public_conversation_id
             .filter(|_| found.state == crate::member_store::MemberState::Active)
             .ok_or_else(|| invalid("that member is not ready (see its setup state)"))?;
-        self.assign(work_id, &session, reason)
+        self.assign_to(work_id, &session, Some(&found.id), reason)
     }
 
     pub fn get(&self, work_id: &str) -> Result<WorkSummary, AgentWorkError> {
@@ -446,6 +450,16 @@ impl WorkAgent {
         session_id: &str,
         reason: &str,
     ) -> Result<WorkSummary, AgentWorkError> {
+        self.assign_to(work_id, session_id, None, reason)
+    }
+
+    fn assign_to(
+        &self,
+        work_id: &str,
+        session_id: &str,
+        member_id: Option<&str>,
+        reason: &str,
+    ) -> Result<WorkSummary, AgentWorkError> {
         let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
@@ -470,8 +484,14 @@ impl WorkAgent {
                 ));
             }
         }
-        self.work
-            .assign(&self.project_id, work_id, session_id, None, reason, &actor)?;
+        self.work.assign(
+            &self.project_id,
+            work_id,
+            session_id,
+            member_id,
+            reason,
+            &actor,
+        )?;
         Ok(self.work.summary(&self.project_id, work_id)?)
     }
 
@@ -482,6 +502,7 @@ impl WorkAgent {
         title: &str,
         request_key: &str,
     ) -> Result<String, AgentWorkError> {
+        self.refuse_manager("create executor Sessions of its own")?;
         let round_id = self.coordinated(round_id)?;
         let key = request_key.trim();
         if key.is_empty() || key.chars().count() > 128 {
@@ -765,6 +786,7 @@ impl WorkAgent {
         summary_text: &str,
         error: Option<&str>,
     ) -> Result<WorkSummary, AgentWorkError> {
+        self.refuse_manager("report on attempts")?;
         let summary =
             self.work
                 .summary(&self.project_id, work_id)
@@ -790,7 +812,6 @@ impl WorkAgent {
             // has no decision, would put unexamined work in front of review.
             self.refuse_unanalyzed(&summary)?;
         }
-        self.refuse_manager("report on attempts")?;
         let actor = self.executor_actor();
         let wanted = match status {
             ReportStatus::Completed => crate::work_store::AttemptStatus::Completed,
