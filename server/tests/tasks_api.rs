@@ -464,21 +464,27 @@ async fn work_stays_inside_the_task_and_the_researcher_reviews_stale_evidence_aw
         detail["stale_evidence"][0]["work_id"],
         work.item.id.as_str()
     );
-    let result_id = detail["stale_evidence"][0]["result_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let (status, _) = call(
-        &env,
-        Method::POST,
-        &format!(
-            "/projects/{}/tasks/{}/repin",
-            env.project, proposal.research_id
-        ),
-        json!({"work_id": work.item.id, "result_id": result_id}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    // The review cites the same file, so its own pin is stale too (ADR 0226);
+    // the researcher accepts the version they looked at for every pin of it.
+    let stale = detail["stale_evidence"].as_array().unwrap().clone();
+    assert_eq!(stale.len(), 2, "{stale:?}");
+    for entry in stale {
+        assert_eq!(entry["ref_id"], "notes.md");
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &format!(
+                "/projects/{}/tasks/{}/repin",
+                env.project, proposal.research_id
+            ),
+            json!({
+                "work_id": entry["work_id"], "result_id": entry["result_id"],
+                "request_id": entry["request_id"], "revision": entry["current"],
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    }
 
     // Sending it back needs a reason; a valid negative finding then completes it.
     let (status, _) = call(
