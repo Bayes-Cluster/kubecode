@@ -54,7 +54,7 @@ import { SettingsDialog, type SettingsSection } from './SettingsDialog'
 import { DetailPane } from './DetailPane'
 import { WorkspaceNav } from './WorkspaceNav'
 import { useWorkspaceRouteSync } from './useWorkspaceRouteSync'
-import type { WorkspaceRoute } from './workspaceRoute'
+import { parseWorkspaceRoute, type WorkspaceRoute } from './workspaceRoute'
 import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
 import { useWorkspaceBootstrap } from './useWorkspaceBootstrap'
@@ -107,6 +107,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // What the main pane shows besides the Sessions surface. One value, so two
   // views can never both claim the pane.
   const [viewState, setViewState] = useState<ViewState | null>(null)
+  const [conversationsLoadedFor, setConversationsLoadedFor] = useState<string | null>(null)
+  const [homed, setHomed] = useState(false)
   const [memberDefaults, setMemberDefaults] = useState<MemberDefaults | null>(null)
   // Files and Git are tools of the work in hand, not a permanent column of the
   // research views: they open on request there.
@@ -297,10 +299,21 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setTerminalsLoadedForProjectId,
     setConversations,
     setConversationId,
+    setConversationsLoadedFor,
     setTeams,
     setError,
   })
   const { agents, agentsRefreshing, layoutHydrated, refreshAgents } = bootstrap
+
+  // A Workspace with no Sessions of its own opens General (the default home); a
+  // link in the address decides first, and one with Sessions reopens where it was.
+  useEffect(() => {
+    if (homed || !layoutHydrated || !projectId || conversationsLoadedFor !== projectId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHomed(true)
+    if (parseWorkspaceRoute(window.location.hash)) return
+    if (conversations.length === 0) setViewState({ kind: 'channel', projectId, threadId: null })
+  }, [conversations.length, conversationsLoadedFor, homed, layoutHydrated, projectId])
   const attentionSessions = useMemo(
     () => sessionsRequiringInput(reconciliation.projectRuns, sessionCatalog),
     [reconciliation.projectRuns, sessionCatalog],
@@ -376,7 +389,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   useWorkspaceRouteSync({
     apply: applyRoute,
     current: currentRoute,
-    ready: layoutHydrated && projectId !== null,
+    ready: layoutHydrated && projectId !== null && homed,
+    ignoreInitialLink: viewState !== null,
   })
 
   useEffect(() => {
@@ -1035,6 +1049,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         onProject={(created) => {
           setProjects((current) => [...current, created])
           selection.selectProject(created.id)
+          // A new Workspace has no Sessions: it opens in General.
+          setViewState({ kind: 'channel', projectId: created.id, threadId: null })
         }}
         t={t}
       />

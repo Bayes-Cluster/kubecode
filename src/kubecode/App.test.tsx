@@ -1172,6 +1172,8 @@ describe('Kubecode workspace', () => {
   })
 
   it('creates sessions only from available agents and resizes session, context, and terminal panes', async () => {
+    // These tests are about the Sessions surface; an address names it.
+    window.history.replaceState(null, '', '/#/p/project-1/sessions')
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: 'demo' },
@@ -1242,6 +1244,8 @@ describe('Kubecode workspace', () => {
   })
 
   it('keeps narrow overlay side panels mutually exclusive and dismissible by the backdrop', async () => {
+    // These tests are about the Sessions surface; an address names it.
+    window.history.replaceState(null, '', '/#/p/project-1/sessions')
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 980px)',
       media: query,

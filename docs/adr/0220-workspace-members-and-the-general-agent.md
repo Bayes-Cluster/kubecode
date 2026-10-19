@@ -2,8 +2,9 @@
 type: ADR
 id: "0220"
 title: "Workspace members, the General Agent, and role-bounded authority"
-status: proposed
+status: accepted
 date: 2026-10-19
+supersedes: "0176-0188 (Team-first organization) and the executor-creation and self-execution parts of 0217 §2-3, for new Workspace work"
 ---
 
 ## Context

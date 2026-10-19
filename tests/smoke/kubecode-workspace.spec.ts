@@ -79,6 +79,8 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   const projectId = projects.find((project) => project.name === projectName)?.id
   if (!projectId) throw new Error('Created smoke project was not returned by the API')
 
+  // A new Workspace opens in General; this flow is about the Sessions surface.
+  await page.getByRole('button', { name: 'Back to Sessions' }).click()
   await page.getByRole('button', { name: 'Start an agent session' }).click()
   await page.getByRole('combobox', { name: 'Agent' }).click()
   await page.getByRole('option', { name: 'OpenCode' }).click()

@@ -2,8 +2,9 @@
 type: ADR
 id: "0225"
 title: "The Task board, the Task inspector, and browser acceptance with member fixtures"
-status: proposed
+status: accepted
 date: 2026-10-19
+supersedes: "0218 where the Workspace Kanban shows work items instead of Tasks"
 ---
 
 ## Context

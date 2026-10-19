@@ -57,6 +57,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
   await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
+  // A fresh Workspace opens in General, with exactly one General Agent.
+  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
   await writeFile(`${projectPath}/results.csv`, 'accuracy\n0.91\n')
   const projects = await (await request.get(`${api}/projects`)).json() as Array<{ id: string; name: string }>
   projectId = projects.find((candidate) => candidate.name === projectName)?.id
@@ -66,6 +68,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   const roster = async () => (await (await request.get(`${api}/projects/${projectId}/members`)).json()) as {
     members: Array<{ id: string; handle: string; role: string; public_conversation_id: string | null }>
   }
+  expect((await roster()).members.filter((member) => member.role === 'general')).toHaveLength(1)
   const generalConversation = (await roster()).members.find((member) => member.role === 'general')?.public_conversation_id
   expect(generalConversation).toBeTruthy()
   const created = await request.post(`${api}/projects/${projectId}/members`, {

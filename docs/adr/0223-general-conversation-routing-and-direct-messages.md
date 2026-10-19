@@ -2,8 +2,9 @@
 type: ADR
 id: "0223"
 title: "One General conversation, routed to members, with private direct messages"
-status: proposed
+status: accepted
 date: 2026-10-19
+supersedes: "0216 (plain messages are only recorded) and 0217 (only ask and request intents are routed), for the Workspace conversation"
 ---
 
 ## Context

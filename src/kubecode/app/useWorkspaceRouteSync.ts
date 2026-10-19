@@ -35,11 +35,17 @@ export function useWorkspaceRouteSync({
   apply,
   current,
   ready,
+  ignoreInitialLink = false,
 }: {
   apply: (route: WorkspaceRoute) => void
   current: WorkspaceRoute
   /** The shell has its Projects and can honour a route. */
   ready: boolean
+  /**
+   * The researcher already moved before the address was first read (the page
+   * was slow to load): what they chose wins over the link they opened.
+   */
+  ignoreInitialLink?: boolean
 }) {
   const synced = useRef<{ text: string; route: WorkspaceRoute } | null>(null)
   const target = useRef<{ text: string; route: WorkspaceRoute; timer: number } | null>(null)
@@ -67,7 +73,7 @@ export function useWorkspaceRouteSync({
     if (!ready) return
     if (!started.current) {
       started.current = true
-      const requested = parseWorkspaceRoute(window.location.hash)
+      const requested = ignoreInitialLink ? null : parseWorkspaceRoute(window.location.hash)
       if (requested && formatWorkspaceRoute(requested) !== text) {
         request(requested)
         return

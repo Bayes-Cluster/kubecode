@@ -8,11 +8,12 @@ import type { WorkspaceRoute } from './workspaceRoute'
 let setRoute: (route: WorkspaceRoute) => void = () => undefined
 const applied: WorkspaceRoute[] = []
 
-function Probe({ ready = true, delayed = false }: { ready?: boolean; delayed?: boolean }) {
+function Probe({ ready = true, delayed = false, moved = false }: { ready?: boolean; delayed?: boolean; moved?: boolean }) {
   const [route, set] = useState<WorkspaceRoute>({ project: 'p1', view: 'sessions' })
   useEffect(() => { setRoute = set }, [set])
   useWorkspaceRouteSync({
     ready,
+    ignoreInitialLink: moved,
     current: route,
     apply: (next) => {
       applied.push(next)
@@ -127,5 +128,12 @@ describe('useWorkspaceRouteSync', () => {
     expect(window.location.hash).toBe('#/p/p1/dm/m1')
     act(() => setRoute({ project: 'p1', view: 'board' }))
     expect(window.location.hash).toBe('#/p/p1/board')
+  })
+
+  it('lets what the researcher chose before the address was read win over the link they opened', () => {
+    window.history.replaceState(null, '', '/#/p/p1/resources')
+    render(<Probe moved />)
+    expect(applied).toEqual([])
+    expect(window.location.hash).toBe('#/p/p1/sessions')
   })
 })
