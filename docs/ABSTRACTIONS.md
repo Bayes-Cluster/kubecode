@@ -1304,6 +1304,16 @@ suggestions. Sending is independent of stopping: it stays available while
 agents work. Enter sends, Shift+Enter breaks the line, and an input method
 composing is never interrupted. See ADR 0222.
 
+Workspace views adopt one vocabulary, the navigation first and General, direct
+messages, the board, resources, and attention as their slices land. It draws
+the same meaning the same way: one glyph per destination,
+command, and object; one **identity** (avatar, name, `@handle`, role in words,
+and membership state only when it needs attention); one named **reference** to
+an object that shows its version and whether it changed or is gone; and one
+view **header**. Stopping a run and pausing new work in a named scope are
+separate controls, and a research **decision** is always text-labelled and says
+why when it cannot be made. See ADR 0227.
+
 ## Members and the General Agent
 
 A **member** is a durable identity in a Workspace: the **General Agent** (the

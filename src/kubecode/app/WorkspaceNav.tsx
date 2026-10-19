@@ -1,10 +1,10 @@
-import { BellRing, Hash, KanbanSquare, Library, MessageCircle, Users } from 'lucide-react'
-
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { Conversation, Member, TaskCard, TaskDraft } from '../api'
+import { Icon } from '../icons'
+import { WORKSPACE_DESTINATION_ICONS as DESTINATIONS } from '../icons/workspaceIcons'
 import { STATE_LABELS } from '../members/memberModel'
 import type { WorkspaceView } from './workspaceRoute'
 
@@ -51,10 +51,10 @@ export function WorkspaceNav({
   taskCount,
 }: WorkspaceNavProps) {
   const entries = [
-    { view: 'general', icon: <Hash aria-hidden size={14} />, label: t('kubecode.channel.general') },
-    { view: 'board', icon: <KanbanSquare aria-hidden size={14} />, label: t('kubecode.nav.board') },
-    { view: 'resources', icon: <Library aria-hidden size={14} />, label: t('kubecode.nav.resources') },
-    { view: 'members', icon: <Users aria-hidden size={14} />, label: t('kubecode.nav.members') },
+    { view: 'general', icon: DESTINATIONS.general.Icon, label: t('kubecode.channel.general') },
+    { view: 'board', icon: DESTINATIONS.board.Icon, label: t('kubecode.nav.board') },
+    { view: 'resources', icon: DESTINATIONS.resources.Icon, label: t('kubecode.nav.resources') },
+    { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') },
   ] as const
   const waiting = needsYouTasks.length + needsYouDrafts.length + needsYouSessions.length
   return (
@@ -68,7 +68,7 @@ export function WorkspaceNav({
               type="button"
               onClick={() => onOpen(entry.view)}
             >
-              {entry.icon}
+              <Icon role="navigation" size="secondary" source={entry.icon} />
               <span className="kubecode-research-nav-title">{entry.label}</span>
               {entry.view === 'board' && taskCount > 0 && (
                 <StatusBadge tone="muted">{taskCount}</StatusBadge>
@@ -79,7 +79,7 @@ export function WorkspaceNav({
       </ul>
       <details className="kubecode-needs-you" data-waiting={waiting > 0} open={waiting > 0}>
         <summary>
-          <BellRing aria-hidden size={14} />
+          <Icon role="navigation" size="secondary" source={DESTINATIONS.needsYou.Icon} />
           <span>{t('kubecode.nav.needsYou')}</span>
           <StatusBadge title={t('kubecode.nav.needsYou')} tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
         </summary>
@@ -131,7 +131,7 @@ export function WorkspaceNav({
               </button>
               {member.state === 'active' && (
                 <IconButton
-                  icon={<MessageCircle aria-hidden size={14} />}
+                  icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
                   label={t('kubecode.members.messagePrivately', { name: member.name })}
                   onClick={() => onOpenDm(member)}
                 />

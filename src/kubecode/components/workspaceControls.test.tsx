@@ -93,8 +93,11 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled()
     rerender(<Harness busy initial="draft" onSend={onSend} />)
     const send = screen.getByRole('button', { name: 'Send' })
-    expect(send).toBeDisabled()
+    // It keeps focus while waiting (ADR 0227), and ignores clicks.
+    expect(send).not.toBeDisabled()
+    expect(send).toHaveAttribute('aria-disabled', 'true')
     expect(send).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(send)
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
     rerender(<Harness disabled initial="draft" onSend={onSend} />)
@@ -168,6 +171,11 @@ describe('IconButton and StatusBadge', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
     rerender(<IconButton busy icon={<svg />} label="Remove Analyst" onClick={onClick} />)
     const busy = screen.getByRole('button', { name: 'Remove Analyst' })
+    // Busy is not disabled: it keeps keyboard focus (ADR 0227).
+    expect(busy).not.toBeDisabled()
+    busy.focus()
+    expect(busy).toHaveFocus()
+    expect(busy.querySelector('.animate-spin')).not.toBeNull()
     expect(busy).toHaveAttribute('aria-disabled', 'true')
     expect(busy).toHaveAttribute('aria-busy', 'true')
     fireEvent.click(busy)
@@ -207,8 +215,12 @@ describe('SendButton and StopButton', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
     rerender(<SendButton busy canSend label="Send" onSend={onSend} />)
     const waiting = screen.getByRole('button', { name: 'Send' })
-    expect(waiting).toBeDisabled()
+    waiting.focus()
+    expect(waiting).toHaveFocus()
+    expect(waiting).toHaveAttribute('aria-disabled', 'true')
     expect(waiting).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(waiting)
+    expect(onSend).toHaveBeenCalledTimes(1)
   })
 
   it('stops the thing it names and nothing else', () => {
