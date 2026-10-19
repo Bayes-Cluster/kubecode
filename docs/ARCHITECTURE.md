@@ -312,6 +312,26 @@ Task's work cites has changed) and `.../repin`; it has no admission endpoint.
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
+General routing and direct messages (ADR 0223): `channel_store` marks a
+researcher's plain top-level remark, or an agent message that names someone, as
+pending and stores the Task it is about (`task_id`, from its research
+reference), an optional `reply_to`, and a hand-off depth (`hops`, bounded by
+`MAX_HANDOFF_HOPS`). `Orchestrator::route_conversation` reads each pending
+message once (routes first, then mark read) and writes `discussion` (to the
+General Agent), `mention`, or `agent_handoff` routes to members' *public*
+Sessions; `next_hops` derives a hand-off's depth from what was routed to the
+speaker within the hour. Members speak in General with the `general_post`
+tool (`WorkAgent::general_post`, public Sessions only). `GET …/messages?task_id=`
+filters the same records. `dm_api.rs` serves the researcher's private
+conversation with a member: `POST …/members/{id}/dm` (opens the DM Session),
+`…/dm/turns`, `…/dm/messages` (through `RuntimeSink`, so the Session is
+configured and briefed), and `…/dm/share/preview` + `…/dm/share` (the exact
+text, confirmed by digest, posted as the researcher's own message).
+`ProjectContext::with_members` hides every DM Session from search, resolve, and
+read; `channel_api` refuses mentions and citations of one. The browser surface
+is `src/kubecode/dm/` (`DmPane`, `DmShareDialog`) beside the channel's task
+filter, citations, and collapsed routing notes.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the

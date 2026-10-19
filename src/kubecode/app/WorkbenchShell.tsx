@@ -19,6 +19,7 @@ import { ChannelNavigator } from '../channel/ChannelNavigator'
 import { WorkBoard } from '../work/WorkBoard'
 import { WorkNavigator } from '../work/WorkNavigator'
 import { ChannelWorkspace } from '../channel/ChannelWorkspace'
+import { DmPane } from '../dm/DmPane'
 import { useChannelThreads, useDefaultChannel } from '../channel/useChannel'
 import { NewResearchDialog } from '../research/NewResearchDialog'
 import { ResearchNavigator } from '../research/ResearchNavigator'
@@ -27,7 +28,7 @@ import { useResearchList } from '../research/useResearch'
 import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
-import { KubecodeApi, type AgentRun, type Conversation, type Project, type TeamSnapshot, type TerminalInfo, type WorkBoardFilter } from '../api'
+import { KubecodeApi, type AgentRun, type Conversation, type Member, type Project, type TeamSnapshot, type TerminalInfo, type WorkBoardFilter } from '../api'
 import { TerminalWorkspace, type TerminalContextSource } from '../TerminalWorkspace'
 import { SystemMessageProvider } from '../SystemMessageNotice'
 import { WorkspaceNotificationBridge } from '../WorkspaceNotificationBridge'
@@ -77,6 +78,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [researchDialog, setResearchDialog] = useState(false)
   const [researchSelection, setResearchSelection] = useState<{ projectId: string; researchId: string } | null>(null)
   const [channelSelection, setChannelSelection] = useState<{ projectId: string; threadId: string | null } | null>(null)
+  const [dmSelection, setDmSelection] = useState<{ projectId: string; member: Member } | null>(null)
   const [workSelection, setWorkSelection] = useState<{ projectId: string; filter: WorkBoardFilter } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -113,6 +115,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     requestNotificationPermission,
   } = preferences
 
+  const projectIdRef = useRef(projectId)
+  useEffect(() => { projectIdRef.current = projectId }, [projectId])
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -160,6 +164,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const channelView = channelSelection && channelSelection.projectId === projectId
     ? channelSelection
     : null
+  // Choosing any other view replaces the private conversation on screen.
+  const dmView = dmSelection && dmSelection.projectId === projectId
+    && !researchId && !workView && !channelView
+    ? dmSelection
+    : null
   const defaultChannel = useDefaultChannel(api, projectId)
   const channelThreads = useChannelThreads(
     api,
@@ -173,6 +182,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setResearchSelection(null)
     setChannelSelection(null)
     setWorkSelection(null)
+    setDmSelection(null)
   }, [])
 
   const selection = useProjectSelection(api, t, {
@@ -555,6 +565,18 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   setChannelSelection({ projectId, threadId })
                 }}
               />
+            ) : dmView && projectId ? (
+              <DmPane
+                api={api}
+                connectionState={reconciliation.connectionState}
+                events={reconciliation.workspaceEvents}
+                key={dmView.member.id}
+                member={dmView.member}
+                projectId={projectId}
+                research={research.items}
+                t={t}
+                onClose={showSessions}
+              />
             ) : channelView && projectId ? (
               <ChannelWorkspace
                 api={api}
@@ -826,6 +848,18 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         key={settingsSection}
         open={settingsOpen}
         requestedSection={settingsSection}
+        onOpenMemberDm={(member) => {
+          if (!projectId) return
+          void api.openMemberDm(projectId, member.id).then((opened) => {
+            // The researcher may have gone elsewhere while it opened.
+            if (projectIdRef.current !== projectId) return
+            setResearchSelection(null)
+            setChannelSelection(null)
+            setWorkSelection(null)
+            setSettingsOpen(false)
+            setDmSelection({ projectId, member: opened })
+          }).catch((cause) => setError(errorMessage(cause, t('kubecode.error'))))
+        }}
         onAppearanceChange={preferences.setAppearance}
         onAgentPreferencesChange={preferences.setAgentPreferences}
         onEditorPreferencesChange={preferences.setEditorPreferences}

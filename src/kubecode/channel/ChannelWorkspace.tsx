@@ -17,6 +17,7 @@ import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MessageComposer } from './MessageComposer'
 import { useMentionOptions } from './useMentionOptions'
 import { MessageList } from './MessageList'
+import { authorName } from './channelLabels'
 import { ThreadPane } from './ThreadPane'
 import { useChannelThreads, useDefaultChannel, useMessageFeed } from './useChannel'
 
@@ -59,7 +60,10 @@ export function ChannelWorkspace({
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const mentionOptions = useMentionOptions(api, projectId, events, connectionState)
-  const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState)
+  // Showing only what is about one Task is a view of the same conversation.
+  const [taskFilter, setTaskFilter] = useState<string | null>(null)
+  const [replyTo, setReplyTo] = useState<ChannelMessage | null>(null)
+  const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState, taskFilter)
   const { reload: reloadThreads, threads } = useChannelThreads(
     api,
     projectId,
@@ -84,9 +88,14 @@ export function ChannelWorkspace({
 
   const send = useCallback(async (message: NewChannelMessage) => {
     if (!channel) return
-    const saved = await api.postChannelMessage(projectId, channel.id, message)
+    // Writing while looking at one Task is writing about it, so the message
+    // stays in view instead of vanishing from the filtered list.
+    const references = taskFilter && !message.references?.some((ref) => ref.kind === 'research' && ref.id === taskFilter)
+      ? [...(message.references ?? []), { kind: 'research' as const, id: taskFilter, revision: null }]
+      : message.references
+    const saved = await api.postChannelMessage(projectId, channel.id, { ...message, references })
     feed.append(saved)
-  }, [api, channel, feed, projectId])
+  }, [api, channel, feed, projectId, taskFilter])
 
   const openThread = (message: ChannelMessage) => {
     const existing = threadByRoot.get(message.id)
@@ -125,15 +134,33 @@ export function ChannelWorkspace({
           </p>
         )}
         {startThread.error && <p className="kubecode-research-error" role="alert">{startThread.error}</p>}
+        {research.length > 0 && (
+          <label className="kubecode-channel-filter">
+            <span>{t('kubecode.channel.filterTask')}</span>
+            <select
+              className="kubecode-channel-select"
+              value={taskFilter ?? ''}
+              onChange={(event) => setTaskFilter(event.target.value || null)}
+            >
+              <option value="">{t('kubecode.channel.filterAll')}</option>
+              {research.map((item) => (
+                <option key={item.id} value={item.id}>{item.title}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <MessageList
           emptyLabel={t('kubecode.channel.empty')}
           feed={feed}
           label={t('kubecode.channel.messages')}
+          research={research}
           sessions={sessions}
           t={t}
           threadByRoot={threadByRoot}
+          onFilterTask={setTaskFilter}
           onOpenReference={openReference}
           onOpenThread={openThread}
+          onReply={setReplyTo}
         />
         {channel && (
           <MessageComposer
@@ -141,6 +168,12 @@ export function ChannelWorkspace({
             mentionOptions={mentionOptions}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}
+            replyTo={replyTo && {
+              id: replyTo.id,
+              label: authorName(t, replyTo, sessions),
+              // Only the target this send was for: a newer choice stays.
+              onClear: () => setReplyTo((current) => (current?.id === replyTo.id ? null : current)),
+            }}
             sessions={sessions}
             t={t}
             onSend={send}

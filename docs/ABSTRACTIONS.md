@@ -1255,6 +1255,21 @@ Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
 input as conditions. Rounds, internal work, attempts, and experiments live
 inside the Task. See ADR 0221.
 
+## General routing and direct messages
+
+The server reads each top-level General message once and **routes** it: a
+researcher's remark goes to the members it `@mentions`, or to the General Agent
+when it names no one; a member's visible **hand-off** (`general_post` naming
+colleagues) goes to the members it names, one hop deeper, up to a bound. A
+route is a durable record of one source reaching one target, delivered once; it
+never authorizes anything, and a hand-off is fenced as an agent's words. A
+message records the **Task** it is about and may cite an earlier message; a
+Task filter is a view of the same history. A **direct message** is the
+researcher's conversation with one member in that member's own DM Session; no
+shared search, mention, citation, or tool reaches it, and the researcher moves
+part of it into General only through a **previewed share** that posts the exact
+text they confirmed. See ADR 0223.
+
 ## Workspace controls
 
 Workspace views share a small set of controls: a labelled **icon button**, a

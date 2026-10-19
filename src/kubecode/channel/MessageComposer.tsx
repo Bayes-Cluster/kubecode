@@ -42,6 +42,8 @@ export type MessageComposerProps = {
    * message; it never authorizes work by itself.
    */
   mentionOptions?: MentionOption[]
+  /** The message the next one cites; cleared once the citing message is saved. */
+  replyTo?: { id: string; label: string; onClear: () => void } | null
   /** Stops one named task or agent; sending stays available while it runs. */
   stop?: { target: string; onStop: () => void }
   /** Saves the message; resolves once it is stored. */
@@ -63,6 +65,7 @@ export function MessageComposer({
   t,
   threadId = null,
   mentionOptions = [],
+  replyTo = null,
 }: MessageComposerProps) {
   const [body, setBody] = useState('')
   const [intent, setIntent] = useState<ChannelIntent>('say')
@@ -99,6 +102,7 @@ export function MessageComposer({
       draft.intent === 'ask' ? draft.askSession : '',
       draft.references.map((item) => `${item.ref.kind}:${item.ref.id}`),
       mentioned,
+      replyTo?.id ?? '',
     ])
     const id = attempt.current?.signature === signature
       ? attempt.current.id
@@ -116,6 +120,7 @@ export function MessageComposer({
       body: draft.body.trim(),
       threadId,
       clientMessageId: id,
+      replyTo: replyTo?.id ?? null,
       intent: draft.intent,
       mentions: [...new Set([
         ...(draft.intent === 'ask' ? [draft.askSession] : []),
@@ -129,6 +134,7 @@ export function MessageComposer({
     }))
     if (sent) {
       attempt.current = null
+      replyTo?.onClear()
     } else {
       setBody((current) => (current === '' ? draft.body : `${draft.body}\n${current}`))
       setReferences((current) => (current.length === 0 ? draft.references : current))
@@ -140,7 +146,19 @@ export function MessageComposer({
   return (
     <div className="kubecode-channel-composer">
       <Composer
-        above={references.length > 0 && (
+        above={(
+          <>
+            {replyTo && (
+              <p className="kubecode-channel-replying">
+                <span>{t('kubecode.channel.replyingTo', { author: replyTo.label })}</span>
+                <IconButton
+                  icon={<X aria-hidden size={12} />}
+                  label={t('kubecode.channel.clearReply')}
+                  onClick={replyTo.onClear}
+                />
+              </p>
+            )}
+            {references.length > 0 && (
           <ul className="kubecode-channel-references">
             {references.map((item) => (
               <li key={`${item.ref.kind}:${item.ref.id}`}>
@@ -158,6 +176,8 @@ export function MessageComposer({
               </li>
             ))}
           </ul>
+            )}
+          </>
         )}
         below={(
           <>

@@ -170,6 +170,33 @@ work stay inside the Task. When the General Agent reports results, you accept
 them (choosing the outcome; a well-supported negative finding completes a
 Task) or send the Task back with a reason.
 
+## Who reads what you write in General
+
+- A message that names no one goes to the **General Agent**, the project
+  manager. You can think out loud with it, refine a proposal, and tell it, in
+  your own words, to put a Task on the board; you do not need to @mention it.
+- **@mention** a member to ask them directly. Only the members you name receive
+  the message, and a mention alone never starts work.
+- Members can hand work to each other in General. You see every hand-off, who
+  wrote it, and who it was handed to. A member's message is a report or a
+  request, never your authorization, and a chain of hand-offs stops after a few
+  steps and waits for you.
+- Messages about a Task carry a **Task chip**; choose a Task in *Show messages
+  about* to see only those messages. It is a view of the same conversation, not
+  a copy. **Reply** cites a message, and the citation jumps back to it. Routing
+  notes are collapsed to one line you can expand.
+
+## Private messages with a member
+
+Choose **Message … privately** on a member (Settings > Members) to open a
+private conversation. Only you and that member see it: other members cannot
+read, search, mention, or cite it, and nothing in it is posted to General.
+**Share to General…** lets you pick turns, add a note, and read the exact text
+that would be posted; it is posted only when you confirm that preview, and not
+if the conversation changed after you previewed it. What you share is an
+ordinary message from you in General, so it reaches the project manager like any
+other.
+
 ## Writing in General and Threads
 
 General and Threads use one composer (direct messages with an Agent will use it

@@ -7,6 +7,9 @@ import type {
   Channel,
   ChannelMessage,
   ChannelMessagePage,
+  DmShareRequest,
+  DmSharePreview,
+  DmTurn,
   ChannelThread,
   ComposerContextKind,
   ComposerContextRegistration,
@@ -94,6 +97,16 @@ import type {
   WorkspaceMigrationResult,
 } from './types'
 import { query } from './queries'
+
+function dmShareBody(share: DmShareRequest) {
+  return {
+    run_ids: share.runIds,
+    note: share.note,
+    task_id: share.taskId ?? undefined,
+    digest: share.digest,
+    client_message_id: share.clientMessageId,
+  }
+}
 
 export class ApiError extends Error {
   readonly code: string
@@ -389,6 +402,41 @@ export class KubecodeApi {
     })
   }
 
+  /** Opens the researcher's private conversation with a member (created on first use). */
+  openMemberDm(projectId: string, memberId: string): Promise<Member> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm`, {
+      method: 'POST',
+    })
+  }
+
+  memberDmTurns(projectId: string, memberId: string): Promise<DmTurn[]> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/turns`)
+  }
+
+  /** Sends to the member privately; nothing is posted to General. A repeated client id replays. */
+  sendMemberDm(projectId: string, memberId: string, text: string, clientMessageId: string): Promise<void> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ text, client_message_id: clientMessageId }),
+    })
+  }
+
+  /** What sharing these turns would post to General, word for word. Posts nothing. */
+  previewDmShare(projectId: string, memberId: string, share: DmShareRequest): Promise<DmSharePreview> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/share/preview`, {
+      method: 'POST',
+      body: JSON.stringify(dmShareBody(share)),
+    })
+  }
+
+  /** Posts the previewed text to General as the researcher; refused if it changed since the preview. */
+  shareDm(projectId: string, memberId: string, share: DmShareRequest): Promise<ChannelMessage> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/share`, {
+      method: 'POST',
+      body: JSON.stringify(dmShareBody(share)),
+    })
+  }
+
   retryMemberSetup(projectId: string, memberId: string): Promise<Member> {
     return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/setup`, {
       method: 'POST',
@@ -442,11 +490,18 @@ export class KubecodeApi {
   listChannelMessages(
     projectId: string,
     channelId: string,
-    options: { threadId?: string | null; beforeSeq?: number; afterSeq?: number; limit?: number } = {},
+    options: {
+      threadId?: string | null
+      taskId?: string | null
+      beforeSeq?: number
+      afterSeq?: number
+      limit?: number
+    } = {},
   ): Promise<ChannelMessagePage> {
     return this.request(
       `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/messages?${query({
         thread_id: options.threadId ?? undefined,
+        task_id: options.taskId ?? undefined,
         before_seq: options.beforeSeq,
         after_seq: options.afterSeq,
         limit: options.limit,
@@ -471,6 +526,7 @@ export class KubecodeApi {
           intent: message.intent,
           mentions: message.mentions,
           references: message.references,
+          reply_to: message.replyTo ?? undefined,
         }),
       },
     )

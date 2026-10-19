@@ -53,6 +53,35 @@ function roster(client: KubecodeApi) {
 }
 
 describe('MemberRoster', () => {
+  it('offers a private message to active members only', async () => {
+    const onOpenDm = vi.fn()
+    const client = api({
+      listMembers: vi.fn().mockResolvedValue({
+        members: [
+          member(),
+          member({ id: 'm2', role: 'specialist', template: 'analysis', name: 'Analyst', handle: 'analyst', state: 'setup_required' }),
+        ],
+        general_id: 'm-general',
+      }),
+    })
+    render(
+      <MemberRoster
+        agents={agents}
+        api={client}
+        connectionState="live"
+        defaults={defaults}
+        events={[]}
+        projectId="p1"
+        t={t}
+        onOpenDm={onOpenDm}
+      />,
+    )
+    const button = await screen.findByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"General"}' })
+    fireEvent.click(button)
+    expect(onOpenDm).toHaveBeenCalledWith(expect.objectContaining({ id: 'm-general' }))
+    expect(screen.queryByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"Analyst"}' })).not.toBeInTheDocument()
+  })
+
   it('shows the project manager as a manager that cannot be removed, beside specialists', async () => {
     roster(api({
       listMembers: vi.fn().mockResolvedValue({

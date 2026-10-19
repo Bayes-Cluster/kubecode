@@ -33,6 +33,9 @@ pub struct ProjectContext {
     work: Arc<WorkStore>,
     channels: Arc<ChannelStore>,
     workspace: Arc<WorkspaceService>,
+    /// Who the direct-message Sessions are, so private conversations are never
+    /// listed, resolved, or read as shared Project context (ADR 0223).
+    members: Option<Arc<crate::member_store::MemberStore>>,
 }
 
 /// Keeps the first `SCAN_CAP` entries (callers order newest first) and flags
@@ -94,6 +97,25 @@ impl ProjectContext {
             work,
             channels,
             workspace,
+            members: None,
+        }
+    }
+
+    /// Hides every member's direct-message Session from Project context: no
+    /// search, resolve, or read reaches it, from any caller. A direct message
+    /// enters the shared record only through an explicit, previewed share.
+    pub fn with_members(mut self, members: Arc<crate::member_store::MemberStore>) -> Self {
+        self.members = Some(members);
+        self
+    }
+
+    /// Fails closed: if the roster cannot be read, nothing is shown as shared.
+    fn is_private(&self, project_id: &str, conversation_id: &str) -> Result<bool, ContextError> {
+        match &self.members {
+            Some(members) => members
+                .is_dm_session(project_id, conversation_id)
+                .map_err(source_error),
+            None => Ok(false),
         }
     }
 
@@ -271,6 +293,10 @@ impl ProjectContext {
                 .list_conversations(project_id)
                 .map_err(source_error)?;
             conversations.reverse();
+            if let Some(members) = &self.members {
+                let private = members.dm_session_ids().map_err(source_error)?;
+                conversations.retain(|conversation| !private.contains(&conversation.id));
+            }
             for conversation in cap(conversations, truncated) {
                 out.push(self.session_item(&conversation));
             }
@@ -920,6 +946,9 @@ impl ProjectContext {
         project_id: &str,
         id: &str,
     ) -> Result<Option<Conversation>, ContextError> {
+        if self.is_private(project_id, id)? {
+            return Ok(None);
+        }
         self.agents
             .visible_conversation(project_id, id)
             .map_err(source_error)
@@ -1769,6 +1798,7 @@ impl ProjectContext {
                     before_seq,
                     after_seq: None,
                     limit: Some(TURN_PAGE * 2),
+                    task: None,
                 },
             )
             .map_err(source_error)?;

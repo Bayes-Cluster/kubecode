@@ -71,8 +71,9 @@ export function useMessageFeed(
   threadId: string | null,
   events: WorkspaceEvent[],
   connectionState: WorkspaceConnectionState,
+  taskId: string | null = null,
 ): MessageFeed {
-  const scope = projectId && channelId ? `${projectId}/${channelId}/${threadId ?? ''}` : null
+  const scope = projectId && channelId ? `${projectId}/${channelId}/${threadId ?? ''}/${taskId ?? ''}` : null
   const [state, setState] = useState<{
     scope: string
     messages: ChannelMessage[]
@@ -98,14 +99,14 @@ export function useMessageFeed(
     const known = stateRef.current?.scope === scope ? stateRef.current : null
     const run = async () => {
       if (!known || known.messages.length === 0) {
-        const page = await api.listChannelMessages(projectId, channelId, { threadId, limit: PAGE })
+        const page = await api.listChannelMessages(projectId, channelId, { threadId, taskId, limit: PAGE })
         return { messages: page.messages, hasMore: page.has_more, initial: true }
       }
       let messages = known.messages
       let after = messages[messages.length - 1].seq
       for (let pages = 0; pages < MAX_CATCH_UP_PAGES; pages += 1) {
         const page = await api.listChannelMessages(projectId, channelId, {
-          threadId, afterSeq: after, limit: PAGE,
+          threadId, taskId, afterSeq: after, limit: PAGE,
         })
         if (page.messages.length === 0) break
         messages = mergeMessages(messages, page.messages)
@@ -129,7 +130,7 @@ export function useMessageFeed(
     }).catch(() => {
       if (mine === ticket.current) setFailedScope(scope)
     })
-  }, [api, projectId, channelId, threadId, scope, tick, manual])
+  }, [api, projectId, channelId, threadId, taskId, scope, tick, manual])
 
   const current = state && state.scope === scope ? state : null
 
@@ -139,7 +140,7 @@ export function useMessageFeed(
     const first = held.messages[0]
     if (!first) return
     setLoadingOlder(true)
-    api.listChannelMessages(projectId, channelId, { threadId, beforeSeq: first.seq, limit: PAGE })
+    api.listChannelMessages(projectId, channelId, { threadId, taskId, beforeSeq: first.seq, limit: PAGE })
       .then((page) => {
         setState((now) => (
           now && now.scope === scope
@@ -149,15 +150,17 @@ export function useMessageFeed(
       })
       .catch(() => setFailedScope(scope))
       .finally(() => setLoadingOlder(false))
-  }, [api, projectId, channelId, threadId, scope, loadingOlder])
+  }, [api, projectId, channelId, threadId, taskId, scope, loadingOlder])
 
   const append = useCallback((message: ChannelMessage) => {
+    // A message that is not about the filtered Task belongs to the unfiltered view only.
+    if (taskId && message.task_id !== taskId) return
     setState((now) => (
       now && now.scope === scope
         ? { ...now, messages: mergeMessages(now.messages, [message]) }
         : now
     ))
-  }, [scope])
+  }, [scope, taskId])
 
   const unsupported = typeof api.listChannelMessages !== 'function'
   const status: ChannelLoadStatus = current || unsupported

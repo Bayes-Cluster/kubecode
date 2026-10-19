@@ -485,6 +485,21 @@ struct PostInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct GeneralPostInput {
+    body: String,
+    /// Members to hand this to, by @handle (at most four). Naming a member
+    /// delivers the message to them; it is not an authorization.
+    #[serde(default)]
+    mentions: Vec<String>,
+    /// The Task (research question id) the message is about.
+    #[serde(default)]
+    task: Option<String>,
+    /// An earlier General message this one answers or cites.
+    #[serde(default)]
+    reply_to: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct RefInput {
     kind: String,
     id: String,
@@ -1035,6 +1050,29 @@ impl WorkMcpServer {
             .run(move |agent| agent.repin(&input.work_id, &input.result_id))
             .await?;
         json_output(&summary)
+    }
+
+    #[tool(
+        description = "Say something in the General conversation, visibly and attributed to you: report progress, answer the researcher, or hand a request to another member by naming them in `mentions` (their @handles). Hand-offs are bounded and are never an authorization. Only from your public Session; a direct message is private."
+    )]
+    async fn general_post(
+        &self,
+        Parameters(input): Parameters<GeneralPostInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let message = self
+            .run(move |agent| {
+                agent.general_post(
+                    &input.body,
+                    &input.mentions,
+                    input.task.as_deref(),
+                    input.reply_to.as_deref(),
+                )
+            })
+            .await?;
+        json_output(&serde_json::json!({
+            "message_id": message.id,
+            "seq": message.seq,
+        }))
     }
 
     #[tool(

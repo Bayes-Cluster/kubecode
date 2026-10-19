@@ -11,6 +11,7 @@ pub mod config;
 pub mod context_api;
 pub mod context_mcp;
 pub mod database;
+pub mod dm_api;
 pub mod doctor;
 pub mod experiment_runner;
 pub mod experiment_store;

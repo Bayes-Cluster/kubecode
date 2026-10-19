@@ -7,7 +7,10 @@
 use serde::Serialize;
 
 use super::{AgentWorkError, WorkAgent, invalid};
-use crate::channel_store::{AuthorKind, Message, MessageQuery, Scope};
+use crate::channel_store::{
+    AuthorKind, ContextRef, Mention, Message, MessageQuery, NewMessage, Scope,
+};
+use crate::project_context::ContextKind;
 use crate::research_store::{BriefPatch, ResearchBrief};
 use crate::task_store::{Authorization, Draft, ReviewRequest, TaskCard, TaskError};
 
@@ -43,6 +46,17 @@ pub struct TaskList {
 
 impl WorkAgent {
     fn tasks(&self) -> Result<&std::sync::Arc<crate::task_store::TaskStore>, AgentWorkError> {
+        // Task commands post into General. A direct-message Session is private
+        // and cannot publish there, whichever member it belongs to (ADR 0223).
+        if let Some(members) = &self.members
+            && members
+                .is_dm_session(&self.project_id, &self.caller)
+                .map_err(|error| invalid(error.to_string()))?
+        {
+            return Err(invalid(
+                "a direct message is private; Task commands belong to the public Session",
+            ));
+        }
         self.tasks
             .as_ref()
             .ok_or_else(|| invalid("Tasks are not available in this Workspace"))
@@ -259,5 +273,138 @@ impl WorkAgent {
 impl From<TaskError> for AgentWorkError {
     fn from(error: TaskError) -> Self {
         Self::Task(error)
+    }
+}
+
+/// Longest list of members one General message may name.
+const MAX_NAMED: usize = 4;
+/// Hand-offs one member may make in an hour, however the chain is shaped.
+const MAX_HANDOFFS_PER_HOUR: u32 = 12;
+
+impl WorkAgent {
+    /// Posts into the General conversation as this member, visibly and
+    /// attributed (ADR 0223). Only a live member speaking from its *public*
+    /// Session may: a direct-message Session is private and cannot publish.
+    /// Naming members hands the message to them; the chain is bounded
+    /// (`MAX_HANDOFF_HOPS`) and nothing said here authorizes a Task.
+    pub fn general_post(
+        &self,
+        body: &str,
+        handles: &[String],
+        task: Option<&str>,
+        reply_to: Option<&str>,
+    ) -> Result<Message, AgentWorkError> {
+        let members = self
+            .members
+            .as_ref()
+            .ok_or_else(|| invalid("members are not available"))?;
+        let speaker = members
+            .public_member(&self.project_id, &self.caller)
+            .map_err(|error| invalid(error.to_string()))?
+            .ok_or_else(|| {
+                invalid(
+                    "only a member speaking from its public Session posts in General; \
+                     a direct message is private",
+                )
+            })?;
+        if handles.len() > MAX_NAMED {
+            return Err(invalid("name at most four members in one message"));
+        }
+        let roster = members
+            .list(&self.project_id, false)
+            .map_err(|error| invalid(error.to_string()))?;
+        let mut mentions: Vec<Mention> = Vec::new();
+        for handle in handles {
+            let handle = handle.trim().trim_start_matches('@').to_lowercase();
+            let named = roster
+                .iter()
+                .find(|member| member.handle == handle && member.public_conversation_id.is_some())
+                .ok_or_else(|| invalid(format!("no member answers to @{handle}")))?;
+            if named.id == speaker.id {
+                continue;
+            }
+            let session_id = named.public_conversation_id.clone().unwrap_or_default();
+            if mentions.iter().all(|seen| seen.session_id != session_id) {
+                mentions.push(Mention { session_id });
+            }
+        }
+        let reply_to = reply_to.filter(|id| !id.trim().is_empty());
+        let task = task.filter(|id| !id.trim().is_empty());
+        let hops = if mentions.is_empty() {
+            0
+        } else {
+            if self
+                .channels
+                .recent_handoffs(&self.project_id, &self.caller)?
+                >= MAX_HANDOFFS_PER_HOUR
+            {
+                return Err(invalid(
+                    "too many hand-offs in the last hour; ask the researcher to continue",
+                ));
+            }
+            self.orchestrator
+                .next_hops(&self.project_id, &self.caller, reply_to)?
+        };
+        let references: Vec<ContextRef> = task
+            .map(|id| vec![ContextRef::new(ContextKind::Research, id)])
+            .unwrap_or_default();
+        let channel = self.channels.default_channel(&self.project_id)?;
+        // The same words by the same member, with nobody else having spoken
+        // since, are one message (a retry after a lost reply); the same words
+        // after someone else spoke are a new one.
+        let others_seq = self
+            .channels
+            .messages(
+                &self.project_id,
+                &channel.id,
+                MessageQuery {
+                    scope: Scope::All,
+                    limit: Some(RECENT_LIMIT),
+                    ..Default::default()
+                },
+            )?
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.author_ref.as_deref() != Some(self.caller.as_str()))
+            .map_or(0, |message| message.seq);
+        let key = {
+            use sha2::{Digest, Sha256};
+            let digest = hex::encode(Sha256::digest(
+                format!(
+                    "{}\u{0}{body}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+                    self.caller,
+                    mentions
+                        .iter()
+                        .map(|mention| mention.session_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    task.unwrap_or_default(),
+                    reply_to.unwrap_or_default(),
+                    others_seq
+                )
+                .as_bytes(),
+            ));
+            format!("general:{}", &digest[..32])
+        };
+        let (message, created) = self.channels.post(
+            &self.project_id,
+            &channel.id,
+            NewMessage {
+                body,
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&self.caller),
+                mentions: &mentions,
+                references: &references,
+                client_message_id: Some(&key),
+                reply_to,
+                hops,
+                ..Default::default()
+            },
+        )?;
+        if created {
+            self.orchestrator.wake();
+        }
+        Ok(message)
     }
 }

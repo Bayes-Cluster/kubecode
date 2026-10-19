@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch'
 
 import { MemberDefaultsPanel } from '../members/MemberDefaultsPanel'
 import { MemberRoster } from '../members/MemberRoster'
-import type { MemberDefaults } from '../api'
+import type { Member, MemberDefaults } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 
 import type { KubecodeAgentPreferences } from '../agentPreferences'
@@ -67,6 +67,8 @@ export type SettingsDialogProps = {
   appearance: KubecodeAppearance
   /** The selected Workspace, whose members the Members section shows. */
   activeProjectId?: string | null
+  /** Opens the researcher's private conversation with a member. */
+  onOpenMemberDm?: (member: Member) => void
   connectionState?: WorkspaceConnectionState
   editorPreferences: KubecodeEditorPreferences
   notifications: KubecodeNotifications
@@ -96,6 +98,7 @@ export function SettingsDialog({
   agentsRefreshing,
   appearance,
   activeProjectId = null,
+  onOpenMemberDm,
   connectionState = 'live',
   editorPreferences,
   notifications,
@@ -476,6 +479,7 @@ export function SettingsDialog({
                   events={workspaceEvents}
                   projectId={activeProjectId}
                   t={t}
+                  onOpenDm={onOpenMemberDm}
                 />
               ) : (
                 <p className="kubecode-research-muted">{t('kubecode.members.noProject')}</p>

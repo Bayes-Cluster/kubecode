@@ -149,6 +149,8 @@ struct MessagesQuery {
     before_seq: Option<u64>,
     after_seq: Option<u64>,
     limit: Option<usize>,
+    /// Only messages about this Task: a filter over the same history.
+    task_id: Option<String>,
 }
 
 async fn list_messages(
@@ -157,9 +159,11 @@ async fn list_messages(
     Query(query): Query<MessagesQuery>,
 ) -> Result<Json<MessagePage>, ChannelApiError> {
     check_project(&state, &project_id)?;
-    let scope = match query.thread_id.as_deref() {
-        Some(thread_id) => Scope::Thread(thread_id),
-        None => Scope::Channel,
+    let scope = match (query.thread_id.as_deref(), query.task_id.as_deref()) {
+        (Some(thread_id), _) => Scope::Thread(thread_id),
+        // A Task's messages include the replies of an older Thread.
+        (None, Some(_)) => Scope::All,
+        (None, None) => Scope::Channel,
     };
     Ok(Json(state.channels.messages(
         &project_id,
@@ -169,6 +173,7 @@ async fn list_messages(
             before_seq: query.before_seq,
             after_seq: query.after_seq,
             limit: query.limit,
+            task: query.task_id.as_deref(),
         },
     )?))
 }
@@ -183,6 +188,39 @@ struct PostMessageRequest {
     mentions: Vec<Mention>,
     #[serde(default)]
     references: Vec<ContextRef>,
+    /// An earlier message of the conversation this one cites.
+    reply_to: Option<String>,
+}
+
+/// A direct message is private to the researcher and one member: it cannot be
+/// mentioned or cited in the shared conversation. Sharing it is an explicit,
+/// previewed act of its own (ADR 0223).
+fn refuse_private(
+    state: &AppState,
+    project_id: &str,
+    mentions: &[Mention],
+    references: &[ContextRef],
+) -> Result<(), ChannelApiError> {
+    let private = |conversation_id: &str| {
+        state
+            .members
+            .is_dm_session(project_id, conversation_id)
+            .unwrap_or(true)
+    };
+    if mentions.iter().any(|mention| private(&mention.session_id)) {
+        return Err(ChannelError::Invalid("a direct message cannot be mentioned").into());
+    }
+    let cites_private = references.iter().any(|reference| match reference.kind {
+        crate::project_context::ContextKind::Session => private(&reference.id),
+        crate::project_context::ContextKind::SessionTurn => {
+            private(reference.id.split('/').next().unwrap_or_default())
+        }
+        _ => false,
+    });
+    if cites_private {
+        return Err(ChannelError::Invalid("a direct message cannot be cited").into());
+    }
+    Ok(())
 }
 
 async fn post_message(
@@ -191,6 +229,7 @@ async fn post_message(
     Json(request): Json<PostMessageRequest>,
 ) -> Result<Response, ChannelApiError> {
     check_project(&state, &project_id)?;
+    refuse_private(&state, &project_id, &request.mentions, &request.references)?;
     let (message, created): (Message, bool) = state.channels.post(
         &project_id,
         &channel_id,
@@ -203,10 +242,12 @@ async fn post_message(
             mentions: &request.mentions,
             references: &request.references,
             client_message_id: request.client_message_id.as_deref(),
+            reply_to: request.reply_to.as_deref(),
+            hops: 0,
         },
     )?;
-    if created && message.intent != Intent::Say {
-        // An intent is recorded; the orchestrator routes it without waiting
+    if created {
+        // The orchestrator reads the message and routes it without waiting
         // for its next scheduled pass.
         state.orchestrator.wake();
     }
