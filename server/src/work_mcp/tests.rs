@@ -932,7 +932,10 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
     // for the orchestrator.
     let first = payload(
         manager
-            .general_post(Parameters(say("@analyst please run the sweep", &["@Analyst"])))
+            .general_post(Parameters(say(
+                "@analyst please run the sweep",
+                &["@Analyst"],
+            )))
             .await,
     );
     let stored = rig
@@ -958,7 +961,10 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
     // The same words with nothing said since are one message; later, a new one.
     let again = payload(
         manager
-            .general_post(Parameters(say("@analyst please run the sweep", &["analyst"])))
+            .general_post(Parameters(say(
+                "@analyst please run the sweep",
+                &["analyst"],
+            )))
             .await,
     );
     assert_eq!(again["message_id"], first["message_id"]);
@@ -976,7 +982,10 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
         .unwrap();
     let later = payload(
         manager
-            .general_post(Parameters(say("@analyst please run the sweep", &["analyst"])))
+            .general_post(Parameters(say(
+                "@analyst please run the sweep",
+                &["analyst"],
+            )))
             .await,
     );
     assert_ne!(later["message_id"], first["message_id"]);
@@ -984,8 +993,12 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
     // Unknown names, too many names, and Sessions that are not public member
     // Sessions are refused with a reason.
     assert!(
-        refused(manager.general_post(Parameters(say("hi", &["nobody"]))).await)
-            .contains("no member answers")
+        refused(
+            manager
+                .general_post(Parameters(say("hi", &["nobody"])))
+                .await
+        )
+        .contains("no member answers")
     );
     assert!(
         refused(
@@ -997,8 +1010,7 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
     );
     let outsider = rig.leader();
     assert!(
-        refused(outsider.general_post(Parameters(say("hi", &[]))).await)
-            .contains("public Session")
+        refused(outsider.general_post(Parameters(say("hi", &[]))).await).contains("public Session")
     );
     let dm = rig
         .state
@@ -1008,8 +1020,5 @@ async fn members_speak_in_general_by_name_and_a_direct_message_cannot() {
         .dm_conversation_id
         .unwrap();
     let private = rig.server(&dm);
-    assert!(
-        refused(private.general_post(Parameters(say("leak?", &[]))).await)
-            .contains("private")
-    );
+    assert!(refused(private.general_post(Parameters(say("leak?", &[]))).await).contains("private"));
 }

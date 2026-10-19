@@ -464,18 +464,21 @@ impl Orchestrator {
             match self.route_chatter(&message) {
                 Ok(true) => {
                     report.routed += 1;
-                    self.channels.mark_routed(&message.project_id, &message.id)?;
+                    self.channels
+                        .mark_routed(&message.project_id, &message.id)?;
                 }
                 Ok(false) => {
                     report.denied += 1;
-                    self.channels.mark_routed(&message.project_id, &message.id)?;
+                    self.channels
+                        .mark_routed(&message.project_id, &message.id)?;
                 }
                 Err(OrchestratorError::Database(error)) => {
                     eprintln!("WARN: could not route message {}: {error}", message.id);
                 }
                 Err(error) => {
                     eprintln!("WARN: could not route message {}: {error}", message.id);
-                    self.channels.mark_routed(&message.project_id, &message.id)?;
+                    self.channels
+                        .mark_routed(&message.project_id, &message.id)?;
                     report.denied += 1;
                 }
             }
@@ -536,9 +539,7 @@ impl Orchestrator {
                 continue;
             };
             let body = match kind {
-                RouteKind::AgentHandoff => {
-                    self.frame_handoff(message, author.as_ref(), target)
-                }
+                RouteKind::AgentHandoff => self.frame_handoff(message, author.as_ref(), target),
                 RouteKind::Mention => self.frame_mention(message, target),
                 _ => self.frame_discussion(message, target),
             };
@@ -556,10 +557,9 @@ impl Orchestrator {
             routed = true;
         }
         if message.author_kind == AuthorKind::Agent && (!routed || !unreachable.is_empty()) {
-            let reason = unreachable.first().map_or(
-                "no live member answers to that mention",
-                String::as_str,
-            );
+            let reason = unreachable
+                .first()
+                .map_or("no live member answers to that mention", String::as_str);
             self.note(
                 project_id,
                 &message.channel_id,
@@ -601,7 +601,10 @@ impl Orchestrator {
     }
 
     fn frame_handoff(&self, message: &Message, author: Option<&Member>, target: &Member) -> String {
-        let from = author.map_or_else(|| "another member".to_owned(), |member| format!("@{}", member.handle));
+        let from = author.map_or_else(
+            || "another member".to_owned(),
+            |member| format!("@{}", member.handle),
+        );
         format!(
             "{from}, a member of this Workspace (an agent, not the researcher), handed this to you \
              (@{}) in the General conversation.\n\n{}\n\n\

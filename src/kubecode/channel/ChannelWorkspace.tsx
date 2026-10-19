@@ -17,6 +17,7 @@ import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MessageComposer } from './MessageComposer'
 import { useMentionOptions } from './useMentionOptions'
 import { MessageList } from './MessageList'
+import { authorName } from './channelLabels'
 import { ThreadPane } from './ThreadPane'
 import { useChannelThreads, useDefaultChannel, useMessageFeed } from './useChannel'
 
@@ -59,7 +60,10 @@ export function ChannelWorkspace({
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const mentionOptions = useMentionOptions(api, projectId, events, connectionState)
-  const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState)
+  // Showing only what is about one Task is a view of the same conversation.
+  const [taskFilter, setTaskFilter] = useState<string | null>(null)
+  const [replyTo, setReplyTo] = useState<ChannelMessage | null>(null)
+  const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState, taskFilter)
   const { reload: reloadThreads, threads } = useChannelThreads(
     api,
     projectId,
@@ -125,15 +129,33 @@ export function ChannelWorkspace({
           </p>
         )}
         {startThread.error && <p className="kubecode-research-error" role="alert">{startThread.error}</p>}
+        {research.length > 0 && (
+          <label className="kubecode-channel-filter">
+            <span>{t('kubecode.channel.filterTask')}</span>
+            <select
+              className="kubecode-channel-select"
+              value={taskFilter ?? ''}
+              onChange={(event) => setTaskFilter(event.target.value || null)}
+            >
+              <option value="">{t('kubecode.channel.filterAll')}</option>
+              {research.map((item) => (
+                <option key={item.id} value={item.id}>{item.title}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <MessageList
           emptyLabel={t('kubecode.channel.empty')}
           feed={feed}
           label={t('kubecode.channel.messages')}
+          research={research}
           sessions={sessions}
           t={t}
           threadByRoot={threadByRoot}
+          onFilterTask={setTaskFilter}
           onOpenReference={openReference}
           onOpenThread={openThread}
+          onReply={setReplyTo}
         />
         {channel && (
           <MessageComposer
@@ -141,6 +163,11 @@ export function ChannelWorkspace({
             mentionOptions={mentionOptions}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}
+            replyTo={replyTo && {
+              id: replyTo.id,
+              label: authorName(t, replyTo, sessions),
+              onClear: () => setReplyTo(null),
+            }}
             sessions={sessions}
             t={t}
             onSend={send}

@@ -115,7 +115,12 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
     // hand-off depth, and whether the orchestrator still has to read the message.
     ensure_column(connection, "channel_messages", "task_id", "TEXT")?;
     ensure_column(connection, "channel_messages", "reply_to", "TEXT")?;
-    ensure_column(connection, "channel_messages", "hops", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(
+        connection,
+        "channel_messages",
+        "hops",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     ensure_column(connection, "channel_messages", "routing", "TEXT")?;
     connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS channel_messages_pending
@@ -1032,7 +1037,6 @@ impl ChannelStore {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 /// What a message carries beyond its text: the citation, the hand-off depth,
 /// and whether the orchestrator must still read it.
 #[derive(Clone, Copy, Default)]
@@ -1042,6 +1046,7 @@ struct Extras<'a> {
     routing: Option<&'a str>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_message(
     tx: &Transaction<'_>,
     project_id: &str,

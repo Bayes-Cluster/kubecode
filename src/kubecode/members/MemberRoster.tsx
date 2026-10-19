@@ -1,4 +1,4 @@
-import { Plus, RotateCw, Trash2 } from 'lucide-react'
+import { MessageCircle, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useState } from 'react'
@@ -36,6 +36,8 @@ export type MemberRosterProps = {
   /** Server defaults, for pre-filling a new member's instructions. */
   defaults?: MemberDefaults | null
   onOpenMember?: (member: Member) => void
+  /** Opens the researcher's private conversation with a member. */
+  onOpenDm?: (member: Member) => void
   projectId: string
   t: Translator
 }
@@ -61,7 +63,7 @@ type Draft = {
  * member keeps its history and is refused while it holds open work.
  */
 export function MemberRoster({
-  agents, api, connectionState, defaults, events, onOpenMember, projectId, t,
+  agents, api, connectionState, defaults, events, onOpenDm, onOpenMember, projectId, t,
 }: MemberRosterProps) {
   const { roster, status, refreshFailed, reload } = useMembers(api, projectId, events, connectionState)
   const [confirming, setConfirming] = useState<string | null>(null)
@@ -221,6 +223,14 @@ export function MemberRoster({
             >
               {t('kubecode.members.edit')}
             </Button>
+            {onOpenDm && member.state === 'active' && (
+              <IconButton
+                disabled={busy}
+                icon={<MessageCircle aria-hidden size={14} />}
+                label={t('kubecode.members.messagePrivately', { name: member.name })}
+                onClick={() => onOpenDm(member)}
+              />
+            )}
             {member.public_conversation_id !== null && (
               <Button
                 aria-label={`${t('kubecode.members.replaceSession')}: ${member.name}`}

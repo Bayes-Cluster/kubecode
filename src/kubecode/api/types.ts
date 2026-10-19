@@ -1067,6 +1067,12 @@ export type ChannelMessage = {
   client_message_id: string | null
   intent_claimed_by: string | null
   created_at: string
+  /** The Task (research question) the message is about. */
+  task_id: string | null
+  /** The earlier message this one cites. */
+  reply_to: string | null
+  /** Hand-off depth: 0 for the researcher's own message. */
+  hops: number
 }
 export type ChannelMessagePage = { messages: ChannelMessage[]; has_more: boolean }
 export type ChannelThread = {
@@ -1091,6 +1097,20 @@ export type NewChannelMessage = {
   intent?: ChannelIntent
   mentions?: ChannelMention[]
   references?: ProjectContextRef[]
+  /** An earlier message of the conversation this one answers or cites. */
+  replyTo?: string | null
+}
+
+/** A turn of the researcher's private conversation with a member (ADR 0223). */
+export type DmTurn = { run_id: string; user: string; assistant: string }
+/** Exactly what sharing from a private conversation would post to General. */
+export type DmSharePreview = { text: string; digest: string; task_id: string | null }
+export type DmShareRequest = {
+  runIds: string[]
+  note?: string
+  taskId?: string | null
+  digest?: string
+  clientMessageId?: string
 }
 
 /** The Workspace work board (ADR 0218): one projection of the canonical work records. */

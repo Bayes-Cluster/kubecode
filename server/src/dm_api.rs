@@ -13,12 +13,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::app_state::AppState;
 use crate::channel_store::{AuthorKind, ChannelError, ContextRef, Message, NewMessage};
 use crate::member_store::{Member, MemberError, MemberState};
+use crate::orchestrator::{DeliveryOutcome, DeliveryRequest, RouteSink, RuntimeSink};
 use crate::project_context::ContextKind;
 use crate::workspace::WorkspaceError;
 
@@ -41,6 +42,10 @@ pub fn routes() -> Router<AppState> {
             get(list_turns),
         )
         .route(
+            "/projects/{project_id}/members/{member_id}/dm/messages",
+            post(send_message),
+        )
+        .route(
             "/projects/{project_id}/members/{member_id}/dm/share/preview",
             post(preview_share),
         )
@@ -57,6 +62,10 @@ enum DmError {
     Invalid(&'static str),
     /// The preview the researcher confirmed is not what would be posted now.
     Stale,
+    /// The member's Session cannot take the message right now.
+    Busy,
+    /// The provider or runtime refused the message.
+    Refused,
     Storage,
 }
 
@@ -106,6 +115,16 @@ impl IntoResponse for DmError {
                 StatusCode::CONFLICT,
                 "dm_share_stale",
                 "the conversation changed since the preview; preview it again".to_owned(),
+            ),
+            Self::Busy => (
+                StatusCode::CONFLICT,
+                "dm_busy",
+                "the member is busy; try again in a moment".to_owned(),
+            ),
+            Self::Refused => (
+                StatusCode::BAD_GATEWAY,
+                "dm_failed",
+                "the message could not be delivered to the member".to_owned(),
             ),
             Self::Workspace(_) | Self::Member(_) | Self::Channel(_) | Self::Storage => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -171,6 +190,73 @@ fn clip(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+/// The researcher's words without the role brief the first prompt carries.
+fn without_brief(text: &str) -> String {
+    const END: &str = "[End of role brief]";
+    if let Some(start) = text.find("[Role brief]")
+        && let Some(end) = text[start..].find(END)
+    {
+        let after = start + end + END.len();
+        return format!(
+            "{}{}",
+            &text[..start],
+            text[after..].trim_start_matches('\n')
+        );
+    }
+    text.to_owned()
+}
+
+#[derive(Debug, Deserialize)]
+struct SendRequest {
+    text: String,
+    /// One key per typed message: a retry after a lost reply is the same message.
+    client_message_id: String,
+}
+
+const MAX_DM_CHARS: usize = 16_000;
+
+/// Sends the researcher's message to the member's DM Session. It goes through
+/// the same delivery as every member message, so the Session is configured and
+/// briefed first; nothing is posted to the shared conversation.
+async fn send_message(
+    State(state): State<AppState>,
+    Path((project_id, member_id)): Path<(String, String)>,
+    Json(request): Json<SendRequest>,
+) -> Result<(StatusCode, Json<Value>), DmError> {
+    check_project(&state, &project_id)?;
+    let text = request.text.trim().to_owned();
+    if text.is_empty() {
+        return Err(DmError::Invalid("a message is required"));
+    }
+    if text.chars().count() > MAX_DM_CHARS {
+        return Err(DmError::Invalid("the message is too long"));
+    }
+    let key = request.client_message_id.trim().to_owned();
+    if key.is_empty() || key.chars().count() > 128 {
+        return Err(DmError::Invalid("a client message id is required"));
+    }
+    let outcome = tokio::task::spawn_blocking(move || -> Result<DeliveryOutcome, DmError> {
+        let (_, dm) = member_with_dm(&state, &project_id, &member_id)?;
+        let sink = RuntimeSink::new(std::sync::Arc::clone(&state.agent_runtime))
+            .with_members(std::sync::Arc::clone(&state.members));
+        Ok(sink.deliver(&DeliveryRequest {
+            project_id: &project_id,
+            conversation_id: &dm,
+            delivery_key: &format!("dm:{key}"),
+            body: &text,
+        }))
+    })
+    .await
+    .map_err(|_| DmError::Storage)??;
+    match outcome {
+        DeliveryOutcome::Delivered => {
+            Ok((StatusCode::ACCEPTED, Json(json!({"state": "delivered"}))))
+        }
+        DeliveryOutcome::Busy => Err(DmError::Busy),
+        DeliveryOutcome::Failed(_) => Err(DmError::Refused),
+    }
+}
+
 async fn list_turns(
     State(state): State<AppState>,
     Path((project_id, member_id)): Path<(String, String)>,
@@ -193,7 +279,7 @@ async fn list_turns(
             {
                 turns.push(DmTurn {
                     run_id: run.id.clone(),
-                    user: clip(&text.user, TURN_CHARS),
+                    user: clip(&without_brief(&text.user), TURN_CHARS),
                     assistant: clip(&text.assistant, TURN_CHARS),
                 });
             }
@@ -252,12 +338,17 @@ fn compose(
             .ok_or(DmError::Invalid("that turn is not in this direct message"))?;
         text.push_str(&format!(
             "\nMe: {}\n@{}: {}\n",
-            clip(&turn.user, TURN_CHARS).trim(),
+            clip(&without_brief(&turn.user), TURN_CHARS).trim(),
             member.handle,
             clip(&turn.assistant, TURN_CHARS).trim()
         ));
     }
-    if let Some(note) = request.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+    if let Some(note) = request
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+    {
         text.push_str(&format!("\n{}", clip(note, NOTE_CHARS)));
     }
     let digest = hex::encode(Sha256::digest(

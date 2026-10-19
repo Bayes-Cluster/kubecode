@@ -3,7 +3,13 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
-import type { ChannelMessage, ChannelThread, Conversation, ProjectContextRef } from '../api'
+import type {
+  ChannelMessage,
+  ChannelThread,
+  Conversation,
+  ProjectContextRef,
+  ResearchSummary,
+} from '../api'
 import type { MessageFeed } from './useChannel'
 import { MessageItem } from './MessageItem'
 
@@ -13,6 +19,9 @@ type MessageListProps = {
   label: string
   onOpenReference?: (reference: ProjectContextRef) => void
   onOpenThread?: (message: ChannelMessage) => void
+  onReply?: (message: ChannelMessage) => void
+  onFilterTask?: (taskId: string) => void
+  research?: ResearchSummary[]
   sessions: Conversation[]
   t: Translator
   threadByRoot?: Map<string, ChannelThread>
@@ -25,6 +34,9 @@ export function MessageList({
   label,
   onOpenReference,
   onOpenThread,
+  onFilterTask,
+  onReply,
+  research,
   sessions,
   t,
   threadByRoot,
@@ -32,6 +44,17 @@ export function MessageList({
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const newest = feed.messages.at(-1)?.seq ?? 0
+  const byId = new Map(feed.messages.map((message) => [message.id, message]))
+
+  /** Scrolls to a message of this feed and focuses it so the jump is announced. */
+  const jump = (messageId: string) => {
+    const target = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
+    if (!target) return
+    stuck.current = false
+    target.setAttribute('tabindex', '-1')
+    target.scrollIntoView?.({ block: 'center' })
+    target.focus({ preventScroll: true })
+  }
 
   useEffect(() => {
     const element = scroller.current
@@ -77,12 +100,17 @@ export function MessageList({
       {feed.messages.map((message) => (
         <MessageItem
           key={message.id}
+          cited={message.reply_to ? byId.get(message.reply_to) ?? null : null}
           message={message}
+          research={research}
           sessions={sessions}
           t={t}
           thread={threadByRoot?.get(message.id)}
+          onFilterTask={onFilterTask}
+          onJump={jump}
           onOpenReference={onOpenReference}
           onOpenThread={onOpenThread}
+          onReply={onReply}
         />
       ))}
     </div>

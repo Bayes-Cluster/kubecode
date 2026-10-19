@@ -318,7 +318,8 @@ impl WorkAgent {
         let hops = if mentions.is_empty() {
             0
         } else {
-            self.orchestrator.next_hops(&self.project_id, &self.caller)?
+            self.orchestrator
+                .next_hops(&self.project_id, &self.caller)?
         };
         let references: Vec<ContextRef> = task
             .map(|id| vec![ContextRef::new(ContextKind::Research, id)])

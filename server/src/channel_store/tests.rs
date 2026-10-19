@@ -755,9 +755,19 @@ fn a_message_about_a_task_is_filtered_without_a_second_history() {
     );
     // The same records, not copies: ids and sequence numbers are the General ones.
     for message in &filtered {
-        assert!(all.iter().any(|m| m.id == message.id && m.seq == message.seq));
+        assert!(
+            all.iter()
+                .any(|m| m.id == message.id && m.seq == message.seq)
+        );
     }
-    assert_eq!(r.channels.messages(r.project(), &channel.id, MessageQuery::default()).unwrap().messages.len(), 4);
+    assert_eq!(
+        r.channels
+            .messages(r.project(), &channel.id, MessageQuery::default())
+            .unwrap()
+            .messages
+            .len(),
+        4
+    );
     // Paging a filtered view keeps the filter.
     let page = r
         .channels
@@ -913,8 +923,15 @@ fn only_conversation_messages_are_read_by_the_orchestrator_and_only_once() {
         .collect();
     assert!(pending.contains(&remark.id) && pending.contains(&root.id));
     assert!(pending.contains(&handoff.id));
-    assert!(!pending.contains(&silent.id), "an agent line that names no one is not routed");
-    assert_eq!(pending.len(), 3, "a Thread reply is not conversation chatter");
+    assert!(
+        !pending.contains(&silent.id),
+        "an agent line that names no one is not routed"
+    );
+    assert_eq!(
+        pending.len(),
+        3,
+        "a Thread reply is not conversation chatter"
+    );
     r.channels.mark_routed(r.project(), &remark.id).unwrap();
     r.channels.mark_routed(r.project(), &remark.id).unwrap();
     assert_eq!(r.channels.pending_routing(50).unwrap().len(), 2);

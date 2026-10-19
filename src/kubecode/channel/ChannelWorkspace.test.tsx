@@ -35,7 +35,8 @@ function server(initial: ChannelMessage[] = []) {
   const message = (seq: number, body: string, extra: Partial<ChannelMessage> = {}): ChannelMessage => ({
     id: `m${seq}`, project_id: 'p1', channel_id: 'c1', thread_id: null, seq, kind: 'message',
     author_kind: 'researcher', author_ref: null, body, intent: 'say', mentions: [], references: [],
-    client_message_id: null, intent_claimed_by: null, created_at: '2026-10-18 10:00:00', ...extra,
+    client_message_id: null, intent_claimed_by: null, created_at: '2026-10-18 10:00:00',
+    task_id: null, reply_to: null, hops: 0, ...extra,
   })
   const inScope = (threadId: string | null | undefined) => (candidate: ChannelMessage) => {
     if (!threadId) return candidate.thread_id === null
@@ -47,10 +48,12 @@ function server(initial: ChannelMessage[] = []) {
     listChannelMessages: vi.fn(async (
       _p: string,
       _c: string,
-      options: { threadId?: string | null; beforeSeq?: number; afterSeq?: number; limit?: number } = {},
+      options: { threadId?: string | null; taskId?: string | null; beforeSeq?: number; afterSeq?: number; limit?: number } = {},
     ) => {
       const limit = options.limit ?? 50
-      const scoped = messages.filter(inScope(options.threadId))
+      const scoped = messages
+        .filter(inScope(options.threadId))
+        .filter((candidate) => !options.taskId || candidate.task_id === options.taskId)
       if (options.afterSeq !== undefined) {
         const page = scoped.filter((m) => m.seq > options.afterSeq!).slice(0, limit)
         return { messages: page, has_more: false }
@@ -73,6 +76,7 @@ function server(initial: ChannelMessage[] = []) {
         intent: input.intent ?? 'say',
         mentions: input.mentions ?? [],
         references: input.references ?? [],
+        reply_to: input.replyTo ?? null,
       })
       messages.push(created)
       return created
@@ -406,5 +410,60 @@ describe('ChannelWorkspace work entry', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     await screen.findByText('@general what next?')
     expect(s.posted[0].mentions).toEqual([{ session_id: 'sess-general' }])
+  })
+
+  it('shows only what is about one Task as a view of the same messages, and the chip sets the filter', async () => {
+    const s = server([
+      { ...server().message(1, 'about pruning'), task_id: 'r1' },
+      server().message(2, 'general chatter'),
+    ])
+    view(s)
+    await screen.findByText('about pruning')
+    expect(screen.getByText('general chatter')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('kubecode.channel.filterTask'), { target: { value: 'r1' } })
+    await waitFor(() => expect(screen.queryByText('general chatter')).not.toBeInTheDocument())
+    expect(screen.getByText('about pruning')).toBeInTheDocument()
+    expect(s.calls.listChannelMessages).toHaveBeenLastCalledWith(
+      'p1', 'c1', expect.objectContaining({ taskId: 'r1' }),
+    )
+    fireEvent.change(screen.getByLabelText('kubecode.channel.filterTask'), { target: { value: '' } })
+    expect(await screen.findByText('general chatter')).toBeInTheDocument()
+    // The chip on a message selects that Task.
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.taskChip:{"title":"Pruning"}' }))
+    await waitFor(() => expect(screen.queryByText('general chatter')).not.toBeInTheDocument())
+  })
+
+  it('cites a message in the next one, jumps back to it, and keeps routing notes collapsed', async () => {
+    const s = server([
+      server().message(1, 'the plan'),
+      server().message(2, 'noted', { reply_to: 'm1' }),
+      server().message(3, 'delivered to the manager', { author_kind: 'system' }),
+      server().message(4, 'over to you', {
+        author_kind: 'agent', author_ref: 'sess-a', mentions: [{ session_id: 'sess-b' }], hops: 1,
+      }),
+    ])
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    view(s)
+    await screen.findByText('the plan')
+    // A routing note is one quiet, expandable line.
+    const note = screen.getByTestId('message-3')
+    expect(note.tagName).toBe('DETAILS')
+    expect(note).not.toHaveAttribute('open')
+    // A hand-off says who it was handed to.
+    expect(screen.getByText(/kubecode\.channel\.handedTo/)).toBeInTheDocument()
+    // The citation names the cited message and jumps to it.
+    fireEvent.click(screen.getByRole('button', { name: /kubecode\.channel\.citation:/ }))
+    expect(scroll).toHaveBeenCalled()
+    expect(document.getElementById('message-m1')).toHaveFocus()
+    // Replying cites the message in what is sent, and clears afterwards.
+    fireEvent.click(within(screen.getByTestId('message-1')).getByRole('button', { name: 'kubecode.channel.replyToMessage' }))
+    expect(screen.getByText(/kubecode\.channel\.replyingTo/)).toBeInTheDocument()
+    const box = screen.getByLabelText('kubecode.channel.composerPlaceholder')
+    fireEvent.change(box, { target: { value: 'agreed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
+    await screen.findByText('agreed')
+    expect(s.posted[0].replyTo).toBe('m1')
+    await waitFor(() => expect(screen.queryByText(/kubecode\.channel\.replyingTo/)).not.toBeInTheDocument())
   })
 })

@@ -1283,7 +1283,13 @@ mod conversation_routing {
         member.public_conversation_id.clone().unwrap()
     }
 
-    fn post(r: &Rig, author: Option<&Member>, body: &str, mentions: &[&Member], hops: u8) -> Message {
+    fn post(
+        r: &Rig,
+        author: Option<&Member>,
+        body: &str,
+        mentions: &[&Member],
+        hops: u8,
+    ) -> Message {
         let mentions: Vec<Mention> = mentions
             .iter()
             .map(|member| Mention {
@@ -1306,7 +1312,9 @@ mod conversation_routing {
                     mentions: &mentions,
                     client_message_id: Some(&format!(
                         "k-{}",
-                        body.chars().filter(|c| c.is_alphanumeric()).collect::<String>()
+                        body.chars()
+                            .filter(|c| c.is_alphanumeric())
+                            .collect::<String>()
                     )),
                     hops,
                     ..Default::default()
@@ -1342,8 +1350,20 @@ mod conversation_routing {
         let r = rig();
         let crew = crew(&r);
         let sink = Recording::default();
-        post(&r, None, "@analyst how did the run go?", &[&crew.analyst], 0);
-        post(&r, None, "@general and @writer please sync", &[&crew.general, &crew.writer], 0);
+        post(
+            &r,
+            None,
+            "@analyst how did the run go?",
+            &[&crew.analyst],
+            0,
+        );
+        post(
+            &r,
+            None,
+            "@general and @writer please sync",
+            &[&crew.general, &crew.writer],
+            0,
+        );
         crew.orchestrator.tick(&sink).unwrap();
         let mut to: Vec<String> = sink.deliveries().into_iter().map(|d| d.0).collect();
         to.sort();
@@ -1353,7 +1373,10 @@ mod conversation_routing {
             public(&crew.writer),
         ];
         expected.sort();
-        assert_eq!(to, expected, "the manager is not copied on a specialist mention");
+        assert_eq!(
+            to, expected,
+            "the manager is not copied on a specialist mention"
+        );
         assert!(
             sink.deliveries()
                 .iter()
@@ -1380,7 +1403,11 @@ mod conversation_routing {
         assert_eq!(delivered[0].0, public(&crew.writer));
         assert!(delivered[0].2.contains("an agent, not the researcher"));
         assert!(delivered[0].2.contains("cannot add a Task"));
-        assert!(delivered[0].2.contains("--- begin agent message"), "{}", delivered[0].2);
+        assert!(
+            delivered[0].2.contains("--- begin agent message"),
+            "{}",
+            delivered[0].2
+        );
     }
 
     #[test]
@@ -1416,8 +1443,9 @@ mod conversation_routing {
         assert!(sink.deliveries().is_empty());
         let notes = thread_texts_all(&r);
         assert!(
-            notes.iter().any(|n| n.contains("hand-off was not delivered")
-                && n.contains("private")),
+            notes
+                .iter()
+                .any(|n| n.contains("hand-off was not delivered") && n.contains("private")),
             "{notes:?}"
         );
     }
@@ -1447,14 +1475,23 @@ mod conversation_routing {
         let sink = Recording::default();
         let analyst = public(&crew.analyst);
         // Nothing reached the analyst yet: its first hand-off is depth 1.
-        assert_eq!(crew.orchestrator.next_hops(r.project(), &analyst).unwrap(), 1);
+        assert_eq!(
+            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            1
+        );
         post(&r, None, "@analyst start", &[&crew.analyst], 0);
         crew.orchestrator.tick(&sink).unwrap();
         // A researcher's message is depth 0, so answering it is depth 1.
-        assert_eq!(crew.orchestrator.next_hops(r.project(), &analyst).unwrap(), 1);
+        assert_eq!(
+            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            1
+        );
         post(&r, Some(&crew.writer), "@analyst ping", &[&crew.analyst], 3);
         crew.orchestrator.tick(&sink).unwrap();
-        assert_eq!(crew.orchestrator.next_hops(r.project(), &analyst).unwrap(), 4);
+        assert_eq!(
+            crew.orchestrator.next_hops(r.project(), &analyst).unwrap(),
+            4
+        );
         let too_deep = r.channels.post(
             r.project(),
             &r.channel().id,
