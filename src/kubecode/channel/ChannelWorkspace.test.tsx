@@ -384,4 +384,27 @@ describe('ChannelWorkspace work entry', () => {
     fireEvent.click(within(pane).getByRole('button', { name: 'kubecode.channel.openWork' }))
     expect(onOpenWork).toHaveBeenCalledWith({ thread_id: 't1' })
   })
+
+  it('offers active members with a public Session as @mentions and records the Session on the message', async () => {
+    const s = server()
+    ;(s.calls as unknown as Record<string, unknown>).listMembers = vi.fn(async () => ({
+      members: [
+        { id: 'm-general', state: 'active', handle: 'general', name: 'General', public_conversation_id: 'sess-general' },
+        { id: 'm-gone', state: 'removed', handle: 'gone', name: 'Gone', public_conversation_id: 'sess-gone' },
+        { id: 'm-none', state: 'active', handle: 'nosession', name: 'No Session', public_conversation_id: null },
+      ],
+    }))
+    view(s)
+    const box = await screen.findByRole('combobox', { name: 'kubecode.channel.composerPlaceholder' })
+    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } })
+    const options = within(await screen.findByRole('listbox')).getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]).toHaveTextContent('@general')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(box).toHaveValue('@general ')
+    fireEvent.change(box, { target: { value: '@general what next?', selectionStart: 19 } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await screen.findByText('@general what next?')
+    expect(s.posted[0].mentions).toEqual([{ session_id: 'sess-general' }])
+  })
 })

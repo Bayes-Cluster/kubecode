@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "このスレッドに返信",
   "kubecode.channel.send": "送信",
   "kubecode.channel.sending": "送信中…",
+  "kubecode.composer.mentions": "メンションできるメンバー",
+  "kubecode.composer.stopTarget": "{target} を停止",
   "kubecode.channel.author.researcher": "あなた",
   "kubecode.channel.author.agent": "エージェント",
   "kubecode.channel.author.system": "Kubecode",

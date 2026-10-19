@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Adkazać u hetym lancužku",
   "kubecode.channel.send": "Adpravić",
   "kubecode.channel.sending": "Adpraŭka…",
+  "kubecode.composer.mentions": "Udzielniki, jakich možna zhadać",
+  "kubecode.composer.stopTarget": "Spynić {target}",
   "kubecode.channel.author.researcher": "Vy",
   "kubecode.channel.author.agent": "Ahient",
   "kubecode.channel.author.system": "Kubecode",

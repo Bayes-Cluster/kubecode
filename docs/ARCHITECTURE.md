@@ -312,6 +312,17 @@ Task's work cites has changed) and `.../repin`; it has no admission endpoint.
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
+Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
+vocabulary Workspace views are built from — `IconButton` (required label,
+tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
+semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
+(arrow send; a stop that names its target), and `Composer` (text, `@mention`
+combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
+the line, nothing is sent while an input method composes). It knows nothing of
+channels or Tasks: `channel/MessageComposer` supplies the mention options and
+the intent and reference controls, and General and direct messages both use it.
+The session composer shares the send and stop buttons.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Відповісти в цій гілці",
   "kubecode.channel.send": "Надіслати",
   "kubecode.channel.sending": "Надсилання…",
+  "kubecode.composer.mentions": "Учасники, яких можна згадати",
+  "kubecode.composer.stopTarget": "Зупинити {target}",
   "kubecode.channel.author.researcher": "Ви",
   "kubecode.channel.author.agent": "Агент",
   "kubecode.channel.author.system": "Kubecode",

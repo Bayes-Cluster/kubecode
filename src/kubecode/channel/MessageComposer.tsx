@@ -1,7 +1,6 @@
 import { Paperclip, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +8,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
+import { Composer } from '@/components/workspace/Composer'
+import { IconButton } from '@/components/workspace/IconButton'
+import { extractMentions, type MentionOption } from '@/components/workspace/mentions'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -35,6 +36,14 @@ export type MessageComposerProps = {
   sessions: Conversation[]
   t: Translator
   threadId?: string | null
+  /**
+   * Members that `@handle` reaches; the option id is the member's Session.
+   * Mentioning is how a message addresses someone, and it is recorded with the
+   * message; it never authorizes work by itself.
+   */
+  mentionOptions?: MentionOption[]
+  /** Stops one named task or agent; sending stays available while it runs. */
+  stop?: { target: string; onStop: () => void }
   /** Saves the message; resolves once it is stored. */
   onSend: (message: NewChannelMessage) => Promise<void>
 }
@@ -50,8 +59,10 @@ export function MessageComposer({
   placeholder,
   projectId,
   sessions,
+  stop,
   t,
   threadId = null,
+  mentionOptions = [],
 }: MessageComposerProps) {
   const [body, setBody] = useState('')
   const [intent, setIntent] = useState<ChannelIntent>('say')
@@ -65,14 +76,29 @@ export function MessageComposer({
   const asking = intent === 'ask'
   const ready = body.trim().length > 0 && (!asking || askSession !== '')
 
+  const sending = useRef(false)
+
   const send = async () => {
-    if (!ready || action.busy) return
+    // A second call before the first renders must not clear the draft again or
+    // be mistaken for a failed send.
+    if (!ready || action.busy || sending.current) return
+    sending.current = true
+    try {
+      await submit()
+    } finally {
+      sending.current = false
+    }
+  }
+
+  const submit = async () => {
     const draft = { body, intent, askSession, references }
+    const mentioned = extractMentions(draft.body, mentionOptions).map((option) => option.id)
     const signature = JSON.stringify([
       draft.body.trim(),
       draft.intent,
       draft.intent === 'ask' ? draft.askSession : '',
       draft.references.map((item) => `${item.ref.kind}:${item.ref.id}`),
+      mentioned,
     ])
     const id = attempt.current?.signature === signature
       ? attempt.current.id
@@ -91,7 +117,10 @@ export function MessageComposer({
       threadId,
       clientMessageId: id,
       intent: draft.intent,
-      mentions: draft.intent === 'ask' ? [{ session_id: draft.askSession }] : [],
+      mentions: [...new Set([
+        ...(draft.intent === 'ask' ? [draft.askSession] : []),
+        ...mentioned,
+      ])].map((session_id) => ({ session_id })),
       references: draft.references.map((item): ProjectContextRef => ({
         kind: item.ref.kind,
         id: item.ref.id,
@@ -109,93 +138,81 @@ export function MessageComposer({
   }
 
   return (
-    <form
-      className="kubecode-channel-composer"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void send()
-      }}
-    >
-      <Textarea
-        aria-label={placeholder}
-        placeholder={placeholder}
-        rows={3}
-        value={body}
-        onChange={(event) => setBody(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault()
-            void send()
-          }
-        }}
-      />
-      {references.length > 0 && (
-        <ul className="kubecode-channel-references">
-          {references.map((item) => (
-            <li key={`${item.ref.kind}:${item.ref.id}`}>
-              <span className="kubecode-channel-reference">
-                {t(PROJECT_CONTEXT_KIND_LABELS[item.ref.kind])}
-                <span>{item.title}</span>
-                <button
-                  aria-label={t('kubecode.channel.removeReference', { title: item.title })}
-                  type="button"
-                  onClick={() => setReferences((current) => current.filter((candidate) => (
-                    candidate.ref.kind !== item.ref.kind || candidate.ref.id !== item.ref.id
-                  )))}
-                >
-                  <X aria-hidden size={12} />
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="kubecode-channel-composer-row">
-        <select
-          aria-label={t('kubecode.channel.intent.label')}
-          className="kubecode-channel-select"
-          value={intent}
-          onChange={(event) => setIntent(event.target.value as ChannelIntent)}
-        >
-          <option value="say">{t('kubecode.channel.intent.say')}</option>
-          <option value="ask">{t('kubecode.channel.intent.ask')}</option>
-          <option value="request">{t('kubecode.channel.intent.request')}</option>
-        </select>
-        {asking && (
-          <select
-            aria-label={t('kubecode.channel.askSession')}
-            className="kubecode-channel-select"
-            value={askSession}
-            onChange={(event) => setAskSession(event.target.value)}
-          >
-            <option value="">{t('kubecode.channel.chooseSession')}</option>
-            {sessions.map((session) => (
-              <option key={session.id} value={session.id}>{session.title}</option>
+    <div className="kubecode-channel-composer">
+      <Composer
+        above={references.length > 0 && (
+          <ul className="kubecode-channel-references">
+            {references.map((item) => (
+              <li key={`${item.ref.kind}:${item.ref.id}`}>
+                <span className="kubecode-channel-reference">
+                  {t(PROJECT_CONTEXT_KIND_LABELS[item.ref.kind])}
+                  <span>{item.title}</span>
+                  <IconButton
+                    icon={<X aria-hidden size={12} />}
+                    label={t('kubecode.channel.removeReference', { title: item.title })}
+                    onClick={() => setReferences((current) => current.filter((candidate) => (
+                      candidate.ref.kind !== item.ref.kind || candidate.ref.id !== item.ref.id
+                    )))}
+                  />
+                </span>
+              </li>
             ))}
-          </select>
+          </ul>
         )}
-        <Button
-          aria-label={t('kubecode.channel.attach')}
-          disabled={references.length >= MAX_REFERENCES}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-          onClick={() => setPicker(true)}
-        >
-          <Paperclip aria-hidden size={16} />
-        </Button>
-        <Button
-          disabled={!ready || action.busy}
-          size="sm"
-          type="submit"
-        >
-          {action.busy ? t('kubecode.channel.sending') : t('kubecode.channel.send')}
-        </Button>
-      </div>
-      {intent !== 'say' && (
-        <p className="kubecode-research-muted">{t('kubecode.channel.intent.requestHint')}</p>
-      )}
-      {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
+        below={(
+          <>
+            {intent !== 'say' && (
+              <p className="kubecode-research-muted">{t('kubecode.channel.intent.requestHint')}</p>
+            )}
+            {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
+          </>
+        )}
+        busy={action.busy}
+        busyLabel={t('kubecode.channel.sending')}
+        canSend={ready}
+        controls={(
+          <>
+            <select
+              aria-label={t('kubecode.channel.intent.label')}
+              className="kubecode-channel-select"
+              value={intent}
+              onChange={(event) => setIntent(event.target.value as ChannelIntent)}
+            >
+              <option value="say">{t('kubecode.channel.intent.say')}</option>
+              <option value="ask">{t('kubecode.channel.intent.ask')}</option>
+              <option value="request">{t('kubecode.channel.intent.request')}</option>
+            </select>
+            {asking && (
+              <select
+                aria-label={t('kubecode.channel.askSession')}
+                className="kubecode-channel-select"
+                value={askSession}
+                onChange={(event) => setAskSession(event.target.value)}
+              >
+                <option value="">{t('kubecode.channel.chooseSession')}</option>
+                {sessions.map((session) => (
+                  <option key={session.id} value={session.id}>{session.title}</option>
+                ))}
+              </select>
+            )}
+            <IconButton
+              disabled={references.length >= MAX_REFERENCES}
+              icon={<Paperclip aria-hidden size={16} />}
+              label={t('kubecode.channel.attach')}
+              onClick={() => setPicker(true)}
+            />
+          </>
+        )}
+        label={placeholder}
+        mentionLabel={t('kubecode.composer.mentions')}
+        mentions={mentionOptions}
+        placeholder={placeholder}
+        sendLabel={t('kubecode.channel.send')}
+        stop={stop && { label: t('kubecode.composer.stopTarget', { target: stop.target }), onStop: stop.onStop }}
+        value={body}
+        onChange={setBody}
+        onSend={send}
+      />
       <Dialog open={picker} onOpenChange={setPicker}>
         <DialogContent>
           <DialogHeader>
@@ -218,6 +235,6 @@ export function MessageComposer({
           />
         </DialogContent>
       </Dialog>
-    </form>
+    </div>
   )
 }

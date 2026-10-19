@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Rispondi in questo thread",
   "kubecode.channel.send": "Invia",
   "kubecode.channel.sending": "Invio in corso…",
+  "kubecode.composer.mentions": "Membri che puoi menzionare",
+  "kubecode.composer.stopTarget": "Interrompi {target}",
   "kubecode.channel.author.researcher": "Tu",
   "kubecode.channel.author.agent": "Agente",
   "kubecode.channel.author.system": "Kubecode",

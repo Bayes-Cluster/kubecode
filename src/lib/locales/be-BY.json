@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Адказаць у гэтым ланцужку",
   "kubecode.channel.send": "Адправіць",
   "kubecode.channel.sending": "Адпраўка…",
+  "kubecode.composer.mentions": "Удзельнікі, якіх можна згадаць",
+  "kubecode.composer.stopTarget": "Спыніць {target}",
   "kubecode.channel.author.researcher": "Вы",
   "kubecode.channel.author.agent": "Агент",
   "kubecode.channel.author.system": "Kubecode",

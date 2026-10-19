@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Balas di thread ini",
   "kubecode.channel.send": "Kirim",
   "kubecode.channel.sending": "Mengirim…",
+  "kubecode.composer.mentions": "Anggota yang dapat disebut",
+  "kubecode.composer.stopTarget": "Hentikan {target}",
   "kubecode.channel.author.researcher": "Anda",
   "kubecode.channel.author.agent": "Agen",
   "kubecode.channel.author.system": "Kubecode",

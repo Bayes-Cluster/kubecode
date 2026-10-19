@@ -1,5 +1,6 @@
 import { Hash } from 'lucide-react'
 
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelThread } from '../api'
@@ -41,9 +42,9 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads }: C
             >
               <span className="kubecode-research-nav-title">{thread.title}</span>
               {thread.research_id && (
-                <span className="kubecode-research-badge" data-tone="ok">
+                <StatusBadge tone="ok">
                   {t('kubecode.channel.linkedBadge')}
-                </span>
+                </StatusBadge>
               )}
             </button>
           </li>

@@ -1,6 +1,7 @@
 import { FlaskConical, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchSummary } from '../api'
@@ -67,14 +68,10 @@ export function ResearchNavigator({
                 <FlaskConical aria-hidden size={14} />
                 <span className="kubecode-research-nav-title">{item.title}</span>
                 {item.archived && (
-                  <span className="kubecode-research-badge" data-tone="muted">
-                    {t('kubecode.research.status.archived')}
-                  </span>
+                  <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
                 )}
                 {item.status === 'resolved' && (
-                  <span className="kubecode-research-badge" data-tone="muted">
-                    {t('kubecode.research.status.resolved')}
-                  </span>
+                  <StatusBadge tone="muted">{t('kubecode.research.status.resolved')}</StatusBadge>
                 )}
               </button>
             </li>

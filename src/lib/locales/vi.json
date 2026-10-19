@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Trả lời trong chuỗi này",
   "kubecode.channel.send": "Gửi",
   "kubecode.channel.sending": "Đang gửi…",
+  "kubecode.composer.mentions": "Thành viên có thể nhắc tên",
+  "kubecode.composer.stopTarget": "Dừng {target}",
   "kubecode.channel.author.researcher": "Bạn",
   "kubecode.channel.author.agent": "Agent",
   "kubecode.channel.author.system": "Kubecode",

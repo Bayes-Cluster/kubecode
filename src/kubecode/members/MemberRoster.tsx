@@ -1,4 +1,6 @@
 import { Plus, RotateCw, Trash2 } from 'lucide-react'
+import { IconButton } from '@/components/workspace/IconButton'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useState } from 'react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -185,9 +187,9 @@ export function MemberRoster({
                 </small>
               )}
             </div>
-            <span className="kubecode-research-badge" data-tone={member.state === 'active' ? 'ok' : 'warn'}>
+            <StatusBadge tone={member.state === 'active' ? 'ok' : 'warn'}>
               {t(STATE_LABELS[member.state])}
-            </span>
+            </StatusBadge>
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}
@@ -241,15 +243,12 @@ export function MemberRoster({
                 {t('kubecode.members.confirmRemove')}
               </Button>
             ) : (
-              <Button
-                aria-label={`${t('kubecode.members.remove')}: ${member.name}`}
+              <IconButton
                 disabled={busy}
-                size="icon-xs"
-                variant="ghost"
+                icon={<Trash2 aria-hidden size={14} />}
+                label={`${t('kubecode.members.remove')}: ${member.name}`}
                 onClick={() => setConfirming(member.id)}
-              >
-                <Trash2 aria-hidden size={14} />
-              </Button>
+              />
             ))}
           </li>
         ))}

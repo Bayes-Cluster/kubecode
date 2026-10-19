@@ -1,4 +1,5 @@
 import { Plus, X } from 'lucide-react'
+import { IconButton } from '@/components/workspace/IconButton'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -132,14 +133,11 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
               value={row.value}
               onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, value: event.target.value } : r))}
             />
-            <Button
-              aria-label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
-              size="icon-xs"
-              variant="ghost"
+            <IconButton
+              icon={<X aria-hidden size={14} />}
+              label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
               onClick={() => setRows(rows.filter((_, i) => i !== index))}
-            >
-              <X aria-hidden size={14} />
-            </Button>
+            />
           </div>
         ))}
         <Button size="xs" variant="outline" onClick={() => setRows([...rows, { key: '', value: '' }])}>

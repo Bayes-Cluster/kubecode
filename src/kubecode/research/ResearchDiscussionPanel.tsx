@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -124,7 +125,7 @@ export function ResearchDiscussionPanel({
               {link.agent_id && <span className="kubecode-research-muted">{agentLabel(link.agent_id)}</span>}
               {link.availability !== 'available' && <AvailabilityBadge availability={link.availability} t={t} />}
               {link.state === 'archived' && (
-                <span className="kubecode-research-badge" data-tone="muted">{t('kubecode.research.sessionArchived')}</span>
+                <StatusBadge tone="muted">{t('kubecode.research.sessionArchived')}</StatusBadge>
               )}
               <Button
                 aria-label={`${t('kubecode.research.openSession')}: ${link.title || t('kubecode.untitledSession')}`}
@@ -198,9 +199,9 @@ export function ResearchDiscussionPanel({
           {entries.map((item) => (
             <li key={item.id} data-kind={item.kind}>
               <header>
-                <span className="kubecode-research-badge" data-tone={item.kind === 'decision' ? 'ok' : 'muted'}>
+                <StatusBadge tone={item.kind === 'decision' ? 'ok' : 'muted'}>
                   {entryKindLabel(t, item.kind)}
-                </span>
+                </StatusBadge>
                 <span className="kubecode-research-muted">
                   {authorLabel(t, item.author_kind)} · {t('kubecode.research.revisionShort', { revision: item.brief_revision })}
                 </span>

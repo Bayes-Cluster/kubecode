@@ -1255,6 +1255,15 @@ Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
 input as conditions. Rounds, internal work, attempts, and experiments live
 inside the Task. See ADR 0221.
 
+## Workspace controls
+
+Workspace views share a small set of controls: a labelled **icon button**, a
+**status badge** whose text carries the meaning, an arrow **send** and a named
+**stop**, and one **composer** for General and direct messages with `@mention`
+suggestions. Sending is independent of stopping: it stays available while
+agents work. Enter sends, Shift+Enter breaks the line, and an input method
+composing is never interrupted. See ADR 0222.
+
 ## Members and the General Agent
 
 A **member** is a durable identity in a Workspace: the **General Agent** (the

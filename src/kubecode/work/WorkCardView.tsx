@@ -1,5 +1,6 @@
 import { AlertCircle, FlaskConical, GitBranch, MessageSquareText, Repeat2 } from 'lucide-react'
 
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -75,40 +76,40 @@ export function WorkCardView({
       )}
       <div className="kubecode-work-card-badges">
         {closed && (
-          <span className="kubecode-research-badge" data-tone="muted">
+          <StatusBadge tone="muted">
             {t(LIFECYCLE_LABELS[item.lifecycle as keyof typeof LIFECYCLE_LABELS])}
-          </span>
+          </StatusBadge>
         )}
         {condition && (
-          <span className="kubecode-research-badge" data-tone={condition === 'needs_input' ? 'warn' : 'info'}>
+          <StatusBadge tone={condition === 'needs_input' ? 'warn' : 'info'}>
             {t(CONDITION_LABELS[condition])}
-          </span>
+          </StatusBadge>
         )}
         {item.acceptance === 'accepted' && (
-          <span className="kubecode-research-badge" data-tone="ok">{t('kubecode.work.acceptance.accepted')}</span>
+          <StatusBadge tone="ok">{t('kubecode.work.acceptance.accepted')}</StatusBadge>
         )}
         {item.acceptance === 'rejected' && item.stage !== 'done' && (
-          <span className="kubecode-research-badge" data-tone="warn">{t('kubecode.work.acceptance.rejected')}</span>
+          <StatusBadge tone="warn">{t('kubecode.work.acceptance.rejected')}</StatusBadge>
         )}
         {item.outcome === 'refuted' && (
-          <span className="kubecode-research-badge" data-tone="ok">{t('kubecode.work.outcome.refuted')}</span>
+          <StatusBadge tone="ok">{t('kubecode.work.outcome.refuted')}</StatusBadge>
         )}
         {item.outcome === 'inconclusive' && (
-          <span className="kubecode-research-badge" data-tone="muted">{t('kubecode.work.outcome.inconclusive')}</span>
+          <StatusBadge tone="muted">{t('kubecode.work.outcome.inconclusive')}</StatusBadge>
         )}
         {failed && !closed && (
-          <span className="kubecode-research-badge" data-tone="warn">
+          <StatusBadge tone="warn">
             <AlertCircle aria-hidden size={12} /> {t('kubecode.work.attemptFailed')}
-          </span>
+          </StatusBadge>
         )}
         {card.operable === 'legacy_team' && (
-          <span className="kubecode-research-badge" data-tone="muted">{t('kubecode.work.legacy')}</span>
+          <StatusBadge tone="muted">{t('kubecode.work.legacy')}</StatusBadge>
         )}
         {card.delivery?.state === 'failed' && (
-          <span className="kubecode-research-badge" data-tone="warn">{t('kubecode.work.delivery.failed')}</span>
+          <StatusBadge tone="warn">{t('kubecode.work.delivery.failed')}</StatusBadge>
         )}
         {card.delivery?.state === 'pending' && (
-          <span className="kubecode-research-badge" data-tone="info">{t('kubecode.work.delivery.pending')}</span>
+          <StatusBadge tone="info">{t('kubecode.work.delivery.pending')}</StatusBadge>
         )}
       </div>
       {dependencyBlockers.length > 0 && (

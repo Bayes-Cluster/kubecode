@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError } from '../api'
@@ -147,9 +148,9 @@ export function ResearchExecutionSection({
         <h4>{t('kubecode.research.exec.title')}</h4>
         {envelope && (
           <>
-            <span className="kubecode-research-badge" data-tone={envelope.state === 'active' ? 'ok' : 'warn'}>
+            <StatusBadge tone={envelope.state === 'active' ? 'ok' : 'warn'}>
               {t(`kubecode.research.exec.envelopeState.${envelope.state}` as Parameters<Translator>[0])}
-            </span>
+            </StatusBadge>
             <span className="kubecode-research-muted">
               {t('kubecode.research.exec.policyRevision', { revision: envelope.revision })}
             </span>
@@ -518,20 +519,17 @@ function ExperimentCard({
     <li data-state={experiment.state}>
       <header>
         <strong>{title}</strong>
-        <span
-          className="kubecode-research-badge"
-          data-tone={experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted'}
-        >
+        <StatusBadge tone={experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted'}>
           {t(STATE_LABELS[experiment.state])}
-        </span>
+        </StatusBadge>
         {(experiment.analysis !== 'none' || isActive(experiment.state)) && (
-          <span className="kubecode-research-badge" data-tone={experiment.analysis === 'pending' ? 'warn' : 'muted'}>
+          <StatusBadge tone={experiment.analysis === 'pending' ? 'warn' : 'muted'}>
             {experiment.analysis === 'pending'
               ? t('kubecode.research.exec.awaitingAnalysis')
               : experiment.analysis === 'analyzed'
                 ? t('kubecode.research.exec.analyzed')
                 : t('kubecode.research.exec.notYetAnalyzable')}
-          </span>
+          </StatusBadge>
         )}
         <span className="kubecode-research-muted">
           {t('kubecode.research.exec.policyRevision', { revision: experiment.policy_revision })}
@@ -603,7 +601,7 @@ function ExperimentCard({
         <ul className="kubecode-research-decisions" aria-label={t('kubecode.research.exec.decisions')}>
           {decisions.map((decision) => (
             <li key={decision.id}>
-              <span className="kubecode-research-badge" data-tone="ok">{t(DECISION_LABELS[decision.kind])}</span>{' '}
+              <StatusBadge tone="ok">{t(DECISION_LABELS[decision.kind])}</StatusBadge>{' '}
               {decision.rationale}
             </li>
           ))}

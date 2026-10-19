@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "이 스레드에 답글 달기",
   "kubecode.channel.send": "보내기",
   "kubecode.channel.sending": "보내는 중…",
+  "kubecode.composer.mentions": "멘션할 수 있는 멤버",
+  "kubecode.composer.stopTarget": "{target} 중지",
   "kubecode.channel.author.researcher": "나",
   "kubecode.channel.author.agent": "에이전트",
   "kubecode.channel.author.system": "Kubecode",
