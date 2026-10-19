@@ -2,7 +2,7 @@
 type: ADR
 id: "0216"
 title: "Shared Workspace conversation with research Threads"
-status: proposed
+status: accepted
 date: 2026-10-18
 ---
 

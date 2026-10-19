@@ -2,7 +2,7 @@
 type: ADR
 id: "0219"
 title: "Experiment analysis, evidence review, and decisions on native work"
-status: proposed
+status: accepted
 date: 2026-10-18
 ---
 
@@ -139,4 +139,7 @@ bounded pilot that is **only run when the maintainer asks for it**. Protocol:
    finished experiment has a decision, no limit exceeded, every acceptance
    rests on current evidence. Failures are recorded as gaps on issue #185.
 
-Until a pilot is run, real-agent behavior is an acknowledged gap.
+Until a pilot is run, real-agent behavior is an acknowledged gap. At acceptance
+of ADRs 0215-0219 (milestone #185) the maintainer chose not to spend on a pilot,
+so it was not run and result quality, human interventions, duplicate work, and
+resource use with real agents remain unmeasured.
