@@ -35,7 +35,7 @@ impl Evidence {
     /// The revision a reference has *now*, or `None` if it is gone or has none.
     pub fn current_revision(&self, project_id: &str, kind: &str, id: &str) -> Option<String> {
         if kind == "file" {
-            return self.workspace.file_revision(project_id, id).ok();
+            return self.file_revision(project_id, id);
         }
         let kind = ContextKind::parse(kind)?;
         let resolved = self
@@ -70,6 +70,19 @@ impl Evidence {
             .collect()
     }
 
+    /// A file's content revision; one over the hashing limit is identified by
+    /// its size and modification time instead of going unchecked.
+    fn file_revision(&self, project_id: &str, path: &str) -> Option<String> {
+        match self.workspace.file_revision(project_id, path) {
+            Ok(revision) => Some(revision),
+            Err(crate::workspace::WorkspaceError::AssetTooLarge) => self
+                .workspace
+                .execution_file_revision(project_id, None, path)
+                .ok(),
+            Err(_) => None,
+        }
+    }
+
     /// A citation checked against the Project and pinned to what it is now, or
     /// `None` when it does not exist here.
     pub fn source_ref(&self, project_id: &str, kind: &str, id: &str) -> Option<SourceRef> {
@@ -87,7 +100,7 @@ impl Evidence {
             return None;
         }
         if kind == SourceKind::File {
-            source.revision = self.workspace.file_revision(project_id, id).ok();
+            source.revision = self.file_revision(project_id, id);
         }
         Some(source)
     }
@@ -96,12 +109,12 @@ impl Evidence {
     pub fn source_status(&self, project_id: &str, source: &SourceRef) -> &'static str {
         let kind = match source.kind {
             SourceKind::File => {
-                return match self.workspace.file_revision(project_id, &source.id) {
-                    Ok(current) if source.revision.as_deref().is_none_or(|r| r == current) => {
+                return match self.file_revision(project_id, &source.id) {
+                    Some(current) if source.revision.as_deref().is_none_or(|r| r == current) => {
                         "available"
                     }
-                    Ok(_) => "changed",
-                    Err(_) => "removed",
+                    Some(_) => "changed",
+                    None => "removed",
                 };
             }
             SourceKind::Import => ContextKind::Import,

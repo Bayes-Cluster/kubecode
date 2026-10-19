@@ -4058,6 +4058,9 @@ button.kubecode-channel-reference:disabled { cursor: default; }
 .kubecode-work-facts dt { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); min-width: 84px; }
 .kubecode-work-facts dd { margin: 0; overflow-wrap: anywhere; }
 .kubecode-work-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.kubecode-work-evidence { border-left: 2px solid var(--border-subtle, var(--border)); display: grid; gap: 6px; margin: 6px 0 6px 4px; padding-left: 10px; }
+.kubecode-work-evidence h5 { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); margin: 0; }
+.kubecode-work-evidence-text { background: var(--surface-subtle, transparent); border-radius: 4px; margin: 0; max-height: 240px; overflow: auto; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .kubecode-work-commands,
 .kubecode-work-review { display: flex; flex-direction: column; gap: 8px; }
 .kubecode-work-review label { display: flex; flex-direction: column; font-size: var(--kubecode-ui-font-small); gap: 4px; }

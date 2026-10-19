@@ -828,20 +828,39 @@ impl WorkAgent {
         if let Some(thread_id) = &message.thread_id {
             return Ok((self.channels.thread(&self.project_id, thread_id)?, false));
         }
-        // Only a Session that was asked about this message may open its Thread.
-        if !self
-            .orchestrator
-            .was_asked(&self.project_id, &self.caller, &message.id, None)?
+        // Only a Session that was asked about this message, or that coordinates
+        // the round a request in it was routed to, may open its Thread.
+        let requested =
+            self.orchestrator
+                .requested_round(&self.project_id, &self.caller, &message.id)?;
+        if requested.is_none()
+            && !self
+                .orchestrator
+                .was_asked(&self.project_id, &self.caller, &message.id, None)?
         {
             return Err(AgentWorkError::NotFound);
         }
-        let (thread, _) = self.channels.start_thread(
+        let (mut thread, _) = self.channels.start_thread(
             &self.project_id,
             &message.channel_id,
             &message.id,
             None,
             Some(&self.caller),
         )?;
+        // The answer to a request belongs to the round it was for, so work
+        // organized from the Thread is the round's.
+        if let Some(round_id) = requested
+            && thread.research_id.is_none()
+            && let Ok(round) = self.research.round_by_id(&self.project_id, &round_id)
+        {
+            thread = self.channels.link_thread(
+                &self.project_id,
+                &thread.id,
+                thread.revision,
+                Some(&round.research_id),
+                Some(&round_id),
+            )?;
+        }
         Ok((thread, true))
     }
 
@@ -873,7 +892,11 @@ impl WorkAgent {
             &self.caller,
             &thread.root_message_id,
             Some(&thread.id),
-        )? {
+        )? || self
+            .orchestrator
+            .requested_round(&self.project_id, &self.caller, &thread.root_message_id)?
+            .is_some()
+        {
             return Ok(true);
         }
         // Executing work that came from this Thread.

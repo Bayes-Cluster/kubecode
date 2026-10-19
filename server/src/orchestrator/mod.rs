@@ -345,6 +345,30 @@ impl Orchestrator {
             .is_some())
     }
 
+    /// Whether a request in `message_id` was routed to a round this Session
+    /// coordinates *now*. A coordinator may answer the request that reached it;
+    /// one that handed the round off may not. Returns that round.
+    pub fn requested_round(
+        &self,
+        project_id: &str,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<Option<String>, OrchestratorError> {
+        let coordinated = self.work.coordinated_rounds(project_id, session_id)?;
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT target_ref FROM message_routes
+             WHERE project_id = ?1 AND kind = 'request' AND target_kind = 'coordinator'
+               AND source_id = ?2",
+        )?;
+        let rounds = statement
+            .query_map(params![project_id, message_id], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rounds.into_iter().find(|round| coordinated.contains(round)))
+    }
+
     // -- Routing intents -----------------------------------------------------------------------------
 
     /// Routes every unclaimed intent of the conversation, one at a time: a
@@ -799,6 +823,15 @@ impl Orchestrator {
                     continue;
                 }
                 Err(RecipientError::Unavailable(reason)) => (None, DeliveryOutcome::Failed(reason)),
+                Err(RecipientError::Hold(_)) => {
+                    // Looked at again later; no attempt is used and nothing fails.
+                    self.connection().execute(
+                        "UPDATE message_routes SET next_attempt_at = ?2, lease_until = 0
+                         WHERE id = ?1 AND state = 'pending'",
+                        params![route.id, now + HOLD_SECS],
+                    )?;
+                    continue;
+                }
             };
             self.settle(&route, recipient.as_deref(), outcome, now, &mut report)?;
         }
@@ -861,6 +894,31 @@ impl Orchestrator {
                         return Err(RecipientError::Gone(
                             "the task was reassigned or the attempt ended".into(),
                         ));
+                    }
+                    // The researcher's stop applies until the work actually
+                    // reaches the executor, not only when it was queued.
+                    let item = self
+                        .work
+                        .get(&route.project_id, &attempt.task_id)
+                        .map_err(|error| RecipientError::Unavailable(error.to_string()))?;
+                    if item.lifecycle != crate::work_store::WorkLifecycle::Active {
+                        return Err(RecipientError::Gone("the task was closed".into()));
+                    }
+                    if matches!(
+                        item.condition,
+                        crate::work_store::WorkCondition::Paused
+                            | crate::work_store::WorkCondition::Blocked
+                    ) {
+                        return Err(RecipientError::Hold("the task is paused or blocked".into()));
+                    }
+                    if let Some(round_id) = item.round_id.as_deref()
+                        && self
+                            .work
+                            .policy(&route.project_id, round_id)
+                            .map_err(|error| RecipientError::Unavailable(error.to_string()))?
+                            .paused
+                    {
+                        return Err(RecipientError::Hold("the round is paused".into()));
                     }
                 }
                 Ok(session_id.clone())
@@ -954,7 +1012,63 @@ impl Orchestrator {
             route,
             &format!("route-failed:{}", route.id),
             &format!("This could not be delivered: {}.", clip(reason, 200)),
-        )
+        )?;
+        self.close_failed_dispatch(route, reason)
+    }
+
+    /// A dispatch that could never be delivered must not leave its attempt
+    /// queued: that would hold the task's slot and block a new start. The
+    /// attempt (which never began) is closed as failed and the coordinator is
+    /// told, so it can start again or assign another Session.
+    fn close_failed_dispatch(&self, route: &Route, reason: &str) -> Result<(), OrchestratorError> {
+        if route.kind != RouteKind::Dispatch {
+            return Ok(());
+        }
+        if self
+            .work
+            .undelivered_attempt_failed(&route.project_id, &route.source_id, reason)?
+            .is_some()
+        {
+            let attempt = self.work.attempt(&route.project_id, &route.source_id)?;
+            let item = self.work.get(&route.project_id, &attempt.task_id)?;
+            self.route_result(
+                &route.project_id,
+                &item,
+                &attempt.id,
+                &format!(
+                    "FAILED: the executing Session could not be reached ({}). The attempt was \
+                     closed without starting; start the task again or assign another Session.",
+                    clip(reason, 200)
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Dispatches that failed before this fix existed, or whose attempt could
+    /// not be closed at the time (a crash), are closed now. Idempotent.
+    pub fn reconcile_failed_dispatches(&self) -> Result<usize, OrchestratorError> {
+        let failed: Vec<Route> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(&format!(
+                "{ROUTE_SELECT} WHERE kind = 'dispatch' AND state = 'failed'
+                   AND source_id IN (SELECT id FROM work_attempts WHERE status = 'queued')
+                 LIMIT ?1"
+            ))?;
+            statement
+                .query_map([BATCH as i64], route_from_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut closed = 0;
+        for route in failed {
+            let reason = route
+                .last_error
+                .clone()
+                .unwrap_or_else(|| "delivery failed".to_owned());
+            self.close_failed_dispatch(&route, &reason)?;
+            closed += 1;
+        }
+        Ok(closed)
     }
 
     /// A system note in the conversation the route came from, if it has one.
@@ -985,7 +1099,8 @@ impl Orchestrator {
         let routed = self.route_intents();
         let experiments = self
             .route_experiments()
-            .and(self.route_answers().map(|_| 0));
+            .and(self.route_answers().map(|_| 0))
+            .and(self.reconcile_failed_dispatches());
         let delivered = self.deliver_due(sink, now_secs());
         experiments?;
         Ok((routed?, delivered?))

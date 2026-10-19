@@ -1495,6 +1495,34 @@ mod analysis {
     }
 
     #[tokio::test]
+    async fn a_file_over_the_hashing_limit_is_still_pinned_and_checked() {
+        let lab = lab();
+        let r = &lab.r;
+        let (coordinator, executor, _, work) = lab.started(None);
+        let path =
+            r.f.workspace
+                .execution_path(&r.f.project_id, None)
+                .unwrap()
+                .join("big.bin");
+        std::fs::write(&path, vec![7u8; 9 * 1024 * 1024]).unwrap();
+        executor
+            .attach(&work, "file", "big.bin", None, ResultRole::Evidence)
+            .unwrap();
+        let cited = r.work.results(&r.f.project_id, &work).unwrap();
+        assert!(
+            cited[0].revision.is_some(),
+            "large evidence is fingerprinted"
+        );
+        assert!(lab.evidence.stale(&r.f.project_id, &cited).is_empty());
+        std::fs::write(&path, vec![7u8; 9 * 1024 * 1024 + 1]).unwrap();
+        assert_eq!(
+            lab.evidence.stale(&r.f.project_id, &cited)[0].status,
+            "changed"
+        );
+        let _ = coordinator;
+    }
+
+    #[tokio::test]
     async fn exhausted_limits_flag_the_task_for_the_researcher_and_stop_dispatch() {
         let lab = lab();
         let r = &lab.r;
@@ -1661,4 +1689,219 @@ mod analysis {
                 .is_err()
         );
     }
+}
+
+// -- Acceptance review of #185: pause at dispatch, failed dispatch, request replies -------------------
+
+#[test]
+fn a_task_paused_before_delivery_is_not_dispatched_until_it_is_resumed() {
+    let r = rig();
+    let lead = r.leader();
+    let task = lead.create(r.task("Pause before delivery", None)).unwrap();
+    let executor = r.executor(&lead, "pause-worker");
+    lead.assign(&task.item.id, &executor, "execute").unwrap();
+    lead.start(&task.item.id, "pause-start").unwrap();
+    r.work
+        .set_condition(
+            &r.f.project_id,
+            &task.item.id,
+            WorkCondition::Paused,
+            Some("researcher paused before launch"),
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let held = r.orchestrator.deliver_due(&Always, 1_000_000).unwrap();
+    assert_eq!((held.delivered, held.failed), (0, 0), "held, not failed");
+    // A paused round holds it too.
+    r.work
+        .set_condition(
+            &r.f.project_id,
+            &task.item.id,
+            WorkCondition::None,
+            None,
+            &Actor::Researcher,
+        )
+        .unwrap();
+    r.work
+        .set_policy(
+            &r.f.project_id,
+            &r.f.round_id,
+            0,
+            PolicyPatch {
+                paused: Some(true),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    assert_eq!(
+        r.orchestrator
+            .deliver_due(&Always, 1_000_100)
+            .unwrap()
+            .delivered,
+        0
+    );
+    // Resuming releases it, once, with no attempt consumed by waiting.
+    r.work
+        .set_policy(
+            &r.f.project_id,
+            &r.f.round_id,
+            1,
+            PolicyPatch {
+                paused: Some(false),
+                ..Default::default()
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let released = r.orchestrator.deliver_due(&Always, 1_000_200).unwrap();
+    assert_eq!(released.delivered, 1);
+    assert_eq!(
+        r.orchestrator
+            .deliver_due(&Always, 1_000_300)
+            .unwrap()
+            .delivered,
+        0
+    );
+}
+
+#[test]
+fn a_dispatch_that_cannot_be_delivered_closes_its_attempt_and_tells_the_coordinator() {
+    struct Broken;
+    impl RouteSink for Broken {
+        fn deliver(&self, _: &DeliveryRequest<'_>) -> DeliveryOutcome {
+            DeliveryOutcome::Failed("provider unavailable".into())
+        }
+    }
+    let r = rig();
+    let thread = r.thread();
+    let lead = r.leader();
+    let task = lead
+        .create(r.task("Provider failure", Some(&thread.id)))
+        .unwrap();
+    let executor = r.executor(&lead, "broken-worker");
+    lead.assign(&task.item.id, &executor, "execute").unwrap();
+    let attempt = lead.start(&task.item.id, "broken-start").unwrap();
+    for now in [100_000, 200_000, 300_000, 400_000, 500_000, 600_000] {
+        r.orchestrator.deliver_due(&Broken, now).unwrap();
+    }
+    let routes = r.orchestrator.routes(&r.f.project_id, None, 100).unwrap();
+    assert!(
+        routes
+            .iter()
+            .any(|route| route.kind == RouteKind::Dispatch && route.state == RouteState::Failed)
+    );
+    let closed = r.work.attempt(&r.f.project_id, &attempt.id).unwrap();
+    assert_eq!(closed.status, AttemptStatus::Failed);
+    assert_eq!(closed.failure_kind.as_deref(), Some("dispatch_failed"));
+    // The coordinator hears of it once, and the Thread shows it.
+    assert_eq!(
+        routes
+            .iter()
+            .filter(|route| route.kind == RouteKind::Result)
+            .count(),
+        1
+    );
+    assert!(
+        r.texts(&thread)
+            .iter()
+            .any(|(_, text)| text.contains("could not be reached"))
+    );
+    // A new Orchestrator over the same data changes nothing and the task can restart.
+    let reopened = Orchestrator::new(
+        r.f.agents.database(),
+        Arc::clone(&r.f.agents),
+        Arc::clone(&r.channels),
+        Arc::clone(&r.work),
+        Arc::clone(&r.f.research),
+    )
+    .unwrap();
+    assert_eq!(reopened.reconcile_failed_dispatches().unwrap(), 0);
+    let retry = lead.start(&task.item.id, "retry").unwrap();
+    assert_ne!(retry.id, attempt.id);
+}
+
+#[test]
+fn a_dispatch_failed_before_this_fix_is_closed_by_the_next_pass() {
+    struct Broken;
+    impl RouteSink for Broken {
+        fn deliver(&self, _: &DeliveryRequest<'_>) -> DeliveryOutcome {
+            DeliveryOutcome::Failed("down".into())
+        }
+    }
+    let r = rig();
+    let lead = r.leader();
+    let task = lead.create(r.task("Stranded", None)).unwrap();
+    let executor = r.executor(&lead, "w");
+    lead.assign(&task.item.id, &executor, "").unwrap();
+    let attempt = lead.start(&task.item.id, "s").unwrap();
+    for now in [100_000, 200_000, 300_000, 400_000, 500_000] {
+        r.orchestrator.deliver_due(&Broken, now).unwrap();
+    }
+    // Put the attempt back as it was left by earlier versions: queued.
+    r.f.agents
+        .database()
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE work_attempts SET status = 'queued', failure_kind = NULL, error = NULL,
+               completed_at = NULL WHERE id = ?1",
+            [&attempt.id],
+        )
+        .unwrap();
+    r.orchestrator.tick(&Always).unwrap();
+    assert_eq!(
+        r.work.attempt(&r.f.project_id, &attempt.id).unwrap().status,
+        AttemptStatus::Failed
+    );
+}
+
+#[test]
+fn a_coordinator_can_answer_the_request_that_reached_it_in_the_main_channel() {
+    let r = rig();
+    r.f.research
+        .round_mark_started(&r.f.project_id, &r.f.research_id, &r.f.round_id)
+        .unwrap();
+    let channel = r.channels.default_channel(&r.f.project_id).unwrap();
+    let message = r
+        .channels
+        .post(
+            &r.f.project_id,
+            &channel.id,
+            NewMessage {
+                body: "Please organize this approved research round",
+                intent: Some(Intent::Request),
+                references: &[ContextRef {
+                    kind: crate::project_context::ContextKind::Round,
+                    id: r.f.round_id.clone(),
+                    revision: None,
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    assert_eq!(r.orchestrator.route_intents().unwrap().routed, 1);
+    r.orchestrator.tick(&Always).unwrap();
+    let lead = r.leader();
+    let reply = lead
+        .post(&message.id, "Here is the plan for your request", &[])
+        .expect("the coordinator may answer the request delivered to it");
+    // The answer lands in a Thread of that message, linked to the round, so
+    // work organized from it is the round's.
+    let thread = r
+        .channels
+        .thread(&r.f.project_id, reply.thread_id.as_deref().unwrap())
+        .unwrap();
+    assert_eq!(thread.round_id.as_deref(), Some(r.f.round_id.as_str()));
+    assert!(
+        lead.create(r.task("From the answer", Some(&thread.id)))
+            .is_ok()
+    );
+    // Anyone else, and a coordinator that handed the round off, may not.
+    let stranger = r.agent(&r.f.project_id, &r.session("Stranger"));
+    assert!(stranger.post(&message.id, "me too", &[]).is_err());
+    let successor = r.session("Successor");
+    lead.handoff(&r.f.round_id, &successor, "rotating").unwrap();
+    assert!(lead.post(&thread.id, "still me?", &[]).is_err());
 }

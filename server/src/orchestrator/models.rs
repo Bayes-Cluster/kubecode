@@ -146,7 +146,13 @@ pub enum RecipientError {
     Unavailable(String),
     /// Never will: the Session is gone or the task moved on.
     Gone(String),
+    /// Not yet, and not a failure: the researcher stopped the work (paused task
+    /// or round). The route waits, untouched, until it is resumed or closed.
+    Hold(String),
 }
+
+/// How long a held route waits before its conditions are looked at again.
+pub const HOLD_SECS: i64 = 30;
 
 pub const MAX_ATTEMPTS: u32 = 5;
 pub const MAX_BUSY: u32 = 30;
