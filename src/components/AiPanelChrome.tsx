@@ -1,16 +1,15 @@
-import { memo, useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import {
-  ArrowUp,
   Link,
   Plus,
   Sparkle,
-  Square,
   X,
 } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import { ActionTooltip } from '@/components/ui/action-tooltip'
+import { SendButton, StopButton } from '@/components/workspace/SendButton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WikilinkChatInput } from './WikilinkChatInput'
 import { extractInlineWikilinkReferences } from './inlineWikilinkText'
@@ -101,28 +100,6 @@ function getComposerPlaceholder(
   return t('ai.panel.placeholder.ready', { agent: agentLabel })
 }
 
-function composerSendButtonStyle(canSend: boolean): CSSProperties {
-  return {
-    background: canSend ? 'var(--primary)' : 'var(--muted)',
-    color: canSend ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
-    borderRadius: 9999,
-    width: 32,
-    height: 32,
-    cursor: canSend ? 'pointer' : 'not-allowed',
-  }
-}
-
-function composerStopButtonStyle(): CSSProperties {
-  return {
-    background: 'var(--destructive)',
-    color: 'var(--destructive-foreground)',
-    borderRadius: 9999,
-    width: 32,
-    height: 32,
-    cursor: 'pointer',
-  }
-}
-
 function ComposerInput({
   disabled,
   entries,
@@ -186,21 +163,14 @@ function ComposerSendButton({
   label: string
   onSend: (text: string, references: NoteReference[]) => void
 }) {
+  // The shared arrow button: the same control as every other composer (ADR 0222).
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="shrink-0 flex items-center justify-center border-none cursor-pointer transition-colors"
-      style={composerSendButtonStyle(canSend)}
-      onClick={() => onSend(input, extractInlineWikilinkReferences(input, entries))}
-      disabled={!canSend}
-      aria-label={label}
-      title={label}
-      data-testid="agent-send"
-    >
-      <ArrowUp size={17} />
-    </Button>
+    <SendButton
+      canSend={canSend}
+      label={label}
+      testId="agent-send"
+      onSend={() => onSend(input, extractInlineWikilinkReferences(input, entries))}
+    />
   )
 }
 
@@ -211,21 +181,7 @@ function ComposerStopButton({
   label: string
   onStop: () => void
 }) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="shrink-0 flex items-center justify-center border-none cursor-pointer transition-colors hover:opacity-90"
-      style={composerStopButtonStyle()}
-      onClick={onStop}
-      aria-label={label}
-      title={label}
-      data-testid="agent-stop"
-    >
-      <Square size={16} fill="currentColor" />
-    </Button>
-  )
+  return <StopButton label={label} testId="agent-stop" onStop={onStop} />
 }
 
 function permissionModeTooltip(

@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { IconButton } from '@/components/workspace/IconButton'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -136,14 +137,11 @@ export function ThreadPane({
               : t('kubecode.channel.notLinked')}
           </p>
         </div>
-        <Button
-          aria-label={t('kubecode.channel.closeThread')}
-          size="icon-xs"
-          variant="ghost"
+        <IconButton
+          icon={<X aria-hidden size={16} />}
+          label={t('kubecode.channel.closeThread')}
           onClick={onClose}
-        >
-          <X aria-hidden size={16} />
-        </Button>
+        />
       </header>
       <div className="kubecode-channel-link">
         <select

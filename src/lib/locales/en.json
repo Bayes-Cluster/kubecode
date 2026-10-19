@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Reply in this thread",
   "kubecode.channel.send": "Send",
   "kubecode.channel.sending": "Sending…",
+  "kubecode.composer.mentions": "Members you can mention",
+  "kubecode.composer.stopTarget": "Stop {target}",
   "kubecode.channel.author.researcher": "You",
   "kubecode.channel.author.agent": "Agent",
   "kubecode.channel.author.system": "Kubecode",

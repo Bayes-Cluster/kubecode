@@ -66,3 +66,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0219](0219-experiment-analysis-and-evidence-review.md) | Experiment analysis, evidence review, and decisions on native work |
 | [0220](0220-workspace-members-and-the-general-agent.md) | Workspace members, the General Agent, and role-bounded authority |
 | [0221](0221-tasks-and-human-authorized-admission.md) | Tasks, and admission authorized by the researcher through the General Agent |
+
+| [0222](0222-shared-workspace-controls-and-composer.md) | Shared Workspace controls and one Composer for General and direct messages |

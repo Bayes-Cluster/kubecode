@@ -1,4 +1,6 @@
 import { X } from 'lucide-react'
+import { IconButton } from '@/components/workspace/IconButton'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -108,9 +110,7 @@ export function WorkInspector({
     return (
       <aside aria-label={t('kubecode.work.inspector')} className="kubecode-work-inspector">
         <header>
-          <Button aria-label={t('kubecode.work.closeInspector')} size="icon-xs" variant="ghost" onClick={onClose}>
-            <X aria-hidden size={16} />
-          </Button>
+          <IconButton icon={<X aria-hidden size={16} />} label={t('kubecode.work.closeInspector')} onClick={onClose} />
         </header>
         <p className="kubecode-research-muted" role={status === 'error' ? 'alert' : 'status'}>
           {status === 'error' ? t('kubecode.work.loadFailed') : t('kubecode.work.loading')}
@@ -165,22 +165,20 @@ export function WorkInspector({
         <div>
           <h3>{item.title}</h3>
           <div className="kubecode-work-card-badges">
-            <span className="kubecode-research-badge" data-tone="info">{t(STAGE_LABELS[item.stage])}</span>
+            <StatusBadge tone="info">{t(STAGE_LABELS[item.stage])}</StatusBadge>
             {item.condition !== 'none' && (
-              <span className="kubecode-research-badge" data-tone="warn">
+              <StatusBadge tone="warn">
                 {t(CONDITION_LABELS[item.condition])}
-              </span>
+              </StatusBadge>
             )}
             {item.lifecycle !== 'active' && (
-              <span className="kubecode-research-badge" data-tone="muted">
+              <StatusBadge tone="muted">
                 {t(LIFECYCLE_LABELS[item.lifecycle as Exclude<WorkLifecycle, 'active'>])}
-              </span>
+              </StatusBadge>
             )}
           </div>
         </div>
-        <Button aria-label={t('kubecode.work.closeInspector')} size="icon-xs" variant="ghost" onClick={onClose}>
-          <X aria-hidden size={16} />
-        </Button>
+        <IconButton icon={<X aria-hidden size={16} />} label={t('kubecode.work.closeInspector')} onClick={onClose} />
       </header>
 
       <dl className="kubecode-work-facts">
@@ -419,9 +417,9 @@ export function WorkInspector({
                   />
                 )}
                 {staleIds.has(result.id) && (
-                  <span className="kubecode-research-badge" data-tone="warn">
+                  <StatusBadge tone="warn">
                     {t(`kubecode.work.stale.${detail.stale_evidence.find((entry) => entry.result_id === result.id)?.status ?? 'changed'}` as 'kubecode.work.stale.changed')}
-                  </span>
+                  </StatusBadge>
                 )}
               </li>
             ))}

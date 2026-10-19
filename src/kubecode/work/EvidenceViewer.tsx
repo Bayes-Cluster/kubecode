@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
@@ -153,10 +154,10 @@ export function EvidenceViewer({ api, projectId, t, target }: EvidenceViewerProp
     <div className="kubecode-work-evidence" data-testid="evidence-viewer">
       <strong>{data.title}</strong>
       {changed && (
-        <span className="kubecode-research-badge" data-tone="warn">{t('kubecode.work.evidence.changed')}</span>
+        <StatusBadge tone="warn">{t('kubecode.work.evidence.changed')}</StatusBadge>
       )}
       {data.availability === 'removed' && (
-        <span className="kubecode-research-badge" data-tone="warn">{t('kubecode.work.evidence.removed')}</span>
+        <StatusBadge tone="warn">{t('kubecode.work.evidence.removed')}</StatusBadge>
       )}
       {original && targetRevision && (
         <small className="kubecode-research-muted">

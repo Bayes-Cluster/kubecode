@@ -1,5 +1,6 @@
 import { MessageSquareText } from 'lucide-react'
 
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
@@ -45,10 +46,10 @@ export function MessageItem({
         <strong>{authorName(t, message, sessions)}</strong>
         <time dateTime={message.created_at}>{messageTime(message.created_at)}</time>
         {message.intent !== 'say' && (
-          <span className="kubecode-research-badge" data-tone="info">
+          <StatusBadge tone="info">
             {intentLabel(t, message.intent)}
             {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
-          </span>
+          </StatusBadge>
         )}
       </header>
       <p className="kubecode-channel-body">{message.body}</p>

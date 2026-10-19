@@ -169,3 +169,16 @@ blocked, paused, and needs-input are shown as conditions. Retries and internal
 work stay inside the Task. When the General Agent reports results, you accept
 them (choosing the outcome; a well-supported negative finding completes a
 Task) or send the Task back with a reason.
+
+## Writing in General and direct messages
+
+General and every direct message use the same composer:
+
+- **Enter** sends; **Shift+Enter** starts a new line. While an input method
+  (for example for Chinese or Japanese) is composing, Enter confirms the
+  candidate and never sends.
+- Type **@** to mention a member; use the arrow keys and **Enter** (or
+  **Tab**) to pick one, **Esc** to close the list. A mention addresses the
+  member in the message; it does not authorize any work.
+- The arrow button sends. It stays available while agents are working. A
+  separate **Stop** button names the task or agent it stops.

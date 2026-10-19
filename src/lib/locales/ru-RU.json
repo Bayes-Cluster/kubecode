@@ -1721,6 +1721,8 @@
   "kubecode.channel.threadPlaceholder": "Ответить в этом треде",
   "kubecode.channel.send": "Отправить",
   "kubecode.channel.sending": "Отправка…",
+  "kubecode.composer.mentions": "Участники, которых можно упомянуть",
+  "kubecode.composer.stopTarget": "Остановить {target}",
   "kubecode.channel.author.researcher": "Вы",
   "kubecode.channel.author.agent": "Агент",
   "kubecode.channel.author.system": "Kubecode",
