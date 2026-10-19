@@ -35,9 +35,15 @@ const serverCommand = configuredServerBinary ?? 'cargo'
 const serverArguments = configuredServerBinary
   ? []
   : ['run', '--locked', '--manifest-path', 'server/Cargo.toml']
+// A git hook (pre-push) exports GIT_DIR and friends. The server and the
+// projects the smoke tests create must not see them, or every directory would
+// look like a clone of the repository that is being pushed.
+const environment = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
+)
 const server = spawn(serverCommand, serverArguments, {
   env: {
-    ...process.env,
+    ...environment,
     KUBECODE_BASE_PATH: '/user/local/kubecode',
     KUBECODE_HOST: '127.0.0.1',
     KUBECODE_PORT: port,

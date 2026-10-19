@@ -250,6 +250,25 @@ impl ResearchStore {
         brief: ResearchBrief,
         client_request_id: Option<&str>,
     ) -> Result<(ResearchQuestion, bool), ResearchError> {
+        self.create_authored(
+            project_id,
+            brief,
+            client_request_id,
+            AuthorKind::Researcher,
+            None,
+        )
+    }
+
+    /// Like [`create`](Self::create), recording who wrote the first revision:
+    /// a proposal drafted by an agent is attributed to it, not to the researcher.
+    pub fn create_authored(
+        &self,
+        project_id: &str,
+        brief: ResearchBrief,
+        client_request_id: Option<&str>,
+        author_kind: AuthorKind,
+        author_ref: Option<&str>,
+    ) -> Result<(ResearchQuestion, bool), ResearchError> {
         let brief = brief.normalized()?;
         let request_id = normalize_client_request_id(client_request_id)?;
         self.write(|tx| {
@@ -275,9 +294,9 @@ impl ResearchStore {
             )?;
             tx.execute(
                 "INSERT INTO research_brief_revisions
-                   (research_id, revision, brief_json, author_kind)
-                 VALUES (?1, 1, ?2, 'researcher')",
-                params![id, brief_json],
+                   (research_id, revision, brief_json, author_kind, author_ref)
+                 VALUES (?1, 1, ?2, ?3, ?4)",
+                params![id, brief_json, author_kind.as_str(), author_ref],
             )?;
             let question = load_question(tx, project_id, &id)?;
             Ok((
@@ -335,6 +354,29 @@ impl ResearchStore {
         patch: &BriefPatch,
         note: Option<&str>,
     ) -> Result<(ResearchQuestion, bool), ResearchError> {
+        self.update_brief_authored(
+            project_id,
+            id,
+            expected_revision,
+            patch,
+            note,
+            AuthorKind::Researcher,
+            None,
+        )
+    }
+
+    /// Like [`update_brief`](Self::update_brief), recording the author of the revision.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_brief_authored(
+        &self,
+        project_id: &str,
+        id: &str,
+        expected_revision: u64,
+        patch: &BriefPatch,
+        note: Option<&str>,
+        author_kind: AuthorKind,
+        author_ref: Option<&str>,
+    ) -> Result<(ResearchQuestion, bool), ResearchError> {
         let note = note
             .map(str::trim)
             .filter(|note| !note.is_empty())
@@ -369,9 +411,16 @@ impl ResearchStore {
             )?;
             tx.execute(
                 "INSERT INTO research_brief_revisions
-                   (research_id, revision, brief_json, author_kind, note)
-                 VALUES (?1, ?2, ?3, 'researcher', ?4)",
-                params![id, revision as i64, brief_json, note],
+                   (research_id, revision, brief_json, author_kind, author_ref, note)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    id,
+                    revision as i64,
+                    brief_json,
+                    author_kind.as_str(),
+                    author_ref,
+                    note
+                ],
             )?;
             let question = load_question(tx, project_id, id)?;
             Ok((
@@ -812,6 +861,45 @@ impl ResearchStore {
     /// Records the Leader or Solo Session. Idempotent for the same Session.
     /// A Solo round also links its Session as execution unless the Session is
     /// already linked to this question (its existing role is kept).
+    /// Gives a round the Session that coordinates it *without* linking that
+    /// Session to the question. The General Agent coordinates the rounds of
+    /// many Tasks, so it cannot be the exclusive link of one (ADR 0221).
+    pub fn round_set_shared_session(
+        &self,
+        project_id: &str,
+        id: &str,
+        round_id: &str,
+        session_id: &str,
+    ) -> Result<ResearchRound, ResearchError> {
+        self.write(|tx| {
+            load_question(tx, project_id, id)?;
+            let round = load_round(tx, id, round_id)?;
+            match round.session_id.as_deref() {
+                Some(existing) if existing == session_id => return Ok((round, None)),
+                Some(_) => {
+                    return Err(ResearchError::RoundState(
+                        "the round already has a different Session",
+                    ));
+                }
+                None => {}
+            }
+            if round.phase != RoundPhase::Created {
+                return Err(ResearchError::RoundState("the round has already advanced"));
+            }
+            tx.execute(
+                "UPDATE research_rounds
+                 SET session_id = ?2, phase = 'session_ready', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![round_id, session_id],
+            )?;
+            touch(tx, id)?;
+            Ok((
+                load_round(tx, id, round_id)?,
+                Some((project_id.to_owned(), id.to_owned(), Change::Round)),
+            ))
+        })
+    }
+
     pub fn round_set_session(
         &self,
         project_id: &str,

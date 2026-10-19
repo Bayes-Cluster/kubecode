@@ -36,6 +36,8 @@ pub struct AppState {
     pub channels: Arc<ChannelStore>,
     /// The Workspace roster: members and the General Agent (ADR 0220).
     pub members: Arc<crate::member_store::MemberStore>,
+    /// Tasks: admission by the General Agent and the researcher's review (ADR 0221).
+    pub tasks: Arc<crate::task_store::TaskStore>,
     /// Routes intents of the conversation to Sessions (ADR 0217).
     pub orchestrator: Arc<Orchestrator>,
     pub experiment_runner: Arc<ExperimentRunner>,
@@ -94,6 +96,17 @@ impl AppState {
         work.set_assignment_guard(
             Arc::clone(&members) as Arc<dyn crate::work_store::AssignmentGuard>
         );
+        let tasks = Arc::new(
+            crate::task_store::TaskStore::from_database(
+                agent_store.database(),
+                Arc::clone(&agent_store),
+                Arc::clone(&research),
+                Arc::clone(&channels),
+                Arc::clone(&members),
+                Arc::clone(&work),
+            )
+            .expect("task store"),
+        );
         let orchestrator = Arc::new(
             Orchestrator::new(
                 agent_store.database(),
@@ -128,6 +141,7 @@ impl AppState {
                     channels: Arc::clone(&channels),
                     orchestrator: Arc::clone(&orchestrator),
                     members: Arc::clone(&members),
+                    tasks: Arc::clone(&tasks),
                 })
                 .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
@@ -145,6 +159,7 @@ impl AppState {
             work,
             channels,
             members,
+            tasks,
             orchestrator,
             experiment_runner,
             context,
@@ -212,6 +227,7 @@ impl AppState {
                 channels: Arc::clone(&self.channels),
                 orchestrator: Arc::clone(&self.orchestrator),
                 members: Arc::clone(&self.members),
+                tasks: Arc::clone(&self.tasks),
             })
             .with_experiments(
                 Arc::clone(&self.experiments),

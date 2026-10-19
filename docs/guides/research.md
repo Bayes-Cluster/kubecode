@@ -142,3 +142,30 @@ In **Settings > Members** you can:
   provider options such as the model, and its instructions. Defaults are saved
   on the server, so every browser agrees, and they do not change existing
   members.
+
+## Putting a Task on the board
+
+A **Task** is a research question that is on the board. It gets there by
+conversation, not by a form or a button:
+
+1. Discuss the idea in General. The General Agent (or a specialist) can draft a
+   proposal; it appears in General and stays off the board.
+2. Refine it by talking: tell the General Agent what to change. Each new
+   version is shown in General.
+3. When the proposal is what you want, tell the General Agent, in your own
+   words, to add it to the board. You do not need to @mention it.
+4. To let it start work, tell the General Agent to go ahead. This is a separate
+   step from adding it; it sets no limits and no experiment envelope, which stay
+   yours.
+
+An instruction only counts if it is your own message in General, is not just a
+quote, comes after the proposal you are agreeing to, and has not already been
+used for something else. Specialists' messages, agents quoting you, and
+replayed text never add a Task. If something is unclear the General Agent asks
+in the conversation.
+
+The board shows only Tasks: Ready, In progress, Review, and Done. Waiting,
+blocked, paused, and needs-input are shown as conditions. Retries and internal
+work stay inside the Task. When the General Agent reports results, you accept
+them (choosing the outcome; a well-supported negative finding completes a
+Task) or send the Task back with a reason.

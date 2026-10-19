@@ -137,6 +137,9 @@ pub enum Scope<'a> {
     Channel,
     /// One Thread's root and replies, in order.
     Thread(&'a str),
+    /// Every message of the channel, replies included, in order: the whole
+    /// conversation as one stream.
+    All,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

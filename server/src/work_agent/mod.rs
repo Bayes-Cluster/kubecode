@@ -26,11 +26,13 @@ use crate::work_store::{
 
 mod analysis;
 mod evidence;
+mod tasks;
 #[cfg(test)]
 mod tests;
 
 pub use analysis::{DecisionInput, LaunchSpec};
 pub use evidence::{Evidence, StaleEvidence};
+pub use tasks::{GeneralMessage, Proposal, TaskList};
 
 const LIST_LIMIT: usize = 100;
 
@@ -49,6 +51,8 @@ pub enum AgentWorkError {
     /// Cited evidence changed or was removed since it was pinned.
     #[error("evidence changed since it was attached; look at it and re-pin it before accepting")]
     StaleEvidence(Vec<StaleEvidence>),
+    #[error(transparent)]
+    Task(crate::task_store::TaskError),
     #[error(transparent)]
     Work(#[from] WorkError),
     #[error(transparent)]
@@ -114,6 +118,7 @@ pub struct WorkServices {
     pub channels: Arc<ChannelStore>,
     pub orchestrator: Arc<Orchestrator>,
     pub members: Arc<crate::member_store::MemberStore>,
+    pub tasks: Arc<crate::task_store::TaskStore>,
 }
 
 pub struct WorkAgent {
@@ -128,6 +133,7 @@ pub struct WorkAgent {
     experiments: Option<Arc<crate::experiment_runner::ExperimentRunner>>,
     evidence: Option<Evidence>,
     members: Option<Arc<crate::member_store::MemberStore>>,
+    tasks: Option<Arc<crate::task_store::TaskStore>>,
 }
 
 impl WorkAgent {
@@ -154,7 +160,14 @@ impl WorkAgent {
             experiments: None,
             evidence: None,
             members: None,
+            tasks: None,
         }
+    }
+
+    /// Lets members propose, refine, admit, and hand over Tasks (ADR 0221).
+    pub fn with_tasks(mut self, tasks: Arc<crate::task_store::TaskStore>) -> Self {
+        self.tasks = Some(tasks);
+        self
     }
 
     /// Lets commands read the Workspace roster: who the manager is and which
@@ -196,6 +209,26 @@ impl WorkAgent {
     pub fn with_evidence(mut self, evidence: Evidence) -> Self {
         self.evidence = Some(evidence);
         self
+    }
+
+    /// A Task that is finished, or waiting for the researcher's review, takes no
+    /// new work, assignments, attempts, executors, or experiments: iterating is
+    /// the researcher's decision (ADR 0221).
+    fn ensure_task_open(&self, round_id: &str) -> Result<(), AgentWorkError> {
+        if let Some(tasks) = &self.tasks
+            && let Ok(round) = self.research.round_by_id(&self.project_id, round_id)
+            && matches!(
+                tasks.stage(&self.project_id, &round.research_id),
+                Ok(Some(
+                    crate::task_store::TaskStage::Done | crate::task_store::TaskStage::Review
+                ))
+            )
+        {
+            return Err(invalid(
+                "the Task is finished or awaiting the researcher's review; they decide whether to iterate",
+            ));
+        }
+        Ok(())
     }
 
     // -- Identity ------------------------------------------------------------------------------------
@@ -388,6 +421,7 @@ impl WorkAgent {
             .research
             .round_by_id(&self.project_id, &round_id)
             .map_err(|_| AgentWorkError::NotFound)?;
+        self.ensure_task_open(&round_id)?;
         // A task's discussion must be this round's: a Thread of another
         // question, of another round, or of no question at all is another
         // context and does not justify this round's work (nor does it gain the
@@ -464,6 +498,9 @@ impl WorkAgent {
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if let Some(round_id) = summary.item.round_id.as_deref() {
+            self.ensure_task_open(round_id)?;
+        }
         // A coordinator executes work itself or hands it to a Session it made
         // for the round. Other Sessions (the researcher's chats, Team members,
         // other work) are not its to direct.
@@ -504,6 +541,7 @@ impl WorkAgent {
     ) -> Result<String, AgentWorkError> {
         self.refuse_manager("create executor Sessions of its own")?;
         let round_id = self.coordinated(round_id)?;
+        self.ensure_task_open(&round_id)?;
         let key = request_key.trim();
         if key.is_empty() || key.chars().count() > 128 {
             return Err(invalid(
@@ -553,6 +591,9 @@ impl WorkAgent {
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if let Some(round_id) = summary.item.round_id.as_deref() {
+            self.ensure_task_open(round_id)?;
+        }
         if request_key.trim().is_empty() {
             return Err(invalid(
                 "a request_key is required so a replay starts nothing twice",

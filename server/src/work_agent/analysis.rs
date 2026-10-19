@@ -251,6 +251,9 @@ impl WorkAgent {
             ));
         }
         self.require_runnable(&summary)?;
+        if let Some(round_id) = summary.item.round_id.as_deref() {
+            self.ensure_task_open(round_id)?;
+        }
         let key = spec.launch_key.trim();
         if key.is_empty()
             || key.chars().count() > MAX_CALLER_KEY_CHARS

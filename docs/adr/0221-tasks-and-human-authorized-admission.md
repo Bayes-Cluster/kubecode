@@ -45,21 +45,32 @@ state:
    its author is the *researcher*; agent- and system-authored messages never
    authorize, and a message whose text is entirely quoted (lines starting with
    `>`) is not an instruction;
-3. the named brief revision is the question's *current* revision, **and** a
-   proposal message citing exactly that revision was posted in General before
-   the authorizing message (the channel's gapless sequence is the clock), so
-   what the researcher authorized is what they were shown;
-4. the message has not authorized another Task (`UNIQUE(kind, message)`), so
-   an instruction cannot be replayed for a different Task; a different brief
-   revision than the one shown is *stale* and is refused until it is shown
-   again.
+3. the named brief revision is the question's *current* revision, **and** the
+   General Agent posted a top-level proposal of exactly that revision in
+   General before the authorizing message (the channel's gapless sequence is
+   the clock; only a message posted by the Task service under the key
+   `proposal:{question}:{revision}` counts, so a citation planted in a Thread
+   does not), so what the researcher authorized is what they were shown;
+4. the instruction answers *that* proposal: it names the Task (attaches it) or
+   that proposal is the latest one shown before it. When another proposal came
+   after, which one the researcher meant is unclear, and the General Agent must
+   show the right one again (`task_show`) and ask;
+5. the message authorizes nothing else: it is single-use across *every* step
+   and Task (`UNIQUE(message)`), so the words that added a Task cannot also
+   start it or approve something else, and an instruction cannot be replayed
+   for a different Task.
 
 A retry of the same authorized admission returns the same record and the same
-board identity. Ambiguity (no matching proposal, two plausible Tasks) is not
+board identity, however many callers race (the decisive checks run in the
+transaction); a lost acknowledgement in General is posted again on the retry. Ambiguity (no matching proposal, two plausible Tasks) is not
 guessed at: the tool refuses and the General Agent asks in the conversation.
 The instruction text itself is interpreted by the General Agent; the server
 verifies provenance and freshness, not wording, and an @mention alone is
 neither required nor sufficient.
+
+The server never reads the researcher's wording; the only message ids it
+accepts are those of the researcher's own messages in General, which any member
+can list with `general_recent`.
 
 Proposals are displayed by construction: proposing or revising a brief posts a
 message in General that cites the question and its revision, so condition 3
@@ -68,11 +79,15 @@ cannot be satisfied by a brief the researcher never saw.
 ### 3. Admission is not execution
 
 Admitting a Task puts it on the board as *Ready*. Beginning execution is a
-second authorization (`kind = execute`) by a later (or the same) researcher
-message, recorded the same way, which starts a round pinned to the approved
-brief revision, seats the General Agent as its coordinator, and uses the
-round's limits (ADR 0217) and the researcher-set experiment envelope
-(ADR 0213). Neither authorization sets an envelope or raises a limit. A brief
+second authorization (`kind = execute`) by a *later* researcher message,
+newer than the Task's last change of stage (so an old, unused message cannot
+reopen a finished Task), recorded the same way. It starts a round pinned to
+the approved brief revision, seats the General Agent as its coordinator (the
+round's Session is the manager's, without linking that Session to the
+question: it coordinates many Tasks), and uses the round's limits (ADR 0217)
+and the researcher-set experiment envelope (ADR 0213). It is allowed from
+Ready, or from Done to iterate, never while a round runs or under review, and a
+retry of a half-finished start is checked against the Task as it is now. Neither authorization sets an envelope or raises a limit. A brief
 revised after admission is a *proposed* revision: rounds keep the approved
 revision until a `revise` authorization approves the new one. Specialists'
 proposals and internal work cannot expand scope, because only an authorized
@@ -107,15 +122,45 @@ nothing else is admitted retroactively, and no approval is invented for
 discussion, drafts, or resolved-without-execution questions. They remain
 drafts, visible in the research panel and Resources.
 
+### 7. Trust boundary
+
+The server tells the researcher's messages from agents' by the interface that
+posted them: the browser API, authenticated by the Workspace's access token,
+posts as the researcher; MCP callers carry per-Session derived credentials and
+can only post as agents. Anything that holds the browser token can therefore
+author a researcher message; that is the same boundary as every other
+researcher command (limits, envelopes, reviews), not something this ADR adds.
+Agents are not given that token.
+
+### 8. Conditions, unattached work, and server wording
+
+A Task's condition is derived with this precedence: needs input (an open
+question for the researcher, or internal work flagged), paused (a round of the
+Task is paused), blocked (all active work is blocked), waiting. Work with no
+research question (native candidates created without a round, legacy Team work
+outside any research) is not a Task and not on the board; it stays reachable
+through the work API and appears in Resources as work outside Tasks (ADR to
+follow with the shell). The researcher editing an admitted Task's brief in the
+research panel makes a revision above the approved one; it waits for approval in
+the conversation like any other change, and `task_show` puts it in front of them.
+The text the server posts in General ("Proposed Task…", acknowledgements,
+review verdicts) is English; making it a locale-aware message kind is a follow-up
+and is recorded as a gap.
+
 ## Supersession
 
 This ADR supersedes, for new Workspace work: the statement in ADR 0212 that
 the browser starts a round as the sole authorization path (the research panel's
 command still works and is the legacy path above); ADR 0215 and ADR 0218's
 position that work items are the board's cards (they are now internal; the
-work board remains available as the Task's internal work); and ADR 0217's
-routing of a conversation `request` to a round coordinator as the primary
-entry (it remains for legacy rounds). The execution, evidence, and
+work board remains available as the Task's internal work); ADR 0217's routing
+of a conversation `request` to a round coordinator as the primary entry (it
+remains for legacy rounds; ADR 0217's "admitted round" means a started round and
+is unrelated to an admitted Task) and, together with ADR 0220, its executor
+creation and self-execution by the coordinator; and, for the conversation, ADR
+0216's Threads as the place work is discussed (Threads remain readable; the
+single General conversation and Task filtering are the subject of the
+conversation ADR). The execution, evidence, and
 experiment contracts of ADRs 0213, 0214, 0217 (limits, routes), and 0219
 are unchanged.
 

@@ -1244,6 +1244,17 @@ request changes, close) and cannot complete work or bypass a check; commands
 carry the state revision the card was shown at and are refused if it moved on.
 See ADR 0218.
 
+## Tasks
+
+A **Task** is a research question that has been put on the board. It is
+admitted only when the researcher, in their own words in General, tells the
+General Agent to add it; the server records that message as the
+**authorization** and checks it is the researcher's, current, and used once.
+Until then a question is a **draft** (a proposal). The board shows Tasks as
+Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
+input as conditions. Rounds, internal work, attempts, and experiments live
+inside the Task. See ADR 0221.
+
 ## Members and the General Agent
 
 A **member** is a durable identity in a Workspace: the **General Agent** (the
