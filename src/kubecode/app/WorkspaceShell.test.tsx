@@ -57,7 +57,11 @@ vi.mock('../research/ResearchWorkspace', () => ({
   ),
 }))
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  // Most of these tests start on the Sessions surface; the address says so.
+  window.history.replaceState(null, '', '/#/p/project-1/sessions')
+})
 
 describe('Workspace navigation and routes', () => {
   it('opens General, the board, Resources, and Members from one navigation and names each in the URL hash', async () => {
@@ -116,6 +120,9 @@ describe('Workspace navigation and routes', () => {
   it('keeps Files and Git out of the research views until asked for', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
+    // The address is applied once the Workspace has loaded.
+    await screen.findByTestId('agent-session-workspace')
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions'))
     const toggle = screen.getByRole('button', { name: 'Toggle context panel' })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
@@ -137,5 +144,34 @@ describe('Workspace navigation and routes', () => {
     expect(await screen.findByRole('heading', { name: 'Private conversation with Analyst' })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst')
     expect(client.openMemberDm).toHaveBeenCalledWith('project-1', 'm-analyst')
+  })
+
+  it('opens General for a Workspace with no Sessions, and a link still decides first', async () => {
+    window.history.replaceState(null, '', '/')
+    const first = render(<KubecodeApp api={api()} />)
+    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/p/project-1/general')
+    first.unmount()
+
+    window.history.replaceState(null, '', '/#/p/project-1/resources')
+    render(<KubecodeApp api={api()} />)
+    expect(await screen.findByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '# General' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a Workspace that has Sessions where it was, on the Sessions surface', async () => {
+    window.history.replaceState(null, '', '/')
+    render(
+      <KubecodeApp
+        api={api({
+          listConversations: vi.fn().mockResolvedValue([{
+            id: 's1', project_id: 'project-1', agent_id: 'opencode', provider_session_id: 'p', title: 'Earlier chat',
+            manual_title: null, agent_title: null,
+          }]),
+        })}
+      />,
+    )
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/p\/project-1\/sessions/))
+    expect(screen.queryByRole('heading', { name: '# General' })).not.toBeInTheDocument()
   })
 })

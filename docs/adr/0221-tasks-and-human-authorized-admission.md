@@ -2,8 +2,9 @@
 type: ADR
 id: "0221"
 title: "Tasks, and admission authorized by the researcher through the General Agent"
-status: proposed
+status: accepted
 date: 2026-10-19
+supersedes: "0212 (the browser as the sole authorization path), 0215 and 0218 (work items as the board's cards), and 0217 (a conversation request routed to a round coordinator as the primary entry), for new Workspace work"
 ---
 
 ## Context
@@ -152,8 +153,8 @@ and is recorded as a gap.
 This ADR supersedes, for new Workspace work: the statement in ADR 0212 that
 the browser starts a round as the sole authorization path (the research panel's
 command still works and is the legacy path above); ADR 0215 and ADR 0218's
-position that work items are the board's cards (they are now internal; the
-work board remains available as the Task's internal work); ADR 0217's routing
+position that work items are the board's cards (they are now internal and listed in the Task's
+inspector; the work-item board remains the Team surface); ADR 0217's routing
 of a conversation `request` to a round coordinator as the primary entry (it
 remains for legacy rounds; ADR 0217's "admitted round" means a started round and
 is unrelated to an admitted Task) and, together with ADR 0220, its executor

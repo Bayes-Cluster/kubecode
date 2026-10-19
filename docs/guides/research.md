@@ -172,7 +172,8 @@ Task) or send the Task back with a reason.
 
 ## Finding your way around
 
-The navigator leads with four places: **General** (the one conversation),
+A new Workspace opens in **General**, where its project manager (the General
+Agent) is already waiting. The navigator leads with four places: **General** (the one conversation),
 **Kanban** (the one board of Tasks), **Resources** (what the Workspace has
 produced, previewed read-only), and **Members** (the agents). **Needs you**
 collects what is waiting for you — results to review and input an agent asked

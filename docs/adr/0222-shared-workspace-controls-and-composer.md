@@ -2,7 +2,7 @@
 type: ADR
 id: "0222"
 title: "Shared Workspace controls and one Composer for General and direct messages"
-status: proposed
+status: accepted
 date: 2026-10-19
 ---
 

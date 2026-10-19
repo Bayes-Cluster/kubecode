@@ -32,6 +32,8 @@ export type WorkspaceBootstrapOptions = {
   setTerminalsLoadedForProjectId: Dispatch<string | null>
   setConversations: Dispatch<Conversation[]>
   setConversationId: Dispatch<string | null>
+  /** The Project whose Sessions have been read, so "no Sessions yet" is known and not a guess. */
+  setConversationsLoadedFor?: Dispatch<string | null>
   setTeams: Dispatch<TeamSnapshot[]>
   setError: Dispatch<string | null>
 }
@@ -64,6 +66,7 @@ export function useWorkspaceBootstrap(
     setTerminalsLoadedForProjectId,
     setConversations,
     setConversationId,
+    setConversationsLoadedFor,
     setTeams,
     setError,
   } = options
@@ -142,6 +145,8 @@ export function useWorkspaceBootstrap(
               : nextConversations.at(-1)?.id ?? null
           ))
         }
+        // Read, or failed to read: either way the first view can be chosen.
+        setConversationsLoadedFor?.(projectId)
         if (teamResult.status === 'fulfilled') setTeams(teamResult.value)
         const failure = [terminalResult, conversationResult, teamResult]
           .find((result) => result.status === 'rejected')
@@ -150,7 +155,7 @@ export function useWorkspaceBootstrap(
         }
       })
     return () => { current = false }
-  }, [api, projectId, setAllConversations, setConversationId, setConversations, setError, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
+  }, [api, projectId, setAllConversations, setConversationId, setConversations, setConversationsLoadedFor, setError, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
 
   const refreshAgents = useCallback(async () => {
     setAgentsRefreshing(true)

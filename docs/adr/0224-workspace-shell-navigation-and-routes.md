@@ -2,8 +2,9 @@
 type: ADR
 id: "0224"
 title: "Workspace shell: General, Kanban, Resources, and members, with stable hash routes"
-status: proposed
+status: accepted
 date: 2026-10-19
+supersedes: "0216, 0218, and 0170 where Sessions, the conversation, the board, and a permanent Files/Git column are separate organizing navigation"
 ---
 
 ## Context
@@ -87,8 +88,11 @@ contiguous, and focuses the message.
 
 ## Consequences
 
-The first screen of a Workspace is the same Sessions surface as before; the
-Workspace views are one click away and addressable. `WorkbenchShell` remains
+A Workspace with no Sessions of its own (a fresh one, or one just created) opens
+in General, its default home; a Workspace that has Sessions reopens where the
+address says, and on the Sessions surface when it says nothing. A link in the
+address always decides first. The other Workspace views are one click away and
+addressable. `WorkbenchShell` remains
 the owner of state; the route is derived from it and applied to it rather than
 replacing it. Legacy smoke flows reach questions and Threads through the History
 disclosure. Task *interaction* (the proposal, instruction, review, and board
