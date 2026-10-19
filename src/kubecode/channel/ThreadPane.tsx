@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { IconButton } from '@/components/workspace/IconButton'
+import type { MentionOption } from '@/components/workspace/mentions'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,7 @@ type ThreadPaneProps = {
   channel: Channel
   connectionState: WorkspaceConnectionState
   events: WorkspaceEvent[]
+  mentionOptions?: MentionOption[]
   onClose: () => void
   onOpenReference: (reference: ProjectContextRef) => void
   onOpenWork?: (filter: { thread_id: string }) => void
@@ -50,6 +52,7 @@ export function ThreadPane({
   channel,
   connectionState,
   events,
+  mentionOptions = [],
   onClose,
   onOpenReference,
   onOpenWork,
@@ -208,6 +211,7 @@ export function ThreadPane({
       <MessageComposer
         api={api}
         key={thread.id}
+        mentionOptions={mentionOptions}
         placeholder={t('kubecode.channel.threadPlaceholder')}
         projectId={thread.project_id}
         sessions={sessions}

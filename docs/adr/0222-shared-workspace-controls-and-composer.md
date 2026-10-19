@@ -21,12 +21,12 @@ behave identically.
 
 ## Inventory
 
-For the surfaces this change touches (`kubecode/channel`, `work`, `members`,
-the session composer chrome): 36 hand-written status badges (`<span
-class="kubecode-research-badge" data-tone=…>`) across 12 files, eight
-icon-only controls using three different sizes and no tooltip, two send
-buttons (one round with an arrow and inline styles, one a text button), and two
-different send shortcuts. Everything else in those views already uses shadcn
+Before this change, the Workspace views (`kubecode/channel`, `work`,
+`members`, `research`, and the session composer chrome) drew status labels as
+hand-written `<span class="kubecode-research-badge" data-tone=…>` elements,
+used icon-only controls at several sizes without a tooltip, drew two different
+send buttons (one round with an arrow and inline styles, one a text button),
+and had two send shortcuts. Everything else in those views already uses shadcn
 `Button`, `Dialog`, `Textarea`, Lucide icons, and semantic tokens. A
 repository-wide rewrite is out of scope; the scope is the Workspace views and
 the composers.
@@ -40,8 +40,9 @@ the composers.
 - **`IconButton`** — the one icon-only control. The label is required and is
   both the accessible name and the tooltip (an icon alone is never a name); it
   has a compact and a regular size, visible focus from the shadcn button, a
-  touch-sized hit area on coarse pointers, and a `busy` state that disables it
-  and sets `aria-busy`.
+  touch-sized hit area on coarse pointers, and a `busy` state that ignores
+  clicks and sets `aria-busy` and `aria-disabled` (it stays focusable so
+  keyboard focus is not lost mid-action).
 - **`StatusBadge`** — one status label with a tone (`ok`, `info`, `warn`,
   `danger`, `muted`) taken from the semantic feedback tokens. The text always
   carries the meaning; the tone only adds emphasis, so color is never the only
@@ -55,8 +56,9 @@ the composers.
 
 ### 2. One keyboard and IME contract
 
-Enter sends; Shift+Enter breaks the line; nothing is sent while an input
-method is composing (`compositionstart`/`compositionend`, `isComposing`, and
+Enter sends; Shift+Enter breaks the line (on a touch-first device Enter breaks
+the line and Ctrl/Cmd+Enter or the send button sends); Ctrl/Cmd+Enter sends
+everywhere; nothing is sent while an input method is composing (`compositionstart`/`compositionend`, `isComposing`, and
 the legacy 229 key code). `@` after whitespace opens a member list that is an
 ARIA combobox with a listbox: the arrow keys move, Enter or Tab inserts
 `@handle `, Escape closes, a click inserts without leaving the text box.
@@ -68,7 +70,10 @@ Sending stays available while agents are working: the only thing that disables
 it is an empty draft, a disabled composer, or a send of this very draft that
 is still in flight (so one draft is not sent twice). Stopping a task or agent
 is a different control that names its target and never replaces the send
-button.
+button. The session composer's stop names its Agent today; the conversation
+composer accepts a named stop, but nothing in General passes one yet because
+General has no per-agent run to stop until the direct-message surface and
+Task-bound runs land (#202, #205).
 
 ### 4. What stays out of the primitive
 
@@ -76,7 +81,8 @@ The `Composer` does not know about channels, Tasks, members, or stores. A
 caller supplies the `MentionOption`s (id, handle, label), reads which ones the
 text mentions (`extractMentions`), and decides what a mention or a message
 *means*; domain routing stays in the messaging layer. The conversation
-composer (`MessageComposer`) is the first user: General and DM both use it.
+composer (`MessageComposer`) is the first user, in General and in Threads. The
+direct-message surface is introduced by #202 and will use the same component.
 The session composer keeps its provider-specific machinery (ACP commands,
 agent configuration, capability menus) and shares the send and stop buttons,
 not the text surface.
@@ -86,13 +92,16 @@ not the text surface.
 All labels are passed in by the caller from the locale catalogs, so a
 primitive has no copy of its own. Controls are keyboard-operable, the mention
 list uses the combobox pattern, busy and disabled states are exposed with
-`aria-busy` and `disabled`, and the touch hit area grows on coarse pointers.
+`aria-busy` and `aria-disabled`/`disabled`, and the touch hit area grows on
+coarse pointers. Confirming or approving a Task, accepting evidence, and
+other consequential decisions keep explicit, text-labelled buttons; an icon
+alone is never the only way to authorize or finish work.
 
 ## Consequences
 
 Workspace views look and speak alike, and a keyboard or IME fix is made once.
 The conversation composer now sends on Enter, as the session composer already
-did; Ctrl/Cmd+Enter no longer has a special meaning. The session composer's
+did; Ctrl/Cmd+Enter still sends. The session composer's
 round send and stop buttons are now these components (their test ids are
 kept). Remaining hand-written controls outside the touched surfaces keep
 their current form until a view is next changed.

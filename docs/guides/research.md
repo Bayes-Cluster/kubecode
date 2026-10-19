@@ -170,15 +170,20 @@ work stay inside the Task. When the General Agent reports results, you accept
 them (choosing the outcome; a well-supported negative finding completes a
 Task) or send the Task back with a reason.
 
-## Writing in General and direct messages
+## Writing in General and Threads
 
-General and every direct message use the same composer:
+General and Threads use one composer (direct messages with an Agent will use it
+too once they ship):
 
-- **Enter** sends; **Shift+Enter** starts a new line. While an input method
-  (for example for Chinese or Japanese) is composing, Enter confirms the
-  candidate and never sends.
+- **Enter** sends; **Shift+Enter** starts a new line. On a phone or tablet
+  Enter starts a new line and the arrow button sends. **Ctrl/Cmd+Enter** always
+  sends. While an input method (for example for Chinese or Japanese) is
+  composing, Enter confirms the candidate and never sends.
 - Type **@** to mention a member; use the arrow keys and **Enter** (or
-  **Tab**) to pick one, **Esc** to close the list. A mention addresses the
-  member in the message; it does not authorize any work.
+  **Tab**, once you have typed part of a name or moved with the arrows) to pick
+  one, **Esc** to close the list. A mention addresses the member in the
+  message; it does not authorize any work.
 - The arrow button sends. It stays available while agents are working. A
-  separate **Stop** button names the task or agent it stops.
+  session's **Stop** button names the Agent it stops. Approving a Task or
+  accepting evidence is always an explicit, text-labelled button, never an
+  icon alone.

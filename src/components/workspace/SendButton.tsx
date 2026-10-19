@@ -34,7 +34,7 @@ export function SendButton({ busy = false, canSend, label, onSend, testId }: Sen
           variant="ghost"
           onClick={onSend}
         >
-          {busy ? <Loader2 aria-hidden className="animate-spin" size={16} /> : <ArrowUp aria-hidden size={17} />}
+          {busy ? <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={16} /> : <ArrowUp aria-hidden size={17} />}
         </Button>
       </ActionTooltip>
     </TooltipProvider>

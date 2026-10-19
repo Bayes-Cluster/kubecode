@@ -22,12 +22,24 @@ export function mentionQueryAt(value: string, caret: number): { start: number; q
   return { start: caret - match[2].length - 1, query: match[2].toLowerCase() }
 }
 
+/**
+ * Options matching what was typed, best first: the exact handle, then handles
+ * that start with it, then labels that contain it. Ties keep the caller's order.
+ */
 export function filterMentions(options: MentionOption[], query: string, limit = 8): MentionOption[] {
+  const rank = (option: MentionOption): number => {
+    const handle = option.handle.toLowerCase()
+    if (handle === query) return 0
+    if (handle.startsWith(query)) return 1
+    if (option.label.toLowerCase().includes(query)) return 2
+    return 3
+  }
   return options
-    .filter((option) => (
-      option.handle.startsWith(query) || option.label.toLowerCase().includes(query)
-    ))
+    .map((option, index) => ({ option, index, rank: rank(option) }))
+    .filter((entry) => entry.rank < 3)
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .slice(0, limit)
+    .map((entry) => entry.option)
 }
 
 /** Replaces the typed `@query` with `@handle ` and says where the caret goes. */

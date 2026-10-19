@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -138,16 +139,15 @@ export function ResearchFindingsPanel({
           {findings.map((finding) => (
             <li key={finding.id} data-basis={finding.basis}>
               <header>
-                <span className="kubecode-research-badge" data-tone="muted">{findingKindLabel(t, finding.kind)}</span>
-                <span
-                  className="kubecode-research-badge"
-                  data-tone={finding.basis === 'observation' ? 'ok' : 'warn'}
+                <StatusBadge tone="muted">{findingKindLabel(t, finding.kind)}</StatusBadge>
+                <StatusBadge
+                  tone={finding.basis === 'observation' ? 'ok' : 'warn'}
                   title={finding.basis === 'interpretation' ? t('kubecode.research.interpretationHint') : undefined}
                 >
                   {finding.basis === 'observation'
                     ? t('kubecode.research.basis.observation')
                     : t('kubecode.research.basis.interpretation')}
-                </span>
+                </StatusBadge>
                 {finding.stale && <StaleBadge t={t} />}
               </header>
               <p>{finding.statement}</p>
@@ -194,11 +194,11 @@ export function ResearchFindingsPanel({
             {decidedProposals.map((proposal) => (
               <li key={proposal.entry.id}>
                 <p>{proposal.entry.body}</p>
-                <span className="kubecode-research-badge" data-tone={proposal.review?.decision === 'accepted' ? 'ok' : 'muted'}>
+                <StatusBadge tone={proposal.review?.decision === 'accepted' ? 'ok' : 'muted'}>
                   {proposal.review?.decision === 'accepted'
                     ? t('kubecode.research.accepted')
                     : t('kubecode.research.rejected')}
-                </span>
+                </StatusBadge>
               </li>
             ))}
           </ul>

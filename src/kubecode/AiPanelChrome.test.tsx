@@ -227,7 +227,7 @@ describe('AiPanelComposer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ask side question' }))
     expect(onActiveSend).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Stop response' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Claude Code' }))
     expect(onStop).toHaveBeenCalledOnce()
   })
 

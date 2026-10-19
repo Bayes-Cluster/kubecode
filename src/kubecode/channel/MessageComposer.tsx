@@ -76,8 +76,21 @@ export function MessageComposer({
   const asking = intent === 'ask'
   const ready = body.trim().length > 0 && (!asking || askSession !== '')
 
+  const sending = useRef(false)
+
   const send = async () => {
-    if (!ready || action.busy) return
+    // A second call before the first renders must not clear the draft again or
+    // be mistaken for a failed send.
+    if (!ready || action.busy || sending.current) return
+    sending.current = true
+    try {
+      await submit()
+    } finally {
+      sending.current = false
+    }
+  }
+
+  const submit = async () => {
     const draft = { body, intent, askSession, references }
     const mentioned = extractMentions(draft.body, mentionOptions).map((option) => option.id)
     const signature = JSON.stringify([
@@ -125,13 +138,7 @@ export function MessageComposer({
   }
 
   return (
-    <form
-      className="kubecode-channel-composer"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void send()
-      }}
-    >
+    <div className="kubecode-channel-composer">
       <Composer
         above={references.length > 0 && (
           <ul className="kubecode-channel-references">
@@ -140,15 +147,13 @@ export function MessageComposer({
                 <span className="kubecode-channel-reference">
                   {t(PROJECT_CONTEXT_KIND_LABELS[item.ref.kind])}
                   <span>{item.title}</span>
-                  <button
-                    aria-label={t('kubecode.channel.removeReference', { title: item.title })}
-                    type="button"
+                  <IconButton
+                    icon={<X aria-hidden size={12} />}
+                    label={t('kubecode.channel.removeReference', { title: item.title })}
                     onClick={() => setReferences((current) => current.filter((candidate) => (
                       candidate.ref.kind !== item.ref.kind || candidate.ref.id !== item.ref.id
                     )))}
-                  >
-                    <X aria-hidden size={12} />
-                  </button>
+                  />
                 </span>
               </li>
             ))}
@@ -163,6 +168,7 @@ export function MessageComposer({
           </>
         )}
         busy={action.busy}
+        busyLabel={t('kubecode.channel.sending')}
         canSend={ready}
         controls={(
           <>
@@ -229,6 +235,6 @@ export function MessageComposer({
           />
         </DialogContent>
       </Dialog>
-    </form>
+    </div>
   )
 }

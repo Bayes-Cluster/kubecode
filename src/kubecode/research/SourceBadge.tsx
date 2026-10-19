@@ -1,3 +1,4 @@
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchSourceAvailability } from '../api'
@@ -15,16 +16,16 @@ export function AvailabilityBadge({
   t: Translator
 }) {
   return (
-    <span className="kubecode-research-badge" data-tone={availability === 'available' ? 'ok' : 'warn'}>
+    <StatusBadge tone={availability === 'available' ? 'ok' : 'warn'}>
       {availabilityLabel(t, availability)}
-    </span>
+    </StatusBadge>
   )
 }
 
 export function StaleBadge({ t }: { t: Translator }) {
   return (
-    <span className="kubecode-research-badge" data-tone="warn" title={t('kubecode.research.staleHint')}>
+    <StatusBadge tone="warn" title={t('kubecode.research.staleHint')}>
       {t('kubecode.research.stale')}
-    </span>
+    </StatusBadge>
   )
 }

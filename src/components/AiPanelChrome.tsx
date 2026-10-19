@@ -599,7 +599,7 @@ export function AiPanelComposer({
               onSend={onSend}
             />
           )}
-          <ComposerStopButton label={t('ai.panel.stop')} onStop={onStop} />
+          <ComposerStopButton label={t('kubecode.composer.stopTarget', { target: agentLabel })} onStop={onStop} />
         </div>
       )
     : (

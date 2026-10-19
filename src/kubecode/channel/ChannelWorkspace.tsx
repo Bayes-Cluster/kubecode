@@ -15,6 +15,7 @@ import type {
 import { useAction } from '../research/useAction'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MessageComposer } from './MessageComposer'
+import { useMentionOptions } from './useMentionOptions'
 import { MessageList } from './MessageList'
 import { ThreadPane } from './ThreadPane'
 import { useChannelThreads, useDefaultChannel, useMessageFeed } from './useChannel'
@@ -57,6 +58,7 @@ export function ChannelWorkspace({
   t,
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
+  const mentionOptions = useMentionOptions(api, projectId, events, connectionState)
   const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState)
   const { reload: reloadThreads, threads } = useChannelThreads(
     api,
@@ -136,6 +138,7 @@ export function ChannelWorkspace({
         {channel && (
           <MessageComposer
             api={api}
+            mentionOptions={mentionOptions}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}
             sessions={sessions}
@@ -151,6 +154,7 @@ export function ChannelWorkspace({
           connectionState={connectionState}
           events={events}
           key={thread.id}
+          mentionOptions={mentionOptions}
           research={research}
           sessions={sessions}
           t={t}

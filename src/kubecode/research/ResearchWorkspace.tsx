@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -110,11 +111,11 @@ export function ResearchWorkspace({
           <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.research.back')}</Button>
           <h2>{detail.brief.title}</h2>
           <div className="kubecode-research-header-meta">
-            <span className="kubecode-research-badge" data-tone={detail.status === 'open' ? 'ok' : 'muted'}>
+            <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>
               {detail.status === 'open' ? t('kubecode.research.status.open') : t('kubecode.research.status.resolved')}
-            </span>
+            </StatusBadge>
             {detail.archived && (
-              <span className="kubecode-research-badge" data-tone="muted">{t('kubecode.research.status.archived')}</span>
+              <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
             )}
             <span className="kubecode-research-muted">
               {t('kubecode.research.revision', { revision: detail.revision })}

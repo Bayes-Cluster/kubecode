@@ -1,8 +1,23 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Conversation, KubecodeApi } from '../api'
+import type { Conversation, KubecodeApi, ProjectContextItem } from '../api'
 import { MessageComposer } from './MessageComposer'
+
+const pickable = (id: string, title: string) => ({
+  ref: { kind: 'research', id, revision: 3 },
+  title,
+}) as unknown as ProjectContextItem
+
+// The picker is covered by its own tests; here it only hands back a reference.
+vi.mock('../ComposerProjectWorkPicker', () => ({
+  ComposerProjectWorkPicker: ({ onSelect }: { onSelect: (item: ProjectContextItem) => void }) => (
+    <div>
+      <button type="button" onClick={() => onSelect(pickable('r1', 'Pruning'))}>pick Pruning</button>
+      <button type="button" onClick={() => onSelect(pickable('r2', 'Quantization'))}>pick Quantization</button>
+    </div>
+  ),
+}))
 
 const t = ((key: string, values?: Record<string, string | number>) => (
   values ? `${key}:${JSON.stringify(values)}` : key
@@ -72,5 +87,57 @@ describe('MessageComposer on the shared Composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.send' }))
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
     expect(onSend.mock.calls[0][0].mentions).toEqual([{ session_id: 's-analyst' }])
+  })
+
+  it('attaches references once, removes one, and sends the rest with their revisions', async () => {
+    const { box, onSend } = composer()
+    for (const name of ['pick Pruning', 'pick Pruning', 'pick Quantization']) {
+      fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.attach' }))
+      fireEvent.click(await screen.findByRole('button', { name: name }))
+    }
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.removeReference:{"title":"Pruning"}' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.change(box, { target: { value: 'see this' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'research', id: 'r2', revision: 3 }])
+    await waitFor(() => expect(screen.queryAllByRole('listitem')).toHaveLength(0))
+  })
+
+  it('puts the references back after a failed send and sends an edited draft as a new message', async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(undefined)
+    const { box } = composer(onSend)
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.attach' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick Pruning' }))
+    fireEvent.change(box, { target: { value: 'first wording' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(box.value).toBe('first wording'))
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.change(box, { target: { value: 'second wording' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
+    await waitFor(() => expect(box.value).toBe('second wording'))
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(3))
+    expect(onSend.mock.calls[2][0].clientMessageId).toBe(onSend.mock.calls[1][0].clientMessageId)
+  })
+
+  it('writes into a Thread when one is given, and requires a Session to ask', async () => {
+    const { box, onSend } = composer(undefined, { threadId: 'th1' })
+    fireEvent.change(box, { target: { value: 'in the thread' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][0].threadId).toBe('th1')
+    fireEvent.change(screen.getByLabelText('kubecode.channel.intent.label'), { target: { value: 'ask' } })
+    fireEvent.change(box, { target: { value: 'who?' } })
+    expect(screen.getByRole('button', { name: 'kubecode.channel.send' })).toBeDisabled()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledTimes(1)
   })
 })

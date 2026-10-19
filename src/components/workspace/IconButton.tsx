@@ -12,7 +12,7 @@ export type IconButtonProps = Omit<ComponentProps<typeof Button>, 'children' | '
   icon: ReactNode
   /** Shown in the tooltip beside the label. */
   shortcut?: string
-  /** An action is in flight: the button is disabled and announces it. */
+  /** An action is in flight: the button ignores clicks, stays focusable, and announces it. */
   busy?: boolean
   /** `sm` is the compact control used inside dense rows; both keep a touch-sized hit area. */
   size?: 'sm' | 'md'
@@ -29,6 +29,7 @@ export function IconButton({
   disabled,
   icon,
   label,
+  onClick,
   shortcut,
   size = 'sm',
   type = 'button',
@@ -40,16 +41,25 @@ export function IconButton({
       <ActionTooltip copy={{ label, shortcut }}>
         <Button
           aria-busy={busy || undefined}
+          aria-disabled={busy || undefined}
           aria-label={label}
           className={cn('kubecode-icon-button', className)}
           data-size={size}
-          disabled={disabled || busy}
+          disabled={disabled}
           size={size === 'sm' ? 'icon-xs' : 'icon-sm'}
           type={type}
           variant={variant}
           {...props}
+          // A busy button keeps focus (it is not `disabled`), and ignores clicks.
+          onClick={(event) => {
+            if (busy) {
+              event.preventDefault()
+              return
+            }
+            onClick?.(event)
+          }}
         >
-          {busy ? <Loader2 aria-hidden className="animate-spin" size={size === 'sm' ? 14 : 16} /> : icon}
+          {busy ? <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={size === 'sm' ? 14 : 16} /> : icon}
         </Button>
       </ActionTooltip>
     </TooltipProvider>

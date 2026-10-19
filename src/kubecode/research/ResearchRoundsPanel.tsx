@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -314,16 +315,16 @@ export function ResearchRoundsPanel({
               <li key={round.id}>
                 <header>
                   <strong>{t('kubecode.research.roundShort', { round: round.round })}</strong>
-                  <span className="kubecode-research-badge" data-tone="muted">
+                  <StatusBadge tone="muted">
                     {round.kind === 'team' ? t('kubecode.research.mode.team') : t('kubecode.research.mode.solo')}
-                  </span>
+                  </StatusBadge>
                   <span className="kubecode-research-muted">
                     {t('kubecode.research.contextRevision', { revision: round.brief_revision })}
                   </span>
                   {round.stale && <StaleBadge t={t} />}
-                  <span className="kubecode-research-badge" data-tone={round.phase === 'started' ? 'ok' : 'warn'}>
+                  <StatusBadge tone={round.phase === 'started' ? 'ok' : 'warn'}>
                     {phaseLabel(t, round.phase)}
-                  </span>
+                  </StatusBadge>
                 </header>
                 {instructionText && <p>{instructionText}</p>}
                 <div className="kubecode-research-row">
