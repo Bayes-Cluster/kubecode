@@ -40,7 +40,7 @@ export type ComposerProps = {
   /** Names the suggestion list; required wherever `mentions` is given. */
   mentionLabel?: string
   /** Stops one named task or agent. Never replaces the send button. */
-  stop?: { label: string; onStop: () => void }
+  stop?: { label: string; shortLabel?: string; onStop: () => void }
   /** Chips or references shown above the text box. */
   above?: ReactNode
   /** Controls before the send button: attach, intent, and the like. */
@@ -258,13 +258,12 @@ export function Composer({
         />
       </div>
       <div className="kubecode-composer-row">
+        {stop && <StopButton label={stop.label} shortLabel={stop.shortLabel} onStop={stop.onStop} />}
         <div className="kubecode-composer-controls">{controls}</div>
-        {stop && <StopButton label={stop.label} onStop={stop.onStop} />}
         <SendButton busy={busy} canSend={ready} label={sendLabel} onSend={submit} />
       </div>
-      {busy && busyLabel && (
-        <span className="sr-only" role="status">{busyLabel}</span>
-      )}
+      {/* The live region stays mounted so the change to "Sending…" is announced. */}
+      {busyLabel && <span className="sr-only" role="status">{busy ? busyLabel : ''}</span>}
       {below}
     </div>
   )

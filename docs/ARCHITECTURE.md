@@ -374,6 +374,17 @@ channels or Tasks: `channel/MessageComposer` supplies the mention options and
 the intent and reference controls, and General and direct messages both use it.
 The session composer shares the send and stop buttons.
 
+Workspace visual vocabulary (ADR 0227): `src/kubecode/icons/workspaceIcons.ts`
+maps destinations, commands, and objects to one Lucide glyph and one locale key
+each. `src/components/workspace/` adds `MemberAvatar`/`MemberIdentity`,
+`ReferenceChip`, `ViewHeader`, `MoreActions`, `DecisionButton`, and
+`PauseButton` (new work in a named scope, distinct from a run's `StopButton`);
+`kubecode.css` defines the `--ws-*` type (scoped to `.kubecode-app`, following
+the UI font), spacing, reading-width, focus, and touch-target tokens (44 px on
+coarse pointers). `main.tsx` renders `ControlMatrix` instead of the Workspace for
+`#/controls[?theme=&lang=]`, and `tests/smoke/workspace-controls.spec.ts` checks
+it in both themes and on a phone.
+
 The browser research surface lives in `src/kubecode/research/`. `WorkbenchShell`
 owns the selected question (scoped to its Project, so switching Projects clears
 it) beside the selected Session, and swaps the main pane between the Session

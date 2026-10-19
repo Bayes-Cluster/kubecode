@@ -581,6 +581,8 @@ export function AiPanelComposer({
   const sendButton = isActive
     ? (
         <div className="flex shrink-0 items-center gap-1">
+          {/* Stopping the run is its own control, apart from sending (ADR 0227). */}
+          <ComposerStopButton label={t('kubecode.composer.stopTarget', { target: agentLabel })} onStop={onStop} />
           {onActiveSend && (
             <ComposerSendButton
               canSend={canActiveSend}
@@ -599,7 +601,6 @@ export function AiPanelComposer({
               onSend={onSend}
             />
           )}
-          <ComposerStopButton label={t('kubecode.composer.stopTarget', { target: agentLabel })} onStop={onStop} />
         </div>
       )
     : (
