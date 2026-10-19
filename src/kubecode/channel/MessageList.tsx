@@ -23,6 +23,7 @@ type MessageListProps = {
   onFilterTask?: (taskId: string) => void
   /** Opens the Task a message is about. */
   onOpenTask?: (taskId: string, messageId: string) => void
+  onBoard?: (taskId: string) => boolean
   /** A message to scroll to and focus once it is loaded (a link, or coming back from a Task). */
   focusId?: string | null
   research?: ResearchSummary[]
@@ -40,6 +41,7 @@ export function MessageList({
   onOpenThread,
   onFilterTask,
   onOpenTask,
+  onBoard,
   focusId = null,
   onReply,
   research,
@@ -127,6 +129,7 @@ export function MessageList({
           thread={threadByRoot?.get(message.id)}
           onFilterTask={onFilterTask}
           onJump={jump}
+          onBoard={onBoard}
           onOpenTask={onOpenTask}
           onOpenReference={onOpenReference}
           onOpenThread={onOpenThread}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -31,6 +31,10 @@ export type ResearchWorkspaceProps = {
   events: WorkspaceEvent[]
   /** Replaces "Back to Sessions" where the workspace is a detail pane. */
   backLabel?: string
+  /** What the researcher decides on, shown under the title (the Task inspector). */
+  inspector?: ReactNode
+  /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
+  startsRounds?: boolean
   onClose: () => void
   onConversationCreated: (conversation: Conversation) => void
   onOpenSession: (conversationId: string) => void
@@ -60,6 +64,8 @@ export function ResearchWorkspace({
   events,
   onClose,
   backLabel,
+  inspector,
+  startsRounds = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
@@ -136,6 +142,7 @@ export function ResearchWorkspace({
       </header>
       {state.error && <p className="kubecode-research-error" role="alert">{state.error}</p>}
       {detail.archived && <p className="kubecode-research-notice" role="status">{t('kubecode.research.archivedNotice')}</p>}
+      {inspector}
       {pendingDecisions > 0 && (
         <p className="kubecode-research-notice" role="status">
           <button type="button" onClick={() => setTab('findings')}>
@@ -223,6 +230,7 @@ export function ResearchWorkspace({
             onChanged={reload}
             onOpenSession={onOpenSession}
             rounds={bundle.rounds}
+            startsRounds={startsRounds}
             t={t}
             teams={teams}
           />

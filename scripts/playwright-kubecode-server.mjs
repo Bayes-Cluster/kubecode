@@ -10,6 +10,8 @@ const localState = join(process.cwd(), '.local')
 await mkdir(localState, { recursive: true })
 const root = await mkdtemp(join(localState, `kubecode-playwright-${port}-`))
 const state = join(root, '.state', 'kubecode')
+const fixtureDir = join(localState, `playwright-fixtures-${port}`)
+await rm(fixtureDir, { force: true, recursive: true })
 const fakeOpenCode = join(process.cwd(), 'scripts/fixtures/playwright-opencode')
 const configuredServerBinary = process.env.KUBECODE_SERVER_BIN
 
@@ -51,6 +53,11 @@ const server = spawn(serverCommand, serverArguments, {
     KUBECODE_STATIC_DIR: 'dist',
     KUBECODE_WORKSPACE_ROOT: root,
     KUBECODE_OPENCODE_PATH: fakeOpenCode,
+    // Only the fixture provider exists for the browser tests: a message routed to a
+    // member must never start a real Claude Code or Codex, however the machine is set up.
+    KUBECODE_CLAUDE_PATH: join(root, 'no-such-claude'),
+    KUBECODE_CODEX_PATH: join(root, 'no-such-codex'),
+    KUBECODE_PLAYWRIGHT_FIXTURE_DIR: fixtureDir,
   },
   stdio: 'inherit',
 })

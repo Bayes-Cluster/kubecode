@@ -1113,6 +1113,8 @@ export type TaskCard = {
   stage: TaskStage
   condition: TaskCondition
   condition_reason: string | null
+  /** The scientific outcome once the researcher accepted it. */
+  outcome?: WorkOutcome | null
   revision: number
   approved_revision: number
   admitted_at: string
@@ -1136,6 +1138,66 @@ export type TaskDraft = {
   revision: number
   proposed_by: string
   updated_at: string
+}
+
+/** One Task as the inspector reads it (ADR 0221). */
+export type TaskRevisionNote = {
+  revision: number
+  author_kind: string
+  approved: boolean
+  created_at: string
+}
+export type TaskReviewRequest = {
+  id: string
+  research_id: string
+  summary: string
+  /** Cited evidence as `kind:id`. */
+  evidence: string[]
+  requested_by: string
+  brief_revision: number
+  state: 'open' | 'accepted' | 'returned'
+  created_at: string
+  resolved_at: string | null
+}
+export type TaskReviewRecord = {
+  id: string
+  research_id: string
+  request_id: string
+  accepted: boolean
+  outcome: WorkOutcome
+  reason: string | null
+  brief_revision: number
+  created_at: string
+}
+export type TaskInternalWork = {
+  id: string
+  title: string
+  stage: WorkStage
+  condition: WorkCondition
+  lifecycle: WorkLifecycle
+  attempts: number
+  experiments: number
+  assignee: { member_id: string; name: string; handle: string; role: string } | null
+}
+export type TaskStaleEvidence = {
+  work_id: string
+  result_id: string
+  kind: string
+  ref_id: string
+  status: 'changed' | 'removed'
+  /** The revision it was attached at, and the one it has now (none if removed). */
+  pinned: string
+  current: string | null
+}
+export type TaskDetail = TaskCard & {
+  brief: ResearchBrief
+  revisions: TaskRevisionNote[]
+  authorizing_message: { id: string; body: string; created_at: string } | null
+  review_requests: TaskReviewRequest[]
+  reviews: TaskReviewRecord[]
+  internal_work: TaskInternalWork[]
+  open_questions: Array<WorkDecisionRequest & { work_title: string }>
+  stale_evidence: TaskStaleEvidence[]
 }
 
 /** A turn of the researcher's private conversation with a member (ADR 0223). */

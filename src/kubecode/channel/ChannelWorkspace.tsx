@@ -43,6 +43,8 @@ export type ChannelWorkspaceProps = {
   onThreadChange?: (threadId: string | null) => void
   /** Opens a Task from a message's chip, in the detail pane. */
   onOpenTask?: (taskId: string, messageId: string) => void
+  /** Task ids that are on the board, to mark proposals that are not. */
+  tasksOnBoard?: ReadonlySet<string>
   onClose: () => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
@@ -70,6 +72,7 @@ export function ChannelWorkspace({
   onFilterChange,
   onThreadChange,
   onOpenTask,
+  tasksOnBoard,
   onClose,
   onOpenResearch,
   onOpenSession,
@@ -212,6 +215,7 @@ export function ChannelWorkspace({
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : focusMessageId}
           onFilterTask={setTaskFilter}
+          onBoard={tasksOnBoard ? (id) => tasksOnBoard.has(id) : undefined}
           onOpenTask={onOpenTask}
           onOpenReference={openReference}
           onOpenThread={openThread}

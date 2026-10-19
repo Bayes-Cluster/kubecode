@@ -1255,6 +1255,17 @@ Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
 input as conditions. Rounds, internal work, attempts, and experiments live
 inside the Task. See ADR 0221.
 
+## Task board and inspector
+
+The **board** shows admitted Tasks only, in Ready, In progress, Review, and Done;
+waiting, blocked, paused, needs-input, a changed brief, and "waiting for you" are
+badges on a card, never columns. A Task's **inspector** gathers where it stands,
+who authorized it and who works on it, what waits on the researcher, and the
+review the manager asked for: its evidence, any that changed since it was
+attached (acceptance waits until it is looked at), and the researcher's decision
+— accept with what the result showed (a valid negative result completes the
+Task) or send back with a reason. See ADR 0225.
+
 ## Workspace views and routes
 
 The researcher's place is a **route**: a Project, a **view** (Sessions, General,

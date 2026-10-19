@@ -69,3 +69,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0222](0222-shared-workspace-controls-and-composer.md) | Shared Workspace controls and one Composer for General and direct messages |
 | [0223](0223-general-conversation-routing-and-direct-messages.md) | One General conversation, routed to members, with private direct messages |
 | [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes |
+| [0225](0225-task-board-inspector-and-browser-acceptance.md) | The Task board, the Task inspector, and browser acceptance with member fixtures |
