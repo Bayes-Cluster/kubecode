@@ -105,6 +105,7 @@ impl WorkAgent {
 
     /// The task, if the caller is the Session executing it right now.
     fn executing(&self, work_id: &str) -> Result<WorkSummary, AgentWorkError> {
+        self.refuse_manager("run or analyze experiments")?;
         let (summary, role) = self.visible(work_id)?;
         let is_executor = summary
             .assignment

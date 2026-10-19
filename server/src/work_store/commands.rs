@@ -813,6 +813,7 @@ impl WorkStore {
     ) -> Result<Assignment, WorkError> {
         let ctx = ctx.into();
         text_ok(reason, MAX_REASON_CHARS, "the reason is too long")?;
+        self.check_may_execute(project_id, conversation_id)?;
         if let Some(member_id) = member_id {
             text_ok(member_id, MAX_ID_CHARS, "the member id is too long")?;
         }

@@ -64,6 +64,14 @@ pub(super) async fn create_project(
         CreateProjectRequest::Create { path } => state.workspace.create_project_at(path)?,
         CreateProjectRequest::Import { path } => state.workspace.import_project_at(path)?,
     };
+    // A new Workspace opens with its General Agent (ADR 0220). A provider
+    // problem shows as the member's setup state, never as a failed creation.
+    let project_id = project.id.clone();
+    let setup_state = state.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        crate::member_api::ensure_general(&setup_state, &project_id)
+    })
+    .await;
     Ok((StatusCode::CREATED, Json(ProjectSummary::from(project))))
 }
 

@@ -100,6 +100,7 @@ async fn a_coordinator_drives_a_task_from_creation_to_acceptance_through_the_too
             .work_assign(Parameters(AssignInput {
                 work_id: work_id.clone(),
                 session_id: executor_id.clone(),
+                member: None,
                 reason: None,
             }))
             .await,
@@ -532,6 +533,7 @@ async fn experiments_decisions_and_the_brief_are_tools_bound_to_the_executing_se
             .work_assign(Parameters(AssignInput {
                 work_id: work_id.clone(),
                 session_id: executor_id.clone(),
+                member: None,
                 reason: None,
             }))
             .await,

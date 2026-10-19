@@ -29,6 +29,15 @@ use crate::database::Database;
 pub struct WorkStore {
     database: Arc<Database>,
     agents: Arc<AgentStore>,
+    guard: std::sync::OnceLock<Arc<dyn AssignmentGuard>>,
+}
+
+/// Decides, before a Session is given work, whether it may execute it. The
+/// member roster implements this so the General Agent (and any private DM
+/// Session) can never be assigned (ADR 0220 §4). The check runs outside the
+/// store's transaction because it reads another store.
+pub trait AssignmentGuard: Send + Sync {
+    fn may_execute(&self, project_id: &str, conversation_id: &str) -> Result<(), &'static str>;
 }
 
 /// What changed, for the content-free `work_updated` event payload.
@@ -261,11 +270,33 @@ impl WorkStore {
             ensure_schema(&connection)?;
             sync::enqueue_all_teams(&connection)?;
         }
-        let store = Self { database, agents };
+        let store = Self {
+            database,
+            agents,
+            guard: std::sync::OnceLock::new(),
+        };
         // Drain whatever a previous run left queued, or the first mirror of
         // pre-existing Team tasks. Idempotent and safe to repeat after a crash.
         store.reconcile()?;
         Ok(store)
+    }
+
+    /// Installs the roster's execution rule; the first guard wins.
+    pub fn set_assignment_guard(&self, guard: Arc<dyn AssignmentGuard>) {
+        let _ = self.guard.set(guard);
+    }
+
+    pub(crate) fn check_may_execute(
+        &self,
+        project_id: &str,
+        conversation_id: &str,
+    ) -> Result<(), WorkError> {
+        match self.guard.get() {
+            Some(guard) => guard
+                .may_execute(project_id, conversation_id)
+                .map_err(WorkError::Invalid),
+            None => Ok(()),
+        }
     }
 
     pub(crate) fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {

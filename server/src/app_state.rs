@@ -34,6 +34,8 @@ pub struct AppState {
     pub work: Arc<WorkStore>,
     /// The Workspace conversation (ADR 0216).
     pub channels: Arc<ChannelStore>,
+    /// The Workspace roster: members and the General Agent (ADR 0220).
+    pub members: Arc<crate::member_store::MemberStore>,
     /// Routes intents of the conversation to Sessions (ADR 0217).
     pub orchestrator: Arc<Orchestrator>,
     pub experiment_runner: Arc<ExperimentRunner>,
@@ -82,6 +84,16 @@ impl AppState {
             ChannelStore::from_database(agent_store.database(), Arc::clone(&agent_store))
                 .expect("channel store"),
         );
+        let members = Arc::new(
+            crate::member_store::MemberStore::from_database(
+                agent_store.database(),
+                Arc::clone(&agent_store),
+            )
+            .expect("member store"),
+        );
+        work.set_assignment_guard(
+            Arc::clone(&members) as Arc<dyn crate::work_store::AssignmentGuard>
+        );
         let orchestrator = Arc::new(
             Orchestrator::new(
                 agent_store.database(),
@@ -115,6 +127,7 @@ impl AppState {
                     work: Arc::clone(&work),
                     channels: Arc::clone(&channels),
                     orchestrator: Arc::clone(&orchestrator),
+                    members: Arc::clone(&members),
                 })
                 .with_experiments(Arc::clone(&experiments), Arc::clone(&experiment_runner))
                 .with_terminal_manager(Arc::clone(&terminals)),
@@ -131,6 +144,7 @@ impl AppState {
             experiments,
             work,
             channels,
+            members,
             orchestrator,
             experiment_runner,
             context,
@@ -197,6 +211,7 @@ impl AppState {
                 work: Arc::clone(&self.work),
                 channels: Arc::clone(&self.channels),
                 orchestrator: Arc::clone(&self.orchestrator),
+                members: Arc::clone(&self.members),
             })
             .with_experiments(
                 Arc::clone(&self.experiments),
@@ -234,7 +249,8 @@ impl AppState {
                     _ = state.orchestrator.woken() => {}
                 }
                 let orchestrator = Arc::clone(&state.orchestrator);
-                let sink = RuntimeSink::new(Arc::clone(&state.agent_runtime));
+                let sink = RuntimeSink::new(Arc::clone(&state.agent_runtime))
+                    .with_members(Arc::clone(&state.members));
                 let result = tokio::task::spawn_blocking(move || orchestrator.tick(&sink)).await;
                 match result {
                     Ok(Ok(_)) => {}

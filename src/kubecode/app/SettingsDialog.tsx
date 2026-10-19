@@ -26,6 +26,11 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 
+import { MemberDefaultsPanel } from '../members/MemberDefaultsPanel'
+import { MemberRoster } from '../members/MemberRoster'
+import type { MemberDefaults } from '../api'
+import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+
 import type { KubecodeAgentPreferences } from '../agentPreferences'
 import type { KubecodeAppearance, KubecodeTheme } from '../appearancePreferences'
 import { KUBECODE_THEME_OPTIONS } from '../appearancePreferences'
@@ -52,7 +57,7 @@ import type { Translator } from '@/lib/i18n'
 import type { WeChatBinding } from './useWeChatBinding'
 import { WeChatSettingsPanel } from './WeChatSettingsPanel'
 
-export type SettingsSection = 'general' | 'notifications' | 'agents' | 'wechat' | 'terminal' | 'editor'
+export type SettingsSection = 'general' | 'notifications' | 'agents' | 'members' | 'wechat' | 'terminal' | 'editor'
 
 export type SettingsDialogProps = {
   api: KubecodeApi
@@ -60,6 +65,9 @@ export type SettingsDialogProps = {
   agents: AgentDescriptor[]
   agentsRefreshing: boolean
   appearance: KubecodeAppearance
+  /** The selected Workspace, whose members the Members section shows. */
+  activeProjectId?: string | null
+  connectionState?: WorkspaceConnectionState
   editorPreferences: KubecodeEditorPreferences
   notifications: KubecodeNotifications
   notificationPermission: BrowserNotificationPermission
@@ -87,6 +95,8 @@ export function SettingsDialog({
   agents,
   agentsRefreshing,
   appearance,
+  activeProjectId = null,
+  connectionState = 'live',
   editorPreferences,
   notifications,
   notificationPermission: browserPermission,
@@ -109,6 +119,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
+  const [memberDefaults, setMemberDefaults] = useState<MemberDefaults | null>(null)
 
   const copyDiagnostics = async () => {
     const report = {
@@ -171,14 +182,16 @@ export function SettingsDialog({
         </DialogHeader>
         <aside className="kubecode-settings-nav">
           <strong>{t('kubecode.settings')}</strong>
-          {(['general', 'notifications', 'agents', 'wechat', 'terminal', 'editor'] as const).map((item) => (
+          {(['general', 'notifications', 'agents', 'members', 'wechat', 'terminal', 'editor'] as const).map((item) => (
             <Button key={item} variant={section === item ? 'secondary' : 'ghost'} onClick={() => setSection(item)}>
-              {t(`kubecode.settings.${item}`)}
+              {item === 'members' ? t('kubecode.members.title') : t(`kubecode.settings.${item}`)}
             </Button>
           ))}
         </aside>
         <section className="kubecode-settings-content">
-          <h2>{section === 'general' ? t('kubecode.appearance') : t(`kubecode.settings.${section}`)}</h2>
+          <h2>{section === 'general'
+            ? t('kubecode.appearance')
+            : section === 'members' ? t('kubecode.members.title') : t(`kubecode.settings.${section}`)}</h2>
           {section === 'general' && (
             <div className="kubecode-settings-group">
               <div className="kubecode-setting-row">
@@ -451,6 +464,24 @@ export function SettingsDialog({
             <h3 className="kubecode-settings-section-heading">{t('kubecode.runtime')}</h3>
             <RuntimeStatusPanel api={api} t={t} />
             </>
+          )}
+          {section === 'members' && (
+            <div className="kubecode-settings-group">
+              {activeProjectId ? (
+                <MemberRoster
+                  agents={agents}
+                  api={api}
+                  connectionState={connectionState}
+                  defaults={memberDefaults}
+                  events={workspaceEvents}
+                  projectId={activeProjectId}
+                  t={t}
+                />
+              ) : (
+                <p className="kubecode-research-muted">{t('kubecode.members.noProject')}</p>
+              )}
+              <MemberDefaultsPanel agents={agents} api={api} t={t} onLoaded={setMemberDefaults} />
+            </div>
           )}
           {section === 'wechat' && (
             <WeChatSettingsPanel
