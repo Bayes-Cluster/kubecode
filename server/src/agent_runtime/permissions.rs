@@ -513,6 +513,42 @@ fn side_question_capability(store: &AgentStore, conversation_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Claude Code tools that edit files or run commands: withdrawn from the
+/// General Agent's sessions when they start, whatever the user's own Claude
+/// settings allow (ADR 0226).
+const MANAGER_WITHDRAWN_CLAUDE_TOOLS: &[&str] = &[
+    "Bash",
+    "BashOutput",
+    "KillShell",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "NotebookEdit",
+    // Runs a shell command and watches its output.
+    "Monitor",
+    "TaskOutput",
+    "TaskStop",
+    // Creates a git worktree.
+    "EnterWorktree",
+    "PowerShell",
+];
+
+/// Session metadata a provider reads when a session starts (new, loaded, or
+/// resumed). Only the manager's Claude Code sessions carry any: the tools it
+/// may not use are withdrawn at the source, not refused one request at a time.
+pub(super) fn session_meta(
+    agent_id: AgentId,
+    profile: AgentPermissionProfile,
+) -> Option<agent_client_protocol::schema::v1::Meta> {
+    if agent_id != AgentId::ClaudeCode || profile != AgentPermissionProfile::Manager {
+        return None;
+    }
+    let value = serde_json::json!({
+        "claudeCode": { "options": { "disallowedTools": MANAGER_WITHDRAWN_CLAUDE_TOOLS } }
+    });
+    value.as_object().cloned()
+}
+
 pub(super) async fn apply_native_permission_profile(
     connection: &ConnectionTo<Agent>,
     session_id: &agent_client_protocol::schema::v1::SessionId,
@@ -569,6 +605,37 @@ pub(super) async fn apply_native_permission_profile(
                 .await?;
             Ok(())
         }
+        // The manager's Codex runs read-only: commands stay inside a read-only,
+        // no-network sandbox, and editing or leaving the sandbox needs an
+        // approval, which the runtime refuses for the manager.
+        (AgentPermissionProfile::Manager, AgentId::Codex) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("read-only"),
+                ))
+                .block_task()
+                .await
+                .map_err(native_permission_error)?;
+            Ok(())
+        }
+        // Claude Code's editing and shell tools were withdrawn at launch; its
+        // mode is reset to the one that asks, never one that skips asking.
+        (AgentPermissionProfile::Manager, AgentId::ClaudeCode) => {
+            connection
+                .send_request(SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    "mode",
+                    config_value("default"),
+                ))
+                .block_task()
+                .await
+                .map_err(native_permission_error)?;
+            Ok(())
+        }
+        // OpenCode's editing and shell were denied in its launch environment.
+        (AgentPermissionProfile::Manager, AgentId::OpenCode) => Ok(()),
         (AgentPermissionProfile::ReadOnly, AgentId::OpenCode) => {
             connection
                 .send_request(SetSessionModeRequest::new(session_id.clone(), "plan"))
@@ -593,6 +660,41 @@ mod tests {
 
     use crate::agents::PermissionMode;
     use crate::workspace::WorkspaceService;
+
+    #[test]
+    fn a_manager_claude_session_starts_without_editing_or_shell_tools() {
+        let meta = session_meta(AgentId::ClaudeCode, AgentPermissionProfile::Manager)
+            .expect("a manager's Claude session carries its restriction");
+        let disallowed: Vec<&str> = meta["claudeCode"]["options"]["disallowedTools"]
+            .as_array()
+            .expect("disallowed tools")
+            .iter()
+            .filter_map(|tool| tool.as_str())
+            .collect();
+        for tool in [
+            "Bash",
+            "Edit",
+            "MultiEdit",
+            "Write",
+            "NotebookEdit",
+            // Runs a shell command and watches it.
+            "Monitor",
+            "TaskOutput",
+            "TaskStop",
+            // Writes a git worktree.
+            "EnterWorktree",
+            "PowerShell",
+        ] {
+            assert!(
+                disallowed.contains(&tool),
+                "{tool} is not withdrawn: {disallowed:?}"
+            );
+        }
+        // Other profiles and providers start as before.
+        assert!(session_meta(AgentId::ClaudeCode, AgentPermissionProfile::Default).is_none());
+        assert!(session_meta(AgentId::Codex, AgentPermissionProfile::Manager).is_none());
+        assert!(session_meta(AgentId::OpenCode, AgentPermissionProfile::Manager).is_none());
+    }
 
     #[test]
     fn always_allow_matchers_carry_tool_kind_only() {

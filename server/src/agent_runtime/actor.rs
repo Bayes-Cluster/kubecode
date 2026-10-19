@@ -36,8 +36,8 @@ use super::permissions::{
     start_side_question,
 };
 use super::{
-    AgentRuntime, AgentSessionConfig, AgentStartupStage, RuntimeError, RuntimeFailure,
-    SessionActorGeneration, SessionActorHandle,
+    AgentPermissionProfile, AgentRuntime, AgentSessionConfig, AgentStartupStage, RuntimeError,
+    RuntimeFailure, SessionActorGeneration, SessionActorHandle,
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -249,6 +249,7 @@ async fn run_acp_session(
     let pending_permissions = Arc::clone(&runtime.pending_permissions);
     let permission_runtime = runtime.clone();
     let permission_conversation_id = config.conversation_id.clone();
+    let permission_profile = config.permission_profile;
     let elicitation_conversation_id = config.conversation_id.clone();
     let elicitation_store = Arc::clone(&runtime.store);
     let elicitation_run_id = Arc::clone(&active_run_id);
@@ -345,22 +346,17 @@ async fn run_acp_session(
                 });
                 // The General Agent manages: native file-editing, deleting,
                 // moving, and command-execution tools are refused outright, not
-                // surfaced for approval (ADR 0220 §4). Its management tools are
+                // surfaced for approval (ADR 0220 §4). Anything else it asks for
+                // is put to the researcher every time, never answered from
+                // always-allow memory (ADR 0226). Its management tools are
                 // Kubecode's own, which this does not touch.
-                let manager_denied = super::permissions::denied_for_manager(
-                    request.tool_call.fields.kind,
-                ) && permission_runtime
-                    .work_services()
-                    .zip(permission_store.get_conversation(&permission_conversation_id).ok())
-                    .is_some_and(|(services, conversation)| {
-                        services
-                            .members
-                            .was_general(&conversation.project_id, &permission_conversation_id)
-                            .unwrap_or(false)
-                    });
+                let manager = permission_profile == AgentPermissionProfile::Manager;
+                let manager_denied =
+                    manager && super::permissions::denied_for_manager(request.tool_call.fields.kind);
                 let outcome = if discriminator_request || manager_denied {
                     RequestPermissionOutcome::Cancelled
-                } else if let Some(run_id) = run_id.as_deref()
+                } else if !manager
+                    && let Some(run_id) = run_id.as_deref()
                     && let Some(outcome) = remembered_permission_outcome(
                         &permission_runtime,
                         run_id,
@@ -641,6 +637,8 @@ async fn run_acp_session(
                 &initialization.agent_capabilities,
                 Some(&generation),
             )?;
+            let session_meta =
+                super::permissions::session_meta(config.agent_id, config.permission_profile);
             let mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
                 runtime
                     .mcp_http_servers(&conversation_id)
@@ -657,7 +655,8 @@ async fn run_acp_session(
                     let response = connection
                         .send_request(
                             LoadSessionRequest::new(session_id.clone(), cwd.clone())
-                                .mcp_servers(mcp_http.clone()),
+                                .mcp_servers(mcp_http.clone())
+                                .meta(session_meta.clone()),
                         )
                         .block_task()
                         .await?;
@@ -684,7 +683,8 @@ async fn run_acp_session(
                         match connection
                             .send_request(
                                 ResumeSessionRequest::new(session_id.clone(), cwd.clone())
-                                    .mcp_servers(mcp_http.clone()),
+                                    .mcp_servers(mcp_http.clone())
+                                    .meta(session_meta.clone()),
                             )
                             .block_task()
                             .await
@@ -716,7 +716,7 @@ async fn run_acp_session(
                             .send_request(LoadSessionRequest::new(
                                 session_id.clone(),
                                 cwd.clone(),
-                            ).mcp_servers(mcp_http.clone()))
+                            ).mcp_servers(mcp_http.clone()).meta(session_meta.clone()))
                             .block_task()
                             .await
                         {
@@ -739,6 +739,7 @@ async fn run_acp_session(
                                     &connection,
                                     cwd.clone(),
                                     ProviderSessionCreation {
+                                        meta: session_meta.clone(),
                                         runtime: &runtime,
                                         conversation_id: &conversation_id,
                                         mcp_http: mcp_http.clone(),
@@ -758,6 +759,7 @@ async fn run_acp_session(
                     &connection,
                     cwd.clone(),
                     ProviderSessionCreation {
+                        meta: session_meta.clone(),
                         runtime: &runtime,
                         conversation_id: &conversation_id,
                         mcp_http,
@@ -1038,6 +1040,8 @@ type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 struct ProviderSessionCreation<'a> {
     runtime: &'a AgentRuntime,
     mcp_http: Vec<McpServer>,
+    /// What the provider reads when the session starts (the manager's restriction).
+    meta: Option<agent_client_protocol::schema::v1::Meta>,
     conversation_id: &'a str,
     captured_responses: &'a SessionResponseCapture,
     startup_stage: &'a StartupStageCapture,
@@ -1059,6 +1063,7 @@ async fn create_provider_session(
     let ProviderSessionCreation {
         runtime,
         mcp_http,
+        meta,
         conversation_id,
         captured_responses,
         startup_stage,
@@ -1068,7 +1073,7 @@ async fn create_provider_session(
     set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
     if !mcp_http.is_empty() {
         let response = connection
-            .send_request(NewSessionRequest::new(cwd).mcp_servers(mcp_http))
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(mcp_http).meta(meta))
             .block_task()
             .await?;
         let session_id = response.session_id.clone();
@@ -1114,7 +1119,7 @@ async fn create_provider_session(
         return Ok((session_id, Some(active_session)));
     }
     let response = connection
-        .send_request(NewSessionRequest::new(cwd))
+        .send_request(NewSessionRequest::new(cwd).meta(meta))
         .block_task()
         .await?;
     let session_id = response.session_id.clone();
@@ -1399,6 +1404,9 @@ impl AgentRuntime {
         conversation_id: &str,
         mode_id: String,
     ) -> Result<(), RuntimeError> {
+        if self.permission_profile(conversation_id) == AgentPermissionProfile::Manager {
+            return Err(RuntimeError::ManagerModeLocked);
+        }
         self.dispatch_session_control(conversation_id, |response| SessionCommand::SetMode {
             mode_id,
             response,
@@ -1412,6 +1420,13 @@ impl AgentRuntime {
         config_id: String,
         value: SessionConfigInput,
     ) -> Result<(), RuntimeError> {
+        // The manager's mode is part of its launch restriction (ADR 0226),
+        // whoever asks to change it.
+        if self.permission_profile(conversation_id) == AgentPermissionProfile::Manager
+            && super::is_mode_config(&self.store, conversation_id, &config_id)?
+        {
+            return Err(RuntimeError::ManagerModeLocked);
+        }
         self.dispatch_session_control(conversation_id, |response| SessionCommand::SetConfig {
             config_id,
             value,

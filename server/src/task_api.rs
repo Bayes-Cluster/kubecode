@@ -190,7 +190,11 @@ struct InternalWork {
 
 #[derive(Debug, Serialize)]
 struct TaskStale {
+    /// The internal work the evidence is attached to; empty for the review's own evidence.
     work_id: String,
+    /// The open review whose own evidence this is (its `result_id` is the cited `kind:id`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
     #[serde(flatten)]
     evidence: StaleEvidence,
 }
@@ -243,7 +247,38 @@ fn stale_of(
         for entry in evidence.stale(project_id, &summary.results) {
             stale.push(TaskStale {
                 work_id: summary.item.id.clone(),
+                request_id: None,
                 evidence: entry,
+            });
+        }
+    }
+    // The open review's own evidence, against the revisions pinned when the
+    // manager asked for the review (ADR 0226).
+    if let Some(request) = state
+        .tasks
+        .review_requests(project_id, research_id)?
+        .into_iter()
+        .find(|request| request.state == "open")
+    {
+        for (entry, pinned) in &request.evidence_pins {
+            let (kind, id) = entry.split_once(':').unwrap_or((entry.as_str(), ""));
+            let now = evidence.current_revision(project_id, kind, id);
+            let status = match &now {
+                None => "removed",
+                Some(current) if current != pinned => "changed",
+                Some(_) => continue,
+            };
+            stale.push(TaskStale {
+                work_id: String::new(),
+                request_id: Some(request.id.clone()),
+                evidence: StaleEvidence {
+                    result_id: entry.clone(),
+                    kind: kind.to_owned(),
+                    ref_id: id.to_owned(),
+                    status,
+                    pinned: pinned.clone(),
+                    current: now,
+                },
             });
         }
     }
@@ -375,14 +410,34 @@ async fn review(
                 return Err(ApiError::StaleEvidence(stale));
             }
         }
-        Ok(state.tasks.review(
+        let review = state.tasks.review(
             &project_id,
             &research_id,
             &body.request_id,
             body.accept,
             outcome,
             body.reason.as_deref(),
-        )?)
+        )?;
+        // The manager hears the decision, with the researcher's reasons: a Task
+        // sent back is rework it must plan, and an accepted one is closed out.
+        if let Ok(Some(manager)) = state.members.general(&project_id)
+            && let Some(session) = manager.public_conversation_id.as_deref()
+        {
+            let title = state
+                .research
+                .get(&project_id, &research_id)
+                .map(|question| question.brief.title)
+                .unwrap_or_default();
+            if let Err(error) =
+                state
+                    .orchestrator
+                    .route_task_review(&project_id, session, &review, &title)
+            {
+                eprintln!("WARN: could not tell the manager about a Task review: {error}");
+            }
+            state.orchestrator.wake();
+        }
+        Ok(review)
     })
     .await
     .map_err(|_| ApiError::BadRequest("the review could not be recorded"))??;
@@ -391,8 +446,13 @@ async fn review(
 
 #[derive(Debug, Deserialize)]
 struct RepinBody {
+    #[serde(default)]
     work_id: String,
+    /// A work result's id, or, with `request_id`, the review's cited `kind:id`.
     result_id: String,
+    /// The open review whose own evidence is being re-pinned.
+    #[serde(default)]
+    request_id: Option<String>,
     /// The version the researcher looked at; if it has changed again, nothing is pinned.
     #[serde(default)]
     revision: Option<String>,
@@ -407,6 +467,38 @@ async fn repin(
 ) -> Result<StatusCode, ApiError> {
     check_project(&state, &project_id)?;
     tokio::task::spawn_blocking(move || -> Result<(), ApiError> {
+        if let Some(request_id) = body.request_id.as_deref() {
+            let (kind, id) = body
+                .result_id
+                .split_once(':')
+                .unwrap_or((body.result_id.as_str(), ""));
+            let current = evidence_of(&state)
+                .current_revision(&project_id, kind, id)
+                .ok_or(ApiError::BadRequest(
+                    "that evidence has no current version to accept",
+                ))?;
+            // The review's own evidence is accepted only at the version the
+            // researcher looked at (ADR 0226).
+            let looked_at = body
+                .revision
+                .as_deref()
+                .ok_or(ApiError::BadRequest("name the version that was looked at"))?;
+            if looked_at != current {
+                return Err(ApiError::StaleEvidence(stale_of(
+                    &state,
+                    &project_id,
+                    &research_id,
+                )?));
+            }
+            state.tasks.repin_review_evidence(
+                &project_id,
+                &research_id,
+                request_id,
+                &body.result_id,
+                &current,
+            )?;
+            return Ok(());
+        }
         let item = state.work.get(&project_id, &body.work_id)?;
         if item.research_id.as_deref() != Some(research_id.as_str()) {
             return Err(WorkError::NotFound.into());

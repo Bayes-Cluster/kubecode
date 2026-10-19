@@ -715,6 +715,9 @@ impl MemberStore {
                 None => member.template,
             };
             let spec = match &patch.spec {
+                Some(spec) if member.role == MemberRole::General => {
+                    spec.clone().normalized()?.checked_for_general()?
+                }
                 Some(spec) => spec.clone().normalized()?,
                 None => member.spec.clone(),
             };
@@ -847,6 +850,9 @@ impl MemberStore {
             return Err(MemberError::Removed);
         }
         let spec = match spec {
+            Some(spec) if member.role == MemberRole::General => {
+                spec.normalized()?.checked_for_general()?
+            }
             Some(spec) => spec.normalized()?,
             None => member.spec.clone(),
         };
@@ -1044,7 +1050,14 @@ impl MemberStore {
                 Binding::Public
             },
             revision: member.revision,
-            values: member.spec.config.into_iter().collect(),
+            // A mode stored for the General Agent before ADR 0226 is never
+            // applied: the manager's mode is set by its role.
+            values: member
+                .spec
+                .config
+                .into_iter()
+                .filter(|(key, _)| member.role != MemberRole::General || !is_mode_key(key))
+                .collect(),
         }))
     }
 

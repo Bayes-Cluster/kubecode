@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "Введіть відповідь для керівника команди",
   "kubecode.teamSubmitAnswer": "Надіслати відповідь",
   "kubecode.teamYoloNativePermission": "Нативний дозвіл",
+  "kubecode.generalManagerMode": "General Agent керує роботою, тому його режим зафіксовано",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

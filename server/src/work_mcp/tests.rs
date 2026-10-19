@@ -1098,3 +1098,135 @@ async fn a_private_session_cannot_publish_through_task_commands_and_hand_offs_ar
     let limited = refused(manager.general_post(Parameters(say(12))).await);
     assert!(limited.contains("too many hand-offs"), "{limited}");
 }
+
+#[tokio::test]
+async fn the_general_agent_s_sessions_start_with_the_manager_profile_and_specialists_do_not() {
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let project = rig.f.project_id.clone();
+    let general = rig
+        .state
+        .members
+        .ensure_general(&project, available, AgentId::OpenCode)
+        .unwrap();
+    let dm = rig
+        .state
+        .members
+        .ensure_dm_session(&project, &general.id, available)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let analyst = rig
+        .state
+        .members
+        .create_specialist(
+            &project,
+            crate::member_store::NewMember {
+                name: "Analyst".into(),
+                ..Default::default()
+            },
+            available,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    use crate::agent_runtime::AgentPermissionProfile;
+    for session in [
+        general.public_conversation_id.as_deref().unwrap(),
+        dm.as_str(),
+    ] {
+        assert_eq!(
+            rig.runtime.permission_profile(session),
+            AgentPermissionProfile::Manager,
+            "every Session of the manager starts restricted"
+        );
+    }
+    assert_eq!(
+        rig.runtime
+            .permission_profile(analyst.public_conversation_id.as_deref().unwrap()),
+        AgentPermissionProfile::Default
+    );
+}
+
+#[tokio::test]
+async fn the_manager_s_mode_cannot_be_widened_through_the_api_or_the_runtime() {
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request, header};
+    use tower::ServiceExt;
+
+    use crate::agent_runtime::{RuntimeError, SessionConfigInput};
+
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let general = rig
+        .state
+        .members
+        .ensure_general(&rig.f.project_id, available, AgentId::OpenCode)
+        .unwrap();
+    let session = general.public_conversation_id.clone().unwrap();
+    let app = crate::api::app_router(rig.state.clone(), "/base");
+    let call = |method: Method, path: String, body: Value| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header(header::HOST, "127.0.0.1:9999")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (
+                status,
+                serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null),
+            )
+        }
+    };
+
+    // The researcher's mode picker shows why it is locked...
+    let (status, state) = call(
+        Method::GET,
+        format!("/base/api/v1/sessions/{session}/state"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{state}");
+    assert_eq!(state["mode_access"]["can_change"], false);
+    assert_eq!(state["mode_access"]["reason"], "general_manager");
+    // ...and the API refuses a mode change, by mode or by its config option.
+    for body in [
+        json!({"kind": "mode", "value": "agent-full-access"}),
+        json!({"kind": "config", "config_id": "mode", "value": "agent-full-access"}),
+    ] {
+        let (status, error) = call(
+            Method::PATCH,
+            format!("/base/api/v1/sessions/{session}/options"),
+            body,
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::CONFLICT, "{error}");
+        assert_eq!(error["code"], "session_mode_locked");
+    }
+    // Nothing else in the server can widen it either.
+    assert!(matches!(
+        rig.runtime
+            .set_session_mode(&session, "agent-full-access".into())
+            .await,
+        Err(RuntimeError::ManagerModeLocked)
+    ));
+    assert!(matches!(
+        rig.runtime
+            .set_session_config(
+                &session,
+                "mode".into(),
+                SessionConfigInput::ValueId("agent-full-access".into()),
+            )
+            .await,
+        Err(RuntimeError::ManagerModeLocked)
+    ));
+}

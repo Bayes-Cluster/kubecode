@@ -169,16 +169,19 @@ describe('TaskInspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.lookAtIt' }))
     expect(accept).toBeEnabled()
     fireEvent.click(accept)
-    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', 'w1', 'res1', 'b'))
+    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({ work_id: 'w1', result_id: 'res1' }), 'b'))
   })
 
   it('lets the researcher accept results when evidence no longer exists, only after saying they know', async () => {
     const { api } = inspector(detail({
       stale_evidence: [
         { work_id: 'w1', result_id: 'res2', kind: 'artifact', ref_id: 'gone.csv', status: 'removed', pinned: 'a', current: null },
+        // Evidence the review itself cited, also gone.
+        { work_id: '', request_id: 'rq1', result_id: 'file:notes.md', kind: 'file', ref_id: 'notes.md', status: 'removed', pinned: 'a', current: null },
       ],
     }))
     await screen.findByText('kubecode.task.staleEvidenceTitle')
+    expect(screen.getByText(/file:notes\.md/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'kubecode.task.acceptCurrent' })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'refuted' } })
     const accept = screen.getByRole('button', { name: 'kubecode.task.acceptResults' })
@@ -210,5 +213,63 @@ describe('TaskInspector', () => {
     expect(await screen.findByText('Which ratio?')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '0.5' }))
     await waitFor(() => expect(api.answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', '0.5'))
+  })
+
+  it('accepts only the version that was looked at; a newer version must be looked at again', async () => {
+    const stale = (current: string) => detail({
+      stale_evidence: [
+        { work_id: 'w1', result_id: 'res1', kind: 'artifact', ref_id: 'results.csv', status: 'changed', pinned: 'a', current },
+      ],
+    })
+    const taskDetail = vi.fn()
+      .mockResolvedValueOnce(stale('b'))
+      .mockResolvedValue(stale('c'))
+    const api = {
+      taskDetail,
+      reviewTask: vi.fn(),
+      repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
+      answerWorkDecision: vi.fn(),
+      readProjectContext: vi.fn().mockRejectedValue(new Error('not needed')),
+    } as unknown as KubecodeApi
+    const props = { api, connectionState: 'live' as const, projectId: 'p1', t, taskId: 'r1', onShowMessage: vi.fn() }
+    const view = render(<TaskInspector {...props} events={[]} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.task.lookAtIt' }))
+    expect(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })).toBeEnabled()
+    // The evidence changes again while the researcher is reading: version C arrives.
+    view.rerender(<TaskInspector {...props} events={[{
+      id: 9, kind: 'task_updated', project_id: 'p1', conversation_id: null, run_id: null, payload: {}, created_at: '',
+    }]} />)
+    await waitFor(() => expect(taskDetail).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.lookAtIt' }))
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' }))
+    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({
+      work_id: 'w1', result_id: 'res1',
+    }), 'c'))
+  })
+
+  it('shows evidence cited by both the work and the review once, and one look re-pins every pin of it', async () => {
+    const api = {
+      taskDetail: vi.fn().mockResolvedValue(detail({
+        stale_evidence: [
+          { work_id: 'w1', result_id: 'res1', kind: 'file', ref_id: 'results.csv', status: 'changed', pinned: 'a', current: 'b' },
+          { work_id: '', request_id: 'rq1', result_id: 'file:results.csv', kind: 'file', ref_id: 'results.csv', status: 'changed', pinned: 'a2', current: 'b' },
+        ],
+      })),
+      reviewTask: vi.fn(),
+      repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
+      answerWorkDecision: vi.fn(),
+      readProjectContext: vi.fn().mockRejectedValue(new Error('not needed')),
+    } as unknown as KubecodeApi
+    render(<TaskInspector api={api} connectionState="live" events={[]} projectId="p1" t={t} taskId="r1" onShowMessage={vi.fn()} />)
+    const looks = await screen.findAllByRole('button', { name: 'kubecode.task.lookAtIt' })
+    expect(looks).toHaveLength(1)
+    fireEvent.click(looks[0])
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' }))
+    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledTimes(2))
+    expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({ work_id: 'w1', result_id: 'res1' }), 'b')
+    expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({
+      request_id: 'rq1', result_id: 'file:results.csv',
+    }), 'b')
   })
 })

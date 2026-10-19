@@ -12,6 +12,7 @@ import type {
   TaskDetail,
   TaskDraft,
   TaskReviewRecord,
+  TaskStaleEvidence,
   WorkOutcome,
   DmSharePreview,
   DmTurn,
@@ -534,13 +535,17 @@ export class KubecodeApi {
   repinTaskEvidence(
     projectId: string,
     researchId: string,
-    workId: string,
-    resultId: string,
-    revision?: string | null,
+    evidence: Pick<TaskStaleEvidence, 'work_id' | 'result_id' | 'request_id'>,
+    revision: string,
   ): Promise<void> {
     return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/repin`, {
       method: 'POST',
-      body: JSON.stringify({ work_id: workId, result_id: resultId, revision: revision ?? undefined }),
+      body: JSON.stringify({
+        work_id: evidence.work_id,
+        result_id: evidence.result_id,
+        request_id: evidence.request_id,
+        revision,
+      }),
     })
   }
 

@@ -20,7 +20,7 @@ export function fixtureDirectory(): string {
   return join(process.cwd(), '.local', `playwright-fixtures-${port}`)
 }
 
-type Recorded = { conversationId: string; url: string; prompts: string[] }
+type Recorded = { conversationId: string; url: string; prompts: string[]; permission: string }
 
 function read(directory: string): Recorded[] {
   let names: string[]
@@ -57,7 +57,13 @@ function read(directory: string): Recorded[] {
     } catch {
       // No prompt yet.
     }
-    recorded.push({ conversationId, url: work.url, prompts })
+    let permission = ''
+    try {
+      permission = readFileSync(join(directory, `permission-${pid}.txt`), 'utf8')
+    } catch {
+      // Launched without a permission override.
+    }
+    recorded.push({ conversationId, url: work.url, prompts, permission })
   }
   return recorded
 }
@@ -67,6 +73,13 @@ export function promptsOf(conversationId: string): string[] {
   return read(fixtureDirectory())
     .filter((entry) => entry.conversationId === conversationId)
     .flatMap((entry) => entry.prompts)
+}
+
+/** The `OPENCODE_PERMISSION` each process serving a Session was launched with. */
+export function launchPermissionsOf(conversationId: string): string[] {
+  return read(fixtureDirectory())
+    .filter((entry) => entry.conversationId === conversationId)
+    .map((entry) => entry.permission)
 }
 
 /** Waits until a Session was prompted with text satisfying `matches`, and returns that text. */

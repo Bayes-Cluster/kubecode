@@ -157,6 +157,25 @@ impl WorkAgent {
         summary: &str,
         evidence: &[String],
     ) -> Result<ReviewRequest, AgentWorkError> {
+        // Each cited record is pinned to the revision it has now, so a change
+        // before the researcher decides is caught (ADR 0226). A citation of
+        // something that does not exist here is refused, not carried along.
+        let mut pins = std::collections::BTreeMap::new();
+        if let Some(checker) = &self.evidence {
+            for entry in evidence.iter().take(20) {
+                // A malformed citation is refused by the store with its rule.
+                let Some((kind, id)) = entry
+                    .split_once(':')
+                    .filter(|(kind, id)| !kind.is_empty() && !id.is_empty())
+                else {
+                    continue;
+                };
+                let revision = checker
+                    .current_revision(&self.project_id, kind, id)
+                    .ok_or_else(|| invalid(format!("cited evidence was not found: {entry}")))?;
+                pins.insert(entry.clone(), revision);
+            }
+        }
         Ok(self
             .tasks()?
             .request_review(
@@ -165,6 +184,7 @@ impl WorkAgent {
                 research_id,
                 summary,
                 evidence,
+                &pins,
             )?
             .0)
     }

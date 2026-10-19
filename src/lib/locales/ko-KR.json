@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "팀 리더에게 보낼 답변 입력",
   "kubecode.teamSubmitAnswer": "답변 보내기",
   "kubecode.teamYoloNativePermission": "네이티브 권한",
+  "kubecode.generalManagerMode": "General Agent는 관리를 맡으므로 모드가 고정됩니다",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

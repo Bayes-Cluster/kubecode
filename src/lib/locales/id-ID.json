@@ -1544,6 +1544,7 @@
   "kubecode.teamAnswerPlaceholder": "Ketik jawaban Anda untuk pemimpin tim",
   "kubecode.teamSubmitAnswer": "Kirim jawaban",
   "kubecode.teamYoloNativePermission": "Izin native",
+  "kubecode.generalManagerMode": "General Agent bertugas mengelola, jadi modenya tetap",
   "kubecode.teamYoloPermissionClaude": "Claude Code · bypassPermissions",
   "kubecode.teamYoloPermissionCodex": "Codex · Agent (full access)",
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",

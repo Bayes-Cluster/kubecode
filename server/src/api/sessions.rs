@@ -12,7 +12,7 @@ use super::error::{ApiError, SessionModeLockReason};
 use super::runtime::project_available_commands;
 use crate::agent_runtime::SessionConfigInput;
 use crate::agents::{
-    AgentId, AgentStore, Conversation, ConversationRevision, ExecutionMode, RunStatus, StoreError,
+    AgentId, Conversation, ConversationRevision, ExecutionMode, RunStatus, StoreError,
 };
 use crate::composer_catalog::ComposerCatalogSnapshot;
 use crate::teams::{TeamError, TeamMode, TeamRole, TeamStatus};
@@ -563,7 +563,11 @@ pub(super) async fn update_session_option(
     let changes_mode = match &request {
         UpdateSessionOptionRequest::Mode { .. } => true,
         UpdateSessionOptionRequest::Config { config_id, .. } => {
-            is_mode_config(&state.agent_runtime.store(), &conversation_id, config_id)?
+            crate::agent_runtime::is_mode_config(
+                &state.agent_runtime.store(),
+                &conversation_id,
+                config_id,
+            )?
         }
     };
     if changes_mode {
@@ -597,6 +601,11 @@ fn session_mode_access(
         .agent_runtime
         .store()
         .get_conversation(conversation_id)?;
+    if state.agent_runtime.permission_profile(conversation_id)
+        == crate::agent_runtime::AgentPermissionProfile::Manager
+    {
+        return Ok(locked_session_mode(SessionModeLockReason::GeneralManager));
+    }
     let member = state.teams.member_for_conversation(conversation_id)?;
     if let Some(member) = member.as_ref() {
         let reason = match member.role {
@@ -633,30 +642,4 @@ fn locked_session_mode(reason: SessionModeLockReason) -> SessionModeAccess {
         can_change: false,
         reason: Some(reason),
     }
-}
-
-fn is_mode_config(
-    store: &AgentStore,
-    conversation_id: &str,
-    config_id: &str,
-) -> Result<bool, ApiError> {
-    if config_id.eq_ignore_ascii_case("mode") {
-        return Ok(true);
-    }
-    let events = store.session_events_after(conversation_id, 0)?;
-    Ok(events.iter().rev().any(|event| {
-        let configs = event
-            .payload
-            .get("configOptions")
-            .and_then(|value| value.as_array());
-        configs.is_some_and(|configs| {
-            configs.iter().any(|config| {
-                config.get("id").and_then(|value| value.as_str()) == Some(config_id)
-                    && config
-                        .get("category")
-                        .and_then(|value| value.as_str())
-                        .is_some_and(|category| category.eq_ignore_ascii_case("mode"))
-            })
-        })
-    }))
 }

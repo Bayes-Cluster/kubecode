@@ -83,6 +83,8 @@ pub enum RuntimeError {
     SideQuestionInactive,
     #[error("another Claude side question is already pending")]
     SideQuestionPending,
+    #[error("the General Agent's mode is set by its role as manager")]
+    ManagerModeLocked,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -259,12 +261,43 @@ impl SessionActorGeneration {
     }
 }
 
+/// Whether a config option sets the Session's permission mode.
+pub fn is_mode_config(
+    store: &AgentStore,
+    conversation_id: &str,
+    config_id: &str,
+) -> Result<bool, StoreError> {
+    if config_id.eq_ignore_ascii_case("mode") {
+        return Ok(true);
+    }
+    let events = store.session_events_after(conversation_id, 0)?;
+    Ok(events.iter().rev().any(|event| {
+        let configs = event
+            .payload
+            .get("configOptions")
+            .and_then(|value| value.as_array());
+        configs.is_some_and(|configs| {
+            configs.iter().any(|config| {
+                config.get("id").and_then(|value| value.as_str()) == Some(config_id)
+                    && config
+                        .get("category")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|category| category.eq_ignore_ascii_case("mode"))
+            })
+        })
+    }))
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum AgentPermissionProfile {
     #[default]
     Default,
     Maximum,
     ReadOnly,
+    /// The General Agent: it manages, so its provider starts without the tools
+    /// that edit files or run commands (ADR 0226). Kubecode's own management
+    /// tools and reading stay available.
+    Manager,
 }
 
 struct AgentSessionConfig {
@@ -1593,7 +1626,23 @@ impl AgentRuntime {
             .ok_or(RuntimeError::AgentUnavailable(agent_id))
     }
 
-    fn permission_profile(&self, conversation_id: &str) -> AgentPermissionProfile {
+    pub(crate) fn permission_profile(&self, conversation_id: &str) -> AgentPermissionProfile {
+        // Every Session the General Agent has had is bound by its boundary; an
+        // unreadable roster restricts rather than lets the Session through.
+        if let Some(services) = self.work_services()
+            && let Ok(conversation) = self.store.get_conversation(conversation_id)
+            && services
+                .members
+                .was_general(&conversation.project_id, conversation_id)
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "WARN: the roster could not be read; Session {conversation_id} starts restricted: {error}"
+                    );
+                    true
+                })
+        {
+            return AgentPermissionProfile::Manager;
+        }
         let Some(teams) = self.team_store() else {
             return AgentPermissionProfile::Default;
         };

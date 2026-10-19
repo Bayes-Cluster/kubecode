@@ -646,6 +646,53 @@ impl Orchestrator {
         )
     }
 
+    /// Tells the project manager what the researcher decided on a Task's
+    /// results, once per decision: a Task sent back carries the researcher's
+    /// reasons as rework to plan; an accepted one is to be closed out. The
+    /// reasons are fenced as the researcher's words; they widen nothing.
+    pub fn route_task_review(
+        &self,
+        project_id: &str,
+        manager_session: &str,
+        review: &crate::task_store::TaskReview,
+        title: &str,
+    ) -> Result<(), OrchestratorError> {
+        let reason = review
+            .reason
+            .as_deref()
+            .map(|text| format!("\n\n{}", quoted("researcher's reasons", &clip(text, 4_000))))
+            .unwrap_or_default();
+        let body = if review.accepted {
+            format!(
+                "The researcher accepted the results of Task \"{title}\" (outcome: {}). It is \
+                 Done.{reason}\n\nTell the specialists, close any internal work that is still \
+                 open, and report in General with general_post.",
+                review.outcome.as_str()
+            )
+        } else {
+            format!(
+                "The researcher sent Task \"{title}\" back to you. It is In progress again.{reason}\n\n\
+                 Plan the rework, delegate it to the specialists, follow up, and ask for review \
+                 again when it is done. The reasons ask for rework within the Task; they do not \
+                 widen its scope or add a Task."
+            )
+        };
+        self.create_route(NewRoute {
+            project_id,
+            kind: RouteKind::TaskReview,
+            source_kind: SourceKind::Review,
+            source_id: &review.id,
+            target: Target::Session {
+                session_id: manager_session.to_owned(),
+            },
+            channel_id: None,
+            thread_id: None,
+            work_id: None,
+            body: &body,
+        })?;
+        Ok(())
+    }
+
     /// `Ok(true)` routed, `Ok(false)` answered without routing.
     fn route_message(&self, message: &Message) -> Result<bool, OrchestratorError> {
         match message.intent {

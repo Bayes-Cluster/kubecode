@@ -23,6 +23,7 @@ struct ErrorBody {
 #[serde(rename_all = "snake_case")]
 pub(super) enum SessionModeLockReason {
     ActiveRun,
+    GeneralManager,
     ReadOnly,
     TeamDiscriminator,
     TeamTeammate,
@@ -191,6 +192,11 @@ impl IntoResponse for ApiError {
                     "side_question_pending",
                     error.to_string(),
                 ),
+                RuntimeError::ManagerModeLocked => (
+                    StatusCode::CONFLICT,
+                    "session_mode_locked",
+                    error.to_string(),
+                ),
             },
             ApiError::InvalidRequest(message) => {
                 (StatusCode::BAD_REQUEST, "invalid_request", message)
@@ -295,6 +301,9 @@ fn session_mode_lock_message(reason: SessionModeLockReason) -> &'static str {
     match reason {
         SessionModeLockReason::ActiveRun => {
             "session mode can be changed after the current turn finishes"
+        }
+        SessionModeLockReason::GeneralManager => {
+            "the General Agent's mode is set by its role as manager"
         }
         SessionModeLockReason::ReadOnly => "session mode cannot be changed in a read-only session",
         SessionModeLockReason::TeamDiscriminator => "discriminator mode is controlled by the Team",

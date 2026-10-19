@@ -558,7 +558,14 @@ fn the_manager_asks_for_review_and_the_researcher_completes_or_returns_the_task(
     // Nothing to review before work started; only the manager asks.
     assert!(
         r.tasks
-            .request_review(r.project(), &r.specialist, &id, "done", &[])
+            .request_review(
+                r.project(),
+                &r.specialist,
+                &id,
+                "done",
+                &[],
+                &Default::default()
+            )
             .is_err()
     );
     let go = r.say("Run it");
@@ -573,6 +580,7 @@ fn the_manager_asks_for_review_and_the_researcher_completes_or_returns_the_task(
             &id,
             "Both ratios were run; 0.9 diverged.",
             &["finding:f1".into()],
+            &Default::default(),
         )
         .unwrap();
     assert!(created);
@@ -588,14 +596,22 @@ fn the_manager_asks_for_review_and_the_researcher_completes_or_returns_the_task(
                 &r.general,
                 &id,
                 "Both ratios were run; 0.9 diverged.",
-                &[]
+                &[],
+                &Default::default()
             )
             .unwrap()
             .1
     );
     assert!(
         r.tasks
-            .request_review(r.project(), &r.general, &id, "something else", &[])
+            .request_review(
+                r.project(),
+                &r.general,
+                &id,
+                "something else",
+                &[],
+                &Default::default()
+            )
             .is_err()
     );
 
@@ -657,7 +673,14 @@ fn the_manager_asks_for_review_and_the_researcher_completes_or_returns_the_task(
     // A valid negative finding completes the Task.
     let (second, _) = r
         .tasks
-        .request_review(r.project(), &r.general, &id, "0.7 also diverges.", &[])
+        .request_review(
+            r.project(),
+            &r.general,
+            &id,
+            "0.7 also diverges.",
+            &[],
+            &Default::default(),
+        )
         .unwrap();
     assert_ne!(second.id, request.id);
     let accepted = r
@@ -997,7 +1020,14 @@ fn execution_runs_once_after_a_newer_instruction_and_a_retry_is_checked_again() 
     // After it is accepted, an old unused instruction cannot reopen it.
     let old = r.say("Maybe later we should try more");
     r.tasks
-        .request_review(r.project(), &r.general, &id, "done", &[])
+        .request_review(
+            r.project(),
+            &r.general,
+            &id,
+            "done",
+            &[],
+            &Default::default(),
+        )
         .unwrap();
     let request = r.tasks.review_requests(r.project(), &id).unwrap().remove(0);
     r.tasks
@@ -1126,8 +1156,14 @@ fn only_the_manager_refines_starts_approves_and_asks_for_review() {
         Err(TaskError::NotManager)
     ));
     assert!(matches!(
-        r.tasks
-            .request_review(r.project(), &r.specialist, &id, "x", &[]),
+        r.tasks.request_review(
+            r.project(),
+            &r.specialist,
+            &id,
+            "x",
+            &[],
+            &Default::default()
+        ),
         Err(TaskError::NotManager)
     ));
     assert!(matches!(
@@ -1136,7 +1172,7 @@ fn only_the_manager_refines_starts_approves_and_asks_for_review() {
     ));
     // Review needs a running Task and well-formed evidence.
     assert!(matches!(
-        r.tasks.request_review(r.project(), &r.general, &id, "not started yet", &[]),
+        r.tasks.request_review(r.project(), &r.general, &id, "not started yet", &[], &Default::default()),
         Err(TaskError::State(text)) if text.contains("executing")
     ));
     r.tasks
@@ -1148,7 +1184,8 @@ fn only_the_manager_refines_starts_approves_and_asks_for_review() {
             &r.general,
             &id,
             "done",
-            &["not-a-reference".into()]
+            &["not-a-reference".into()],
+            &Default::default()
         ),
         Err(TaskError::Invalid(_))
     ));
