@@ -342,11 +342,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     }
   }, [conversationId, inProject, projectId])
 
-  const applyRoute = useCallback((route: WorkspaceRoute) => {
+  const applyRoute = useCallback((route: WorkspaceRoute): boolean => {
     const target = route.project ?? projectIdRef.current
-    if (!target) return
+    // An unknown Project cannot be honoured: the link is abandoned at once.
+    if (!target) return false
     if (target !== projectIdRef.current) {
-      if (!projects.some((item) => item.id === target)) return
+      if (!projects.some((item) => item.id === target)) return false
       selection.selectProject(target)
     }
     switch (route.view) {
@@ -385,6 +386,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         }
         break
     }
+    return true
   }, [api, projects, selection, t])
   useWorkspaceRouteSync({
     apply: applyRoute,

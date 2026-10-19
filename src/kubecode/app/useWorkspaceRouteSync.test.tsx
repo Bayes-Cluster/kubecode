@@ -1,26 +1,46 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { APPLY_TIMEOUT_MS, useWorkspaceRouteSync } from './useWorkspaceRouteSync'
+import { APPLY_TIMEOUT_MS, useWorkspaceRouteSync, type HistoryMode } from './useWorkspaceRouteSync'
 import type { WorkspaceRoute } from './workspaceRoute'
 
 let setRoute: (route: WorkspaceRoute) => void = () => undefined
 const applied: WorkspaceRoute[] = []
 
-function Probe({ ready = true, delayed = false, moved = false }: { ready?: boolean; delayed?: boolean; moved?: boolean }) {
+function Probe({
+  ready = true,
+  delayed = false,
+  moved = false,
+  reject = false,
+  mode,
+}: {
+  ready?: boolean
+  delayed?: boolean
+  moved?: boolean
+  /** The shell cannot honour the route (an unknown Project). */
+  reject?: boolean
+  mode?: HistoryMode
+}) {
   const [route, set] = useState<WorkspaceRoute>({ project: 'p1', view: 'sessions' })
   useEffect(() => { setRoute = set }, [set])
-  useWorkspaceRouteSync({
+  const { pending } = useWorkspaceRouteSync({
     ready,
     ignoreInitialLink: moved,
     current: route,
+    historyMode: mode ? () => mode : undefined,
     apply: (next) => {
       applied.push(next)
+      if (reject) return false
       if (!delayed) set(next)
+      return true
     },
   })
-  return <output>{route.view}</output>
+  return <output data-pending={pending ? 'yes' : 'no'}>{route.view}</output>
+}
+
+function pending(): string | null {
+  return screen.getByRole('status').getAttribute('data-pending')
 }
 
 beforeEach(() => {
@@ -135,5 +155,123 @@ describe('useWorkspaceRouteSync', () => {
     render(<Probe moved />)
     expect(applied).toEqual([])
     expect(window.location.hash).toBe('#/p/p1/sessions')
+  })
+
+  it('is pending while a link is not reached yet, and settles once it arrives', () => {
+    window.history.replaceState(null, '', '/#/p/p2/general')
+    const view = render(<Probe ready={false} delayed />)
+    // The address holds a link the shell has not reached: nothing else may show.
+    expect(pending()).toBe('yes')
+    view.rerender(<Probe ready delayed />)
+    expect(pending()).toBe('yes')
+    act(() => setRoute({ project: 'p2', view: 'general' }))
+    expect(pending()).toBe('no')
+  })
+
+  it('is not pending without a link', () => {
+    render(<Probe ready={false} />)
+    expect(pending()).toBe('no')
+  })
+
+  it('is not pending when the link already names where the researcher is', () => {
+    window.history.replaceState(null, '', '/#/p/p1/sessions')
+    render(<Probe delayed />)
+    expect(applied).toEqual([])
+    expect(pending()).toBe('no')
+  })
+
+  it('is not pending once the researcher moved before the link was read', () => {
+    window.history.replaceState(null, '', '/#/p/p1/resources')
+    const view = render(<Probe ready={false} />)
+    view.rerender(<Probe ready moved />)
+    expect(applied).toEqual([])
+    expect(pending()).toBe('no')
+  })
+
+  it('abandons a link the shell cannot honour at once, without waiting for the timeout', () => {
+    vi.useFakeTimers()
+    window.history.replaceState(null, '', '/#/p/gone/general')
+    const before = window.history.length
+    render(<Probe reject />)
+    expect(applied).toEqual([{ project: 'gone', view: 'general' }])
+    expect(pending()).toBe('no')
+    // The address names where the researcher is, in place of the dead link.
+    expect(window.location.hash).toBe('#/p/p1/sessions')
+    expect(window.history.length).toBe(before)
+    act(() => setRoute({ project: 'p1', view: 'board' }))
+    expect(window.location.hash).toBe('#/p/p1/board')
+  })
+
+  it('abandons a Back to a place that can no longer be honoured', () => {
+    render(<Probe reject />)
+    const before = window.history.length
+    act(() => {
+      window.history.replaceState(null, '', '#/p/gone/board')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(pending()).toBe('no')
+    expect(window.location.hash).toBe('#/p/p1/sessions')
+    expect(window.history.length).toBe(before)
+    act(() => setRoute({ project: 'p1', view: 'general' }))
+    expect(window.location.hash).toBe('#/p/p1/general')
+  })
+
+  it('is pending while a Back is being reached', () => {
+    render(<Probe delayed />)
+    act(() => {
+      window.history.replaceState(null, '', '#/p/p2/board')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(pending()).toBe('yes')
+    act(() => setRoute({ project: 'p2', view: 'board' }))
+    expect(pending()).toBe('no')
+  })
+
+  it('stops being pending when a link times out', () => {
+    vi.useFakeTimers()
+    window.history.replaceState(null, '', '/#/p/p2/general')
+    render(<Probe delayed />)
+    expect(pending()).toBe('yes')
+    act(() => vi.advanceTimersByTime(APPLY_TIMEOUT_MS + 100))
+    expect(pending()).toBe('no')
+  })
+
+  it('replaces the history entry when the shell asks for a quiet change', () => {
+    render(<Probe mode="replace" />)
+    const before = window.history.length
+    act(() => setRoute({ project: 'p1', view: 'general', message: 'm9' }))
+    expect(window.location.hash).toBe('#/p/p1/general/m/m9')
+    expect(window.history.length).toBe(before)
+  })
+
+  it('pushes a history entry when the shell asks for one', () => {
+    render(<Probe mode="push" />)
+    const before = window.history.length
+    act(() => setRoute({ project: 'p1', view: 'general' }))
+    expect(window.location.hash).toBe('#/p/p1/general')
+    expect(window.history.length).toBe(before + 1)
+  })
+
+  it('re-applies a Back from evidence to its Task once', () => {
+    render(<Probe />)
+    act(() => setRoute({ project: 'p1', view: 'general', task: 'r1' }))
+    act(() => setRoute({
+      project: 'p1',
+      view: 'general',
+      task: 'r1',
+      inspect: [{ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }],
+    }))
+    expect(window.location.hash).toBe('#/p/p1/general?task=r1&inspect=evidence~artifact~a1~3f')
+    const before = window.history.length
+    applied.length = 0
+    act(() => {
+      window.history.replaceState(null, '', '#/p/p1/general?task=r1')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(applied).toEqual([{ project: 'p1', view: 'general', task: 'r1' }])
+    expect(screen.getByRole('status').textContent).toBe('general')
+    expect(window.location.hash).toBe('#/p/p1/general?task=r1')
+    expect(window.history.length).toBe(before)
   })
 })
