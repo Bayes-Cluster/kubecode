@@ -33,6 +33,7 @@ import { useGeneralFromTask } from './taskNavigation'
 import { TaskOverview } from './TaskOverview'
 import { TaskResults } from './TaskResults'
 import { TaskStatusBadges } from './TaskStatusBadges'
+import { TaskWork } from './TaskWork'
 import { useTaskDetail } from './useTaskDetail'
 
 const RESULTS_PENDING = new Set(['review', 'evidence_changed', 'suggestion'])
@@ -186,6 +187,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
       <div className="kubecode-task-panel">
         <p className="kubecode-task-next" data-tone={next.tone}>{nextStepText(t, next, detail)}</p>
         {error && <p className="kubecode-research-error" role="alert">{error}</p>}
+        {detail && !archived && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (
           <DecisionButton busy={busy} variant="secondary" onDecide={() => void setArchived(false)}>
             {t('kubecode.task.restore')}

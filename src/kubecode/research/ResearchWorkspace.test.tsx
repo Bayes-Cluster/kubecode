@@ -260,6 +260,8 @@ describe('ResearchWorkspace', () => {
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
+    // Needs you focuses it under the Task panel's key.
+    expect(screen.getByText('Drop single-GPU').closest('[data-focus-key]')).toHaveAttribute('data-focus-key', 'suggestion:e-p')
     // A suggestion is agreed to or declined: never "Accept", which belongs to a Task's results.
     expect(screen.getByRole('heading', { name: 'kubecode.research.suggestedChanges' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /kubecode.research.accept/ })).not.toBeInTheDocument()

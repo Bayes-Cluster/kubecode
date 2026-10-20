@@ -36,6 +36,9 @@ pub(super) struct PendingPermission {
     /// Present only when the store could establish project/agent scope for
     /// the run; pairs with the always-class option ids that must persist it.
     pub(super) always_allow: Option<(AlwaysAllowContext, HashSet<String>)>,
+    /// When it was asked (store timestamp form). A permission request waits
+    /// until it is answered or its turn stops: it has no deadline.
+    pub(super) requested_at: String,
 }
 
 /// Builds the canonical kind-granular always-allow rule for a permission
@@ -97,11 +100,124 @@ pub(super) fn remembered_permission_outcome(
 pub(super) struct PendingElicitation {
     pub(super) run_id: String,
     pub(super) sender: oneshot::Sender<ElicitationAction>,
+    /// The request as the provider sent it (`message`, `requestedSchema`).
+    pub(super) request_payload: Value,
+    pub(super) requested_at: String,
+    pub(super) deadline: std::time::Instant,
 }
 
-/// How long pending permission / elicitation requests wait before the
-/// server resolves them as declined (#111). Tunable via
-/// `KUBECODE_PENDING_REQUEST_TIMEOUT_MS`.
+/// Which kind of answer a waiting request needs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingKind {
+    Permission,
+    Input,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PendingOptionView {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+}
+
+/// A permission or input request waiting for an answer, as the attention
+/// projection reads it (ADR 0232). Never carries the tool's input.
+#[derive(Clone, Debug, Serialize)]
+pub struct PendingRequestView {
+    pub kind: PendingKind,
+    pub request_id: String,
+    pub run_id: String,
+    pub requested_at: String,
+    /// Milliseconds left before the server declines it; only an input
+    /// request has a deadline, a permission request waits until answered.
+    pub deadline_ms: Option<u64>,
+    /// `user` (the researcher) or `leader` (a Team leader reviews it first).
+    pub reviewer: String,
+    /// The tool's title, for a permission.
+    pub tool: Option<String>,
+    pub options: Vec<PendingOptionView>,
+    /// What an input request asks, and the form it asks for.
+    pub message: Option<String>,
+    pub schema: Option<Value>,
+}
+
+fn text_field(payload: &Value, key: &str, max: usize) -> Option<String> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(|text| text.chars().take(max).collect())
+}
+
+impl PendingPermission {
+    fn view(&self, request_id: &str) -> PendingRequestView {
+        let payload = &self.request_payload;
+        PendingRequestView {
+            kind: PendingKind::Permission,
+            request_id: request_id.to_owned(),
+            run_id: self.run_id.clone(),
+            requested_at: self.requested_at.clone(),
+            deadline_ms: None,
+            reviewer: text_field(payload, "reviewer", 20).unwrap_or_else(|| "user".to_owned()),
+            tool: text_field(payload, "tool", 200),
+            options: payload
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .map(|option| PendingOptionView {
+                            id: text_field(option, "id", 200).unwrap_or_default(),
+                            label: text_field(option, "label", 200).unwrap_or_default(),
+                            kind: text_field(option, "kind", 40).unwrap_or_default(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            message: None,
+            schema: None,
+        }
+    }
+}
+
+impl PendingElicitation {
+    fn view(&self, request_id: &str) -> PendingRequestView {
+        PendingRequestView {
+            kind: PendingKind::Input,
+            request_id: request_id.to_owned(),
+            run_id: self.run_id.clone(),
+            requested_at: self.requested_at.clone(),
+            deadline_ms: Some(deadline_remaining_ms(self.deadline)),
+            reviewer: "user".to_owned(),
+            tool: None,
+            options: Vec::new(),
+            message: text_field(&self.request_payload, "message", 500),
+            schema: self.request_payload.get("requestedSchema").cloned(),
+        }
+    }
+}
+
+/// A wait ended (answered, stopped, or timed out): every tab refetches (#101).
+pub(super) fn announce_wait_ended(store: &AgentStore, run_id: &str) {
+    if let Ok(run) = store.get_run(run_id) {
+        let _ = store.append_workspace_event(
+            "conversation_state",
+            Some(&run.project_id),
+            Some(&run.conversation_id),
+            Some(run_id),
+            &json!({
+                "conversation_id": run.conversation_id,
+                "streaming": true,
+                "pending": Value::Null,
+            }),
+        );
+    }
+}
+
+/// How long a pending input (elicitation) request waits before the server
+/// resolves it as declined (#111). Tunable via
+/// `KUBECODE_PENDING_REQUEST_TIMEOUT_MS`. Permission requests have no
+/// timeout: they wait until answered or their turn stops (ADR 0232).
 pub(crate) fn pending_request_timeout() -> std::time::Duration {
     std::env::var("KUBECODE_PENDING_REQUEST_TIMEOUT_MS")
         .ok()
@@ -168,19 +284,7 @@ impl AgentRuntime {
             ))
             .is_ok();
         // The wait ended: broadcast the cleared snapshot (#101).
-        if let Ok(run) = self.store.get_run(&pending.run_id) {
-            let _ = self.store.append_workspace_event(
-                "conversation_state",
-                Some(&run.project_id),
-                Some(&run.conversation_id),
-                Some(&pending.run_id),
-                &json!({
-                    "conversation_id": run.conversation_id,
-                    "streaming": true,
-                    "pending": Value::Null,
-                }),
-            );
-        }
+        announce_wait_ended(&self.store, &pending.run_id);
         // Remembering follows a successful delivery so an agent that never
         // sees the answer does not gain silent standing grants.
         if sent
@@ -195,19 +299,21 @@ impl AgentRuntime {
     }
 
     pub fn escalate_team_permission(&self, request_id: &str) -> Result<(), RuntimeError> {
-        let (run_id, mut payload) = {
-            let permissions = self
+        // The waiting request itself now names the researcher as its
+        // reviewer, so what is listed as waiting matches what was announced.
+        let (run_id, payload) = {
+            let mut permissions = self
                 .pending_permissions
                 .lock()
                 .expect("pending permission mutex poisoned");
-            let pending = permissions.get(request_id).ok_or_else(|| {
+            let pending = permissions.get_mut(request_id).ok_or_else(|| {
                 RuntimeError::Acp("permission request is no longer active".into())
             })?;
+            if let Value::Object(object) = &mut pending.request_payload {
+                object.insert("reviewer".into(), Value::String("user".into()));
+            }
             (pending.run_id.clone(), pending.request_payload.clone())
         };
-        if let Value::Object(object) = &mut payload {
-            object.insert("reviewer".into(), Value::String("user".into()));
-        }
         self.store
             .append_event(&run_id, AgentEventKind::PermissionRequested, &payload)?;
         let run = self.store.get_run(&run_id)?;
@@ -236,19 +342,7 @@ impl AgentRuntime {
                 });
                 let delivered = pending.sender.send(action).is_ok();
                 // The wait ended: broadcast the cleared snapshot (#101).
-                if let Ok(run) = self.store.get_run(&pending.run_id) {
-                    let _ = self.store.append_workspace_event(
-                        "conversation_state",
-                        Some(&run.project_id),
-                        Some(&run.conversation_id),
-                        Some(&pending.run_id),
-                        &json!({
-                            "conversation_id": run.conversation_id,
-                            "streaming": true,
-                            "pending": Value::Null,
-                        }),
-                    );
-                }
+                announce_wait_ended(&self.store, &pending.run_id);
                 delivered
             })
     }
@@ -289,10 +383,16 @@ impl AgentRuntime {
             .filter(|(_, pending)| pending.run_id == run_id)
             .map(|(request_id, _)| request_id.clone())
             .collect::<Vec<_>>();
+        let mut ended = 0;
         for request_id in request_ids {
             if let Some(pending) = permissions.remove(&request_id) {
                 let _ = pending.sender.send(RequestPermissionOutcome::Cancelled);
+                ended += 1;
             }
+        }
+        drop(permissions);
+        for _ in 0..ended {
+            announce_wait_ended(&self.store, run_id);
         }
     }
 
@@ -306,11 +406,38 @@ impl AgentRuntime {
             .filter(|(_, pending)| pending.run_id == run_id)
             .map(|(request_id, _)| request_id.clone())
             .collect::<Vec<_>>();
+        let mut ended = 0;
         for request_id in request_ids {
             if let Some(pending) = elicitations.remove(&request_id) {
                 let _ = pending.sender.send(ElicitationAction::Cancel);
+                ended += 1;
             }
         }
+        drop(elicitations);
+        for _ in 0..ended {
+            announce_wait_ended(&self.store, run_id);
+        }
+    }
+
+    /// Every permission and input request now waiting for an answer. The
+    /// in-memory maps are the authority: only what is here can be answered.
+    /// Each map is copied under its own lock; no lock is held across a store call.
+    pub fn pending_requests(&self) -> Vec<PendingRequestView> {
+        let mut views: Vec<PendingRequestView> = self
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned")
+            .iter()
+            .map(|(request_id, pending)| pending.view(request_id))
+            .collect();
+        views.extend(
+            self.pending_elicitations
+                .lock()
+                .expect("pending elicitation mutex poisoned")
+                .iter()
+                .map(|(request_id, pending)| pending.view(request_id)),
+        );
+        views
     }
 
     pub async fn ask_side_question(
@@ -768,6 +895,7 @@ mod tests {
                         },
                         HashSet::from(["allow_always".to_owned()]),
                     )),
+                    requested_at: String::new(),
                 },
             );
 
@@ -835,6 +963,7 @@ mod tests {
                     run_id: "run-1".to_owned(),
                     sender,
                     always_allow: None,
+                    requested_at: String::new(),
                 },
             );
 
@@ -886,12 +1015,22 @@ mod tests {
                     run_id: run.id.clone(),
                     sender,
                     always_allow: None,
+                    requested_at: String::new(),
                 },
             );
 
+        assert_eq!(
+            runtime.pending_requests()[0].reviewer,
+            "leader",
+            "a Team leader reviews it first"
+        );
         runtime
             .escalate_team_permission("permission-1")
             .expect("escalation");
+        // The waiting request itself now says so, not only the event.
+        let pending = runtime.pending_requests();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].reviewer, "user");
 
         let event = store
             .events_after(&run.id, 0)
@@ -914,6 +1053,111 @@ mod tests {
             selected_option(receiver.await.expect("permission outcome")),
             "allow_once"
         );
+    }
+
+    #[tokio::test]
+    async fn pending_requests_show_what_waits_and_cancelling_clears_it() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace service"));
+        let project = workspace
+            .create_project_at(temp.path().join("pending-project"))
+            .expect("project");
+        let store = Arc::new(AgentStore::open(&database).expect("agent store"));
+        let conversation = store
+            .create_conversation(&project.id, AgentId::OpenCode, None)
+            .expect("conversation");
+        let run = store
+            .start_run(&conversation.id, &project.id, "Work", PermissionMode::Safe)
+            .expect("run");
+        let runtime = AgentRuntime::new(workspace, Arc::clone(&store), Vec::new());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let (permission_sender, permission_receiver) = oneshot::channel();
+        runtime
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex")
+            .insert(
+                "permission-1".to_owned(),
+                PendingPermission {
+                    allowed_options: HashSet::from(["allow_once".to_owned()]),
+                    request_payload: json!({
+                        "request_id": "permission-1",
+                        "tool": "Shell",
+                        "input": {"command": "rm -rf secret"},
+                        "reviewer": "user",
+                        "options": [{"id": "allow_once", "label": "Allow once", "kind": "allow_once"}],
+                    }),
+                    run_id: run.id.clone(),
+                    sender: permission_sender,
+                    always_allow: None,
+                    requested_at: "2026-10-20 10:00:00.000".to_owned(),
+                },
+            );
+        let (input_sender, input_receiver) = oneshot::channel();
+        runtime
+            .pending_elicitations
+            .lock()
+            .expect("pending elicitation mutex")
+            .insert(
+                "input-1".to_owned(),
+                PendingElicitation {
+                    run_id: run.id.clone(),
+                    sender: input_sender,
+                    request_payload: json!({
+                        "request_id": "input-1",
+                        "message": "Choose a value",
+                        "requestedSchema": {"type": "object"},
+                    }),
+                    requested_at: "2026-10-20 10:00:01.000".to_owned(),
+                    deadline,
+                },
+            );
+
+        let mut pending = runtime.pending_requests();
+        pending.sort_by(|a, b| a.request_id.cmp(&b.request_id));
+        assert_eq!(pending.len(), 2);
+        let input = &pending[0];
+        assert!(matches!(input.kind, PendingKind::Input));
+        assert_eq!(input.message.as_deref(), Some("Choose a value"));
+        assert_eq!(input.schema, Some(json!({"type": "object"})));
+        assert_eq!(input.run_id, run.id);
+        let permission = &pending[1];
+        assert!(matches!(permission.kind, PendingKind::Permission));
+        assert_eq!(permission.tool.as_deref(), Some("Shell"));
+        assert_eq!(permission.reviewer, "user");
+        assert_eq!(permission.options[0].id, "allow_once");
+        assert_eq!(permission.requested_at, "2026-10-20 10:00:00.000");
+        // Only what the server enforces has a deadline: an input request
+        // declines by itself, a permission request waits until answered.
+        assert_eq!(permission.deadline_ms, None);
+        assert!(input.deadline_ms.is_some_and(|left| left > 50_000));
+        assert_eq!(
+            serde_json::to_value(permission).unwrap()["deadline_ms"],
+            Value::Null
+        );
+        let json = serde_json::to_string(&pending).expect("serialize");
+        assert!(
+            !json.contains("rm -rf"),
+            "tool input is never shown: {json}"
+        );
+
+        // Stopping the run clears both, and every tab hears that the wait ended.
+        let before = store.latest_workspace_event_id().expect("cursor");
+        runtime.cancel(&run.id);
+        assert!(runtime.pending_requests().is_empty());
+        assert!(permission_receiver.await.is_ok());
+        assert!(input_receiver.await.is_ok());
+        let cleared = store
+            .workspace_events_after(before)
+            .expect("events")
+            .into_iter()
+            .filter(|event| {
+                event.kind == "conversation_state" && event.payload["pending"].is_null()
+            })
+            .count();
+        assert_eq!(cleared, 2);
     }
 
     #[test]

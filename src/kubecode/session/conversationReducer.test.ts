@@ -461,6 +461,49 @@ describe('mergeLiveOverHistory', () => {
     )
   })
 
+  it('drops a live copy the page already contains even when it arrives after hydration', () => {
+    // The history response can overtake the event stream: the page holds the
+    // chunk (workspace cursor 50) but its live copy (id 40) is still in flight
+    // when hydration resolves, so it never enters the hydration buffer.
+    const historyState = reduceAll(initialConversationState(), [
+      { type: 'run', run: run() },
+      {
+        type: 'event',
+        event: event(2, 'text_delta', { text: 'Smoke Agent is ready', message_id: 'm1' }, { source: 'history' }),
+      },
+    ])
+    const hydrated = mergeLiveOverHistory(historyState, [], 50)
+    const late = reduceAll(hydrated, [
+      { type: 'event', event: event(40, 'text_delta', { text: 'Smoke Agent is ready', message_id: 'm1' }) },
+      { type: 'event', event: event(60, 'text_delta', { text: '!', message_id: 'm1' }) },
+    ])
+    expect(late.messages[0]?.responseBlocks?.map((block) => block.text).join('')).toBe(
+      'Smoke Agent is ready!',
+    )
+  })
+
+  it('takes the covered cursor from the latest hydration only', () => {
+    const chunk: ConversationInput = {
+      type: 'event',
+      event: event(40, 'text_delta', { text: 'ready', message_id: 'm1' }),
+    }
+    const covered = mergeLiveOverHistory(
+      reduceAll(initialConversationState(), [{ type: 'run', run: run() }]),
+      [],
+      50,
+    )
+    expect(reduceConversation(covered, chunk).messages[0]?.responseBlocks ?? []).toEqual([])
+    // A later hydration without a cursor starts from its own replay and must
+    // not inherit the earlier one's coverage.
+    const uncovered = mergeLiveOverHistory(
+      reduceAll(initialConversationState(), [{ type: 'run', run: run() }]),
+      [],
+      null,
+    )
+    expect(reduceConversation(uncovered, chunk).messages[0]?.responseBlocks?.map((block) => block.text))
+      .toEqual(['ready'])
+  })
+
   it('degrades to a plain fold when the page carries no workspace cursor', () => {
     const merged = mergeLiveOverHistory(
       initialConversationState(),

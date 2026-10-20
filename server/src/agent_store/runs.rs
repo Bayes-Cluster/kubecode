@@ -11,13 +11,15 @@ use super::composer::{
     authoritative_catalog_transaction, issue_catalog_snapshot_transaction,
     latest_catalog_transaction, next_catalog_revision_transaction,
 };
+use super::conversations::conversation_by_id;
 use super::events::{RuntimeRunEvent, RuntimeUpdate};
 use super::events::{
     append_session_event_transaction, append_session_state_workspace_event_transaction,
+    latest_workspace_event_id, run_events_after, session_events_after,
 };
 use super::models::{
-    AgentEvent, AgentEventKind, AgentId, AgentRun, PermissionMode, RunCheckpoint, RunStatus,
-    StoreError, TerminalCause, to_sql_conversion_error,
+    AgentEvent, AgentEventKind, AgentId, AgentRun, ConversationHistorySnapshot, PermissionMode,
+    RunCheckpoint, RunStatus, StoreError, TerminalCause, to_sql_conversion_error,
 };
 
 /// Projects a session-state checkpoint into its browser-safe form: the
@@ -273,42 +275,36 @@ impl AgentStore {
         before_run_id: Option<&str>,
         limit: usize,
     ) -> Result<(Vec<AgentRun>, bool), StoreError> {
-        self.get_conversation(conversation_id)?;
         let database = self.database.lock().expect("agent database mutex poisoned");
-        let before_rowid = if let Some(run_id) = before_run_id {
-            database
-                .query_row(
-                    "SELECT rowid FROM agent_runs
-                     WHERE id = ?1 AND conversation_id = ?2",
-                    params![run_id, conversation_id],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?
-                .ok_or_else(|| StoreError::RunNotFound(run_id.to_owned()))?
-        } else {
-            i64::MAX
-        };
-        let page_size = i64::try_from(limit.saturating_add(1)).map_err(|_| {
-            StoreError::InvalidStoredValue("run page size exceeds SQLite range".into())
-        })?;
-        let mut statement = database.prepare(
-            "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
-             FROM agent_runs
-             WHERE conversation_id = ?1 AND rowid < ?2
-             ORDER BY rowid DESC LIMIT ?3",
-        )?;
-        let mut runs = statement
-            .query_map(
-                params![conversation_id, before_rowid, page_size],
-                run_from_row,
-            )?
+        conversation_by_id(&database, conversation_id)?;
+        runs_page(&database, conversation_id, before_run_id, limit)
+    }
+
+    /// A history page and the workspace cursor read under one hold of the
+    /// database: a recorded event that is also streamed commits its
+    /// workspace event in the same transaction, so the cursor covers exactly
+    /// the events in the page and the browser can drop live copies at or
+    /// below it (#103).
+    pub fn conversation_history_snapshot(
+        &self,
+        conversation_id: &str,
+        before_run_id: Option<&str>,
+        limit: usize,
+    ) -> Result<ConversationHistorySnapshot, StoreError> {
+        let database = self.database.lock().expect("agent database mutex poisoned");
+        conversation_by_id(&database, conversation_id)?;
+        let (runs, has_more) = runs_page(&database, conversation_id, before_run_id, limit)?;
+        let run_events = runs
+            .iter()
+            .map(|run| run_events_after(&database, &run.id, 0))
             .collect::<Result<Vec<_>, _>>()?;
-        let has_more = runs.len() > limit;
-        if has_more {
-            runs.pop();
-        }
-        runs.reverse();
-        Ok((runs, has_more))
+        Ok(ConversationHistorySnapshot {
+            runs,
+            has_more,
+            run_events,
+            session_events: session_events_after(&database, conversation_id, 0)?,
+            workspace_cursor: latest_workspace_event_id(&database)?,
+        })
     }
 
     pub fn list_project_runs(&self, project_id: &str) -> Result<Vec<AgentRun>, StoreError> {
@@ -557,6 +553,47 @@ impl AgentStore {
         self.workspace_event_bus.publish_committed(workspace_cursor);
         Ok(())
     }
+}
+
+fn runs_page(
+    database: &rusqlite::Connection,
+    conversation_id: &str,
+    before_run_id: Option<&str>,
+    limit: usize,
+) -> Result<(Vec<AgentRun>, bool), StoreError> {
+    let before_rowid = if let Some(run_id) = before_run_id {
+        database
+            .query_row(
+                "SELECT rowid FROM agent_runs
+                 WHERE id = ?1 AND conversation_id = ?2",
+                params![run_id, conversation_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::RunNotFound(run_id.to_owned()))?
+    } else {
+        i64::MAX
+    };
+    let page_size = i64::try_from(limit.saturating_add(1))
+        .map_err(|_| StoreError::InvalidStoredValue("run page size exceeds SQLite range".into()))?;
+    let mut statement = database.prepare(
+        "SELECT id, conversation_id, project_id, message, status, permission_mode, error, internal, client_message_id, terminal_cause
+         FROM agent_runs
+         WHERE conversation_id = ?1 AND rowid < ?2
+         ORDER BY rowid DESC LIMIT ?3",
+    )?;
+    let mut runs = statement
+        .query_map(
+            params![conversation_id, before_rowid, page_size],
+            run_from_row,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    let has_more = runs.len() > limit;
+    if has_more {
+        runs.pop();
+    }
+    runs.reverse();
+    Ok((runs, has_more))
 }
 
 pub(super) fn append_event_transaction(

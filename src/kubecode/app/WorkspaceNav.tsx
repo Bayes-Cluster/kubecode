@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { Member } from '../api'
+import { NeedsYouList } from '../attention/NeedsYouList'
 import { Icon } from '../icons'
 import { WORKSPACE_DESTINATION_ICONS as DESTINATIONS } from '../icons/workspaceIcons'
 import { Identity } from '../members/Identity'
@@ -22,6 +23,13 @@ export type WorkspaceNavProps = {
   members: readonly Member[]
   /** Everything that waits for the researcher, each saying where it opens. */
   needsYou: NeedsYouEntry[]
+  /** Whether the list is read yet, or could not be (ADR 0232); `ready` when not given. */
+  needsYouStatus?: 'loading' | 'ready' | 'error'
+  /** A source of the list could not be read: it is never called empty. */
+  needsYouIncomplete?: boolean
+  onRetryNeedsYou?: () => void
+  /** The researcher's messages in General that reached nobody yet. */
+  undeliveredGeneral?: number
   t: Translator
   taskCount: number
   onOpen: (view: WorkspaceNavDestination) => void
@@ -49,12 +57,16 @@ export function WorkspaceNav({
   active,
   members,
   needsYou,
+  needsYouIncomplete = false,
+  needsYouStatus = 'ready',
   onInspectMember,
   onOpen,
   onOpenDm,
   onOpenTarget,
+  onRetryNeedsYou = () => undefined,
   t,
   taskCount,
+  undeliveredGeneral = 0,
 }: WorkspaceNavProps) {
   const places = [
     { view: 'general', icon: DESTINATIONS.general.Icon, label: t('kubecode.channel.general') },
@@ -75,6 +87,9 @@ export function WorkspaceNav({
         {entry.view === 'board' && taskCount > 0 && (
           <StatusBadge tone="muted">{taskCount}</StatusBadge>
         )}
+        {entry.view === 'general' && undeliveredGeneral > 0 && (
+          <StatusBadge tone="danger">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</StatusBadge>
+        )}
       </button>
     </li>
   )
@@ -94,17 +109,14 @@ export function WorkspaceNav({
           <span>{t('kubecode.nav.needsYou')}</span>
           <StatusBadge title={t('kubecode.nav.needsYou')} tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
         </summary>
-        {waiting === 0 && <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouNone')}</p>}
-        <ul className="kubecode-research-nav-list">
-          {needsYou.map((entry) => (
-            <li key={entry.key}>
-              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenTarget(entry.target)}>
-                <span className="kubecode-research-nav-title">{entry.title}</span>
-                <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <NeedsYouList
+          entries={needsYou}
+          incomplete={needsYouIncomplete}
+          status={needsYouStatus}
+          t={t}
+          onOpenTarget={onOpenTarget}
+          onRetryLoad={onRetryNeedsYou}
+        />
       </details>
       <ul className="kubecode-research-nav-list">
         {destination(membersPlace)}

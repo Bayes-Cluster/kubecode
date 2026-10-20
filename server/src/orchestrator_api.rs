@@ -22,6 +22,11 @@ pub fn routes() -> Router<AppState> {
             get(get_policy).put(set_policy),
         )
         .route("/projects/{project_id}/routes", get(list_routes))
+        .route("/projects/{project_id}/deliveries", get(deliveries))
+        .route(
+            "/projects/{project_id}/routes/{route_id}/retry",
+            axum::routing::post(retry_route),
+        )
 }
 
 enum ApiError {
@@ -29,6 +34,7 @@ enum ApiError {
     Orchestrator(OrchestratorError),
     Workspace(WorkspaceError),
     RoundNotFound,
+    BadRequest(&'static str),
 }
 
 impl From<WorkError> for ApiError {
@@ -53,6 +59,11 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
+            Self::BadRequest(reason) => (
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                reason.to_owned(),
+            ),
             Self::RoundNotFound => (
                 StatusCode::NOT_FOUND,
                 "round_not_found",
@@ -86,6 +97,41 @@ impl IntoResponse for ApiError {
                 "orchestration storage failed".to_owned(),
             ),
             Self::Work(error) => (StatusCode::CONFLICT, "work_state", error.to_string()),
+            Self::Orchestrator(OrchestratorError::NotFound) => (
+                StatusCode::NOT_FOUND,
+                "route_not_found",
+                "route not found".to_owned(),
+            ),
+            Self::Orchestrator(OrchestratorError::NotRetryable) => (
+                StatusCode::CONFLICT,
+                "route_not_retryable",
+                OrchestratorError::NotRetryable.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::TargetGone) => (
+                StatusCode::CONFLICT,
+                "route_target_gone",
+                OrchestratorError::TargetGone.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::RetryLimit) => (
+                StatusCode::CONFLICT,
+                "retry_limit",
+                OrchestratorError::RetryLimit.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::NeedsSetup) => (
+                StatusCode::CONFLICT,
+                "route_needs_setup",
+                OrchestratorError::NeedsSetup.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::Unavailable) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "route_unavailable",
+                OrchestratorError::Unavailable.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::Superseded) => (
+                StatusCode::CONFLICT,
+                "route_superseded",
+                OrchestratorError::Superseded.to_string(),
+            ),
             Self::Orchestrator(error) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_routing",
@@ -174,4 +220,88 @@ async fn list_routes(
         filter,
         query.limit.unwrap_or(50),
     )?))
+}
+
+/// Ids the delivery read accepts at once.
+const MAX_DELIVERY_IDS: usize = 100;
+
+fn safe_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+        && !id.contains("..")
+}
+
+#[derive(Debug, Deserialize)]
+struct DeliveriesQuery {
+    #[serde(default)]
+    message_ids: String,
+}
+
+/// The delivery state of the researcher's messages, by id (ADR 0232).
+async fn deliveries(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Query(query): Query<DeliveriesQuery>,
+) -> Result<Json<Vec<crate::orchestrator::MessageDelivery>>, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let ids: Vec<String> = query
+        .message_ids
+        .split(',')
+        .map(str::trim)
+        .map(str::to_owned)
+        .collect();
+    if ids.len() > MAX_DELIVERY_IDS {
+        return Err(ApiError::BadRequest("ask for at most 100 messages"));
+    }
+    if !ids.iter().all(|id| safe_id(id)) {
+        return Err(ApiError::BadRequest("message ids are malformed"));
+    }
+    let deliveries =
+        tokio::task::spawn_blocking(move || state.orchestrator.deliveries_for(&project_id, &ids))
+            .await
+            .map_err(|_| ApiError::BadRequest("deliveries could not be read"))??;
+    Ok(Json(deliveries))
+}
+
+#[derive(Debug, Serialize)]
+struct RetryResponse {
+    route: Route,
+    /// False when the route was not failed (already retried, or moving).
+    retried: bool,
+    /// The delivery of the message it carries, when it carries one.
+    delivery: Option<crate::orchestrator::MessageDelivery>,
+}
+
+/// The researcher re-arms a failed route they originated (ADR 0232).
+async fn retry_route(
+    State(state): State<AppState>,
+    Path((project_id, route_id)): Path<(String, String)>,
+) -> Result<Json<RetryResponse>, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let response = tokio::task::spawn_blocking(move || -> Result<RetryResponse, ApiError> {
+        let (route, retried) = match state.orchestrator.retry_route(&project_id, &route_id)? {
+            crate::orchestrator::RetryOutcome::Requeued(route) => (route, true),
+            crate::orchestrator::RetryOutcome::AlreadyMoving(route) => (route, false),
+        };
+        let delivery = if route.source_kind == crate::orchestrator::SourceKind::Message {
+            state
+                .orchestrator
+                .deliveries_for(&project_id, std::slice::from_ref(&route.source_id))?
+                .into_iter()
+                .next()
+        } else {
+            None
+        };
+        Ok(RetryResponse {
+            route,
+            retried,
+            delivery,
+        })
+    })
+    .await
+    .map_err(|_| ApiError::BadRequest("the route could not be retried"))??;
+    Ok(Json(response))
 }

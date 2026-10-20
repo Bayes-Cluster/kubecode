@@ -160,6 +160,80 @@ describe('terminal convergence (#93)', () => {
   })
 })
 
+describe('history and live overlap', () => {
+  const READY = 'Smoke Agent is ready'
+
+  function historyApi(workspaceCursor: number): ApiMock {
+    const api = makeApi()
+    api.getConversationHistory = vi.fn().mockResolvedValue({
+      runs: [makeRun({ message: 'Confirm readiness' })],
+      events: {},
+      session_events: [
+        {
+          conversation_id: 'conversation-1',
+          seq: 1,
+          kind: 'user_message',
+          payload: { run_id: 'run-1', text: 'Confirm readiness' },
+          created_at: '2026-10-20T00:00:00Z',
+        },
+        {
+          conversation_id: 'conversation-1',
+          seq: 2,
+          kind: 'text_delta',
+          payload: { run_id: 'run-1', text: READY, message_id: 'm1' },
+          created_at: '2026-10-20T00:00:01Z',
+        },
+      ],
+      next_cursor: null,
+      workspace_cursor: workspaceCursor,
+    })
+    return api
+  }
+
+  function responseText(result: ReturnType<typeof renderTranscript>): string {
+    return result.current.transcript.messages
+      .flatMap((message) => message.responseBlocks ?? [])
+      .map((block) => block.text)
+      .join('')
+  }
+
+  it('renders a chunk once when its live copy lands after the history page that holds it', async () => {
+    const api = historyApi(50)
+    const result = renderTranscript(api)
+    await waitFor(() => expect(responseText(result)).toBe(READY))
+
+    // The event stream lags the history response: the same chunk (workspace
+    // id 40, inside the page's cursor) only now reaches the pump.
+    act(() => {
+      result.current.transcript.enqueueConversationEvents([
+        liveEvent(40, 'text_delta', { run_id: 'run-1', text: READY, message_id: 'm1' }),
+      ])
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(responseText(result)).toBe(READY)
+  })
+
+  it('folds only the uncovered tail of a reconnect replay over hydrated history', async () => {
+    const api = historyApi(50)
+    const result = renderTranscript(api)
+    await waitFor(() => expect(responseText(result)).toBe(READY))
+
+    // A resumed stream replays from the old high-water mark: ids the page
+    // covers repeat, the rest are new.
+    act(() => {
+      result.current.transcript.enqueueConversationEvents([
+        liveEvent(40, 'text_delta', { run_id: 'run-1', text: READY, message_id: 'm1' }),
+        liveEvent(45, 'thinking_delta', { run_id: 'run-1', text: 'hmm' }),
+        liveEvent(55, 'text_delta', { run_id: 'run-1', text: ' now', message_id: 'm1' }),
+      ])
+    })
+    await waitFor(() => expect(responseText(result)).toBe(`${READY} now`))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(responseText(result)).toBe(`${READY} now`)
+    expect(result.current.transcript.messages[0]?.reasoning ?? '').toBe('')
+  })
+})
+
 describe('terminalCauseNotice copy mapping', () => {
   const t = (key: string) => `copy:${key}`
 

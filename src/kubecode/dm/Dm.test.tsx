@@ -15,6 +15,8 @@ import { MessageComposer } from '../channel/MessageComposer'
 import { localReferenceLabels } from '../references/referenceLabels'
 import { memberDirectory, MemberDirectoryContext, type MemberDirectory } from '../members/memberDirectory'
 import { channelMessage, general, member } from '../members/memberFixtures'
+import { AttentionContext } from '../attention/attentionContext'
+import { execution } from '../attention/attentionFixtures'
 import { DmPane } from './DmPane'
 
 const t = createTranslator('en')
@@ -103,7 +105,7 @@ describe('DmPane', () => {
     expect(api.postChannelMessage).not.toHaveBeenCalled()
   })
 
-  it('keeps the text when the member is still answering, keeps one id across retries, and a new one for new words', async () => {
+  it('keeps a failed send as its own row, sends it again under one id, never touches what is typed since, and new words get a new id', async () => {
     const send = vi.fn()
       .mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502))
       .mockRejectedValueOnce(new ApiError('dm_busy', 'x', 409))
@@ -112,19 +114,22 @@ describe('DmPane', () => {
     await screen.findByText('is 0.91 enough?')
     fireEvent.change(box(), { target: { value: 'hello' } })
     fireEvent.keyDown(box(), { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('The message could not be delivered')
-    expect(box()).toHaveValue('hello')
-    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not sent: The message could not be delivered')
+    expect(screen.getByRole('list', { name: 'Unsent messages' })).toHaveTextContent('hello')
+    expect(box()).toHaveValue('')
+    fireEvent.change(box(), { target: { value: 'typed meanwhile' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
-      'Analyst is still answering your last message. Your message is kept; try again in a moment.',
+      'Not sent: Analyst is still answering your last message. Your message is kept; try again in a moment.',
     ))
-    expect(box()).toHaveValue('hello')
-    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Try again' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(send).toHaveBeenCalledTimes(3))
+    // One message, however often it is sent again: the server admits it once.
     expect(send.mock.calls[1][3]).toBe(send.mock.calls[0][3])
     expect(send.mock.calls[2][3]).toBe(send.mock.calls[0][3])
-    await waitFor(() => expect(box()).toHaveValue(''))
-    fireEvent.change(box(), { target: { value: 'something else' } })
+    expect(send.mock.calls[2][2]).toBe('hello')
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument())
+    expect(box()).toHaveValue('typed meanwhile')
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(send).toHaveBeenCalledTimes(4))
     expect(send.mock.calls[3][3]).not.toBe(send.mock.calls[0][3])
@@ -157,6 +162,50 @@ describe('DmPane', () => {
     expect(turns.mock.calls.length).toBe(before)
     view.rerender(context(pane(api, {}, [event(1, 's-public'), event(2, 's-dm')])))
     await waitFor(() => expect(turns.mock.calls.length).toBe(before + 1))
+  })
+})
+
+describe('DmPane while the member is at work (ADR 0232)', () => {
+  it('shows a message queued behind the running reply as pending, also after a reload', async () => {
+    const pending = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ client_message_id: 'k1', text: 'and the ablation?', position: 1, created_at: '' }])
+    const { api, view } = setup({
+      sendMemberDm: vi.fn().mockResolvedValue({ state: 'delivered', admission: 'queued' }),
+      memberDmPending: pending,
+    })
+    await screen.findByText('is 0.91 enough?')
+    fireEvent.change(box(), { target: { value: 'and the ablation?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(api.sendMemberDm).toHaveBeenCalled())
+    const queued = await screen.findByText('Analyst will read this after the current reply')
+    expect(queued.closest('article')).toHaveTextContent('and the ablation?')
+    // A reload reads the queue from the server.
+    view.unmount()
+    render(context(pane(api)))
+    expect(await screen.findByText('Analyst will read this after the current reply')).toBeInTheDocument()
+  })
+
+  it('offers a Stop that names the member\'s reply while the member answers', async () => {
+    const store = {
+      projectId: 'p1',
+      snapshot: null,
+      status: 'ready' as const,
+      forTask: () => [],
+      byKey: () => undefined,
+      executions: (scope: { binding?: string }) => (scope.binding === 'dm' ? [execution({ binding: 'dm', conversation_id: 's-dm', tasks: [] })] : []),
+      failures: () => [],
+      resolving: new Set<string>(),
+      markResolving: vi.fn(),
+      reload: vi.fn(),
+    }
+    const api = fakeApi({ cancelRun: vi.fn().mockResolvedValue(undefined) })
+    render(context(<AttentionContext.Provider value={store as never}>{pane(api)}</AttentionContext.Provider>))
+    await screen.findByText('is 0.91 enough?')
+    const stops = screen.getAllByRole('button', { name: "Stop Analyst's reply" })
+    expect(stops.length).toBeGreaterThan(0)
+    fireEvent.click(stops[0])
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
   })
 })
 
@@ -289,6 +338,7 @@ describe('DmPane drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => 
         labels={localReferenceLabels({ research: [], threads: [], sessions: [], picked: [], t })}
         placeholder="Message the Workspace"
         projectId="p1"
+        outboxKey={`${placeKey.general('p1')}#outbox`}
         t={t}
         onDraftChange={setDraft}
         onSend={vi.fn()}
@@ -296,7 +346,7 @@ describe('DmPane drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => 
     )
   }
 
-  it('keeps the private draft and a retried send’s id per member, and never shows it in General', async () => {
+  it('keeps the private draft and an unsent message per member, and never shows them in General', async () => {
     const memory = createPlaceMemory()
     const send = vi.fn().mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502)).mockResolvedValue(undefined)
     const api = fakeApi({ memberDmTurns: vi.fn().mockResolvedValue([]), sendMemberDm: send })
@@ -305,6 +355,7 @@ describe('DmPane drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => 
     fireEvent.change(box(), { target: { value: 'just between us' } })
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be delivered')
+    fireEvent.change(box(), { target: { value: 'half typed' } })
 
     view.rerender(context(<GeneralComposer />, { memory }))
     expect(screen.getByRole('combobox', { name: 'Message the Workspace' })).toHaveValue('')
@@ -312,12 +363,14 @@ describe('DmPane drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => 
 
     view.rerender(context(pane(api, { member: { ...analyst, id: 'm2' } }), { memory }))
     expect(box()).toHaveValue('')
+    expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument()
 
     view.rerender(context(pane(api), { memory }))
-    expect(box()).toHaveValue('just between us')
-    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(box()).toHaveValue('half typed')
+    fireEvent.click(screen.getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
     expect(send.mock.calls[1][3]).toBe(send.mock.calls[0][3])
-    await waitFor(() => expect(box()).toHaveValue(''))
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument())
+    expect(box()).toHaveValue('half typed')
   })
 })

@@ -1228,3 +1228,124 @@ fn batched_lookups_find_proposals_reviews_and_messages_in_order() {
             .is_empty()
     );
 }
+
+#[test]
+fn routing_marks_report_how_researcher_messages_were_read() {
+    let r = rig();
+    let channel = r.channel();
+    let pending = r.say(&channel, "hello");
+    let read = r.say(&channel, "read me");
+    r.channels.mark_routed(r.project(), &read.id).unwrap();
+    let marks = r
+        .channels
+        .routing_marks(
+            r.project(),
+            &[pending.id.clone(), read.id.clone(), "missing".into()],
+        )
+        .unwrap();
+    assert_eq!(marks.len(), 2);
+    assert_eq!(marks[&pending.id].routing.as_deref(), Some("pending"));
+    assert_eq!(marks[&read.id].routing.as_deref(), Some("done"));
+    assert!(!marks[&read.id].intent_claimed);
+    assert!(
+        r.channels
+            .routing_marks("other", std::slice::from_ref(&read.id))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_denial_is_a_fact_of_the_message_and_only_the_researchers_are_rerouted() {
+    let r = rig();
+    let channel = r.channel();
+    let denied = r.say(&channel, "anyone?");
+    r.channels
+        .mark_denied(r.project(), &denied.id, "manager_unavailable")
+        .unwrap();
+    // A message already read is not marked again.
+    r.channels
+        .mark_denied(r.project(), &denied.id, "other")
+        .unwrap();
+    let marks = r
+        .channels
+        .routing_marks(r.project(), std::slice::from_ref(&denied.id))
+        .unwrap();
+    assert_eq!(marks[&denied.id].routing.as_deref(), Some("denied"));
+    assert_eq!(
+        marks[&denied.id].issue.as_deref(),
+        Some("manager_unavailable")
+    );
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), "another-channel", &denied.id)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string(),
+        ChannelError::MessageNotFound.to_string()
+    );
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), &channel.id, &denied.id)
+            .unwrap(),
+        RerouteOutcome::Rearmed
+    );
+    let agent = r.session("agent");
+    let by_agent = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "@x hi",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&agent),
+                mentions: &[Mention {
+                    session_id: agent.clone(),
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    r.channels
+        .mark_denied(r.project(), &by_agent.id, "member_unavailable")
+        .unwrap();
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), &channel.id, &by_agent.id)
+            .unwrap(),
+        RerouteOutcome::NotReroutable
+    );
+}
+
+/// Only a denial a reroute can fix is rerouted: a manager or a member that
+/// was not available may be by now; a private direct message, or a request
+/// that was refused, would be denied again and only use up the attempts.
+#[test]
+fn only_a_denial_that_a_reroute_can_fix_is_rerouted() {
+    let r = rig();
+    let channel = r.channel();
+    for (code, expected) in [
+        ("manager_unavailable", RerouteOutcome::Rearmed),
+        ("member_unavailable", RerouteOutcome::Rearmed),
+        ("dm_private", RerouteOutcome::NotReroutable),
+        ("request_refused", RerouteOutcome::NotReroutable),
+    ] {
+        let message = r.say(&channel, code);
+        r.channels
+            .mark_denied(r.project(), &message.id, code)
+            .unwrap();
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &channel.id, &message.id)
+                .unwrap(),
+            expected,
+            "{code}"
+        );
+        assert_eq!(
+            crate::channel_store::reroutable(Some(code)),
+            expected == RerouteOutcome::Rearmed
+        );
+    }
+}

@@ -1386,4 +1386,62 @@ describe('Kubecode API client', () => {
       expect(fetch.mock.calls[3][0]).toBe('/b/api/v1/projects/p/research/r/revisions/2')
     })
   })
+  describe('attention and delivery (ADR 0232)', () => {
+    it('reads what waits on the researcher and its summary below the base path', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await api.attention('p/1')
+      await api.attentionSummary()
+
+      expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p%2F1/attention')
+      expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/attention/summary')
+    })
+
+    it('reads deliveries in chunks of at most one hundred encoded ids', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('[{"message_id":"x"}]')))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+      const ids = Array.from({ length: 101 }, (_, index) => `m${index}`)
+
+      expect(await api.messageDeliveries('p', [])).toEqual([])
+      expect(fetch).not.toHaveBeenCalled()
+      const deliveries = await api.messageDeliveries('p', ['a b', ...ids.slice(1)])
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[0][0]).toBe(`/b/api/v1/projects/p/deliveries?${new URLSearchParams({ message_ids: ['a b', ...ids.slice(1, 100)].join(',') })}`)
+      expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/deliveries?message_ids=m100')
+      expect(deliveries).toHaveLength(2)
+    })
+
+    it('retries a route, reroutes a message, and changes a round\'s pause with its revision', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await api.retryRoute('p', 'r/1')
+      await api.rerouteMessage('p', 'c', 'm/1')
+      await api.roundExecutionPolicy('p', 'round/1')
+      await api.setRoundExecutionPolicy('p', 'round/1', 4, { paused: true })
+      await api.memberDmPending('p', 'mem/1')
+
+      expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/routes/r%2F1/retry')
+      expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' })
+      expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/channels/c/messages/m%2F1/reroute')
+      expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST' })
+      expect(fetch.mock.calls[2][0]).toBe('/b/api/v1/projects/p/rounds/round%2F1/execution-policy')
+      expect(fetch.mock.calls[3][0]).toBe('/b/api/v1/projects/p/rounds/round%2F1/execution-policy')
+      expect(fetch.mock.calls[3][1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ expected_revision: 4, paused: true }) })
+      expect(fetch.mock.calls[4][0]).toBe('/b/api/v1/projects/p/members/mem%2F1/dm/pending')
+    })
+
+    it('says whether a direct message started or was queued', async () => {
+      const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: 'delivered', admission: 'queued' }), { status: 202 }))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('/b')
+
+      await expect(api.sendMemberDm('p', 'm', 'hi', 'k1')).resolves.toEqual({ state: 'delivered', admission: 'queued' })
+    })
+  })
 })

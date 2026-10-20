@@ -12,7 +12,9 @@ pub use self::agent_seam::AgentAdapterRegistry;
 pub use self::dispatch::{
     PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
 };
-pub use self::permissions::SideQuestionAccepted;
+pub use self::permissions::{
+    PendingKind, PendingOptionView, PendingRequestView, SideQuestionAccepted,
+};
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

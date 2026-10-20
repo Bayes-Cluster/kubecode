@@ -107,7 +107,9 @@ describe('MemberRoster', () => {
     expect(general).not.toHaveTextContent(/kubecode\.members\.state\./)
     const analyst = screen.getByText('Analyst').closest('li') as HTMLElement
     expect(within(analyst).getByText('kubecode.members.state.setup_required')).toBeInTheDocument()
-    expect(within(analyst).getByRole('button', { name: 'kubecode.members.retrySetup: Analyst' })).toBeInTheDocument()
+    // Needs you lands on the fix (ADR 0232).
+    expect(within(analyst).getByRole('button', { name: 'kubecode.members.retrySetup: Analyst' }))
+      .toHaveAttribute('data-focus-key', expect.stringMatching(/^member-setup:/))
   })
 
   it('shows the project manager as a manager that cannot be removed, beside specialists', async () => {

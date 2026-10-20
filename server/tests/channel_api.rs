@@ -522,3 +522,44 @@ async fn a_retry_with_the_same_client_id_returns_the_stored_message_after_the_re
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{reused}");
 }
+
+#[tokio::test]
+async fn a_send_again_with_its_pinned_reference_replays_one_message_with_its_delivery() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::write(project_file(&env, "results.csv"), "v1").unwrap();
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/context/resolve", env.project_id),
+        json!({"refs": [{"kind": "file", "id": "results.csv"}]}),
+    )
+    .await;
+    let seen = resolved[0]["current_revision"].as_str().unwrap().to_owned();
+    // The browser's outbox row: the same client id and the same pinned version.
+    let request = json!({
+        "body": "compare with this",
+        "client_message_id": "c-outbox-1",
+        "references": [{"kind": "file", "id": "results.csv", "revision": seen}],
+    });
+    let (status, first) = call(&env, Method::POST, &messages, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    // The answer was lost; the file changed before Send again.
+    std::fs::write(project_file(&env, "results.csv"), "v2").unwrap();
+    let (status, again) = call(&env, Method::POST, &messages, request).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["id"], first["id"]);
+    assert_eq!(
+        again["references"],
+        json!([{"kind": "file", "id": "results.csv", "revision": seen}])
+    );
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    let listed = page["messages"].as_array().unwrap();
+    assert_eq!(listed.len(), 1, "no duplicate: {page}");
+    assert_eq!(listed[0]["references"], again["references"]);
+    assert!(
+        page["deliveries"].is_object(),
+        "the page carries the delivery of the researcher's messages: {page}"
+    );
+}

@@ -73,7 +73,7 @@ export function TaskOverview({
             </p>
           )}
           {approval && (
-            <p>
+            <p data-focus-key={`brief:${detail.id}:${detail.revision}`} tabIndex={-1}>
               {t('kubecode.task.staleApproval', { approved: detail.approved_revision })}{' '}
               <Button size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>
             </p>

@@ -207,7 +207,7 @@ export function ResearchExecutionSection({
                   reload()
                 })}
               >
-                {t('kubecode.research.exec.pause')}
+                {t('kubecode.execution.pauseLaunches', { round: round.round })}
               </Button>
             )}
             {envelope.state === 'paused' && (
@@ -220,7 +220,7 @@ export function ResearchExecutionSection({
                   reload()
                 })}
               >
-                {t('kubecode.research.exec.resume')}
+                {t('kubecode.execution.resumeLaunches', { round: round.round })}
               </Button>
             )}
             {envelope.state !== 'closed' && !archived && editing === null && (

@@ -110,6 +110,13 @@ export type ConversationState = {
   /** Namespaced `source:seq` keys already folded (replay idempotence). */
   appliedSeqs: ReadonlySet<string>
   /**
+   * Workspace cursor the hydrated history page already covers. Live events
+   * at or below it are copies of recorded events in this state — whether
+   * they were buffered during the fetch or arrive after it — so they never
+   * fold a second time.
+   */
+  coveredWorkspaceCursor: number
+  /**
    * Transcript events that arrived before their run row did; they replay in
    * order the moment the run attaches.
    */
@@ -144,6 +151,7 @@ export function initialConversationState(): ConversationState {
     pendingElicitation: null,
     sideQuestions: [],
     appliedSeqs: new Set(),
+    coveredWorkspaceCursor: 0,
     bufferedByRun: {},
   }
 }
@@ -227,9 +235,10 @@ export function reduceAll(
 
 /**
  * Fello-style hydration merge (#103): live inputs buffered while a history
- * fetch was in flight fold on top of the fetched state, dropping events at or
- * below the fetch-time workspace cursor — the page already contains them, so
- * folding both copies would double every overlapping chunk. Inputs without a
+ * fetch was in flight fold on top of the fetched state. The page's
+ * workspace cursor becomes the state's covered cursor, so live events at or
+ * below it — buffered now or still in flight on a lagging event stream —
+ * are dropped instead of doubling every overlapping chunk. Inputs without a
  * workspace sequence (optimistic bubbles, run rows, replay markers) always
  * fold, and a missing cursor degrades to a plain fold.
  */
@@ -238,12 +247,10 @@ export function mergeLiveOverHistory(
   inputs: readonly ConversationInput[],
   workspaceCursor: number | null,
 ): ConversationState {
-  if (workspaceCursor == null) return reduceAll(state, inputs)
-  const kept = inputs.filter((input) => (
-    input.type !== 'event' || input.event.source !== 'live'
-      || input.event.seq > workspaceCursor
-  ))
-  return reduceAll(state, kept)
+  const covered = workspaceCursor == null
+    ? state
+    : { ...state, coveredWorkspaceCursor: Math.max(state.coveredWorkspaceCursor, workspaceCursor) }
+  return reduceAll(covered, inputs)
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +258,7 @@ export function mergeLiveOverHistory(
 // ---------------------------------------------------------------------------
 
 function applyTimelineEvent(state: ConversationState, event: TimelineEvent): ConversationState {
+  if (event.source === 'live' && event.seq <= state.coveredWorkspaceCursor) return state
   const next = routeTimelineEvent(state, event)
   return withSeq(next, event)
 }

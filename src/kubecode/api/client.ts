@@ -1,4 +1,12 @@
 import type {
+  AttentionSnapshot,
+  AttentionSummary,
+  DmPendingPrompt,
+  DmSendResult,
+  MessageDelivery,
+  RoundPolicyPatch,
+  RoundPolicyView,
+  RouteRetryResult,
   AgentDescriptor,
   AgentId,
   AgentRun,
@@ -424,10 +432,65 @@ export class KubecodeApi {
   }
 
   /** Sends to the member privately; nothing is posted to General. A repeated client id replays. */
-  sendMemberDm(projectId: string, memberId: string, text: string, clientMessageId: string): Promise<void> {
+  sendMemberDm(projectId: string, memberId: string, text: string, clientMessageId: string): Promise<DmSendResult> {
     return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/messages`, {
       method: 'POST',
       body: JSON.stringify({ text, client_message_id: clientMessageId }),
+    })
+  }
+
+  /** Direct messages queued behind the member's running turn, so they stay visible (ADR 0232). */
+  memberDmPending(projectId: string, memberId: string): Promise<DmPendingPrompt[]> {
+    return this.request(`${this.projectPath(projectId)}/members/${encodeURIComponent(memberId)}/dm/pending`)
+  }
+
+  /** What waits on the researcher in one Workspace (ADR 0232). */
+  attention(projectId: string): Promise<AttentionSnapshot> {
+    return this.request(`${this.projectPath(projectId)}/attention`)
+  }
+
+  /** How much waits on the researcher in each Workspace. */
+  attentionSummary(): Promise<AttentionSummary> {
+    return this.request('/attention/summary')
+  }
+
+  /** The delivery state of the researcher's messages, read 100 at a time. */
+  async messageDeliveries(projectId: string, messageIds: readonly string[]): Promise<MessageDelivery[]> {
+    const chunks: string[][] = []
+    for (let start = 0; start < messageIds.length; start += 100) chunks.push(messageIds.slice(start, start + 100))
+    const pages = await Promise.all(chunks.map((ids) => this.request<MessageDelivery[]>(
+      `${this.projectPath(projectId)}/deliveries?${query({ message_ids: ids.join(',') })}`,
+    )))
+    return pages.flat()
+  }
+
+  /** Re-arms a failed route the researcher originated, under the same route id. */
+  retryRoute(projectId: string, routeId: string): Promise<RouteRetryResult> {
+    return this.request(`${this.projectPath(projectId)}/routes/${encodeURIComponent(routeId)}/retry`, { method: 'POST' })
+  }
+
+  /** Reads a message that reached nobody it named again, once setup is fixed. */
+  rerouteMessage(projectId: string, channelId: string, messageId: string): Promise<MessageDelivery> {
+    return this.request(
+      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}/reroute`,
+      { method: 'POST' },
+    )
+  }
+
+  roundExecutionPolicy(projectId: string, roundId: string): Promise<RoundPolicyView> {
+    return this.request(`${this.projectPath(projectId)}/rounds/${encodeURIComponent(roundId)}/execution-policy`)
+  }
+
+  /** Changes a round's limits or pause; refused with `policy_revision_conflict` when they changed elsewhere. */
+  setRoundExecutionPolicy(
+    projectId: string,
+    roundId: string,
+    expectedRevision: number,
+    patch: RoundPolicyPatch,
+  ): Promise<RoundPolicyView> {
+    return this.request(`${this.projectPath(projectId)}/rounds/${encodeURIComponent(roundId)}/execution-policy`, {
+      method: 'PUT',
+      body: JSON.stringify({ expected_revision: expectedRevision, ...patch }),
     })
   }
 

@@ -1897,7 +1897,7 @@ fn pending_decisions_have_stable_keys() {
             None,
         )
         .unwrap();
-    assert_eq!(keys(&id), [format!("question:{work}:{}", asked.id)]);
+    assert_eq!(keys(&id), [format!("question:{}", asked.id)]);
     assert_eq!(keys(&id), keys(&id), "stable across reads");
     r.work
         .answer_decision(r.project(), &asked.id, "0.5 and 0.7", "researcher")
@@ -1918,7 +1918,7 @@ fn pending_decisions_have_stable_keys() {
             None,
         )
         .unwrap();
-    assert_eq!(keys(&id), [format!("brief:{}", current + 1)]);
+    assert_eq!(keys(&id), [format!("brief:{id}:{}", current + 1)]);
     let approve = r.say("Approve the sharper brief.");
     r.tasks
         .approve_revision(r.project(), &r.general, &id, &approve.id, current + 1)
@@ -1951,6 +1951,129 @@ fn pending_decisions_have_stable_keys() {
         )
         .unwrap();
     assert!(keys(&id).is_empty(), "decided");
+}
+
+#[test]
+fn open_decisions_assignments_reviews_and_awaiting_proposals_are_read_for_attention() {
+    let r = rig();
+    // A question on work inside a Task, and the work's open assignment.
+    let (task, round) = r.executing("Prune heads");
+    let work = r.internal_work(&round, "Sweep");
+    r.work
+        .assign(
+            r.project(),
+            &work,
+            &r.specialist,
+            None,
+            "",
+            &Actor::Researcher,
+        )
+        .ok();
+    let (asked, _) = r
+        .work
+        .request_decision(
+            r.project(),
+            &work,
+            "q1",
+            &r.specialist,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    let decisions = r.work.open_decisions(r.project()).unwrap();
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0].request.id, asked.id);
+    assert_eq!(decisions[0].work_title, "Sweep");
+    assert_eq!(decisions[0].research_id.as_deref(), Some(task.as_str()));
+    let assignments = r.work.open_assignments(r.project()).unwrap();
+    assert!(
+        assignments
+            .iter()
+            .any(|a| a.work_id == work && a.research_id.as_deref() == Some(task.as_str())),
+        "{assignments:?}"
+    );
+    r.work
+        .answer_decision(r.project(), &asked.id, "0.5", "researcher")
+        .unwrap();
+    assert!(r.work.open_decisions(r.project()).unwrap().is_empty());
+
+    // Open review requests.
+    assert!(
+        r.tasks
+            .open_review_requests(r.project())
+            .unwrap()
+            .is_empty()
+    );
+    let (idle, _) = r.executing("Quantize");
+    let request = r.ask_review(&idle, "done");
+    let open = r.tasks.open_review_requests(r.project()).unwrap();
+    assert_eq!(
+        open.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+        [request.id.as_str()]
+    );
+
+    // Proposals the manager showed and nobody admitted or approved yet.
+    let channel = r.channels.default_channel(r.project()).unwrap();
+    let awaiting = |r: &Rig| {
+        let showings = r
+            .channels
+            .proposal_showings(r.project(), &channel.id)
+            .unwrap();
+        r.tasks
+            .awaiting_proposals(r.project(), &showings)
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.research_id, p.revision, false))
+            .chain(
+                r.tasks
+                    .awaiting_briefs(r.project(), &showings)
+                    .unwrap()
+                    .into_iter()
+                    .map(|b| (b.research_id, b.revision, true)),
+            )
+            .collect::<Vec<_>>()
+    };
+    let (draft, _) = r.proposed("A draft");
+    assert_eq!(awaiting(&r), [(draft.clone(), 1, false)]);
+    // A question the researcher wrote and nobody showed never waits.
+    r.f.research
+        .create(r.project(), brief("Mine"), None)
+        .unwrap();
+    assert_eq!(awaiting(&r).len(), 1);
+    let again = r.tasks.show_again(r.project(), &r.general, &draft).unwrap();
+    let showings = r
+        .channels
+        .proposal_showings(r.project(), &channel.id)
+        .unwrap();
+    assert_eq!(
+        showings.get(&(draft.clone(), 1)),
+        Some(&again.id),
+        "the newest showing"
+    );
+    let instruction = r.say("Yes, add that to the board.");
+    r.tasks
+        .admit(r.project(), &r.general, &draft, &instruction.id, 1)
+        .unwrap();
+    assert!(awaiting(&r).is_empty(), "admitted");
+    // A revised brief of an admitted Task waits for approval.
+    r.tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &draft,
+            1,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(awaiting(&r), [(draft.clone(), 2, true)]);
+    r.tasks.set_archived(r.project(), &draft, true).unwrap();
+    assert!(awaiting(&r).is_empty(), "archived");
 }
 
 impl Rig {

@@ -18,6 +18,7 @@ import {
 import { errorMessage } from '../app/errors'
 import { useInspectionRecord, useInspectorEntry, useInspectorServices } from '../app/inspector/inspectorContext'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
+import { resolveThrough, useAttention } from '../attention/attentionContext'
 import { ResearchFindingsPanel } from '../research/ResearchFindingsPanel'
 import type { ResearchBundle } from '../research/useResearch'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
@@ -210,6 +211,7 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   onDecided: (decided: Decided) => void
 }) {
   const { api, locale, t } = useInspectorServices()
+  const attention = useAttention()
   const record = useInspectionRecord()
   const memory = placeKey.task(projectId, detail.id)
   const [outcome, setOutcome] = usePlaceState<WorkOutcome>(`${memory}#outcome:${request.id}`, 'unknown')
@@ -271,9 +273,9 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
 
   const decide = (accept: boolean) => void run(accept ? 'accept' : 'return', async () => {
     const reason = feedback.trim()
-    const verdict = await api.reviewTask(projectId, detail.id, accept
+    const verdict = await resolveThrough(attention, `review:${request.id}`, () => api.reviewTask(projectId, detail.id, accept
       ? { requestId: request.id, accept: true, outcome, reason: reason || undefined }
-      : { requestId: request.id, accept: false, reason })
+      : { requestId: request.id, accept: false, reason }))
     onDecided({ requestId: request.id, accepted: accept, outcome, messageId: verdict?.general_message_id ?? null })
     setFeedback('')
     setOutcome('unknown')
@@ -293,7 +295,12 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   const requester = detail.timeline?.find((step) => step.kind === 'review_requested' && step.ref_id === request.id)?.member
 
   return (
-    <section aria-label={t('kubecode.task.reviewTitle')} className="kubecode-task-review">
+    <section
+      aria-label={t('kubecode.task.reviewTitle')}
+      className="kubecode-task-review"
+      data-focus-key={`review:${request.id}`}
+      tabIndex={-1}
+    >
       <h4>{t('kubecode.task.reviewTitle')}</h4>
       <p className="kubecode-channel-body">{request.summary}</p>
       <p className="kubecode-research-muted">

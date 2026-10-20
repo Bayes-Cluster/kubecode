@@ -18,6 +18,11 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import { placeKey, usePlaceState, type Landing, type ReadingPosition } from '../app/location/placeMemory'
+import { useAttention } from '../attention/attentionContext'
+import { askerName } from '../attention/attentionTargets'
+import { DeliveryActionsContext, type DeliveryActions } from '../attention/deliveryContext'
+import { ExecutionStrip } from '../attention/ExecutionStrip'
+import { foldRoutingNotes, useMessageDeliveries } from '../attention/useMessageDeliveries'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { useMemberDirectory } from '../members/memberDirectory'
 import { authorView, type IdentityView } from '../members/memberIdentity'
@@ -71,7 +76,7 @@ export type ChannelWorkspaceProps = {
   onOpenReference?: (reference: ProjectContextRef) => void
   /** Opens the one work board filtered to what came from a Thread. */
   onOpenWork?: (filter: { thread_id: string }) => void
-  /** What the conversation says about a message's delivery (#220 replaces the default). */
+  /** What the conversation says about a message's delivery; by default the server's facts (ADR 0232). */
   delivery?: MessageDeliverySource
   projectId: string
   research: ResearchSummary[]
@@ -92,7 +97,7 @@ export function ChannelWorkspace({
   api,
   connectionState,
   conversations,
-  delivery = notesDelivery,
+  delivery,
   events,
   initialThreadId = null,
   detail = null,
@@ -115,6 +120,10 @@ export function ChannelWorkspace({
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const directory = useMemberDirectory()
+  // With exactly one member at work, the composer also offers its Stop; with more it would be ambiguous.
+  const attention = useAttention()
+  const publicRuns = attention?.executions({ binding: 'public' }) ?? []
+  const onlyRun = publicRuns.length === 1 ? publicRuns[0] : null
   const navigation = useContext(WorkspaceNavigationContext)
   // Showing only what is about one Task is a view of the same conversation.
   const [localFilter, setLocalFilter] = useState<string | null>(null)
@@ -178,6 +187,27 @@ export function ChannelWorkspace({
       })
       .catch(() => undefined)
   }
+  // Each of the researcher's messages says how far it got, from facts only (ADR 0232).
+  const facts = useMessageDeliveries(api, projectId, channel?.id ?? null, feed.messages, events, connectionState)
+  const folding = useMemo(() => foldRoutingNotes(feed.messages, facts.deliveries), [facts.deliveries, feed.messages])
+  const shownFeed = useMemo(() => ({ ...feed, messages: folding.messages }), [feed, folding.messages])
+  const latestOwn = useMemo(() => {
+    for (let index = feed.messages.length - 1; index >= 0; index -= 1) {
+      const message = feed.messages[index]
+      if (message.author_kind === 'researcher' && message.thread_id === null) return message.id
+    }
+    return null
+  }, [feed.messages])
+  const deliverySource = useMemo<MessageDeliverySource>(() => delivery ?? ((message, notes) => {
+    const known = facts.deliveries.get(message.id)
+    if (!known) return notesDelivery(message, notes)
+    return {
+      state: 'facts',
+      delivery: known,
+      latest: message.id === latestOwn,
+      notes: [...(folding.folded.get(message.id) ?? []), ...notes.map((note) => note.body)],
+    }
+  }), [delivery, facts.deliveries, folding.folded, latestOwn])
   const sessions = useMemo(() => conversations.filter((item) => item.project_id === projectId), [conversations, projectId])
   const threadByRoot = useMemo(
     () => new Map(threads.map((thread) => [thread.root_message_id, thread])),
@@ -212,6 +242,15 @@ export function ChannelWorkspace({
     box.focus()
     box.setSelectionRange(box.value.length, box.value.length)
   }, [focusRequest])
+  const deliveryActions = useMemo<DeliveryActions>(() => ({
+    ...facts.actions,
+    openMembers: () => navigation?.openPlace({ view: 'members' }),
+    // A message whose recipient is gone comes back as a draft, never sent again by itself.
+    copyToComposer: (text) => {
+      setDraft((current) => ({ ...current, body: current.body.trim() === '' ? text : `${current.body}\n${text}` }))
+      setFocusRequest((count) => count + 1)
+    },
+  }), [facts.actions, navigation, setDraft])
   const reply = (message: ChannelMessage, author: IdentityView) => {
     setDraft((current) => withReply(current, message, author, directory))
     setAnnouncement(t('kubecode.channel.replyingTo', { author: author.name }))
@@ -310,11 +349,12 @@ export function ChannelWorkspace({
             <Button size="xs" variant="ghost" onClick={retry}>{t('kubecode.retry')}</Button>
           </p>
         )}
+        <DeliveryActionsContext.Provider value={deliveryActions}>
         <MessageList
-          delivery={delivery}
+          delivery={deliverySource}
           directory={directory}
           emptyLabel={t('kubecode.channel.empty')}
-          feed={feed}
+          feed={shownFeed}
           filter={taskFilter}
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : jumpTarget ?? focusMessageId}
@@ -336,6 +376,7 @@ export function ChannelWorkspace({
           onReadingPositionChange={(position) => report(position)}
           onReply={reply}
         />
+        </DeliveryActionsContext.Provider>
         {outside && outsideTitle && (
           <p className="kubecode-channel-outside" role="status">
             {t('kubecode.channel.notInFilter', { title: outsideTitle })}{' '}
@@ -345,6 +386,7 @@ export function ChannelWorkspace({
           </p>
         )}
         <span className="sr-only" role="status">{announcement}</span>
+        <ExecutionStrip api={api} scope={{ binding: 'public' }} t={t} />
         {channel && (
           <MessageComposer
             api={api}
@@ -361,6 +403,14 @@ export function ChannelWorkspace({
             projectId={projectId}
             t={t}
             textareaRef={textarea}
+            stop={onlyRun ? {
+              label: t('kubecode.execution.stopTurn', { name: askerName(onlyRun, t) }),
+              shortLabel: t('kubecode.execution.stopShort'),
+              onStop: () => {
+                void api.cancelRun(onlyRun.run_id).then(() => attention?.reload(), () => undefined)
+              },
+            } : undefined}
+            outboxKey={`${placeKey.general(projectId, taskFilter)}#outbox`}
             onDraftChange={setDraft}
             onSend={send}
             onSent={sent}

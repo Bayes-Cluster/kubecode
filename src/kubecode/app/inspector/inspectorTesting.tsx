@@ -10,6 +10,7 @@ import { vi } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import type { KubecodeApi } from '../../api'
+import { AttentionContext, type AttentionStore } from '../../attention/attentionContext'
 import { applyInspect, popEntry, type InspectorStack } from '../location/inspector'
 import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../location/WorkspaceNavigation'
 import { InspectorServicesContext, type InspectorServices } from './inspectorContext'
@@ -50,12 +51,15 @@ export function fakeServices(overrides: Partial<InspectorServices> = {}): Inspec
 
 /** Renders `stack` in an InspectorPane whose Back, Close, and push work like the shell's. */
 export function renderInspector({
+  attention = null,
   navigation = fakeNavigation(),
   panels = INSPECTOR_PANELS,
   presentation = 'side',
   services = fakeServices(),
   stack,
 }: {
+  /** The Workspace's attention store, as the shell provides it (ADR 0232). */
+  attention?: AttentionStore | null
   navigation?: WorkspaceNavigation
   panels?: InspectorPanels
   presentation?: InspectorPresentation
@@ -82,7 +86,9 @@ export function renderInspector({
   const view = render(
     <WorkspaceNavigationContext.Provider value={navigation}>
       <InspectorServicesContext.Provider value={services}>
-        <Host />
+        <AttentionContext.Provider value={attention}>
+          <Host />
+        </AttentionContext.Provider>
       </InspectorServicesContext.Provider>
     </WorkspaceNavigationContext.Provider>,
   )
