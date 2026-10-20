@@ -93,6 +93,8 @@ describe('TaskPanel', () => {
     expect(panel().getByLabelText('Feedback for the team')).toBeInTheDocument()
     fireEvent.click(panel().getByRole('button', { name: 'Review results' }))
     expect(panel().getByRole('tab', { name: /Results/, selected: true })).toBeInTheDocument()
+    // The findings come with the research record, read once the results were shown.
+    expect(await panel().findByText('findings panel')).toBeInTheDocument()
   })
 
   it('stays on the results after a decision, so the researcher sees what happened and where it went', async () => {
