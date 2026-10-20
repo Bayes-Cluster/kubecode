@@ -13,7 +13,7 @@ import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/loc
 import { emptyGeneralDraft, type GeneralDraft } from '../channel/generalDraft'
 import { MessageComposer } from '../channel/MessageComposer'
 import { localReferenceLabels } from '../references/referenceLabels'
-import { memberDirectory, MemberDirectoryContext } from '../members/memberDirectory'
+import { memberDirectory, MemberDirectoryContext, type MemberDirectory } from '../members/memberDirectory'
 import { channelMessage, general, member } from '../members/memberFixtures'
 import { DmPane } from './DmPane'
 
@@ -23,9 +23,11 @@ const team = memberDirectory({ members: [general, analyst], general_id: 'g' }, '
 const research = [{ id: 'r1', title: 'Pruning' }] as unknown as ResearchSummary[]
 const turn = (id: string, user: string, assistant: string): DmTurn => ({ run_id: id, user, assistant })
 
-function context(children: ReactNode, { memory, navigation }: { memory?: PlaceMemory; navigation?: WorkspaceNavigation } = {}) {
+type Context = { memory?: PlaceMemory; navigation?: WorkspaceNavigation; directory?: MemberDirectory }
+
+function context(children: ReactNode, { directory = team, memory, navigation }: Context = {}) {
   const inner = (
-    <MemberDirectoryContext.Provider value={team}>
+    <MemberDirectoryContext.Provider value={directory}>
       {navigation ? <WorkspaceNavigationContext.Provider value={navigation}>{children}</WorkspaceNavigationContext.Provider> : children}
     </MemberDirectoryContext.Provider>
   )
@@ -61,7 +63,7 @@ function pane(api: ReturnType<typeof fakeApi>, extra: Partial<React.ComponentPro
   )
 }
 
-function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, options: { navigation?: WorkspaceNavigation; member?: Member } = {}) {
+function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, options: Context & { member?: Member } = {}) {
   const api = fakeApi(overrides)
   const onShared = vi.fn()
   const view = render(context(pane(api, { onShared, member: options.member ?? analyst }), options))
@@ -195,6 +197,26 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show in General' }))
     expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'general', message: 'shared-1' }, { focus: 'message:shared-1' })
     expect(api.postChannelMessage).not.toHaveBeenCalled()
+  })
+
+  it('says in the preview when the project manager cannot receive the share, and never names General as the recipient', async () => {
+    const unreadyManager = { ...general, state: 'setup_required' as const, public_conversation_id: null }
+    for (const directory of [
+      memberDirectory({ members: [unreadyManager, analyst], general_id: 'g' }, 'ready'),
+      memberDirectory({ members: [analyst], general_id: null }, 'ready'),
+    ]) {
+      const { view } = setup({}, { directory })
+      await screen.findByText('is 0.91 enough?')
+      const dialog = await openShare()
+      fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+      const card = await within(dialog).findByRole('region', { name: 'Preview' })
+      expect(within(card).getByRole('status')).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
+      expect(card).not.toHaveTextContent('This will reach')
+      expect(within(card).queryByText('General · Project manager')).not.toBeInTheDocument()
+      if (directory.manager) expect(card).toHaveTextContent(/General.*Needs setup/)
+      view.unmount()
+    }
   })
 
   it('drops the preview when the server says the conversation changed, and bounds the turns', async () => {

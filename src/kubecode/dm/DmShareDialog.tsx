@@ -18,7 +18,7 @@ import type { ChannelMessage, DmSharePreview, DmTurn, KubecodeApi, Member, Resea
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
 import { Identity } from '../members/Identity'
-import { useMemberDirectory } from '../members/memberDirectory'
+import { canReceive, useMemberDirectory } from '../members/memberDirectory'
 import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
 
@@ -45,13 +45,19 @@ export type DmShareDialogProps = {
  */
 function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview; research: ResearchSummary[]; t: Translator }) {
   const { manager } = useMemberDirectory()
+  const reachable = manager !== null && canReceive(manager)
+  const managerView = manager ? memberView(manager, t) : null
+  // A manager who is active but has no Session yet still cannot receive it: say so on the name too.
+  const shown = managerView && !reachable && !managerView.attention
+    ? { ...managerView, attention: { label: t('kubecode.identity.cannotReceive'), tone: 'warn' as const } }
+    : managerView
   const task = preview.task_id ? research.find((item) => item.id === preview.task_id) : undefined
   return (
     <section aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview">
       <Identity size="sm" view={researcherView(t)} />
       <p className="kubecode-message-recipients">
         <span className="kubecode-message-recipients-label">{t('kubecode.channel.to')}</span>
-        {manager ? <Identity size="sm" view={memberView(manager, t)} /> : <span>{t('kubecode.channel.toManager')}</span>}
+        {shown && <Identity size="sm" view={shown} />}
       </p>
       {preview.task_id && (
         <ReferenceChip
@@ -63,9 +69,9 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
       <div className="kubecode-message-body">
         <MarkdownContent content={preview.text} images="text" />
       </div>
-      <p className="kubecode-research-muted">
-        {t('kubecode.dm.shareRecipients', { name: manager?.name ?? t('kubecode.channel.general') })}
-      </p>
+      {manager && reachable
+        ? <p className="kubecode-research-muted">{t('kubecode.dm.shareRecipients', { name: manager.name })}</p>
+        : <p className="kubecode-composer-warning" role="status">{t('kubecode.channel.noRecipient')}</p>}
       <details>
         <summary>{t('kubecode.dm.shareExactText')}</summary>
         <pre>{preview.text}</pre>
