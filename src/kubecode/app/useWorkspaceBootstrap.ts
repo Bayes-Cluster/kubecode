@@ -17,6 +17,9 @@ import type { Translator } from '@/lib/i18n'
 
 type Dispatch<State> = React.Dispatch<React.SetStateAction<State>>
 
+/** Whether a Workspace's Sessions were read, or failed to be read. */
+export type SessionsLoad = { projectId: string; ok: boolean }
+
 export type WorkspaceBootstrapOptions = {
   projectId: string | null
   applyProjectLayout: (projectId: string) => void
@@ -35,7 +38,8 @@ export type WorkspaceBootstrapOptions = {
   setConversations: Dispatch<Conversation[]>
   setConversationId: Dispatch<string | null>
   /** The Project whose Sessions have been read, so "no Sessions yet" is known and not a guess. */
-  setConversationsLoadedFor?: Dispatch<string | null>
+  /** The Project whose Sessions were read (`ok`), or failed to be read. */
+  setConversationsLoadedFor?: Dispatch<SessionsLoad | null>
   setTeams: Dispatch<TeamSnapshot[]>
   setError: Dispatch<string | null>
   /**
@@ -159,7 +163,7 @@ export function useWorkspaceBootstrap(
           ))
         }
         // Read, or failed to read: either way the first view can be chosen.
-        setConversationsLoadedFor?.(projectId)
+        setConversationsLoadedFor?.({ projectId, ok: conversationResult.status === 'fulfilled' })
         if (teamResult.status === 'fulfilled') setTeams(teamResult.value)
         const failure = [terminalResult, conversationResult, teamResult]
           .find((result) => result.status === 'rejected')

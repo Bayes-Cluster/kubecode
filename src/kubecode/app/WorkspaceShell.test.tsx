@@ -494,6 +494,22 @@ describe('Workspace navigation and routes', () => {
     expect(JSON.stringify(storedLocations().workspaces['project-1'])).not.toContain('s2')
   })
 
+  it('keeps the remembered Session when the Sessions cannot be read', async () => {
+    storeLocations({
+      lastProjectId: 'project-1',
+      seq: 1,
+      workspaces: { 'project-1': { current: 'sessions', at: 1, views: { sessions: '/p/project-1/sessions/c/s1' } } },
+    })
+    window.history.replaceState(null, '', '/')
+    render(<KubecodeApp api={api({ listConversations: vi.fn().mockRejectedValue(new Error('offline')) })} />)
+    await waitFor(() => expect(document.querySelector('.kubecode-topbar-error')).toHaveAttribute('aria-label', 'offline'))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(storedLocations().workspaces['project-1']).toMatchObject({
+      current: 'sessions',
+      views: { sessions: '/p/project-1/sessions/c/s1' },
+    })
+  })
+
   it('opens General when the remembered Session is no longer one of this Workspace', async () => {
     storeLocations({
       lastProjectId: 'project-1',

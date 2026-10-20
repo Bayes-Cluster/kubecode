@@ -93,7 +93,7 @@ import { useWorkspaceRouteSync } from './useWorkspaceRouteSync'
 import { parseWorkspaceRoute, routeHash, type WorkspaceRoute } from './workspaceRoute'
 import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
-import { useWorkspaceBootstrap } from './useWorkspaceBootstrap'
+import { useWorkspaceBootstrap, type SessionsLoad } from './useWorkspaceBootstrap'
 import { useWeChatBinding } from './useWeChatBinding'
 import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
@@ -132,7 +132,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [researchDialog, setResearchDialog] = useState(false)
-  const [conversationsLoadedFor, setConversationsLoadedFor] = useState<string | null>(null)
+  const [conversationsLoadedFor, setConversationsLoadedFor] = useState<SessionsLoad | null>(null)
   // A Workspace's Sessions are read again whenever it becomes the active one.
   const [sessionsProject, setSessionsProject] = useState(projectId)
   if (sessionsProject !== projectId) {
@@ -549,8 +549,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   // Execution history remembers its Session: it reopens once this Workspace's
   // Sessions are read, if it is still one of them, and General otherwise. A
-  // Session chosen there afterwards is what it remembers.
-  const sessionsReady = conversationsLoadedFor !== null && conversationsLoadedFor === projectId
+  // Session chosen there afterwards is what it remembers. Sessions that could
+  // not be read say nothing about what exists, so nothing is forgotten then.
+  const sessionsReady = conversationsLoadedFor !== null && conversationsLoadedFor.projectId === projectId
+  const sessionsRead = sessionsReady && conversationsLoadedFor.ok
   const rememberedSession = place.view === 'sessions' ? place.conversation ?? null : null
   const sessionAwaited = rememberedSession !== null
     && rememberedSession !== conversationId
@@ -567,7 +569,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       restoredSessionRef.current = key
       if (wanted && wanted !== conversationId) {
         if (conversations.some((item) => item.id === wanted)) showSessionIn(projectId, wanted)
-        else {
+        else if (sessionsRead) {
           dispatchLocation({
             type: 'reconcile',
             projectId,
@@ -580,7 +582,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (conversationId && conversationId !== wanted && conversations.some((item) => item.id === conversationId)) {
       dispatchLocation({ type: 'patchSessions', projectId, conversation: conversationId }, { history: 'replace' })
     }
-  }, [conversationId, conversations, dispatchLocation, place, projectId, sessionsReady, showSessionIn])
+  }, [conversationId, conversations, dispatchLocation, place, projectId, sessionsRead, sessionsReady, showSessionIn])
 
   // A move may ask for something to be focused once it is on screen.
   useEffect(() => {
