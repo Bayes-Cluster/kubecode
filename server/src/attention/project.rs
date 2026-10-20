@@ -14,8 +14,10 @@ fn rank(detail: &AttentionDetail) -> u8 {
         AttentionDetail::Permission { .. } | AttentionDetail::Input { .. } => 0,
         AttentionDetail::Question { .. } => 1,
         AttentionDetail::Review { .. } => 2,
-        AttentionDetail::Proposal { .. } => 3,
-        AttentionDetail::Setup { .. } => 4,
+        AttentionDetail::Suggestion { .. } => 3,
+        AttentionDetail::Brief { .. } => 4,
+        AttentionDetail::Proposal { .. } => 5,
+        AttentionDetail::Setup { .. } => 6,
     }
 }
 
@@ -153,6 +155,39 @@ pub fn project(project_id: &str, cursor: u64, inputs: AttentionInputs) -> Attent
             Some(task(&request.research_id)),
         );
     }
+    // The keys the Task panel lists them under (`TaskStore::pending`).
+    for entry in &inputs.suggestions {
+        insert(
+            &mut items,
+            project_id,
+            format!("suggestion:{}", entry.id),
+            &entry.created_at,
+            AttentionDetail::Suggestion {
+                research_id: entry.research_id.clone(),
+                entry_id: entry.id.clone(),
+                text: entry.body.chars().take(500).collect(),
+            },
+            Some(task(&entry.research_id)),
+        );
+    }
+    for brief in &inputs.briefs {
+        insert(
+            &mut items,
+            project_id,
+            format!("brief:{}:{}", brief.research_id, brief.revision),
+            &brief.since,
+            AttentionDetail::Brief {
+                research_id: brief.research_id.clone(),
+                revision: brief.revision,
+                approved_revision: brief.approved_revision,
+                message_id: brief.message_id.clone(),
+            },
+            Some(TaskRef {
+                id: brief.research_id.clone(),
+                title: brief.title.clone(),
+            }),
+        );
+    }
     for proposal in &inputs.proposals {
         insert(
             &mut items,
@@ -163,7 +198,6 @@ pub fn project(project_id: &str, cursor: u64, inputs: AttentionInputs) -> Attent
                 research_id: proposal.research_id.clone(),
                 revision: proposal.revision,
                 message_id: proposal.message_id.clone(),
-                admitted: proposal.admitted,
             },
             Some(TaskRef {
                 id: proposal.research_id.clone(),

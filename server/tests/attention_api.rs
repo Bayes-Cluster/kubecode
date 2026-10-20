@@ -320,3 +320,125 @@ async fn the_summary_counts_every_workspace() {
     assert_eq!(of(&env.other_project)["decisions"], 0);
     assert_eq!(of(&env.project)["incomplete"], false);
 }
+
+/// Every decision the Task panel lists as waiting on the researcher is one
+/// Needs you item under the same key: an open question, a suggested change of
+/// direction, and a revised brief awaiting approval that General never showed.
+#[tokio::test]
+async fn the_task_panel_and_needs_you_list_the_same_decisions_under_the_same_keys() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Prune heads"), Some("prune"))
+        .unwrap();
+    let admit = env.say("Add it to the board").await;
+    manager
+        .task_admit(&proposal.research_id, &admit, proposal.revision)
+        .unwrap();
+    let go = env.say("Go ahead.").await;
+    let round = manager
+        .task_start(&proposal.research_id, &go)
+        .unwrap()
+        .round_id
+        .unwrap();
+    let work = manager
+        .create(NewTask {
+            round_id: Some(&round),
+            title: "Sweep ratios",
+            description: "Try them",
+            plan: None,
+            depends_on: &[],
+            from_thread: None,
+            client_request_id: Some("w1"),
+        })
+        .unwrap();
+    manager
+        .assign_member(&work.item.id, "@analyst", "your area")
+        .unwrap();
+    let (asked, _) = env
+        .state
+        .work
+        .request_decision(
+            &env.project,
+            &work.item.id,
+            "q1",
+            &env.specialist,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    let published = env
+        .state
+        .research
+        .publish(
+            &env.project,
+            &proposal.research_id,
+            kubecode_server::research_store::NewPublication {
+                key: "suggest-1".into(),
+                author_kind: kubecode_server::research_store::AuthorKind::Agent,
+                author_ref: None,
+                producer: Default::default(),
+                round_id: None,
+                findings: Vec::new(),
+                proposals: vec!["Relax the single-GPU constraint".into()],
+            },
+        )
+        .unwrap();
+    // The researcher edits the brief in the inspector: nothing shows it in General.
+    let current = env
+        .state
+        .research
+        .get(&env.project, &proposal.research_id)
+        .unwrap()
+        .revision;
+    env.state
+        .research
+        .update_brief(
+            &env.project,
+            &proposal.research_id,
+            current,
+            &kubecode_server::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+
+    let (status, task) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/tasks/{}", env.project, proposal.research_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{task}");
+    let mut panel: Vec<String> = task["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pending| pending["key"].as_str().unwrap().to_owned())
+        .collect();
+    panel.sort();
+    let mut expected = vec![
+        format!("question:{}", asked.id),
+        format!("suggestion:{}", published.proposals[0].id),
+        format!("brief:{}:{}", proposal.research_id, current + 1),
+    ];
+    expected.sort();
+    assert_eq!(panel, expected, "{task}");
+    let snapshot = snapshot(&env, &env.project).await;
+    let mut listed = keys(&snapshot);
+    listed.sort();
+    assert_eq!(listed, expected, "{snapshot}");
+    let brief_item = snapshot["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "brief")
+        .unwrap();
+    assert_eq!(brief_item["message_id"], Value::Null);
+    assert_eq!(brief_item["task"]["id"], json!(proposal.research_id));
+}

@@ -153,28 +153,44 @@ pub fn collect(state: &AppState, project_id: &str) -> AttentionSnapshot {
         }
         _ => failed.push(Source::Tasks),
     }
-    let proposals =
-        state
-            .channels
-            .existing_channels(project_id)
-            .and_then(
-                |channels| match channels.into_iter().find(|channel| channel.is_default) {
-                    Some(channel) => state.channels.proposal_showings(project_id, &channel.id),
-                    None => Ok(HashMap::new()),
-                },
-            );
-    match proposals
+    let showings = state
+        .channels
+        .existing_channels(project_id)
+        .and_then(
+            |channels| match channels.into_iter().find(|channel| channel.is_default) {
+                Some(channel) => state.channels.proposal_showings(project_id, &channel.id),
+                None => Ok(HashMap::new()),
+            },
+        )
         .map_err(crate::task_store::TaskError::from)
-        .and_then(|showings| state.tasks.awaiting_proposals(project_id, &showings))
-    {
-        Ok(proposals) => inputs.proposals = proposals,
+        .and_then(|showings| {
+            Ok((
+                state.tasks.awaiting_proposals(project_id, &showings)?,
+                state.tasks.awaiting_briefs(project_id, &showings)?,
+            ))
+        });
+    match showings {
+        Ok((proposals, briefs)) => {
+            inputs.proposals = proposals;
+            inputs.briefs = briefs;
+        }
         Err(_) => failed.push(Source::Proposals),
+    }
+    match state.research.open_proposals(project_id) {
+        Ok(suggestions) => inputs.suggestions = suggestions,
+        Err(_) => failed.push(Source::Tasks),
     }
     match state.orchestrator.failed_researcher_routes(project_id) {
         Ok(routes) => inputs.failed_routes = routes,
         Err(_) => failed.push(Source::Routes),
     }
-    failed.dedup();
+    let mut unique: Vec<Source> = Vec::new();
+    for source in failed {
+        if !unique.contains(&source) {
+            unique.push(source);
+        }
+    }
+    let failed = unique;
     inputs.failed_sources = failed;
     project(project_id, cursor, inputs)
 }

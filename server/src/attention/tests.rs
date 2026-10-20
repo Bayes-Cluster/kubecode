@@ -8,7 +8,8 @@ use super::*;
 use crate::agent_runtime::{PendingKind, PendingOptionView, PendingRequestView};
 use crate::agent_store::{ActiveRun, LatestRun, RunStatus};
 use crate::orchestrator::RouteKind;
-use crate::task_store::{AwaitingProposal, ReviewRequest};
+use crate::research_store::{AuthorKind, EntryKind, ResearchEntry};
+use crate::task_store::{AwaitingBrief, AwaitingProposal, ReviewRequest};
 use crate::work_store::{DecisionRequest, OpenAssignment, OpenDecision};
 
 fn analyst() -> MemberRef {
@@ -197,7 +198,6 @@ fn questions_reviews_proposals_and_setup_each_have_one_key() {
         title: "A draft".into(),
         revision: 3,
         message_id: "msg-9".into(),
-        admitted: false,
         created_at: "2026-10-20 09:40:00".into(),
     });
     inputs.task_titles.insert("D".into(), "A draft".into());
@@ -225,6 +225,55 @@ fn questions_reviews_proposals_and_setup_each_have_one_key() {
     assert_eq!(snapshot.items[3].group, Group::Setup);
     let proposal = serde_json::to_value(&snapshot.items[2]).unwrap();
     assert_eq!(proposal["message_id"], "msg-9");
+}
+
+/// Everything the Task panel lists as waiting is one item under the same key:
+/// a suggested change of direction, and a revised brief awaiting approval
+/// whether or not General showed it.
+#[test]
+fn suggestions_and_every_revised_brief_wait_under_the_task_panel_keys() {
+    let mut inputs = base();
+    inputs.suggestions.push(ResearchEntry {
+        id: "e1".into(),
+        research_id: "T".into(),
+        seq: 4,
+        kind: EntryKind::Proposal,
+        author_kind: AuthorKind::Agent,
+        author_ref: None,
+        body: "Relax the single-GPU constraint".into(),
+        brief_revision: 2,
+        created_at: "2026-10-20 09:10:00".into(),
+    });
+    inputs.briefs.push(AwaitingBrief {
+        research_id: "T".into(),
+        title: "Structured pruning".into(),
+        revision: 3,
+        approved_revision: 2,
+        message_id: None,
+        since: "2026-10-20 09:20:00".into(),
+    });
+    inputs.briefs.push(AwaitingBrief {
+        research_id: "U".into(),
+        title: "Shown".into(),
+        revision: 5,
+        approved_revision: 4,
+        message_id: Some("msg-5".into()),
+        since: "2026-10-20 09:30:00".into(),
+    });
+    let snapshot = project("p", 1, inputs);
+    assert_eq!(keys(&snapshot), ["suggestion:e1", "brief:T:3", "brief:U:5"]);
+    let suggestion = serde_json::to_value(&snapshot.items[0]).unwrap();
+    assert_eq!(suggestion["kind"], "suggestion");
+    assert_eq!(suggestion["research_id"], "T");
+    assert_eq!(suggestion["text"], "Relax the single-GPU constraint");
+    assert_eq!(suggestion["task"]["title"], "Structured pruning");
+    let unshown = serde_json::to_value(&snapshot.items[1]).unwrap();
+    assert_eq!(unshown["kind"], "brief");
+    assert_eq!(unshown["approved_revision"], 2);
+    assert_eq!(unshown["message_id"], serde_json::Value::Null);
+    let shown = serde_json::to_value(&snapshot.items[2]).unwrap();
+    assert_eq!(shown["message_id"], "msg-5");
+    assert_eq!(shown["task"]["title"], "Shown");
 }
 
 #[test]

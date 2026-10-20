@@ -8,7 +8,8 @@ use serde_json::Value;
 use crate::agent_runtime::{PendingOptionView, PendingRequestView};
 use crate::agent_store::{ActiveRun, LatestRun, RunStatus};
 use crate::orchestrator::RouteKind;
-use crate::task_store::{AwaitingProposal, ReviewRequest};
+use crate::research_store::ResearchEntry;
+use crate::task_store::{AwaitingBrief, AwaitingProposal, ReviewRequest};
 use crate::work_store::{OpenAssignment, OpenDecision};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -85,11 +86,25 @@ pub enum AttentionDetail {
         request_id: String,
         brief_revision: u64,
     },
+    /// A suggested change of direction on a Task, agreed or declined in its Results.
+    Suggestion {
+        research_id: String,
+        entry_id: String,
+        text: String,
+    },
+    /// A brief revised past the approved revision of an admitted Task.
+    Brief {
+        research_id: String,
+        revision: u64,
+        approved_revision: u64,
+        /// The General message that showed the revision, if one did.
+        message_id: Option<String>,
+    },
+    /// A proposal shown in General, not on the board yet.
     Proposal {
         research_id: String,
         revision: u64,
         message_id: String,
-        admitted: bool,
     },
     Setup {
         member_id: String,
@@ -178,6 +193,9 @@ pub struct AttentionInputs {
     pub decisions: Vec<OpenDecision>,
     pub reviews: Vec<ReviewRequest>,
     pub proposals: Vec<AwaitingProposal>,
+    /// Suggested changes of direction not decided yet.
+    pub suggestions: Vec<ResearchEntry>,
+    pub briefs: Vec<AwaitingBrief>,
     /// `(member, setup_code, since)` for members that need setup.
     pub setup: Vec<(MemberRef, Option<String>, String)>,
     pub active_runs: Vec<ActiveRun>,

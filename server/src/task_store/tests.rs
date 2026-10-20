@@ -1897,7 +1897,7 @@ fn pending_decisions_have_stable_keys() {
             None,
         )
         .unwrap();
-    assert_eq!(keys(&id), [format!("question:{work}:{}", asked.id)]);
+    assert_eq!(keys(&id), [format!("question:{}", asked.id)]);
     assert_eq!(keys(&id), keys(&id), "stable across reads");
     r.work
         .answer_decision(r.project(), &asked.id, "0.5 and 0.7", "researcher")
@@ -1918,7 +1918,7 @@ fn pending_decisions_have_stable_keys() {
             None,
         )
         .unwrap();
-    assert_eq!(keys(&id), [format!("brief:{}", current + 1)]);
+    assert_eq!(keys(&id), [format!("brief:{id}:{}", current + 1)]);
     let approve = r.say("Approve the sharper brief.");
     r.tasks
         .approve_revision(r.project(), &r.general, &id, &approve.id, current + 1)
@@ -2025,7 +2025,14 @@ fn open_decisions_assignments_reviews_and_awaiting_proposals_are_read_for_attent
             .awaiting_proposals(r.project(), &showings)
             .unwrap()
             .into_iter()
-            .map(|p| (p.research_id, p.revision, p.admitted))
+            .map(|p| (p.research_id, p.revision, false))
+            .chain(
+                r.tasks
+                    .awaiting_briefs(r.project(), &showings)
+                    .unwrap()
+                    .into_iter()
+                    .map(|b| (b.research_id, b.revision, true)),
+            )
             .collect::<Vec<_>>()
     };
     let (draft, _) = r.proposed("A draft");

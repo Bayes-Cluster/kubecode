@@ -311,7 +311,8 @@ pub struct ArchivedTask {
     pub updated_at: String,
 }
 
-/// A proposal revision shown in General and waiting for the researcher's word.
+/// A proposal not yet on the board, shown in General and waiting for the
+/// researcher's word.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AwaitingProposal {
     pub research_id: String,
@@ -319,9 +320,21 @@ pub struct AwaitingProposal {
     pub revision: u64,
     /// The newest General message that showed this revision.
     pub message_id: String,
-    /// Admitted already: the revision is a changed brief awaiting approval.
-    pub admitted: bool,
     pub created_at: String,
+}
+
+/// An admitted Task's brief revised past the revision the researcher
+/// approved, whoever revised it and whether or not General showed it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AwaitingBrief {
+    pub research_id: String,
+    pub title: String,
+    pub revision: u64,
+    pub approved_revision: u64,
+    /// The newest General message that showed this revision, if any did.
+    pub message_id: Option<String>,
+    /// When the revision was written.
+    pub since: String,
 }
 
 /// Whether an action is available now, and if not, why (a code).
