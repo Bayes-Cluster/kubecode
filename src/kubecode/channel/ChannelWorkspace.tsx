@@ -404,6 +404,7 @@ export function ChannelWorkspace({
                 void api.cancelRun(onlyRun.run_id).then(() => attention?.reload(), () => undefined)
               },
             } : undefined}
+            outboxKey={`${placeKey.general(projectId, taskFilter)}#outbox`}
             onDraftChange={setDraft}
             onSend={send}
             onSent={sent}

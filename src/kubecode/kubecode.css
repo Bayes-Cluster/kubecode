@@ -5202,6 +5202,12 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-elicitation-actions .kubecode-decision-button { height: auto; white-space: normal; }
 
 .kubecode-delivery-status { display: flex; flex-direction: column; gap: var(--ws-space-1); }
+.kubecode-outbox { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: var(--ws-space-1) var(--ws-space-3) 0; }
+.kubecode-outbox-row { display: flex; flex-direction: column; gap: var(--ws-space-1); }
+.kubecode-outbox-text { color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.kubecode-outbox-row[data-state='sending'] .kubecode-outbox-text { opacity: 0.75; }
+.kubecode-outbox-failure { align-items: center; display: flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); }
+.kubecode-outbox-failure .kubecode-research-error { color: var(--ws-danger-text); }
 .kubecode-delivery-failure {
   align-items: center;
   display: flex;
@@ -5235,5 +5241,6 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-delivery-failure .kubecode-decision-button,
   .kubecode-delivery-failure button,
   .kubecode-task-waiting button,
+  .kubecode-outbox-failure button,
   .kubecode-execution-row button { min-height: var(--ws-touch-target); }
 }

@@ -17,6 +17,7 @@ import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { useAttention } from '../attention/attentionContext'
 import { ExecutionStrip } from '../attention/ExecutionStrip'
 import type { PlainDraft } from '../channel/generalDraft'
+import { OutboxRows, useOutbox, type OutboxItem } from '../channel/outbox'
 import { Identity } from '../members/Identity'
 import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
@@ -38,6 +39,8 @@ export type DmPaneProps = {
 }
 
 const EMPTY_DRAFT: PlainDraft = { body: '', attempt: null }
+
+type DmSend = { text: string }
 
 /**
  * The researcher's private conversation with one member (ADR 0223, ADR 0229).
@@ -71,8 +74,9 @@ export function DmPane({
   const replying = attention?.executions({ binding: 'dm', memberId: member.id }) ?? []
   // The unsent private draft and its last attempt outlive the pane for the life of the page, never on disk.
   const [draft, setDraft] = usePlaceState<PlainDraft>(`${placeKey.dm(projectId, member.id)}#draft`, EMPTY_DRAFT)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Sends the server has not acknowledged, each its own row (ADR 0232 §5).
+  const outbox = useOutbox<DmSend>(`${placeKey.dm(projectId, member.id)}#outbox`)
+  const lastSent = useRef<PlainDraft | null>(null)
   const [sharing, setSharing] = useState(false)
   const [shared, setShared] = useState<ChannelMessage | null>(null)
   const log = useRef<HTMLDivElement>(null)
@@ -88,31 +92,32 @@ export function DmPane({
     if (element) element.scrollTop = element.scrollHeight
   }, [turns.length, newestAssistant])
 
-  const send = async () => {
-    const text = draft.body.trim()
-    if (!text || busy || !ready) return
-    // One id per typed message, kept until it is delivered, so a retry after a lost reply is the same message.
-    const id = draft.attempt?.signature === text ? draft.attempt.id : newClientMessageId()
-    setDraft((current) => ({ ...current, attempt: { id, signature: text } }))
-    setBusy(true)
-    setError(null)
-    try {
-      await api.sendMemberDm(projectId, member.id, text, id)
-      setDraft((current) => ({ body: current.body.trim() === text ? '' : current.body, attempt: null }))
+  const failureOf = (cause: unknown): string => {
+    if (cause instanceof ApiError && cause.code === 'dm_busy') return t('kubecode.dm.busyKept', { name: member.name })
+    if (cause instanceof ApiError && cause.code === 'dm_failed') return t('kubecode.dm.failed')
+    return errorMessage(cause, t('kubecode.error'))
+  }
+
+  /** Sends one outbox row under its own client id; Send again replays that id. */
+  const deliver = (item: Pick<OutboxItem<DmSend>, 'id' | 'text' | 'payload'>) => outbox.send(
+    item,
+    async () => {
+      await api.sendMemberDm(projectId, member.id, item.payload.text, item.id)
       setShared(null)
       reload()
       queue.reload()
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'dm_busy') {
-        setError(t('kubecode.dm.busyKept', { name: member.name }))
-      } else if (cause instanceof ApiError && cause.code === 'dm_failed') {
-        setError(t('kubecode.dm.failed'))
-      } else {
-        setError(errorMessage(cause, t('kubecode.error')))
-      }
-    } finally {
-      setBusy(false)
-    }
+    },
+    failureOf,
+  )
+
+  // Returns at once: the send goes on as its outbox row, so a second message
+  // can follow it, and what is typed next is never merged into a failed one.
+  const send = () => {
+    const text = draft.body.trim()
+    if (!text || !ready || lastSent.current === draft) return
+    lastSent.current = draft
+    setDraft((current) => ({ ...current, body: '', attempt: null }))
+    void deliver({ id: newClientMessageId(), text, payload: { text } })
   }
 
   return (
@@ -191,6 +196,16 @@ export function DmPane({
           ))}
         </div>
         <ExecutionStrip api={api} scope={{ binding: 'dm', memberId: member.id }} t={t} />
+        <OutboxRows
+          items={outbox.items}
+          t={t}
+          onDiscard={(item) => outbox.discard(item.id)}
+          onEdit={draft.body.trim() === '' ? (item) => {
+            outbox.discard(item.id)
+            setDraft((current) => ({ ...current, body: item.payload.text }))
+          } : undefined}
+          onSendAgain={(item) => void deliver(item)}
+        />
         <Composer
           below={(
             <>
@@ -210,18 +225,8 @@ export function DmPane({
                     )}
                   </p>
                 )}
-              {error && (
-                <p className="kubecode-research-error" role="alert">
-                  {error}{' '}
-                  <Button disabled={busy} size="xs" variant="ghost" onClick={() => void send()}>
-                    {t('kubecode.vocab.command.retry')}
-                  </Button>
-                </p>
-              )}
             </>
           )}
-          busy={busy}
-          busyLabel={t('kubecode.dm.sending')}
           disabled={!ready}
           focusKey={`composer:dm:${member.id}`}
           label={t('kubecode.dm.placeholder', { name: member.name })}

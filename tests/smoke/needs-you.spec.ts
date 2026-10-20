@@ -121,22 +121,29 @@ test.describe('on a desktop', () => {
       await expect(strip(page).getByRole('status')).toHaveText("Stopped Analyst's turn", { timeout: 20_000 })
       await expect(page.getByRole('button', { name: "Stop Analyst's current turn" })).toHaveCount(0)
 
-      // 5. A failed send keeps its words, and sending again posts it once.
-      let failOnce = true
+      // 5. The server saves a send but its answer is lost: the send stays as its own
+      // row, the composer is free, and Send again replays the same message, never a second one.
+      let loseOnce = true
       await page.route('**/channels/*/messages', async (route) => {
-        if (route.request().method() === 'POST' && failOnce) {
-          failOnce = false
+        if (route.request().method() === 'POST' && loseOnce) {
+          loseOnce = false
+          await route.fetch()
           await route.abort()
         } else {
           await route.continue()
         }
       })
-      await composer(page).fill('Kept through a failed send.')
+      await composer(page).fill('Saved, though its answer was lost.')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
-      await expect(page.getByRole('alert').filter({ hasText: /./ }).first()).toBeVisible()
-      await expect(composer(page)).toHaveValue('Kept through a failed send.')
-      await page.getByRole('button', { name: 'Try again' }).first().click()
-      await expect(log(page).getByText('Kept through a failed send.', { exact: true })).toHaveCount(1)
+      const unsent = page.getByRole('list', { name: 'Unsent messages' })
+      await expect(unsent.getByRole('alert')).toContainText('Not sent:')
+      await expect(composer(page)).toHaveValue('')
+      await composer(page).fill('Typed while it was unsent')
+      await unsent.getByRole('button', { name: 'Send again' }).click()
+      await expect(unsent).toHaveCount(0)
+      await expect(log(page).getByText('Saved, though its answer was lost.', { exact: true })).toHaveCount(1)
+      await page.reload()
+      await expect(log(page).getByText('Saved, though its answer was lost.', { exact: true })).toHaveCount(1)
       await page.unroute('**/channels/*/messages')
 
       // 6. A review is one row, though its Task is in Review too; it opens the review, focused, and leaves once decided.

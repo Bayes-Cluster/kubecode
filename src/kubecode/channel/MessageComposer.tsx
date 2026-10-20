@@ -32,6 +32,13 @@ import {
   type GeneralDraft,
 } from './generalDraft'
 import { mentionOptions } from './mentionOptions'
+import { OutboxRows, useOutbox, type OutboxItem } from './outbox'
+
+/** What a General send carries: the message, and the draft it came from for Edit. */
+type GeneralSend = {
+  message: Omit<NewChannelMessage, 'clientMessageId'>
+  draft: Pick<GeneralDraft, 'body' | 'reply' | 'task' | 'references'>
+}
 
 const MAX_REFERENCES = 16
 
@@ -48,6 +55,8 @@ export type MessageComposerProps = {
   /** Names the text box for focus return (`data-focus-key`). */
   focusKey: string
   textareaRef?: Ref<HTMLTextAreaElement>
+  /** Where this place's unsent messages are kept (`<place>#outbox`); null keeps them with the composer. */
+  outboxKey: string | null
   /** Saves the message; resolves with it once it is stored. */
   onSend: (message: NewChannelMessage) => Promise<ChannelMessage>
   onSent?: (message: ChannelMessage) => void
@@ -58,9 +67,10 @@ export type MessageComposerProps = {
 /**
  * Writes one General message (ADR 0229 §4–§6): the text, whom it goes to (the
  * members it @mentions, or the project manager), the Task it is about and its
- * references, and the message it replies to. There are no message types. A
- * failed send puts everything back, and a retry of the same draft replays the
- * same message.
+ * references, and the message it replies to. There are no message types.
+ * Each send is its own outbox row until the server has it (ADR 0232 §5): a
+ * failed one stays there with Send again (the same message), Edit and
+ * Discard, apart from whatever is typed next.
  */
 export function MessageComposer({
   api,
@@ -71,6 +81,7 @@ export function MessageComposer({
   onDraftChange,
   onSend,
   onSent,
+  outboxKey,
   placeholder,
   projectId,
   stop,
@@ -80,9 +91,8 @@ export function MessageComposer({
   const hintId = useId()
   const area = useRef<HTMLTextAreaElement | null>(null)
   const [picker, setPicker] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const error = draft.failure
-  const sending = useRef(false)
+  const outbox = useOutbox<GeneralSend>(outboxKey)
+  const lastSent = useRef<GeneralDraft | null>(null)
   const recipients = draftRecipients(draft.body, directory)
   const blocked = sendBlockedReason(recipients, t)
   const ready = draft.body.trim().length > 0 && blocked === null
@@ -94,47 +104,57 @@ export function MessageComposer({
     else if (textareaRef) textareaRef.current = node
   }
 
-  const send = async () => {
-    // A second call before the first settles must not clear the draft again.
-    if (!ready || sending.current) return
-    sending.current = true
-    setBusy(true)
-    const sent = draft
-    const { message, signature } = toNewMessage(sent, recipients)
-    const id = sent.attempt?.signature === signature ? sent.attempt.id : newClientMessageId()
-    // Clear at once so what is typed next is never lost to this send; the Task
-    // stays, and so does the attempt until the send succeeds.
-    onDraftChange((current) => ({
-      ...current, body: '', reply: null, references: [], attempt: { id, signature }, failure: null,
-    }))
-    try {
-      const saved = await onSend({ ...message, clientMessageId: id })
-      onDraftChange((current) => ({ ...current, attempt: current.attempt?.id === id ? null : current.attempt }))
-      onSent?.(saved)
-    } catch (cause) {
-      let failure: string
-      if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
-        const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
-        failure = named
-          ? t('kubecode.channel.mentionUnavailable', { name: named.name })
-          : t('kubecode.channel.mentionUnavailableUnknown')
-        directory.reload()
-      } else {
-        failure = errorMessage(cause, t('kubecode.error'))
-      }
-      // Put back what was sent, never over what the researcher has changed
-      // since: new text follows it, and a Task chosen meanwhile stays.
-      onDraftChange((current) => ({
-        ...current,
-        body: current.body === '' ? sent.body : `${sent.body}\n${current.body}`,
-        reply: current.reply ?? sent.reply,
-        references: current.references.length > 0 ? current.references : sent.references,
-        failure,
-      }))
-    } finally {
-      sending.current = false
-      setBusy(false)
+  const failureOf = (cause: unknown): string => {
+    if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
+      const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
+      directory.reload()
+      return named
+        ? t('kubecode.channel.mentionUnavailable', { name: named.name })
+        : t('kubecode.channel.mentionUnavailableUnknown')
     }
+    return errorMessage(cause, t('kubecode.error'))
+  }
+
+  /** Sends one outbox row under its own client id; a repeat replays that id. */
+  const deliver = (item: Pick<OutboxItem<GeneralSend>, 'id' | 'text' | 'payload'>) => outbox.send(
+    item,
+    async () => {
+      const saved = await onSend({ ...item.payload.message, clientMessageId: item.id })
+      onSent?.(saved)
+    },
+    failureOf,
+  )
+
+  // Returns at once: the send goes on as its outbox row, so the composer is
+  // never held while it is on its way and another message can follow it.
+  const send = () => {
+    // A second call for the same draft before it is cleared is the same send.
+    if (!ready || lastSent.current === draft) return
+    lastSent.current = draft
+    const { message } = toNewMessage(draft, recipients)
+    const item = {
+      id: newClientMessageId(),
+      text: draft.body,
+      payload: { message, draft: { body: draft.body, reply: draft.reply, task: draft.task, references: draft.references } },
+    }
+    // The draft clears at once and is never filled again by this send: if it
+    // fails it stays as its own row, so what is typed meanwhile is never merged
+    // into it, and sending it again is the same message.
+    onDraftChange((current) => ({ ...current, body: '', reply: null, references: [], attempt: null, failure: null }))
+    void deliver(item)
+  }
+
+  /** Puts a failed send back into the empty composer, as a new message from then on. */
+  const edit = (item: OutboxItem<GeneralSend>) => {
+    outbox.discard(item.id)
+    onDraftChange((current) => ({
+      ...current,
+      body: item.payload.draft.body,
+      reply: item.payload.draft.reply,
+      task: item.payload.draft.task,
+      references: item.payload.draft.references,
+    }))
+    focusText()
   }
 
   const insertMention = () => {
@@ -198,6 +218,13 @@ export function MessageComposer({
 
   return (
     <div className="kubecode-channel-composer">
+      <OutboxRows
+        items={outbox.items}
+        t={t}
+        onDiscard={(item) => outbox.discard(item.id)}
+        onEdit={draft.body.trim() === '' ? edit : undefined}
+        onSendAgain={(item) => void deliver(item)}
+      />
       <Composer
         above={(
           <>
@@ -265,18 +292,8 @@ export function MessageComposer({
             />
             {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
             <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
-            {error && (
-              <p className="kubecode-research-error" role="alert">
-                {error}{' '}
-                <Button disabled={busy} size="xs" variant="ghost" onClick={() => void send()}>
-                  {t('kubecode.vocab.command.retry')}
-                </Button>
-              </p>
-            )}
           </>
         )}
-        busy={busy}
-        busyLabel={t('kubecode.channel.sending')}
         canSend={ready}
         controls={(
           <>
@@ -305,7 +322,7 @@ export function MessageComposer({
         textareaRef={setArea}
         value={draft.body}
         // Emptied by hand: the draft is given up, so the same words later are a new message.
-        onChange={(body) => update(body.trim() === '' ? { body, attempt: null, failure: null } : { body })}
+        onChange={(body) => update({ body })}
         onSend={send}
       />
       <Dialog open={picker} onOpenChange={setPicker}>
