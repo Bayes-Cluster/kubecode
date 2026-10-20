@@ -95,6 +95,24 @@ describe('TaskPanel', () => {
     expect(panel().getByRole('tab', { name: /Results/, selected: true })).toBeInTheDocument()
   })
 
+  it('stays on the results after a decision, so the researcher sees what happened and where it went', async () => {
+    const done = taskDetail({
+      stage: 'done', outcome: 'refuted', review_requested: false,
+      review_requests: [reviewRequest({ state: 'accepted' })], pending: [],
+    })
+    const taskDetailCall = vi.fn().mockResolvedValueOnce(taskDetail()).mockResolvedValue(done)
+    mount(taskDetail(), {
+      taskDetail: taskDetailCall,
+      reviewTask: vi.fn().mockResolvedValue({ id: 'v1', accepted: true, general_message_id: 'gm1' }),
+    })
+    fireEvent.click(await panel().findByRole('radio', { name: 'Valid negative result' }))
+    fireEvent.click(panel().getByRole('button', { name: 'Accept results' }))
+    expect(await panel().findByText(/Accepted as Valid negative result/)).toBeInTheDocument()
+    await waitFor(() => expect(taskDetailCall).toHaveBeenCalledTimes(2))
+    expect(panel().getByRole('tab', { name: /Results/, selected: true })).toBeInTheDocument()
+    expect(panel().getByText(/Accepted as Valid negative result/)).toBeVisible()
+  })
+
   it('opens on the overview otherwise, with goal, provenance and people, and opens a member over the Task', async () => {
     const { navigation } = mount(taskDetail({ stage: 'ready', review_requested: false, review_requests: [], revision: 3, approved_revision: 2 }))
     expect(await panel().findByRole('tab', { name: 'Overview', selected: true })).toBeInTheDocument()

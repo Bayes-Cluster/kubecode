@@ -57,7 +57,11 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
 
   const memory = placeKey.task(projectId, taskId)
   const [chosenTab, setTab] = usePlaceState<TaskTab | null>(`${memory}#tab`, null)
-  const tab = chosenTab ?? defaultTabOf(detail)
+  // The section a Task opens on is decided once per opening, so a decision
+  // that closes the review does not move the researcher away from its result.
+  const [openedOn, setOpenedOn] = useState<TaskTab | null>(null)
+  if (openedOn === null && status === 'ready') setOpenedOn(defaultTabOf(detail))
+  const tab = chosenTab ?? openedOn ?? defaultTabOf(detail)
   const [editing, setEditing] = useState(false)
   // The research record is read only once something needs it: a section that
   // shows findings or records, the brief editor, or a proposal's brief.
