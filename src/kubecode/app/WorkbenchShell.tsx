@@ -1137,6 +1137,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 initialThreadId={place.thread ?? null}
                 key={projectId}
                 landing={landing}
+                locale={locale}
                 onReadingPositionChange={(position) => readingRef.current.set(projectId, position)}
                 tasksOnBoard={taskBoard.board ? tasksOnBoard : undefined}
                 onFilterChange={(filter) => patchGeneral({ filter })}

@@ -1,14 +1,14 @@
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage } from '../api'
-import { messageDate } from './timeline'
+import { messageDate, shortTime } from './timeline'
 
 /**
  * A run of routine Kubecode notes (routing, hand-offs) collapsed into one
  * line until asked for (ADR 0229 §7). Each note keeps its anchors, so a link
  * or a citation can still land on it.
  */
-export function ActivityGroup({ messages, t }: { messages: ChannelMessage[]; t: Translator }) {
+export function ActivityGroup({ dateLocale, messages, t }: { dateLocale: string; messages: ChannelMessage[]; t: Translator }) {
   return (
     <details className="kubecode-activity-group">
       <summary>{t('kubecode.channel.activityGroup', { count: messages.length })}</summary>
@@ -26,7 +26,7 @@ export function ActivityGroup({ messages, t }: { messages: ChannelMessage[]; t: 
               key={message.id}
             >
               <span>{message.body}</span>
-              {date && <time dateTime={date.toISOString()}>{date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>}
+              {date && <time dateTime={date.toISOString()}>{shortTime(date, dateLocale)}</time>}
             </li>
           )
         })}

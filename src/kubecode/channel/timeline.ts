@@ -23,6 +23,11 @@ export function messageDate(createdAt: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+/** A message's time of day, in the app's language. */
+export function shortTime(date: Date, locale: string): string {
+  return date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
+}
+
 const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
 
 function dayLabel(date: Date, now: Date, locale: string, t: Translator): string {

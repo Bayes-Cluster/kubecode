@@ -554,6 +554,27 @@ describe('ChannelWorkspace earlier Threads (ADR 0229 §5)', () => {
   })
 })
 
+describe('ChannelWorkspace dates', () => {
+  it('writes days and times in the app language, not the browser’s', async () => {
+    const at = { created_at: '2025-01-02 10:00:00' }
+    const s = server([
+      server().message(1, 'a topic', at),
+      server().message(2, 'a note', { author_kind: 'system', kind: 'system', ...at }),
+    ])
+    view(s, { props: { locale: 'de-DE' } })
+    await screen.findByText('a topic')
+    const date = new Date('2025-01-02T10:00:00Z')
+    const time = date.toLocaleTimeString('de-DE', { hour: 'numeric', minute: '2-digit' })
+    expect(time).not.toBe(date.toLocaleTimeString(navigator.language, { hour: 'numeric', minute: '2-digit' }))
+    expect(screen.getByRole('separator')).toHaveTextContent(
+      date.toLocaleDateString('de-DE', { year: 'numeric', month: 'long', day: 'numeric' }),
+    )
+    expect(row(1).querySelector('time')).toHaveTextContent(time)
+    expect(row(1).querySelector('time')).toHaveAttribute('title', date.toLocaleString('de-DE'))
+    expect(row(2).querySelector('time')).toHaveTextContent(time)
+  })
+})
+
 describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => {
   it('keeps the draft and reply of General and of each Task-scoped view apart, across leaving and coming back', async () => {
     const memory = createPlaceMemory()

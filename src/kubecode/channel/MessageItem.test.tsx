@@ -30,6 +30,7 @@ function item(overrides: Partial<MessageItemProps> = {}) {
     task: message.task_id ? { id: message.task_id, title: 'Structured pruning' } : null,
     references: [],
     delivery: null,
+    dateLocale: 'en-US',
     filtered: false,
     coarse: false,
     t,

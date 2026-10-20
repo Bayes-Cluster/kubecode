@@ -5,7 +5,7 @@ import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
-import type { Translator } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 import type {
   ChannelMessage,
@@ -76,6 +76,8 @@ export type ChannelWorkspaceProps = {
   projectId: string
   research: ResearchSummary[]
   t: Translator
+  /** The app's language, for dates and times (the translator's language). */
+  locale?: AppLocale
 }
 
 /**
@@ -95,6 +97,7 @@ export function ChannelWorkspace({
   detailCovers = false,
   focusMessageId = null,
   landing = 'focus',
+  locale,
   onReadingPositionChange,
   filter,
   onFilterChange,
@@ -315,6 +318,7 @@ export function ChannelWorkspace({
           focusOnLand={jumpTarget !== null || landing === 'focus'}
           label={t('kubecode.channel.messages')}
           labels={labels}
+          locale={locale}
           projectId={projectId}
           research={research}
           sessions={sessions}
@@ -367,6 +371,7 @@ export function ChannelWorkspace({
           events={events}
           key={thread.id}
           labels={labels}
+          locale={locale}
           research={research}
           sessions={sessions}
           t={t}

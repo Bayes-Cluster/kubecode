@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { Translator } from '@/lib/i18n'
+import { DEFAULT_APP_LOCALE, getLocaleDateLocale, type AppLocale, type Translator } from '@/lib/i18n'
 
 import type {
   ChannelMessage,
@@ -26,6 +26,8 @@ type MessageListProps = {
   emptyLabel: string
   feed: MessageFeed
   label: string
+  /** The app's language: dates and times follow it, as Today and Yesterday do. */
+  locale?: AppLocale
   projectId: string
   directory: MemberDirectory
   /** Sessions of the Project, to name an agent that is no member. */
@@ -96,6 +98,7 @@ export function MessageList({
   focusOnLand = true,
   label,
   labels,
+  locale = DEFAULT_APP_LOCALE,
   onBoard,
   onFilterTask,
   onJumpMissing,
@@ -117,10 +120,11 @@ export function MessageList({
   const [unseen, setUnseen] = useState(false)
   const newest = feed.messages.at(-1)?.seq ?? 0
   const byId = useMemo(() => new Map(feed.messages.map((message) => [message.id, message])), [feed.messages])
-  // The reader's own language for dates; today is when the list renders.
+  // The app's language for dates; today is when the list renders.
+  const dateLocale = getLocaleDateLocale(locale)
   const items = useMemo(
-    () => buildTimeline(feed.messages, { locale: navigator.language || 'en', now: new Date(), t }),
-    [feed.messages, t],
+    () => buildTimeline(feed.messages, { locale: dateLocale, now: new Date(), t }),
+    [dateLocale, feed.messages, t],
   )
 
   /** Scrolls to a message of this feed and, unless told not to, focuses it so the jump is announced. */
@@ -244,7 +248,7 @@ export function MessageList({
           if (item.kind === 'date') {
             return <p className="kubecode-date-separator" key={item.key} role="separator">{item.label}</p>
           }
-          if (item.kind === 'activity') return <ActivityGroup key={item.key} messages={item.messages} t={t} />
+          if (item.kind === 'activity') return <ActivityGroup dateLocale={dateLocale} key={item.key} messages={item.messages} t={t} />
           const { message } = item
           const author = authorView(message, directory, sessions, t)
           const citedMessage = message.reply_to ? byId.get(message.reply_to) : undefined
@@ -260,6 +264,7 @@ export function MessageList({
                 : null}
               coarse={coarse}
               continued={item.continued}
+              dateLocale={dateLocale}
               delivery={delivery(message, item.notes)}
               filtered={filter !== null && filter === taskId}
               key={message.id}

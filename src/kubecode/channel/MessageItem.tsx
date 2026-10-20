@@ -13,7 +13,7 @@ import type { IdentityView, RecipientsView } from '../members/memberIdentity'
 import type { ReferenceLabel } from '../references/referenceLabels'
 import { intentLabel } from './channelLabels'
 import type { MessageDeliveryView } from './delivery'
-import { messageDate } from './timeline'
+import { messageDate, shortTime } from './timeline'
 
 export type MessageItemProps = {
   message: ChannelMessage
@@ -26,6 +26,8 @@ export type MessageItemProps = {
   task: { id: string; title: string } | null
   references: Array<ReferenceLabel & { ref: ProjectContextRef }>
   delivery: MessageDeliveryView | null
+  /** The app language's date locale (`getLocaleDateLocale`), never the browser's. */
+  dateLocale: string
   /** The Thread an earlier version started on this message. */
   legacyThread?: ChannelThread
   /** Whether a Task is on the board, to say so on its proposal. */
@@ -47,8 +49,6 @@ export type MessageItemProps = {
   }
 }
 
-const shortTime = (date: Date) => date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-
 /**
  * One message of General (ADR 0229): who wrote it and whom it was for, its
  * Markdown body, the one Task it is about and its titled references, and
@@ -59,6 +59,7 @@ export function MessageItem({
   cited,
   coarse,
   continued,
+  dateLocale,
   delivery,
   filtered,
   legacyThread,
@@ -107,7 +108,7 @@ export function MessageItem({
           className="kubecode-message-author"
           from={focusKey}
           meta={date && (
-            <time dateTime={date.toISOString()} title={date.toLocaleString()}>{shortTime(date)}</time>
+            <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
           )}
           size={continued ? 'sm' : 'md'}
           view={author}

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
-import type { Translator } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 import type {
   Channel,
@@ -35,6 +35,7 @@ type ThreadPaneProps = {
   directory: MemberDirectory
   events: WorkspaceEvent[]
   labels: ReferenceLabelSource
+  locale?: AppLocale
   onClose: () => void
   onOpenReference: (reference: ProjectContextRef) => void
   onOpenWork?: (filter: { thread_id: string }) => void
@@ -59,6 +60,7 @@ export function ThreadPane({
   directory,
   events,
   labels,
+  locale,
   onClose,
   onOpenReference,
   onOpenWork,
@@ -200,6 +202,7 @@ export function ThreadPane({
         feed={feed}
         label={t('kubecode.channel.thread')}
         labels={labels}
+        locale={locale}
         projectId={thread.project_id}
         research={research}
         sessions={sessions}
