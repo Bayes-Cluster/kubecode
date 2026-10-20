@@ -67,9 +67,11 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
     <div className="kubecode-task-results">
       {decided && !openRequest && (
         <p className="kubecode-task-decided" ref={status} role="status" tabIndex={-1}>
-          {decided.accepted
-            ? t('kubecode.task.decided.accepted', { outcome: outcomeLabel(t, decided.outcome) ?? '' })
-            : t('kubecode.task.decided.returned')}
+          {decided.messageId === null
+            ? t('kubecode.task.decided.notPosted')
+            : decided.accepted
+              ? t('kubecode.task.decided.accepted', { outcome: outcomeLabel(t, decided.outcome) ?? '' })
+              : t('kubecode.task.decided.returned')}
           {decided.messageId && (
             <>
               {' '}
@@ -240,14 +242,20 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
     onChanged()
   }, [behind, onChanged])
 
+  const [settled, setSettled] = useState<string | null>(null)
+
   const run = async (which: string, action: () => Promise<void>) => {
     setBusy(which)
     setError(null)
+    setSettled(null)
     try {
       await action()
       onChanged()
     } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'work_evidence_stale') {
+      if (cause instanceof PartlyAccepted) {
+        setError(t('kubecode.task.partlyAccepted'))
+        onChanged()
+      } else if (cause instanceof ApiError && cause.code === 'work_evidence_stale') {
         setError(t('kubecode.task.evidenceStale'))
         onChanged()
       } else if (cause instanceof ApiError && cause.code === 'task_state') {
@@ -272,10 +280,16 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   })
 
   const blocker = acceptBlocker(detail, ackRemoved, outcome)
-  const acceptReason = blocker === null ? undefined : t(BLOCKER_TEXT[blocker])
-  const returnReason = detail.archived
-    ? t('kubecode.task.blocked.archived')
-    : feedback.trim() === '' ? t('kubecode.task.blocked.reason') : undefined
+  // While one decision is being recorded, the other waits for it.
+  const deciding = busy === 'accept' || busy === 'return' ? t('kubecode.task.blocked.deciding') : undefined
+  const acceptReason = busy === 'return'
+    ? deciding
+    : blocker === null ? undefined : t(BLOCKER_TEXT[blocker])
+  const returnReason = busy === 'accept'
+    ? deciding
+    : detail.archived
+      ? t('kubecode.task.blocked.archived')
+      : feedback.trim() === '' ? t('kubecode.task.blocked.reason') : undefined
   const requester = detail.timeline?.find((step) => step.kind === 'review_requested' && step.ref_id === request.id)?.member
 
   return (
@@ -295,10 +309,20 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
               check={checks.get(row.key) as VersionCheck}
               evidence={row}
               key={row.key}
+              settle={settled === row.key}
               onAccept={(revision) => void run(row.key, async () => {
-                for (const citation of repinsFor(row)) {
-                  await api.repinTaskEvidence(projectId, detail.id, citation, revision)
+                // One pin at a time: when a later one fails, the earlier ones
+                // stand, so the researcher is told only part was accepted.
+                let accepted = 0
+                try {
+                  for (const citation of repinsFor(row)) {
+                    await api.repinTaskEvidence(projectId, detail.id, citation, revision)
+                    accepted += 1
+                  }
+                } catch (cause) {
+                  throw accepted > 0 ? new PartlyAccepted() : cause
                 }
+                setSettled(row.key)
               })}
             />
           ))}
@@ -358,6 +382,9 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   )
 }
 
+/** Some pins of a piece of evidence moved to the version shown, and then one failed. */
+class PartlyAccepted extends Error {}
+
 const BLOCKER_TEXT = {
   archived: 'kubecode.task.blocked.archived',
   changed: 'kubecode.task.blocked.changed',
@@ -384,17 +411,23 @@ function OutcomeChoice({ checked, name, onChoose, t, value }: {
   )
 }
 
-function EvidenceRow({ busy, check, evidence, onAccept }: {
+function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
   evidence: TaskEvidence
   check: VersionCheck
   busy: boolean
+  /** The version shown was just accepted: once it is no longer changed, focus goes to the record. */
+  settle: boolean
   onAccept: (revision: string) => void
 }) {
   const { t } = useInspectorServices()
   const open = useOpenEvidence(evidence)
   const changed = evidence.status === 'changed'
+  const row = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (settle && !changed) row.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
+  }, [changed, settle])
   return (
-    <li className="kubecode-task-evidence-row" data-status={evidence.status}>
+    <li className="kubecode-task-evidence-row" data-status={evidence.status} ref={row}>
       <EvidenceChip evidence={evidence} />
       {changed && (
         <div className="kubecode-task-version">

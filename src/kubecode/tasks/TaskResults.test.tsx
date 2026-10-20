@@ -126,6 +126,64 @@ describe('TaskResults', () => {
     )
   })
 
+  it('says a decision was recorded but not posted when General could not be told', async () => {
+    mount(taskDetail(), {
+      reviewTask: vi.fn().mockResolvedValue({ id: 'v1', accepted: false, general_message_id: null }),
+    })
+    fireEvent.change(await screen.findByLabelText('Feedback for the team'), { target: { value: 'Rerun it.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send back' }))
+    const status = await screen.findByText('Recorded. It could not be posted to General; tell the General Agent there.')
+    await waitFor(() => expect(status).toHaveFocus())
+    expect(screen.queryByText(/The General Agent was told in General/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show in General' })).not.toBeInTheDocument()
+  })
+
+  it('holds both decisions while one is being recorded', async () => {
+    let finish: (value: unknown) => void = () => undefined
+    const { api } = mount(taskDetail(), {
+      reviewTask: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve })),
+    })
+    fireEvent.click(await screen.findByRole('radio', { name: 'Supports the hypothesis' }))
+    fireEvent.change(screen.getByLabelText('Feedback for the team'), { target: { value: 'Looks right.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Accept results' }))
+    const sendBack = screen.getByRole('button', { name: 'Send back' })
+    await waitFor(() => expect(sendBack).toBeDisabled())
+    expect(sendBack).toHaveAccessibleDescription('Your decision is being recorded.')
+    fireEvent.click(sendBack)
+    expect(api.reviewTask).toHaveBeenCalledTimes(1)
+    finish({ id: 'v1', accepted: true, general_message_id: 'gm1' })
+    expect(await screen.findByText(/Accepted as Supports the hypothesis/)).toBeInTheDocument()
+  })
+
+  it('moves focus to the evidence it accepted once the version is accepted', async () => {
+    mount([taskDetail({ evidence: [changed('b')] }), taskDetail({ evidence: [evidenceRow({ current: 'b' })] })])
+    await lookAt()
+    expect(await screen.findByText('Showing version b')).toBeInTheDocument()
+    backToTask()
+    fireEvent.click(acceptShown())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Accept the version you saw' })).not.toBeInTheDocument())
+    const evidence = review().getByRole('list', { name: 'Evidence' })
+    await waitFor(() => expect(within(evidence).getByRole('button', { name: /results\.csv/ })).toHaveFocus())
+  })
+
+  it('says so when only part of a version was accepted, and reloads what is still changed', async () => {
+    const { api, taskDetail: load } = mount(taskDetail({ evidence: [changed('b')] }), {
+      repinTaskEvidence: vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new ApiError('internal', 'x', 500)),
+    })
+    await lookAt()
+    expect(await screen.findByText('Showing version b')).toBeInTheDocument()
+    backToTask()
+    fireEvent.click(acceptShown())
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Only part of this evidence was accepted. What is still changed is marked; accept it again.',
+    )
+    expect(api.repinTaskEvidence).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('Changed since cited')).toBeInTheDocument()
+  })
+
   it('reloads and says so when the server refuses over changed evidence or a review that moved', async () => {
     const { taskDetail: load } = mount(taskDetail(), {
       reviewTask: vi.fn()
