@@ -192,8 +192,8 @@ screen beside General or the board.
 
 **Resources** and the search box in the title bar (*Search this Workspace*)
 look through Tasks, findings, experiments and artifacts, discussions, and
-Project files by title, summary, and file path; *Execution history* is searched
-only when you turn it on. The search always says what it covered, and message
+Project files by title, summary, and file path; *History* (execution history)
+is searched only when you turn it on. The search always says what it covered, and message
 text and direct messages are never searched. Choosing a result previews it
 beside the list; it never takes you away, and *Open Task*, *Open Thread in
 General*, or *Open in execution history* in the preview go where it lives.

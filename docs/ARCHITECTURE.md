@@ -149,11 +149,17 @@ existence check, so a removed one is listed as removed. Artifacts are read as bo
 UTF-8 text through `WorkspaceService::read_execution_text` under the execution
 root of the Team that ran the experiment, with no symlink traversal. Project
 files (ADR 0231 §1) are a `file` reference whose id is a Project-relative path
-(never through `.git` or a symlink) and whose revision is the fingerprint work
-evidence pins. They are searched only when the kind is named, by
-`WorkspaceService::search_project_files` (a breadth-first walk bounded at 5,000
-entries and 16 levels that skips hidden, generated, and Git-ignored entries and
-keeps the 200 newest path matches), and read a page at a time by
+(never through `.git` or a symlink, and never an `.env` file) and whose
+revision is the fingerprint work evidence pins, taken from one handle opened
+without following a symlink or blocking. They are searched only when the kind
+is named, by `WorkspaceService::search_project_files` (a breadth-first walk
+bounded at 5,000 entries and 16 levels that lists each directory through a
+handle opened without following a symlink, skips hidden, generated, and
+Git-ignored entries and nested repositories, and keeps the 200 newest path
+matches). `git check-ignore` is fed and drained on separate threads under a
+10-second limit that kills and reaps Git; a level Git does not answer for is
+left out and reported as cut short, never treated as nothing ignored. Files
+are read a page at a time by
 `WorkspaceService::read_text_page` with a cursor bound to the file's revision,
 so a file that changes between pages is reported changed instead of spliced.
 A read names `shown_revision`, the revision whose content it shows (the pinned

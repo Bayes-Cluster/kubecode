@@ -44,25 +44,46 @@ Files are found, resolved, and read only through `WorkspaceService`, under the
 Project root:
 
 - An id with a leading `/`, a `\` or NUL, an empty, `.` or `..` component, or a
-  `.git` component is never a file; it is not found. Other dot paths are
-  readable when named explicitly, as work evidence allows, but are never
-  listed.
+  `.git` component is never a file; it is not found. Neither is an environment
+  file (a component `.env` or `.env.<anything>`, ignoring case), which holds
+  secrets; its committed templates (`.env.example`, `.env.sample`,
+  `.env.template`) stay readable. Other dot paths (`.gitignore`, `.github/…`,
+  dotted configuration) are readable through the context reads and tools when
+  named explicitly, as work evidence allows, but are never listed. The state
+  directory is outside every Project, so it is never reached.
 - Lookup and resolve fingerprint the file through no symlink; a directory, a
-  FIFO, or a path through a symlink is not a file.
+  FIFO, or a path through a symlink is not a file. The fingerprint is taken
+  from one handle opened without following a final symlink and without
+  blocking, checked with `fstat` and to still lie under the Project. A file
+  that cannot be opened (no read permission) is unavailable on its own; it
+  never fails the other references resolved with it, or the post that cites
+  them.
 - A read opens the file once, never following a symlink and never blocking on
   a special file, and fingerprints the same descriptor it reads. A file is read
   a page (8 KiB) at a time at every detail, cut on character boundaries. The
   next-page cursor carries the byte offset and a tag of the revision it was
   issued for; a file that changes between pages is reported `changed` with no
-  text and no cursor, so two versions are never spliced together. A forged
-  cursor is refused.
+  text and no cursor, so two versions are never spliced together, whether the
+  new bytes are text or not. A forged cursor is refused. Only a page that
+  starts inside a character moves to the next whole one; a file whose first
+  byte continues a character is not text. An empty file is one empty section,
+  shown at its version.
 
 Search finds files by the words of their path (every word must appear in the
 lowercase path), newest first, in a bounded breadth-first walk: at most 5,000
 directory entries and 16 levels, never through a symlink, skipping hidden,
 generated, non-UTF-8, and Git-ignored entries (one `git check-ignore` per
-level) before descending. It keeps the 200 most recently modified matches and
-reports when it stopped. There is no index (0214 §1). A file's time is written
+level) before descending. Each directory is opened once without following a
+symlink and listed through that handle. Paths are written to Git on one
+thread while its answer is read on another, so neither can block on a full
+pipe, and a batch that takes longer than 10 seconds kills Git; Git is always
+reaped. A batch Git does not answer (it failed or was stopped) is never read
+as "nothing is ignored": that level and everything below it is left out and
+the walk reports that it stopped. A nested repository (a submodule, or a
+checkout inside the Project, recognised by its `.git`) has its own ignore
+rules and is not searched; Git refuses to answer for paths inside a
+submodule. In a Project that is not a Git work tree nothing is ignored. It
+keeps the 200 most recently modified matches and reports when it stopped. There is no index (0214 §1). A file's time is written
 in the stores' `YYYY-MM-DD HH:MM:SS` UTC form so it sorts among record times.
 Hits are not hashed; resolve and read fill the revision.
 
@@ -95,11 +116,14 @@ explicit kinds, grouped in sections: Tasks (`research`), findings,
 experiments and artifacts, discussions (`import`, `thread`), files, and, only
 when chosen, execution history (`session`, `team`, `team_task`, `work`,
 `round`). The conversation itself (`channel`) and Session turns are never
-results. A note names the sections and the Workspace in words, says that
-titles, summaries, and file paths are matched, and says that message text and
-direct messages are never searched. Each section shows its matches ("200+"
-when cut short), a cut-short kind is named, and with files on, the walk's
-skips are said. Searching is debounced (200 ms), a newer search cancels an
+results; execution history is the History section, named as the destination
+is. A note names the Workspace and, once the server answers, the sections it
+reports in `searched` (until then, the sections asked for), says that titles,
+summaries, and file paths are matched, and says that message text and direct
+messages are never searched. Each section shows its matches ("200+" when cut
+short), a cut-short kind is named, and with files on, the walk's skips are
+said when they could explain a missing file: nothing was found, or files were
+cut short. Searching is debounced (200 ms), a newer search cancels an
 older one, and a response for another Workspace, query, or scope is dropped.
 A relevant Workspace event only marks the results stale, with Refresh; rows
 never reflow under the reader. The titlebar search is its own control ("Search
@@ -123,8 +147,8 @@ A read states `shown_revision`, the revision whose content its sections show:
 the pinned brief revision when an older brief is shown, the revision of the
 bytes of an artifact or file page, and none when nothing of the record is
 shown (removed, or changed while it was being paged). A file that is not UTF-8
-shows no text; its `shown_revision` is the version that was found to be
-unreadable.
+shows no text; its `shown_revision` is the version of the bytes that were
+read and found not to be text, from the same handle.
 
 Resolve returns a record's current `title` only when the record is visible in
 this Project, including an artifact whose file is gone; never for a missing,
@@ -140,7 +164,11 @@ evidence is read through the context reader a page at a time, with the
 fingerprint it is pinned with, instead of the editor's file read.
 
 The preview always reads the current version and compares it with the
-revision that was cited ("Changed since it was cited"). It never asks for the
+revision that was cited ("Changed since it was cited"); with nothing cited it
+never says that. A reference chip opens its record in the inspector with the
+version it cites, so the preview names it ("Cited version: #3f2c1a9") and says
+when it changed. The cited version stays in the page: a route names a
+resource without its version, and a file is never routable. It never asks for the
 pinned revision, because review acceptance (0230 §4) binds to the version the
 researcher actually saw, and that must be the one the server checks now.
 
@@ -148,7 +176,13 @@ The preview reports the revision it displayed (`shown_revision`, or the
 reference's revision from a server before this ADR), once per revision and
 only after a commit that shows content: never while loading, for a failed
 read, for a record that is gone, or for a file with no text to show. That
-report is what evidence acceptance and "Attach this version" bind to. The
+report is what evidence acceptance and "Attach this version" bind to. It
+also says when nothing is on screen (on mount while loading, while reading
+again, after a failed read or a record found gone), and a host forgets the
+reported version then; a host keeps a version only for the record it was
+reported for. So "Attach this version" and "Add to message" offer only the
+version on screen: never one from before a reload or a failure, from another
+result chosen meanwhile, or from before the dialog was closed and reopened. The
 preview never changes content under the reader: after a relevant Workspace
 event it resolves the record in the background and, if it moved on, says
 "This changed after you opened it" with "Show the current version". A file
@@ -157,7 +191,11 @@ or a record reported removed is "no longer exists".
 
 Resources is a preview-first library: choosing a result opens it in the
 inspector (`nav.inspect`, reset, returning focus to the row), beside the list
-or as a screen on narrow layouts, and the row stays selected. A Task opens as
+or as a screen on narrow layouts, and the row stays selected. Focus that
+returns to a row goes to the search box with that row active, so the arrow
+keys keep working. On a narrow screen the Add context preview replaces the
+results; Back returns to them where they were scrolled, with the search box
+focused. A Task opens as
 its Task, or as its brief while a draft waits for a reference. Going to the
 record's home (its Task, its Thread in General, its Session) is an explicit
 action inside the preview, through the shared reference mapping; reference
@@ -191,7 +229,10 @@ result (a record that no longer exists is refused). Attaching another version
 of a record already cited replaces it; a message cites at most 16 records. A
 Task becomes what the message is about (its first reference when sent), not a
 second reference, and attaching it never authorizes admission or execution
-(0221). A version change is a new message for retries (the draft's signature
+(0221). A Task attached from a preview or the list is sent at that version
+(`GeneralDraft.taskRevision`); a Task that comes from the filter or a reply is
+sent without one and pinned when posted. Attaching a different Task replaces
+the one the message was about, and says so. A version change is a new message for retries (the draft's signature
 includes revisions).
 
 Every reference, in drafts and in messages, is one `ResourceReferenceChip`

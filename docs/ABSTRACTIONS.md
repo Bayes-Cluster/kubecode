@@ -1003,10 +1003,13 @@ is visible here.
 
 | Kind | Id | Revision |
 | --- | --- | --- |
-| `file` | Project-relative path, never inside `.git`, reached through no symlink | SHA-256 of the bytes, or `large:<size>:<mtime>` above 8 MiB (the work-evidence fingerprint) |
+| `file` | Project-relative path, never inside `.git`, never an `.env` or `.env.*` file (templates such as `.env.example` excepted), reached through no symlink | SHA-256 of the bytes, or `large:<size>:<mtime>` above 8 MiB (the work-evidence fingerprint) |
 
 A file is found by the words of its path, listed newest first, and never listed
-when hidden, generated, or Git-ignored (it is still readable when named). It
+when hidden, generated, Git-ignored, or inside a nested repository (it is still
+readable when named). A file that cannot be opened is unavailable on its own;
+an empty file is one empty section; a file that is not text shows nothing but
+names the version it read. It
 is read a page at a time with a cursor bound to its revision, so a page of
 another version is reported as `changed`, never spliced in.
 
@@ -1023,17 +1026,24 @@ In the browser (ADR 0231 §4–§6):
   the Add context preview, and the Session picker's preview. It reads the
   current version a page at a time, compares it with a cited revision, and
   reports `onDisplayed({kind, id, revision, title})` with the `shown_revision`
-  once per revision, only after content is on screen. A change after opening is
-  announced, never swapped in.
+  once per revision, only after content is on screen, and `onCleared()`
+  whenever nothing is (loading, reading again, failed, gone), so a host offers
+  only the version on screen. A change after opening is announced, never
+  swapped in. A reference chip opens its record with the cited revision on the
+  inspector entry (never in a route), and only a cited revision can be
+  "changed since it was cited".
 - **One search.** `useWorkspaceSearch` + `WorkspaceSearch` search explicit
   sections (`searchScope.ts`): Tasks, Findings, Experiments and artifacts,
-  Discussions, Files, and Execution history (off by default); `channel` and
-  `session_turn` are never results. The scope is said in words; words,
-  sections, active row, and results are page memory only.
+  Discussions, Files, and History (execution history, off by default);
+  `channel` and `session_turn` are never results. The scope is said in words,
+  from the kinds the server reports it `searched`; words, sections, active
+  row, and results are page memory only.
 - **Draft reference.** `DraftReference` is
   `{ ref: {kind, id, revision}, title, seen: 'previewed' | 'listed' }`, kept in
   `GeneralDraft.references`, one per record (another version replaces it), at
-  most 16; a Task becomes the draft's `task`. `previewed` carries the version
+  most 16; a Task becomes the draft's `task`, at the version attached
+  (`taskRevision`, sent with it; none for a Task from the filter or a reply),
+  and a different Task replaces it with an announcement that says so. `previewed` carries the version
   the preview displayed; `listed` the current version resolved when attached.
 - **Reference chip.** `ResourceReferenceChip` names a reference by kind, title
   (never an id), the cited version in words (`formatVersion`), and its state —
