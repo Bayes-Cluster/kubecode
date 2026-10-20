@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   AgentDescriptor,
@@ -17,6 +17,9 @@ import type { Translator } from '@/lib/i18n'
 
 type Dispatch<State> = React.Dispatch<React.SetStateAction<State>>
 
+/** Whether a Workspace's Sessions were read, or failed to be read. */
+export type SessionsLoad = { projectId: string; ok: boolean }
+
 export type WorkspaceBootstrapOptions = {
   projectId: string | null
   applyProjectLayout: (projectId: string) => void
@@ -24,7 +27,8 @@ export type WorkspaceBootstrapOptions = {
   setProjectId: Dispatch<string | null>
   setSessionSidebarOpen: Dispatch<boolean>
   setSessionSidebarWidth: Dispatch<number>
-  setExpandedProjectIds: Dispatch<string[]>
+  /** Whether "History and execution" was left open. */
+  setHistoryOpen?: Dispatch<boolean>
   setProjectRuns: Dispatch<Record<string, AgentRun[]>>
   setWorkspaceCursor: Dispatch<number | null>
   setAllConversations: Dispatch<Conversation[]>
@@ -33,9 +37,15 @@ export type WorkspaceBootstrapOptions = {
   setConversations: Dispatch<Conversation[]>
   setConversationId: Dispatch<string | null>
   /** The Project whose Sessions have been read, so "no Sessions yet" is known and not a guess. */
-  setConversationsLoadedFor?: Dispatch<string | null>
+  /** The Project whose Sessions were read (`ok`), or failed to be read. */
+  setConversationsLoadedFor?: Dispatch<SessionsLoad | null>
   setTeams: Dispatch<TeamSnapshot[]>
   setError: Dispatch<string | null>
+  /**
+   * The Workspace to start in, once the Projects are known (ADR 0228: a link's
+   * Project, then the last one used, then the first). The first by default.
+   */
+  initialProjectId?: (projects: readonly Project[]) => string | null
 }
 
 export type WorkspaceBootstrapResult = {
@@ -58,7 +68,7 @@ export function useWorkspaceBootstrap(
     setProjectId,
     setSessionSidebarOpen,
     setSessionSidebarWidth,
-    setExpandedProjectIds,
+    setHistoryOpen,
     setProjectRuns,
     setWorkspaceCursor,
     setAllConversations,
@@ -73,6 +83,9 @@ export function useWorkspaceBootstrap(
   const [agents, setAgents] = useState<AgentDescriptor[]>([])
   const [agentsRefreshing, setAgentsRefreshing] = useState(false)
   const [layoutHydrated, setLayoutHydrated] = useState(false)
+  // Read once, when the Projects arrive: it never restarts the bootstrap.
+  const chooseInitialProject = useRef(options.initialProjectId)
+  useEffect(() => { chooseInitialProject.current = options.initialProjectId })
 
   useEffect(() => {
     let current = true
@@ -81,12 +94,13 @@ export function useWorkspaceBootstrap(
         if (!current) return
         setProjects(nextProjects)
         setAgents(nextAgents)
-        const initialProjectId = nextProjects[0]?.id ?? null
+        const chosen = chooseInitialProject.current?.(nextProjects)
+        const initialProjectId = chosen !== undefined ? chosen : nextProjects[0]?.id ?? null
         setProjectId(initialProjectId)
         const navigatorLayout = readWorkbenchNavigatorLayout(localStorage, initialProjectId)
         setSessionSidebarOpen(navigatorLayout.navigatorOpen)
         setSessionSidebarWidth(navigatorLayout.navigatorWidth)
-        setExpandedProjectIds(navigatorLayout.expandedProjectIds)
+        setHistoryOpen?.(navigatorLayout.historyOpen)
         setLayoutHydrated(true)
         if (initialProjectId) applyProjectLayout(initialProjectId)
         if (typeof api.listProjectRuns === 'function') {
@@ -100,7 +114,7 @@ export function useWorkspaceBootstrap(
       })
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
-  }, [api, applyProjectLayout, setError, setExpandedProjectIds, setLayoutHydrated, setProjectId, setProjectRuns, setProjects, setSessionSidebarOpen, setSessionSidebarWidth, t])
+  }, [api, applyProjectLayout, setError, setHistoryOpen, setLayoutHydrated, setProjectId, setProjectRuns, setProjects, setSessionSidebarOpen, setSessionSidebarWidth, t])
 
   useEffect(() => {
     let current = true
@@ -146,7 +160,7 @@ export function useWorkspaceBootstrap(
           ))
         }
         // Read, or failed to read: either way the first view can be chosen.
-        setConversationsLoadedFor?.(projectId)
+        setConversationsLoadedFor?.({ projectId, ok: conversationResult.status === 'fulfilled' })
         if (teamResult.status === 'fulfilled') setTeams(teamResult.value)
         const failure = [terminalResult, conversationResult, teamResult]
           .find((result) => result.status === 'rejected')

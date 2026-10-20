@@ -18,6 +18,7 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import { ApiError } from '../api'
+import { placeKey } from '../app/location/placeMemory'
 import { useAction } from '../research/useAction'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MessageComposer } from './MessageComposer'
@@ -210,6 +211,8 @@ export function ThreadPane({
       />
       <MessageComposer
         api={api}
+        draftKey={placeKey.thread(thread.project_id, thread.id)}
+        focusKey={`composer:thread:${thread.id}`}
         key={thread.id}
         mentionOptions={mentionOptions}
         placeholder={t('kubecode.channel.threadPlaceholder')}

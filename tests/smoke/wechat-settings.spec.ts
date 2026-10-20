@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { openExecutionHistory } from './shell'
+
 // A tiny valid SVG standing in for the server-rendered QR image.
 const QR_SVG = `data:image/svg+xml;base64,${Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40"/></svg>',
@@ -140,6 +142,8 @@ test('@smoke WeChat settings connect, verify, and bind on desktop and mobile', a
     await expect.poll(() => ilink.bound).toBe(session.id)
     await expect(page.getByRole('combobox', { name: 'Active Session' })).toContainText(sessionTitle)
     await page.keyboard.press('Escape')
+    // Sessions are execution history, one step away from the Workspace's places.
+    await openExecutionHistory(page)
     await expect(page.getByRole('button', { name: `${sessionTitle}, active WeChat Session` })).toBeVisible()
 
     // Mobile width: the same section stays usable and contained.

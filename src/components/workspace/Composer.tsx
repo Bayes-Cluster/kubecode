@@ -49,6 +49,8 @@ export type ComposerProps = {
   below?: ReactNode
   className?: string
   testId?: string
+  /** Names the text box for focus return (`data-focus-key`, ADR 0228 §4). */
+  focusKey?: string
 }
 
 /** A touch keyboard has no Shift key: there Enter breaks the line and the arrow sends. */
@@ -75,6 +77,7 @@ export function Composer({
   className,
   controls,
   disabled = false,
+  focusKey,
   label,
   mentionLabel,
   mentions = [],
@@ -231,6 +234,7 @@ export function Composer({
           aria-controls={menuOpen ? listId : undefined}
           aria-expanded={mentions.length > 0 ? menuOpen : undefined}
           aria-label={label}
+          data-focus-key={focusKey}
           disabled={disabled}
           placeholder={placeholder}
           ref={area}

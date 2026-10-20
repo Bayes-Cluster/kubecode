@@ -34,6 +34,12 @@ describe('host action registry', () => {
     expect(registered.find((action) => action.id === 'open-settings')?.enabled).toBe(true)
   })
 
+  it('names the left panel for what it holds: the navigation', () => {
+    const registered = createHostActionRegistry(handlers(), { hasProject: true })
+
+    expect(registered.find((action) => action.id === 'toggle-navigator')?.labelKey).toBe('kubecode.toggleNavigation')
+  })
+
   it('executes only the local handler attached to the selected host action', () => {
     const localHandlers = handlers()
     const registered = createHostActionRegistry(localHandlers, { hasProject: true })

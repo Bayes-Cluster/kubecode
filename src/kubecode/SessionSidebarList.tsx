@@ -2,11 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { RiWechatLine } from '@remixicon/react'
 import {
   Archive,
-  ChevronDown,
-  ChevronRight,
   Ellipsis,
   Filter,
-  Folder,
   GitFork,
   Plus,
   Trash2,
@@ -32,8 +29,9 @@ import { trackEvent } from '@/lib/telemetry'
 import { Icon } from './icons'
 import { RUN_STATUS_ICONS } from './icons/statusIcons'
 
-import type { Conversation, KubecodeApi, Project, RunStatus, TeamRole, TeamSnapshot } from './api'
+import type { Conversation, KubecodeApi, Project, TeamRole, TeamSnapshot } from './api'
 import { DeleteTeamDialog } from './DeleteTeamDialog'
+import { runStatusLabel } from './runStatusLabels'
 import { wechatUnbindableReason, type WeChatBinding } from './app/useWeChatBinding'
 import {
   buildSessionSections,
@@ -46,22 +44,21 @@ import {
 
 type SessionSidebarListProps = {
   activeConversationId: string | null
-  activeProjectId: string | null
   api: KubecodeApi
   conversations: Conversation[]
-  expandedProjectIds: string[]
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
   onConversationUpdated: (conversation: Conversation) => void
   onError: (cause: unknown) => void
   onNewSession: (projectId: string) => void
-  onProjectDelete: (projectId: string) => void
-  onProjectSelect: (projectId: string) => void
-  onProjectToggle: (projectId: string) => void
-  onProjectWorkspacesToggle: (projectId: string) => void
   onSelect: (projectId: string, conversationId: string) => void
+  /** Every registered Project, to name the groups of a search. */
   projects: Project[]
-  projectStatuses?: Record<string, 'running' | 'stuck' | null>
+  /**
+   * The Workspace whose execution history is listed. A search lists the
+   * matches of every Workspace instead, under plain headings.
+   */
+  scopeProjectId: string | null
   query?: string
   t: Translator
   teams?: TeamSnapshot[]
@@ -69,25 +66,25 @@ type SessionSidebarListProps = {
   wechat?: WeChatBinding
 }
 
+/**
+ * Execution history (ADR 0228 §1): one Workspace's Sessions and Teams, or,
+ * while searching, the matching Sessions of every Workspace grouped under
+ * their Project's name. It never renders a control named after a Project, so
+ * the Workspace rows stay the only ones.
+ */
 export function SessionSidebarList({
   activeConversationId,
-  activeProjectId,
   api,
   conversations,
-  expandedProjectIds,
   onConversationCreated,
   onConversationRemoved,
   onConversationUpdated,
   onError,
   onNewSession,
-  onProjectDelete,
-  onProjectSelect,
-  onProjectToggle,
-  onProjectWorkspacesToggle,
   onSelect,
   projects,
-  projectStatuses = {},
   query = '',
+  scopeProjectId,
   t,
   teams = [],
   wechat,
@@ -174,14 +171,18 @@ export function SessionSidebarList({
         )),
       }))
   }, [conversations, conversationsById, t, teamByConversation, teams, visibleConversationIds])
+  const searching = Boolean(query.trim())
   const projectGroups = useMemo(() => {
     const visibleSoloSessions = sections.flatMap((section) => section.sessions)
-    return projects.map((project) => ({
-      project,
-      sessions: visibleSoloSessions.filter((conversation) => conversation.project_id === project.id),
-      teams: teamGroups.filter((team) => team.projectId === project.id),
-    }))
-  }, [projects, sections, teamGroups])
+    return projects
+      .filter((project) => searching || project.id === scopeProjectId)
+      .map((project) => ({
+        project,
+        sessions: visibleSoloSessions.filter((conversation) => conversation.project_id === project.id),
+        teams: teamGroups.filter((team) => team.projectId === project.id),
+      }))
+      .filter((group) => !searching || group.sessions.length > 0 || group.teams.length > 0)
+  }, [projects, scopeProjectId, searching, sections, teamGroups])
 
   useEffect(() => writeSessionListPreferences(localStorage, preferences), [preferences])
 
@@ -256,158 +257,88 @@ export function SessionSidebarList({
         <span>{t('kubecode.sessionsLabel')}</span>
         <SessionFilters preferences={preferences} setPreferences={setPreferences} t={t} />
       </div>
-      <div className="kubecode-session-list" role="tree">
+      <div className="kubecode-session-list">
         {projectGroups.map(({ project, sessions, teams: projectTeams }) => {
-          const hasQueryResults = Boolean(query.trim()) && (
-            sessions.length > 0 || projectTeams.length > 0
-          )
-          const expanded = expandedProjectIds.includes(project.id) || hasQueryResults
           const projectConversations = conversations.filter(
             (conversation) => conversation.project_id === project.id,
           )
-          const projectStatus = projectStatuses[project.id] ?? navigatorStatus(projectConversations)
+          const open = (conversationId: string) => {
+            if (searching) {
+              trackEvent('kubecode_global_search_result_opened', { result_type: 'session' })
+            }
+            onSelect(project.id, conversationId)
+          }
           return (
-            <section className="kubecode-project-tree-group" key={project.id}>
-              <div
-                className="kubecode-project-tree-row"
-                data-active={project.id === activeProjectId}
-                role="treeitem"
-                aria-expanded={expanded}
-              >
+            <section
+              aria-label={searching ? project.name : undefined}
+              className="kubecode-session-history-group"
+              key={project.id}
+            >
+              {searching ? (
+                <h3 className="kubecode-session-history-heading">{project.name}</h3>
+              ) : (
                 <Button
-                  aria-label={expanded ? t('kubecode.collapseProject') : t('kubecode.expandProject')}
-                  className="kubecode-project-tree-chevron"
-                  size="icon-xs"
+                  className="kubecode-project-new-session"
                   variant="ghost"
-                  onClick={() => onProjectToggle(project.id)}
+                  onClick={() => onNewSession(project.id)}
                 >
-                  {expanded ? <ChevronDown  size={16}/> : <ChevronRight  size={16}/>}
+                  <Plus  size={16}/> {t('kubecode.newSession')}
                 </Button>
-                <Button
-                  className="kubecode-project-tree-main"
-                  data-active={project.id === activeProjectId}
-                  data-session-status={projectStatus ?? undefined}
-                  data-workspaces-enabled={project.workspaces_enabled}
-                  title={project.name}
-                  variant="ghost"
-                  onClick={() => onProjectSelect(project.id)}
-                >
-                  <Folder  size={16}/>
-                  <span>{project.name}</span>
-                </Button>
-                <span
-                  aria-label={projectStatusLabel(projectStatus, t)}
-                  className="kubecode-navigator-status"
-                  data-status={projectStatus ?? undefined}
-                  role="status"
+              )}
+              {projectTeams.map((team) => (
+                <div aria-label={team.title} className="kubecode-session-team" key={team.id} role="group">
+                  <div className="kubecode-session-team-header">
+                    <Users  size={16}/>
+                    <span>{team.title}</span>
+                    <small>{team.members.length}</small>
+                  </div>
+                  <div className="kubecode-session-team-tree">
+                    {team.members.map(({ conversation, role }) => (
+                      <SessionRow
+                        activeConversationId={activeConversationId}
+                        archive={archive}
+                        conversation={conversation}
+                        fork={fork}
+                        key={conversation.id}
+                        nested={role !== 'leader'}
+                        onSelect={open}
+                        remove={remove}
+                        t={t}
+                        teamRole={role}
+                        wechat={wechat}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {sessions.map((conversation) => (
+                <SessionRow
+                  activeConversationId={activeConversationId}
+                  archive={archive}
+                  conversation={conversation}
+                  fork={fork}
+                  key={conversation.id}
+                  onSelect={open}
+                  remove={remove}
+                  t={t}
+                  teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
+                  wechat={wechat}
                 />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label={t('kubecode.projectActionsFor', { name: project.name })}
-                      className="kubecode-project-tree-actions"
-                      size="icon-xs"
-                      variant="ghost"
-                    >
-                      <Ellipsis  size={16}/>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
-                      <Plus  size={16}/> {t('kubecode.newSession')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
-                      {project.workspaces_enabled
-                        ? t('kubecode.disableWorkspaces')
-                        : t('kubecode.enableWorkspaces')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => onProjectDelete(project.id)}
-                    >
-                      <Trash2  size={16}/> {t('kubecode.delete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              {expanded && (
-                <div className="kubecode-project-tree-children" role="group">
-                  <Button
-                    className="kubecode-project-new-session"
-                    variant="ghost"
-                    onClick={() => onNewSession(project.id)}
-                  >
-                    <Plus  size={16}/> {t('kubecode.newSession')}
-                  </Button>
-                  {projectTeams.map((team) => (
-                    <div aria-label={team.title} className="kubecode-session-team" key={team.id} role="group">
-                      <div className="kubecode-session-team-header">
-                        <Users  size={16}/>
-                        <span>{team.title}</span>
-                        <small>{team.members.length}</small>
-                      </div>
-                      <div className="kubecode-session-team-tree">
-                        {team.members.map(({ conversation, role }) => (
-                          <SessionRow
-                            activeConversationId={activeConversationId}
-                            archive={archive}
-                            conversation={conversation}
-                            fork={fork}
-                            key={conversation.id}
-                            nested={role !== 'leader'}
-                            onSelect={(conversationId) => {
-                              if (query.trim()) {
-                                trackEvent('kubecode_global_search_result_opened', {
-                                  result_type: 'session',
-                                })
-                              }
-                              onSelect(project.id, conversationId)
-                            }}
-                            remove={remove}
-                            t={t}
-                            teamRole={role}
-                            wechat={wechat}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {sessions.map((conversation) => (
-                    <SessionRow
-                      activeConversationId={activeConversationId}
-                      archive={archive}
-                      conversation={conversation}
-                      fork={fork}
-                      key={conversation.id}
-                      onSelect={(conversationId) => {
-                        if (query.trim()) {
-                          trackEvent('kubecode_global_search_result_opened', {
-                            result_type: 'session',
-                          })
-                        }
-                        onSelect(project.id, conversationId)
-                      }}
-                      remove={remove}
-                      t={t}
-                      teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
-                      wechat={wechat}
-                    />
-                  ))}
-                  {projectTeams.length === 0 && sessions.length === 0 && (
-                    <div className="kubecode-empty-small">
-                      {projectConversations.length
-                        ? t('kubecode.noMatchingSessions')
-                        : t('kubecode.noSessions')}
-                    </div>
-                  )}
+              ))}
+              {!searching && projectTeams.length === 0 && sessions.length === 0 && (
+                <div className="kubecode-empty-small">
+                  {projectConversations.length
+                    ? t('kubecode.noMatchingSessions')
+                    : t('kubecode.noSessions')}
                 </div>
               )}
             </section>
           )
         })}
         {projectGroups.length === 0 && (
-          <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
+          <div className="kubecode-empty-small">
+            {searching ? t('kubecode.noMatchingSessions') : t('kubecode.selectProject')}
+          </div>
         )}
       </div>
       <DeleteTeamDialog
@@ -628,28 +559,4 @@ function SessionFilters({
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
-
-function navigatorStatus(conversations: Conversation[]): RunStatus | null {
-  const statuses = conversations.map((conversation) => conversation.latest_run_status)
-  if (statuses.includes('waiting_permission')) return 'waiting_permission'
-  if (statuses.some((status) => (
-    status === 'failed' || status === 'timed_out' || status === 'interrupted'
-  ))) return 'failed'
-  return statuses.includes('running') ? 'running' : null
-}
-
-function projectStatusLabel(
-  status: RunStatus | 'stuck' | null,
-  t: Translator,
-): string | undefined {
-  if (status === 'stuck') return t('kubecode.permissionRequired')
-  return status ? runStatusLabel(status, t) : undefined
-}
-
-function runStatusLabel(status: RunStatus, t: Translator): string {
-  if (status === 'running') return t('kubecode.running')
-  if (status === 'waiting_permission') return t('kubecode.permissionRequired')
-  if (status === 'completed') return t('kubecode.ready')
-  return t('kubecode.error')
 }

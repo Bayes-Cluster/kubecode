@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import {
   formatWorkspaceRoute,
@@ -10,34 +10,76 @@ import {
 /** How long an applied route may take to show up in the shell's own state. */
 export const APPLY_TIMEOUT_MS = 4_000
 
+/** How a changed place is written: a new history entry, or in place of the current one. */
+export type HistoryMode = 'push' | 'replace'
+
 /** The place without its narrowing ids: what "arrived" means for an applied route. */
 function coarse(route: WorkspaceRoute): string {
   return `${route.project ?? ''}|${route.view}`
 }
 
 /**
- * Keeps the shell's state and the URL hash in step (ADR 0224).
+ * The shell is at the requested place, or at the view it narrows. A link
+ * without a Project (`#/general`) names a place in the active Project.
+ */
+function reached(current: WorkspaceRoute, text: string, requested: WorkspaceRoute): boolean {
+  const wanted = requested.project === null ? { ...requested, project: current.project } : requested
+  return text === formatWorkspaceRoute(wanted) || coarse(current) === coarse(wanted)
+}
+
+/** A valid link in the address that names somewhere other than `text`. */
+function initialLink(text: string): WorkspaceRoute | null {
+  const requested = parseWorkspaceRoute(window.location.hash)
+  return requested && formatWorkspaceRoute(requested) !== text ? requested : null
+}
+
+/** A value outside React state that components read with `useSyncExternalStore`. */
+function createRouteStore(initial: WorkspaceRoute | null) {
+  let value = initial
+  const listeners = new Set<() => void>()
+  return {
+    get: () => value,
+    set(next: WorkspaceRoute | null) {
+      if (next === value) return
+      value = next
+      listeners.forEach((listener) => listener())
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+}
+
+/**
+ * Keeps the shell's state and the URL hash in step (ADR 0224, ADR 0228).
  *
  * - On first load, a valid hash is applied; otherwise the current state is
  *   written so the address always names where the researcher is.
  * - A change of state pushes a history entry, so Back returns to the previous
- *   view and a reload lands where the researcher was. Choosing the first
- *   Session of a Project, which only fills in a place already written, replaces
- *   the entry instead of adding one.
+ *   place and a reload lands where the researcher was. The shell may ask for a
+ *   quiet change (`historyMode` returns `replace`: a reading position, a
+ *   reconciled place) that replaces the entry instead. Choosing the first
+ *   Session of a Project, which only fills in a place already written, also
+ *   replaces it.
  * - Back/Forward, a pasted link, or an edited hash is applied (once, even though
  *   the browser reports it twice).
  *
  * While an applied route is still being reached (a Project that must load
- * first), intermediate states are not written back over it; if it is not
- * reached within `APPLY_TIMEOUT_MS`, where the researcher is gets written.
+ * first), `pending` is true and intermediate states are not written back over
+ * it; if it is not reached within `APPLY_TIMEOUT_MS`, where the researcher is
+ * gets written. A route `apply` refuses (an unknown Project) is abandoned at
+ * once, and the address then names where the researcher is.
  */
 export function useWorkspaceRouteSync({
   apply,
   current,
   ready,
   ignoreInitialLink = false,
+  historyMode,
 }: {
-  apply: (route: WorkspaceRoute) => void
+  /** Moves the shell to the route; false when it cannot be honoured (an unknown Project). */
+  apply: (route: WorkspaceRoute) => boolean
   current: WorkspaceRoute
   /** The shell has its Projects and can honour a route. */
   ready: boolean
@@ -46,47 +88,73 @@ export function useWorkspaceRouteSync({
    * was slow to load): what they chose wins over the link they opened.
    */
   ignoreInitialLink?: boolean
-}) {
+  /** How the next changed place is written; a new history entry by default. */
+  historyMode?: () => HistoryMode
+}): { pending: boolean } {
   const synced = useRef<{ text: string; route: WorkspaceRoute } | null>(null)
   const target = useRef<{ text: string; route: WorkspaceRoute; timer: number } | null>(null)
   const started = useRef(false)
   const applyRef = useRef(apply)
-  const [, bump] = useState(0)
-  useEffect(() => { applyRef.current = apply }, [apply])
+  const historyModeRef = useRef(historyMode)
   const text = formatWorkspaceRoute(current)
+  const latest = useRef({ text, route: current })
+  // The route being reached is settled from the address listeners, the
+  // timeout and the sync effect alike, so it lives in a small store that
+  // render reads, rather than in state each of them would set.
+  const [awaitingStore] = useState(() => createRouteStore(ignoreInitialLink ? null : initialLink(text)))
+  const awaiting = useSyncExternalStore(awaitingStore.subscribe, awaitingStore.get)
+  useEffect(() => {
+    applyRef.current = apply
+    historyModeRef.current = historyMode
+    latest.current = { text, route: current }
+  })
 
-  const request = (route: WorkspaceRoute) => {
+  const request = useCallback((route: WorkspaceRoute) => {
     const wanted = formatWorkspaceRoute(route)
     if (target.current?.text === wanted) return
     if (target.current) window.clearTimeout(target.current.timer)
     synced.current = { text: wanted, route }
     const timer = window.setTimeout(() => {
-      // Never reached (an unknown Project, a rejected place): show where we are.
+      // Never reached (a rejected place): show where we are.
       target.current = null
-      bump((value) => value + 1)
+      awaitingStore.set(null)
     }, APPLY_TIMEOUT_MS)
     target.current = { text: wanted, route, timer }
-    applyRef.current(route)
-  }
+    if (applyRef.current(route)) {
+      awaitingStore.set(route)
+      return
+    }
+    // Cannot be honoured: the address names where the researcher is, in place of the link.
+    window.clearTimeout(timer)
+    target.current = null
+    awaitingStore.set(null)
+    synced.current = latest.current
+    window.history.replaceState(window.history.state, '', routeHash(latest.current.route))
+  }, [awaitingStore])
 
   useEffect(() => {
     if (!ready) return
     if (!started.current) {
       started.current = true
-      const requested = ignoreInitialLink ? null : parseWorkspaceRoute(window.location.hash)
-      if (requested && formatWorkspaceRoute(requested) !== text) {
+      const requested = ignoreInitialLink ? null : initialLink(text)
+      if (requested) {
         request(requested)
         return
       }
+      awaitingStore.set(null)
       synced.current = { text, route: current }
+      // Every write reads the asked-for mode, so it never carries over to a later move.
+      historyModeRef.current?.()
       window.history.replaceState(window.history.state, '', routeHash(current))
       return
     }
     if (target.current) {
-      if (text === target.current.text || coarse(current) === coarse(target.current.route)) {
+      if (reached(current, text, target.current.route)) {
         window.clearTimeout(target.current.timer)
         target.current = null
+        awaitingStore.set(null)
         synced.current = { text, route: current }
+        historyModeRef.current?.()
         // Arrived at the place (or its parent): the address names exactly where we are.
         if (text !== formatWorkspaceRoute(parseWorkspaceRoute(window.location.hash) ?? current)) {
           window.history.replaceState(window.history.state, '', routeHash(current))
@@ -104,8 +172,12 @@ export function useWorkspaceRouteSync({
       && previous.project === current.project
       && !previous.conversation
       && Boolean(current.conversation)
-    if (fillsIn) window.history.replaceState(window.history.state, '', routeHash(current))
-    else window.history.pushState(window.history.state, '', routeHash(current))
+    const quiet = historyModeRef.current?.() === 'replace'
+    if (fillsIn || quiet) {
+      window.history.replaceState(window.history.state, '', routeHash(current))
+    } else {
+      window.history.pushState(window.history.state, '', routeHash(current))
+    }
   })
 
   useEffect(() => {
@@ -123,7 +195,8 @@ export function useWorkspaceRouteSync({
       window.removeEventListener('hashchange', onNavigate)
       if (target.current) window.clearTimeout(target.current.timer)
     }
-    // `request` only reads refs and the latest `apply`.
-     
-  }, [])
+  }, [request])
+
+  // Derived, so a place the shell reaches at once never shows as pending.
+  return { pending: awaiting !== null && !reached(current, text, awaiting) }
 }

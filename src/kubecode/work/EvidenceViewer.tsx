@@ -40,11 +40,19 @@ type Loaded = {
 
 type State = { status: 'loading' } | { status: 'error'; removed: boolean } | { status: 'ready'; data: Loaded }
 
+/** A record as it was actually shown: the revision is the one read, not the one cited. */
+export type DisplayedEvidence = { kind: string; id: string; revision: string | null }
+
 export type EvidenceViewerProps = {
   api: KubecodeApi
   projectId: string
   t: Translator
   target: EvidenceTarget
+  /**
+   * Called after a record rendered successfully, with the revision on screen.
+   * Never called for a read that failed or for a record that is gone.
+   */
+  onDisplayed?: (shown: DisplayedEvidence) => void
 }
 
 /**
@@ -54,7 +62,7 @@ export type EvidenceViewerProps = {
  * (ProjectContext and the file reader), never copied, and a record the task
  * cited that has changed or vanished says so.
  */
-export function EvidenceViewer({ api, projectId, t, target }: EvidenceViewerProps) {
+export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: EvidenceViewerProps) {
   // Following a related record replaces what is shown; a different target
   // (the host remounts this by key) starts over.
   const [followed, setFollowed] = useState<EvidenceTarget | null>(null)
@@ -109,6 +117,16 @@ export function EvidenceViewer({ api, projectId, t, target }: EvidenceViewerProp
     )
     return () => { live = false }
   }, [api, current, projectId, requestKey])
+
+  // Reported after commit, when the content is on screen; a failed read, or a
+  // record the server reports as removed, never is.
+  const shown = state.status === 'ready' && state.data.availability !== 'removed'
+  const shownKind = shown ? current.kind : null
+  const shownId = shown ? current.id : null
+  const shownRevision = shown ? state.data.revision : null
+  useEffect(() => {
+    if (shownKind !== null && shownId !== null) onDisplayed?.({ kind: shownKind, id: shownId, revision: shownRevision })
+  }, [onDisplayed, shownId, shownKind, shownRevision])
 
   const more = async () => {
     if (state.status !== 'ready' || !state.data.cursor || !CONTEXT_KINDS.has(current.kind)) return

@@ -8,14 +8,12 @@ import type { Conversation, KubecodeApi, TeamSnapshot } from './api'
 
 const t = createTranslator('en')
 const navigatorProps = {
-  activeProjectId: 'project-1',
-  expandedProjectIds: ['project-1'],
+  scopeProjectId: 'project-1',
   onNewSession: vi.fn(),
-  onProjectDelete: vi.fn(),
-  onProjectSelect: vi.fn(),
-  onProjectToggle: vi.fn(),
-  onProjectWorkspacesToggle: vi.fn(),
-  projects: [{ id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false }],
+  projects: [
+    { id: 'project-1', name: 'Demo', path: '/demo', workspaces_enabled: false },
+    { id: 'project-2', name: 'Other', path: '/other', workspaces_enabled: false },
+  ],
 }
 
 describe('session sidebar list', () => {
@@ -75,30 +73,88 @@ describe('session sidebar list', () => {
       'data-variant',
       'ghost',
     )
-    expect(screen.getAllByRole('status', { name: 'Permission required' })).toHaveLength(2)
+    expect(screen.getAllByRole('status', { name: 'Permission required' })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Documentation' }))
     expect(onSelect).toHaveBeenCalledWith('project-1', 'session-2')
   })
 
-  it('reveals matching sessions inside a collapsed project while search is active', () => {
+  it('lists only this Workspace’s Sessions, with no button named after the Project', () => {
+    const onNewSession = vi.fn()
     render(
       <SessionSidebarList
         {...navigatorProps}
         activeConversationId={null}
         api={{} as KubecodeApi}
-        conversations={[session('session-1', 'Rare experiment', 'completed')]}
-        expandedProjectIds={[]}
+        conversations={[
+          session('session-1', 'Here', 'completed'),
+          { ...session('session-2', 'Elsewhere', 'completed'), project_id: 'project-2' },
+        ]}
         onConversationCreated={vi.fn()}
         onConversationRemoved={vi.fn()}
         onConversationUpdated={vi.fn()}
         onError={vi.fn()}
+        onNewSession={onNewSession}
         onSelect={vi.fn()}
+        t={t}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Here' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Elsewhere' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Demo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Demo' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    expect(onNewSession).toHaveBeenCalledWith('project-1')
+  })
+
+  it('searches every Workspace’s Sessions, grouped under plain Project headings', () => {
+    const onSelect = vi.fn()
+    render(
+      <SessionSidebarList
+        {...navigatorProps}
+        activeConversationId={null}
+        api={{} as KubecodeApi}
+        conversations={[
+          session('session-1', 'Rare experiment', 'completed'),
+          session('session-2', 'Common chat', 'completed'),
+          { ...session('session-3', 'Rare baseline', 'completed'), project_id: 'project-2' },
+        ]}
+        onConversationCreated={vi.fn()}
+        onConversationRemoved={vi.fn()}
+        onConversationUpdated={vi.fn()}
+        onError={vi.fn()}
+        onSelect={onSelect}
         query="rare"
         t={t}
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Rare experiment' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Demo', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Other', level: 3 })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Demo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Common chat' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New session' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Rare baseline' }))
+    expect(onSelect).toHaveBeenCalledWith('project-2', 'session-3')
+  })
+
+  it('says when a search matches nothing, and asks for a Project without one', () => {
+    const props = {
+      ...navigatorProps,
+      activeConversationId: null,
+      api: {} as KubecodeApi,
+      conversations: [session('session-1', 'Common chat', 'completed')],
+      onConversationCreated: vi.fn(),
+      onConversationRemoved: vi.fn(),
+      onConversationUpdated: vi.fn(),
+      onError: vi.fn(),
+      onSelect: vi.fn(),
+      t,
+    }
+    const { rerender } = render(<SessionSidebarList {...props} query="nothing" />)
+    expect(screen.getByText('No matching sessions')).toBeInTheDocument()
+    rerender(<SessionSidebarList {...props} scopeProjectId={null} />)
+    expect(screen.getByText('Select or create a project')).toBeInTheDocument()
   })
 
   it('renders each Team as a named hierarchy with its Leader before its teammates', () => {

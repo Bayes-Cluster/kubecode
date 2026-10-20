@@ -2,8 +2,10 @@ import { createPreferenceStorage, type PreferenceStorage } from './preferenceSto
 
 export const WORKBENCH_LAYOUT_STORAGE_KEY = 'kubecode:workbench-layout:v2'
 
+/** The navigation's layout. Projects are no longer expanded (ADR 0228); what older layouts stored of that is ignored. */
 export type WorkbenchNavigatorLayout = {
-  expandedProjectIds: string[]
+  /** Whether "History and execution" is open; collapsed unless the researcher opened it. */
+  historyOpen: boolean
   navigatorOpen: boolean
   navigatorWidth: number
 }
@@ -16,7 +18,7 @@ export type ProjectWorkbenchLayout = {
 }
 
 const DEFAULT_NAVIGATOR_LAYOUT: WorkbenchNavigatorLayout = {
-  expandedProjectIds: [],
+  historyOpen: false,
   navigatorOpen: true,
   navigatorWidth: 280,
 }
@@ -29,12 +31,12 @@ const DEFAULT_PROJECT_LAYOUT: ProjectWorkbenchLayout = {
 }
 
 const navigatorLayoutStorage = createPreferenceStorage<WorkbenchNavigatorLayout, [initialProjectId: string | null]>({
-  defaultValue: (initialProjectId) => defaultNavigatorLayout(initialProjectId),
+  defaultValue: () => DEFAULT_NAVIGATOR_LAYOUT,
   key: () => WORKBENCH_LAYOUT_STORAGE_KEY,
   migrate: (read, initialProjectId) => {
     const legacy = initialProjectId ? record(read(legacyProjectLayoutKey(initialProjectId))) : null
     return legacy ? {
-      expandedProjectIds: initialProjectId ? [initialProjectId] : [],
+      historyOpen: DEFAULT_NAVIGATOR_LAYOUT.historyOpen,
       navigatorOpen: booleanValue(legacy.sessionSidebarOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
       navigatorWidth: numericValue(legacy.sessionSidebarWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
     } : undefined
@@ -42,7 +44,7 @@ const navigatorLayoutStorage = createPreferenceStorage<WorkbenchNavigatorLayout,
   normalize: (value) => {
     const stored = record(value)
     return stored ? {
-      expandedProjectIds: normalizedProjectIds(stored.expandedProjectIds),
+      historyOpen: booleanValue(stored.historyOpen, DEFAULT_NAVIGATOR_LAYOUT.historyOpen),
       navigatorOpen: booleanValue(stored.navigatorOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
       navigatorWidth: numericValue(stored.navigatorWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
     } : undefined
@@ -93,13 +95,6 @@ function legacyProjectLayoutKey(projectId: string): string {
   return `kubecode:layout:${projectId}`
 }
 
-function defaultNavigatorLayout(initialProjectId: string | null): WorkbenchNavigatorLayout {
-  return {
-    ...DEFAULT_NAVIGATOR_LAYOUT,
-    expandedProjectIds: initialProjectId ? [initialProjectId] : [],
-  }
-}
-
 function normalizedProjectLayout(value: unknown): ProjectWorkbenchLayout | undefined {
   const stored = record(value)
   return stored ? {
@@ -112,13 +107,6 @@ function normalizedProjectLayout(value: unknown): ProjectWorkbenchLayout | undef
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
-}
-
-function normalizedProjectIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return DEFAULT_NAVIGATOR_LAYOUT.expandedProjectIds
-  return [...new Set(value.filter((item): item is string => (
-    typeof item === 'string' && item.trim().length > 0
-  )))]
 }
 
 function booleanValue(value: unknown, fallback: boolean): boolean {

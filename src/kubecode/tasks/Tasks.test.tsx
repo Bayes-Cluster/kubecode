@@ -1,8 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { KubecodeApi, TaskBoard, TaskCard, TaskDetail, TaskDraft } from '../api'
 import { ApiError } from '../api'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { nextFrame, stubScrollGeometry } from '@/test/scrollGeometry'
 import { TaskBoardView } from './TaskBoardView'
 import { TaskInspector } from './TaskInspector'
 
@@ -37,7 +40,6 @@ describe('TaskBoardView', () => {
         drafts={[]}
         status="ready"
         t={t}
-        onClose={vi.fn()}
         onOpenDraft={vi.fn()}
         onOpenTask={onOpenTask}
         onReload={vi.fn()}
@@ -68,7 +70,6 @@ describe('TaskBoardView', () => {
         drafts={drafts}
         status="error"
         t={t}
-        onClose={vi.fn()}
         onOpenDraft={onOpenDraft}
         onOpenTask={vi.fn()}
         onReload={onReload}
@@ -271,5 +272,84 @@ describe('TaskInspector', () => {
     expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({
       request_id: 'rq1', result_id: 'file:results.csv',
     }), 'b')
+  })
+
+  it('opens review evidence inline, or hands it to the inspector when there is one', async () => {
+    const value = detail({
+      review_requests: [{
+        id: 'rq1', research_id: 'r1', summary: 'Accuracy held at 0.91', evidence: ['artifact:a1', 'file:out/results.csv'],
+        requested_by: 's', brief_revision: 1, state: 'open', created_at: '', resolved_at: null,
+      }],
+    })
+    const { api } = inspector(value)
+    fireEvent.click(await screen.findByRole('button', { name: 'artifact:a1' }))
+    expect(screen.getByRole('button', { name: 'artifact:a1' })).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => expect(api.readProjectContext).toHaveBeenCalled())
+    cleanup()
+
+    const onInspectEvidence = vi.fn()
+    const readProjectContext = vi.fn()
+    const handed = { ...api, readProjectContext } as unknown as KubecodeApi
+    render(
+      <TaskInspector
+        api={handed}
+        connectionState="live"
+        events={[]}
+        projectId="p1"
+        t={t}
+        taskId="r1"
+        onInspectEvidence={onInspectEvidence}
+        onShowMessage={vi.fn()}
+      />,
+    )
+    const list = await screen.findByRole('list', { name: 'kubecode.task.evidence' })
+    fireEvent.click(within(list).getByRole('button', { name: 'file:out/results.csv' }))
+    expect(onInspectEvidence).toHaveBeenCalledWith({ kind: 'file', id: 'out/results.csv' })
+    fireEvent.click(within(list).getByRole('button', { name: 'artifact:a1' }))
+    expect(onInspectEvidence).toHaveBeenLastCalledWith({ kind: 'artifact', id: 'a1' })
+    expect(within(list).getByRole('button', { name: 'artifact:a1' })).not.toHaveAttribute('aria-expanded')
+    expect(screen.queryByTestId('evidence-viewer')).not.toBeInTheDocument()
+    expect(readProjectContext).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskBoardView keeps its place (ADR 0228 §4)', () => {
+  const boardIn = (memory: PlaceMemory, cards: TaskCard[] | null) => (
+    <PlaceMemoryProvider memory={memory}>
+      <TaskBoardView
+        board={cards ? board(cards) : null}
+        drafts={[]}
+        scrollKey="p1|view:board"
+        status={cards ? 'ready' : 'loading'}
+        t={t}
+        onOpenDraft={vi.fn()}
+        onOpenTask={vi.fn()}
+        onReload={vi.fn()}
+      />
+    </PlaceMemoryProvider>
+  )
+
+  it('returns to where the board was scrolled once its cards are back, and names each card for focus return', async () => {
+    const restore = stubScrollGeometry()
+    try {
+      const memory = createPlaceMemory()
+      const cards = [card({ id: 'r1' }), card({ id: 'r2', title: 'Second' })]
+      const view = render(boardIn(memory, cards))
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-focus-key', 'card:r2')
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-scroll-anchor', 'card:r2')
+      const scroller = screen.getByRole('region', { name: 'kubecode.nav.board' })
+      scroller.scrollTop = 130
+      fireEvent.scroll(scroller)
+      await act(nextFrame)
+
+      view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+      view.rerender(boardIn(memory, null))
+      const again = screen.getByRole('region', { name: 'kubecode.nav.board' })
+      expect(again.scrollTop).toBe(0)
+      view.rerender(boardIn(memory, cards))
+      expect(again.scrollTop).toBe(130)
+    } finally {
+      restore()
+    }
   })
 })
