@@ -15,7 +15,9 @@ function recordKindOf(kind: string): InspectorRecordKind | null {
  * the Task inspector on top, as the detail pane showed it before ADR 0228.
  * The record's own header carries the inspector's Back and Close, so there is
  * still one header; review evidence opens over the Task, which stays mounted
- * below it. #218 replaces this adapter with the Task panel.
+ * below it. A Thread or a message opened from here is shown in General with
+ * nothing over it and no Task filter, so it is never hidden under the Task
+ * General last remembered. #218 replaces this adapter with the Task panel.
  */
 export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<InspectorEntry, { kind: 'task' }>>) {
   const services = useInspectorServices()
@@ -52,13 +54,19 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
           t={services.t}
           taskId={entry.id}
           onInspectEvidence={inspectEvidence}
-          onShowMessage={(messageId) => navigation.openPlace({ view: 'general', message: messageId, thread: null })}
+          onShowMessage={(messageId) => navigation.openPlace(
+            { view: 'general', message: messageId, thread: null, filter: null },
+            { inspector: 'closed' },
+          )}
         />
       )}
       onConversationCreated={services.onConversationCreated}
       onOpenBoard={(filter) => navigation.openPlace({ view: 'board' }, { inspect: { kind: 'task', id: filter.research_id } })}
       onOpenSession={(conversationId) => navigation.openSession(conversationId)}
-      onOpenThread={(threadId) => navigation.openPlace({ view: 'general', thread: threadId })}
+      onOpenThread={(threadId) => navigation.openPlace(
+        { view: 'general', thread: threadId, filter: null },
+        { inspector: 'closed' },
+      )}
       onTitle={inspector.setTitle}
     />
   )

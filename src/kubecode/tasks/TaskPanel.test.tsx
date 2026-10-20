@@ -99,9 +99,15 @@ describe('TaskPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'open board' }))
     expect(navigation.openPlace).toHaveBeenLastCalledWith({ view: 'board' }, { inspect: { kind: 'task', id: 'r1' } })
     fireEvent.click(screen.getByRole('button', { name: 'open thread' }))
-    expect(navigation.openPlace).toHaveBeenLastCalledWith({ view: 'general', thread: 't1' })
+    expect(navigation.openPlace).toHaveBeenLastCalledWith(
+      { view: 'general', thread: 't1', filter: null },
+      { inspector: 'closed' },
+    )
     fireEvent.click(screen.getByRole('button', { name: 'show message' }))
-    expect(navigation.openPlace).toHaveBeenLastCalledWith({ view: 'general', message: 'm1', thread: null })
+    expect(navigation.openPlace).toHaveBeenLastCalledWith(
+      { view: 'general', message: 'm1', thread: null, filter: null },
+      { inspector: 'closed' },
+    )
     fireEvent.click(screen.getByRole('button', { name: 'start discussion' }))
     expect(services.onConversationCreated).toHaveBeenCalledWith({ id: 's9' })
   })

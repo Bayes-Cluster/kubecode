@@ -56,23 +56,29 @@ function api(overrides: Record<string, unknown> = {}) {
 }
 
 vi.mock('../research/ResearchWorkspace', () => ({
-  ResearchWorkspace: ({ back, close, inspector, researchId }: {
+  ResearchWorkspace: ({ back, close, inspector, onOpenThread, researchId }: {
     back?: { label: string; onBack: () => void }
     close?: { label: string; onClose: () => void }
     inspector?: React.ReactNode
+    onOpenThread?: (threadId: string) => void
     researchId: string
   }) => (
     <section aria-label={`task ${researchId}`}>
       {back && <button type="button" onClick={back.onBack}>{back.label}</button>}
       {close && <button type="button" onClick={close.onClose}>{close.label}</button>}
+      {onOpenThread && <button type="button" onClick={() => onOpenThread('t1')}>Open thread t1</button>}
       {inspector}
     </section>
   ),
 }))
 
 vi.mock('../tasks/TaskInspector', () => ({
-  TaskInspector: ({ onInspectEvidence }: { onInspectEvidence?: (target: { kind: string; id: string; revision?: string | null }) => void }) => (
+  TaskInspector: ({ onInspectEvidence, onShowMessage }: {
+    onInspectEvidence?: (target: { kind: string; id: string; revision?: string | null }) => void
+    onShowMessage?: (messageId: string) => void
+  }) => (
     <div>
+      <button type="button" onClick={() => onShowMessage?.('m1')}>Show message m1</button>
       <button type="button" onClick={() => onInspectEvidence?.({ kind: 'artifact', id: 'a1', revision: '3f' })}>
         Inspect artifact a1
       </button>
@@ -611,6 +617,75 @@ describe('Workspace navigation and routes', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
     expect(await inspector('Task details')).toBeInTheDocument()
+  })
+
+  it('opens a Thread from a Task as the Thread pane, not under General’s remembered Task', async () => {
+    await start('#/p/project-1/general?task=r1&filter=r1', api({
+      listChannelMessages: vi.fn().mockResolvedValue({ messages: [message()], has_more: false }),
+      listChannelThreads: vi.fn().mockResolvedValue([thread()]),
+    }))
+    expect(await inspector('Task details')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open thread t1' }))
+    expect(await screen.findByRole('complementary', { name: 'Thread' })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?thread=t1'))
+  })
+
+  it('shows a message from Kanban’s Task without General’s remembered Task or filter', async () => {
+    storeLocations({
+      lastProjectId: 'project-1',
+      seq: 2,
+      workspaces: {
+        'project-1': {
+          current: 'board',
+          at: 2,
+          views: { general: '/p/project-1/general?task=r9&filter=r9', board: '/p/project-1/board?task=r1' },
+        },
+      },
+    })
+    await start('#/p/project-1/board?task=r1', api({
+      listChannelMessages: vi.fn().mockResolvedValue({ messages: [message()], has_more: false }),
+    }))
+    expect(await screen.findByRole('region', { name: 'task r1' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show message m1' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1'))
+    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'task r9' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['execution history', async () => {
+      const history = document.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
+      act(() => {
+        history.open = true
+        history.dispatchEvent(new Event('toggle'))
+      })
+      fireEvent.click(await within(history).findByRole('button', { name: /Pruning thread/ }))
+    }],
+    ['a reference in Resources', async () => {
+      fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getByRole('button', { name: 'Resources' }))
+      fireEvent.click(await screen.findByRole('option', { name: /Pruning thread/ }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
+    }],
+  ])('opens a Thread from %s without General’s remembered Task or filter', async (_, open) => {
+    storeLocations({
+      lastProjectId: 'project-1',
+      seq: 2,
+      workspaces: {
+        'project-1': { current: 'board', at: 2, views: { general: '/p/project-1/general?task=r9&filter=r9', board: '/p/project-1/board' } },
+      },
+    })
+    await start('#/p/project-1/board', api({
+      listChannelMessages: vi.fn().mockResolvedValue({ messages: [message()], has_more: false }),
+      listChannelThreads: vi.fn().mockResolvedValue([thread()]),
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('thread', 't1', 'Pruning thread')], next_cursor: null }),
+      readProjectContext: vi.fn().mockResolvedValue(contextDocument('thread', 't1', 'Pruning thread')),
+    }))
+    await screen.findByRole('heading', { name: 'Kanban', level: 2 })
+    await open()
+    expect(await screen.findByRole('complementary', { name: 'Thread' })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?thread=t1'))
   })
 
   it('keeps what is open when the current destination is chosen again', async () => {

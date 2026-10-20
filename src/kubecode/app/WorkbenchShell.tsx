@@ -385,7 +385,9 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const openPlace = useCallback((target: PlaceTarget, options: OpenPlaceOptions = {}) => {
     if (!projectId) return
     const keep = options.inspector === 'keep' || (options.carryInspector === 'when-side' && presentation === 'side')
-    const inspector = options.inspect ? [options.inspect] : keep ? 'keep' : 'remembered'
+    const inspector = options.inspect
+      ? [options.inspect]
+      : options.inspector === 'closed' ? [] : keep ? 'keep' : 'remembered'
     move({ type: 'go', projectId, target, inspector })
     if (options.focus) pendingFocusRef.current = options.focus
     closeNavigatorSheet()
@@ -425,6 +427,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     inspect({ kind: 'task', id: taskId }, { mode: 'reset' })
   }, [inspect, patchGeneral])
 
+  /**
+   * A Thread opens beside General with nothing over it. From elsewhere it is
+   * not narrowed to a Task General happened to remember; within General the
+   * researcher's own filter stays.
+   */
+  const openThread = useCallback((threadId: string) => {
+    const filter = placeRef.current.view === 'general' ? undefined : null
+    openPlace({ view: 'general', thread: threadId, filter }, { inspector: 'closed' })
+  }, [openPlace])
+
   /** A work item opens Kanban with its Task, once the work item says which Task that is. */
   const openWork = useCallback((workId: string) => {
     const requested = projectId
@@ -446,10 +458,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const openReference = useCallback((reference: ProjectContextRef) => {
     const target = inspectorTargetForReference(reference)
     if ('inspect' in target) inspect(target.inspect)
-    else if ('place' in target) openPlace(target.place)
+    else if ('place' in target) {
+      if (target.place.view === 'general' && target.place.thread) openThread(target.place.thread)
+      else openPlace(target.place)
+    }
     else if ('work' in target) openWork(target.work)
     else openSession(target.session)
-  }, [inspect, openPlace, openSession, openWork])
+  }, [inspect, openPlace, openSession, openThread, openWork])
 
   /** Opens the private conversation with a member. */
   const openDm = useCallback((member: Member) => {
@@ -947,7 +962,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 <ChannelNavigator
                   active={false}
                   onOpen={() => openPlace({ view: 'general' })}
-                  onOpenThread={(threadId) => openPlace({ view: 'general', thread: threadId })}
+                  onOpenThread={openThread}
                   t={t}
                   threads={channelThreads.threads}
                   threadsOnly
@@ -1126,7 +1141,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 onConversationCreated={handleConversationCreated}
                 onOpenSession={(nextConversationId) => openSession(nextConversationId)}
                 onOpenBoard={(filter) => openPlace({ view: 'board' }, { inspect: { kind: 'task', id: filter.research_id } })}
-                onOpenThread={(threadId) => openPlace({ view: 'general', thread: threadId })}
+                onOpenThread={openThread}
                 projectId={projectId}
                 researchId={place.question}
                 t={t}

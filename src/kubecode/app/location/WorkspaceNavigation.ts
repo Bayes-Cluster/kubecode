@@ -15,8 +15,12 @@ import type { GeneralPatch, PlaceTarget, WorkspaceLocation } from './workspaceLo
 export type OpenPlaceOptions = {
   /** Opens this entry over the place, replacing its remembered stack. */
   inspect?: InspectorEntry
-  /** `remembered` (default): the place's own stack; `keep`: the stack on screen now. */
-  inspector?: 'keep' | 'remembered'
+  /**
+   * `remembered` (default): the place's own stack; `keep`: the stack on screen
+   * now; `closed`: no inspector, so what the move is for (a Thread, a message)
+   * is not hidden under one the place remembered.
+   */
+  inspector?: 'keep' | 'remembered' | 'closed'
   /** A `data-focus-key` to focus on arrival. */
   focus?: string
   /** `when-side`: keep the open inspector when it is shown beside the view. */
