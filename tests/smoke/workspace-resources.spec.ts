@@ -169,12 +169,15 @@ test.describe('on a desktop', () => {
       })
       expect(analyst.ok(), await analyst.text()).toBe(true)
       const member = await analyst.json() as { id: string }
-      expect((await request.post(`${api}/projects/${projectId}/members/${member.id}/dm`)).ok()).toBe(true)
+      const opened = await request.post(`${api}/projects/${projectId}/members/${member.id}/dm`)
+      expect(opened.ok(), await opened.text()).toBe(true)
+      const { dm_conversation_id: dmSession } = await opened.json() as { dm_conversation_id: string | null }
+      expect(dmSession).toBeTruthy()
       const word = `zanzibarite${stamp}`
-      const sent = await request.post(`${api}/projects/${projectId}/members/${member.id}/dm/messages`, {
-        data: { text: `private note ${word}`, client_message_id: `dm-${stamp}` },
-      })
-      expect(sent.ok(), await sent.text()).toBe(true)
+      // The word is the private Session's title, which a Session search does match; only privacy keeps it out.
+      const renamed = await request.patch(`${api}/sessions/${dmSession}`, { data: { manual_title: `private ${word}` } })
+      expect(renamed.ok(), await renamed.text()).toBe(true)
+      expect(JSON.stringify(await renamed.json())).toContain(word)
 
       await page.goto(`${workspaceUrl}/#/p/${projectId}/resources`)
       const resources = page.getByRole('region', { name: 'Resources' })
