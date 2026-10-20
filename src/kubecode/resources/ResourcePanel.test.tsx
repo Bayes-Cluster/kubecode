@@ -144,7 +144,7 @@ describe('ResourcePanel', () => {
     const navigation = fakeNavigation({ location: { place: { view: 'general' }, inspector: [] } })
     const full = mount({ kind: 'resource', ref: { kind: 'finding', id: 'f1' } }, vi.fn().mockResolvedValue(finding()), navigation, memory)
     await screen.findByText('Accuracy held at 0.91')
-    expect(screen.getByRole('button', { name: 'Add to message' })).toHaveAccessibleDescription('A message can cite up to 16 records.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add to message' })).toHaveAccessibleDescription('A message can cite up to 16 records.'))
     expect(screen.getByRole('button', { name: 'Add to message' })).toBeDisabled()
     full.unmount()
     mount({ kind: 'resource', ref: { kind: 'finding', id: 'f1' } }, vi.fn().mockResolvedValue(finding()), fakeNavigation({ location: { place: { view: 'dm', member: 'm1' }, inspector: [] } }))

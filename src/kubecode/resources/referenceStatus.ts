@@ -58,7 +58,9 @@ export function createReferenceStatusStore(api: KubecodeApi, projectId: string):
     const mine = generation
     for (let start = 0; start < batch.length; start += MAX_RESOLVE) {
       const chunk = batch.slice(start, start + MAX_RESOLVE)
-      api.resolveProjectContext(projectId, chunk.map(({ ref }) => ({ kind: ref.kind, id: ref.id, revision: ref.revision ?? null })))
+      // A resolve that cannot even start is a failure like any other: the chips show no state.
+      Promise.resolve()
+        .then(() => api.resolveProjectContext(projectId, chunk.map(({ ref }) => ({ kind: ref.kind, id: ref.id, revision: ref.revision ?? null }))))
         .then((resolved) => {
           if (mine !== generation) return
           chunk.forEach(({ key }, index) => {
