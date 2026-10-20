@@ -11,6 +11,7 @@ import {
   mentionQueryAt,
   type MentionOption,
 } from '@/components/workspace/mentions'
+import { RecipientRow, type Recipient } from '@/components/workspace/RecipientRow'
 import { SendButton, StopButton } from '@/components/workspace/SendButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
@@ -158,6 +159,64 @@ describe('Composer', () => {
     expect(box).not.toHaveAttribute('aria-expanded')
     fireEvent.change(box, { target: { value: '@g', selectionStart: 2 } })
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+})
+
+describe('Composer for a conversation of members (ADR 0229)', () => {
+  it('shows who each suggestion is, and says when one cannot receive messages yet', async () => {
+    render(<Harness mentions={[
+      { id: 'g', handle: 'general', label: 'General', identity: { role: 'manager', roleLabel: 'Project manager' } },
+      { id: 'w', handle: 'writer', label: 'Writer', identity: { role: 'specialist', roleLabel: 'Specialist · Writing', unavailable: "Can't receive messages yet" } },
+    ]} />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Message' }), { target: { value: '@', selectionStart: 1 } })
+    const options = await screen.findAllByRole('option')
+    expect(options[0]).toHaveTextContent('General@generalProject manager')
+    expect(options[0].querySelector('[data-testid="member-avatar"]')).not.toBeNull()
+    // It can still be chosen: the draft then says why it cannot be sent.
+    expect(options[1]).toHaveTextContent("Can't receive messages yet")
+  })
+
+  it('says why it cannot send, linked to the send button, and links the caller’s hints to the text box', () => {
+    render(
+      <>
+        <p id="hint">Mentions never start work.</p>
+        <Harness describedBy="hint" initial="@writer hi" sendDisabledReason="Writer can't receive messages yet." canSend={false} />
+      </>,
+    )
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAccessibleDescription("Writer can't receive messages yet.")
+    expect(screen.getByRole('combobox', { name: 'Message' })).toHaveAccessibleDescription('Mentions never start work.')
+  })
+
+  it('gives the caller its text box, to put the caret after a reply', () => {
+    const ref = { current: null as HTMLTextAreaElement | null }
+    render(<Harness focusKey="composer:general" textareaRef={ref} />)
+    expect(ref.current).toBe(screen.getByRole('combobox', { name: 'Message' }))
+    expect(ref.current).toHaveAttribute('data-focus-key', 'composer:general')
+  })
+})
+
+describe('RecipientRow', () => {
+  function Row({ onEmpty }: { onEmpty: () => void }) {
+    const [names, setNames] = useState(['Analyst', 'Writer'])
+    const recipients: Recipient[] = names.map((name) => ({
+      key: name, name, role: 'specialist', removeLabel: `Don't send to ${name}`,
+      onRemove: () => setNames((current) => current.filter((item) => item !== name)),
+    }))
+    return <RecipientRow empty="General · Project manager" label="To" recipients={recipients} onFocusAfterLast={onEmpty} />
+  }
+
+  it('lists whom a draft goes to, each removable, and moves focus to the next one or past the row', () => {
+    const onEmpty = vi.fn()
+    render(<Row onEmpty={onEmpty} />)
+    const row = screen.getByRole('list', { name: 'To' })
+    expect(row).toHaveTextContent(/Analyst.*Writer/)
+    fireEvent.click(screen.getByRole('button', { name: "Don't send to Analyst" }))
+    expect(screen.getByRole('button', { name: "Don't send to Writer" })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: "Don't send to Writer" }))
+    expect(onEmpty).toHaveBeenCalled()
+    expect(screen.getByText('General · Project manager')).toBeInTheDocument()
   })
 })
 

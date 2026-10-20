@@ -77,3 +77,25 @@ describe('MarkdownContent block-level rendering (#112)', () => {
     expect(after[2]).toContain('Para 3 added')
   })
 })
+
+describe('MarkdownContent images (ADR 0229 §7)', () => {
+  it('shows an image as its alternative text when asked, so a message makes no request', () => {
+    const { container } = render(<MarkdownContent content={'Look: ![loss curve](https://example.test/x.png)'} images="text" />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('loss curve')).toHaveClass('kubecode-inert-image')
+  })
+
+  it('still renders images by default', () => {
+    const { container } = render(<MarkdownContent content={'![loss curve](https://example.test/x.png)'} />)
+    expect(container.querySelector('img')).not.toBeNull()
+  })
+
+  it('keeps raw HTML and javascript: links inert', () => {
+    const { container } = render(
+      <MarkdownContent content={'<script>alert(1)</script>\n\n**bold** [go](javascript:alert(1))'} images="text" />,
+    )
+    expect(container.querySelector('script')).toBeNull()
+    expect(screen.getByText('bold').tagName).toBe('STRONG')
+    expect(screen.getByText('go').getAttribute('href') ?? '').not.toContain('javascript')
+  })
+})

@@ -74,21 +74,26 @@ function openExplicitWebUrl(event: MouseEvent<HTMLAnchorElement>, href: string) 
   })
 }
 
+/** `text` shows an image as its alternative text, so rendering it never fetches anything. */
+export type MarkdownImages = 'render' | 'text'
+
 interface MarkdownContentProps {
   content: string
   onWikilinkClick?: (target: string) => void
+  images?: MarkdownImages
 }
 
 /** Renders a single markdown block — no outer wrapper. */
-const MarkdownBlock = memo(function MarkdownBlock({ content, onWikilinkClick }: {
+const MarkdownBlock = memo(function MarkdownBlock({ content, images, onWikilinkClick }: {
   content: string
   onWikilinkClick?: (target: string) => void
+  images: MarkdownImages
 }) {
   const processedContent = useMemo(
     () => replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content),
     [content, onWikilinkClick],
   )
-  const components = useMarkdownComponents(onWikilinkClick)
+  const components = useMarkdownComponents(onWikilinkClick, images)
   return (
     <Markdown
       remarkPlugins={REMARK_PLUGINS}
@@ -101,9 +106,14 @@ const MarkdownBlock = memo(function MarkdownBlock({ content, onWikilinkClick }: 
   )
 })
 
-function useMarkdownComponents(onWikilinkClick?: (target: string) => void) {
+function inertImage({ alt }: { alt?: string }) {
+  return <span className="kubecode-inert-image">{alt ?? ''}</span>
+}
+
+function useMarkdownComponents(onWikilinkClick: ((target: string) => void) | undefined, images: MarkdownImages) {
   return useMemo(() => {
     return {
+      ...(images === 'text' ? { img: inertImage } : {}),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const math = href ? mathMarkup(href) : null
         if (math) return math
@@ -133,7 +143,7 @@ function useMarkdownComponents(onWikilinkClick?: (target: string) => void) {
         return <a href={href}>{children}</a>
       },
     }
-  }, [onWikilinkClick])
+  }, [images, onWikilinkClick])
 }
 
 /**
@@ -143,7 +153,7 @@ function useMarkdownComponents(onWikilinkClick?: (target: string) => void) {
  * messages get the same sanitization, shiki, and mermaid treatment as
  * before — just block-by-block instead of full-document.
  */
-export const MarkdownContent = memo(function MarkdownContent({ content, onWikilinkClick }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, images = 'render', onWikilinkClick }: MarkdownContentProps) {
   const blocks = useMemo(
     () => splitMarkdownBlocks(replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content)),
     [content, onWikilinkClick],
@@ -154,6 +164,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, onWikili
       {blocks.map((block, index) => (
         <MarkdownBlock
           content={block}
+          images={images}
           key={index}
           onWikilinkClick={onWikilinkClick}
         />
