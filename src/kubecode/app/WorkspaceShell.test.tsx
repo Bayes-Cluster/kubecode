@@ -268,6 +268,15 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst'))
   })
 
+  it('announces what newly needs the researcher in the shell\'s status region, with the navigation sheet closed', async () => {
+    narrowScreen()
+    const { nav } = await start('#/p/project-1/general')
+    const shellStatus = () => document.querySelector('main.kubecode-app > [role="status"]')
+    await waitFor(() => expect(shellStatus()).toHaveTextContent('Review the results of Pruning needs you'))
+    // Needs you, folded away in the sheet, has no live region of its own to lose it in.
+    expect(nav.querySelector('.kubecode-needs-you [role="status"]')).toBeNull()
+  })
+
   it('keeps Files and Git out of the research views until asked for', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
@@ -332,7 +341,7 @@ describe('Workspace navigation and routes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Other' }))
     expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
-    expect(screen.getByText('Other: General')).toHaveAttribute('role', 'status')
+    expect(screen.getByText('Other: General').closest('[role="status"]')).toBe(document.querySelector('main.kubecode-app > [role="status"]'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Demo' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))

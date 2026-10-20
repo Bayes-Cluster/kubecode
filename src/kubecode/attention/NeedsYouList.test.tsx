@@ -79,12 +79,8 @@ describe('NeedsYouList', () => {
     expect(screen.getByText('Some waiting items could not be loaded.')).toBeInTheDocument()
   })
 
-  it('announces a new decision and one that was resolved', () => {
-    const { rerender, props } = list({ entries: [] })
-    rerender(<NeedsYouList {...props} entries={[entry('permission:q1', { title: 'Analyst wants to use pytest' })]} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Analyst wants to use pytest needs you')
-    rerender(<NeedsYouList {...props} entries={[entry('permission:q1', { title: 'Analyst wants to use pytest', state: 'resolving' })]} />)
-    rerender(<NeedsYouList {...props} entries={[]} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Resolved: Analyst wants to use pytest')
+  it('leaves announcing to the shell: the list holds no live region of its own', () => {
+    list({ entries: [entry('permission:q1', { title: 'Analyst wants to use pytest' })] })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

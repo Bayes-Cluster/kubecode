@@ -24,6 +24,7 @@ import { ResourcesView } from '../resources/ResourcesView'
 import { useTaskBoard } from '../tasks/useTaskBoard'
 import { AttentionContext } from '../attention/attentionContext'
 import { attentionTarget, needsYouFromAttention } from '../attention/attentionTargets'
+import { useNeedsYouAnnouncement } from '../attention/useNeedsYouAnnouncement'
 import { useAttentionStore } from '../attention/useAttention'
 import { useAttentionSummary } from '../attention/useAttentionSummary'
 import { ChannelWorkspace } from '../channel/ChannelWorkspace'
@@ -401,6 +402,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     () => needsYouFromAttention(attention.snapshot, attention.resolving, t, { presentation }),
     [attention.resolving, attention.snapshot, presentation, t],
   )
+  const needsYouAnnouncement = useNeedsYouAnnouncement(needsYou, t)
 
   const titlebarAttention = useMemo(() => {
     const others = (attentionSummary?.workspaces ?? [])
@@ -1001,7 +1003,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     <InspectorServicesContext.Provider value={inspectorServices}>
     <AttentionContext.Provider value={attention}>
     <main className="kubecode-app">
-      <p className="sr-only" role="status">{announcement}</p>
+      {/* The shell's one always-mounted status region: where the researcher is, and what newly needs them. */}
+      <p className="sr-only" role="status">
+        <span>{announcement}</span>
+        {' '}
+        <span>{needsYouAnnouncement}</span>
+      </p>
       <WorkbenchTitlebar
         attention={titlebarAttention}
         connectionState={reconciliation.connectionState}

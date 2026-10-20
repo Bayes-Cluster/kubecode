@@ -67,7 +67,9 @@ function Rows({ entries, label, onOpenTarget, t }: {
  * What waits for the researcher (ADR 0232): decisions, then setup, each row
  * one button that opens the context holding it. An answered row stays, busy,
  * until the server's next snapshot drops it; a list that could not be read
- * completely says so instead of claiming nothing waits.
+ * completely says so instead of claiming nothing waits. What newly waits, or
+ * left, is announced by the shell (`useNeedsYouAnnouncement`), not here: this
+ * list is folded away or out of the DOM on a phone.
  */
 export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, status, t }: NeedsYouListProps) {
   const [all, setAll] = useState(false)
@@ -76,18 +78,6 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
   const setup = shown.filter((entry) => entry.group === 'setup')
   const failed = status === 'error' || incomplete
 
-  // New decisions are announced, and so is one that was answered and left.
-  const [seen, setSeen] = useState<NeedsYouEntry[]>(entries)
-  const [announcement, setAnnouncement] = useState('')
-  if (seen !== entries) {
-    const before = new Map(seen.map((entry) => [entry.key, entry]))
-    const now = new Set(entries.map((entry) => entry.key))
-    const added = entries.find((entry) => !before.has(entry.key))
-    const resolved = seen.find((entry) => entry.state === 'resolving' && !now.has(entry.key))
-    setSeen(entries)
-    if (resolved) setAnnouncement(t('kubecode.attention.resolved', { title: resolved.title }))
-    else if (added) setAnnouncement(t('kubecode.attention.newItem', { title: added.title }))
-  }
 
   return (
     <div className="kubecode-needs-you-list">
@@ -110,7 +100,6 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
           {t('kubecode.nav.needsYouShowAll', { count: entries.length })}
         </Button>
       )}
-      <span className="sr-only" role="status">{announcement}</span>
     </div>
   )
 }
