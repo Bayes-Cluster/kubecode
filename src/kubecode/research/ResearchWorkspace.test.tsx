@@ -72,7 +72,8 @@ describe('ResearchWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
     expect(onBack).toHaveBeenCalledTimes(2)
     expect(onCloseDetail).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('button', { name: 'kubecode.research.back' })).not.toBeInTheDocument()
+    // No way "back to Sessions" of its own: only the Back and Close it was given.
+    expect(screen.getAllByRole('button', { name: /back/i })).toHaveLength(1)
   })
 
   it('shows loading, then the brief with its revision', async () => {
