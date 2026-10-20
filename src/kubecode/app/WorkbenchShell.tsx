@@ -611,6 +611,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     [conversationId, location, place.view, projectId],
   )
 
+  const linkFollowedRef = useRef(false)
   const applyRoute = useCallback((route: WorkspaceRoute): boolean => {
     const target = route.project ?? projectIdRef.current
     // An unknown Project cannot be honoured: the link is abandoned at once.
@@ -618,8 +619,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (target !== projectIdRef.current) selectProject(target)
     dispatchLocation({ type: 'applyRoute', projectId: target, location: locationFromRoute(route) })
     if (route.view === 'sessions' && route.conversation) showSessionIn(target, route.conversation)
+    // A link followed after load is a move like any other: on a phone the
+    // navigation sheet makes way for the place. The first link only sets where
+    // the page opens, so the sheet stays as the layout left it.
+    if (linkFollowedRef.current) closeNavigatorSheet()
     return true
-  }, [dispatchLocation, projects, selectProject, showSessionIn])
+  }, [closeNavigatorSheet, dispatchLocation, projects, selectProject, showSessionIn])
   const routeSync = useWorkspaceRouteSync({
     apply: applyRoute,
     current: currentRoute,
@@ -627,6 +632,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     ignoreInitialLink: workspaceLocation.userMoved,
     historyMode: workspaceLocation.takeHistoryMode,
   })
+  // Once the page has opened where its address said, later links are moves.
+  const routeReady = layoutHydrated && projectId !== null && !routeSync.pending
+  useEffect(() => {
+    if (routeReady) linkFollowedRef.current = true
+  }, [routeReady])
 
   useEffect(() => {
     if (!layoutHydrated) return
