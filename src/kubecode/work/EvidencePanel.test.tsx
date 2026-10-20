@@ -53,8 +53,9 @@ describe('EvidencePanel', () => {
     const readProjectContext = vi.fn().mockResolvedValue(document('b7'))
     mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
     expect(await screen.findByText('acc 0.91')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'accuracy.csv', level: 3 })).toBeInTheDocument()
-    expect(screen.getByText('Showing version b7')).toBeInTheDocument()
+    // The title and version follow the display report, a commit after the content.
+    expect(await screen.findByRole('heading', { name: 'accuracy.csv', level: 3 })).toBeInTheDocument()
+    expect(await screen.findByText('Showing version b7')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Back to Pruning heads' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('artifact displayed b7')).toBeInTheDocument())
     expect(readProjectContext).toHaveBeenCalledWith('p1', { kind: 'artifact', id: 'a1' }, 'content')
