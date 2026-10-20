@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -56,7 +56,8 @@ describe('WorkbenchTitlebar', () => {
     fireEvent.pointerDown(bell, { button: 0, ctrlKey: false })
     expect(await screen.findByText('This Workspace')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: /Analyst wants to use pytest/ }))
-    expect(handlers.onOpenTarget).toHaveBeenCalledWith(entry.target)
+    // It opens once the menu has closed, so the menu cannot keep or return focus.
+    await waitFor(() => expect(handlers.onOpenTarget).toHaveBeenCalledWith(entry.target))
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Needs you: 3' }), { button: 0, ctrlKey: false })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Other: 2' }))
     expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-2')

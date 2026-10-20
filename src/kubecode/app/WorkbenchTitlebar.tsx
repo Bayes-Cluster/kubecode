@@ -86,8 +86,9 @@ export function WorkbenchTitlebar({
   terminalOpen,
   titlebarTargetRef,
 }: WorkbenchTitlebarProps) {
-  // Set when a decision is chosen from the bell, so closing it leaves focus there.
-  const openedEntry = useRef(false)
+  // A decision chosen from the bell opens once the menu has closed: while it is
+  // open it holds focus, and on closing it would hand focus back to the bell.
+  const chosen = useRef<NeedsYouTarget | null>(null)
   const toggleNavigation = () => {
     const nextOpen = togglePanel('sessions', sessionSidebarOpen)
     onSessionSidebarOpenChange(nextOpen)
@@ -158,11 +159,12 @@ export function WorkbenchTitlebar({
             <DropdownMenuContent
               align="end"
               className="kubecode-attention-menu"
-              // A chosen decision takes focus where it opens; the bell must not take it back.
               onCloseAutoFocus={(event) => {
-                if (!openedEntry.current) return
-                openedEntry.current = false
+                const target = chosen.current
+                if (!target) return
+                chosen.current = null
                 event.preventDefault()
+                onOpenTarget(target)
               }}
             >
               {attention.current.length > 0 && (
@@ -171,10 +173,7 @@ export function WorkbenchTitlebar({
                   {attention.current.slice(0, BELL_ENTRIES).map((entry) => (
                     <DropdownMenuItem
                       key={entry.key}
-                      onSelect={() => {
-                        openedEntry.current = true
-                        onOpenTarget(entry.target)
-                      }}
+                      onSelect={() => { chosen.current = entry.target }}
                     >
                       <span className="kubecode-attention-menu-entry">
                         <strong>{entry.title}</strong>
