@@ -88,10 +88,29 @@ describe('draftRecipients', () => {
     expect(mentionTokens(body)).toEqual(['writer', 'analyst', 'ana'])
   })
 
-  it('classifies a member who cannot receive, and ignores a removed member’s handle', () => {
+  it('classifies a member who cannot receive and a removed member, so neither falls through to the manager', () => {
     expect(draftRecipients('@unready @Analyst @old', directory)).toEqual({
-      kind: 'members', reachable: [analyst], unreachable: [{ member: unready, reason: 'needs_setup' }],
+      kind: 'members',
+      reachable: [analyst],
+      unreachable: [{ member: unready, reason: 'needs_setup' }, { member: removed, reason: 'removed' }],
     })
+    expect(draftRecipients('@old are you there?', directory)).toEqual({
+      kind: 'members', reachable: [], unreachable: [{ member: removed, reason: 'removed' }],
+    })
+  })
+
+  it('prefers a live member over a removed one with the same handle, and ignores handles no member has', () => {
+    const again = member({ id: 'new-old', name: 'Old again', handle: 'old' })
+    const reused = memberDirectory({ members: [general, removed, again], general_id: 'g' }, 'ready')
+    expect(draftRecipients('@old hi', reused)).toEqual({ kind: 'members', reachable: [again], unreachable: [] })
+    expect(draftRecipients('@nobody hi', directory)).toEqual({ kind: 'manager', manager: general })
+  })
+
+  it('knows no one while the members are loading or could not be loaded', () => {
+    const loading = memberDirectory(null, 'loading')
+    const failed = memberDirectory(null, 'error')
+    expect(draftRecipients('@analyst hi', loading)).toEqual({ kind: 'unknown', status: 'loading' })
+    expect(draftRecipients('hi', failed)).toEqual({ kind: 'unknown', status: 'error' })
   })
 })
 
@@ -114,6 +133,28 @@ describe('sendBlockedReason', () => {
     const many = memberDirectory({ members: crowd, general_id: null }, 'ready')
     expect(sendBlockedReason(draftRecipients(crowd.map((item) => `@${item.handle}`).join(' '), many), t))
       .toBe('A message can name at most 8 members.')
+  })
+
+  it('blocks a draft naming a removed member, with a reason that does not offer setup', () => {
+    expect(sendBlockedReason(draftRecipients('@old hi', directory), t))
+      .toBe('Old was removed and can no longer receive messages. Remove the mention.')
+  })
+
+  it('blocks while the members are not known, and says which', () => {
+    expect(sendBlockedReason(draftRecipients('hi', memberDirectory(null, 'loading')), t))
+      .toBe('Send is available once the members have loaded, so Kubecode knows whom this goes to.')
+    expect(sendBlockedReason(draftRecipients('hi', memberDirectory(null, 'error')), t))
+      .toBe("The members could not be loaded, so Kubecode can't tell whom this goes to. Try again before sending.")
+  })
+
+  it('blocks a draft that names no one when the project manager cannot receive it, but not one that names a member', () => {
+    const unreadyManager = { ...general, state: 'setup_required' as const, public_conversation_id: null }
+    const noManager = memberDirectory({ members: [analyst], general_id: null }, 'ready')
+    const setupManager = memberDirectory({ members: [unreadyManager, analyst], general_id: 'g' }, 'ready')
+    const reason = "The project manager can't receive messages yet. @mention a member who can, or fix the project manager in Members."
+    expect(sendBlockedReason(draftRecipients('hi', noManager), t)).toBe(reason)
+    expect(sendBlockedReason(draftRecipients('hi', setupManager), t)).toBe(reason)
+    expect(sendBlockedReason(draftRecipients('@analyst hi', setupManager), t)).toBeNull()
   })
 })
 

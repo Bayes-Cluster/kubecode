@@ -59,7 +59,9 @@ function placed(memory: PlaceMemory, children: ReactNode) {
   return <PlaceMemoryProvider memory={memory}>{children}</PlaceMemoryProvider>
 }
 
-const box = () => screen.getByRole('combobox', { name: 'Message the Workspace' }) as HTMLTextAreaElement
+// With no member to suggest, the text box is a plain textbox rather than a combobox.
+const box = () => (screen.queryByRole('combobox', { name: 'Message the Workspace' })
+  ?? screen.getByRole('textbox', { name: 'Message the Workspace' })) as HTMLTextAreaElement
 const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLElement
 const type = (value: string) => fireEvent.change(box(), { target: { value, selectionStart: value.length } })
 
@@ -104,6 +106,67 @@ describe('MessageComposer', () => {
     expect(screen.getAllByText(reason).some((element) => element.getAttribute('role') === 'status')).toBe(true)
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+  })
+
+  it('blocks sending while the members load, without saying the project manager needs setup', () => {
+    const onSend = vi.fn()
+    render(<Harness directory={memberDirectory(null, 'loading')} onSend={onSend} />)
+    type('@analyst hello')
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAccessibleDescription('Send is available once the members have loaded, so Kubecode knows whom this goes to.')
+    expect(toRow()).toHaveTextContent('Loading members…')
+    expect(screen.queryByText(/needs setup/)).not.toBeInTheDocument()
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box().value).toBe('@analyst hello')
+  })
+
+  it('blocks sending when the members could not be loaded, and offers to load them again', () => {
+    const reload = vi.fn()
+    const onSend = vi.fn()
+    render(<Harness directory={{ ...memberDirectory(null, 'error'), reload }} onSend={onSend} />)
+    type('hello')
+    const reason = "The members could not be loaded, so Kubecode can't tell whom this goes to. Try again before sending."
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveAccessibleDescription(reason)
+    expect(screen.getAllByText(reason).some((element) => element.getAttribute('role') === 'status')).toBe(true)
+    expect(screen.queryByText(/needs setup/)).not.toBeInTheDocument()
+    fireEvent.click(within(toRow()).getByRole('button', { name: 'Try again' }))
+    expect(reload).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('blocks a draft that names no one while the project manager needs setup, and sends one that names a member', async () => {
+    const onSend = vi.fn().mockResolvedValue(saved())
+    const manager = { ...general, state: 'setup_required' as const, public_conversation_id: null }
+    render(<Harness directory={memberDirectory({ members: [manager, analyst], general_id: 'g' }, 'ready')} onSend={onSend} />)
+    type('anyone?')
+    expect(toRow()).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAccessibleDescription(
+      "The project manager can't receive messages yet. @mention a member who can, or fix the project manager in Members.",
+    )
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    type('@analyst anyone?')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+  })
+
+  it('blocks a draft naming a removed member instead of sending it to the project manager', () => {
+    const gone = member({ id: 'old', name: 'Old', handle: 'old', state: 'removed', public_conversation_id: null })
+    const onSend = vi.fn()
+    render(<Harness directory={memberDirectory({ members: [general, analyst, gone], general_id: 'g' }, 'ready')} onSend={onSend} />)
+    type('@old are you there?')
+    expect(within(toRow()).getByRole('list', { name: 'To' })).toHaveTextContent(/Old.*Removed/)
+    expect(toRow()).not.toHaveTextContent('Project manager')
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAccessibleDescription('Old was removed and can no longer receive messages. Remove the mention.')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
   })
 
   it('does not send on Shift+Enter or while an input method composes', () => {
@@ -223,6 +286,17 @@ describe('MessageComposer', () => {
     )
     expect(box().value).toBe('@writer draft the summary')
     expect(reload).toHaveBeenCalled()
+  })
+
+  it('names no one as "@" when the server refuses a mention of a member it does not know', async () => {
+    const onSend = vi.fn().mockRejectedValue(new ApiError('mention_unavailable', 'no', 400, null, 'removed', 'gone-id'))
+    render(<Harness onSend={onSend} />)
+    type('@writer draft the summary')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A member you mentioned can no longer receive messages. Your message was kept; check the mentions, or Members.',
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/^@ /)
   })
 
   it('offers a named stop that does not block sending', async () => {

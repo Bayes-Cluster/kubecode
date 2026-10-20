@@ -97,13 +97,26 @@ export function removeMention(body: string, handle: string): string {
 }
 
 export type DraftRecipients =
+  /** The members are not known yet (loading) or could not be read (error): whom it goes to is unknown. */
+  | { kind: 'unknown'; status: 'loading' | 'error' }
   | { kind: 'manager'; manager: Member | null }
   | { kind: 'members'; reachable: Member[]; unreachable: Array<{ member: Member; reason: 'needs_setup' | 'removed' }> }
 
-/** Whom the draft goes to: the live members it names, or the project manager when it names none. */
+/** The member a handle names: a live member first, then a removed one, so a removed member's mention is never dropped. */
+function memberByHandle(handle: string, directory: MemberDirectory): Member | undefined {
+  const named = (item: Member) => item.handle.toLowerCase() === handle
+  return directory.live.find(named) ?? [...directory.byId.values()].find((item) => item.state === 'removed' && named(item))
+}
+
+/**
+ * Whom the draft goes to: the members it names (removed ones too, as
+ * unreachable), or the project manager when it names none. Unknown until the
+ * members are read, so a mention is never mistaken for plain text.
+ */
 export function draftRecipients(body: string, directory: MemberDirectory): DraftRecipients {
+  if (directory.status !== 'ready') return { kind: 'unknown', status: directory.status }
   const named = mentionTokens(body)
-    .map((handle) => directory.live.find((item) => item.handle.toLowerCase() === handle))
+    .map((handle) => memberByHandle(handle, directory))
     .filter((item): item is Member => item !== undefined)
   if (named.length === 0) return { kind: 'manager', manager: directory.manager }
   const reachable: Member[] = []
@@ -118,13 +131,21 @@ export function draftRecipients(body: string, directory: MemberDirectory): Draft
 
 /** Why the draft cannot be sent as it is, or null. */
 export function sendBlockedReason(recipients: DraftRecipients, t: Translator): string | null {
-  if (recipients.kind !== 'members') return null
+  if (recipients.kind === 'unknown') {
+    return recipients.status === 'loading'
+      ? t('kubecode.channel.blocked.membersLoading')
+      : t('kubecode.channel.blocked.membersFailed')
+  }
+  if (recipients.kind === 'manager') {
+    return recipients.manager && canReceive(recipients.manager)
+      ? null
+      : t('kubecode.channel.blocked.managerUnavailable')
+  }
   const blocked = recipients.unreachable[0]
   if (blocked) {
-    return t('kubecode.channel.recipientUnavailable', {
-      name: blocked.member.name,
-      state: t(STATE_LABELS[blocked.reason === 'removed' ? 'removed' : 'setup_required']),
-    })
+    return blocked.reason === 'removed'
+      ? t('kubecode.channel.recipientRemoved', { name: blocked.member.name })
+      : t('kubecode.channel.recipientUnavailable', { name: blocked.member.name, state: t(STATE_LABELS.setup_required) })
   }
   if (recipients.reachable.length > MAX_RECIPIENTS) {
     return t('kubecode.channel.tooManyRecipients', { max: MAX_RECIPIENTS })

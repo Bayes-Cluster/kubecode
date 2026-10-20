@@ -120,8 +120,10 @@ export function MessageComposer({
         taskCleared: sent.taskCleared,
       }))
       if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
-        const name = (cause.memberId && directory.byId.get(cause.memberId)?.name) || '@'
-        setError(t('kubecode.channel.mentionUnavailable', { name }))
+        const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
+        setError(named
+          ? t('kubecode.channel.mentionUnavailable', { name: named.name })
+          : t('kubecode.channel.mentionUnavailableUnknown'))
         directory.reload()
       } else {
         setError(errorMessage(cause, t('kubecode.error')))
@@ -177,6 +179,18 @@ export function MessageComposer({
     })
     : []
   const manager = recipients.kind === 'manager' ? recipients.manager : null
+  const nobody = recipients.kind === 'unknown'
+    ? recipients.status === 'loading'
+      ? <span className="kubecode-composer-hint">{t('kubecode.members.loading')}</span>
+      : (
+        <span className="kubecode-composer-warning">
+          {t('kubecode.members.loadFailed')}{' '}
+          <Button size="xs" variant="ghost" onClick={() => directory.reload()}>{t('kubecode.members.retryLoad')}</Button>
+        </span>
+      )
+    : manager && canReceive(manager)
+      ? <Identity size="sm" view={memberView(manager, t)} />
+      : <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>
   const taskLabel = draft.task ? labels({ kind: 'research', id: draft.task }) : null
 
   return (
@@ -241,14 +255,12 @@ export function MessageComposer({
         below={(
           <>
             <RecipientRow
-              empty={manager && canReceive(manager)
-                ? <Identity size="sm" view={memberView(manager, t)} />
-                : <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>}
+              empty={nobody}
               label={t('kubecode.channel.to')}
               recipients={toRecipients}
               onFocusAfterLast={focusText}
             />
-            {blocked && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
+            {blocked && draft.body.trim() && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
             <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
             {error && (
               <p className="kubecode-research-error" role="alert">
