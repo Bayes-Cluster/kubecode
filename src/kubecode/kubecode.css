@@ -4491,6 +4491,8 @@
 .kubecode-task-card small { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
 .kubecode-task-badges { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1); min-width: 0; }
 .kubecode-task-condition-reason { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
+/* On a card the reason takes its own line under the badges. */
+.kubecode-task-condition-reason[data-compact] { flex-basis: 100%; }
 .kubecode-task-card-people { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); font: var(--ws-font-meta); }
 .kubecode-task-card-person { align-items: center; display: inline-flex; gap: var(--ws-space-1); min-width: 0; }
 

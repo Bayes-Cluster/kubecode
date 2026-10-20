@@ -76,7 +76,7 @@ describe('TaskPanel', () => {
     expect(await panel().findByRole('heading', { name: 'Pruning heads', level: 3 })).toBeInTheDocument()
     expect(panel().getAllByText('In progress')).toHaveLength(1)
     expect(panel().getByText('Blocked')).toBeInTheDocument()
-    expect(panel().getByText('needs a GPU')).toBeInTheDocument()
+    expect(panel().getByText('All of its active work is blocked.')).toBeInTheDocument()
     expect(panel().queryByText(/^(Open|Resolved)$/)).not.toBeInTheDocument()
     expect(panel().queryAllByRole('button').filter((button) => FORBIDDEN.test(button.textContent ?? ''))).toEqual([])
     expect(panel().getByText('Specialists are working. The General Agent will ask you to review the results.')).toBeInTheDocument()

@@ -48,7 +48,10 @@ describe('TaskBoardView', () => {
     const columns = screen.getAllByRole('region').filter((region) => region.hasAttribute('data-stage'))
     expect(columns.map((column) => column.getAttribute('data-stage'))).toEqual(['ready', 'in_progress', 'review', 'done'])
     const running = within(screen.getByRole('region', { name: 'In progress' }))
-    expect(running.getByText('Blocked')).toHaveAttribute('title', 'needs GPU')
+    expect(running.getByText('Blocked')).toBeInTheDocument()
+    // Why, in words on the card itself (reachable on touch), in the app's language.
+    expect(running.getByText('All of its active work is blocked.')).toBeVisible()
+    expect(running.queryByText('needs GPU')).not.toBeInTheDocument()
     expect(running.getByText('1 of 2 work items done')).toBeInTheDocument()
     expect(running.getByText(/^Work started · /)).toBeInTheDocument()
     expect(running.getAllByText('Analyst').length).toBeGreaterThan(0)

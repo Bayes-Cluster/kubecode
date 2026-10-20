@@ -34,6 +34,18 @@ export function conditionLabel(t: Translator, condition: TaskCondition): string 
   return condition === 'none' ? null : t(CONDITION_LABELS[condition])
 }
 
+const CONDITION_REASONS: Record<Exclude<TaskCondition, 'none'>, Key> = {
+  waiting: 'kubecode.task.conditionReason.waiting',
+  blocked: 'kubecode.task.conditionReason.blocked',
+  paused: 'kubecode.task.conditionReason.paused',
+  needs_input: 'kubecode.task.conditionReason.needs_input',
+}
+
+/** Why a Task has its condition, in the app's language (the server's reason is English). */
+export function conditionReason(t: Translator, condition: TaskCondition): string | null {
+  return condition === 'none' ? null : t(CONDITION_REASONS[condition])
+}
+
 /** An outcome in words; `unknown` (not judged) has none. */
 export function outcomeLabel(t: Translator, outcome: WorkOutcome | null | undefined): string | null {
   switch (outcome) {
