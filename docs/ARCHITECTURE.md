@@ -363,6 +363,32 @@ read; `channel_api` refuses mentions and citations of one. The browser surface
 is `src/kubecode/dm/` (`DmPane`, `DmShareDialog`) beside the channel's task
 filter, citations, and collapsed routing notes.
 
+Member identity and member-following routes (ADR 0229): every conversation
+message the API serves (`GET`/`POST …/channels/{c}/messages`, one message by
+id, and the `…/dm/share` response) is a `MessageView` — the stored `Message`
+plus `author_member_id` and `mention_member_ids`, resolved at read time through
+`MemberStore::public_authors` (every public Session a member of the Project has
+had, current or ended; never a DM Session). Nothing is stored or migrated, and
+the projection grants nothing. A failed roster lookup degrades to no member ids
+(logged), so identity never fails a read and never names the wrong member.
+`POST …/messages` accepts `mentions: [{member_id}]` beside the legacy
+`[{session_id}]`: a member resolves to its current public Session when the
+message is written, or the post is refused with 400 `mention_unavailable`
+(`reason`: `removed`, `needs_setup`, `not_found`); a retry with the same client
+message id reuses the Session the stored message named that member by
+(`ChannelStore::by_client_message_id`), so it replays after a Session
+replacement. The Orchestrator re-resolves a conversation route (`discussion`,
+`mention`, `agent_handoff`, `task_review`; `RouteKind::follows_member`) at
+delivery when its target is a member's ended public Session: to the member's
+current public Session, failed with a note if the member was removed, retried
+then failed with a note if it needs setup. `message_routes.recipient` records
+the Session actually reached and `next_hops` counts depth through it. A
+researcher message that reaches the General member is framed for discussion and
+admission even when the manager is @-named, and every frame quotes the
+replied-to message fenced. `general_recent` reports `reply_to` and `to` (named
+members' handles through public Sessions only). The `ask`/`request` intents and
+Thread routes stay accepted for older pages.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the

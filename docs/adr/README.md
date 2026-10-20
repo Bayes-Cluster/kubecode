@@ -72,3 +72,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0225](0225-task-board-inspector-and-browser-acceptance.md) | The Task board, the Task inspector, and browser acceptance with member fixtures |
 | [0226](0226-manager-launch-profile-review-routing-and-evidence-pins.md) | The manager's provider launch profile, review decisions routed to the manager, and review evidence pins |
 | [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls (proposed) |
+| [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
