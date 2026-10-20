@@ -117,6 +117,16 @@ impl IntoResponse for ApiError {
                 "retry_limit",
                 OrchestratorError::RetryLimit.to_string(),
             ),
+            Self::Orchestrator(OrchestratorError::NeedsSetup) => (
+                StatusCode::CONFLICT,
+                "route_needs_setup",
+                OrchestratorError::NeedsSetup.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::Unavailable) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "route_unavailable",
+                OrchestratorError::Unavailable.to_string(),
+            ),
             Self::Orchestrator(OrchestratorError::Superseded) => (
                 StatusCode::CONFLICT,
                 "route_superseded",

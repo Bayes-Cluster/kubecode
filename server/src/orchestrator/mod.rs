@@ -1442,7 +1442,11 @@ impl Orchestrator {
     /// since left, it goes to the member's current public Session. A removed
     /// member is gone; one that needs setup may be fixed, so it is retried.
     /// Any other route, and a Session that is no member's, is unchanged.
-    fn member_session(&self, route: &Route, session_id: &str) -> Result<String, RecipientError> {
+    pub(super) fn member_session(
+        &self,
+        route: &Route,
+        session_id: &str,
+    ) -> Result<String, RecipientError> {
         let Some(members) = self
             .members
             .as_ref()
@@ -1463,7 +1467,7 @@ impl Orchestrator {
                         Err(RecipientError::Gone("the member was removed".into()))
                     }
                     (MemberState::Active, Some(next)) => Ok(next),
-                    _ => Err(RecipientError::Unavailable("the member needs setup".into())),
+                    _ => Err(RecipientError::Unavailable(NEEDS_SETUP.into())),
                 }
             }
             Ok(_) => Ok(session_id.to_owned()),

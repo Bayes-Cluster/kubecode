@@ -169,24 +169,9 @@ impl Orchestrator {
         if route.state != RouteState::Failed {
             return Ok(RetryOutcome::AlreadyMoving(route));
         }
-        // A conversation route addressed to a Session that is gone (a member
-        // removed, a plain Session deleted) cannot be retried; coordinator,
-        // decision and review routes find their recipient at delivery.
-        if let Target::Session { session_id } = &route.target
-            && matches!(
-                route.kind,
-                RouteKind::Discussion | RouteKind::Mention | RouteKind::Ask
-            )
-        {
-            let session = self
-                .member_session(&route, session_id)
-                .map_err(|_| OrchestratorError::TargetGone)?;
-            if !matches!(
-                self.agents.visible_conversation(project_id, &session),
-                Ok(Some(_))
-            ) {
-                return Err(OrchestratorError::TargetGone);
-            }
+        // A route to a Session: gone, waiting for setup, or not checkable now.
+        if let Target::Session { session_id } = &route.target {
+            self.retry_target(&route, session_id)?;
         }
         if route.retries >= MAX_MANUAL_RETRIES {
             return Err(OrchestratorError::RetryLimit);
@@ -195,19 +180,70 @@ impl Orchestrator {
         if self.superseded(&route)? {
             return Err(OrchestratorError::Superseded);
         }
-        let changed = self.connection().execute(
-            "UPDATE message_routes SET state = 'pending', attempts = 0, busy = 0,
-               next_attempt_at = 0, lease_until = 0, last_error = NULL, retries = retries + 1
-             WHERE id = ?1 AND project_id = ?2 AND state = 'failed'",
-            rusqlite::params![route_id, project_id],
-        )?;
+        let changed = self.rearm(project_id, route_id)?;
         let route = self.route(project_id, route_id)?;
-        if changed == 0 {
+        if !changed {
+            if route.state == RouteState::Failed && route.retries >= MAX_MANUAL_RETRIES {
+                return Err(OrchestratorError::RetryLimit);
+            }
             return Ok(RetryOutcome::AlreadyMoving(route));
         }
         self.announce(&route, "retried");
         self.wake();
         Ok(RetryOutcome::Requeued(route))
+    }
+
+    /// Whether a route to this Session can go now. A conversation route whose
+    /// Session is gone (a member removed, a plain Session deleted) never can;
+    /// coordinator, decision and review routes find their recipient at
+    /// delivery. A member that needs setup can once it is fixed, and a lookup
+    /// that failed is worth trying again: neither is "gone".
+    fn retry_target(&self, route: &Route, session_id: &str) -> Result<(), OrchestratorError> {
+        let conversation = matches!(
+            route.kind,
+            RouteKind::Discussion | RouteKind::Mention | RouteKind::Ask
+        );
+        let session = match self.member_session(route, session_id) {
+            Ok(session) => session,
+            Err(RecipientError::Unavailable(reason)) if reason == NEEDS_SETUP => {
+                return Err(OrchestratorError::NeedsSetup);
+            }
+            Err(RecipientError::Gone(_)) if conversation => {
+                return Err(OrchestratorError::TargetGone);
+            }
+            Err(RecipientError::Gone(_) | RecipientError::Hold(_)) => return Ok(()),
+            Err(RecipientError::Unavailable(_)) => return Err(OrchestratorError::Unavailable),
+        };
+        if let Some(members) = &self.members
+            && route.kind.follows_member()
+        {
+            match members.by_conversation(&route.project_id, &session) {
+                Ok(Some(resolved)) if resolved.member.state == MemberState::SetupRequired => {
+                    return Err(OrchestratorError::NeedsSetup);
+                }
+                Ok(_) => {}
+                Err(_) => return Err(OrchestratorError::Unavailable),
+            }
+        }
+        match self.agents.visible_conversation(&route.project_id, &session) {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) if conversation => Err(OrchestratorError::TargetGone),
+            Ok(None) => Ok(()),
+            Err(_) => Err(OrchestratorError::Unavailable),
+        }
+    }
+
+    /// The one conditional write that re-arms a failed route: only while it
+    /// is failed and under the retry limit, so concurrent retries collapse
+    /// and never pass the limit. Whether it changed the route.
+    pub(super) fn rearm(&self, project_id: &str, route_id: &str) -> Result<bool, OrchestratorError> {
+        let changed = self.connection().execute(
+            "UPDATE message_routes SET state = 'pending', attempts = 0, busy = 0,
+               next_attempt_at = 0, lease_until = 0, last_error = NULL, retries = retries + 1
+             WHERE id = ?1 AND project_id = ?2 AND state = 'failed' AND retries < ?3",
+            rusqlite::params![route_id, project_id, MAX_MANUAL_RETRIES],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Whether this is a review verdict its Task has moved past.

@@ -2307,6 +2307,7 @@ mod delivery_state {
 
     struct Crew {
         orchestrator: Orchestrator,
+        members: Arc<MemberStore>,
         general: Member,
         analyst: Member,
     }
@@ -2337,9 +2338,10 @@ mod delivery_state {
             Arc::clone(&r.f.research),
         )
         .unwrap()
-        .with_members(members);
+        .with_members(Arc::clone(&members));
         Crew {
             orchestrator,
+            members,
             general,
             analyst,
         }
@@ -2379,6 +2381,7 @@ mod delivery_state {
             last_error: None,
             delivered_at: None,
             retryable: false,
+            superseded: false,
             note_ids: Vec::new(),
         }
     }
@@ -2683,6 +2686,67 @@ mod delivery_state {
             1 + MAX_MANUAL_RETRIES as usize
         );
         assert!(!delivery.routes[0].retryable);
+    }
+
+    /// The limit is part of the one conditional write, so two retries racing
+    /// past the read of `retries` can never re-arm a route a fourth time.
+    #[test]
+    fn the_retry_limit_is_enforced_by_the_conditional_write_itself() {
+        let r = rig();
+        let crew = crew(&r);
+        say(&r, "hello", &[]);
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let failed = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE message_routes SET retries = ?2 WHERE id = ?1",
+                rusqlite::params![failed.id, MAX_MANUAL_RETRIES],
+            )
+            .unwrap();
+        // As if another retry had been counted after this one read the row.
+        assert!(!crew.orchestrator.rearm(r.project(), &failed.id).unwrap());
+        let after = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(
+            (after.state, after.retries),
+            (RouteState::Failed, MAX_MANUAL_RETRIES)
+        );
+    }
+
+    /// A member that needs setup is not gone: the retry says why it cannot
+    /// go now, and goes once setup is fixed.
+    #[test]
+    fn a_retry_to_a_member_that_needs_setup_waits_for_the_fix_and_is_never_gone() {
+        let r = rig();
+        let crew = crew(&r);
+        say(&r, "@analyst look", &[&crew.analyst]);
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let failed = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(failed.state, RouteState::Failed);
+        crew.members
+            .record_setup_error(&crew.analyst.id, "the provider rejected an option")
+            .unwrap();
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), &failed.id),
+            Err(OrchestratorError::NeedsSetup)
+        ));
+        let unchanged = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(
+            (unchanged.state, unchanged.retries),
+            (RouteState::Failed, 0),
+            "no retry is used up"
+        );
+        crew.members
+            .finish_setup(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap();
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), &failed.id).unwrap(),
+            RetryOutcome::Requeued(_)
+        ));
     }
 
     #[test]

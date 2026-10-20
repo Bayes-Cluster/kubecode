@@ -177,6 +177,9 @@ pub enum RecipientError {
     Hold(String),
 }
 
+/// Why a route to a member that needs setup waits (retried once it is fixed).
+pub const NEEDS_SETUP: &str = "the member needs setup";
+
 /// How long a held route waits before its conditions are looked at again.
 pub const HOLD_SECS: i64 = 30;
 
@@ -205,6 +208,12 @@ pub enum OrchestratorError {
     /// no longer true.
     #[error("the Task has moved on since this decision; it is not delivered late")]
     Superseded,
+    /// The member it is for needs setup: it can be retried once that is fixed.
+    #[error("the member this was for needs setup")]
+    NeedsSetup,
+    /// The recipient could not be looked up just now: try again.
+    #[error("the recipient could not be checked just now")]
+    Unavailable,
     #[error(transparent)]
     Channel(#[from] crate::channel_store::ChannelError),
     #[error(transparent)]
