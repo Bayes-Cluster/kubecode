@@ -106,8 +106,7 @@ pub enum RetryOutcome {
     AlreadyMoving(Route),
 }
 
-/// Reroutes of one denied message at most.
-pub const MAX_REROUTES: u32 = 3;
+pub use crate::channel_store::MAX_REROUTES;
 
 /// A message's state from its mark and its routes. Pure.
 pub fn aggregate(mark: &RoutingMark, routes: &[RouteDelivery]) -> MessageDeliveryState {

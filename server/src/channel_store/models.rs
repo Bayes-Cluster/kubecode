@@ -251,6 +251,21 @@ pub struct RoutingMark {
     pub intent_claimed: bool,
 }
 
+/// Reroutes of one message at most (ADR 0232).
+pub const MAX_REROUTES: u32 = 3;
+
+/// What a reroute did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RerouteOutcome {
+    /// It will be read again.
+    Rearmed,
+    /// It is already waiting to be read.
+    AlreadyPending,
+    /// Not a denied researcher message, or rerouted too often.
+    NotReroutable,
+}
+
 /// The result of claiming a message's intent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Claim {

@@ -1224,3 +1224,57 @@ async fn the_researcher_retries_a_failed_delivery_over_http() {
         (StatusCode::CONFLICT, Some("retry_limit"))
     );
 }
+
+#[tokio::test]
+async fn a_denied_message_is_rerouted_once_the_member_is_set_up() {
+    let env = env();
+    let crew = crew(&env).await;
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    env.state
+        .members
+        .record_setup_error(&analyst_id, "the provider refused the model")
+        .unwrap();
+    let ask = say(&env, &crew, "@analyst look", &[&session(&crew.analyst)]).await;
+    let id = ask["id"].as_str().unwrap().to_owned();
+    env.state.orchestrator.route_conversation().unwrap();
+    let (_, page) = call(&env, Method::GET, &messages_path(&env, &crew), Value::Null).await;
+    let delivery = &page["deliveries"][&id];
+    assert_eq!(delivery["state"], "denied", "{page}");
+    assert_eq!(delivery["denial"]["code"], "member_unavailable");
+    assert_eq!(delivery["denial"]["reroutable"], true);
+
+    env.state
+        .members
+        .finish_setup(&env.project, &analyst_id, &|_| true)
+        .unwrap();
+    let reroute = format!("{}/{id}/reroute", messages_path(&env, &crew));
+    let (status, rerouted) = call(&env, Method::POST, &reroute, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{rerouted}");
+    assert_eq!(rerouted["state"], "saved");
+    env.state.orchestrator.route_conversation().unwrap();
+    let (_, page) = call(&env, Method::GET, &messages_path(&env, &crew), Value::Null).await;
+    assert_eq!(page["deliveries"][&id]["state"], "sending", "{page}");
+    assert_eq!(
+        page["deliveries"][&id]["routes"][0]["recipient"]["handle"],
+        "analyst"
+    );
+
+    // Routed now, it is not rerouted again; an unknown message is not found.
+    let (status, body) = call(&env, Method::POST, &reroute, Value::Null).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("message_not_reroutable")),
+        "{body}"
+    );
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{}/missing/reroute", messages_path(&env, &crew)),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("message_not_found"))
+    );
+}

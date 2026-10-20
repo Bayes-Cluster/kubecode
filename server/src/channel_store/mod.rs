@@ -123,6 +123,15 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(connection, "channel_messages", "routing", "TEXT")?;
+    // Why a message reached nobody (or not everyone it named), and how often
+    // the researcher had it read again (ADR 0232).
+    ensure_column(connection, "channel_messages", "routing_issue", "TEXT")?;
+    ensure_column(
+        connection,
+        "channel_messages",
+        "reroutes",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     // Messages written before Tasks were associated with them: the first
     // research question a message references is its Task. Idempotent.
     connection.execute(
@@ -881,8 +890,8 @@ impl ChannelStore {
         for chunk in ids.chunks(100) {
             let placeholders = vec!["?"; chunk.len()].join(", ");
             let mut statement = connection.prepare(&format!(
-                "SELECT id, routing, intent_claimed_by IS NOT NULL FROM channel_messages
-                 WHERE project_id = ?1 AND id IN ({placeholders})"
+                "SELECT id, routing, intent_claimed_by IS NOT NULL, routing_issue, reroutes
+                 FROM channel_messages WHERE project_id = ?1 AND id IN ({placeholders})"
             ))?;
             let params: Vec<&dyn rusqlite::ToSql> =
                 std::iter::once(&project_id as &dyn rusqlite::ToSql)
@@ -893,8 +902,8 @@ impl ChannelStore {
                     row.get::<_, String>(0)?,
                     RoutingMark {
                         routing: row.get(1)?,
-                        issue: None,
-                        reroutes: 0,
+                        issue: row.get(3)?,
+                        reroutes: row.get::<_, i64>(4)?.max(0) as u32,
                         intent_claimed: row.get(2)?,
                     },
                 ))
@@ -1233,6 +1242,100 @@ impl ChannelStore {
             params![message_id, project_id],
         )?;
         Ok(())
+    }
+
+    /// Records that a message reached nobody, and why (a code): a fact of the
+    /// message, not only a note (ADR 0232).
+    pub fn mark_denied(
+        &self,
+        project_id: &str,
+        message_id: &str,
+        code: &str,
+    ) -> Result<(), ChannelError> {
+        self.connection().execute(
+            "UPDATE channel_messages SET routing = 'denied', routing_issue = ?3
+             WHERE id = ?1 AND project_id = ?2 AND routing = 'pending'",
+            params![message_id, project_id, code],
+        )?;
+        Ok(())
+    }
+
+    /// Records that a message was read and reached some, not all, of the
+    /// members it named.
+    pub fn mark_routed_with_issue(
+        &self,
+        project_id: &str,
+        message_id: &str,
+        code: &str,
+    ) -> Result<(), ChannelError> {
+        self.connection().execute(
+            "UPDATE channel_messages SET routing = 'done', routing_issue = ?3
+             WHERE id = ?1 AND project_id = ?2 AND routing = 'pending'",
+            params![message_id, project_id, code],
+        )?;
+        Ok(())
+    }
+
+    /// Records why a legacy intent was refused (the intent stays claimed).
+    pub fn mark_issue(
+        &self,
+        project_id: &str,
+        message_id: &str,
+        code: &str,
+    ) -> Result<(), ChannelError> {
+        self.connection().execute(
+            "UPDATE channel_messages SET routing_issue = ?3 WHERE id = ?1 AND project_id = ?2",
+            params![message_id, project_id, code],
+        )?;
+        Ok(())
+    }
+
+    /// The researcher has a denied (or partly denied) top-level message read
+    /// again, at most `MAX_REROUTES` times; members it already reached are
+    /// never routed twice (one route per source and target).
+    pub fn reroute(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        message_id: &str,
+    ) -> Result<RerouteOutcome, ChannelError> {
+        self.write(|tx| {
+            let message = load_message(tx, project_id, message_id)?;
+            if message.channel_id != channel_id {
+                return Err(ChannelError::MessageNotFound);
+            }
+            let changed = tx.execute(
+                "UPDATE channel_messages
+                 SET routing = 'pending', routing_issue = NULL, reroutes = reroutes + 1
+                 WHERE id = ?1 AND project_id = ?2 AND channel_id = ?3
+                   AND author_kind = 'researcher' AND thread_id IS NULL
+                   AND (routing = 'denied' OR (routing = 'done' AND routing_issue IS NOT NULL))
+                   AND reroutes < ?4",
+                params![message_id, project_id, channel_id, MAX_REROUTES],
+            )?;
+            if changed == 0 {
+                let routing: Option<String> = tx.query_row(
+                    "SELECT routing FROM channel_messages WHERE id = ?1",
+                    [message_id],
+                    |row| row.get(0),
+                )?;
+                let outcome = if routing.as_deref() == Some("pending") {
+                    RerouteOutcome::AlreadyPending
+                } else {
+                    RerouteOutcome::NotReroutable
+                };
+                return Ok((outcome, None));
+            }
+            Ok((
+                RerouteOutcome::Rearmed,
+                Some((
+                    project_id.to_owned(),
+                    channel_id.to_owned(),
+                    None,
+                    Change::Message,
+                )),
+            ))
+        })
     }
 
     /// Unclaimed intents of every Project, oldest first (for the orchestrator).

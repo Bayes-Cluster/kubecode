@@ -184,6 +184,13 @@ fn quoted(label: &str, text: &str) -> String {
     )
 }
 
+/// What reading one conversation message did.
+struct RouteOutcome {
+    routed: bool,
+    /// Why somebody it named (or the manager) was not reached.
+    issue: Option<&'static str>,
+}
+
 /// A new route's identity and payload.
 pub struct NewRoute<'a> {
     pub project_id: &'a str,
@@ -521,6 +528,11 @@ impl Orchestrator {
                         .is_ok()
                         && self.claim(&message).is_ok()
                     {
+                        let _ = self.channels.mark_issue(
+                            &message.project_id,
+                            &message.id,
+                            "request_refused",
+                        );
                         report.denied += 1;
                     }
                 }
@@ -540,16 +552,33 @@ impl Orchestrator {
         let mut report = RoutingReport::default();
         for message in self.channels.pending_routing(BATCH)? {
             match self.route_chatter(&message) {
-                Ok(true) => {
+                Ok(RouteOutcome {
+                    routed: true,
+                    issue,
+                }) => {
                     report.routed += 1;
-                    self.channels
-                        .mark_routed(&message.project_id, &message.id)?;
+                    match issue {
+                        Some(code) => self.channels.mark_routed_with_issue(
+                            &message.project_id,
+                            &message.id,
+                            code,
+                        )?,
+                        None => self
+                            .channels
+                            .mark_routed(&message.project_id, &message.id)?,
+                    }
                     self.announce_message(&message, "routed");
                 }
-                Ok(false) => {
+                Ok(RouteOutcome {
+                    routed: false,
+                    issue,
+                }) => {
                     report.denied += 1;
-                    self.channels
-                        .mark_routed(&message.project_id, &message.id)?;
+                    self.channels.mark_denied(
+                        &message.project_id,
+                        &message.id,
+                        issue.unwrap_or("manager_unavailable"),
+                    )?;
                     self.announce_message(&message, "denied");
                 }
                 // Storage trouble is transient: the message stays unread and the
@@ -571,10 +600,13 @@ impl Orchestrator {
         Ok(report)
     }
 
-    /// `Ok(true)` when something was routed, `Ok(false)` when nobody could be.
-    fn route_chatter(&self, message: &Message) -> Result<bool, OrchestratorError> {
+    /// Whether something was routed, and why somebody it named was not reached.
+    fn route_chatter(&self, message: &Message) -> Result<RouteOutcome, OrchestratorError> {
         let Some(members) = &self.members else {
-            return Ok(true);
+            return Ok(RouteOutcome {
+                routed: true,
+                issue: None,
+            });
         };
         let project_id = message.project_id.as_str();
         let author = match (message.author_kind, message.author_ref.as_deref()) {
@@ -583,10 +615,14 @@ impl Orchestrator {
         };
         if message.author_kind == AuthorKind::Agent && author.is_none() {
             // Only a live member's public Session speaks in the conversation.
-            return Ok(false);
+            return Ok(RouteOutcome {
+                routed: false,
+                issue: Some("member_unavailable"),
+            });
         }
         let mut targets: Vec<Member> = Vec::new();
         let mut unreachable: Vec<String> = Vec::new();
+        let mut issue: Option<&'static str> = None;
         for mention in &message.mentions {
             if message.author_ref.as_deref() == Some(mention.session_id.as_str()) {
                 continue;
@@ -597,11 +633,19 @@ impl Orchestrator {
                 }
                 Some(_) => {}
                 None => match members.by_conversation(project_id, &mention.session_id)? {
-                    Some(resolved) if resolved.binding == Binding::Dm => unreachable.push(
-                        "a direct message is private to the researcher and one member".to_owned(),
-                    ),
-                    Some(_) => unreachable
-                        .push("that member is not available (check Settings > Members)".to_owned()),
+                    Some(resolved) if resolved.binding == Binding::Dm => {
+                        issue.get_or_insert("dm_private");
+                        unreachable.push(
+                            "a direct message is private to the researcher and one member"
+                                .to_owned(),
+                        )
+                    }
+                    Some(_) => {
+                        issue.get_or_insert("member_unavailable");
+                        unreachable.push(
+                            "that member is not available (check Settings > Members)".to_owned(),
+                        )
+                    }
                     // A Session that is not a member keeps the older behavior: a
                     // mention records who was named and routes nothing.
                     None => {}
@@ -665,15 +709,32 @@ impl Orchestrator {
                 )
             };
             let reason = unreachable.first().map_or(fallback, String::as_str);
+            // A message read again after a reroute is noted under its own key.
+            let reroutes = self
+                .channels
+                .routing_marks(project_id, std::slice::from_ref(&message.id))?
+                .get(&message.id)
+                .map_or(0, |mark| mark.reroutes);
+            let key = match reroutes {
+                0 => format!("{key}:{}", message.id),
+                count => format!("{key}:{}:{count}", message.id),
+            };
             self.note(
                 project_id,
                 &message.channel_id,
                 None,
-                &format!("{key}:{}", message.id),
+                &key,
                 &format!("{lead}: {reason}."),
             )?;
+            if issue.is_none() {
+                issue = Some(if message.author_kind == AuthorKind::Agent {
+                    "member_unavailable"
+                } else {
+                    "manager_unavailable"
+                });
+            }
         }
-        Ok(routed)
+        Ok(RouteOutcome { routed, issue })
     }
 
     /// The project manager's frame for a researcher's message, whether it was
@@ -875,6 +936,11 @@ impl Orchestrator {
                         "This request was not passed on: there is no approved round to carry \
                          it out. Start a round from the research question, then ask again. \
                          Messages never authorize work or widen a budget.",
+                    )?;
+                    self.channels.mark_issue(
+                        &message.project_id,
+                        &message.id,
+                        "request_refused",
                     )?;
                     self.claim(message)?;
                     Ok(false)

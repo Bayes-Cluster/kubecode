@@ -32,6 +32,10 @@ pub fn routes() -> Router<AppState> {
             get(get_message),
         )
         .route(
+            "/projects/{project_id}/channels/{channel_id}/messages/{message_id}/reroute",
+            axum::routing::post(reroute_message),
+        )
+        .route(
             "/projects/{project_id}/channels/{channel_id}/threads",
             get(list_threads).post(start_thread),
         )
@@ -48,6 +52,10 @@ pub fn routes() -> Router<AppState> {
 enum ChannelApiError {
     Channel(ChannelError),
     Workspace(WorkspaceError),
+    /// The message is not a denied researcher message, or was rerouted too often.
+    NotReroutable,
+    /// The delivery could not be read after the reroute.
+    Orchestrator(crate::orchestrator::OrchestratorError),
     /// A mention names a member who cannot receive messages (ADR 0229 §2).
     MentionUnavailable {
         member_id: String,
@@ -71,6 +79,19 @@ impl IntoResponse for ChannelApiError {
     fn into_response(self) -> Response {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
+            Self::NotReroutable => (
+                StatusCode::CONFLICT,
+                "message_not_reroutable",
+                "only a message that reached nobody it named can be sent again".to_owned(),
+            ),
+            Self::Orchestrator(error) => {
+                eprintln!("WARN: a delivery could not be read: {error}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "the delivery could not be read".to_owned(),
+                )
+            }
             Self::MentionUnavailable { member_id, reason } => {
                 extra.insert("member_id".into(), json!(member_id));
                 extra.insert("reason".into(), json!(reason));
@@ -512,4 +533,29 @@ async fn link_thread(
         request.research_id.as_deref(),
         request.round_id.as_deref(),
     )?))
+}
+
+/// The researcher has a message that reached nobody it named read again,
+/// once its recipients are set up (ADR 0232). Members it already reached are
+/// never routed twice.
+async fn reroute_message(
+    State(state): State<AppState>,
+    Path((project_id, channel_id, message_id)): Path<(String, String, String)>,
+) -> Result<Json<crate::orchestrator::MessageDelivery>, ChannelApiError> {
+    check_project(&state, &project_id)?;
+    let outcome = state
+        .channels
+        .reroute(&project_id, &channel_id, &message_id)?;
+    if outcome == crate::channel_store::RerouteOutcome::NotReroutable {
+        return Err(ChannelApiError::NotReroutable);
+    }
+    state.orchestrator.wake();
+    state
+        .orchestrator
+        .deliveries_for(&project_id, std::slice::from_ref(&message_id))
+        .map_err(ChannelApiError::Orchestrator)?
+        .into_iter()
+        .next()
+        .map(Json)
+        .ok_or(ChannelApiError::NotReroutable)
 }

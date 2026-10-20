@@ -1254,3 +1254,67 @@ fn routing_marks_report_how_researcher_messages_were_read() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_denial_is_a_fact_of_the_message_and_only_the_researchers_are_rerouted() {
+    let r = rig();
+    let channel = r.channel();
+    let denied = r.say(&channel, "anyone?");
+    r.channels
+        .mark_denied(r.project(), &denied.id, "manager_unavailable")
+        .unwrap();
+    // A message already read is not marked again.
+    r.channels
+        .mark_denied(r.project(), &denied.id, "other")
+        .unwrap();
+    let marks = r
+        .channels
+        .routing_marks(r.project(), std::slice::from_ref(&denied.id))
+        .unwrap();
+    assert_eq!(marks[&denied.id].routing.as_deref(), Some("denied"));
+    assert_eq!(
+        marks[&denied.id].issue.as_deref(),
+        Some("manager_unavailable")
+    );
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), "another-channel", &denied.id)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string(),
+        ChannelError::MessageNotFound.to_string()
+    );
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), &channel.id, &denied.id)
+            .unwrap(),
+        RerouteOutcome::Rearmed
+    );
+    let agent = r.session("agent");
+    let by_agent = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "@x hi",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&agent),
+                mentions: &[Mention {
+                    session_id: agent.clone(),
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    r.channels
+        .mark_denied(r.project(), &by_agent.id, "member_unavailable")
+        .unwrap();
+    assert_eq!(
+        r.channels
+            .reroute(r.project(), &channel.id, &by_agent.id)
+            .unwrap(),
+        RerouteOutcome::NotReroutable
+    );
+}
