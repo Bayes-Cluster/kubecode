@@ -65,6 +65,18 @@ export function TaskBoardView({
   }, [followed, selectedId, setStage])
   const switchId = useId()
 
+  // Closing a Task gives focus back to its card when nothing else took it
+  // (the inspector was opened elsewhere, or its opener was replaced).
+  const shownTask = useRef(selectedId)
+  useEffect(() => {
+    const previous = shownTask.current
+    shownTask.current = selectedId
+    if (!previous || selectedId) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    scroller.current?.querySelector<HTMLElement>(`[data-focus-key="card:${CSS.escape(previous)}"]`)?.focus({ preventScroll: true })
+  }, [selectedId])
+
   const cards = (board?.cards ?? []).filter((card) => !needsYou || requiredActionOf(card) !== null)
   const stage = pickedStage ?? (board ? initialBoardStage(board) : 'ready')
   const archived = board?.archived ?? []

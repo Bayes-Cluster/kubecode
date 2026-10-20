@@ -116,6 +116,15 @@ describe('TaskBoardView', () => {
     expect(screen.getByTestId('task-card-r1')).toHaveAttribute('aria-current', 'true')
   })
 
+  it('returns focus to the card of the Task that was closed when nothing else holds it', () => {
+    const cards = [card({ id: 'r1', stage: 'done' })]
+    const props = { board: board(cards), drafts: [], status: 'ready' as const, t, onOpenGeneral: vi.fn(), onOpenTask: vi.fn(), onReload: vi.fn() }
+    const rendered = render(<TaskBoardView {...props} selectedId="r1" />)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    rendered.rerender(<TaskBoardView {...props} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+  })
+
   it('narrows to what needs the researcher, keeping counts of what is shown', () => {
     view({ board: board([
       card({ id: 'r1', title: 'Quiet' }),
