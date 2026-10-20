@@ -49,6 +49,17 @@ export type MessageItemProps = {
   }
 }
 
+/** A delivery the source reports, in words and quietly: who it is waiting to reach, or reached. */
+function deliveryText(state: 'queued' | 'delivered', recipients: string[], locale: string, t: Translator): string {
+  if (recipients.length === 0) {
+    return state === 'queued' ? t('kubecode.channel.delivery.queued') : t('kubecode.channel.delivery.delivered')
+  }
+  const names = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(recipients)
+  return state === 'queued'
+    ? t('kubecode.channel.delivery.queuedTo', { names })
+    : t('kubecode.channel.delivery.deliveredTo', { names })
+}
+
 /**
  * One message of General (ADR 0229): who wrote it and whom it was for, its
  * Markdown body, the one Task it is about and its titled references, and
@@ -207,6 +218,11 @@ export function MessageItem({
           <p className="kubecode-message-delivery" data-delivery="failed">
             <StatusBadge tone="danger">{t('kubecode.channel.notDelivered')}</StatusBadge>
             <span>{delivery.text}</span>
+          </p>
+        )}
+        {(delivery?.state === 'queued' || delivery?.state === 'delivered') && (
+          <p className="kubecode-message-delivery" data-delivery={delivery.state}>
+            {deliveryText(delivery.state, delivery.recipients, dateLocale, t)}
           </p>
         )}
       </div>

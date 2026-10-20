@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -102,6 +102,23 @@ describe('MessageItem', () => {
     expect(row).toHaveTextContent('Writer needs setup.')
     const items = await openMore("More actions for You's message")
     expect(items.map((entry) => entry.textContent)).toContain('Open earlier thread')
+  })
+
+  it('says quietly, in words, when a message is waiting to be delivered or was delivered, as a delivery source reports it', () => {
+    const message = channelMessage(6)
+    const view = item({ message, author: researcherView(t), task: null, delivery: { state: 'queued', recipients: ['Analyst', 'Writer'] } })
+    let row = view.article.querySelector('[data-delivery]')
+    expect(row).toHaveAttribute('data-delivery', 'queued')
+    expect(row).toHaveTextContent('Waiting to reach Analyst and Writer')
+    expect(row?.querySelector('.kubecode-research-badge')).toBeNull()
+    cleanup()
+    const delivered = item({ message, author: researcherView(t), task: null, delivery: { state: 'delivered', recipients: ['Analyst'] } })
+    row = delivered.article.querySelector('[data-delivery]')
+    expect(row).toHaveAttribute('data-delivery', 'delivered')
+    expect(row).toHaveTextContent('Reached Analyst')
+    cleanup()
+    const nobody = item({ message, author: researcherView(t), task: null, delivery: { state: 'delivered', recipients: [] } })
+    expect(nobody.article.querySelector('[data-delivery]')).toHaveTextContent(/^Delivered$/)
   })
 
   it('counts one reply in the singular, and in other languages in a form that fits any count', () => {
