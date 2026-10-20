@@ -1045,9 +1045,19 @@ the board reads.
 One pure reducer applies Agent Chat conversation events regardless of their
 source: live SSE delivery, history hydration, and reconnect replay all feed
 `reduceConversation`, so every path produces identical transcript state from an
-identical sequence. Events carry a namespaced `source:seq` key; folding is
-idempotent per key across channels without letting one channel's sequence space
-shadow the other's.
+identical sequence. Events carry a namespaced `source:seq` key, so one
+channel's sequence space never shadows the other's.
+
+A live event and the recorded event it mirrors have different keys, so the
+cross-channel overlap is settled by the history page's workspace cursor
+instead. The server reads a page and that cursor under one hold of the
+database, and a recorded event that is also streamed commits its workspace
+event in the same transaction, so the cursor covers exactly the events in the
+page. Hydration stores it in the reducer state as the covered cursor, and a
+live event at or below it is a copy and does not fold, whether it was buffered
+during the fetch, was still in flight on an event stream slower than the
+history response, or comes back in a reconnect replay. A page without a cursor
+covers nothing, and each hydration replaces the covered cursor with its own.
 
 Transcript events that arrive before their run row are buffered per run and
 replay in order the moment the row attaches, so a live stream racing its own
