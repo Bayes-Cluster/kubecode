@@ -81,7 +81,7 @@ export function MessageComposer({
   const area = useRef<HTMLTextAreaElement | null>(null)
   const [picker, setPicker] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const error = draft.failure
   const sending = useRef(false)
   const recipients = draftRecipients(draft.body, directory)
   const blocked = sendBlockedReason(recipients, t)
@@ -99,35 +99,38 @@ export function MessageComposer({
     if (!ready || sending.current) return
     sending.current = true
     setBusy(true)
-    setError(null)
     const sent = draft
     const { message, signature } = toNewMessage(sent, recipients)
     const id = sent.attempt?.signature === signature ? sent.attempt.id : newClientMessageId()
     // Clear at once so what is typed next is never lost to this send; the Task
     // stays, and so does the attempt until the send succeeds.
-    onDraftChange((current) => ({ ...current, body: '', reply: null, references: [], attempt: { id, signature } }))
+    onDraftChange((current) => ({
+      ...current, body: '', reply: null, references: [], attempt: { id, signature }, failure: null,
+    }))
     try {
       const saved = await onSend({ ...message, clientMessageId: id })
-      onDraftChange((current) => ({ ...current, attempt: null }))
+      onDraftChange((current) => ({ ...current, attempt: current.attempt?.id === id ? null : current.attempt }))
       onSent?.(saved)
     } catch (cause) {
+      let failure: string
+      if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
+        const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
+        failure = named
+          ? t('kubecode.channel.mentionUnavailable', { name: named.name })
+          : t('kubecode.channel.mentionUnavailableUnknown')
+        directory.reload()
+      } else {
+        failure = errorMessage(cause, t('kubecode.error'))
+      }
+      // Put back what was sent, never over what the researcher has changed
+      // since: new text follows it, and a Task chosen meanwhile stays.
       onDraftChange((current) => ({
         ...current,
         body: current.body === '' ? sent.body : `${sent.body}\n${current.body}`,
         reply: current.reply ?? sent.reply,
         references: current.references.length > 0 ? current.references : sent.references,
-        task: sent.task,
-        taskCleared: sent.taskCleared,
+        failure,
       }))
-      if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
-        const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
-        setError(named
-          ? t('kubecode.channel.mentionUnavailable', { name: named.name })
-          : t('kubecode.channel.mentionUnavailableUnknown'))
-        directory.reload()
-      } else {
-        setError(errorMessage(cause, t('kubecode.error')))
-      }
     } finally {
       sending.current = false
       setBusy(false)
@@ -301,7 +304,8 @@ export function MessageComposer({
         stop={stop && { label: t('kubecode.composer.stopTarget', { target: stop.target }), onStop: stop.onStop }}
         textareaRef={setArea}
         value={draft.body}
-        onChange={(body) => update({ body })}
+        // Emptied by hand: the draft is given up, so the same words later are a new message.
+        onChange={(body) => update(body.trim() === '' ? { body, attempt: null, failure: null } : { body })}
         onSend={send}
       />
       <Dialog open={picker} onOpenChange={setPicker}>

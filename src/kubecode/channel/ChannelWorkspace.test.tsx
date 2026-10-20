@@ -558,6 +558,29 @@ describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => 
     expect(box()).toHaveValue('about r1')
   })
 
+  it('keeps a send in flight, its failure, and Try again with the view of General it was sent from', async () => {
+    const memory = createPlaceMemory()
+    const s = server()
+    let fail: (cause: Error) => void = () => undefined
+    vi.mocked(s.calls.postChannelMessage)
+      .mockImplementationOnce(() => new Promise<ChannelMessage>((_, reject) => { fail = reject }))
+    const v = view(s, { memory, props: { filter: null } })
+    await screen.findByText('No messages yet. Start the discussion.')
+    fireEvent.change(box(), { target: { value: 'for everyone' } })
+    send()
+    await waitFor(() => expect(screen.queryAllByText('Sending…').length).toBeGreaterThan(0))
+    v.rerenderWith({ filter: 'r1' })
+    expect(screen.queryAllByText('Sending…')).toHaveLength(0)
+    fireEvent.change(box(), { target: { value: 'about r1' } })
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
+    await act(async () => { fail(new Error('network down')) })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(box()).toHaveValue('about r1')
+    v.rerenderWith({ filter: null })
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    expect(box()).toHaveValue('for everyone')
+  })
+
   it('names its rows and its composer for scroll and focus return', async () => {
     const s = server([server().message(1, 'a topic'), server().message(2, 'a note', { author_kind: 'system', kind: 'system' })])
     view(s)

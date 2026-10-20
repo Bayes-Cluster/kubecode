@@ -34,7 +34,9 @@ const picked = (kind: ProjectContextItem['ref']['kind'], id: string): ProjectCon
 
 describe('emptyGeneralDraft', () => {
   it('is about the Task General is showing', () => {
-    expect(emptyGeneralDraft(null)).toEqual({ body: '', reply: null, task: null, taskCleared: false, references: [], attempt: null })
+    expect(emptyGeneralDraft(null)).toEqual({
+      body: '', reply: null, task: null, taskCleared: false, references: [], attempt: null, failure: null,
+    })
     expect(emptyGeneralDraft('r1').task).toBe('r1')
   })
 })
@@ -166,6 +168,7 @@ describe('toNewMessage', () => {
     taskCleared: false,
     references: [picked('artifact', 'a1'), picked('artifact', 'a1'), picked('research', 'r1')],
     attempt: null,
+    failure: null,
   }
 
   it('names members by id, puts the Task first among the references, and cites the reply', () => {

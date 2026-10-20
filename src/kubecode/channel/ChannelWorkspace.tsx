@@ -344,6 +344,8 @@ export function ChannelWorkspace({
             directory={directory}
             draft={draft}
             focusKey="composer:general"
+            // Each view of General has its own composer: a send in flight stays with the view it was sent from.
+            key={placeKey.general(projectId, taskFilter)}
             labels={labels}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}

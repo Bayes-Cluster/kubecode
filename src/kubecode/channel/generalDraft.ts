@@ -30,13 +30,18 @@ export type GeneralDraft = {
   references: ProjectContextItem[]
   /** The id of the last send and what it carried, so a retry of the same draft is the same message. */
   attempt: { id: string; signature: string } | null
+  /**
+   * Why the last send failed, shown with Try again. Kept with the draft, so
+   * a send that fails after the researcher left still says so on return.
+   */
+  failure: string | null
 }
 
 /** A private message's draft (ADR 0223): text and the last attempt only. */
 export type PlainDraft = { body: string; attempt: { id: string; signature: string } | null }
 
 export function emptyGeneralDraft(filter: string | null): GeneralDraft {
-  return { body: '', reply: null, task: filter, taskCleared: false, references: [], attempt: null }
+  return { body: '', reply: null, task: filter, taskCleared: false, references: [], attempt: null, failure: null }
 }
 
 export function excerptOf(body: string, length = EXCERPT): string {

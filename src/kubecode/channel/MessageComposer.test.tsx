@@ -274,6 +274,39 @@ describe('MessageComposer', () => {
     expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
   })
 
+  it('forgets a failed attempt once the text is emptied by hand, so the same words typed later are a new message', async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(saved())
+    render(<Harness onSend={onSend} />)
+    type('ship it')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    type('')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    type('ship it')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
+  })
+
+  it('keeps a Task chosen while the send was in flight when the send fails', async () => {
+    let fail: (cause: Error) => void = () => undefined
+    const onSend = vi.fn(() => new Promise<ChannelMessage>((_, reject) => { fail = reject }))
+    render(<Harness initial={emptyGeneralDraft('r1')} onSend={onSend} />)
+    type('in flight')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick Quantization' }))
+    fail(new Error('network down'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    expect(box()).toHaveValue('in flight')
+    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    expect(within(about).getByText('Quantization')).toBeInTheDocument()
+    expect(within(about).queryByText('Pruning')).not.toBeInTheDocument()
+  })
+
   it('keeps the draft and reads the members again when the server says a mention cannot receive', async () => {
     const reload = vi.fn()
     const directory: MemberDirectory = { ...team, reload }
@@ -332,5 +365,28 @@ describe('MessageComposer drafts kept for the place (ADR 0228 §4, ADR 0229 §6)
     await new Promise((resolve) => setTimeout(resolve, 0))
     view.rerender(placed(memory, <Harness onSend={onSend} />))
     await waitFor(() => expect(box()).toHaveValue('in flight'))
+  })
+
+  it('keeps the failure and Try again with the draft when the send fails after the place was left', async () => {
+    const memory = createPlaceMemory()
+    let fail: (cause: Error) => void = () => undefined
+    const onSend = vi.fn()
+      .mockImplementationOnce(() => new Promise<ChannelMessage>((_, reject) => { fail = reject }))
+      .mockResolvedValue(saved())
+    const view = render(placed(memory, <Harness onSend={onSend} />))
+    type('in flight')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    view.rerender(placed(memory, <p>elsewhere</p>))
+    fail(new Error('network down'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    view.rerender(placed(memory, <Harness onSend={onSend} />))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('network down')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).toBe(onSend.mock.calls[0][0].clientMessageId)
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(box()).toHaveValue('')
   })
 })
