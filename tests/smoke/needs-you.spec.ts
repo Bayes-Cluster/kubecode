@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 
 import { waitForPrompt } from './agents'
-import { inspector, workspaceNav } from './shell'
+import { closeNavigationSheet, inspector, workspaceNav } from './shell'
 import { seedTaskInReview } from './taskFixtures'
 
 /**
@@ -164,6 +164,63 @@ test.describe('on a desktop', () => {
       await nothingWaits(page)
     } finally {
       for (const id of registered) await request.delete(`${api}/projects/${id}`)
+    }
+  })
+})
+
+test.describe('on a phone', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } })
+
+  test('@smoke the bell opens a member\'s prompt focused with the navigation sheet closed, and two prompts never push the composer off screen', async ({ page, request }) => {
+    test.setTimeout(240_000)
+    const { api, workspaceUrl } = urls()
+    const stamp = Date.now()
+    const created = await request.post(`${api}/projects`, { data: { kind: 'create', path: `/tmp/kubecode-needs-you-phone-${stamp}` } })
+    expect(created.ok(), await created.text()).toBe(true)
+    const projectId = (await created.json() as { id: string }).id
+    try {
+      await expect.poll(async () => (await roster(request, api, projectId)).members.some((member) => member.role === 'general')).toBe(true)
+      for (const [name, template] of [['Analyst', 'analysis'], ['Writer', 'writing']]) {
+        const added = await request.post(`${api}/projects/${projectId}/members`, {
+          data: { name, template, client_request_id: `${template}-${stamp}` },
+        })
+        expect(added.ok(), await added.text()).toBe(true)
+      }
+      const members = (await roster(request, api, projectId)).members
+      const analyst = members.find((member) => member.handle === 'analyst')!
+      const writer = members.find((member) => member.handle === 'writer')!
+
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
+      await closeNavigationSheet(page)
+
+      // Two members ask permission at once: two prompts above the composer.
+      await send(page, '@analyst @writer [smoke:permission] run the checks')
+      await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
+      await waitForPrompt(writer.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
+      await expect(strip(page).getByTestId('permission-queue-card')).toHaveCount(2, { timeout: 30_000 })
+
+      // The bell opens the Analyst's prompt, focused, and the navigation sheet stays closed.
+      await page.getByRole('button', { name: 'Needs you: 2' }).click()
+      await page.getByRole('menuitem', { name: /Analyst wants to use Run pytest -q/ }).click()
+      const prompt = page.getByRole('group', { name: /^Analyst asks permission/ })
+      await expect(prompt).toBeFocused()
+      await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'false')
+
+      // The strip is capped and sums itself up; the composer is still on screen and usable.
+      await expect(strip(page).locator('.kubecode-execution-summary')).toHaveText('Working now: 2 · Waiting for you: 2')
+      const stripBox = await strip(page).boundingBox()
+      expect(stripBox!.height).toBeLessThanOrEqual(844 * 0.6)
+      await expect(composer(page)).toBeInViewport()
+      await composer(page).fill('Still reachable with two prompts open.')
+      await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
+
+      // Answering both ends both turns.
+      await prompt.getByRole('button', { name: 'Allow', exact: true }).click()
+      await page.getByRole('group', { name: /^Writer asks permission/ }).getByRole('button', { name: 'Allow', exact: true }).click()
+      await expect(strip(page).getByTestId('permission-queue-card')).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await request.delete(`${api}/projects/${projectId}`)
     }
   })
 })
