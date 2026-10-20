@@ -118,10 +118,12 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
     return () => { live = false }
   }, [api, current, projectId, requestKey])
 
-  // Reported after commit, when the content is on screen; a failed read never is.
-  const shownKind = state.status === 'ready' ? current.kind : null
-  const shownId = state.status === 'ready' ? current.id : null
-  const shownRevision = state.status === 'ready' ? state.data.revision : null
+  // Reported after commit, when the content is on screen; a failed read, or a
+  // record the server reports as removed, never is.
+  const shown = state.status === 'ready' && state.data.availability !== 'removed'
+  const shownKind = shown ? current.kind : null
+  const shownId = shown ? current.id : null
+  const shownRevision = shown ? state.data.revision : null
   useEffect(() => {
     if (shownKind !== null && shownId !== null) onDisplayed?.({ kind: shownKind, id: shownId, revision: shownRevision })
   }, [onDisplayed, shownId, shownKind, shownRevision])

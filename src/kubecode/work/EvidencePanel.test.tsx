@@ -71,6 +71,18 @@ describe('EvidencePanel', () => {
     expect(screen.getByText('artifact never displayed')).toBeInTheDocument()
   })
 
+  it('never records a record the server reports as removed', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue({
+      ...document(null),
+      availability: 'removed',
+      sections: [],
+    })
+    mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
+    expect(await screen.findByText('This record no longer exists.')).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText('artifact never displayed')).toBeInTheDocument()
+  })
+
   it('records a Project file at the revision it read', async () => {
     const readFile = vi.fn().mockResolvedValue({ content: 'acc,0.91', revision: 'f9', path: 'results.csv' })
     mount({ kind: 'evidence', ref: { kind: 'file', id: 'results.csv' } }, { readFile })
