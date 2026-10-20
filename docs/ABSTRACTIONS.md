@@ -1140,8 +1140,19 @@ researcher can make (a member's permission or input request, a question on a
 Task's work, a review, a proposal shown in General, a member's setup), each
 keyed by its decision identity so it appears once wherever it is referred to.
 A Task's condition, a run's waiting status, or an unread message is never one.
-A source that cannot be read makes the snapshot incomplete, never empty. See
-ADR 0232.
+A source that cannot be read makes the snapshot incomplete, never empty. In the
+browser one **attention store** per Workspace holds the newest snapshot; Needs
+you (Decisions, then Setup), the title bar's bell (this Workspace and counts
+for the others), the Task panel, the **Working now** strip and the Session
+prompt all read it, and an answer keeps its item **resolving** until a newer
+snapshot drops it, so every surface clears together. Each item opens the
+context that holds the decision and focuses it there. See ADR 0232.
+
+**Working now** lists a scope's member turns (General, one DM, or a Task) with
+what they work on and what is queued. **Stop** ends one named turn now and says
+that the member's assigned work stays open; **Pause new work on a Task** is the
+executing round's policy and lets running work continue. Neither is
+Workspace-wide.
 
 Notification preferences are versioned browser-local state. Workspace events
 map to completion, attention, or error categories. The browser's native
@@ -1246,7 +1257,9 @@ saved, recorded, sending, delivered (queued, started, or withdrawn at the
 Session), partial, failed, or denied (it reached nobody, with the reason). The
 researcher may **retry** a failed route they originated, under the same route,
 and **reroute** a denied message once its recipients are set up; each is
-bounded and never makes a second turn. See ADR 0232.
+bounded and never makes a second turn. The browser shows only those states,
+says "Delivered" only under the researcher's latest message, and folds a
+route's notes into the message they are about. See ADR 0232.
 
 ## Round limits
 

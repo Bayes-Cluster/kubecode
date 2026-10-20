@@ -56,7 +56,7 @@ the researcher can retry, in General and per Task. Resolution stays on the
 existing endpoints, which commit before replying. `GET /attention/summary`
 gives counts per Workspace.
 
-### 2. Each item opens the context that holds the decision (browser, planned)
+### 2. Each item opens the context that holds the decision
 
 The Task inspector for questions and reviews; the proposal message in General
 for proposals (admission stays words-only, ADR 0221); for a member's permission
@@ -64,6 +64,22 @@ or input request, the prompt above General's composer (public Session) or above
 the member's direct-message composer; the Session itself for other Sessions;
 the member profile for setup. The browser removes an item only when a newer
 snapshot omits it.
+
+In the browser one attention store per Workspace holds the newest snapshot,
+refetched (debounced) on the events that can change it and after a reconnect;
+an answer older than the one shown, by request or by cursor, is dropped, and a
+failed read keeps the last snapshot and says the list may be incomplete. Needs
+you, the title bar's bell, the Task panel, the Working-now strip, notifications
+and the Session prompt all read it. Answering goes through the store: the item
+stays, marked as being updated, until a snapshot read after the answer omits
+it (ten seconds at most), so every surface clears together; a request that is
+gone (404) says it is no longer waiting. Each entry carries a focus key
+(`permission:`, `input:`, `question:`, `review:`, `message:`,
+`member-setup:`) that the destination focuses on arrival; a Task opens on the
+section that holds the decision. The Task panel never draws a second prompt: it
+says who waits for the researcher's permission, with Show. The bell counts this
+Workspace's decisions and the others' from the summary, and a notification
+opens the waiting item of its Session when there is one.
 
 ### 3. Delivery state is a fact of the message
 
@@ -76,7 +92,11 @@ the message (`routing = 'denied'` with a code: `manager_unavailable`,
 members it named records the code with `routing = 'done'`; a refused legacy
 request records `request_refused`. "Delivered" keeps ADR 0217's meaning: the
 Session has it. Routing notes are still written and still read by agents; the
-browser folds a note into its message. `GET /projects/{p}/deliveries` reads
+browser folds a note into its message once that message's delivery is loaded,
+and keeps the note's text under the message's Details. "Delivered" is said
+only under the researcher's latest message, with what it means; Retry and Try
+again are each at most once in flight, and a recipient whose Session is gone
+offers the text back to the composer instead. `GET /projects/{p}/deliveries` reads
 states by message, message pages carry them, and `orchestration_updated`
 carries the message id.
 
@@ -98,9 +118,10 @@ they fail.
 
 A direct message's send reports whether the member started on it or it is
 queued, and `GET …/dm/pending` lists queued direct messages so they stay
-visible. In the browser (planned), a send the server has not acknowledged stays
-as its own in-memory row (not on disk, ADR 0228), and retrying it replays its
-client message id.
+visible, including after a reload. In the browser a General send keeps ADR
+0229's draft: it clears at once, a failure puts the words back with Try again,
+and the retry replays the same client message id, so a lost acknowledgement or
+a reconnect never posts twice. Sending is never blocked by running agents.
 
 ### 6. Controls name their effect
 
@@ -112,12 +133,27 @@ continue. The experiment envelope's control pauses experiment launches in a
 named round. There is no Workspace-wide pause (ADR 0227). The Task detail also
 lists `delivery_issues`: decisions on it that did not reach their recipient.
 
+In the browser the Working-now strip (above General's composer, above a DM's
+composer, and in the Task panel without prompts) lists each member turn with
+what it works on and what is queued, and a Stop named for the turn it ends
+("Stop Analyst's current turn", "Stop Analyst's reply") that stays busy until
+the run leaves the snapshot. The composer offers the same Stop beside Send
+only when exactly one turn runs. A member's last failed turn appears once, by
+status, until dismissed. The Task panel's PauseButton keeps the name "Pause new
+work on {task}" with its pressed state, sends the policy revision it showed,
+and on a conflict shows the current state without sending again.
+
 ## Consequences
 
-- Member permission requests become answerable inside the Workspace; Needs
-  you, the bell, the Task panel and notifications can share one source.
-- General no longer needs a row per routing failure, and a failed send is
+- Member permission requests are answerable inside the Workspace; Needs you,
+  the bell, the Task panel, the strip and notifications share one source and
+  resolve together.
+- General no longer shows a row per routing failure, and a failed send is
   recoverable without duplicates.
+- Not done in the browser: a separate outbox row per unsent General message
+  (ADR 0229's draft model is kept), seeding deliveries from the message page
+  (the browser reads `/deliveries` instead), and the strip's one-line phone
+  summary.
 - Each refetch reads the runtime maps and a handful of indexed queries; the
   summary composes one snapshot per Workspace.
 - Recorded gaps: questions on work outside any Task stay on the Team surface;

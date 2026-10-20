@@ -378,6 +378,43 @@ per retry or reroute and a note already written never aborts a pass. The DM
 send reports `admission`, `…/dm/pending` lists queued direct messages, and the
 Task detail adds `execution` (the round's pause policy) and `delivery_issues`.
 
+Attention in the browser (ADR 0232): `attention/useAttention.ts` keeps one
+snapshot of `GET …/attention` per Workspace, refetched (250 ms debounce) on the
+events that can change it — Task, research, work, member, channel and
+orchestration updates, permission and input requests and answers, run start
+and completion, and `conversation_state` that carries `pending` — and after a
+reconnect; a response older than the newest applied one, by request ticket or
+by cursor, is dropped, and a failed read keeps the last snapshot. The shell
+provides it through `AttentionContext`; `markResolving(key, call)` runs an
+answer and keeps the key busy until a snapshot requested after the call omits
+it (10 s fallback), so Needs you, the bell, the Task panel, the strip and the
+Session prompt resolve together and nothing is removed locally.
+`attention/attentionTargets.ts` turns items into `NeedsYouEntry` (title, badge,
+detail, group, and a target with a `focus` key: `question:`/`review:` on the
+Task inspector, whose tab the shell sets first; `message:` for a proposal in
+General; `permission:`/`input:` in General's or the DM's Working-now strip, or
+the Session itself; `member-setup:` on Members). The titlebar bell counts this
+Workspace's entries and the others' from `GET …/attention/summary`
+(`useAttentionSummary`, 1 s debounce); a notification click opens the waiting
+item of that Session when there is one. `PermissionPrompt` and
+`ElicitationPrompt` are shared by `SessionComposer` and
+`attention/ExecutionStrip.tsx`, which lists `executions` for a scope (General's
+members, one DM, or a Task without prompts) with a `StopButton` named for the
+turn it ends (`DELETE /runs/{id}`, busy until the run leaves the snapshot), the
+scope's member prompts, and failed turns until dismissed (place memory).
+General and the DM composer offer that Stop only when exactly one turn runs.
+`attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
+researcher's top-level messages on screen, again on `orchestration_updated`
+naming one of them (or `channel_updated` while one is saved or sending), and
+runs Retry (`POST …/routes/{id}/retry`) and Try again (`POST …/reroute`) once
+each in flight; `foldRoutingNotes` removes the notes a loaded delivery names
+from the timeline and keeps their text for its Details. `dm/useDmPending.ts`
+reads `…/dm/pending` so a message queued behind a running reply stays visible.
+`tasks/TaskWork.tsx` adds `RoundPauseControl` ("Pause new work on {task}",
+`PUT …/rounds/{r}/execution-policy` with the shown revision, never re-sent on a
+conflict), the Task's waiting line with Show, its Working-now rows, and its
+`delivery_issues` with Retry.
+
 Task board and details (ADRs 0225, 0230): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
@@ -442,8 +479,9 @@ reports a link still being reached as `pending` (the main pane shows "Opening
 Workspace…", never a Session), abandons a link to an unknown Project at once,
 and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
 the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
-`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you from
-`location/needsYou.ts`, Members, then the roster and Direct messages under
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you —
+`attention/NeedsYouList.tsx` over `NeedsYouEntry` from `location/needsYou.ts` —
+Members, then the roster and Direct messages under
 their own headings), then a collapsed History and execution section with the
 Session search across all Workspaces, this Workspace's Sessions and Teams,
 Threads and questions. Reference chips in General and rows in Resources open
@@ -532,8 +570,9 @@ directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{memb
 Task as the first research reference), `timeline.ts` (days, author groups,
 collapsed routine notes, denial notes attached to their message or shown on
 their own, never collapsed),
-`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
-`MessageItem` also draws queued and delivered as quiet text), and
+`delivery.ts` (`MessageDeliverySource`: the server's delivery facts once
+loaded, otherwise a failure only when a note says so; `MessageItem` draws
+facts through `attention/DeliveryStatus` and notes as before), and
 `mentionOptions.ts`; `references/referenceLabels.ts` names references by title
 (`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
 place memory under `placeKey.general(p, filter) + '#draft'`, keys its
