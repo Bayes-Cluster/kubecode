@@ -48,6 +48,11 @@ pub fn routes() -> Router<AppState> {
 enum ChannelApiError {
     Channel(ChannelError),
     Workspace(WorkspaceError),
+    /// A mention names a member who cannot receive messages (ADR 0229 §2).
+    MentionUnavailable {
+        member_id: String,
+        reason: &'static str,
+    },
 }
 
 impl From<ChannelError> for ChannelApiError {
@@ -66,6 +71,15 @@ impl IntoResponse for ChannelApiError {
     fn into_response(self) -> Response {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
+            Self::MentionUnavailable { member_id, reason } => {
+                extra.insert("member_id".into(), json!(member_id));
+                extra.insert("reason".into(), json!(reason));
+                (
+                    StatusCode::BAD_REQUEST,
+                    "mention_unavailable",
+                    "a mentioned member cannot receive messages".to_owned(),
+                )
+            }
             Self::Workspace(WorkspaceError::ProjectNotFound(id)) => (
                 StatusCode::NOT_FOUND,
                 "not_found",
@@ -221,18 +235,118 @@ async fn get_message(
     Ok(Json(view(&state, message)))
 }
 
+/// Who a message names: a member (what the browser sends), or a Session (the
+/// legacy form). Exactly one of the two.
+#[derive(Debug, Deserialize)]
+struct MentionRequest {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    member_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct PostMessageRequest {
     body: String,
+    /// Legacy: kept for pages opened before Threads became read-only history.
     thread_id: Option<String>,
     client_message_id: Option<String>,
+    /// Legacy: `ask`/`request`, kept for pages opened before the upgrade.
     intent: Option<Intent>,
     #[serde(default)]
-    mentions: Vec<Mention>,
+    mentions: Vec<MentionRequest>,
     #[serde(default)]
     references: Vec<ContextRef>,
     /// An earlier message of the conversation this one cites.
     reply_to: Option<String>,
+}
+
+/// Resolves each mention to the Session it is stored as. A member resolves to
+/// its current public Session when the message is written; one that is
+/// removed, needs setup, or is not in this Project is refused instead of the
+/// message silently falling through to the manager. A retry of a stored
+/// message reuses the Session its mention was stored with when that Session
+/// was this member's, so a retry after a Session replacement replays instead
+/// of conflicting. Naming a member twice names it once.
+fn resolve_mentions(
+    state: &AppState,
+    project_id: &str,
+    channel_id: &str,
+    client_message_id: Option<&str>,
+    requested: &[MentionRequest],
+) -> Result<Vec<Mention>, ChannelApiError> {
+    if requested.len() > crate::channel_store::MAX_MENTIONS {
+        return Err(ChannelError::Invalid("too many mentions").into());
+    }
+    let lookup_failed = |error: crate::member_store::MemberError| {
+        eprintln!("WARN: a mention could not be resolved: {error}");
+        ChannelApiError::Channel(ChannelError::Invalid("a mention could not be resolved"))
+    };
+    // Only a mention by member needs the roster and the stored message.
+    let (authors, stored) = if requested.iter().any(|mention| mention.member_id.is_some()) {
+        let authors = state
+            .members
+            .public_authors(project_id)
+            .map_err(lookup_failed)?;
+        let stored = match client_message_id.map(str::trim).filter(|id| !id.is_empty()) {
+            Some(key) => state
+                .channels
+                .by_client_message_id(project_id, channel_id, key)?
+                .map(|message| message.mentions)
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        (authors, stored)
+    } else {
+        Default::default()
+    };
+    let mut resolved: Vec<Mention> = Vec::new();
+    let mut named: Vec<&str> = Vec::new();
+    for mention in requested {
+        let member_id = match (&mention.session_id, &mention.member_id) {
+            (Some(session_id), None) => {
+                resolved.push(Mention {
+                    session_id: session_id.clone(),
+                });
+                continue;
+            }
+            (None, Some(member_id)) => member_id.as_str(),
+            _ => {
+                return Err(ChannelError::Invalid("a mention names a member or a Session").into());
+            }
+        };
+        if named.contains(&member_id) {
+            continue;
+        }
+        named.push(member_id);
+        // A replay keeps the Session the stored message named this member by.
+        if let Some(previous) = stored.iter().find(|previous| {
+            authors.get(&previous.session_id).map(String::as_str) == Some(member_id)
+        }) {
+            resolved.push(previous.clone());
+            continue;
+        }
+        let unavailable = |reason: &'static str| ChannelApiError::MentionUnavailable {
+            member_id: member_id.to_owned(),
+            reason,
+        };
+        let member = match state.members.get(project_id, member_id) {
+            Ok(member) => member,
+            Err(crate::member_store::MemberError::NotFound) => {
+                return Err(unavailable("not_found"));
+            }
+            Err(error) => return Err(lookup_failed(error)),
+        };
+        let session_id = match (member.state, member.public_conversation_id) {
+            (crate::member_store::MemberState::Removed, _) => {
+                return Err(unavailable("removed"));
+            }
+            (crate::member_store::MemberState::Active, Some(session_id)) => session_id,
+            _ => return Err(unavailable("needs_setup")),
+        };
+        resolved.push(Mention { session_id });
+    }
+    Ok(resolved)
 }
 
 /// A direct message is private to the researcher and one member: it cannot be
@@ -272,7 +386,14 @@ async fn post_message(
     Json(request): Json<PostMessageRequest>,
 ) -> Result<Response, ChannelApiError> {
     check_project(&state, &project_id)?;
-    refuse_private(&state, &project_id, &request.mentions, &request.references)?;
+    let mentions = resolve_mentions(
+        &state,
+        &project_id,
+        &channel_id,
+        request.client_message_id.as_deref(),
+        &request.mentions,
+    )?;
+    refuse_private(&state, &project_id, &mentions, &request.references)?;
     let (message, created): (Message, bool) = state.channels.post(
         &project_id,
         &channel_id,
@@ -282,7 +403,7 @@ async fn post_message(
             author_kind: Some(AuthorKind::Researcher),
             author_ref: None,
             intent: request.intent,
-            mentions: &request.mentions,
+            mentions: &mentions,
             references: &request.references,
             client_message_id: request.client_message_id.as_deref(),
             reply_to: request.reply_to.as_deref(),

@@ -12,6 +12,10 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_store::AgentStore;
 use kubecode_server::agents::AgentId;
 use kubecode_server::api::{AppState, app_router};
+use kubecode_server::channel_store::{Mention, NewMessage};
+use kubecode_server::orchestrator::{
+    DeliveryOutcome, DeliveryRequest, RouteKind, RouteSink, Target,
+};
 use kubecode_server::research_store::ResearchBrief;
 use kubecode_server::task_store::TaskError;
 use kubecode_server::teams::TeamStore;
@@ -616,4 +620,188 @@ async fn the_manager_coordinates_many_tasks_and_a_stale_review_click_decides_not
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[derive(Default)]
+struct Recording {
+    delivered: std::sync::Mutex<Vec<(String, String)>>,
+}
+
+impl RouteSink for Recording {
+    fn deliver(&self, request: &DeliveryRequest<'_>) -> DeliveryOutcome {
+        self.delivered
+            .lock()
+            .unwrap()
+            .push((request.conversation_id.to_owned(), request.body.to_owned()));
+        DeliveryOutcome::Delivered
+    }
+}
+
+#[tokio::test]
+async fn general_recent_reports_reply_to_and_recipients() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let first = env.say("What did the sweep show?").await;
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let (named, _) = env
+        .state
+        .channels
+        .post(
+            &env.project,
+            &channel.id,
+            NewMessage {
+                body: "@analyst @general look at this",
+                mentions: &[
+                    Mention {
+                        session_id: env.specialist.clone(),
+                    },
+                    Mention {
+                        session_id: env.general.clone(),
+                    },
+                ],
+                reply_to: Some(&first),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // The Analyst's Session is replaced: the old mention still names it.
+    let analyst = env
+        .state
+        .members
+        .find(&env.project, "analyst")
+        .unwrap()
+        .unwrap();
+    env.state
+        .members
+        .replace_session(
+            &env.project,
+            &analyst.id,
+            kubecode_server::member_store::Binding::Public,
+            None,
+            &|_| true,
+        )
+        .unwrap();
+
+    let recent = manager.general_recent(None).unwrap();
+    let seen = recent.iter().find(|m| m.id == named.id).unwrap();
+    assert_eq!(seen.reply_to.as_deref(), Some(first.as_str()));
+    assert_eq!(seen.to, ["analyst", "general"]);
+    let plain = recent.iter().find(|m| m.id == first).unwrap();
+    assert_eq!(plain.reply_to, None);
+    assert!(plain.to.is_empty(), "a remark names no one");
+    let json = serde_json::to_value(seen).unwrap();
+    assert_eq!(json["to"], json!(["analyst", "general"]));
+    assert_eq!(json["reply_to"], json!(first));
+}
+
+#[tokio::test]
+async fn general_recent_never_names_a_dm_session_in_to() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let analyst = env
+        .state
+        .members
+        .find(&env.project, "analyst")
+        .unwrap()
+        .unwrap();
+    let dm = env
+        .state
+        .members
+        .ensure_dm_session(&env.project, &analyst.id, &|_| true)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let stranger = env
+        .agents
+        .create_conversation(&env.project, AgentId::OpenCode, Some("chat"))
+        .unwrap()
+        .id;
+    // Written straight to the store, as data from before the HTTP refusal
+    // of private mentions could be.
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let (message, _) = env
+        .state
+        .channels
+        .post(
+            &env.project,
+            &channel.id,
+            NewMessage {
+                body: "private and stranger",
+                mentions: &[
+                    Mention { session_id: dm },
+                    Mention {
+                        session_id: stranger,
+                    },
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let recent = manager.general_recent(None).unwrap();
+    let seen = recent.iter().find(|m| m.id == message.id).unwrap();
+    assert!(seen.to.is_empty(), "{:?}", seen.to);
+}
+
+#[tokio::test]
+async fn a_reply_is_public_and_authorizes_nothing() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Prune heads"), Some("prune"))
+        .unwrap();
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let (status, reply) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/channels/{}/messages", env.project, channel.id),
+        json!({"body": "yes, add it", "reply_to": proposal.message_id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{reply}");
+    assert_eq!(reply["reply_to"], json!(proposal.message_id));
+    assert_eq!(reply["thread_id"], Value::Null);
+    let (_, threads) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/channels/{}/threads", env.project, channel.id),
+        Value::Null,
+    )
+    .await;
+    assert!(threads.as_array().unwrap().is_empty(), "{threads}");
+
+    let sink = Recording::default();
+    env.state.orchestrator.tick(&sink).unwrap();
+    // The reply reached the manager as the manager, citing the proposal fenced.
+    let reply_id = reply["id"].as_str().unwrap();
+    let route = env
+        .state
+        .orchestrator
+        .routes(&env.project, None, 50)
+        .unwrap()
+        .into_iter()
+        .find(|route| route.source_id == reply_id)
+        .expect("the reply was routed");
+    assert_eq!(route.kind, RouteKind::Discussion);
+    assert!(
+        matches!(&route.target, Target::Session { session_id } if *session_id == env.general),
+        "{:?}",
+        route.target
+    );
+    let delivered = sink.delivered.lock().unwrap().clone();
+    let (_, body) = delivered
+        .iter()
+        .find(|(to, body)| *to == env.general && body.contains("yes, add it"))
+        .expect("delivered to the manager");
+    assert!(
+        body.contains(&format!("It replies to message {}", proposal.message_id)),
+        "{body}"
+    );
+    assert!(body.contains("task_admit"), "{body}");
+    // Nothing was admitted by the reply itself.
+    assert_eq!(env.board(&env.project).await["total"], 0);
+    // Only the manager's own call, citing the researcher's words, admits it.
+    manager
+        .task_admit(&proposal.research_id, reply_id, proposal.revision)
+        .unwrap();
+    assert_eq!(env.board(&env.project).await["total"], 1);
 }

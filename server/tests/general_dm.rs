@@ -845,3 +845,152 @@ async fn messages_name_their_members_through_every_session_a_member_has_had() {
         "{roster}"
     );
 }
+
+fn messages_path(env: &Env, crew: &Crew) -> String {
+    format!(
+        "/projects/{}/channels/{}/messages",
+        env.project, crew.channel
+    )
+}
+
+#[tokio::test]
+async fn a_mention_by_member_id_reaches_that_members_current_session() {
+    let env = env();
+    let crew = crew(&env).await;
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    let messages = messages_path(&env, &crew);
+    let request = json!({
+        "body": "@analyst run the sweep",
+        "client_message_id": "member-mention-1",
+        "mentions": [{"member_id": analyst_id}, {"member_id": analyst_id}],
+    });
+    let (status, posted) = call(&env, Method::POST, &messages, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{posted}");
+    // Stored in its Session form, once, and shown as the member.
+    assert_eq!(
+        posted["mentions"],
+        json!([{"session_id": session(&crew.analyst)}])
+    );
+    assert_eq!(posted["mention_member_ids"], json!([analyst_id]));
+    let sink = Recording::default();
+    env.state.orchestrator.tick(&sink).unwrap();
+    let delivered = sink.to();
+    assert_eq!(delivered.len(), 1, "{delivered:?}");
+    assert_eq!(delivered[0].0, session(&crew.analyst));
+
+    // A retry after the member's Session was replaced is the same message.
+    let (status, replaced) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/members/{analyst_id}/session", env.project),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    let (status, replay) = call(&env, Method::POST, &messages, request).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], posted["id"]);
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert_eq!(page["messages"].as_array().unwrap().len(), 1, "{page}");
+
+    // A new message reaches the member's new Session.
+    let (status, fresh) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "@analyst again", "mentions": [{"member_id": analyst_id}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{fresh}");
+    assert_eq!(
+        fresh["mentions"],
+        json!([{"session_id": session(&replaced)}])
+    );
+    assert_eq!(fresh["mention_member_ids"], json!([analyst_id]));
+}
+
+#[tokio::test]
+async fn a_mention_of_a_member_who_cannot_receive_is_refused() {
+    let env = env();
+    let crew = crew(&env).await;
+    let messages = messages_path(&env, &crew);
+    let members = format!("/projects/{}/members", env.project);
+    let (_, writer) = call(
+        &env,
+        Method::POST,
+        &members,
+        json!({"name": "Writer", "template": "writing"}),
+    )
+    .await;
+    let writer_id = writer["id"].as_str().unwrap().to_owned();
+    let (status, _) = call(
+        &env,
+        Method::DELETE,
+        &format!("{members}/{writer_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    env.state
+        .members
+        .record_setup_error(&analyst_id, "the provider refused the model")
+        .unwrap();
+    // A member of another Workspace is not found here.
+    let (_, elsewhere) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.other_project),
+        Value::Null,
+    )
+    .await;
+    let foreign = elsewhere["members"][0]["id"].as_str().unwrap().to_owned();
+
+    for (member, reason) in [
+        (writer_id.as_str(), "removed"),
+        (analyst_id.as_str(), "needs_setup"),
+        ("no-such-member", "not_found"),
+        (foreign.as_str(), "not_found"),
+    ] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &messages,
+            json!({"body": "hello", "mentions": [{"member_id": member}]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{member}: {body}");
+        assert_eq!(body["code"], "mention_unavailable", "{body}");
+        assert_eq!(body["reason"], reason, "{body}");
+        assert_eq!(body["member_id"], member, "{body}");
+    }
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert!(
+        page["messages"].as_array().unwrap().is_empty(),
+        "nothing is stored: {page}"
+    );
+}
+
+#[tokio::test]
+async fn a_mention_must_name_a_member_or_a_session() {
+    let env = env();
+    let crew = crew(&env).await;
+    let messages = messages_path(&env, &crew);
+    let analyst_id = crew.analyst["id"].as_str().unwrap();
+    for mention in [
+        json!({"member_id": analyst_id, "session_id": session(&crew.analyst)}),
+        json!({}),
+    ] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &messages,
+            json!({"body": "hello", "mentions": [mention]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_conversation", "{body}");
+    }
+    // The legacy Session form still works.
+    say(&env, &crew, "@analyst hi", &[&session(&crew.analyst)]).await;
+}

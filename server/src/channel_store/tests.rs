@@ -1101,3 +1101,47 @@ fn message_view_projects_authors_and_mentions_in_order() {
     assert_eq!(json["mention_member_ids"][1], serde_json::Value::Null);
     assert_eq!(json["mentions"][0]["session_id"], "s-writer");
 }
+
+#[test]
+fn by_client_message_id_finds_the_stored_message() {
+    let r = rig();
+    let channel = r.channel();
+    let (stored, _) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "keyed",
+                client_message_id: Some("k-1"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), &channel.id, "k-1")
+            .unwrap()
+            .map(|message| message.id),
+        Some(stored.id)
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), &channel.id, "k-2")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), "other", "k-1")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id("other", &channel.id, "k-1")
+            .unwrap(),
+        None,
+        "another Project cannot read it"
+    );
+}
