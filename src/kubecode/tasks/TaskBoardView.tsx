@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -57,28 +57,51 @@ export function TaskBoardView({
   useScrollMemory(scroller, scrollKey, { ready: board !== null })
   const [needsYou, setNeedsYou] = usePlaceState(scrollKey ? `${scrollKey}#needsYou` : null, false)
   const [pickedStage, setStage] = usePlaceState<TaskStage | null>(scrollKey ? `${scrollKey}#stage` : null, null)
-  const followed = inspectedStage(board, selectedId)
-  // The stage shown on a narrow board follows the inspected Task, also when it
-  // moves column; the researcher can still pick another stage afterwards.
+  // The stage shown on a narrow board follows the Task inspected last, also
+  // when it moves column (even after it was closed, as a decision lands); the
+  // researcher can still pick another stage afterwards.
+  const [lastInspected, setLastInspected] = useState(selectedId)
+  if (selectedId && selectedId !== lastInspected) setLastInspected(selectedId)
+  const followedId = selectedId ?? lastInspected
+  const stage = pickedStage ?? (board ? initialBoardStage(board) : 'ready')
+  const followed = inspectedStage(board, followedId)
   useEffect(() => {
     if (followed) setStage(followed)
-  }, [followed, selectedId, setStage])
+  }, [followed, followedId, setStage])
   const switchId = useId()
 
   // Closing a Task gives focus back to its card when nothing else took it
-  // (the inspector was opened elsewhere, or its opener was replaced).
+  // (the inspector was opened elsewhere, or its opener was replaced), and
+  // keeps it there while the card moves column, until the researcher moves on.
   const shownTask = useRef(selectedId)
+  const returning = useRef<string | null>(null)
   useEffect(() => {
     const previous = shownTask.current
     shownTask.current = selectedId
-    if (!previous || selectedId) return
-    const active = document.activeElement
-    if (active && active !== document.body) return
-    scroller.current?.querySelector<HTMLElement>(`[data-focus-key="card:${CSS.escape(previous)}"]`)?.focus({ preventScroll: true })
+    if (selectedId) returning.current = null
+    else if (previous) returning.current = previous
   }, [selectedId])
+  useEffect(() => {
+    const id = returning.current
+    if (!id) return
+    const cardOf = () => scroller.current?.querySelector<HTMLElement>(`[data-focus-key="card:${CSS.escape(id)}"]`) ?? null
+    const active = document.activeElement
+    const target = cardOf()
+    if (active && active !== document.body && active !== target) {
+      returning.current = null
+      return
+    }
+    if (target && active !== target) target.focus({ preventScroll: true })
+    const moveOn = () => { returning.current = null }
+    document.addEventListener('pointerdown', moveOn, { once: true })
+    document.addEventListener('keydown', moveOn, { once: true })
+    return () => {
+      document.removeEventListener('pointerdown', moveOn)
+      document.removeEventListener('keydown', moveOn)
+    }
+  }, [board, selectedId, stage])
 
   const cards = (board?.cards ?? []).filter((card) => !needsYou || requiredActionOf(card) !== null)
-  const stage = pickedStage ?? (board ? initialBoardStage(board) : 'ready')
   const archived = board?.archived ?? []
   const empty = board !== null && board.cards.length === 0 && drafts.length === 0
 

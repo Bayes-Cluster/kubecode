@@ -125,6 +125,24 @@ describe('TaskBoardView', () => {
     expect(screen.getByTestId('task-card-r1')).toHaveFocus()
   })
 
+  it('keeps focus on a closed Task\'s card, and shows its stage, when the board learns it moved column after the close', () => {
+    const props = { drafts: [], status: 'ready' as const, t, onOpenGeneral: vi.fn(), onOpenTask: vi.fn(), onReload: vi.fn() }
+    const before = board([card({ id: 'r1', stage: 'review', review_requested: true }), card({ id: 'r2', stage: 'ready' })])
+    const rendered = render(<TaskBoardView {...props} board={before} selectedId="r1" />)
+    screen.getByTestId('task-card-r1').focus()
+    rendered.rerender(<TaskBoardView {...props} board={before} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+    const after = board([card({ id: 'r1', stage: 'in_progress' }), card({ id: 'r2', stage: 'ready' })])
+    rendered.rerender(<TaskBoardView {...props} board={after} selectedId={null} />)
+    expect(screen.getByRole('region', { name: 'In progress' })).toHaveAttribute('data-selected', 'true')
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+    // Once the researcher moves on, the board leaves focus alone.
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    screen.getByTestId('task-card-r2').focus()
+    rendered.rerender(<TaskBoardView {...props} board={board([card({ id: 'r1', stage: 'review' }), card({ id: 'r2', stage: 'ready' })])} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r2')).toHaveFocus()
+  })
+
   it('narrows to what needs the researcher, keeping counts of what is shown', () => {
     view({ board: board([
       card({ id: 'r1', title: 'Quiet' }),
