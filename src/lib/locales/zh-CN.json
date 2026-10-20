@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "历史",
   "kubecode.task.activity.inGeneral": "常规中有关此任务的近期讨论",
   "kubecode.task.activity.inGeneralEmpty": "常规中还没有关于此任务的内容。",
+  "kubecode.task.activity.inGeneralLoading": "正在加载常规中的相关内容…",
+  "kubecode.task.activity.inGeneralFailed": "无法加载常规中关于此任务的内容。",
   "kubecode.task.activity.execution": "执行记录",
   "kubecode.task.activity.records": "关联记录",
   "kubecode.task.activity.empty": "尚无任何动态。",

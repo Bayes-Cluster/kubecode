@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "기록",
   "kubecode.task.activity.inGeneral": "'일반'에서 이 작업에 관한 최근 대화",
   "kubecode.task.activity.inGeneralEmpty": "'일반'에 아직 이 작업에 관한 내용이 없습니다.",
+  "kubecode.task.activity.inGeneralLoading": "'일반'에서 나눈 대화를 불러오는 중…",
+  "kubecode.task.activity.inGeneralFailed": "'일반'에서 이 작업에 관해 나눈 대화를 불러오지 못했습니다.",
   "kubecode.task.activity.execution": "실행 기록",
   "kubecode.task.activity.records": "연결된 기록",
   "kubecode.task.activity.empty": "아직 아무 일도 없었습니다.",

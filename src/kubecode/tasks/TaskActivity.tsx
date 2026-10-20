@@ -94,13 +94,16 @@ function RecentInGeneral({ onShow, projectId, taskId }: {
   onShow: (messageId: string) => void
 }) {
   const { api, connectionState, events, locale, t } = useInspectorServices()
-  const { channel } = useDefaultChannel(api, projectId)
+  const { channel, retry: retryChannel, status: channelStatus } = useDefaultChannel(api, projectId)
   const channelId = channel?.id ?? null
   const matches = useCallback((event: { kind: string; project_id: string | null }) => (
     event.project_id === projectId && event.kind === 'channel_updated'
   ), [projectId])
   const tick = useRefreshTick(events, connectionState, matches)
-  const [messages, setMessages] = useState<{ key: string; list: ChannelMessage[] } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [messages, setMessages] = useState<
+    { key: string; list: ChannelMessage[]; failed?: never } | { key: string; failed: true; list?: never } | null
+  >(null)
   const key = `${projectId}|${channelId ?? ''}|${taskId}`
 
   useEffect(() => {
@@ -108,16 +111,31 @@ function RecentInGeneral({ onShow, projectId, taskId }: {
     let live = true
     api.listChannelMessages(projectId, channelId, { taskId, limit: RECENT }).then(
       (page) => { if (live) setMessages({ key, list: page.messages }) },
-      () => undefined,
+      () => { if (live) setMessages({ key, failed: true }) },
     )
     return () => { live = false }
-  }, [api, channelId, key, projectId, taskId, tick])
+  }, [api, attempt, channelId, key, projectId, taskId, tick])
 
-  const list = messages?.key === key ? [...messages.list].reverse() : []
+  const current = messages?.key === key ? messages : null
+  // A list that loaded once stays while it is read again; a failure is said, never shown as "nothing".
+  const failed = channelStatus === 'error' || Boolean(current?.failed)
+  const list = current?.list ? [...current.list].reverse() : null
+  const retry = () => {
+    setMessages(null)
+    if (channelStatus === 'error') retryChannel()
+    else setAttempt((value) => value + 1)
+  }
   return (
     <section aria-label={t('kubecode.task.activity.inGeneral')} className="kubecode-task-recent">
       <h4>{t('kubecode.task.activity.inGeneral')}</h4>
-      {list.length === 0
+      {failed ? (
+        <p className="kubecode-research-error" role="alert">
+          {t('kubecode.task.activity.inGeneralFailed')}{' '}
+          <Button size="xs" variant="ghost" onClick={retry}>{t('kubecode.retry')}</Button>
+        </p>
+      ) : list === null ? (
+        <p className="kubecode-research-muted" role="status">{t('kubecode.task.activity.inGeneralLoading')}</p>
+      ) : list.length === 0
         ? <p className="kubecode-research-muted">{t('kubecode.task.activity.inGeneralEmpty')}</p>
         : (
           <ul>

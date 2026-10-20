@@ -2555,6 +2555,8 @@
   "kubecode.task.activity.history": "History",
   "kubecode.task.activity.inGeneral": "Recently in General about this Task",
   "kubecode.task.activity.inGeneralEmpty": "Nothing about this Task in General yet.",
+  "kubecode.task.activity.inGeneralLoading": "Loading what was said in General…",
+  "kubecode.task.activity.inGeneralFailed": "What was said in General about this Task could not be loaded.",
   "kubecode.task.activity.execution": "Execution records",
   "kubecode.task.activity.records": "Linked records",
   "kubecode.task.activity.empty": "Nothing has happened yet.",

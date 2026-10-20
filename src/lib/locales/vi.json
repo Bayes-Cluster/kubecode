@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Lịch sử",
   "kubecode.task.activity.inGeneral": "Gần đây trong Chung về Tác vụ này",
   "kubecode.task.activity.inGeneralEmpty": "Chưa có gì về Tác vụ này trong Chung.",
+  "kubecode.task.activity.inGeneralLoading": "Đang tải những gì đã trao đổi trong Chung…",
+  "kubecode.task.activity.inGeneralFailed": "Không thể tải những gì đã trao đổi trong Chung về Tác vụ này.",
   "kubecode.task.activity.execution": "Bản ghi thực thi",
   "kubecode.task.activity.records": "Bản ghi được liên kết",
   "kubecode.task.activity.empty": "Chưa có gì xảy ra.",

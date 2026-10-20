@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Historyja",
   "kubecode.task.activity.inGeneral": "Niadaŭna ŭ «Ahulnaje» pra hetuju Zadačku",
   "kubecode.task.activity.inGeneralEmpty": "U «Ahulnaje» pra hetuju Zadačku pakul ničoha niama.",
+  "kubecode.task.activity.inGeneralLoading": "Zahružajecca toje, što skazana ŭ «Ahulnaje»…",
+  "kubecode.task.activity.inGeneralFailed": "Nie ŭdałosia zahruzić toje, što skazana pra hetuju Zadačku ŭ «Ahulnaje».",
   "kubecode.task.activity.execution": "Zapisy vykanańnia",
   "kubecode.task.activity.records": "Źviazanyja zapisy",
   "kubecode.task.activity.empty": "Pakul ničoha nie adbyłosia.",

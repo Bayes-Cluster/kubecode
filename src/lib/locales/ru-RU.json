@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "История",
   "kubecode.task.activity.inGeneral": "Недавно в General об этой задаче",
   "kubecode.task.activity.inGeneralEmpty": "В General пока ничего об этой задаче.",
+  "kubecode.task.activity.inGeneralLoading": "Загружается сказанное в «Общее»…",
+  "kubecode.task.activity.inGeneralFailed": "Не удалось загрузить сказанное в «Общее» об этой задаче.",
   "kubecode.task.activity.execution": "Записи выполнения",
   "kubecode.task.activity.records": "Связанные записи",
   "kubecode.task.activity.empty": "Пока ничего не произошло.",

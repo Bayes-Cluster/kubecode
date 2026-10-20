@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Гісторыя",
   "kubecode.task.activity.inGeneral": "Нядаўна ў «Агульнае» пра гэту Задачу",
   "kubecode.task.activity.inGeneralEmpty": "У «Агульнае» пра гэту Задачу пакуль нічога няма.",
+  "kubecode.task.activity.inGeneralLoading": "Загружаецца тое, што сказана ў «Агульнае»…",
+  "kubecode.task.activity.inGeneralFailed": "Не ўдалося загрузіць тое, што сказана пра гэту Задачу ў «Агульнае».",
   "kubecode.task.activity.execution": "Запісы выканання",
   "kubecode.task.activity.records": "Звязаныя запісы",
   "kubecode.task.activity.empty": "Пакуль нічога не адбылося.",

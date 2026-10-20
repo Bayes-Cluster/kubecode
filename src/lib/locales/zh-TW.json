@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "歷史",
   "kubecode.task.activity.inGeneral": "一般中有關此任務的近期討論",
   "kubecode.task.activity.inGeneralEmpty": "一般中還沒有關於此任務的內容。",
+  "kubecode.task.activity.inGeneralLoading": "正在載入一般中的相關內容…",
+  "kubecode.task.activity.inGeneralFailed": "無法載入一般中關於此任務的內容。",
   "kubecode.task.activity.execution": "執行記錄",
   "kubecode.task.activity.records": "連結的記錄",
   "kubecode.task.activity.empty": "尚無任何動態。",

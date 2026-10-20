@@ -37,7 +37,7 @@ const step = (overrides: Partial<TaskActivityStep>): TaskActivityStep => ({
 const gene = { member_id: 'g', name: 'Gene', handle: 'general', role: 'general' as const }
 const analyst = { member_id: 'a', name: 'Analyst', handle: 'analyst', role: 'specialist' as const }
 
-function mount(detail: TaskDetail, bundle: ResearchBundle | null = null) {
+function mount(detail: TaskDetail, bundle: ResearchBundle | null = null, overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}) {
   const api = {
     listChannels: vi.fn().mockResolvedValue([{ id: 'c1', is_default: true }]),
     listChannelMessages: vi.fn().mockResolvedValue({
@@ -45,6 +45,7 @@ function mount(detail: TaskDetail, bundle: ResearchBundle | null = null) {
       has_more: false,
     }),
     listResearchImports: vi.fn().mockResolvedValue([]),
+    ...overrides,
   } as unknown as KubecodeApi
   const navigation = fakeNavigation()
   function Probe() {
@@ -111,6 +112,26 @@ describe('TaskActivity', () => {
       { view: 'general', filter: 'r1', message: 'gm7', thread: null },
       { inspector: 'keep' },
     )
+  })
+
+  it('says it is loading what was said in General, never that nothing was', async () => {
+    mount(taskDetail(), null, { listChannelMessages: vi.fn().mockReturnValue(new Promise(() => undefined)) })
+    const recent = await screen.findByRole('region', { name: 'Recently in General about this Task' })
+    expect(await within(recent).findByRole('status')).toHaveTextContent('Loading what was said in General…')
+    expect(within(recent).queryByText('Nothing about this Task in General yet.')).not.toBeInTheDocument()
+  })
+
+  it('says what was said in General could not be loaded, and tries again', async () => {
+    const listChannelMessages = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ messages: [{ id: 'gm7', body: 'The sweep is half done.', author_kind: 'member', created_at: '2026-10-20 10:00:00' }], has_more: false })
+    mount(taskDetail(), null, { listChannelMessages })
+    const recent = await screen.findByRole('region', { name: 'Recently in General about this Task' })
+    expect(await within(recent).findByRole('alert')).toHaveTextContent('What was said in General about this Task could not be loaded.')
+    expect(within(recent).queryByText('Nothing about this Task in General yet.')).not.toBeInTheDocument()
+    fireEvent.click(within(recent).getByRole('button', { name: 'Retry' }))
+    expect(await within(recent).findByRole('button', { name: /The sweep is half done\./ })).toBeInTheDocument()
+    expect(listChannelMessages).toHaveBeenCalledTimes(2)
   })
 
   it('opens execution records and linked records only when asked, and starts nothing', async () => {

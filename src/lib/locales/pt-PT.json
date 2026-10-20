@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Histórico",
   "kubecode.task.activity.inGeneral": "Recente em Geral sobre esta Tarefa",
   "kubecode.task.activity.inGeneralEmpty": "Ainda nada sobre esta Tarefa em Geral.",
+  "kubecode.task.activity.inGeneralLoading": "A carregar o que foi dito em Geral…",
+  "kubecode.task.activity.inGeneralFailed": "Não foi possível carregar o que foi dito em Geral sobre esta Tarefa.",
   "kubecode.task.activity.execution": "Registos de execução",
   "kubecode.task.activity.records": "Registos associados",
   "kubecode.task.activity.empty": "Ainda não aconteceu nada.",

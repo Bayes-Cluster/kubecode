@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "História",
   "kubecode.task.activity.inGeneral": "Nedávno v konverzácii Všeobecné o tejto úlohe",
   "kubecode.task.activity.inGeneralEmpty": "V konverzácii Všeobecné zatiaľ nie je nič o tejto úlohe.",
+  "kubecode.task.activity.inGeneralLoading": "Načítava sa, čo zaznelo v konverzácii Všeobecné…",
+  "kubecode.task.activity.inGeneralFailed": "Nepodarilo sa načítať, čo zaznelo o tejto úlohe v konverzácii Všeobecné.",
   "kubecode.task.activity.execution": "Záznamy o vykonaní",
   "kubecode.task.activity.records": "Prepojené záznamy",
   "kubecode.task.activity.empty": "Zatiaľ sa nič nestalo.",

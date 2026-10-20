@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Verlauf",
   "kubecode.task.activity.inGeneral": "Zuletzt in „General“ zu dieser Aufgabe",
   "kubecode.task.activity.inGeneralEmpty": "Noch nichts zu dieser Aufgabe in „General“.",
+  "kubecode.task.activity.inGeneralLoading": "Was in Allgemein gesagt wurde, wird geladen …",
+  "kubecode.task.activity.inGeneralFailed": "Was in Allgemein zu dieser Aufgabe gesagt wurde, konnte nicht geladen werden.",
   "kubecode.task.activity.execution": "Ausführungseinträge",
   "kubecode.task.activity.records": "Verknüpfte Einträge",
   "kubecode.task.activity.empty": "Bisher ist nichts passiert.",

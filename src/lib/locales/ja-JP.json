@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "履歴",
   "kubecode.task.activity.inGeneral": "「一般」でのこのタスクに関する最近のやり取り",
   "kubecode.task.activity.inGeneralEmpty": "「一般」にはまだこのタスクに関する内容はありません。",
+  "kubecode.task.activity.inGeneralLoading": "「一般」でのやり取りを読み込んでいます…",
+  "kubecode.task.activity.inGeneralFailed": "「一般」でのこのタスクに関するやり取りを読み込めませんでした。",
   "kubecode.task.activity.execution": "実行記録",
   "kubecode.task.activity.records": "リンクされたレコード",
   "kubecode.task.activity.empty": "まだ何も起きていません。",

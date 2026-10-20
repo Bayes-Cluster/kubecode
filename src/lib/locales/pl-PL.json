@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Historia",
   "kubecode.task.activity.inGeneral": "Ostatnio w „Ogólne” o tym zadaniu",
   "kubecode.task.activity.inGeneralEmpty": "W „Ogólne” nie ma jeszcze nic o tym zadaniu.",
+  "kubecode.task.activity.inGeneralLoading": "Wczytywanie tego, co napisano w „Ogólne”…",
+  "kubecode.task.activity.inGeneralFailed": "Nie udało się wczytać tego, co napisano w „Ogólne” o tym zadaniu.",
   "kubecode.task.activity.execution": "Zapisy wykonania",
   "kubecode.task.activity.records": "Powiązane wpisy",
   "kubecode.task.activity.empty": "Jeszcze nic się nie wydarzyło.",

@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Cronologia",
   "kubecode.task.activity.inGeneral": "Di recente in General su questo Task",
   "kubecode.task.activity.inGeneralEmpty": "Ancora niente su questo Task in General.",
+  "kubecode.task.activity.inGeneralLoading": "Caricamento di ciò che è stato detto in Generale…",
+  "kubecode.task.activity.inGeneralFailed": "Non è stato possibile caricare ciò che è stato detto in Generale su questo Task.",
   "kubecode.task.activity.execution": "Record di esecuzione",
   "kubecode.task.activity.records": "Record collegati",
   "kubecode.task.activity.empty": "Non è ancora successo nulla.",

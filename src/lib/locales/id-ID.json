@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Riwayat",
   "kubecode.task.activity.inGeneral": "Terbaru di Umum tentang Tugas ini",
   "kubecode.task.activity.inGeneralEmpty": "Belum ada apa pun tentang Tugas ini di Umum.",
+  "kubecode.task.activity.inGeneralLoading": "Memuat apa yang dibicarakan di Umum…",
+  "kubecode.task.activity.inGeneralFailed": "Apa yang dibicarakan di Umum tentang Tugas ini tidak dapat dimuat.",
   "kubecode.task.activity.execution": "Catatan eksekusi",
   "kubecode.task.activity.records": "Catatan tertaut",
   "kubecode.task.activity.empty": "Belum ada yang terjadi.",

@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Historik",
   "kubecode.task.activity.inGeneral": "Senaste i Allmänt om den här uppgiften",
   "kubecode.task.activity.inGeneralEmpty": "Inget om den här uppgiften i Allmänt ännu.",
+  "kubecode.task.activity.inGeneralLoading": "Läser in vad som sagts i Allmänt…",
+  "kubecode.task.activity.inGeneralFailed": "Det som sagts i Allmänt om den här uppgiften kunde inte läsas in.",
   "kubecode.task.activity.execution": "Körningsposter",
   "kubecode.task.activity.records": "Länkade poster",
   "kubecode.task.activity.empty": "Inget har hänt ännu.",

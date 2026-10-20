@@ -2043,6 +2043,8 @@
   "kubecode.task.activity.history": "Історія",
   "kubecode.task.activity.inGeneral": "Нещодавно в «Загальне» про це завдання",
   "kubecode.task.activity.inGeneralEmpty": "У «Загальне» про це завдання ще нічого немає.",
+  "kubecode.task.activity.inGeneralLoading": "Завантажується сказане в «Загальне»…",
+  "kubecode.task.activity.inGeneralFailed": "Не вдалося завантажити сказане в «Загальне» про це завдання.",
   "kubecode.task.activity.execution": "Записи виконання",
   "kubecode.task.activity.records": "Пов’язані записи",
   "kubecode.task.activity.empty": "Ще нічого не сталося.",
