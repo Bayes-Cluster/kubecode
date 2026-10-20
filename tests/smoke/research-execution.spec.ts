@@ -94,14 +94,14 @@ test('@smoke research execution shows processes, controls launches, and never ca
     await expect(section).toContainText('result(s) still need analysis')
 
     // Pausing stops future launches and leaves the running process alone.
-    await section.getByRole('button', { name: 'Pause launches' }).click()
+    await section.getByRole('button', { name: 'Pause experiment launches in round 1' }).click()
     await expect(section.getByText('Paused', { exact: true })).toBeVisible()
     const refused = await launch('later', 'true')
     expect(refused.status()).toBe(409)
     expect((await refused.json() as { reason: string }).reason).toBe('envelope_paused')
     const long = section.getByRole('listitem').filter({ hasText: 'long' }).first()
     await expect(long).toContainText('Running')
-    await section.getByRole('button', { name: 'Resume launches' }).click()
+    await section.getByRole('button', { name: 'Resume experiment launches in round 1' }).click()
     await expect(section.getByText('Active', { exact: true })).toBeVisible()
 
     // Stop one process, then cancel the round's authority with a confirmation.
