@@ -1085,7 +1085,12 @@ export type ChannelMessage = {
   /** The mentioned members, in the order of `mentions`; null where a Session is no member's. */
   mention_member_ids?: Array<string | null>
 }
-export type ChannelMessagePage = { messages: ChannelMessage[]; has_more: boolean }
+export type ChannelMessagePage = {
+  messages: ChannelMessage[]
+  has_more: boolean
+  /** The delivery state of the researcher's messages on the page, by id (ADR 0232). */
+  deliveries?: Record<string, MessageDelivery>
+}
 export type ChannelThread = {
   id: string
   project_id: string
@@ -1314,6 +1319,10 @@ export type TaskDetail = TaskCard & {
   timeline?: TaskActivity[]
   pending?: TaskPendingDecision[]
   actions?: { archive: TaskAvailability; restore: boolean }
+  /** The round the newest execution authorization started, and whether new work on it is paused (ADR 0232). */
+  execution?: TaskExecution | null
+  /** Decisions on this Task that did not reach their recipient yet. */
+  delivery_issues?: SourceDelivery[]
 }
 
 /** A turn of the researcher's private conversation with a member (ADR 0223). */
@@ -1599,3 +1608,131 @@ export type MemberInput = {
   client_request_id?: string
 }
 export type MemberPatch = { name?: string; template?: MemberTemplate; spec?: MemberSpec }
+
+/**
+ * What waits on the researcher (ADR 0232): one server read model. Each item is
+ * keyed by its decision identity and appears once, whichever records refer to it.
+ */
+export type AttentionTaskRef = { id: string; title: string }
+export type AttentionMemberRef = { id: string; name: string; handle: string; role: 'general' | 'specialist' | string }
+export type AttentionBinding = 'public' | 'dm'
+type AttentionBase = {
+  key: string
+  project_id: string
+  group: 'decision' | 'setup'
+  created_at: string
+  /** Milliseconds left before a permission or input request declines by itself. */
+  deadline_ms: number | null
+  task: AttentionTaskRef | null
+  member: AttentionMemberRef | null
+  binding: AttentionBinding | null
+  conversation_id: string | null
+  /** A Session that is no member's, by its title. */
+  session_title: string | null
+}
+export type PendingOption = { id: string; label: string; kind: string }
+export type AttentionItem =
+  | AttentionBase & { kind: 'permission'; request_id: string; run_id: string; tool: string; options: PendingOption[] }
+  | AttentionBase & { kind: 'input'; request_id: string; run_id: string; message: string; schema: unknown }
+  | AttentionBase & {
+    kind: 'question'
+    request_id: string
+    work_id: string
+    work_title: string
+    question: string
+    options: string[]
+    impact: string | null
+  }
+  | AttentionBase & { kind: 'review'; request_id: string; brief_revision: number }
+  | AttentionBase & { kind: 'proposal'; research_id: string; revision: number; message_id: string; admitted: boolean }
+  | AttentionBase & { kind: 'setup'; member_id: string; setup_code: string | null }
+export type AttentionKind = AttentionItem['kind']
+/** A Session working now: what it works on, what is queued, and the requests it waits on. */
+export type ExecutionView = {
+  run_id: string
+  conversation_id: string
+  status: 'running' | 'waiting_permission'
+  started_at: string
+  member: AttentionMemberRef | null
+  binding: AttentionBinding | null
+  session_title: string | null
+  tasks: AttentionTaskRef[]
+  queued: number
+  waiting_keys: string[]
+}
+/** A member Session's latest turn that failed: its status only, never the error. */
+export type ExecutionFailure = {
+  run_id: string
+  conversation_id: string
+  member: AttentionMemberRef
+  binding: AttentionBinding
+  status: AgentRun['status']
+  ended_at: string
+}
+export type AttentionSource = 'runtime' | 'work' | 'tasks' | 'proposals' | 'members' | 'runs' | 'routes'
+export type AttentionSnapshot = {
+  project_id: string
+  /** The workspace event cursor read before any source. */
+  cursor: number
+  items: AttentionItem[]
+  executions: ExecutionView[]
+  failures: ExecutionFailure[]
+  /** Failed deliveries the researcher can retry, in General and per Task. */
+  undelivered: { general: number; tasks: Record<string, number> }
+  /** Sources that could not be read: never "nothing waits". */
+  incomplete: AttentionSource[]
+  truncated: boolean
+}
+export type AttentionWorkspaceCounts = {
+  project_id: string
+  decisions: number
+  setup: number
+  permissions: number
+  undelivered: number
+  incomplete: boolean
+}
+export type AttentionSummary = { cursor: number; workspaces: AttentionWorkspaceCounts[] }
+
+/** How far one route of a message got, from the route and the recipient Session's admission. */
+export type RouteDeliveryState = 'sending' | 'retrying' | 'busy' | 'queued' | 'started' | 'withdrawn' | 'failed'
+export type RouteDelivery = {
+  route_id: string
+  kind: string
+  recipient: AttentionMemberRef | null
+  recipient_session: string | null
+  state: RouteDeliveryState
+  attempts: number
+  busy: number
+  retries: number
+  last_error: string | null
+  delivered_at: string | null
+  retryable: boolean
+  /** The routing notes about this route, which the message folds. */
+  note_ids: string[]
+}
+export type MessageDeliveryState = 'saved' | 'recorded' | 'sending' | 'delivered' | 'partial' | 'failed' | 'denied'
+export type DeliveryDenialCode = 'manager_unavailable' | 'member_unavailable' | 'dm_private' | 'request_refused'
+export type MessageDelivery = {
+  message_id: string
+  state: MessageDeliveryState
+  routes: RouteDelivery[]
+  denial: { code: DeliveryDenialCode | string; reroutable: boolean; note_id: string | null } | null
+}
+export type SourceDelivery = { source_kind: 'review' | 'decision' | string; source_id: string; route: RouteDelivery }
+export type RouteRetryResult = { route: { id: string; state: string }; retried: boolean; delivery: MessageDelivery | null }
+export type TaskExecution = { round_id: string; round_number: number; paused: boolean; policy_revision: number }
+export type RoundPolicyView = {
+  policy: {
+    round_id: string
+    paused: boolean
+    revision: number
+    max_executors: number
+    max_parallel_attempts: number
+    max_attempts: number
+  }
+  used: { executors: number; open_attempts: number; total_attempts: number }
+}
+export type RoundPolicyPatch = Partial<Pick<RoundPolicyView['policy'], 'paused' | 'max_executors' | 'max_parallel_attempts' | 'max_attempts'>>
+/** Whether the member started on a direct message or it waits behind the running turn. */
+export type DmSendResult = { state: 'delivered'; admission?: 'started' | 'queued' | null }
+export type DmPendingPrompt = { client_message_id: string; text: string; position: number; created_at: string }
