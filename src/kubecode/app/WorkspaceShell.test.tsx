@@ -558,6 +558,29 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/p\/project-1\/resources\?/))
   })
 
+  it('keeps the Resources search, kind filter, and preview after a visit to Kanban', async () => {
+    const { nav } = await start('#/p/project-1/resources', api({
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('finding', 'f1', 'Accuracy holds')], next_cursor: null }),
+      readProjectContext: vi.fn().mockResolvedValue({
+        ...contextDocument('finding', 'f1', 'Accuracy holds'),
+        sections: [{ heading: 'Claim', text: 'Pruning keeps 0.91', truncated: false }],
+      }),
+    }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search Project work' }), { target: { value: 'accuracy' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Findings' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Accuracy holds/ }))
+    expect(await screen.findByText('Pruning keeps 0.91')).toBeInTheDocument()
+
+    fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
+    await screen.findByRole('heading', { name: 'Kanban', level: 2 })
+    fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
+    await screen.findByRole('heading', { name: 'Resources', level: 2 })
+    expect(screen.getByRole('combobox', { name: 'Search Project work' })).toHaveValue('accuracy')
+    expect(screen.getByRole('button', { name: 'Findings' })).toHaveAttribute('aria-pressed', 'true')
+    await screen.findByRole('option', { name: /Accuracy holds/ })
+    expect(screen.getByText('Pruning keeps 0.91')).toBeInTheDocument()
+  })
+
   it('opens a work item from Resources on Kanban with its Task', async () => {
     await start('#/p/project-1/resources', api({
       searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('work', 'w1', 'Sweep heads')], next_cursor: null }),

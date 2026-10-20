@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import type {
   KubecodeApi, ProjectContextDocument, ProjectContextItem, ProjectContextRef,
 } from './api'
+import { usePlaceState } from './app/location/placeMemory'
 import {
   PROJECT_CONTEXT_KIND_LABELS,
   PROJECT_WORK_FILTERS,
@@ -27,11 +28,16 @@ type ListState = {
   status: 'error' | 'loading' | 'ready'
 }
 
+/** `scope` is the search the preview was opened from: a new search closes it. */
 type PreviewState =
   | { status: 'closed' }
-  | { status: 'error'; target: ProjectContextItem }
-  | { status: 'loading'; target: ProjectContextItem }
-  | { document: ProjectContextDocument; status: 'ready'; target: ProjectContextItem }
+  | { scope: string; status: 'error'; target: ProjectContextItem }
+  | { scope: string; status: 'loading'; target: ProjectContextItem }
+  | { document: ProjectContextDocument; scope: string; status: 'ready'; target: ProjectContextItem }
+
+const CLOSED_PREVIEW: PreviewState = { status: 'closed' }
+
+export type ProjectWorkListStatus = 'error' | 'loading' | 'ready'
 
 type ComposerProjectWorkPickerProps = {
   api: KubecodeApi
@@ -48,6 +54,13 @@ type ComposerProjectWorkPickerProps = {
   t: Translator
   /** The scrolling list of results, so a view can keep its scroll position. */
   resultsRef?: Ref<HTMLDivElement>
+  /**
+   * Where a view keeps the search, the kind filter, and the open preview
+   * (ADR 0228 §4), so leaving and coming back finds them again.
+   */
+  stateKey?: string | null
+  /** Reports whether the results are still loading, so a view can restore its scroll once they are in. */
+  onListStatusChange?: (status: ProjectWorkListStatus) => void
 }
 
 /**
@@ -63,15 +76,17 @@ export function ComposerProjectWorkPicker({
   onSelect,
   projectId,
   resultsRef,
+  stateKey = null,
+  onListStatusChange,
   t,
 }: ComposerProjectWorkPickerProps) {
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<ProjectWorkFilter>('all')
+  const [query, setQuery] = usePlaceState(stateKey && `${stateKey}#query`, '')
+  const [filter, setFilter] = usePlaceState<ProjectWorkFilter>(stateKey && `${stateKey}#filter`, 'all')
   const [list, setList] = useState<ListState>({
     items: [], loadMoreFailed: false, nextCursor: null, status: 'loading',
   })
   const [activeIndex, setActiveIndex] = useState(0)
-  const [preview, setPreview] = useState<PreviewState>({ status: 'closed' })
+  const [preview, setPreview] = usePlaceState<PreviewState>(stateKey && `${stateKey}#preview`, CLOSED_PREVIEW)
   const requestRef = useRef(0)
   const previewRequestRef = useRef(0)
   const listboxId = useId()
@@ -79,6 +94,7 @@ export function ComposerProjectWorkPicker({
     () => PROJECT_WORK_FILTERS.find((entry) => entry.id === filter)?.kinds ?? undefined,
     [filter],
   )
+  const scope = `${filter}|${query.trim()}`
 
   useEffect(() => {
     const request = ++requestRef.current
@@ -86,7 +102,8 @@ export function ComposerProjectWorkPicker({
       // A new search replaces what is listed: rows from the previous query or
       // filter must not stay selectable while it loads.
       setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'loading' })
-      setPreview({ status: 'closed' })
+      // A preview kept from this very search (a view returned to) stays open.
+      setPreview((current) => (current.status !== 'closed' && current.scope === scope ? current : CLOSED_PREVIEW))
       api.searchProjectContext(projectId, { query: query.trim(), kinds, limit: PAGE_SIZE })
         .then((page) => {
           if (request !== requestRef.current) return
@@ -108,7 +125,9 @@ export function ComposerProjectWorkPicker({
       requestRef.current += 1
       previewRequestRef.current += 1
     }
-  }, [api, kinds, projectId, query])
+  }, [api, kinds, projectId, query, scope, setPreview])
+
+  useEffect(() => { onListStatusChange?.(list.status) }, [list.status, onListStatusChange])
 
   const rows = useMemo(
     () => list.items.filter((item) => !isOwnSessionReference(item.ref, conversationId)),
@@ -151,13 +170,21 @@ export function ComposerProjectWorkPicker({
 
   function openPreview(target: ProjectContextItem) {
     const request = ++previewRequestRef.current
-    setPreview({ status: 'loading', target })
+    setPreview({ scope, status: 'loading', target })
     api.readProjectContext(projectId, target.ref, 'content').then((document) => {
-      if (request === previewRequestRef.current) setPreview({ document, status: 'ready', target })
+      if (request === previewRequestRef.current) setPreview({ document, scope, status: 'ready', target })
     }).catch(() => {
-      if (request === previewRequestRef.current) setPreview({ status: 'error', target })
+      if (request === previewRequestRef.current) setPreview({ scope, status: 'error', target })
     })
   }
+
+  // A preview still loading when the view was left is read again on return.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (resumed.current) return
+    resumed.current = true
+    if (preview.status === 'loading') openPreview(preview.target)
+  })
 
   const move = (direction: 1 | -1) => {
     if (enabledIndexes.length === 0) return
@@ -169,7 +196,7 @@ export function ComposerProjectWorkPicker({
   const unavailableLabel = (item: ProjectContextItem) => t(
     item.availability === 'removed' ? 'kubecode.projectWorkRemoved' : 'kubecode.projectWorkChanged',
   )
-  const closePreview = () => setPreview({ status: 'closed' })
+  const closePreview = () => setPreview(CLOSED_PREVIEW)
   const hasList = ready && rows.length > 0
 
   return (

@@ -1054,7 +1054,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 <ResourcesView
                   api={api}
                   projectId={projectId}
-                  scrollKey={placeKey.view(projectId, 'resources')}
+                  stateKey={placeKey.view(projectId, 'resources')}
                   t={t}
                   onOpen={openReference}
                 />

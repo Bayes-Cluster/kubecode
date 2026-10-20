@@ -1,10 +1,10 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, ProjectContextItem, ProjectContextRef } from '../api'
 import { useScrollMemory } from '../app/location/placeMemory'
-import { ComposerProjectWorkPicker } from '../ComposerProjectWorkPicker'
+import { ComposerProjectWorkPicker, type ProjectWorkListStatus } from '../ComposerProjectWorkPicker'
 
 export type ResourcesViewProps = {
   api: KubecodeApi
@@ -15,8 +15,11 @@ export type ResourcesViewProps = {
    * this view's inspector, a Session, Thread, or work item where it lives.
    */
   onOpen: (reference: ProjectContextRef) => void
-  /** Where the results' scroll position is kept for the place (`placeKey.view`). */
-  scrollKey?: string | null
+  /**
+   * Where the place keeps the results' scroll position, the search, the kind
+   * filter, and the open preview (`placeKey.view`).
+   */
+  stateKey?: string | null
 }
 
 /**
@@ -26,10 +29,11 @@ export type ResourcesViewProps = {
  * can be cited in a message. Choosing a row previews it; the preview opens
  * the record in this view's inspector, beside the list.
  */
-export function ResourcesView({ api, onOpen, projectId, scrollKey = null, t }: ResourcesViewProps) {
+export function ResourcesView({ api, onOpen, projectId, stateKey = null, t }: ResourcesViewProps) {
   const results = useRef<HTMLDivElement>(null)
-  // The results load after arrival; restoring waits for the rows it needs.
-  useScrollMemory(results, scrollKey, { ready: true })
+  // The results load after arrival: the scroll position is put back once they are in.
+  const [listStatus, setListStatus] = useState<ProjectWorkListStatus>('loading')
+  useScrollMemory(results, stateKey, { ready: listStatus !== 'loading' })
   return (
     <section aria-label={t('kubecode.nav.resources')} className="kubecode-resources">
       <header className="kubecode-channel-header">
@@ -43,9 +47,11 @@ export function ResourcesView({ api, onOpen, projectId, scrollKey = null, t }: R
         conversationId=""
         projectId={projectId}
         t={t}
+        onListStatusChange={setListStatus}
         onOpen={(item: ProjectContextItem) => onOpen(item.ref)}
         onSelect={() => undefined}
         resultsRef={results}
+        stateKey={stateKey}
       />
     </section>
   )

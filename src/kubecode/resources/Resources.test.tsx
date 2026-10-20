@@ -76,7 +76,7 @@ describe('ResourcesView keeps its place (ADR 0228 §4)', () => {
       } as unknown as KubecodeApi
       const resources = (
         <PlaceMemoryProvider memory={memory}>
-          <ResourcesView api={api} projectId="p1" scrollKey="p1|view:resources" t={t} onOpen={vi.fn()} />
+          <ResourcesView api={api} projectId="p1" stateKey="p1|view:resources" t={t} onOpen={vi.fn()} />
         </PlaceMemoryProvider>
       )
       const view = render(resources)
