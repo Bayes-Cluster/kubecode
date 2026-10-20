@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, ProjectContextItem, ProjectContextRef } from '../api'
@@ -8,7 +7,6 @@ export type ResourcesViewProps = {
   api: KubecodeApi
   projectId: string
   t: Translator
-  onClose: () => void
   /** Goes to the item itself: its Task, Session, Thread, or the board. */
   onOpen: (reference: ProjectContextRef) => void
   /** Which kinds of record have somewhere to go. */
@@ -22,12 +20,11 @@ export type ResourcesViewProps = {
  * can be cited in a message. Choosing a row previews it; the preview offers
  * going to the record.
  */
-export function ResourcesView({ api, canOpen, onClose, onOpen, projectId, t }: ResourcesViewProps) {
+export function ResourcesView({ api, canOpen, onOpen, projectId, t }: ResourcesViewProps) {
   return (
     <section aria-label={t('kubecode.nav.resources')} className="kubecode-resources">
       <header className="kubecode-channel-header">
         <div>
-          <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.nav.back')}</Button>
           <h2>{t('kubecode.nav.resources')}</h2>
           <p className="kubecode-research-muted">{t('kubecode.resources.subtitle')}</p>
         </div>

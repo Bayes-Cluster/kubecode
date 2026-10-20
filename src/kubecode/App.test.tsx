@@ -10,6 +10,19 @@ vi.mock('./TerminalView', () => ({
   ),
 }))
 
+/**
+ * For tests about execution history: the Workspace was last left on its
+ * Sessions surface, and the address says so (ADR 0228 opens General otherwise).
+ */
+function startOnSessions(projectId = 'project-1') {
+  window.history.replaceState(null, '', `/#/p/${projectId}/sessions`)
+  localStorage.setItem('kubecode:workspace-location:v1', JSON.stringify({
+    lastProjectId: projectId,
+    seq: 1,
+    workspaces: { [projectId]: { current: 'sessions', at: 1, views: { sessions: `/p/${projectId}/sessions` } } },
+  }))
+}
+
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.unstubAllGlobals())
@@ -121,6 +134,7 @@ describe('Kubecode workspace', () => {
   )
 
   it('uses project and session navigation with the agent session as the primary workspace', async () => {
+    startOnSessions()
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: 'demo' },
@@ -1326,6 +1340,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('restores the saved pane layout for a project', async () => {
+    startOnSessions()
     localStorage.setItem('kubecode:layout:project-1', JSON.stringify({
       contextOpen: true,
       contextWidth: 612,
@@ -1459,6 +1474,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('shows functional session actions and preserves an Agent title separately', async () => {
+    startOnSessions()
     const deleteConversation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
@@ -1573,6 +1589,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('renders and resolves an ACP elicitation form from the active Agent run', async () => {
+    startOnSessions()
     const resolveElicitation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),

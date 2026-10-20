@@ -13,7 +13,6 @@ export type TaskBoardViewProps = {
   selectedId?: string | null
   status: TaskBoardStatus
   t: Translator
-  onClose: () => void
   onOpenDraft: (draft: TaskDraft) => void
   onOpenTask: (task: TaskCard) => void
   onReload: () => void
@@ -28,7 +27,6 @@ export type TaskBoardViewProps = {
 export function TaskBoardView({
   board,
   drafts,
-  onClose,
   onOpenDraft,
   onOpenTask,
   onReload,
@@ -40,7 +38,6 @@ export function TaskBoardView({
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board">
       <header className="kubecode-channel-header">
         <div>
-          <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.nav.back')}</Button>
           <h2>{t('kubecode.nav.board')}</h2>
           <p className="kubecode-research-muted">{t('kubecode.task.boardSubtitle')}</p>
         </div>

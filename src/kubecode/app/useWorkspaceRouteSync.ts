@@ -139,6 +139,8 @@ export function useWorkspaceRouteSync({
       }
       awaitingStore.set(null)
       synced.current = { text, route: current }
+      // Every write reads the asked-for mode, so it never carries over to a later move.
+      historyModeRef.current?.()
       window.history.replaceState(window.history.state, '', routeHash(current))
       return
     }
@@ -148,6 +150,7 @@ export function useWorkspaceRouteSync({
         target.current = null
         awaitingStore.set(null)
         synced.current = { text, route: current }
+        historyModeRef.current?.()
         // Arrived at the place (or its parent): the address names exactly where we are.
         if (text !== formatWorkspaceRoute(parseWorkspaceRoute(window.location.hash) ?? current)) {
           window.history.replaceState(window.history.state, '', routeHash(current))
@@ -165,7 +168,8 @@ export function useWorkspaceRouteSync({
       && previous.project === current.project
       && !previous.conversation
       && Boolean(current.conversation)
-    if (fillsIn || historyModeRef.current?.() === 'replace') {
+    const quiet = historyModeRef.current?.() === 'replace'
+    if (fillsIn || quiet) {
       window.history.replaceState(window.history.state, '', routeHash(current))
     } else {
       window.history.pushState(window.history.state, '', routeHash(current))

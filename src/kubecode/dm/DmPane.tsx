@@ -21,7 +21,6 @@ export type DmPaneProps = {
   projectId: string
   research: ResearchSummary[]
   t: Translator
-  onClose: () => void
   /** Called after part of the conversation was shared to General. */
   onShared?: () => void
 }
@@ -37,7 +36,6 @@ export function DmPane({
   connectionState,
   events,
   member,
-  onClose,
   onShared,
   projectId,
   research,
@@ -100,7 +98,6 @@ export function DmPane({
       <div className="kubecode-channel-main">
         <header className="kubecode-channel-header">
           <div>
-            <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.dm.back')}</Button>
             <h2>{t('kubecode.dm.title', { name: member.name })}</h2>
             <p className="kubecode-research-muted">{t('kubecode.dm.private', { name: member.name })}</p>
           </div>

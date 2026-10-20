@@ -30,8 +30,8 @@ export type ChannelWorkspaceProps = {
   /** A Thread to open on arrival (for example from a research question). */
   initialThreadId?: string | null
   /**
-   * The Task detail (or any other detail) shown beside the conversation. On a
-   * narrow screen it replaces the conversation, with its own way back.
+   * The inspector, beside the conversation or over it (ADR 0228 §3). Over it,
+   * the conversation stays mounted underneath; the inspector has the way back.
    */
   detail?: ReactNode
   /** A message to land on, and to return to when the detail closes. */
@@ -45,7 +45,6 @@ export type ChannelWorkspaceProps = {
   onOpenTask?: (taskId: string, messageId: string) => void
   /** Task ids that are on the board, to mark proposals that are not. */
   tasksOnBoard?: ReadonlySet<string>
-  onClose: () => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
   /** Opens the one work board filtered to what came from a Thread. */
@@ -73,7 +72,6 @@ export function ChannelWorkspace({
   onThreadChange,
   onOpenTask,
   tasksOnBoard,
-  onClose,
   onOpenResearch,
   onOpenSession,
   onOpenWork,
@@ -177,7 +175,6 @@ export function ChannelWorkspace({
       <div className="kubecode-channel-main">
         <header className="kubecode-channel-header">
           <div>
-            <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.channel.back')}</Button>
             <h2>{channel?.is_default ? `# ${t('kubecode.channel.general')}` : channel?.name ?? t('kubecode.channel.title')}</h2>
             <p className="kubecode-research-muted">{t('kubecode.channel.subtitle')}</p>
           </div>

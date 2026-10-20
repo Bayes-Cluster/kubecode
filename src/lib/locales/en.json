@@ -2364,6 +2364,8 @@
   "kubecode.nav.needsPermission": "Permission",
   "kubecode.nav.taskDetail": "Task details",
   "kubecode.nav.closeDetail": "Close details",
+  "kubecode.nav.opening": "Opening Workspace…",
+  "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
   "kubecode.inspector.backTo": "Back to {place}",
   "kubecode.inspector.evidenceDetail": "Evidence details",
   "kubecode.inspector.resourceDetail": "Resource details",

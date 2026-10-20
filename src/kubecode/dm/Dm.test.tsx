@@ -41,7 +41,6 @@ function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, even
       projectId="p1"
       research={research}
       t={t}
-      onClose={vi.fn()}
       onShared={onShared}
     />,
   )
@@ -111,7 +110,6 @@ describe('DmPane', () => {
         projectId="p1"
         research={research}
         t={t}
-        onClose={vi.fn()}
       />,
     )
     rerender([event(1, 's-public')])

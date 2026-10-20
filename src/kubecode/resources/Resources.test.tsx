@@ -36,7 +36,6 @@ function view(onOpen = vi.fn()) {
       canOpen={(reference) => reference.kind === 'research'}
       projectId="p1"
       t={t}
-      onClose={vi.fn()}
       onOpen={onOpen}
     />,
   )

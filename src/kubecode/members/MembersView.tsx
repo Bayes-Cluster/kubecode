@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -20,7 +19,6 @@ export type MembersViewProps = {
   events: WorkspaceEvent[]
   projectId: string
   t: Translator
-  onClose: () => void
   onDefaultsLoaded: (defaults: MemberDefaults) => void
   onOpenDm: (member: Member) => void
   onOpenMember: (member: Member) => void
@@ -33,7 +31,6 @@ export function MembersView({
   connectionState,
   defaults,
   events,
-  onClose,
   onDefaultsLoaded,
   onOpenDm,
   onOpenMember,
@@ -44,7 +41,6 @@ export function MembersView({
     <section aria-label={t('kubecode.nav.members')} className="kubecode-members-view">
       <header className="kubecode-channel-header">
         <div>
-          <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.nav.back')}</Button>
           <h2>{t('kubecode.nav.members')}</h2>
         </div>
       </header>

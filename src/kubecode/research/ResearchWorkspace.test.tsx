@@ -25,7 +25,6 @@ function mount(overrides: Partial<ResearchWorkspaceProps> = {}) {
     connectionState: 'live',
     conversations: [],
     events: [],
-    onClose: vi.fn(),
     onConversationCreated: vi.fn(),
     onOpenSession: vi.fn(),
     projectId: 'p1',
@@ -62,7 +61,6 @@ describe('ResearchWorkspace', () => {
     mount({
       back: { label: 'Back to General', onBack },
       close: { label: 'Close details', onClose: onCloseDetail },
-      onClose: undefined,
       onTitle,
     })
     // While loading, the way out is already there.
@@ -360,7 +358,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -450,7 +448,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -528,7 +526,7 @@ describe('ResearchWorkspace', () => {
     const getResearch = vi.fn().mockResolvedValue(detailFixture)
     const props: ResearchWorkspaceProps = {
       agents, api: fakeApi({ getResearch }), connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)

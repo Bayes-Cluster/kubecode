@@ -20,7 +20,7 @@ function Probe({
   moved?: boolean
   /** The shell cannot honour the route (an unknown Project). */
   reject?: boolean
-  mode?: HistoryMode
+  mode?: HistoryMode | (() => HistoryMode)
 }) {
   const [route, set] = useState<WorkspaceRoute>({ project: 'p1', view: 'sessions' })
   useEffect(() => { setRoute = set }, [set])
@@ -28,7 +28,7 @@ function Probe({
     ready,
     ignoreInitialLink: moved,
     current: route,
-    historyMode: mode ? () => mode : undefined,
+    historyMode: typeof mode === 'function' ? mode : mode ? () => mode : undefined,
     apply: (next) => {
       applied.push(next)
       if (reject) return false
@@ -250,6 +250,20 @@ describe('useWorkspaceRouteSync', () => {
     act(() => setRoute({ project: 'p1', view: 'general' }))
     expect(window.location.hash).toBe('#/p/p1/general')
     expect(window.history.length).toBe(before + 1)
+  })
+
+  it('reads how to write on every write, so a quiet change never carries over to the next move', () => {
+    window.history.replaceState(null, '', '/#/p/p1/general')
+    const mode = vi.fn((): HistoryMode => 'replace')
+    render(<Probe mode={mode} />)
+    // Arriving at a link takes the place of the entry, whatever was asked meanwhile.
+    expect(window.location.hash).toBe('#/p/p1/general')
+    expect(mode).toHaveBeenCalledTimes(1)
+    act(() => setRoute({ project: 'p1', view: 'sessions' }))
+    expect(mode).toHaveBeenCalledTimes(2)
+    // Filling in the first Session replaces the entry, and still takes the asked-for mode.
+    act(() => setRoute({ project: 'p1', view: 'sessions', conversation: 's1' }))
+    expect(mode).toHaveBeenCalledTimes(3)
   })
 
   it('re-applies a Back from evidence to its Task once', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   AgentDescriptor,
@@ -36,6 +36,11 @@ export type WorkspaceBootstrapOptions = {
   setConversationsLoadedFor?: Dispatch<string | null>
   setTeams: Dispatch<TeamSnapshot[]>
   setError: Dispatch<string | null>
+  /**
+   * The Workspace to start in, once the Projects are known (ADR 0228: a link's
+   * Project, then the last one used, then the first). The first by default.
+   */
+  initialProjectId?: (projects: readonly Project[]) => string | null
 }
 
 export type WorkspaceBootstrapResult = {
@@ -73,6 +78,9 @@ export function useWorkspaceBootstrap(
   const [agents, setAgents] = useState<AgentDescriptor[]>([])
   const [agentsRefreshing, setAgentsRefreshing] = useState(false)
   const [layoutHydrated, setLayoutHydrated] = useState(false)
+  // Read once, when the Projects arrive: it never restarts the bootstrap.
+  const chooseInitialProject = useRef(options.initialProjectId)
+  useEffect(() => { chooseInitialProject.current = options.initialProjectId })
 
   useEffect(() => {
     let current = true
@@ -81,7 +89,8 @@ export function useWorkspaceBootstrap(
         if (!current) return
         setProjects(nextProjects)
         setAgents(nextAgents)
-        const initialProjectId = nextProjects[0]?.id ?? null
+        const chosen = chooseInitialProject.current?.(nextProjects)
+        const initialProjectId = chosen !== undefined ? chosen : nextProjects[0]?.id ?? null
         setProjectId(initialProjectId)
         const navigatorLayout = readWorkbenchNavigatorLayout(localStorage, initialProjectId)
         setSessionSidebarOpen(navigatorLayout.navigatorOpen)

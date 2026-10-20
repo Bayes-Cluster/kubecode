@@ -33,9 +33,7 @@ export type ResearchWorkspaceProps = {
   connectionState: WorkspaceConnectionState
   conversations: Conversation[]
   events: WorkspaceEvent[]
-  /** Replaces "Back to Sessions" where the workspace is a detail pane. */
-  backLabel?: string
-  /** In the inspector: its Back, drawn in this header (ADR 0227 shape). Replaces `onClose`. */
+  /** In the inspector: its Back, drawn in this header (ADR 0227 shape). */
   back?: ViewHeaderProps['back']
   /** In the inspector: its Close, drawn in this header (ADR 0227 shape). */
   close?: ViewHeaderProps['close']
@@ -43,8 +41,6 @@ export type ResearchWorkspaceProps = {
   inspector?: ReactNode
   /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
   startsRounds?: boolean
-  /** The legacy question view's way out; the inspector passes `back`/`close` instead. */
-  onClose?: () => void
   /** The loaded title, for the inspector's "Back to …" one level up. */
   onTitle?: (title: string) => void
   onConversationCreated: (conversation: Conversation) => void
@@ -73,8 +69,6 @@ export function ResearchWorkspace({
   connectionState,
   conversations,
   events,
-  onClose,
-  backLabel,
   back,
   close,
   inspector,
@@ -112,8 +106,6 @@ export function ResearchWorkspace({
       size="md"
       onClick={back.onBack}
     />
-  ) : onClose ? (
-    <Button size="xs" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
   ) : null
   const closeControl = close ? (
     <IconButton
