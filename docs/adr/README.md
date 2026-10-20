@@ -74,3 +74,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls (proposed) |
 | [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
 | [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version (proposed) |
+| [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections (proposed) |

@@ -1135,6 +1135,14 @@ to render cross-Project input-required navigation. Rich Team snapshots remain a
 separate task/member view and are independently recoverable after a partial load
 or SSE reconnect.
 
+**Pending decisions** are a server projection: the decisions only the
+researcher can make (a member's permission or input request, a question on a
+Task's work, a review, a proposal shown in General, a member's setup), each
+keyed by its decision identity so it appears once wherever it is referred to.
+A Task's condition, a run's waiting status, or an unread message is never one.
+A source that cannot be read makes the snapshot incomplete, never empty. See
+ADR 0232.
+
 Notification preferences are versioned browser-local state. Workspace events
 map to completion, attention, or error categories. The browser's native
 notification permission and focus state determine delivery; no custom audio
@@ -1230,7 +1238,12 @@ a Session, and is resolved to the round's current coordinator when it is
 delivered, so a handoff retargets pending routes. A route is `pending`,
 `delivered` (the Session has the event), or `failed` (visible, with the reason,
 in the conversation). Delivery is neither task completion nor experiment
-analysis.
+analysis. A researcher's message has a **delivery state** built only from facts —
+saved, recorded, sending, delivered (queued, started, or withdrawn at the
+Session), partial, failed, or denied (it reached nobody, with the reason). The
+researcher may **retry** a failed route they originated, under the same route,
+and **reroute** a denied message once its recipients are set up; each is
+bounded and never makes a second turn. See ADR 0232.
 
 ## Round limits
 

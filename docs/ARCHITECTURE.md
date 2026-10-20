@@ -341,6 +341,31 @@ verdicts (also on the `POST …/review` response), and `internal_work`
 `messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
 deprecated. `ResolvedRef` carries the record's `title`.
 
+Pending decisions and delivery state (ADR 0232): `server/src/attention/` is one
+read model of what waits on the researcher. `collect` reads the workspace event
+cursor first, then the runtime's pending permission and input maps
+(`AgentRuntime::pending_requests`, never tool input; a Team leader's request
+counts once escalated, and escalation now updates the waiting entry), open
+questions on work inside a Task (`WorkStore::open_decisions`), open review
+requests, proposals the General Agent showed and nobody admitted or approved
+(`TaskStore::awaiting_proposals` over `ChannelStore::proposal_showings`),
+members needing setup, active runs, member Sessions' latest failed turn, queued
+prompts and failed researcher-originated routes; the pure `project` keys each
+decision (`permission:`, `input:`, `question:`, `review:`,
+`proposal:<task>:<revision>`, `setup:`) so it appears once, orders and caps the
+list, and reports a failing source in `incomplete`. `attention_api.rs` serves
+`GET …/projects/{p}/attention` and `GET …/attention/summary`; decisions are
+still answered on their own endpoints. `orchestrator/delivery.rs` projects each
+researcher message from its routing mark (`routing` pending, done or `denied`,
+with `routing_issue` and `reroutes`), its routes, and the recipient Session's
+admission of `route:<route>:<recipient>` (started, queued, withdrawn):
+`GET …/deliveries?message_ids=`, a `deliveries` map on message pages,
+`POST …/routes/{id}/retry` (same route id, at most three times, researcher kinds
+only) and `POST …/messages/{m}/reroute`. Failure and denial notes are keyed
+per retry or reroute and a note already written never aborts a pass. The DM
+send reports `admission`, `…/dm/pending` lists queued direct messages, and the
+Task detail adds `execution` (the round's pause policy) and `delivery_issues`.
+
 Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
@@ -1028,6 +1053,11 @@ and `.git` metadata paths never enter that payload.
 Ordinary paths produce `file_changed`, which invalidates the affected Files
 scopes and marks Git dirty. A batch containing only `.git` metadata produces a
 Git-only `git_changed`; a full Files invalidation reconciles both projections.
+
+`orchestration_updated` carries `message_id` (for routes a message carries, and
+`routed`/`denied` once a message is read) so a sender's view refreshes only that
+message; an attention snapshot carries the cursor read before its sources, so a
+client drops a snapshot older than one it has.
 Explicit API invalidations remain immediate even when watching is unavailable.
 Watch registrations start with persisted Projects, follow register/unregister,
 and use generations to reject late callbacks. Registration, callback, and
