@@ -25,15 +25,18 @@ export type ElicitationPromptProps = {
   onGone?: () => void
   /** Who asks; "Answer Agent question" when absent. */
   heading?: string
+  /** Answered, and waiting for the server to drop it: nothing answers it again. */
+  resolving?: boolean
   t: Translator
 }
 
 /** An agent's request for input, answered in place with the fields it asks for (ADR 0232). */
-export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChange, onGone, onResolve, t }: ElicitationPromptProps) {
+export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChange, onGone, onResolve, resolving = false, t }: ElicitationPromptProps) {
   const [busy, setBusy] = useState<'submit' | 'decline' | null>(null)
   const [outcome, setOutcome] = useState<'failed' | 'gone' | null>(null)
+  const title = heading ?? t('kubecode.answerAgentQuestion')
   const resolve = async (accepted: boolean) => {
-    if (busy) return
+    if (busy || resolving) return
     setBusy(accepted ? 'submit' : 'decline')
     setOutcome(null)
     try {
@@ -51,9 +54,15 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
   }
   const complete = elicitationComplete(elicitation, answers)
   return (
-    <div className="kubecode-elicitation-dock" data-focus-key={`input:${elicitation.requestId}`} tabIndex={-1}>
+    <div
+      aria-label={elicitation.message ? `${title}: ${elicitation.message}` : title}
+      className="kubecode-elicitation-dock"
+      data-focus-key={`input:${elicitation.requestId}`}
+      role="group"
+      tabIndex={-1}
+    >
       <div className="kubecode-elicitation-heading">
-        <strong>{heading ?? t('kubecode.answerAgentQuestion')}</strong>
+        <strong>{title}</strong>
         <span>{elicitation.message}</span>
       </div>
       <div className="kubecode-elicitation-fields">
@@ -91,11 +100,11 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
         ))}
       </div>
       <div className="kubecode-elicitation-actions">
-        <DecisionButton busy={busy === 'decline'} variant="secondary" onDecide={() => void resolve(false)}>
+        <DecisionButton busy={busy === 'decline' || resolving} variant="secondary" onDecide={() => void resolve(false)}>
           {t('kubecode.decline')}
         </DecisionButton>
         <DecisionButton
-          busy={busy === 'submit'}
+          busy={busy === 'submit' || resolving}
           disabledReason={complete ? undefined : t('kubecode.attention.answerRequired')}
           variant="primary"
           onDecide={() => void resolve(true)}
@@ -103,6 +112,7 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
           {t('kubecode.submitAnswers')}
         </DecisionButton>
       </div>
+      {resolving && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.resolving')}</p>}
       {outcome === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.attention.resolveFailed')}</p>}
       {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
     </div>

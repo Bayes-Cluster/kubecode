@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
@@ -7,6 +7,7 @@ import type { Translator } from '@/lib/i18n'
 
 import type { AgentEvent, AttentionItem, ExecutionFailure, ExecutionView, KubecodeApi } from '../api'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
+import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { elicitationFromEvent, type ElicitationAnswer } from '../session/conversationReducer'
 import { elicitationContent, initialElicitationAnswers } from '../session/sessionModel'
 import { askerName } from './attentionTargets'
@@ -56,6 +57,7 @@ function PermissionRow({ api, item, t }: { api: KubecodeApi; item: Kinded<'permi
       requestId={item.request_id}
       t={t}
       tool={item.tool}
+      resolving={attention?.resolving.has(item.key) ?? false}
       onGone={() => attention?.reload()}
       onResolve={(optionId) => (attention
         ? attention.markResolving(item.key, () => api.resolvePermission(item.request_id, optionId))
@@ -80,6 +82,7 @@ function InputRow({ api, item, t }: { api: KubecodeApi; item: Kinded<'input'>; t
       answers={answers}
       elicitation={elicitation}
       heading={heading(item, 'kubecode.attention.inputFrom', t)}
+      resolving={attention?.resolving.has(item.key) ?? false}
       t={t}
       onAnswerChange={(id, value) => setAnswers((current) => ({ ...current, [id]: value }))}
       onGone={() => attention?.reload()}
@@ -90,7 +93,9 @@ function InputRow({ api, item, t }: { api: KubecodeApi; item: Kinded<'input'>; t
 
 function stateText(run: ExecutionView, t: Translator): string {
   const name = nameOf(run, t)
-  if (run.status === 'waiting_permission' || run.waiting_keys.length > 0) return t('kubecode.execution.waitingPermission', { name })
+  if (run.waiting_keys.length > 0) return t('kubecode.execution.waitingPermission', { name })
+  // Waiting with nothing the researcher can answer: a Team leader reviews it first.
+  if (run.status === 'waiting_permission') return t('kubecode.execution.waitingLeader', { name })
   return run.tasks[0]
     ? t('kubecode.execution.workingOn', { name, task: run.tasks.map((task) => task.title).join(', ') })
     : t('kubecode.execution.working', { name })
@@ -111,7 +116,7 @@ function RunRow({ dm, onStop, run, stopping, t }: {
         : <strong>{name}</strong>}
       <span className="kubecode-execution-state">
         {stateText(run, t)}
-        {run.queued > 0 && <> · {t('kubecode.execution.queued', { count: run.queued })}</>}
+        {run.queued > 0 && <> · {t('kubecode.execution.queued', { count: run.queued, plural: run.queued === 1 ? '' : 's' })}</>}
         {stopping && <> · {t('kubecode.execution.stopping')}</>}
       </span>
       <StopButton
@@ -126,10 +131,21 @@ function RunRow({ dm, onStop, run, stopping, t }: {
 }
 
 function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDismiss: () => void; t: Translator }) {
+  const navigation = useContext(WorkspaceNavigationContext)
   const key = failure.status === 'interrupted' ? 'kubecode.execution.turnInterrupted' : 'kubecode.execution.turnFailed'
   return (
     <li className="kubecode-execution-row" data-state="failed">
       <span className="kubecode-execution-state kubecode-research-error">{t(key, { name: failure.member.name })}</span>
+      {/* The member's profile holds what fixes a failing turn: its Session, its setup. */}
+      {navigation && (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: failure.member.id } })}
+        >
+          {t('kubecode.execution.openMember', { name: failure.member.name })}
+        </Button>
+      )}
       <Button size="xs" variant="ghost" onClick={onDismiss}>{t('kubecode.execution.dismiss')}</Button>
     </li>
   )
@@ -197,31 +213,39 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
     <RunRow dm={dm} key={run.run_id} run={run} stopping={stopping.has(run.run_id)} t={t} onStop={() => stop(run)} />
   )
 
+  // On a phone the body is capped and scrolls, under a one-line summary, so
+  // prompts never push the composer off screen.
+  const summary = runs.length + items.length > 1
+    ? t('kubecode.execution.summary', { working: runs.length, waiting: items.length })
+    : null
   return (
     <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip">
-      {(waiting.length > 0 || (quiet.length > 0 && quiet.length <= QUIET_ROWS) || failures.length > 0) && (
-        <ul className="kubecode-execution-rows">
-          {waiting.map(row)}
-          {quiet.length <= QUIET_ROWS && quiet.map(row)}
-          {failures.map((entry) => (
-            <FailureRow
-              failure={entry}
-              key={entry.run_id}
-              t={t}
-              onDismiss={() => setDismissed((current) => [...current, entry.run_id])}
-            />
-          ))}
-        </ul>
-      )}
-      {quiet.length > QUIET_ROWS && (
-        <details className="kubecode-execution-more">
-          <summary>{t('kubecode.execution.workingCount', { count: quiet.length })}</summary>
-          <ul className="kubecode-execution-rows">{quiet.map(row)}</ul>
-        </details>
-      )}
-      {items.map((item) => (item.kind === 'permission'
-        ? <PermissionRow api={api} item={item} key={item.key} t={t} />
-        : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
+      {summary && <p aria-hidden className="kubecode-execution-summary">{summary}</p>}
+      <div aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-body" role="group">
+        {(waiting.length > 0 || (quiet.length > 0 && quiet.length <= QUIET_ROWS) || failures.length > 0) && (
+          <ul className="kubecode-execution-rows">
+            {waiting.map(row)}
+            {quiet.length <= QUIET_ROWS && quiet.map(row)}
+            {failures.map((entry) => (
+              <FailureRow
+                failure={entry}
+                key={entry.run_id}
+                t={t}
+                onDismiss={() => setDismissed((current) => [...current, entry.run_id])}
+              />
+            ))}
+          </ul>
+        )}
+        {quiet.length > QUIET_ROWS && (
+          <details className="kubecode-execution-more">
+            <summary>{t('kubecode.execution.workingCount', { count: quiet.length })}</summary>
+            <ul className="kubecode-execution-rows">{quiet.map(row)}</ul>
+          </details>
+        )}
+        {items.map((item) => (item.kind === 'permission'
+          ? <PermissionRow api={api} item={item} key={item.key} t={t} />
+          : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
+      </div>
       <span className="sr-only" role="status">{announcement}</span>
     </section>
   )

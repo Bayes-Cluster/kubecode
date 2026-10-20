@@ -5181,6 +5181,8 @@ button.kubecode-reference-chip-open:focus-visible,
   gap: var(--ws-space-2);
   padding: var(--ws-space-2) var(--ws-space-3);
 }
+.kubecode-execution-body { display: flex; flex-direction: column; gap: var(--ws-space-2); min-height: 0; }
+.kubecode-execution-summary { color: var(--text-secondary); display: none; font: var(--ws-font-meta); margin: 0; }
 .kubecode-execution-rows { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
 .kubecode-execution-row {
   align-items: center;
@@ -5220,6 +5222,14 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-task-waiting li,
 .kubecode-task-delivery-issues li { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
 .kubecode-task-work .kubecode-execution-strip { border-top: 0; padding: 0; }
+/* On a phone the strip never pushes the composer off screen: its body is
+   capped and scrolls under a one-line summary. */
+@media (max-width: 720px) {
+  .kubecode-execution-summary { display: block; }
+  .kubecode-execution-body { max-height: min(40dvh, 22rem); overflow-y: auto; overscroll-behavior: contain; }
+  .kubecode-task-work .kubecode-execution-summary { display: none; }
+  .kubecode-task-work .kubecode-execution-body { max-height: none; overflow: visible; }
+}
 .kubecode-dm-turn[data-state='queued'] { opacity: 0.8; }
 @media (pointer: coarse) {
   .kubecode-delivery-failure .kubecode-decision-button,

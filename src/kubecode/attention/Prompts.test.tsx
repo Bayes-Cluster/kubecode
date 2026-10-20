@@ -40,6 +40,17 @@ describe('PermissionPrompt', () => {
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith('allow'))
   })
 
+  it('is a named group that announces only what changes, never the ticking countdown', async () => {
+    const onResolve = vi.fn().mockRejectedValue(new Error('network'))
+    render(<PermissionPrompt deadlineMs={Date.now() + 90_000} heading="Analyst asks permission" options={options} requestId="q1" t={t} tool="pytest" onResolve={onResolve} />)
+    const card = screen.getByRole('group', { name: 'Analyst asks permission: pytest' })
+    expect(card).toHaveAttribute('data-focus-key', 'permission:q1')
+    expect(card).not.toHaveAttribute('aria-live')
+    expect(card.querySelector('[aria-live]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your answer was not recorded. Try again.')
+  })
+
   it('shows no countdown without a deadline, and never a 0 s one once a deadline passed', () => {
     const { rerender } = render(<PermissionPrompt deadlineMs={null} options={options} requestId="q1" t={t} tool="pytest" onResolve={vi.fn()} />)
     expect(screen.queryByTestId('permission-countdown')).not.toBeInTheDocument()
@@ -85,6 +96,8 @@ describe('ElicitationPrompt', () => {
     )
     const prompt = screen.getByText('Which split?').closest('[data-focus-key]')
     expect(prompt).toHaveAttribute('data-focus-key', 'input:e1')
+    // The focus target is a named group, so arriving on it says what it is.
+    expect(screen.getByRole('group', { name: 'Answer Agent question: Which split?' })).toBe(prompt)
     expect(screen.getByRole('button', { name: 'Submit answers' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Split'), { target: { value: 'val' } })
     expect(onAnswerChange).toHaveBeenCalledWith('split', 'val')

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import type { AttentionSnapshot, KubecodeApi } from '../api'
+import { fakeNavigation } from '../app/inspector/inspectorTesting'
+import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { AttentionContext, type AttentionStore } from './attentionContext'
 import { execution, failure, inputItem, permissionItem, snapshot } from './attentionFixtures'
 import { ExecutionStrip, type ExecutionStripProps } from './ExecutionStrip'
@@ -32,7 +34,7 @@ function store(value: AttentionSnapshot, overrides: Partial<AttentionStore> = {}
   }
 }
 
-function strip(value: AttentionStore, props: Partial<ExecutionStripProps> = {}, api: Partial<KubecodeApi> = {}) {
+function strip(value: AttentionStore, props: Partial<ExecutionStripProps> = {}, api: Partial<KubecodeApi> = {}, navigation: WorkspaceNavigation | null = null) {
   const client = {
     cancelRun: vi.fn().mockResolvedValue(undefined),
     resolvePermission: vi.fn().mockResolvedValue(undefined),
@@ -40,9 +42,11 @@ function strip(value: AttentionStore, props: Partial<ExecutionStripProps> = {}, 
     ...api,
   } as unknown as KubecodeApi
   const view = render(
-    <AttentionContext.Provider value={value}>
-      <ExecutionStrip api={client} scope={{ binding: 'public' }} t={t} {...props} />
-    </AttentionContext.Provider>,
+    <WorkspaceNavigationContext.Provider value={navigation}>
+      <AttentionContext.Provider value={value}>
+        <ExecutionStrip api={client} scope={{ binding: 'public' }} t={t} {...props} />
+      </AttentionContext.Provider>
+    </WorkspaceNavigationContext.Provider>,
   )
   return { ...view, api: client }
 }
@@ -53,7 +57,7 @@ describe('ExecutionStrip', () => {
     const { api } = strip(value)
     const region = screen.getByRole('region', { name: 'Working now' })
     expect(region).toHaveTextContent('Analyst is working on Structured pruning')
-    expect(region).toHaveTextContent('2 more queued')
+    expect(region).toHaveTextContent('2 more messages queued')
     const stop = within(region).getByRole('button', { name: "Stop Analyst's current turn" })
     expect(stop).toHaveAccessibleDescription(/Work assigned to Analyst stays open/)
     fireEvent.click(stop)
@@ -76,9 +80,11 @@ describe('ExecutionStrip', () => {
     await act(async () => undefined)
     const next = store(snapshot({ cursor: 2 }))
     rerender(
-      <AttentionContext.Provider value={next}>
-        <ExecutionStrip api={{ cancelRun: vi.fn() } as unknown as KubecodeApi} scope={{ binding: 'public' }} t={t} />
-      </AttentionContext.Provider>,
+      <WorkspaceNavigationContext.Provider value={null}>
+        <AttentionContext.Provider value={next}>
+          <ExecutionStrip api={{ cancelRun: vi.fn() } as unknown as KubecodeApi} scope={{ binding: 'public' }} t={t} />
+        </AttentionContext.Provider>
+      </WorkspaceNavigationContext.Provider>,
     )
     expect(screen.getByRole('status')).toHaveTextContent("Stopped Analyst's turn")
   })
@@ -138,6 +144,61 @@ describe('ExecutionStrip', () => {
     expect(screen.getByText("Analyst's last turn failed")).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByText("Analyst's last turn failed")).not.toBeInTheDocument()
+  })
+
+  it('counts one queued message in the singular', () => {
+    strip(store(snapshot({ executions: [execution({ queued: 1 })] })))
+    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('1 more message queued')
+  })
+
+  it('keeps an answered prompt busy until the server drops it: no button or 1–9 key answers it twice', () => {
+    const item = permissionItem()
+    const value = store(snapshot({ items: [item], executions: [execution({ waiting_keys: [item.key] })] }), { resolving: new Set([item.key]) })
+    const { api } = strip(value)
+    const prompt = screen.getByTestId('permission-queue-card')
+    expect(prompt).toHaveTextContent('Answer recorded — updating…')
+    const allow = within(prompt).getByRole('button', { name: 'Allow' })
+    expect(allow).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(allow)
+    fireEvent.keyDown(prompt, { key: '1' })
+    expect(api.resolvePermission).not.toHaveBeenCalled()
+  })
+
+  it('keeps an answered input request busy until the server drops it', () => {
+    const item = inputItem()
+    const value = store(snapshot({ items: [item] }), { resolving: new Set([item.key]) })
+    const { api } = strip(value, { scope: { binding: 'dm', memberId: 'm1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
+    expect(api.resolveElicitation).not.toHaveBeenCalled()
+    expect(screen.getByText('Answer recorded — updating…')).toBeInTheDocument()
+  })
+
+  it('says a turn waits for its Team leader, not for the researcher, when no request is the researcher\'s', () => {
+    strip(store(snapshot({ executions: [execution({ status: 'waiting_permission', waiting_keys: [] })] })))
+    expect(screen.getByText("Analyst is waiting for the Team leader's answer")).toBeInTheDocument()
+    expect(screen.queryByText('Analyst is waiting for your permission')).not.toBeInTheDocument()
+  })
+
+  it('offers a step for a failed turn: the member in Members, where its Session and setup are', () => {
+    const navigation = fakeNavigation()
+    strip(store(snapshot({ failures: [failure()] })), {}, {}, navigation)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Analyst in Members' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'members' }, { inspect: { kind: 'member', id: 'm1' } })
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+  })
+
+  it('on a phone, sums itself up in one line and keeps its prompts in a capped, scrollable body', () => {
+    const first = permissionItem()
+    const second = permissionItem({ request_id: 'q2', key: 'permission:q2', tool: 'Run make' })
+    strip(store(snapshot({
+      items: [first, second],
+      executions: [execution({ status: 'waiting_permission', waiting_keys: [first.key, second.key] })],
+    })))
+    const region = screen.getByRole('region', { name: 'Working now' })
+    expect(region.querySelector('.kubecode-execution-summary')).toHaveTextContent('Working now: 1 · Waiting for you: 2')
+    const body = within(region).getByRole('group', { name: 'Working now' })
+    expect(body).toHaveClass('kubecode-execution-body')
+    expect(within(body).getAllByTestId('permission-queue-card')).toHaveLength(2)
   })
 
   it('renders nothing when nobody is at work', () => {

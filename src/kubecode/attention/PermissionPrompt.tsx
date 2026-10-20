@@ -20,6 +20,8 @@ export type PermissionPromptProps = {
   onResolve: (optionId: string) => Promise<void> | void
   /** The request is gone: answered elsewhere, timed out, or its turn stopped. */
   onGone?: () => void
+  /** Answered, and waiting for the server to drop it: nothing answers it again. */
+  resolving?: boolean
   t: Translator
 }
 
@@ -28,11 +30,12 @@ export type PermissionPromptProps = {
  * time left, and each option as a decision, 1–9 from the keyboard. It stays
  * while the answer is recorded and says so when it was not.
  */
-export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, options, requestId, t, tool }: PermissionPromptProps) {
+export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, options, requestId, resolving = false, t, tool }: PermissionPromptProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<'failed' | 'gone' | null>(null)
+  const title = heading ?? t('kubecode.permissionRequired')
   const resolve = async (optionId: string) => {
-    if (busy) return
+    if (busy || resolving) return
     setBusy(optionId)
     setOutcome(null)
     try {
@@ -49,11 +52,13 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
     }
   }
   return (
+    // Only changes are announced (the outcome lines below); the countdown is not.
     <div
-      aria-live="polite"
+      aria-label={`${title}: ${tool}`}
       className="kubecode-permission-dock"
       data-focus-key={`permission:${requestId}`}
       data-testid="permission-queue-card"
+      role="group"
       tabIndex={0}
       onKeyDown={(event) => {
         // 1–9 keyboard option select (#111).
@@ -63,14 +68,14 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
     >
       <div className="kubecode-permission-heading">
         <ShieldAlert aria-hidden size={17} />
-        <strong>{heading ?? t('kubecode.permissionRequired')}</strong>
+        <strong>{title}</strong>
         {deadlineMs !== null && <PermissionCountdown deadlineMs={deadlineMs} t={t} />}
       </div>
       <code className="kubecode-permission-command">{tool}</code>
       <div className="kubecode-permission-actions">
         {options.map((option, index) => (
           <DecisionButton
-            busy={busy === option.id}
+            busy={busy === option.id || resolving}
             key={option.id}
             title={`${index + 1} — ${option.label}`}
             variant={option.kind.startsWith('reject') ? 'secondary' : 'primary'}
@@ -80,6 +85,7 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
           </DecisionButton>
         ))}
       </div>
+      {resolving && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.resolving')}</p>}
       {outcome === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.attention.resolveFailed')}</p>}
       {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
     </div>
