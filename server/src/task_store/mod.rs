@@ -1824,11 +1824,17 @@ impl TaskStore {
     /// Archived Tasks and proposals, newest first: their stage (none for a
     /// proposal) and the accepted outcome, without composing a whole card.
     pub fn archived(&self, project_id: &str) -> Result<Vec<ArchivedTask>, TaskError> {
-        let mut archived: Vec<ArchivedTask> = Vec::new();
-        for summary in self.research.list(project_id, true)? {
-            if !summary.archived {
-                continue;
-            }
+        // Newest first and cut to the limit before anything else is read.
+        let mut summaries: Vec<_> = self
+            .research
+            .list(project_id, true)?
+            .into_iter()
+            .filter(|summary| summary.archived)
+            .collect();
+        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        summaries.truncate(MAX_ARCHIVED);
+        let mut archived: Vec<ArchivedTask> = Vec::with_capacity(summaries.len());
+        for summary in summaries {
             let stage = self.stage(project_id, &summary.id)?;
             let outcome = if stage == Some(TaskStage::Done) {
                 self.reviews(project_id, &summary.id)?
@@ -1847,8 +1853,6 @@ impl TaskStore {
                 updated_at: summary.updated_at,
             });
         }
-        archived.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        archived.truncate(MAX_ARCHIVED);
         Ok(archived)
     }
 

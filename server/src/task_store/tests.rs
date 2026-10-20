@@ -2210,3 +2210,47 @@ fn questions_of_closed_work_are_not_pending() {
     );
 }
 
+#[test]
+fn the_archived_list_is_the_newest_fifty_tasks_and_proposals() {
+    let r = rig();
+    let done = r.done("Oldest done");
+    r.tasks.set_archived(r.project(), &done, true).unwrap();
+    let mut proposals = Vec::new();
+    for n in 0..MAX_ARCHIVED {
+        let (draft, _) = r.proposed(&format!("Draft {n}"));
+        r.tasks.set_archived(r.project(), &draft, true).unwrap();
+        proposals.push(draft);
+    }
+    let stamp = |id: &str, at: &str| {
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE research_questions SET updated_at = ?2 WHERE id = ?1",
+                params![id, at],
+            )
+            .unwrap();
+    };
+    stamp(&done, "2026-01-01 00:00:00");
+    for (n, draft) in proposals.iter().enumerate() {
+        stamp(draft, &format!("2026-02-01 00:00:{n:02}"));
+    }
+    let archived = r.tasks.archived(r.project()).unwrap();
+    assert_eq!(archived.len(), MAX_ARCHIVED);
+    assert!(
+        archived.iter().all(|task| task.id != done),
+        "the oldest falls off"
+    );
+    assert_eq!(archived[0].id, proposals[MAX_ARCHIVED - 1], "newest first");
+    // Bring the Task forward: it is listed with its stage and outcome.
+    stamp(&done, "2026-03-01 00:00:00");
+    let archived = r.tasks.archived(r.project()).unwrap();
+    assert_eq!(archived.len(), MAX_ARCHIVED);
+    assert_eq!(archived[0].id, done);
+    assert_eq!(
+        (archived[0].stage, archived[0].outcome),
+        (Some(TaskStage::Done), Some(WorkOutcome::Supported))
+    );
+    assert!(archived[1..].iter().all(|task| task.stage.is_none()));
+}
