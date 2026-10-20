@@ -881,6 +881,107 @@ fn file_search_stops_at_its_entry_budget_and_depth_and_says_so() {
     assert!(found.truncated);
 }
 
+/// Runs a file search on another thread and fails, instead of hanging the
+/// suite, when it does not finish within `bound`.
+fn search_within(
+    service: WorkspaceService,
+    project_id: String,
+    query: &'static str,
+    bound: std::time::Duration,
+) -> kubecode_server::workspace::FileSearch {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let found = service.search_project_files(&project_id, &words(query), 20_000, 200);
+        let _ = sender.send(found);
+    });
+    receiver
+        .recv_timeout(bound)
+        .expect("the file search finished within its bound")
+        .expect("search")
+}
+
+#[test]
+fn a_level_with_thousands_of_ignored_files_is_filtered_without_hanging() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("noisy-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    run_git(root, &["init"]);
+    fs::write(root.join(".gitignore"), "*.log\n").expect("gitignore");
+    let outputs = root.join("outputs");
+    fs::create_dir_all(&outputs).expect("outputs");
+    // Well over a pipe buffer of ignored paths echoed back by git.
+    for n in 0..5_000 {
+        fs::write(
+            outputs.join(format!("experiment_run_{n:06}_stdout.log")),
+            "",
+        )
+        .expect("log");
+    }
+    fs::write(outputs.join("experiment_summary.txt"), "x").expect("summary");
+    let found = search_within(
+        service,
+        project.id.clone(),
+        "experiment",
+        std::time::Duration::from_secs(60),
+    );
+    let paths: Vec<&str> = found.hits.iter().map(|hit| hit.path.as_str()).collect();
+    assert_eq!(paths, ["outputs/experiment_summary.txt"]);
+}
+
+#[test]
+fn a_git_submodule_is_not_searched_and_does_not_stop_ignore_filtering() {
+    let (temp, service) = service();
+    let source = temp.path().join("submodule-source");
+    fs::create_dir_all(&source).expect("source");
+    run_git(&source, &["init"]);
+    fs::write(source.join("inner-result.txt"), "x").expect("inner");
+    run_git(&source, &["add", "."]);
+    run_git(
+        &source,
+        &[
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "initial",
+        ],
+    );
+    let project = service
+        .create_project_at(service.root().join("submodule-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    run_git(root, &["init"]);
+    run_git(
+        root,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            source.to_str().expect("utf8 source"),
+            "vendor",
+        ],
+    );
+    fs::write(root.join(".gitignore"), "*.log\n").expect("gitignore");
+    fs::create_dir_all(root.join("results")).expect("results");
+    fs::write(root.join("results/run-result.log"), "x").expect("ignored");
+    fs::write(root.join("results/kept-result.txt"), "x").expect("kept");
+    // A nested repository that is not a submodule is not searched either.
+    fs::create_dir_all(root.join("scratch")).expect("nested");
+    run_git(root.join("scratch"), &["init"]);
+    fs::write(root.join("scratch/nested-result.txt"), "x").expect("nested file");
+
+    let found = service
+        .search_project_files(&project.id, &words("result"), 5_000, 200)
+        .expect("search");
+    let paths: Vec<&str> = found.hits.iter().map(|hit| hit.path.as_str()).collect();
+    assert_eq!(paths, ["results/kept-result.txt"]);
+}
+
 #[test]
 fn a_text_page_is_cut_on_character_boundaries_and_carries_the_file_revision() {
     let (_temp, service) = service();
@@ -923,10 +1024,73 @@ fn a_text_page_is_cut_on_character_boundaries_and_carries_the_file_revision() {
     assert_eq!((text.as_str(), truncated), ("aé", true));
     assert_eq!(legacy, revision);
     fs::write(root.join("binary.bin"), [0xff, 0xfe, 0x00]).expect("binary");
+    let binary = service
+        .read_text_page(&project.id, None, "binary.bin", 0, 64)
+        .expect("a binary page");
+    assert!(!binary.utf8);
+    assert_eq!(binary.text, "");
+    assert_eq!(binary.next_offset, None);
+    // The revision describes the bytes read, with no second open.
+    assert_eq!(
+        binary.revision,
+        service
+            .execution_file_revision(&project.id, None, "binary.bin")
+            .expect("binary revision")
+    );
     assert!(matches!(
-        service.read_text_page(&project.id, None, "binary.bin", 0, 64),
+        service.read_execution_text(&project.id, None, "binary.bin", 64),
         Err(WorkspaceError::UnsupportedText)
     ));
+}
+
+#[test]
+fn a_file_that_starts_with_a_continuation_byte_is_not_text() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("continuation-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    // A lone continuation byte at the start of a file is invalid UTF-8; only
+    // a page that starts inside a character skips to the next whole one.
+    fs::write(root.join("broken.txt"), [0x80, b'a', b'b']).expect("file");
+    let page = service
+        .read_text_page(&project.id, None, "broken.txt", 0, 64)
+        .expect("page");
+    assert!(!page.utf8, "{page:?}");
+    assert_eq!(page.text, "");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_revision_never_blocks_on_a_fifo_or_follows_a_link() {
+    use std::os::unix::fs::symlink;
+
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("fifo-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    fs::write(root.join("real.txt"), "x").expect("file");
+    symlink(root.join("real.txt"), root.join("link.txt")).expect("link");
+    let status = Command::new("mkfifo")
+        .arg(root.join("pipe"))
+        .status()
+        .expect("mkfifo");
+    assert!(status.success());
+    for refused in ["link.txt", "pipe"] {
+        assert!(
+            matches!(
+                service.execution_file_revision(&project.id, None, refused),
+                Err(WorkspaceError::InvalidPath(_))
+            ),
+            "{refused} must be refused"
+        );
+    }
+    assert!(
+        service
+            .execution_file_revision(&project.id, None, "real.txt")
+            .is_ok()
+    );
 }
 
 #[cfg(unix)]
