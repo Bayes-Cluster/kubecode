@@ -208,6 +208,23 @@ describe('Kubecode workspace', () => {
     })
   })
 
+  it.each(['/#/p/project-1/sessions', '/#/p/gone/general'])(
+    'shows the first-run screen with no Projects even when the address names a Workspace (%s)',
+    async (url) => {
+      window.history.replaceState(null, '', url)
+      const api = {
+        listProjects: vi.fn().mockResolvedValue([]),
+        listAgents: vi.fn().mockResolvedValue([]),
+      } as unknown as KubecodeApi
+
+      render(<KubecodeApp api={api} />)
+
+      expect(await screen.findByRole('heading', { name: 'Start with a project' })).toBeInTheDocument()
+      expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
+      window.history.replaceState(null, '', '/')
+    },
+  )
+
   it('persists the browser-wide teammate chat preference from Agent settings', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([]),

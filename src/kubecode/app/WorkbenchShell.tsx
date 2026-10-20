@@ -675,7 +675,9 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     ? t('kubecode.nav.placeAnnouncement', { workspace: project.name, place: placeName(place) })
     : ''
   // A link or a remembered Session is still being reached: never show another place meanwhile.
-  const arriving = (!layoutHydrated && error === null) || routeSync.pending || sessionAwaited
+  // With no Project once loaded, nothing can be reached and the first-run screen shows.
+  const arriving = (!layoutHydrated && error === null)
+    || (projectId !== null && (routeSync.pending || sessionAwaited))
 
   const commandPaletteHostActions = createHostActionRegistry({
     addProject: () => setProjectDialog(true),
