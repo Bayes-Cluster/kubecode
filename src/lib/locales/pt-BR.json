@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Permite que este navegador envie novos turnos diretamente aos integrantes do Team. Leader, a automação do Team e os históricos não são afetados.",
   "kubecode.details": "Detalhes",
   "kubecode.searchSessions": "Sessões de pesquisa",
+  "kubecode.searchSessionsAllWorkspaces": "Pesquisar sessões em todos os espaços de trabalho",
   "kubecode.sessionFilters": "Filtros de sessão",
   "kubecode.filterByAgent": "Agente",
   "kubecode.allAgents": "Todos os agentes",

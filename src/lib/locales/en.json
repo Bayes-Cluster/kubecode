@@ -1521,6 +1521,7 @@
   "kubecode.providerSessionsLoadFailed": "Could not load sessions from this Agent",
   "kubecode.noSessions": "No sessions yet",
   "kubecode.searchSessions": "Search sessions",
+  "kubecode.searchSessionsAllWorkspaces": "Search Sessions in all Workspaces",
   "kubecode.sessionFilters": "Session filters",
   "kubecode.filterByAgent": "Agent",
   "kubecode.allAgents": "All Agents",

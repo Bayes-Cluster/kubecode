@@ -139,8 +139,9 @@ export function ProjectNavigator({
             <div className="kubecode-history-search">
               <Search aria-hidden="true" size={16} />
               <Input
-                aria-label={t('kubecode.searchSessions')}
-                placeholder={t('kubecode.searchSessions')}
+                // It finds Sessions of every Workspace, not only this one, and says so.
+                aria-label={t('kubecode.searchSessionsAllWorkspaces')}
+                placeholder={t('kubecode.searchSessionsAllWorkspaces')}
                 ref={searchRef}
                 spellCheck={false}
                 value={query}

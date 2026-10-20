@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Erlaubt diesem Browser, neue Nachrichten direkt an Teammitglieder zu senden. Leader, Teamautomatisierung und Chatverläufe bleiben unverändert.",
   "kubecode.details": "Einzelheiten",
   "kubecode.searchSessions": "Suchsitzungen",
+  "kubecode.searchSessionsAllWorkspaces": "Sitzungen in allen Arbeitsbereichen suchen",
   "kubecode.sessionFilters": "Sitzungsfilter",
   "kubecode.filterByAgent": "Agent",
   "kubecode.allAgents": "Alle Agenten",

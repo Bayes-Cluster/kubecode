@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Izinkan browser ini mengirim giliran baru langsung ke anggota Team. Leader, otomatisasi Team, dan riwayat chat tidak terpengaruh.",
   "kubecode.details": "Detail",
   "kubecode.searchSessions": "Sesi pencarian",
+  "kubecode.searchSessionsAllWorkspaces": "Cari sesi di semua ruang kerja",
   "kubecode.sessionFilters": "Filter sesi",
   "kubecode.filterByAgent": "Agen",
   "kubecode.allAgents": "Semua Agen",

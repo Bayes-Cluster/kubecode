@@ -86,7 +86,7 @@ describe('ProjectNavigator', () => {
     const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
     expect(history.open).toBe(false)
     expect(within(history).getByText('History and execution', { selector: 'summary' })).toBeInTheDocument()
-    const search = within(history).getByRole('textbox', { name: 'Search sessions' })
+    const search = within(history).getByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     expect(searchRef.current).toBe(search)
     expect(within(history).getByRole('button', { name: 'Earlier chat' })).toBeInTheDocument()
     expect(within(history).queryByRole('button', { name: 'Elsewhere chat' })).not.toBeInTheDocument()

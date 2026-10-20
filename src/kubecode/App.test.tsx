@@ -1399,7 +1399,7 @@ describe('Kubecode workspace', () => {
 
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     // The navigation opens, then execution history, then the search inside it.
-    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     expect(container.querySelector('details.kubecode-history-nav')).toHaveAttribute('open')
     await waitFor(() => expect(search).toHaveFocus())
   })
@@ -1419,7 +1419,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
-    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     search.focus()
     fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })
 

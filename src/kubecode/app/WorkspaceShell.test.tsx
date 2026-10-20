@@ -792,7 +792,7 @@ describe('The Workspaces navigation', () => {
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
     await screen.findByRole('heading', { name: 'Kanban', level: 2 })
     expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('Demo/Kanban')
-    expect(screen.queryByRole('textbox', { name: 'Search sessions' })?.closest('.kubecode-topbar')).toBeFalsy()
+    expect(screen.queryByRole('textbox', { name: 'Search Sessions in all Workspaces' })?.closest('.kubecode-topbar')).toBeFalsy()
     expect(screen.getAllByRole('button', { name: 'Demo' })).toHaveLength(1)
     expect(history().open).toBe(false)
   })
@@ -834,7 +834,7 @@ describe('The Workspaces navigation', () => {
   it('searches Sessions from execution history and opens the one chosen', async () => {
     await start('#/p/project-1/resources', api({ listConversations: vi.fn().mockResolvedValue([session]) }))
     await screen.findByRole('heading', { name: 'Resources', level: 2 })
-    const search = within(history()).getByRole('textbox', { name: 'Search sessions' })
+    const search = within(history()).getByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     fireEvent.change(search, { target: { value: 'earlier' } })
     expect(history().open).toBe(true)
     expect(within(history()).getByRole('heading', { name: 'Demo', level: 3 })).toBeInTheDocument()

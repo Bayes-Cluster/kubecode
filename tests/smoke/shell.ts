@@ -18,7 +18,7 @@ export async function openHistory(page: Page) {
 export async function openExecutionHistory(page: Page) {
   await openHistory(page)
   const history = page.locator('.kubecode-history-nav')
-  await expect(history.getByRole('textbox', { name: 'Search sessions' })).toBeVisible()
+  await expect(history.getByRole('textbox', { name: 'Search Sessions in all Workspaces' })).toBeVisible()
   return history
 }
 

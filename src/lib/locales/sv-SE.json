@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Låter den här webbläsaren skicka nya meddelanden direkt till Team-medlemmar. Leader, Team-automatisering och chatthistorik påverkas inte.",
   "kubecode.details": "Detaljer",
   "kubecode.searchSessions": "Sök sessioner",
+  "kubecode.searchSessionsAllWorkspaces": "Sök sessioner i alla arbetsytor",
   "kubecode.sessionFilters": "Sessionsfilter",
   "kubecode.filterByAgent": "Agent",
   "kubecode.allAgents": "Alla agenter",

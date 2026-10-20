@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Umožní tomuto prehliadaču posielať nové správy priamo členom Team. Leader, automatizácia Team a história chatov zostanú nezmenené.",
   "kubecode.details": "Podrobnosti",
   "kubecode.searchSessions": "Vyhľadávacie relácie",
+  "kubecode.searchSessionsAllWorkspaces": "Hľadať relácie vo všetkých pracovných priestoroch",
   "kubecode.sessionFilters": "Filtre relácií",
   "kubecode.filterByAgent": "agent",
   "kubecode.allAgents": "Všetci agenti",

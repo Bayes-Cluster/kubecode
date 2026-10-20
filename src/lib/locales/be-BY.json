@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Дазволіць гэтаму браўзеру адпраўляць новыя паведамленні непасрэдна ўдзельнікам Team. Leader, аўтаматызацыя Team і гісторыя чатаў не змяняюцца.",
   "kubecode.details": "Дэталі",
   "kubecode.searchSessions": "Сеансы пошуку",
+  "kubecode.searchSessionsAllWorkspaces": "Пошук сеансаў ва ўсіх працоўных прасторах",
   "kubecode.sessionFilters": "Фільтры сесіі",
   "kubecode.filterByAgent": "Агент",
   "kubecode.allAgents": "Усе агенты",

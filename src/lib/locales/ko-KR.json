@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "이 브라우저에서 Team 멤버에게 새 대화를 직접 보낼 수 있습니다. Leader, Team 자동화 및 채팅 기록에는 영향을 주지 않습니다.",
   "kubecode.details": "세부정보",
   "kubecode.searchSessions": "세션 검색",
+  "kubecode.searchSessionsAllWorkspaces": "모든 워크스페이스에서 세션 검색",
   "kubecode.sessionFilters": "세션 필터",
   "kubecode.filterByAgent": "대리인",
   "kubecode.allAgents": "모든 에이전트",

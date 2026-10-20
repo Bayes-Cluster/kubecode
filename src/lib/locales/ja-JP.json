@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "このブラウザから Team メンバーへ新しいターンを直接送信できるようにします。Leader、Team の自動処理、チャット履歴には影響しません。",
   "kubecode.details": "詳細",
   "kubecode.searchSessions": "セッションの検索",
+  "kubecode.searchSessionsAllWorkspaces": "すべてのワークスペースのセッションを検索",
   "kubecode.sessionFilters": "セッションフィルター",
   "kubecode.filterByAgent": "エージェント",
   "kubecode.allAgents": "すべてのエージェント",

@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Zezwala tej przeglądarce wysyłać nowe wiadomości bezpośrednio do członków Team. Leader, automatyzacja Team i historie czatów pozostają bez zmian.",
   "kubecode.details": "Szczegóły",
   "kubecode.searchSessions": "Wyszukaj sesje",
+  "kubecode.searchSessionsAllWorkspaces": "Wyszukaj sesje we wszystkich przestrzeniach roboczych",
   "kubecode.sessionFilters": "Filtry sesji",
   "kubecode.filterByAgent": "Agent",
   "kubecode.allAgents": "Wszyscy agenci",

@@ -46,7 +46,7 @@ describe('WorkbenchTitlebar', () => {
     const { container } = titlebar({ placeLabel: 'Kanban' })
     const leading = container.querySelector('.kubecode-topbar-leading')
     expect(leading).toHaveTextContent('Demo/Kanban')
-    expect(screen.queryByRole('textbox', { name: 'Search sessions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Search Sessions in all Workspaces' })).not.toBeInTheDocument()
   })
 
   it('shows only the place on a phone', () => {

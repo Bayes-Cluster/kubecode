@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "允許此瀏覽器直接向 Team 成員傳送新對話。不會影響 Leader、Team 自動協作與聊天記錄。",
   "kubecode.details": "詳細資訊",
   "kubecode.searchSessions": "搜尋工作階段",
+  "kubecode.searchSessionsAllWorkspaces": "搜尋所有工作區中的工作階段",
   "kubecode.sessionFilters": "工作階段篩選",
   "kubecode.filterByAgent": "Agent",
   "kubecode.allAgents": "所有 Agent",

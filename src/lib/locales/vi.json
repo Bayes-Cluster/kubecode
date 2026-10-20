@@ -1418,6 +1418,7 @@
   "kubecode.allowTeammateChatDescription": "Cho phép trình duyệt này gửi lượt mới trực tiếp đến thành viên Team. Leader, tự động hóa Team và lịch sử trò chuyện không bị ảnh hưởng.",
   "kubecode.details": "Chi tiết",
   "kubecode.searchSessions": "Phiên tìm kiếm",
+  "kubecode.searchSessionsAllWorkspaces": "Tìm kiếm phiên trong tất cả không gian làm việc",
   "kubecode.sessionFilters": "Bộ lọc phiên",
   "kubecode.filterByAgent": "đại lý",
   "kubecode.allAgents": "Tất cả đại lý",
