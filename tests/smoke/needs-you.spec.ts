@@ -1,0 +1,162 @@
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+
+import { waitForPrompt } from './agents'
+import { inspector, workspaceNav } from './shell'
+import { seedTaskInReview } from './taskFixtures'
+
+/**
+ * What waits on the researcher, against the real Runtime (#220, ADR 0232):
+ * one pending decision is one Needs-you row, however many records refer to
+ * it; the row opens the context that holds it, and answering it there clears
+ * Needs you, the bell and the prompt once the server acknowledges it. Sending
+ * stays possible while a member waits; Stop names the turn it ends; delivery
+ * lines say only what the server proved; a failed send keeps its words and is
+ * sent once. The member asking permission is the deterministic fixture
+ * provider (`[smoke:permission]`); no real agent runs.
+ */
+
+type Roster = { members: Array<{ id: string; name: string; handle: string; role: string; public_conversation_id: string | null }> }
+
+function urls() {
+  const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
+  const workspaceUrl = requested.pathname === '/'
+    ? `${requested.origin}/user/local/kubecode`
+    : requested.href.replace(/\/$/, '')
+  return { workspaceUrl, api: `${workspaceUrl}/api/v1` }
+}
+
+async function roster(request: APIRequestContext, api: string, projectId: string): Promise<Roster> {
+  return (await (await request.get(`${api}/projects/${projectId}/members`)).json()) as Roster
+}
+
+const composer = (page: Page) => page.getByRole('combobox', { name: 'Message the Workspace' })
+const log = (page: Page) => page.getByRole('log', { name: 'Messages' })
+const row = (page: Page, text: string) => page.locator('article[data-message-id]').filter({ hasText: text })
+const decisions = (page: Page) => workspaceNav(page).getByRole('list', { name: 'Decisions' })
+const strip = (page: Page) => page.getByRole('region', { name: 'Working now' })
+
+async function send(page: Page, text: string) {
+  await composer(page).fill(text)
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(log(page).getByText(text, { exact: true })).toBeVisible()
+}
+
+/** Nothing waits: said in the (then closed) Needs you, never just an empty list. */
+async function nothingWaits(page: Page) {
+  await expect(workspaceNav(page).getByText('Nothing is waiting for you.')).toBeAttached({ timeout: 20_000 })
+  await expect(workspaceNav(page).locator('.kubecode-needs-you')).toHaveAttribute('data-waiting', 'false')
+}
+
+test.describe('on a desktop', () => {
+  test.use({ hasTouch: false })
+
+  test('@smoke Needs you lists each decision once, opens where it is answered, and clears everywhere after the answer', async ({ page, request }) => {
+    test.setTimeout(360_000)
+    const { api, workspaceUrl } = urls()
+    const stamp = Date.now()
+    const registered: string[] = []
+    try {
+      // Another Workspace with a Task waiting for review: the bell counts it too.
+      const reviewName = `kubecode-needs-review-${stamp}`
+      const reviewPath = `/tmp/${reviewName}`
+      const reviewProject = await request.post(`${api}/projects`, { data: { kind: 'create', path: reviewPath } })
+      expect(reviewProject.ok(), await reviewProject.text()).toBe(true)
+      const reviewId = (await reviewProject.json() as { id: string }).id
+      registered.push(reviewId)
+      const seed = await seedTaskInReview(request, { api, projectId: reviewId, projectPath: reviewPath, laterMessages: 0 })
+
+      const created = await request.post(`${api}/projects`, { data: { kind: 'create', path: `/tmp/kubecode-needs-you-${stamp}` } })
+      expect(created.ok(), await created.text()).toBe(true)
+      const projectId = (await created.json() as { id: string }).id
+      registered.push(projectId)
+      await expect.poll(async () => (await roster(request, api, projectId)).members.some((member) => member.role === 'general')).toBe(true)
+      const added = await request.post(`${api}/projects/${projectId}/members`, {
+        data: { name: 'Analyst', template: 'analysis', client_request_id: `analyst-${stamp}` },
+      })
+      expect(added.ok(), await added.text()).toBe(true)
+      const analyst = (await roster(request, api, projectId)).members.find((member) => member.handle === 'analyst')!
+
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
+      await nothingWaits(page)
+
+      // 1. A member asks permission: one row, one bell entry, one prompt above the composer.
+      await send(page, '@analyst [smoke:permission] run the tests')
+      await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
+      const asked = decisions(page).getByRole('button', { name: /Analyst wants to use Run pytest -q/ })
+      await expect(asked).toBeVisible({ timeout: 30_000 })
+      await expect(decisions(page).getByRole('button')).toHaveCount(1)
+      await expect(asked).toContainText('Permission')
+      await expect(strip(page)).toContainText('Analyst is waiting for your permission')
+      // The bell has this Workspace's request and the other Workspace's review.
+      const bell = page.getByRole('button', { name: 'Needs you: 2' })
+      await expect(bell).toBeVisible()
+      await bell.click()
+      await expect(page.getByRole('menuitem', { name: /Analyst wants to use Run pytest -q/ })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: `${reviewName}: 1` })).toBeVisible()
+      await page.keyboard.press('Escape')
+
+      // 2. Sending stays possible while the member waits, and says only what the server proved.
+      await send(page, 'Meanwhile, keep notes on the sweep.')
+      await expect(row(page, 'Meanwhile, keep notes on the sweep.')).toContainText(/Delivered to /, { timeout: 30_000 })
+      await expect(row(page, '@analyst [smoke:permission] run the tests')).not.toContainText('Delivered to')
+
+      // 3. The row opens the prompt where it is answered, focused; answering clears every surface.
+      await asked.click()
+      const prompt = page.getByTestId('permission-queue-card')
+      await expect(prompt).toBeFocused()
+      await expect(prompt).toContainText('Analyst asks permission')
+      await prompt.getByRole('button', { name: 'Allow', exact: true }).click()
+      await nothingWaits(page)
+      await expect(prompt).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Needs you: 1' })).toBeVisible()
+
+      // 4. Stop names the one turn it ends; stopping it ends its request too.
+      await send(page, '@analyst [smoke:permission] once more')
+      await expect(decisions(page).getByRole('button', { name: /Analyst wants to use/ })).toBeVisible({ timeout: 30_000 })
+      const stop = strip(page).getByRole('button', { name: "Stop Analyst's current turn" })
+      await expect(stop).toBeVisible()
+      await stop.click()
+      await nothingWaits(page)
+      await expect(strip(page).getByRole('status')).toHaveText("Stopped Analyst's turn", { timeout: 20_000 })
+      await expect(page.getByRole('button', { name: "Stop Analyst's current turn" })).toHaveCount(0)
+
+      // 5. A failed send keeps its words, and sending again posts it once.
+      let failOnce = true
+      await page.route('**/channels/*/messages', async (route) => {
+        if (route.request().method() === 'POST' && failOnce) {
+          failOnce = false
+          await route.abort()
+        } else {
+          await route.continue()
+        }
+      })
+      await composer(page).fill('Kept through a failed send.')
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      await expect(page.getByRole('alert').filter({ hasText: /./ }).first()).toBeVisible()
+      await expect(composer(page)).toHaveValue('Kept through a failed send.')
+      await page.getByRole('button', { name: 'Try again' }).first().click()
+      await expect(log(page).getByText('Kept through a failed send.', { exact: true })).toHaveCount(1)
+      await page.unroute('**/channels/*/messages')
+
+      // 6. A review is one row, though its Task is in Review too; it opens the review, focused, and leaves once decided.
+      await page.goto(`${workspaceUrl}/#/p/${reviewId}/general`)
+      const review = decisions(page).getByRole('button', { name: new RegExp(`Review the results of ${seed.taskTitle}`) })
+      await expect(review).toBeVisible({ timeout: 30_000 })
+      await expect(decisions(page).getByRole('button')).toHaveCount(1)
+      await review.click()
+      await expect.poll(() => page.url()).toContain(`/board?task=${seed.taskId}`)
+      const task = inspector(page, 'Task details')
+      const region = task.getByRole('region', { name: 'Results for your review' })
+      await expect(region).toBeFocused()
+      await region.getByRole('textbox', { name: 'Feedback for the team' }).fill('Please rerun with three seeds.')
+      await region.getByRole('button', { name: 'Send back' }).click()
+      await nothingWaits(page)
+      await expect(page.getByRole('button', { name: /^Needs you: / })).toHaveCount(0)
+      await page.reload()
+      await nothingWaits(page)
+    } finally {
+      for (const id of registered) await request.delete(`${api}/projects/${id}`)
+    }
+  })
+})
