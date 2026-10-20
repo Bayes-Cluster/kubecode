@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Это больше не существует, поэтому добавить нельзя.",
   "kubecode.resources.added": "{title} добавлено в ваше сообщение.",
   "kubecode.resources.updated": "{title} обновлено до просмотренной версии.",
+  "kubecode.resources.taskReplaced": "Теперь ваше сообщение о {title}, а не о прежней задаче.",
   "kubecode.resources.taskNote": "Прикрепление задачи связывает с ней ваше сообщение. Оно ничего не одобряет и не запускает.",
   "kubecode.resources.goTo.task": "Открыть задачу",
   "kubecode.resources.goTo.thread": "Открыть тред в «Общее»",

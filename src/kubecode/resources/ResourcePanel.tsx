@@ -13,7 +13,7 @@ import type { InspectorEntry } from '../app/location/inspector'
 import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { objectKindOf } from '../references/referenceLabels'
 import { useAttachToDraft } from './attachTarget'
-import { MAX_DRAFT_REFERENCES } from './draftReferences'
+import { attachAnnouncement, MAX_DRAFT_REFERENCES } from './draftReferences'
 import { RecordPreview, type DisplayedRecord } from './RecordPreview'
 import { fallbackTitle, formatVersion, goToTargetFor, kindLabelKey, previewEntryFor } from './referenceKinds'
 
@@ -67,9 +67,8 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
 
   const add = () => {
     if (!attachment || !reference || !shown || removed) return
-    const result = attachment.attach({ ref: reference, title: shown.title, seen: 'previewed' })
-    if (result === 'added') setAnnouncement(t('kubecode.resources.added', { title: shown.title }))
-    else if (result === 'replaced') setAnnouncement(t('kubecode.resources.updated', { title: shown.title }))
+    const announcement = attachAnnouncement(attachment.attach({ ref: reference, title: shown.title, seen: 'previewed' }))
+    if (announcement) setAnnouncement(t(announcement, { title: shown.title }))
   }
 
   return (

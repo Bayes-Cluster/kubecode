@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Ya no existe, así que no se puede añadir.",
   "kubecode.resources.added": "Se ha añadido {title} a tu mensaje.",
   "kubecode.resources.updated": "Se ha actualizado {title} a la versión que previsualizaste.",
+  "kubecode.resources.taskReplaced": "Tu mensaje ahora trata sobre {title} en lugar de la Tarea anterior.",
   "kubecode.resources.taskNote": "Adjuntar una Tarea vincula tu mensaje con ella. No aprueba ni inicia nada.",
   "kubecode.resources.goTo.task": "Abrir la Tarea",
   "kubecode.resources.goTo.thread": "Abrir el hilo en General",

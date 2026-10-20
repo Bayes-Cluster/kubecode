@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Non esiste più, quindi non può essere aggiunto.",
   "kubecode.resources.added": "{title} aggiunto al tuo messaggio.",
   "kubecode.resources.updated": "{title} aggiornato alla versione che hai visto in anteprima.",
+  "kubecode.resources.taskReplaced": "Il tuo messaggio ora riguarda {title} invece del Task precedente.",
   "kubecode.resources.taskNote": "Allegare un Task collega il tuo messaggio al Task. Non approva né avvia nulla.",
   "kubecode.resources.goTo.task": "Apri il Task",
   "kubecode.resources.goTo.thread": "Apri il thread in Generale",

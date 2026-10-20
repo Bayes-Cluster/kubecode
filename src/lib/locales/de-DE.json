@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Es existiert nicht mehr und kann daher nicht hinzugefügt werden.",
   "kubecode.resources.added": "{title} wurde Ihrer Nachricht hinzugefügt.",
   "kubecode.resources.updated": "{title} wurde auf die Version aus der Vorschau aktualisiert.",
+  "kubecode.resources.taskReplaced": "Ihre Nachricht bezieht sich jetzt auf {title} statt auf die bisherige Aufgabe.",
   "kubecode.resources.taskNote": "Das Anhängen einer Aufgabe verknüpft Ihre Nachricht mit ihr. Es genehmigt oder startet nichts.",
   "kubecode.resources.goTo.task": "Aufgabe öffnen",
   "kubecode.resources.goTo.thread": "Thread in Allgemein öffnen",

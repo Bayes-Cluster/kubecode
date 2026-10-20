@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "它已不存在，因此无法添加。",
   "kubecode.resources.added": "已将 {title} 添加到你的消息。",
   "kubecode.resources.updated": "已将 {title} 更新为你预览的版本。",
+  "kubecode.resources.taskReplaced": "你的消息现在关于 {title}，不再关于之前的任务。",
   "kubecode.resources.taskNote": "附加任务会将你的消息与该任务关联。它不会批准或启动任何内容。",
   "kubecode.resources.goTo.task": "打开任务",
   "kubecode.resources.goTo.thread": "在常规中打开主题串",

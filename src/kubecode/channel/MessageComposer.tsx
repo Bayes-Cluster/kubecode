@@ -18,7 +18,7 @@ import { canReceive, type MemberDirectory } from '../members/memberDirectory'
 import { memberView } from '../members/memberIdentity'
 import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { AddContextDialog } from '../resources/AddContextDialog'
-import { attachToDraft, draftHas, MAX_DRAFT_REFERENCES, type DraftReference } from '../resources/draftReferences'
+import { attachAnnouncement, attachToDraft, draftHas, MAX_DRAFT_REFERENCES, type DraftReference } from '../resources/draftReferences'
 import { useReferenceStatus } from '../resources/referenceStatus'
 import { ResourceReferenceChip } from '../resources/ResourceReferenceChip'
 import { newClientMessageId } from '../session/sessionModel'
@@ -200,10 +200,11 @@ export function MessageComposer({
 
   const attach = (reference: DraftReference) => {
     const { result } = attachToDraft(draft, reference)
-    if (result === 'added' || result === 'replaced') {
+    const announcement = attachAnnouncement(result)
+    if (announcement) {
       onDraftChange((current) => attachToDraft(current, reference).draft)
       setGate(null)
-      setAnnouncement(t(result === 'added' ? 'kubecode.resources.added' : 'kubecode.resources.updated', { title: reference.title }))
+      setAnnouncement(t(announcement, { title: reference.title }))
     }
     return result
   }
@@ -279,7 +280,7 @@ export function MessageComposer({
                         removeLabel={t('kubecode.channel.removeTask', { title: taskLabel.title })}
                         title={taskLabel.title}
                         onRemove={() => {
-                          update({ task: null, taskCleared: true })
+                          update({ task: null, taskRevision: null, taskCleared: true })
                           focusText()
                         }}
                       />

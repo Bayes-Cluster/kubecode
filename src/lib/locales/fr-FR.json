@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Cet élément n'existe plus et ne peut donc pas être ajouté.",
   "kubecode.resources.added": "{title} a été ajouté à votre message.",
   "kubecode.resources.updated": "{title} a été mis à jour vers la version que vous avez prévisualisée.",
+  "kubecode.resources.taskReplaced": "Votre message porte désormais sur {title} au lieu de la tâche précédente.",
   "kubecode.resources.taskNote": "Joindre une tâche relie votre message à celle-ci. Cela n'approuve et ne lance rien.",
   "kubecode.resources.goTo.task": "Ouvrir la tâche",
   "kubecode.resources.goTo.thread": "Ouvrir le fil dans Général",

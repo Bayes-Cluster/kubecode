@@ -2608,6 +2608,7 @@
   "kubecode.resources.removedCannotAdd": "It no longer exists, so it cannot be added.",
   "kubecode.resources.added": "Added {title} to your message.",
   "kubecode.resources.updated": "Updated {title} to the version you previewed.",
+  "kubecode.resources.taskReplaced": "Your message is now about {title} instead of the Task it was about.",
   "kubecode.resources.taskNote": "Attaching a Task links your message to it. It doesn't approve or start anything.",
   "kubecode.resources.goTo.task": "Open Task",
   "kubecode.resources.goTo.thread": "Open Thread in General",

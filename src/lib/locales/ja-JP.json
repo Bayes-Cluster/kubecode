@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "存在しなくなったため、追加できません。",
   "kubecode.resources.added": "{title} をメッセージに追加しました。",
   "kubecode.resources.updated": "{title} をプレビューしたバージョンに更新しました。",
+  "kubecode.resources.taskReplaced": "メッセージの対象を、以前のタスクから {title} に変更しました。",
   "kubecode.resources.taskNote": "タスクを添付すると、メッセージがそのタスクに関連付けられます。何かを承認したり開始したりすることはありません。",
   "kubecode.resources.goTo.task": "タスクを開く",
   "kubecode.resources.goTo.thread": "「一般」でスレッドを開く",

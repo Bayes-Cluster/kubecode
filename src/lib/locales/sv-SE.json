@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Den finns inte längre och kan därför inte läggas till.",
   "kubecode.resources.added": "{title} lades till i ditt meddelande.",
   "kubecode.resources.updated": "{title} uppdaterades till versionen du förhandsgranskade.",
+  "kubecode.resources.taskReplaced": "Ditt meddelande handlar nu om {title} i stället för den tidigare uppgiften.",
   "kubecode.resources.taskNote": "Att bifoga en uppgift kopplar ditt meddelande till den. Det godkänner eller startar ingenting.",
   "kubecode.resources.goTo.task": "Öppna uppgiften",
   "kubecode.resources.goTo.thread": "Öppna tråden i Allmänt",

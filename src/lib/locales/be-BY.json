@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Гэтага больш не існуе, таму дадаць нельга.",
   "kubecode.resources.added": "{title} дададзена ў ваша паведамленне.",
   "kubecode.resources.updated": "{title} абноўлена да версіі з перадпрагляду.",
+  "kubecode.resources.taskReplaced": "Цяпер ваша паведамленне пра {title}, а не пра Задачу, пра якую было раней.",
   "kubecode.resources.taskNote": "Далучэнне Задачы звязвае з ёй ваша паведамленне. Яно нічога не зацвярджае і не запускае.",
   "kubecode.resources.goTo.task": "Адкрыць Задачу",
   "kubecode.resources.goTo.thread": "Адкрыць ланцужок у «Агульнае»",

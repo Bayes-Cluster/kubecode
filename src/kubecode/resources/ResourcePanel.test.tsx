@@ -211,6 +211,17 @@ describe('ResourcePanel', () => {
     expect(screen.getByText('Changed since it was cited.')).toBeInTheDocument()
   })
 
+  it('says a Task replaces the one the message was about, and keeps the version shown', async () => {
+    const read = vi.fn().mockResolvedValue(finding({ ref: { kind: 'research', id: 'r2', revision: '3' }, title: 'Prune heads', shown_revision: '3' }))
+    const navigation = fakeNavigation({ location: { place: { view: 'general', filter: 'r1' }, inspector: [] } })
+    const { memory } = mount({ kind: 'resource', ref: { kind: 'research', id: 'r2' } }, read, navigation)
+    const add = screen.getByRole('button', { name: 'Add to message' })
+    await waitFor(() => expect(add).toBeEnabled())
+    fireEvent.click(add)
+    expect(draftOf(memory, 'r1')).toMatchObject({ task: 'r2', taskRevision: '3' })
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('Your message is now about Prune heads instead of the Task it was about.')
+  })
+
   it('a record that is gone keeps Back and Close and says it is no longer available', async () => {
     const read = vi.fn().mockResolvedValue(finding({ availability: 'removed', sections: [] }))
     mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read)

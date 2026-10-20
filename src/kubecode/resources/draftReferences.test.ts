@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { emptyGeneralDraft, toNewMessage, type GeneralDraft } from '../channel/generalDraft'
-import { attachToDraft, MAX_DRAFT_REFERENCES, type DraftReference } from './draftReferences'
+import { attachToDraft, draftHas, MAX_DRAFT_REFERENCES, type DraftReference } from './draftReferences'
 
 const file = (revision: string): DraftReference => ({
   ref: { kind: 'file', id: 'results/summary.csv', revision }, title: 'results/summary.csv', seen: 'previewed',
@@ -26,6 +26,25 @@ describe('draft references', () => {
     expect(result).toBe('added')
     expect(draft).toMatchObject({ task: 'r2', taskCleared: false, references: [] })
     expect(attachToDraft(draft, task).result).toBe('duplicate')
+  })
+
+  it('says a different Task replaces the one the message was about, and pins the version of the Task attached', () => {
+    const task = (id: string, revision: string): DraftReference => ({ ref: { kind: 'research', id, revision }, title: id, seen: 'previewed' })
+    const about = emptyGeneralDraft('r1')
+    const replaced = attachToDraft(about, task('r2', '3'))
+    expect(replaced.result).toBe('replacedTask')
+    expect(replaced.draft).toMatchObject({ task: 'r2', taskRevision: '3' })
+    // Another version of the same Task is an update, and the same one a duplicate.
+    const updated = attachToDraft(replaced.draft, task('r2', '4'))
+    expect(updated.result).toBe('replaced')
+    expect(updated.draft.taskRevision).toBe('4')
+    expect(attachToDraft(updated.draft, task('r2', '4')).result).toBe('duplicate')
+    expect(draftHas(updated.draft, task('r2', '4').ref)).toBe(true)
+    expect(draftHas(updated.draft, task('r2', '3').ref)).toBe(false)
+    // The Task goes at the version that was attached; a Task the draft only filters by goes as current.
+    expect(toNewMessage(updated.draft, managerOnly).message.references).toEqual([{ kind: 'research', id: 'r2', revision: '4' }])
+    expect(toNewMessage(about, managerOnly).message.references).toEqual([{ kind: 'research', id: 'r1', revision: null }])
+    expect(toNewMessage(updated.draft, managerOnly).signature).not.toBe(toNewMessage(replaced.draft, managerOnly).signature)
   })
 
   it('cites at most as many records as the server accepts', () => {

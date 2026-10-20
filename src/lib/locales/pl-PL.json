@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "To już nie istnieje, więc nie można tego dodać.",
   "kubecode.resources.added": "Dodano {title} do Twojej wiadomości.",
   "kubecode.resources.updated": "Zaktualizowano {title} do wersji z podglądu.",
+  "kubecode.resources.taskReplaced": "Twoja wiadomość dotyczy teraz {title} zamiast poprzedniego zadania.",
   "kubecode.resources.taskNote": "Dołączenie zadania łączy z nim Twoją wiadomość. Niczego nie zatwierdza ani nie uruchamia.",
   "kubecode.resources.goTo.task": "Otwórz zadanie",
   "kubecode.resources.goTo.thread": "Otwórz wątek w „Ogólne”",

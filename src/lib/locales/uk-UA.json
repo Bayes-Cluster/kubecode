@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Цього більше не існує, тому додати не можна.",
   "kubecode.resources.added": "{title} додано до вашого повідомлення.",
   "kubecode.resources.updated": "{title} оновлено до переглянутої версії.",
+  "kubecode.resources.taskReplaced": "Тепер ваше повідомлення про {title}, а не про попереднє завдання.",
   "kubecode.resources.taskNote": "Прикріплення завдання пов'язує з ним ваше повідомлення. Воно нічого не схвалює і не запускає.",
   "kubecode.resources.goTo.task": "Відкрити завдання",
   "kubecode.resources.goTo.thread": "Відкрити гілку в «Загальне»",

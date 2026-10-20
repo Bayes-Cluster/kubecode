@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Não existe mais, então não pode ser adicionado.",
   "kubecode.resources.added": "{title} adicionado à sua mensagem.",
   "kubecode.resources.updated": "{title} atualizado para a versão que você visualizou.",
+  "kubecode.resources.taskReplaced": "Sua mensagem agora é sobre {title} em vez da Tarefa anterior.",
   "kubecode.resources.taskNote": "Anexar uma Tarefa vincula sua mensagem a ela. Isso não aprova nem inicia nada.",
   "kubecode.resources.goTo.task": "Abrir a Tarefa",
   "kubecode.resources.goTo.thread": "Abrir thread em Geral",

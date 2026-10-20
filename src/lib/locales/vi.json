@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Mục này không còn tồn tại nên không thể thêm.",
   "kubecode.resources.added": "Đã thêm {title} vào tin nhắn của bạn.",
   "kubecode.resources.updated": "Đã cập nhật {title} lên phiên bản bạn đã xem trước.",
+  "kubecode.resources.taskReplaced": "Tin nhắn của bạn giờ nói về {title} thay cho Tác vụ trước đó.",
   "kubecode.resources.taskNote": "Đính kèm một Tác vụ sẽ liên kết tin nhắn của bạn với Tác vụ đó. Việc này không phê duyệt hay bắt đầu bất cứ điều gì.",
   "kubecode.resources.goTo.task": "Mở Tác vụ",
   "kubecode.resources.goTo.thread": "Mở chuỗi trả lời trong Chung",

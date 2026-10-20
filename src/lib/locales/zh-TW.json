@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "它已不存在，因此無法加入。",
   "kubecode.resources.added": "已將 {title} 加入你的訊息。",
   "kubecode.resources.updated": "已將 {title} 更新為你預覽的版本。",
+  "kubecode.resources.taskReplaced": "你的訊息現在是關於 {title}，不再是先前的任務。",
   "kubecode.resources.taskNote": "附加任務會將你的訊息與該任務連結。它不會核准或啟動任何事項。",
   "kubecode.resources.goTo.task": "開啟任務",
   "kubecode.resources.goTo.thread": "在一般中開啟討論串",

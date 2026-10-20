@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Hetaha bolš nie isnuje, tamu dadać nielha.",
   "kubecode.resources.added": "{title} dadadziena ŭ vaša paviedamleńnie.",
   "kubecode.resources.updated": "{title} abnoŭlena da viersii z pieradpraghladu.",
+  "kubecode.resources.taskReplaced": "Ciapier vaša paviedamleńnie pra {title}, a nie pra Zadaču, pra jakuju było raniej.",
   "kubecode.resources.taskNote": "Dałučeńnie Zadački źviazvaje z joj vaša paviedamleńnie. Jano ničoha nie zaćviardžaje i nie zapuskaje.",
   "kubecode.resources.goTo.task": "Adkryć Zadačku",
   "kubecode.resources.goTo.thread": "Adkryć lancužok u «Ahulnaje»",

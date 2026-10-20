@@ -25,6 +25,12 @@ export type GeneralDraft = {
   reply: DraftReply | null
   /** The Task the message is about: sent as its first research reference. */
   task: string | null
+  /**
+   * The version of `task` that was attached from a preview or the list, sent
+   * with it. Absent or null sends the current one (a Task from the filter or
+   * a reply).
+   */
+  taskRevision?: string | null
   /** The researcher took the Task off; a reply does not put one back. */
   taskCleared: boolean
   /** Never a research question: that is `task`. Each carries the version that was seen (ADR 0231 §5). */
@@ -171,10 +177,12 @@ export function withReply(
   author: IdentityView,
   directory: MemberDirectory,
 ): GeneralDraft {
+  const task = draft.task === null && !draft.taskCleared ? message.task_id : draft.task
   const next: GeneralDraft = {
     ...draft,
     reply: { messageId: message.id, authorName: author.name, excerpt: excerptOf(message.body) },
-    task: draft.task === null && !draft.taskCleared ? message.task_id : draft.task,
+    task,
+    taskRevision: task === draft.task ? draft.taskRevision : null,
   }
   const writer = author.memberId ? directory.byId.get(author.memberId) : undefined
   if (!writer || !canReceive(writer)) return next
@@ -199,7 +207,7 @@ export function toNewMessage(
   const add = (ref: ProjectContextRef) => {
     if (!references.some((existing) => refKey(existing) === refKey(ref))) references.push(ref)
   }
-  if (draft.task) add({ kind: 'research', id: draft.task, revision: null })
+  if (draft.task) add({ kind: 'research', id: draft.task, revision: draft.taskRevision ?? null })
   draft.references.forEach((item) => add({ kind: item.ref.kind, id: item.ref.id, revision: item.ref.revision ?? null }))
   const memberIds = recipients.kind === 'members' ? recipients.reachable.map((item) => item.id) : []
   const body = draft.body.trim()

@@ -73,7 +73,7 @@ export function useAttachToDraft(t: Translator): DraftAttachment | null {
     if (!resolved || !key) return 'full'
     const current = (memory?.has(key) ? memory.get(key) : emptyGeneralDraft(resolved.filter)) as GeneralDraft
     const { draft: next, result } = attachToDraft(current, reference)
-    if (result === 'added' || result === 'replaced') setDraft(next)
+    if (result === 'added' || result === 'replaced' || result === 'replacedTask') setDraft(next)
     if (result === 'full' || result === 'duplicate') return result
     if (target) {
       setTarget(null)

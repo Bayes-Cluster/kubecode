@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Item ini sudah tidak ada, sehingga tidak dapat ditambahkan.",
   "kubecode.resources.added": "{title} ditambahkan ke pesan Anda.",
   "kubecode.resources.updated": "{title} diperbarui ke versi yang Anda pratinjau.",
+  "kubecode.resources.taskReplaced": "Pesan Anda kini tentang {title}, bukan Tugas sebelumnya.",
   "kubecode.resources.taskNote": "Melampirkan Tugas menautkan pesan Anda ke Tugas itu. Ini tidak menyetujui atau memulai apa pun.",
   "kubecode.resources.goTo.task": "Buka Tugas",
   "kubecode.resources.goTo.thread": "Buka thread di Umum",

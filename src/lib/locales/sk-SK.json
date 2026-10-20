@@ -2096,6 +2096,7 @@
   "kubecode.resources.removedCannotAdd": "Už neexistuje, preto sa nedá pridať.",
   "kubecode.resources.added": "{title} sa pridalo do vašej správy.",
   "kubecode.resources.updated": "{title} sa aktualizovalo na verziu, ktorú ste si pozreli v ukážke.",
+  "kubecode.resources.taskReplaced": "Vaša správa sa teraz týka {title} namiesto predchádzajúcej úlohy.",
   "kubecode.resources.taskNote": "Priloženie úlohy s ňou prepojí vašu správu. Nič neschvaľuje ani nespúšťa.",
   "kubecode.resources.goTo.task": "Otvoriť úlohu",
   "kubecode.resources.goTo.thread": "Otvoriť vlákno v konverzácii Všeobecné",
