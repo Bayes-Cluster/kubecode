@@ -367,6 +367,27 @@ impl MemberStore {
             .map_err(Into::into)
     }
 
+    /// Every public Session any member of this Project has had (current or
+    /// ended), mapped to that member: how a message keeps naming its author
+    /// after a Session replacement or a removal (ADR 0220 §1, ADR 0229).
+    /// Direct-message Sessions are never included. Presentation only: it
+    /// grants nothing, authority comes from a member's current binding.
+    pub fn public_authors(
+        &self,
+        project_id: &str,
+    ) -> Result<std::collections::HashMap<String, String>, MemberError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT ms.conversation_id, ms.member_id FROM member_sessions ms
+             JOIN workspace_members m ON m.id = ms.member_id
+             WHERE m.project_id = ?1 AND ms.binding = 'public'",
+        )?;
+        statement
+            .query_map([project_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()
+            .map_err(Into::into)
+    }
+
     /// Whether `conversation_id` is, or was, a member's direct-message Session.
     pub fn is_dm_session(
         &self,

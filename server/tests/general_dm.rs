@@ -13,6 +13,7 @@ use kubecode_server::agent_discovery::AgentDescriptor;
 use kubecode_server::agent_store::{AgentStore, RunStatus, TerminalCause};
 use kubecode_server::agents::{AgentId, PermissionMode};
 use kubecode_server::api::{AppState, app_router};
+use kubecode_server::channel_store::{AuthorKind, NewMessage};
 use kubecode_server::orchestrator::{DeliveryOutcome, DeliveryRequest, RouteSink};
 use kubecode_server::teams::TeamStore;
 use kubecode_server::workspace::WorkspaceService;
@@ -437,6 +438,9 @@ async fn sharing_from_a_direct_message_is_previewed_and_posts_exactly_that_text(
     assert_eq!(status, StatusCode::CREATED, "{posted}");
     assert_eq!(posted["body"].as_str().unwrap(), text.trim());
     assert_eq!(posted["author_kind"], "researcher");
+    // The shared message is shown like any other: the researcher is no member.
+    assert_eq!(posted["author_member_id"], Value::Null, "{posted}");
+    assert_eq!(posted["mention_member_ids"], json!([]));
     // Confirming again is the same message, not a second copy.
     let (status, replay) = call(&env, Method::POST, &format!("{base}/share"), confirmed).await;
     assert_eq!(status, StatusCode::OK);
@@ -687,4 +691,306 @@ async fn a_message_can_be_read_by_id_only_in_its_own_conversation_and_project() 
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// An agent's message written the way the MCP tools write it.
+fn agent_says(env: &Env, crew: &Crew, session: &str, body: &str) -> String {
+    env.state
+        .channels
+        .post(
+            &env.project,
+            &crew.channel,
+            NewMessage {
+                body,
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(session),
+                ..Default::default()
+            },
+        )
+        .expect("agent message")
+        .0
+        .id
+}
+
+#[tokio::test]
+async fn messages_name_their_members_through_every_session_a_member_has_had() {
+    let env = env();
+    let crew = crew(&env).await;
+    let members = format!("/projects/{}/members", env.project);
+    let (status, writer) = call(
+        &env,
+        Method::POST,
+        &members,
+        json!({"name": "Writer", "template": "writing"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{writer}");
+    let id = |member: &Value| member["id"].as_str().unwrap().to_owned();
+    let (analyst_id, writer_id, general_id) = (id(&crew.analyst), id(&writer), id(&crew.general));
+
+    let mention = say(
+        &env,
+        &crew,
+        "@analyst please look",
+        &[&session(&crew.analyst)],
+    )
+    .await;
+    assert_eq!(mention["author_member_id"], Value::Null, "{mention}");
+    assert_eq!(mention["mention_member_ids"], json!([analyst_id]));
+    let old_analyst = agent_says(&env, &crew, &session(&crew.analyst), "first look");
+    let by_writer = agent_says(&env, &crew, &session(&writer), "a draft");
+    let by_general = agent_says(&env, &crew, &session(&crew.general), "noted");
+    let stranger = env
+        .agents
+        .create_conversation(&env.project, AgentId::OpenCode, Some("chat"))
+        .unwrap()
+        .id;
+    let by_stranger = agent_says(&env, &crew, &stranger, "who am I");
+    let (note, _) = env
+        .state
+        .channels
+        .post(
+            &env.project,
+            &crew.channel,
+            NewMessage {
+                body: "a note",
+                author_kind: Some(AuthorKind::System),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // The Analyst gets a new Session and keeps writing from it.
+    let (status, replaced) = call(
+        &env,
+        Method::POST,
+        &format!("{members}/{analyst_id}/session"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    assert_ne!(session(&replaced), session(&crew.analyst));
+    let new_analyst = agent_says(&env, &crew, &session(&replaced), "second look");
+
+    let messages = format!(
+        "/projects/{}/channels/{}/messages",
+        env.project, crew.channel
+    );
+    let author_of = |page: &Value, message: &str| -> Value {
+        page["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == message)
+            .unwrap_or_else(|| panic!("{message} is listed: {page}"))["author_member_id"]
+            .clone()
+    };
+    let (status, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(author_of(&page, &old_analyst), json!(analyst_id));
+    assert_eq!(author_of(&page, &new_analyst), json!(analyst_id));
+    assert_eq!(author_of(&page, &by_writer), json!(writer_id));
+    assert_eq!(author_of(&page, &by_general), json!(general_id));
+    assert_eq!(author_of(&page, &by_stranger), Value::Null);
+    assert_eq!(author_of(&page, &note.id), Value::Null);
+    assert_eq!(
+        author_of(&page, mention["id"].as_str().unwrap()),
+        Value::Null
+    );
+    let listed = page["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == mention["id"])
+        .unwrap();
+    assert_eq!(listed["mention_member_ids"], json!([analyst_id]));
+    assert_eq!(page["has_more"], false);
+
+    // One message by id carries the same projection.
+    let (status, one) = call(
+        &env,
+        Method::GET,
+        &format!("{messages}/{old_analyst}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{one}");
+    assert_eq!(one["author_member_id"], json!(analyst_id));
+    assert_eq!(one["mention_member_ids"], json!([]));
+
+    // A removed member keeps its name in history.
+    let (status, removed) = call(
+        &env,
+        Method::DELETE,
+        &format!("{members}/{writer_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{removed}");
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert_eq!(author_of(&page, &by_writer), json!(writer_id));
+    let (_, roster) = call(
+        &env,
+        Method::GET,
+        &format!("{members}?include_removed=true"),
+        Value::Null,
+    )
+    .await;
+    assert!(
+        roster["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == json!(writer_id) && m["state"] == "removed"),
+        "{roster}"
+    );
+}
+
+fn messages_path(env: &Env, crew: &Crew) -> String {
+    format!(
+        "/projects/{}/channels/{}/messages",
+        env.project, crew.channel
+    )
+}
+
+#[tokio::test]
+async fn a_mention_by_member_id_reaches_that_members_current_session() {
+    let env = env();
+    let crew = crew(&env).await;
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    let messages = messages_path(&env, &crew);
+    let request = json!({
+        "body": "@analyst run the sweep",
+        "client_message_id": "member-mention-1",
+        "mentions": [{"member_id": analyst_id}, {"member_id": analyst_id}],
+    });
+    let (status, posted) = call(&env, Method::POST, &messages, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{posted}");
+    // Stored in its Session form, once, and shown as the member.
+    assert_eq!(
+        posted["mentions"],
+        json!([{"session_id": session(&crew.analyst)}])
+    );
+    assert_eq!(posted["mention_member_ids"], json!([analyst_id]));
+    let sink = Recording::default();
+    env.state.orchestrator.tick(&sink).unwrap();
+    let delivered = sink.to();
+    assert_eq!(delivered.len(), 1, "{delivered:?}");
+    assert_eq!(delivered[0].0, session(&crew.analyst));
+
+    // A retry after the member's Session was replaced is the same message.
+    let (status, replaced) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/members/{analyst_id}/session", env.project),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    let (status, replay) = call(&env, Method::POST, &messages, request).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], posted["id"]);
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert_eq!(page["messages"].as_array().unwrap().len(), 1, "{page}");
+
+    // A new message reaches the member's new Session.
+    let (status, fresh) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "@analyst again", "mentions": [{"member_id": analyst_id}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{fresh}");
+    assert_eq!(
+        fresh["mentions"],
+        json!([{"session_id": session(&replaced)}])
+    );
+    assert_eq!(fresh["mention_member_ids"], json!([analyst_id]));
+}
+
+#[tokio::test]
+async fn a_mention_of_a_member_who_cannot_receive_is_refused() {
+    let env = env();
+    let crew = crew(&env).await;
+    let messages = messages_path(&env, &crew);
+    let members = format!("/projects/{}/members", env.project);
+    let (_, writer) = call(
+        &env,
+        Method::POST,
+        &members,
+        json!({"name": "Writer", "template": "writing"}),
+    )
+    .await;
+    let writer_id = writer["id"].as_str().unwrap().to_owned();
+    let (status, _) = call(
+        &env,
+        Method::DELETE,
+        &format!("{members}/{writer_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    env.state
+        .members
+        .record_setup_error(&analyst_id, "the provider refused the model")
+        .unwrap();
+    // A member of another Workspace is not found here.
+    let (_, elsewhere) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.other_project),
+        Value::Null,
+    )
+    .await;
+    let foreign = elsewhere["members"][0]["id"].as_str().unwrap().to_owned();
+
+    for (member, reason) in [
+        (writer_id.as_str(), "removed"),
+        (analyst_id.as_str(), "needs_setup"),
+        ("no-such-member", "not_found"),
+        (foreign.as_str(), "not_found"),
+    ] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &messages,
+            json!({"body": "hello", "mentions": [{"member_id": member}]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{member}: {body}");
+        assert_eq!(body["code"], "mention_unavailable", "{body}");
+        assert_eq!(body["reason"], reason, "{body}");
+        assert_eq!(body["member_id"], member, "{body}");
+    }
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert!(
+        page["messages"].as_array().unwrap().is_empty(),
+        "nothing is stored: {page}"
+    );
+}
+
+#[tokio::test]
+async fn a_mention_must_name_a_member_or_a_session() {
+    let env = env();
+    let crew = crew(&env).await;
+    let messages = messages_path(&env, &crew);
+    let analyst_id = crew.analyst["id"].as_str().unwrap();
+    for mention in [
+        json!({"member_id": analyst_id, "session_id": session(&crew.analyst)}),
+        json!({}),
+    ] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &messages,
+            json!({"body": "hello", "mentions": [mention]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_conversation", "{body}");
+    }
+    // The legacy Session form still works.
+    say(&env, &crew, "@analyst hi", &[&session(&crew.analyst)]).await;
 }

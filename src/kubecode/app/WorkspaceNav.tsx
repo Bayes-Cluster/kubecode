@@ -1,14 +1,15 @@
 import { useId } from 'react'
 
 import { IconButton } from '@/components/workspace/IconButton'
-import { MemberAvatar, MemberIdentity, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
+import { MemberAvatar, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { Member } from '../api'
 import { Icon } from '../icons'
 import { WORKSPACE_DESTINATION_ICONS as DESTINATIONS } from '../icons/workspaceIcons'
-import { STATE_LABELS } from '../members/memberModel'
+import { Identity } from '../members/Identity'
+import { memberView } from '../members/memberIdentity'
 import type { NeedsYouEntry, NeedsYouTarget } from './location/needsYou'
 import type { ViewKey } from './location/workspaceLocation'
 
@@ -18,7 +19,7 @@ export type WorkspaceNavProps = {
   /** The view on screen, so its entry is marked as current; nothing on execution history or a question. */
   active: ViewKey | null
   /** Live members (the roster), General Agent first. */
-  members: Member[]
+  members: readonly Member[]
   /** Everything that waits for the researcher, each saying where it opens. */
   needsYou: NeedsYouEntry[]
   t: Translator
@@ -114,14 +115,9 @@ export function WorkspaceNav({
           <ul aria-labelledby={rosterHeading} className="kubecode-nav-members">
             {members.map((member) => (
               <li data-state={member.state} key={member.id}>
-                <MemberIdentity
-                  attention={member.state === 'setup_required'
-                    ? { label: t(STATE_LABELS[member.state]), tone: 'warn' }
-                    : undefined}
-                  handle={member.handle}
-                  name={member.name}
-                  role={roleKind(member)}
+                <Identity
                   size="sm"
+                  view={memberView(member, t)}
                   onOpen={() => onInspectMember(member.id)}
                 />
                 {member.state === 'active' && (

@@ -8,9 +8,10 @@ import {
   type WorkspaceIconEntry,
   type WorkspaceObjectKind,
 } from '@/kubecode/icons/workspaceIcons'
-import { translate, type AppLocale, type TranslationKey, type Translator } from '@/lib/i18n'
+import { translate, type AppLocale, type TranslationKey, type TranslationValues, type Translator } from '@/lib/i18n'
 
 import { Composer } from './Composer'
+import { RecipientRow } from './RecipientRow'
 import { longestTranslation } from './controlMatrixRoute'
 import { DecisionButton } from './DecisionButton'
 import { IconButton } from './IconButton'
@@ -64,7 +65,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
   const long = useMemo(() => {
     const sample = (key: TranslationKey) => {
       const { locale } = longestTranslation(key)
-      return { locale, in: (other: TranslationKey) => translate(locale, other) }
+      return { locale, in: (other: TranslationKey, values?: TranslationValues) => translate(locale, other, values) }
     }
     return {
       accept: sample('kubecode.task.acceptResults'),
@@ -72,6 +73,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
       identity: sample('kubecode.matrix.sample.managerRole'),
       reference: sample('kubecode.matrix.sample.longTitle'),
       reason: sample('kubecode.matrix.sample.disabledReason'),
+      recipient: sample('kubecode.channel.recipientUnavailable'),
     }
   }, [])
   const lang = (locale: AppLocale, children: ReactNode) => <span lang={locale}>{children}</span>
@@ -319,6 +321,50 @@ export function ControlMatrix({ t }: { t: Translator }) {
           onChange={setDraft}
           onSend={() => setDraft('')}
         />
+        <div className="kubecode-control-matrix-narrow">
+          {lang(long.recipient.locale, (() => {
+            const say = long.recipient.in
+            const writer = 'Writer'
+            const blocked = say('kubecode.channel.recipientUnavailable', {
+              name: writer,
+              state: say('kubecode.members.state.setup_required'),
+            })
+            return (
+              <Composer
+                below={(
+                  <>
+                    <RecipientRow
+                      label={say('kubecode.channel.to')}
+                      recipients={[
+                        {
+                          key: 'analyst', name: 'Data Analyst', handle: 'analyst', role: 'specialist',
+                          roleLabel: say('kubecode.identity.specialist', { responsibility: say('kubecode.members.template.analysis') }),
+                          removeLabel: say('kubecode.channel.removeRecipient', { name: 'Data Analyst' }),
+                          onRemove: () => undefined,
+                        },
+                        {
+                          key: 'writer', name: writer, handle: 'writer', role: 'specialist',
+                          attention: { label: say('kubecode.members.state.setup_required'), tone: 'warn' },
+                          removeLabel: say('kubecode.channel.removeRecipient', { name: writer }),
+                          onRemove: () => undefined,
+                        },
+                      ]}
+                    />
+                    <p className="kubecode-composer-warning" role="status">{blocked}</p>
+                  </>
+                )}
+                canSend={false}
+                label={say('kubecode.channel.composerPlaceholder')}
+                placeholder={say('kubecode.channel.composerPlaceholder')}
+                sendDisabledReason={blocked}
+                sendLabel={say('kubecode.vocab.command.send')}
+                value="@analyst @writer"
+                onChange={() => undefined}
+                onSend={() => undefined}
+              />
+            )
+          })())}
+        </div>
         <Composer
           disabled
           label={t('kubecode.matrix.sample.composerDisabled')}

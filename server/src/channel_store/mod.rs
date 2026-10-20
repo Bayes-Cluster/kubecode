@@ -264,6 +264,25 @@ fn load_message(
         .ok_or(ChannelError::MessageNotFound)
 }
 
+/// The message a client message id was first used for in a channel.
+fn load_by_client_id(
+    connection: &Connection,
+    project_id: &str,
+    channel_id: &str,
+    client_message_id: &str,
+) -> Result<Option<Message>, ChannelError> {
+    Ok(connection
+        .query_row(
+            &format!(
+                "{MESSAGE_SELECT} WHERE channel_id = ?1 AND client_message_id = ?2
+                   AND project_id = ?3"
+            ),
+            params![channel_id, client_message_id, project_id],
+            message_from_row,
+        )
+        .optional()?)
+}
+
 fn session_in_project(
     tx: &Connection,
     project_id: &str,
@@ -521,15 +540,7 @@ impl ChannelStore {
         self.write(|tx| {
             load_channel(tx, project_id, channel_id)?;
             if let Some(request) = &request
-                && let Some(existing) = tx
-                    .query_row(
-                        &format!(
-                            "{MESSAGE_SELECT} WHERE channel_id = ?1 AND client_message_id = ?2"
-                        ),
-                        params![channel_id, request],
-                        message_from_row,
-                    )
-                    .optional()?
+                && let Some(existing) = load_by_client_id(tx, project_id, channel_id, request)?
             {
                 let same = existing.body == body
                     && existing.thread_id.as_deref() == new.thread_id
@@ -741,6 +752,22 @@ impl ChannelStore {
 
     pub fn message(&self, project_id: &str, message_id: &str) -> Result<Message, ChannelError> {
         load_message(&self.connection(), project_id, message_id)
+    }
+
+    /// The message stored under a client message id in a channel, if any: what
+    /// a retried post replays.
+    pub fn by_client_message_id(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        client_message_id: &str,
+    ) -> Result<Option<Message>, ChannelError> {
+        load_by_client_id(
+            &self.connection(),
+            project_id,
+            channel_id,
+            client_message_id,
+        )
     }
 
     // -- Threads ---------------------------------------------------------------

@@ -54,7 +54,7 @@ describe('Settings > Members', () => {
   it('shows the selected Workspace roster beside the server defaults', async () => {
     const { client } = dialog({ activeProjectId: 'p1' })
     expect(await screen.findByText('General')).toBeInTheDocument()
-    expect(client.listMembers).toHaveBeenCalledWith('p1')
+    expect(client.listMembers).toHaveBeenCalledWith('p1', false)
     expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toHaveValue('Manage.')
     expect(screen.getByRole('button', { name: 'kubecode.members.title' })).toBeInTheDocument()
   })

@@ -1032,3 +1032,116 @@ fn messages_written_before_tasks_were_associated_get_their_task_once() {
     assert_eq!(page.messages.len(), 1);
     assert_eq!(page.messages[0].id, message.id);
 }
+
+#[test]
+fn message_view_projects_authors_and_mentions_in_order() {
+    let message = |author_kind: AuthorKind, author_ref: Option<&str>, mentions: &[&str]| Message {
+        id: "m".into(),
+        project_id: "p".into(),
+        channel_id: "c".into(),
+        thread_id: None,
+        seq: 1,
+        kind: MessageKind::Message,
+        author_kind,
+        author_ref: author_ref.map(str::to_owned),
+        body: "hello".into(),
+        intent: Intent::Say,
+        mentions: mentions
+            .iter()
+            .map(|id| Mention {
+                session_id: (*id).to_owned(),
+            })
+            .collect(),
+        references: Vec::new(),
+        client_message_id: None,
+        intent_claimed_by: None,
+        created_at: "now".into(),
+        task_id: None,
+        reply_to: None,
+        hops: 0,
+    };
+    let authors: std::collections::HashMap<String, String> = [
+        ("s-analyst-old", "analyst"),
+        ("s-analyst", "analyst"),
+        ("s-writer", "writer"),
+    ]
+    .into_iter()
+    .map(|(session, member)| (session.to_owned(), member.to_owned()))
+    .collect();
+
+    let agent = MessageView::project(
+        message(
+            AuthorKind::Agent,
+            Some("s-analyst-old"),
+            &["s-writer", "s-stranger", "s-analyst"],
+        ),
+        &authors,
+    );
+    assert_eq!(agent.author_member_id.as_deref(), Some("analyst"));
+    assert_eq!(
+        agent.mention_member_ids,
+        vec![Some("writer".to_owned()), None, Some("analyst".to_owned())],
+        "same length and order as the mentions"
+    );
+    let unknown = MessageView::project(
+        message(AuthorKind::Agent, Some("s-stranger"), &[]),
+        &authors,
+    );
+    assert_eq!(unknown.author_member_id, None);
+    assert!(unknown.mention_member_ids.is_empty());
+    // Only an agent is named through its Session.
+    for kind in [AuthorKind::Researcher, AuthorKind::System] {
+        let view = MessageView::project(message(kind, Some("s-analyst"), &[]), &authors);
+        assert_eq!(view.author_member_id, None, "{kind:?}");
+    }
+    // The projection is the message plus two fields, flattened.
+    let json = serde_json::to_value(&agent).unwrap();
+    assert_eq!(json["id"], "m");
+    assert_eq!(json["author_member_id"], "analyst");
+    assert_eq!(json["mention_member_ids"][1], serde_json::Value::Null);
+    assert_eq!(json["mentions"][0]["session_id"], "s-writer");
+}
+
+#[test]
+fn by_client_message_id_finds_the_stored_message() {
+    let r = rig();
+    let channel = r.channel();
+    let (stored, _) = r
+        .channels
+        .post(
+            r.project(),
+            &channel.id,
+            NewMessage {
+                body: "keyed",
+                client_message_id: Some("k-1"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), &channel.id, "k-1")
+            .unwrap()
+            .map(|message| message.id),
+        Some(stored.id)
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), &channel.id, "k-2")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id(r.project(), "other", "k-1")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        r.channels
+            .by_client_message_id("other", &channel.id, "k-1")
+            .unwrap(),
+        None,
+        "another Project cannot read it"
+    );
+}

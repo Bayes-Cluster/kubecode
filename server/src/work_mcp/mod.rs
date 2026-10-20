@@ -760,7 +760,7 @@ impl WorkMcpServer {
     }
 
     #[tool(
-        description = "The latest messages of the shared General conversation, oldest first, with each message's id, who wrote it (researcher, agent with @handle, or system) and the Tasks it cites. Use the id of the researcher's own message when a Task step needs their authorization."
+        description = "The latest messages of the shared General conversation, oldest first, with each message's id, who wrote it (researcher, agent with @handle, or system), the Tasks it cites, the message it replies to (reply_to) and the members it names (to). Use the id of the researcher's own message when a Task step needs their authorization."
     )]
     async fn general_recent(
         &self,

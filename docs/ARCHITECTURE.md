@@ -399,6 +399,66 @@ read; `channel_api` refuses mentions and citations of one. The browser surface
 is `src/kubecode/dm/` (`DmPane`, `DmShareDialog`) beside the channel's task
 filter, citations, and collapsed routing notes.
 
+Member identity and member-following routes (ADR 0229): every conversation
+message the API serves (`GET`/`POST …/channels/{c}/messages`, one message by
+id, and the `…/dm/share` response) is a `MessageView` — the stored `Message`
+plus `author_member_id` and `mention_member_ids`, resolved at read time through
+`MemberStore::public_authors` (every public Session a member of the Project has
+had, current or ended; never a DM Session). Nothing is stored or migrated, and
+the projection grants nothing. A failed roster lookup degrades to no member ids
+(logged), so identity never fails a read and never names the wrong member.
+`POST …/messages` accepts `mentions: [{member_id}]` beside the legacy
+`[{session_id}]`: a member resolves to its current public Session when the
+message is written, or the post is refused with 400 `mention_unavailable`
+(`reason`: `removed`, `needs_setup`, `not_found`); a retry with the same client
+message id reuses the Session the stored message named that member by
+(`ChannelStore::by_client_message_id`), so it replays after a Session
+replacement. The Orchestrator re-resolves a conversation route (`discussion`,
+`mention`, `agent_handoff`, `task_review`; `RouteKind::follows_member`) at
+delivery when its target is a member's ended public Session: to the member's
+current public Session, failed with a note if the member was removed, retried
+then failed with a note if it needs setup. `message_routes.recipient` records
+the Session actually reached and `next_hops` counts depth through it. A
+researcher message that reaches the General member is framed for discussion and
+admission even when the manager is @-named, and every frame quotes the
+replied-to message fenced. `general_recent` reports `reply_to` and `to` (named
+members' handles through public Sessions only). The `ask`/`request` intents and
+Thread routes stay accepted for older pages.
+
+In the browser, `WorkbenchShell` reads the roster with removed members
+(`useMembers(…, { includeRemoved: true })`) into one `MemberDirectory`
+(`members/memberDirectory.ts`: by id, by current public Session for messages
+read without the projection, the live members with the manager first) and
+provides it through `MemberDirectoryContext`; views name people with
+`members/memberIdentity.ts` (`memberView`, `authorView`, `messageRecipients`,
+never "Agent") drawn by `members/Identity.tsx`, whose live-member name opens the
+profile through `useWorkspaceNavigation().inspect`. General's rules are pure
+modules under `channel/`: `generalDraft.ts` (one `GeneralDraft` of text, reply,
+Task, references, last attempt, and last failure; recipients read from the
+text outside quotes and code, removed members included, and unknown until the
+directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{member_id}` mentions and the
+Task as the first research reference), `timeline.ts` (days, author groups,
+collapsed routine notes, denial notes attached to their message or shown on
+their own, never collapsed),
+`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
+`MessageItem` also draws queued and delivered as quiet text), and
+`mentionOptions.ts`; `references/referenceLabels.ts` names references by title
+(`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
+place memory under `placeKey.general(p, filter) + '#draft'`, keys its
+composer by that place, and has no message types, Thread starts, or hidden
+references; `MessageComposer` is controlled by that draft (its failure and
+Try again included) and shows the To row (`components/workspace/RecipientRow`), the
+Task and reference chips, and why Send is blocked; `MessageList` renders the
+timeline through `MessageItem` (Markdown with inert images, Reply and
+`MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
+`ThreadPane` is read-only with "Reply in General" (only its Task link
+changes). Dates and times use the app locale's date locale
+(`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
+inline `$…$` as math only under remark-math's rules and never in code, and
+`renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+share as General will show it before posting.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
@@ -406,8 +466,9 @@ semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
 (arrow send; a stop that names its target), and `Composer` (text, `@mention`
 combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
 the line, nothing is sent while an input method composes). It knows nothing of
-channels or Tasks: `channel/MessageComposer` supplies the mention options and
-the intent and reference controls, and General and direct messages both use it.
+channels or Tasks: `channel/MessageComposer` supplies the members to mention,
+the recipients, and the reference controls, and General and direct messages
+both use it.
 The session composer shares the send and stop buttons.
 
 Workspace visual vocabulary (ADR 0227): `src/kubecode/icons/workspaceIcons.ts`

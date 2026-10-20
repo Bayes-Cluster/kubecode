@@ -36,6 +36,11 @@ pub struct GeneralMessage {
     pub body: String,
     pub task: Vec<String>,
     pub created_at: String,
+    /// The earlier message this one cites (ADR 0229 §4).
+    pub reply_to: Option<String>,
+    /// The @handles of the members it names, through their public Sessions
+    /// only (current or ended): a private Session is never named here.
+    pub to: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -252,10 +257,26 @@ impl WorkAgent {
                 ..Default::default()
             },
         )?;
+        // Who each mention names: presentation, so a failed lookup names no one.
+        let authors = members.public_authors(&self.project_id).unwrap_or_default();
+        let handles: std::collections::HashMap<String, String> = members
+            .list(&self.project_id, true)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|member| (member.id, member.handle))
+            .collect();
         Ok(page
             .messages
             .iter()
-            .map(|message| self.view(message, members))
+            .map(|message| {
+                let to = message
+                    .mentions
+                    .iter()
+                    .filter_map(|mention| authors.get(&mention.session_id))
+                    .filter_map(|member_id| handles.get(member_id).cloned())
+                    .collect();
+                self.view(message, members, to)
+            })
             .collect())
     }
 
@@ -263,6 +284,7 @@ impl WorkAgent {
         &self,
         message: &Message,
         members: &crate::member_store::MemberStore,
+        to: Vec<String>,
     ) -> GeneralMessage {
         GeneralMessage {
             id: message.id.clone(),
@@ -286,6 +308,8 @@ impl WorkAgent {
                 .map(|reference| reference.id.clone())
                 .collect(),
             created_at: message.created_at.clone(),
+            reply_to: message.reply_to.clone(),
+            to,
         }
     }
 }

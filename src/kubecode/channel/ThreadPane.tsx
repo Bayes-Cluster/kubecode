@@ -1,27 +1,27 @@
-import { X } from 'lucide-react'
-import { IconButton } from '@/components/workspace/IconButton'
-import type { MentionOption } from '@/components/workspace/mentions'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { Translator } from '@/lib/i18n'
+import { ViewHeader } from '@/components/workspace/ViewHeader'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 import type {
   Channel,
+  ChannelMessage,
   ChannelThread,
   Conversation,
   KubecodeApi,
-  NewChannelMessage,
   ProjectContextRef,
   ResearchRound,
   ResearchSummary,
   WorkspaceEvent,
 } from '../api'
 import { ApiError } from '../api'
-import { placeKey } from '../app/location/placeMemory'
+import type { MemberDirectory } from '../members/memberDirectory'
+import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { useAction } from '../research/useAction'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
-import { MessageComposer } from './MessageComposer'
 import { MessageList } from './MessageList'
 import { useMessageFeed } from './useChannel'
 
@@ -32,11 +32,15 @@ type ThreadPaneProps = {
   api: KubecodeApi
   channel: Channel
   connectionState: WorkspaceConnectionState
+  directory: MemberDirectory
   events: WorkspaceEvent[]
-  mentionOptions?: MentionOption[]
+  labels: ReferenceLabelSource
+  locale?: AppLocale
   onClose: () => void
   onOpenReference: (reference: ProjectContextRef) => void
   onOpenWork?: (filter: { thread_id: string }) => void
+  /** Continues the Thread in General: cites its first message in the General draft. */
+  onReplyInGeneral: (root: ChannelMessage) => void
   onThreadChanged: () => void
   research: ResearchSummary[]
   sessions: Conversation[]
@@ -45,18 +49,22 @@ type ThreadPaneProps = {
 }
 
 /**
- * One Thread: its messages, a reply box, and the link to a research question.
- * Linking never moves a message; it records the link in the Thread itself.
+ * A Thread from an earlier version, read-only (ADR 0229 §5): its messages, its
+ * link to a Task and round, and the way to continue in General. Nothing is
+ * written here, so nothing written here could reach no one.
  */
 export function ThreadPane({
   api,
   channel,
   connectionState,
+  directory,
   events,
-  mentionOptions = [],
+  labels,
+  locale,
   onClose,
   onOpenReference,
   onOpenWork,
+  onReplyInGeneral,
   onThreadChanged,
   research,
   sessions,
@@ -83,6 +91,7 @@ export function ThreadPane({
   )
   const roundOptions = rounds && rounds.researchId === chosenResearch ? rounds.rounds : []
   const candidates = research.filter((item) => !item.archived || item.id === thread.research_id)
+  const root = feed.messages.find((message) => message.id === thread.root_message_id) ?? null
 
   useEffect(() => {
     if (!chosenResearch || typeof api.listResearchRounds !== 'function') return
@@ -121,32 +130,18 @@ export function ThreadPane({
     }
   }
 
-  const reply = async (message: NewChannelMessage) => {
-    const saved = await api.postChannelMessage(thread.project_id, channel.id, {
-      ...message,
-      threadId: thread.id,
-    })
-    feed.append(saved)
-    onThreadChanged()
-  }
-
   return (
-    <aside aria-label={t('kubecode.channel.thread')} className="kubecode-channel-thread">
-      <header>
-        <div>
-          <h3>{thread.title}</h3>
-          <p className="kubecode-research-muted">
-            {linked
-              ? t('kubecode.channel.linkedTo', { title: linked.title })
-              : t('kubecode.channel.notLinked')}
-          </p>
-        </div>
-        <IconButton
-          icon={<X aria-hidden size={16} />}
-          label={t('kubecode.channel.closeThread')}
-          onClick={onClose}
-        />
-      </header>
+    <aside aria-label={t('kubecode.channel.legacyThread.title')} className="kubecode-channel-thread">
+      <ViewHeader
+        close={{ label: t('kubecode.channel.closeThread'), onClose }}
+        description={linked
+          ? t('kubecode.channel.linkedTo', { title: linked.title })
+          : t('kubecode.channel.notLinked')}
+        level={3}
+        meta={<span className="kubecode-legacy-thread-topic">{thread.title}</span>}
+        title={t('kubecode.channel.legacyThread.title')}
+      />
+      <p className="kubecode-legacy-thread-note">{t('kubecode.channel.legacyThread.readOnly')}</p>
       <div className="kubecode-channel-link">
         <select
           aria-label={t('kubecode.channel.linkLabel')}
@@ -202,26 +197,24 @@ export function ThreadPane({
       </div>
       {link.error && <p className="kubecode-research-error" role="alert">{link.error}</p>}
       <MessageList
+        directory={directory}
         emptyLabel={t('kubecode.channel.threadEmpty')}
         feed={feed}
         label={t('kubecode.channel.thread')}
+        labels={labels}
+        locale={locale}
+        projectId={thread.project_id}
+        research={research}
         sessions={sessions}
         t={t}
         onOpenReference={onOpenReference}
       />
-      <MessageComposer
-        api={api}
-        draftKey={placeKey.thread(thread.project_id, thread.id)}
-        focusKey={`composer:thread:${thread.id}`}
-        key={thread.id}
-        mentionOptions={mentionOptions}
-        placeholder={t('kubecode.channel.threadPlaceholder')}
-        projectId={thread.project_id}
-        sessions={sessions}
-        t={t}
-        threadId={thread.id}
-        onSend={reply}
-      />
+      <div className="kubecode-legacy-thread-actions">
+        <Button disabled={!root} size="sm" variant="outline" onClick={() => root && onReplyInGeneral(root)}>
+          <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
+          {t('kubecode.channel.legacyThread.replyInGeneral')}
+        </Button>
+      </div>
     </aside>
   )
 }

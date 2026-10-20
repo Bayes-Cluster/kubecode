@@ -18,6 +18,7 @@ import { ContextWorkbench } from '../ContextWorkbench'
 import { ChannelNavigator } from '../channel/ChannelNavigator'
 import { TaskBoardView } from '../tasks/TaskBoardView'
 import { MembersView } from '../members/MembersView'
+import { memberDirectory, MemberDirectoryContext } from '../members/memberDirectory'
 import { useMembers } from '../members/useMembers'
 import { ResourcesView } from '../resources/ResourcesView'
 import { useTaskBoard } from '../tasks/useTaskBoard'
@@ -259,8 +260,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     reconciliation.workspaceEvents,
     reconciliation.connectionState,
   )
-  const roster = useMembers(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
+  // Removed members too: the conversation keeps naming them (ADR 0229 §1).
+  const roster = useMembers(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState, { includeRemoved: true })
   const rosterMembers = roster.roster?.members ?? null
+  const directory = useMemo(
+    () => memberDirectory(roster.roster, roster.status, roster.reload),
+    [roster.reload, roster.roster, roster.status],
+  )
+  const liveMembers = roster.roster ? directory.live : null
   const taskBoard = useTaskBoard(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
   const tasksOnBoard = useMemo(
     () => new Set((taskBoard.board?.cards ?? []).map((card) => card.id)),
@@ -537,7 +544,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   // A private conversation is named by its member; the Member comes from the roster or is opened.
   const dmMemberId = place.view === 'dm' ? place.member : null
-  const dmTarget = useDmTarget(api, projectId, dmMemberId, rosterMembers, {
+  const dmTarget = useDmTarget(api, projectId, dmMemberId, liveMembers, {
     rosterFailed: roster.status === 'error',
     onError: (cause) => {
       setError(errorMessage(cause, t('kubecode.error')))
@@ -936,6 +943,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
     <PlaceMemoryProvider memory={placeMemory}>
     <WorkspaceNavigationContext.Provider value={navigation}>
+    <MemberDirectoryContext.Provider value={directory}>
     <InspectorServicesContext.Provider value={inspectorServices}>
     <main className="kubecode-app">
       <p className="sr-only" role="status">{announcement}</p>
@@ -1042,7 +1050,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             workspaceSection={projectId ? (
               <WorkspaceNav
                 active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
-                members={rosterMembers?.filter((member) => member.state !== 'removed') ?? NO_MEMBERS}
+                members={liveMembers ?? NO_MEMBERS}
                 needsYou={needsYou}
                 taskCount={taskBoard.board?.total ?? 0}
                 t={t}
@@ -1139,12 +1147,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 initialThreadId={place.thread ?? null}
                 key={projectId}
                 landing={landing}
+                locale={locale}
                 onReadingPositionChange={(position) => readingRef.current.set(projectId, position)}
                 tasksOnBoard={taskBoard.board ? tasksOnBoard : undefined}
                 onFilterChange={(filter) => patchGeneral({ filter })}
                 onOpenReference={openReference}
-                onOpenResearch={(taskId) => inspect({ kind: 'task', id: taskId })}
-                onOpenSession={(nextConversationId) => openSession(nextConversationId)}
                 onOpenTask={openTaskFromMessage}
                 onOpenWork={(filter) => {
                   const taskId = channelThreads.threads.find((item) => item.id === filter.thread_id)?.research_id
@@ -1360,6 +1367,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       />
     </main>
     </InspectorServicesContext.Provider>
+    </MemberDirectoryContext.Provider>
     </WorkspaceNavigationContext.Provider>
     </PlaceMemoryProvider>
     </SystemMessageProvider>

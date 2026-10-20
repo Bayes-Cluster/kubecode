@@ -86,6 +86,30 @@ describe('MemberRoster', () => {
     expect(screen.queryByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"Analyst"}' })).not.toBeInTheDocument()
   })
 
+  it('shows each member in the shared identity, with a membership state only when it needs the researcher', async () => {
+    roster(api({
+      listMembers: vi.fn().mockResolvedValue({
+        members: [
+          member(),
+          member({ id: 'm2', role: 'specialist', template: 'analysis', name: 'Analyst', handle: 'analyst', state: 'setup_required' }),
+        ],
+        general_id: 'm-general',
+      }),
+    }))
+    const general = (await screen.findByText('General')).closest('li') as HTMLElement
+    expect(within(general).getByText('@general')).toBeInTheDocument()
+    expect(within(general).getByText('kubecode.members.template.general')).toBeInTheDocument()
+    expect(within(general).getByText('OpenCode')).toBeInTheDocument()
+    // Membership is not activity: an active member's row is its identity and provider, with no state at all.
+    expect(general).toHaveTextContent(
+      /^G\s*General\s*@general\s*kubecode\.members\.template\.general\s*OpenCode\s*kubecode\.members\.managerNote\s*kubecode\.members\.edit\s*kubecode\.members\.replaceSession$/,
+    )
+    expect(general).not.toHaveTextContent(/kubecode\.members\.state\./)
+    const analyst = screen.getByText('Analyst').closest('li') as HTMLElement
+    expect(within(analyst).getByText('kubecode.members.state.setup_required')).toBeInTheDocument()
+    expect(within(analyst).getByRole('button', { name: 'kubecode.members.retrySetup: Analyst' })).toBeInTheDocument()
+  })
+
   it('shows the project manager as a manager that cannot be removed, beside specialists', async () => {
     roster(api({
       listMembers: vi.fn().mockResolvedValue({

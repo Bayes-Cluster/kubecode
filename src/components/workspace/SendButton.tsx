@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react'
-import type { MouseEvent } from 'react'
+import { useId, type MouseEvent } from 'react'
 
 import { ActionTooltip } from '@/components/ui/action-tooltip'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -35,18 +35,24 @@ export type SendButtonProps = {
   busy?: boolean
   onSend: () => void
   testId?: string
+  /** Why it cannot send now, in words; it describes the button. */
+  disabledReason?: string
 }
 
 /**
  * The arrow button every composer ends with. It stays available while agents
  * are working: sending a message is independent of stopping anything.
  */
-export function SendButton({ busy = false, canSend, label, onSend, testId }: SendButtonProps) {
+export function SendButton({ busy = false, canSend, disabledReason, label, onSend, testId }: SendButtonProps) {
+  const reasonId = useId()
+  const reason = !canSend && !busy && disabledReason ? disabledReason : null
   return (
     <TooltipProvider>
+      {reason && <span className="sr-only" id={reasonId}>{reason}</span>}
       <ActionTooltip copy={{ label }}>
         <Button
           aria-busy={busy || undefined}
+          aria-describedby={reason ? reasonId : undefined}
           aria-disabled={busy || undefined}
           aria-label={label}
           className="kubecode-send-button"

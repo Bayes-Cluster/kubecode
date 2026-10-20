@@ -1212,6 +1212,17 @@ nothing. Only the researcher can author a `request`. Channel messages are
 distinct from provider transcripts (one per Session) and from the delivery
 mailbox between Team members. See ADR 0216.
 
+The browser now writes plain top-level messages only: Threads are read-only
+history that continues in General by citation, and the server still accepts
+intents and Thread posts from older pages. A message read through the API also
+names the **members** behind its author and mentions, through any public
+Session they have had; that identity is presentation and grants nothing. A
+mention may name a member, resolved to its current public Session when the
+message is written and refused when the member cannot receive. The browser
+shows whom a message goes to before it is sent, and keeps each unsent message
+(text, reply, Task, references) with the place it was written for. See ADR
+0229.
+
 ## Route
 
 A **route** is the durable delivery of one thing to one Session: a researcher's
@@ -1304,6 +1315,14 @@ shared search, mention, citation, or tool reaches it, and the researcher moves
 part of it into General only through a **previewed share** that posts the exact
 text they confirmed. See ADR 0223.
 
+A conversation route (discussion, mention, hand-off, Task review) is addressed
+to a **member**: if the member's Session is replaced while it is pending, it
+reaches the member's current public Session, and it fails with a note if the
+member was removed or cannot receive. A researcher message that reaches the
+General Agent is always framed for discussion and admission, even when the
+manager is named, and a **reply** carries the cited message, quoted as data, to
+its recipient. See ADR 0229.
+
 ## Workspace controls
 
 Workspace views share a small set of controls: a labelled **icon button**, a
@@ -1333,7 +1352,9 @@ changing who the member is. The manager clarifies, plans, delegates, tracks,
 and reports; it cannot be assigned or perform specialist work, and this is
 enforced by the service, not by instructions: its Sessions start with the
 **Manager** permission profile, which withdraws editing and command tools at
-the provider's launch. See ADRs 0220 and 0226.
+the provider's launch. See ADRs 0220 and 0226. Every Session a member has had
+is recorded, so its messages keep naming it after a replacement or a removal
+(ADR 0229).
 
 ## Analysis and evidence
 
