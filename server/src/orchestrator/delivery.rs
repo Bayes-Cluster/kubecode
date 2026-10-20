@@ -258,6 +258,41 @@ impl Orchestrator {
         }
     }
 
+    /// A Task's deliveries that went wrong or are being retried: the
+    /// researcher's review decisions on it, and answers to questions on its
+    /// work, that did not reach their recipient (ADR 0232).
+    pub fn task_delivery_issues(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<SourceDelivery>, OrchestratorError> {
+        let routes: Vec<Route> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(&format!(
+                "{ROUTE_SELECT} WHERE project_id = ?1
+                   AND (state = 'failed' OR (state = 'pending' AND attempts > 0))
+                   AND ((kind = 'task_review' AND source_id IN
+                          (SELECT id FROM task_reviews WHERE research_id = ?2))
+                        OR (kind = 'decision' AND work_id IN
+                          (SELECT id FROM work_items WHERE research_id = ?2)))
+                 ORDER BY created_at, rowid"
+            ))?;
+            statement
+                .query_map(rusqlite::params![project_id, research_id], route_from_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let keys: Vec<String> = routes.iter().flat_map(route_note_keys).collect();
+        let notes = self.channels.messages_by_client_ids(project_id, &keys)?;
+        Ok(routes
+            .iter()
+            .map(|route| SourceDelivery {
+                source_kind: route.source_kind,
+                source_id: route.source_id.clone(),
+                route: self.route_delivery(route, &notes),
+            })
+            .collect())
+    }
+
     /// Routes whose source is one of these messages.
     fn routes_of_messages(
         &self,

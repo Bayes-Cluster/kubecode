@@ -1278,3 +1278,53 @@ async fn a_denied_message_is_rerouted_once_the_member_is_set_up() {
         (StatusCode::NOT_FOUND, Some("message_not_found"))
     );
 }
+
+#[tokio::test]
+async fn a_dm_reports_its_admission_and_queued_text_stays_visible() {
+    let env = env();
+    let crew = crew(&env).await;
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    let base = format!("/projects/{}/members/{analyst_id}/dm", env.project);
+    let (_, opened) = call(&env, Method::POST, &base, Value::Null).await;
+    let dm = opened["dm_conversation_id"].as_str().unwrap().to_owned();
+    // A turn that already started under this key (a retry after a lost reply).
+    let started = env
+        .agents
+        .start_run_with_client_message_id(
+            &dm,
+            &env.project,
+            "[Role brief]\nYou are the Analyst.\n[End of role brief]\nfirst question",
+            PermissionMode::Safe,
+            Some(&format!("route:dm:k1:{dm}")),
+        )
+        .unwrap();
+    let (status, sent) = call(
+        &env,
+        Method::POST,
+        &format!("{base}/messages"),
+        json!({"text": "first question", "client_message_id": "k1"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{sent}");
+    assert_eq!(sent["state"], "delivered");
+    assert_eq!(sent["admission"], "started");
+    // A message queued behind that running turn stays visible, without the brief.
+    env.agents
+        .start_prompt_or_enqueue(
+            &dm,
+            &env.project,
+            "[Role brief]\nYou are the Analyst.\n[End of role brief]\nsecond question",
+            PermissionMode::Safe,
+            false,
+            Some(&format!("route:dm:k2:{dm}")),
+        )
+        .unwrap();
+    let (status, pending) = call(&env, Method::GET, &format!("{base}/pending"), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    let pending = pending.as_array().unwrap();
+    assert_eq!(pending.len(), 1, "{pending:?}");
+    assert_eq!(pending[0]["client_message_id"], "k2");
+    assert_eq!(pending[0]["text"], "second question");
+    assert_eq!(pending[0]["position"], 1);
+    let _ = started;
+}

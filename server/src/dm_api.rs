@@ -48,6 +48,10 @@ pub fn routes() -> Router<AppState> {
             post(send_message),
         )
         .route(
+            "/projects/{project_id}/members/{member_id}/dm/pending",
+            get(list_pending),
+        )
+        .route(
             "/projects/{project_id}/members/{member_id}/dm/share/preview",
             post(preview_share),
         )
@@ -242,26 +246,91 @@ async fn send_message(
     if key.is_empty() || key.chars().count() > 128 {
         return Err(DmError::Invalid("a client message id is required"));
     }
-    let outcome = tokio::task::spawn_blocking(move || -> Result<DeliveryOutcome, DmError> {
-        let (_, dm) = member_with_dm(&state, &project_id, &member_id)?;
-        let sink = RuntimeSink::new(std::sync::Arc::clone(&state.agent_runtime))
-            .with_members(std::sync::Arc::clone(&state.members));
-        Ok(sink.deliver(&DeliveryRequest {
-            project_id: &project_id,
-            conversation_id: &dm,
-            delivery_key: &format!("dm:{key}"),
-            body: &text,
-        }))
-    })
+    let (outcome, admission) = tokio::task::spawn_blocking(
+        move || -> Result<(DeliveryOutcome, Option<&'static str>), DmError> {
+            let (_, dm) = member_with_dm(&state, &project_id, &member_id)?;
+            let sink = RuntimeSink::new(std::sync::Arc::clone(&state.agent_runtime))
+                .with_members(std::sync::Arc::clone(&state.members));
+            let outcome = sink.deliver(&DeliveryRequest {
+                project_id: &project_id,
+                conversation_id: &dm,
+                delivery_key: &format!("dm:{key}"),
+                body: &text,
+            });
+            // Whether the member started on it or it waits behind a running
+            // turn (ADR 0232): a queued message is still the member's.
+            let admission = state
+                .agent_runtime
+                .store_ref()
+                .prompt_admission(&format!("route:dm:{key}:{dm}"))
+                .ok()
+                .flatten()
+                .map(|admission| match admission {
+                    crate::agent_store::Admission::Started { .. } => "started",
+                    crate::agent_store::Admission::Queued { .. } => "queued",
+                });
+            Ok((outcome, admission))
+        },
+    )
     .await
     .map_err(|_| DmError::Storage)??;
     match outcome {
-        DeliveryOutcome::Delivered => {
-            Ok((StatusCode::ACCEPTED, Json(json!({"state": "delivered"}))))
-        }
+        DeliveryOutcome::Delivered => Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({"state": "delivered", "admission": admission})),
+        )),
         DeliveryOutcome::Busy => Err(DmError::Busy),
         DeliveryOutcome::Failed(_) => Err(DmError::Refused),
     }
+}
+
+/// A direct message waiting behind the member's running turn.
+#[derive(Debug, Serialize)]
+struct PendingDm {
+    client_message_id: String,
+    text: String,
+    /// 1 for the next to start.
+    position: u32,
+    created_at: String,
+}
+
+/// Direct messages queued for the member, so they stay visible after a
+/// reload until the member starts on them (ADR 0232).
+async fn list_pending(
+    State(state): State<AppState>,
+    Path((project_id, member_id)): Path<(String, String)>,
+) -> Result<Json<Vec<PendingDm>>, DmError> {
+    check_project(&state, &project_id)?;
+    let pending = tokio::task::spawn_blocking(move || -> Result<Vec<PendingDm>, DmError> {
+        let (_, dm) = member_with_dm(&state, &project_id, &member_id)?;
+        let suffix = format!(":{dm}");
+        let queued = state
+            .agent_runtime
+            .store_ref()
+            .dm_queued(&dm)
+            .map_err(|_| DmError::Storage)?;
+        Ok(queued
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let key = item
+                    .client_message_id
+                    .as_deref()?
+                    .strip_prefix("route:dm:")?
+                    .strip_suffix(&suffix)?
+                    .to_owned();
+                Some(PendingDm {
+                    client_message_id: key,
+                    text: clip(&without_brief(&item.content), TURN_CHARS),
+                    position: index as u32 + 1,
+                    created_at: item.created_at,
+                })
+            })
+            .collect())
+    })
+    .await
+    .map_err(|_| DmError::Storage)??;
+    Ok(Json(pending))
 }
 
 async fn list_turns(

@@ -1278,3 +1278,100 @@ async fn an_archived_task_detail_says_so() {
         .collect();
     assert_eq!(kinds, ["proposed", "admitted", "archived"]);
 }
+
+#[tokio::test]
+async fn the_task_detail_names_its_executing_round_policy_and_delivery_issues() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let tasks = format!("/projects/{}/tasks/{}", env.project, task.research_id);
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    let execution = &detail["execution"];
+    assert_eq!(execution["round_id"], json!(task.round), "{detail}");
+    assert_eq!(execution["paused"], false);
+    let revision = execution["policy_revision"].as_u64().unwrap();
+    // Pausing new work is the round's execution policy.
+    let (status, body) = call(
+        &env,
+        Method::PUT,
+        &format!(
+            "/projects/{}/rounds/{}/execution-policy",
+            env.project, task.round
+        ),
+        json!({"expected_revision": revision, "paused": true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    assert_eq!(detail["execution"]["paused"], true);
+    assert_eq!(detail["delivery_issues"], json!([]));
+
+    // The decision reaches the manager; when that cannot be delivered, the Task says so.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{tasks}/review"),
+        json!({"request_id": task.request_id, "accept": false, "reason": "again"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    struct Failing;
+    impl RouteSink for Failing {
+        fn deliver(&self, _request: &DeliveryRequest<'_>) -> DeliveryOutcome {
+            DeliveryOutcome::Failed("provider unavailable".into())
+        }
+    }
+    for step in 0..10 {
+        env.state
+            .orchestrator
+            .deliver_due(&Failing, 1_000_000 * (step + 1))
+            .unwrap();
+    }
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    let issues = detail["delivery_issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1, "{detail}");
+    assert_eq!(issues[0]["source_kind"], "review");
+    assert_eq!(issues[0]["route"]["kind"], "task_review");
+    assert_eq!(issues[0]["route"]["state"], "failed");
+    assert_eq!(issues[0]["route"]["retryable"], true);
+}
+
+#[tokio::test]
+async fn stopping_a_members_turn_leaves_its_assigned_work_open() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let item = env.state.work.get(&env.project, &task.work_id).unwrap();
+    let run = env
+        .agents
+        .start_run(
+            &env.specialist,
+            &env.project,
+            "working on it",
+            kubecode_server::agents::PermissionMode::Safe,
+        )
+        .unwrap();
+    env.state.agent_runtime.cancel(&run.id);
+    // Only the attempt's own report ends it; Stop says the work stays open.
+    let after = env.state.work.get(&env.project, &task.work_id).unwrap();
+    assert_eq!(after.stage, item.stage);
+    assert_eq!(after.lifecycle, item.lifecycle);
+    let summary = env
+        .state
+        .work
+        .list(
+            &env.project,
+            &kubecode_server::work_store::WorkFilter {
+                research_id: Some(task.research_id.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let attempt = summary[0].latest_attempt.as_ref().unwrap();
+    use kubecode_server::work_store::AttemptStatus;
+    assert!(
+        !matches!(
+            attempt.status,
+            AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+        ),
+        "{attempt:?}"
+    );
+}

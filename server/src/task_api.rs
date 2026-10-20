@@ -234,6 +234,16 @@ struct EvidenceCitation {
     pinned: Option<String>,
 }
 
+/// The round a Task executes in and whether new work is paused there.
+#[derive(Debug, Serialize)]
+struct TaskExecution {
+    round_id: String,
+    round_number: u64,
+    paused: bool,
+    /// The policy revision a pause must name.
+    policy_revision: u64,
+}
+
 #[derive(Debug, Serialize)]
 struct TaskActions {
     archive: crate::task_store::Availability,
@@ -456,6 +466,10 @@ struct Detail {
     timeline: Vec<crate::task_store::TaskActivity>,
     pending: Vec<crate::task_store::PendingDecision>,
     actions: TaskActions,
+    /// The round the newest execution authorization started (ADR 0232).
+    execution: Option<TaskExecution>,
+    /// Decisions on this Task that did not reach their recipient yet.
+    delivery_issues: Vec<crate::orchestrator::SourceDelivery>,
 }
 
 fn stale_of(
@@ -616,7 +630,41 @@ async fn detail(
                     }),
             );
         }
+        let execution = match authorizations
+            .iter()
+            .rev()
+            .filter(|authorization| {
+                authorization.kind == crate::task_store::AuthorizationKind::Execute
+            })
+            .find_map(|authorization| authorization.round_id.clone())
+        {
+            Some(round_id) => {
+                let policy = state.work.policy(&project_id, &round_id)?;
+                let round_number = card
+                    .rounds
+                    .iter()
+                    .find(|round| round.id == round_id)
+                    .map_or(0, |round| round.number);
+                Some(TaskExecution {
+                    round_id,
+                    round_number,
+                    paused: policy.paused,
+                    policy_revision: policy.revision,
+                })
+            }
+            None => None,
+        };
+        // Presentation: a failed read lists no issue instead of failing the detail.
+        let delivery_issues = state
+            .orchestrator
+            .task_delivery_issues(&project_id, &research_id)
+            .unwrap_or_else(|error| {
+                eprintln!("WARN: Task delivery issues could not be read: {error}");
+                Vec::new()
+            });
         Ok(Detail {
+            execution,
+            delivery_issues,
             archived: question.archived,
             actions: TaskActions {
                 archive: state
