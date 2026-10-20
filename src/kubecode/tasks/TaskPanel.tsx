@@ -35,6 +35,8 @@ import { TaskResults } from './TaskResults'
 import { TaskStatusBadges } from './TaskStatusBadges'
 import { useTaskDetail } from './useTaskDetail'
 
+const RESULTS_PENDING = new Set(['review', 'evidence_changed', 'suggestion'])
+
 type ArchiveDialog = { kind: 'confirm' } | { kind: 'blocked'; reason: TaskAvailability['reason'] } | null
 
 /**
@@ -160,7 +162,8 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
       onOpenResults={() => setTab('results')}
     />
   )
-  const reviewCount = detail?.pending?.filter((item) => item.kind === 'review' || item.kind === 'evidence_changed').length ?? 0
+  // Everything decided in Results: the review, changed evidence, and suggested changes of direction.
+  const reviewCount = detail?.pending?.filter((item) => RESULTS_PENDING.has(item.kind)).length ?? 0
 
   return (
     <InspectorPanel

@@ -115,6 +115,29 @@ describe('TaskPanel', () => {
     expect(panel().getByText(/Accepted as Valid negative result/)).toBeVisible()
   })
 
+  it('counts on the Results tab everything that waits there: the review, changed evidence and suggested changes', async () => {
+    mount(taskDetail({
+      pending: [
+        { key: 'review:rq1', kind: 'review', ref_id: 'rq1', since: '' },
+        { key: 'evidence:file:results.csv', kind: 'evidence_changed', ref_id: 'file:results.csv', since: '' },
+        { key: 'suggestion:e1', kind: 'suggestion', ref_id: 'e1', since: '' },
+        { key: 'question:w1:q1', kind: 'question', ref_id: 'q1', since: '' },
+      ],
+    }))
+    expect(await panel().findByRole('tab', { name: /^Results\s*3$/ })).toBeInTheDocument()
+  })
+
+  it('says a suggested change of direction waits on the researcher, and takes them to the Results', async () => {
+    mount(taskDetail({
+      stage: 'in_progress', review_requested: false, review_requests: [],
+      pending: [{ key: 'suggestion:e1', kind: 'suggestion', ref_id: 'e1', since: '' }],
+    }))
+    const waiting = await panel().findByRole('region', { name: 'Waiting on you' })
+    expect(within(waiting).getByText(/An agent suggested a change to the direction/)).toBeInTheDocument()
+    fireEvent.click(within(waiting).getByRole('button', { name: 'Go to Results' }))
+    expect(panel().getByRole('tab', { name: /Results/, selected: true })).toBeInTheDocument()
+  })
+
   it('opens on the overview otherwise, with goal, provenance and people, and opens a member over the Task', async () => {
     const { navigation } = mount(taskDetail({ stage: 'ready', review_requested: false, review_requests: [], revision: 3, approved_revision: 2 }))
     expect(await panel().findByRole('tab', { name: 'Overview', selected: true })).toBeInTheDocument()

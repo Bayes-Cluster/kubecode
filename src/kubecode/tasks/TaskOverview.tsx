@@ -53,9 +53,10 @@ export function TaskOverview({
   const review = hasOpenReview(detail)
   const questions = (detail?.open_questions.length ?? 0) > 0
   const approval = detail !== null && detail.revision > detail.approved_revision
+  const suggestions = detail?.pending?.some((item) => item.kind === 'suggestion') ?? false
   return (
     <div className="kubecode-task-overview">
-      {detail && (review || questions || approval) && (
+      {detail && (review || questions || approval || suggestions) && (
         <section aria-label={t('kubecode.task.waitingOnYou')} className="kubecode-task-waiting">
           <h4>{t('kubecode.task.waitingOnYou')}</h4>
           {review && (
@@ -65,6 +66,12 @@ export function TaskOverview({
             </p>
           )}
           {questions && <TaskQuestions detail={detail} projectId={projectId} onChanged={onChanged} />}
+          {suggestions && (
+            <p>
+              {t('kubecode.task.suggestionsWaiting')}{' '}
+              <Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>
+            </p>
+          )}
           {approval && (
             <p>
               {t('kubecode.task.staleApproval', { approved: detail.approved_revision })}{' '}

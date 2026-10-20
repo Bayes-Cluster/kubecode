@@ -2318,8 +2318,8 @@ impl TaskStore {
     }
 
     /// What waits on the researcher, under stable keys: an open review, each
-    /// open question of the Task's work, and a revised brief waiting for
-    /// approval. (Changed evidence under an open review is added by the
+    /// open question of the Task's open work, each suggested change of
+    /// direction not yet decided, and a revised brief waiting for approval. (Changed evidence under an open review is added by the
     /// reader that checks evidence.)
     pub fn pending(
         &self,
@@ -2356,6 +2356,17 @@ impl TaskStore {
                         since: request.created_at,
                     });
                 }
+            }
+        }
+        // A suggested change of direction waits for the researcher to agree or decline.
+        for proposal in self.research.proposals(project_id, research_id)? {
+            if proposal.review.is_none() {
+                pending.push(PendingDecision {
+                    key: format!("suggestion:{}", proposal.entry.id),
+                    kind: "suggestion",
+                    ref_id: proposal.entry.id,
+                    since: proposal.entry.created_at,
+                });
             }
         }
         if self.admission(project_id, research_id)?.is_some() {

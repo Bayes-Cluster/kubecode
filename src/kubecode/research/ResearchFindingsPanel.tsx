@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
@@ -52,51 +53,61 @@ export function ResearchFindingsPanel({
   const decidedProposals = proposals.filter((proposal) => proposal.review)
   const pendingOutcomes = outcomes.filter((outcome) => outcome.status === 'pending')
   const review = useAction(t)
+  const [deciding, setDeciding] = useState<string | null>(null)
   const decline = useAction(t)
   const roundNumber = (roundId: string | null) => rounds.find((round) => round.id === roundId)?.round ?? null
 
   return (
     <div className="kubecode-research-panel">
       {pendingProposals.length > 0 && (
-        <section className="kubecode-research-section" aria-label={t('kubecode.research.decisionsNeeded')}>
-          <h3>{t('kubecode.research.decisionsNeeded')}</h3>
+        <section className="kubecode-research-section" aria-label={t('kubecode.research.suggestedChanges')}>
+          <h3>{t('kubecode.research.suggestedChanges')}</h3>
           <p className="kubecode-research-muted">{t('kubecode.research.proposalHint')}</p>
           <ul className="kubecode-research-cards">
-            {pendingProposals.map((proposal) => (
-              <li key={proposal.entry.id}>
-                <p>{proposal.entry.body}</p>
-                <span className="kubecode-research-muted">
-                  {authorLabel(t, proposal.entry.author_kind)} · {t('kubecode.research.revisionShort', { revision: proposal.entry.brief_revision })}
-                </span>
-                {!detail.archived && (
-                  <div className="kubecode-research-row">
-                    <Button
-                      aria-label={`${t('kubecode.research.accept')}: ${proposal.entry.body.slice(0, 60)}`}
-                      disabled={review.busy}
-                      size="xs"
-                      onClick={() => void review.run(async () => {
-                        await api.reviewResearchProposal(detail.project_id, detail.id, proposal.entry.id, 'accepted')
-                        onChanged()
-                      })}
-                    >
-                      {t('kubecode.research.accept')}
-                    </Button>
-                    <Button
-                      aria-label={`${t('kubecode.research.reject')}: ${proposal.entry.body.slice(0, 60)}`}
-                      disabled={review.busy}
-                      size="xs"
-                      variant="outline"
-                      onClick={() => void review.run(async () => {
-                        await api.reviewResearchProposal(detail.project_id, detail.id, proposal.entry.id, 'rejected')
-                        onChanged()
-                      })}
-                    >
-                      {t('kubecode.research.reject')}
-                    </Button>
-                  </div>
-                )}
-              </li>
-            ))}
+            {pendingProposals.map((proposal) => {
+              // Agreeing or declining is a researcher decision (ADR 0227), named
+              // apart from accepting a Task's results.
+              const decide = (decision: 'accepted' | 'rejected') => {
+                setDeciding(`${proposal.entry.id}:${decision}`)
+                void review.run(async () => {
+                  try {
+                    await api.reviewResearchProposal(detail.project_id, detail.id, proposal.entry.id, decision)
+                    onChanged()
+                  } finally {
+                    setDeciding(null)
+                  }
+                })
+              }
+              const held = review.busy ? t('kubecode.task.blocked.deciding') : undefined
+              return (
+                <li key={proposal.entry.id}>
+                  <p>{proposal.entry.body}</p>
+                  <span className="kubecode-research-muted">
+                    {authorLabel(t, proposal.entry.author_kind)} · {t('kubecode.research.revisionShort', { revision: proposal.entry.brief_revision })}
+                  </span>
+                  {!detail.archived && (
+                    <div aria-label={proposal.entry.body.slice(0, 60)} className="kubecode-research-row" role="group">
+                      <DecisionButton
+                        busy={deciding === `${proposal.entry.id}:accepted`}
+                        disabledReason={deciding === `${proposal.entry.id}:accepted` ? undefined : held}
+                        variant="primary"
+                        onDecide={() => decide('accepted')}
+                      >
+                        {t('kubecode.research.agree')}
+                      </DecisionButton>
+                      <DecisionButton
+                        busy={deciding === `${proposal.entry.id}:rejected`}
+                        disabledReason={deciding === `${proposal.entry.id}:rejected` ? undefined : held}
+                        variant="secondary"
+                        onDecide={() => decide('rejected')}
+                      >
+                        {t('kubecode.research.decline')}
+                      </DecisionButton>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
           {review.error && <p className="kubecode-research-error" role="alert">{review.error}</p>}
         </section>

@@ -1443,3 +1443,60 @@ async fn the_authorizing_message_says_whether_it_is_in_the_tasks_scope() {
         "{body}"
     );
 }
+
+/// A suggested change of direction waits on the researcher like any other
+/// decision, under a stable key, until it is decided.
+#[tokio::test]
+async fn a_suggested_change_of_direction_is_pending() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let published = env
+        .state
+        .research
+        .publish(
+            &env.project,
+            &task.research_id,
+            kubecode_server::research_store::NewPublication {
+                key: "suggest-1".into(),
+                author_kind: kubecode_server::research_store::AuthorKind::Agent,
+                author_ref: None,
+                producer: Default::default(),
+                round_id: None,
+                findings: Vec::new(),
+                proposals: vec!["Relax the single-GPU constraint".into()],
+            },
+        )
+        .unwrap();
+    let entry = published.proposals[0].id.clone();
+    let path = format!("/projects/{}/tasks/{}", env.project, task.research_id);
+    let (_, body) = call(&env, Method::GET, &path, Value::Null).await;
+    let keys: Vec<&str> = body["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pending| pending["key"].as_str().unwrap())
+        .collect();
+    assert!(
+        keys.contains(&format!("suggestion:{entry}").as_str()),
+        "{body}"
+    );
+    env.state
+        .research
+        .review_proposal(
+            &env.project,
+            &task.research_id,
+            &entry,
+            kubecode_server::research_store::ReviewDecision::Rejected,
+            None,
+        )
+        .unwrap();
+    let (_, body) = call(&env, Method::GET, &path, Value::Null).await;
+    assert!(
+        body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|pending| pending["kind"] != "suggestion"),
+        "{body}"
+    );
+}

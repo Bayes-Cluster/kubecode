@@ -260,7 +260,11 @@ describe('ResearchWorkspace', () => {
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /kubecode.research.accept/ }))
+    // A suggestion is agreed to or declined: never "Accept", which belongs to a Task's results.
+    expect(screen.getByRole('heading', { name: 'kubecode.research.suggestedChanges' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /kubecode.research.accept/ })).not.toBeInTheDocument()
+    const suggestion = screen.getByRole('group', { name: 'Drop single-GPU' })
+    fireEvent.click(within(suggestion).getByRole('button', { name: 'kubecode.research.agree' }))
     await waitFor(() => expect(reviewResearchProposal).toHaveBeenCalledWith('p1', 'rq-1', 'e-p', 'accepted'))
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.nothingToRecord' }))
     await waitFor(() => expect(declineResearchOutcome).toHaveBeenCalledWith('p1', 'rq-1', 't-1'))

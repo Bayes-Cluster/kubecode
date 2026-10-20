@@ -1292,7 +1292,7 @@ export type TaskActivity = {
 /** Something that waits on the researcher, under a key that stays the same while it waits. */
 export type TaskPendingDecision = {
   key: string
-  kind: 'review' | 'question' | 'brief_approval' | 'evidence_changed'
+  kind: 'review' | 'question' | 'suggestion' | 'brief_approval' | 'evidence_changed'
   ref_id: string
   since: string
 }
