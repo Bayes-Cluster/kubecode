@@ -209,6 +209,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => { projectIdRef.current = projectId }, [projectId])
   const placeRef = useRef(place)
   useEffect(() => { placeRef.current = place }, [place])
+  const conversationIdRef = useRef(conversationId)
+  useEffect(() => { conversationIdRef.current = conversationId }, [conversationId])
   // Where the researcher is reading in each Workspace's General, as it reports it; no render, no route write.
   const readingRef = useRef(new Map<string, ReadingPosition>())
   // What had focus in General when it was last left, per Workspace.
@@ -711,14 +713,23 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (target) move({ type: 'go', projectId: target, target: { view: 'sessions', conversation: created.id } })
   }, [move])
 
+  /**
+   * A removed Session is forgotten wherever it was remembered. Removing the one
+   * on screen goes to the Workspace's General: never into another Session.
+   */
   const handleConversationRemoved = useCallback((removedId: string) => {
-    setConversations((current) => {
-      const next = current.filter((item) => item.id !== removedId)
-      setConversationId((selected) => selected === removedId ? next.at(-1)?.id ?? null : selected)
-      return next
-    })
-    setAllConversations((current) => current.filter((item) => item.id !== removedId))
-  }, [])
+    const current = projectIdRef.current
+    const onScreen = placeRef.current.view === 'sessions' && conversationIdRef.current === removedId
+    setConversations((list) => list.filter((item) => item.id !== removedId))
+    setConversationId((selected) => (selected === removedId ? null : selected))
+    setAllConversations((list) => list.filter((item) => item.id !== removedId))
+    if (!current) return
+    if (onScreen) dispatchLocation({ type: 'go', projectId: current, target: { view: 'general' } }, { history: 'replace' })
+    dispatchLocation(
+      { type: 'reconcile', projectId: current, facts: { removedConversationIds: new Set([removedId]) } },
+      { history: 'replace' },
+    )
+  }, [dispatchLocation])
 
   const handleConversationUpdated = useCallback((updated: Conversation) => {
     setConversations((current) => upsertConversation(current, updated))

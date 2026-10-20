@@ -72,6 +72,8 @@ export type ReconcileFacts = {
   removedMemberIds?: ReadonlySet<string>
   /** This Project's Sessions. */
   conversationIds?: ReadonlySet<string>
+  /** Sessions just removed from Kubecode. */
+  removedConversationIds?: ReadonlySet<string>
 }
 export type LocationAction =
   | {
@@ -306,8 +308,9 @@ function reconcile(memory: LocationMemory, projectId: string, facts: ReconcileFa
   if (!workspace) return memory
   const memberGone = (id: string) => Boolean(facts.removedMemberIds?.has(id))
     || (facts.memberIds !== undefined && !facts.memberIds.has(id))
-  const sessionGone = (id: string | undefined) => (
-    id !== undefined && facts.conversationIds !== undefined && !facts.conversationIds.has(id)
+  const sessionGone = (id: string | undefined) => id !== undefined && (
+    Boolean(facts.removedConversationIds?.has(id))
+    || (facts.conversationIds !== undefined && !facts.conversationIds.has(id))
   )
   let current = workspace.current
   let changed = false

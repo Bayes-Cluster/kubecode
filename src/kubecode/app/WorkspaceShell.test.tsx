@@ -468,6 +468,26 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
   })
 
+  it('goes to General, never to another Session, when the Session on screen is removed', async () => {
+    const later = { ...session, id: 's2', title: 'Later chat' }
+    await start('#/p/project-1/sessions/c/s1', api({
+      listConversations: vi.fn().mockResolvedValue([session, later]),
+      deleteConversation: vi.fn().mockResolvedValue(undefined),
+    }))
+    await screen.findByTestId('agent-session-workspace')
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Actions for Earlier chat' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
+    expect(screen.queryByTestId('agent-session-workspace')).not.toBeInTheDocument()
+    expect(JSON.stringify(storedLocations().workspaces['project-1'])).not.toContain('s2')
+  })
+
   it('opens General when the remembered Session is no longer one of this Workspace', async () => {
     storeLocations({
       lastProjectId: 'project-1',

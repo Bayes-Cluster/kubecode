@@ -245,6 +245,21 @@ describe('workspace locations', () => {
       })).toBe(memory)
     })
 
+    it('forgets a remembered Session that was removed, and turns it into General while on screen', () => {
+      const memory = run(
+        { type: 'go', projectId: 'p1', target: { view: 'general', message: 'm4' } },
+        { type: 'go', projectId: 'p1', target: { view: 'sessions', conversation: 'c1' } },
+      )
+      const next = locationReducer(memory, {
+        type: 'reconcile', projectId: 'p1', facts: { removedConversationIds: new Set(['c1']) },
+      })
+      expect(locationOf(next, 'p1')).toEqual({ place: { view: 'general', message: 'm4' }, inspector: [] })
+      expect(next.workspaces.p1.views.sessions).toBeUndefined()
+      expect(locationReducer(memory, {
+        type: 'reconcile', projectId: 'p1', facts: { removedConversationIds: new Set(['c2']) },
+      })).toBe(memory)
+    })
+
     it('turns a current private conversation remembered only by its key into General', () => {
       const memory: LocationMemory = {
         lastProjectId: 'p1', seq: 1, workspaces: { p1: { current: 'dm:m1', views: {}, at: 1 } },
