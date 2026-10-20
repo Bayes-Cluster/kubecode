@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Wyniki czekają na Twoją decyzję.",
   "kubecode.task.next.returned": "Odesłano je. Główny Agent planuje poprawki.",
   "kubecode.task.next.done": "Zaakceptowano: {outcome}. Aby przeprowadzić kolejną iterację, poproś Głównego Agenta w „Ogólne”.",
+  "kubecode.task.next.doneNoOutcome": "Zaakceptowano. Aby przeprowadzić kolejną iterację, poproś Głównego Agenta w „Ogólne”.",
   "kubecode.task.next.archived": "Zarchiwizowano. Zadanie zniknęło z tablicy; przywróć je, aby kontynuować.",
   "kubecode.task.archive": "Archiwizuj zadanie",
   "kubecode.task.archiveProposal": "Archiwizuj propozycję",

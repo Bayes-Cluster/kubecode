@@ -133,10 +133,13 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
   const title = detail?.title ?? draftCard?.title ?? archivedCard?.title ?? bundle?.detail.brief.title
     ?? t('kubecode.nav.taskDetail')
   const shownMessage = draftCard?.shown_message_id ?? null
+  // An archived Task is restored from its panel's own button, offered once.
   const items: MoreActionItem[] = [
-    archived
-      ? { id: 'restore', label: t('kubecode.task.restore'), onSelect: () => void setArchived(false) }
-      : { id: 'archive', label: draft ? t('kubecode.task.archiveProposal') : t('kubecode.task.archive'), onSelect: askArchive },
+    ...(archived ? [] : [{
+      id: 'archive',
+      label: draft ? t('kubecode.task.archiveProposal') : t('kubecode.task.archive'),
+      onSelect: askArchive,
+    }]),
     ...(draft && shownMessage ? [{
       id: 'proposal',
       label: t('kubecode.task.showProposal'),
@@ -173,7 +176,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
             <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
             {t('kubecode.task.discuss')}
           </Button>
-          <MoreActions items={items} label={t('kubecode.task.moreActions')} />
+          {items.length > 0 && <MoreActions items={items} label={t('kubecode.task.moreActions')} />}
         </>
       )}
       icon={<TaskIcon />}
@@ -265,6 +268,9 @@ function nextStepText(t: Translator, next: TaskNextStep, detail: TaskDetail | nu
     case 'returned': return t('kubecode.task.next.returned')
     case 'working': return t('kubecode.task.next.working')
     case 'ready': return t('kubecode.task.next.ready')
-    case 'done': return t('kubecode.task.next.done', { outcome: outcomeLabel(t, detail?.outcome) ?? '' })
+    case 'done': {
+      const outcome = outcomeLabel(t, detail?.outcome)
+      return outcome ? t('kubecode.task.next.done', { outcome }) : t('kubecode.task.next.doneNoOutcome')
+    }
   }
 }

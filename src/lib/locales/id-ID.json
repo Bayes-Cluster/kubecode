@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Hasil siap untuk keputusan Anda.",
   "kubecode.task.next.returned": "Anda mengembalikannya. General Agent sedang merencanakan pengerjaan ulang.",
   "kubecode.task.next.done": "Diterima: {outcome}. Untuk iterasi berikutnya, minta General Agent di Umum.",
+  "kubecode.task.next.doneNoOutcome": "Diterima. Untuk iterasi berikutnya, minta General Agent di Umum.",
   "kubecode.task.next.archived": "Diarsipkan. Tugas ini tidak ada di papan; pulihkan untuk melanjutkan.",
   "kubecode.task.archive": "Arsipkan Tugas",
   "kubecode.task.archiveProposal": "Arsipkan usulan",

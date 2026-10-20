@@ -2487,6 +2487,7 @@
   "kubecode.task.next.review": "Results are ready for your decision.",
   "kubecode.task.next.returned": "You sent it back. The General Agent is planning the rework.",
   "kubecode.task.next.done": "Accepted: {outcome}. To iterate, ask the General Agent in General.",
+  "kubecode.task.next.doneNoOutcome": "Accepted. To iterate, ask the General Agent in General.",
   "kubecode.task.next.archived": "Archived. It is off the board; restore it to continue.",
   "kubecode.task.archive": "Archive Task",
   "kubecode.task.archiveProposal": "Archive proposal",

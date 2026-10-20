@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "결과가 준비되어 결정을 기다리고 있습니다.",
   "kubecode.task.next.returned": "되돌렸습니다. General Agent가 재작업을 계획하고 있습니다.",
   "kubecode.task.next.done": "수락됨: {outcome}. 반복하려면 '일반'에서 General Agent에게 요청하세요.",
+  "kubecode.task.next.doneNoOutcome": "수락됨. 반복하려면 '일반'에서 General Agent에게 요청하세요.",
   "kubecode.task.next.archived": "보관되어 보드에 표시되지 않습니다. 계속하려면 복원하세요.",
   "kubecode.task.archive": "작업 보관",
   "kubecode.task.archiveProposal": "제안 보관",

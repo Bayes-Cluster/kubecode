@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "I risultati attendono la tua decisione.",
   "kubecode.task.next.returned": "L'hai rimandato indietro. Il General Agent sta pianificando la rielaborazione.",
   "kubecode.task.next.done": "Accettato: {outcome}. Per iterare, chiedi al General Agent in General.",
+  "kubecode.task.next.doneNoOutcome": "Accettato. Per iterare, chiedi al General Agent in Generale.",
   "kubecode.task.next.archived": "Archiviato. Non è più nella bacheca; ripristinalo per continuare.",
   "kubecode.task.archive": "Archivia Task",
   "kubecode.task.archiveProposal": "Archivia proposta",

@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Die Ergebnisse warten auf Ihre Entscheidung.",
   "kubecode.task.next.returned": "Sie haben sie zurückgesendet. Der General Agent plant die Nacharbeit.",
   "kubecode.task.next.done": "Angenommen: {outcome}. Für eine weitere Iteration fragen Sie den General Agent in „General“.",
+  "kubecode.task.next.doneNoOutcome": "Angenommen. Für eine weitere Iteration fragen Sie den General Agent in Allgemein.",
   "kubecode.task.next.archived": "Archiviert. Sie ist nicht mehr auf dem Board; stellen Sie sie wieder her, um fortzufahren.",
   "kubecode.task.archive": "Aufgabe archivieren",
   "kubecode.task.archiveProposal": "Vorschlag archivieren",

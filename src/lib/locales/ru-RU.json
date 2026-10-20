@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Результаты ждут вашего решения.",
   "kubecode.task.next.returned": "Вы вернули задачу. Главный агент планирует доработку.",
   "kubecode.task.next.done": "Принято: {outcome}. Чтобы начать новую итерацию, обратитесь к Главному агенту в General.",
+  "kubecode.task.next.doneNoOutcome": "Принято. Чтобы начать новую итерацию, обратитесь к Главному агенту в «Общее».",
   "kubecode.task.next.archived": "В архиве. Задача убрана с доски; восстановите её, чтобы продолжить.",
   "kubecode.task.archive": "Архивировать задачу",
   "kubecode.task.archiveProposal": "Архивировать предложение",

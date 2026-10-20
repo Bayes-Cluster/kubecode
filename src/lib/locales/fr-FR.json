@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Les résultats attendent votre décision.",
   "kubecode.task.next.returned": "Vous l'avez renvoyée. L'Agent général planifie la reprise du travail.",
   "kubecode.task.next.done": "Acceptée : {outcome}. Pour itérer, demandez à l'Agent général dans « General ».",
+  "kubecode.task.next.doneNoOutcome": "Acceptée. Pour itérer, demandez à l'Agent général dans Général.",
   "kubecode.task.next.archived": "Archivée. Elle n'est plus sur le tableau ; restaurez-la pour continuer.",
   "kubecode.task.archive": "Archiver la tâche",
   "kubecode.task.archiveProposal": "Archiver la proposition",

@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Výsledky čakajú na vaše rozhodnutie.",
   "kubecode.task.next.returned": "Vrátili ste ju. Všeobecný agent plánuje prepracovanie.",
   "kubecode.task.next.done": "Prijaté: {outcome}. Ak chcete ďalšiu iteráciu, požiadajte Všeobecného agenta v konverzácii Všeobecné.",
+  "kubecode.task.next.doneNoOutcome": "Prijaté. Ak chcete ďalšiu iteráciu, požiadajte Všeobecného agenta v konverzácii Všeobecné.",
   "kubecode.task.next.archived": "Archivované. Nie je na tabuli; ak chcete pokračovať, obnovte ju.",
   "kubecode.task.archive": "Archivovať úlohu",
   "kubecode.task.archiveProposal": "Archivovať návrh",

@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "結果已就緒，等待你的決定。",
   "kubecode.task.next.returned": "你已將其退回。General Agent 正在規劃重做。",
   "kubecode.task.next.done": "已接受：{outcome}。如需反覆改進，請在一般中告訴 General Agent。",
+  "kubecode.task.next.doneNoOutcome": "已接受。如需反覆改進，請在一般中告訴 General Agent。",
   "kubecode.task.next.archived": "已封存，不再顯示於看板上；還原後即可繼續。",
   "kubecode.task.archive": "封存任務",
   "kubecode.task.archiveProposal": "封存提案",

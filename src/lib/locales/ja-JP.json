@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "結果の判断をお待ちしています。",
   "kubecode.task.next.returned": "差し戻しました。General Agent がやり直しを計画しています。",
   "kubecode.task.next.done": "承認済み: {outcome}。さらに改善するには、「一般」で General Agent に依頼してください。",
+  "kubecode.task.next.doneNoOutcome": "承認済みです。さらに改善するには、「一般」で General Agent に依頼してください。",
   "kubecode.task.next.archived": "アーカイブ済みのため、ボードには表示されません。続けるには復元してください。",
   "kubecode.task.archive": "タスクをアーカイブ",
   "kubecode.task.archiveProposal": "提案をアーカイブ",

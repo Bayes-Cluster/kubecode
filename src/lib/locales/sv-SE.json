@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Resultaten väntar på ditt beslut.",
   "kubecode.task.next.returned": "Du skickade tillbaka den. Den generella agenten planerar omarbetningen.",
   "kubecode.task.next.done": "Godkänd: {outcome}. Be den generella agenten i Allmänt om du vill iterera.",
+  "kubecode.task.next.doneNoOutcome": "Godkänd. Be den generella agenten i Allmänt om du vill iterera.",
   "kubecode.task.next.archived": "Arkiverad. Den är borta från tavlan; återställ den för att fortsätta.",
   "kubecode.task.archive": "Arkivera uppgift",
   "kubecode.task.archiveProposal": "Arkivera förslag",

@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Вынікі гатовы для вашага рашэння.",
   "kubecode.task.next.returned": "Вы вярнулі яе. Генеральны агент плануе дапрацоўку.",
   "kubecode.task.next.done": "Прынята: {outcome}. Каб працягнуць ітэрацыю, звярніцеся да Генеральнага агента ў «Агульнае».",
+  "kubecode.task.next.doneNoOutcome": "Прынята. Каб працягнуць ітэрацыю, звярніцеся да Генеральнага агента ў «Агульнае».",
   "kubecode.task.next.archived": "Архівавана. Яе няма на дошцы; аднавіце яе, каб працягнуць.",
   "kubecode.task.archive": "Архіваваць Задачу",
   "kubecode.task.archiveProposal": "Архіваваць прапанову",

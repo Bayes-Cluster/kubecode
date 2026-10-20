@@ -1974,6 +1974,7 @@
   "kubecode.task.next.review": "Kết quả đã sẵn sàng để bạn quyết định.",
   "kubecode.task.next.returned": "Bạn đã gửi lại. General Agent đang lên kế hoạch làm lại.",
   "kubecode.task.next.done": "Đã chấp nhận: {outcome}. Để tiếp tục cải tiến, hãy yêu cầu General Agent trong Chung.",
+  "kubecode.task.next.doneNoOutcome": "Đã chấp nhận. Để tiếp tục cải tiến, hãy yêu cầu General Agent trong Chung.",
   "kubecode.task.next.archived": "Đã lưu trữ và không còn trên bảng; hãy khôi phục để tiếp tục.",
   "kubecode.task.archive": "Lưu trữ Tác vụ",
   "kubecode.task.archiveProposal": "Lưu trữ đề xuất",

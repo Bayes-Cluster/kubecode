@@ -239,8 +239,20 @@ describe('TaskPanel', () => {
     expect(await panel().findByText('Archived. It is off the board; restore it to continue.')).toBeInTheDocument()
     expect(panel().getByText('Archived')).toBeInTheDocument()
     expect(panel().getByRole('button', { name: 'Accept results' })).toBeDisabled()
+    // Restore is offered once, in the panel, not again under More actions.
+    expect(panel().getAllByRole('button', { name: 'Restore to the board' })).toHaveLength(1)
+    expect(panel().queryByRole('button', { name: 'More actions for this Task' })).not.toBeInTheDocument()
     fireEvent.click(panel().getByRole('button', { name: 'Restore to the board' }))
     await waitFor(() => expect(api.restoreTask).toHaveBeenCalledWith('p1', 'r1'))
+  })
+
+  it('says a Task was accepted without naming an outcome it does not have', async () => {
+    mount(taskDetail({
+      stage: 'done', outcome: null, review_requested: false,
+      review_requests: [reviewRequest({ state: 'accepted' })], pending: [],
+    }))
+    expect(await panel().findByText('Accepted. To iterate, ask the General Agent in General.')).toBeInTheDocument()
+    expect(panel().queryByText(/Accepted: \./)).not.toBeInTheDocument()
   })
 
   it('shows a proposal as a draft: its brief, how it gets on the board, and the message that showed it', async () => {
@@ -263,6 +275,10 @@ describe('TaskPanel', () => {
   it('shows an archived proposal with the way back', async () => {
     const { api } = mount('draft', {}, ['r1'])
     expect(await panel().findByText('Archived. It is off the board; restore it to continue.')).toBeInTheDocument()
+    await openMore()
+    expect(await screen.findByRole('menuitem', { name: 'Show the proposal' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Restore to the board' })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     fireEvent.click(panel().getByRole('button', { name: 'Restore to the board' }))
     await waitFor(() => expect(api.restoreTask).toHaveBeenCalledWith('p1', 'r1'))
   })
