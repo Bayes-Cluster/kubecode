@@ -32,6 +32,14 @@ function DeliveryIssue({ issue, onChanged, projectId }: { issue: SourceDelivery;
     }
   }
   const retrying = issue.route.state !== 'failed'
+  // An older verdict the Task moved past is listed, never delivered late.
+  if (issue.route.superseded) {
+    return (
+      <li className="kubecode-delivery-status" data-state="superseded">
+        <span className="kubecode-research-muted">{t('kubecode.delivery.superseded', { name })}</span>
+      </li>
+    )
+  }
   return (
     <li className="kubecode-delivery-status" data-state={issue.route.state}>
       <span className={retrying ? 'kubecode-research-muted' : 'kubecode-research-error'}>

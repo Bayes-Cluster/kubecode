@@ -117,6 +117,11 @@ impl IntoResponse for ApiError {
                 "retry_limit",
                 OrchestratorError::RetryLimit.to_string(),
             ),
+            Self::Orchestrator(OrchestratorError::Superseded) => (
+                StatusCode::CONFLICT,
+                "route_superseded",
+                OrchestratorError::Superseded.to_string(),
+            ),
             Self::Orchestrator(error) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_routing",

@@ -16,6 +16,7 @@ export function retryRefusal(cause: unknown, name: string, t: Translator): strin
   if (cause instanceof ApiError) {
     if (cause.code === 'route_target_gone') return t('kubecode.delivery.targetGone', { name })
     if (cause.code === 'retry_limit') return t('kubecode.delivery.retryLimit')
+    if (cause.code === 'route_superseded') return t('kubecode.delivery.supersededRefusal')
     if (cause.code === 'route_not_retryable' || cause.code === 'message_not_reroutable') return t('kubecode.delivery.notRetryable')
   }
   return t('kubecode.delivery.retryFailed')

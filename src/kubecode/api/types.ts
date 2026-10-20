@@ -1712,6 +1712,8 @@ export type RouteDelivery = {
   last_error: string | null
   delivered_at: string | null
   retryable: boolean
+  /** A review verdict the Task has moved past: listed, never retried. */
+  superseded: boolean
   /** The routing notes about this route, which the message folds. */
   note_ids: string[]
 }

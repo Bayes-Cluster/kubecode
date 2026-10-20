@@ -1405,6 +1405,36 @@ async fn the_task_detail_names_its_executing_round_policy_and_delivery_issues() 
     assert_eq!(issues[0]["route"]["kind"], "task_review");
     assert_eq!(issues[0]["route"]["state"], "failed");
     assert_eq!(issues[0]["route"]["retryable"], true);
+    assert_eq!(issues[0]["route"]["superseded"], false);
+    let route = issues[0]["route"]["route_id"].as_str().unwrap().to_owned();
+
+    // The manager moved on and asked for review again: the old verdict is
+    // superseded. It is listed as such and never delivered late.
+    env.agent(&env.general)
+        .task_request_review(&task.research_id, "Reworked.", &[])
+        .unwrap();
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    let issues = detail["delivery_issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1, "{detail}");
+    assert_eq!(issues[0]["route"]["superseded"], true, "{detail}");
+    assert_eq!(issues[0]["route"]["retryable"], false, "{detail}");
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/routes/{route}/retry", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "route_superseded");
+    let (_, attention) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/attention", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(attention["undelivered"]["tasks"], json!({}), "{attention}");
 }
 
 #[tokio::test]

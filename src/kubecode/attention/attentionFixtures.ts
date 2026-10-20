@@ -214,6 +214,7 @@ export function routeDelivery(overrides: Partial<RouteDelivery> = {}): RouteDeli
     last_error: null,
     delivered_at: '2026-10-20 10:00:01',
     retryable: false,
+    superseded: false,
     note_ids: [],
     ...overrides,
   }

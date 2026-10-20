@@ -53,6 +53,8 @@ pub struct RouteDelivery {
     pub last_error: Option<String>,
     pub delivered_at: Option<String>,
     pub retryable: bool,
+    /// A review verdict the Task has moved past: listed, never retried.
+    pub superseded: bool,
     /// The routing notes about this route, which the browser folds in.
     pub note_ids: Vec<String>,
 }
@@ -107,6 +109,14 @@ pub enum RetryOutcome {
 }
 
 pub use crate::channel_store::MAX_REROUTES;
+
+/// SQL: whether the review `t` is still its Task's newest step — its verdict
+/// is the Task's last stage-affecting event — and the Task is not archived.
+/// Only such a verdict may still be delivered (ADR 0232).
+pub(super) const REVIEW_IS_CURRENT: &str = "(SELECT e.ref_id FROM task_events e
+       WHERE e.research_id = t.research_id ORDER BY e.seq DESC LIMIT 1) = t.id
+     AND NOT EXISTS (SELECT 1 FROM research_questions q
+       WHERE q.id = t.research_id AND q.archived <> 0)";
 
 /// A message's state from its mark and its routes. Pure.
 pub fn aggregate(mark: &RoutingMark, routes: &[RouteDelivery]) -> MessageDeliveryState {
@@ -181,6 +191,10 @@ impl Orchestrator {
         if route.retries >= MAX_MANUAL_RETRIES {
             return Err(OrchestratorError::RetryLimit);
         }
+        // Only the Task's newest verdict, while the Task still stands by it.
+        if self.superseded(&route)? {
+            return Err(OrchestratorError::Superseded);
+        }
         let changed = self.connection().execute(
             "UPDATE message_routes SET state = 'pending', attempts = 0, busy = 0,
                next_attempt_at = 0, lease_until = 0, last_error = NULL, retries = retries + 1
@@ -194,6 +208,25 @@ impl Orchestrator {
         self.announce(&route, "retried");
         self.wake();
         Ok(RetryOutcome::Requeued(route))
+    }
+
+    /// Whether this is a review verdict its Task has moved past.
+    fn superseded(&self, route: &Route) -> Result<bool, OrchestratorError> {
+        if route.kind != RouteKind::TaskReview {
+            return Ok(false);
+        }
+        let current: Option<bool> = self
+            .connection()
+            .query_row(
+                &format!(
+                    "SELECT {REVIEW_IS_CURRENT} FROM task_reviews t
+                     WHERE t.id = ?1 AND t.project_id = ?2"
+                ),
+                rusqlite::params![route.source_id, route.project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(current != Some(true))
     }
 
     /// The delivery of one route, from its row, the recipient's admission of
@@ -236,6 +269,7 @@ impl Orchestrator {
                 None => RouteDeliveryState::Withdrawn,
             },
         };
+        let superseded = self.superseded(route).unwrap_or(false);
         let note_ids = route_note_keys(route)
             .iter()
             .filter_map(|key| notes.get(key).map(|(id, _)| id.clone()))
@@ -253,7 +287,9 @@ impl Orchestrator {
             delivered_at: route.delivered_at.clone(),
             retryable: state == RouteDeliveryState::Failed
                 && RETRYABLE.contains(&route.kind)
-                && route.retries < MAX_MANUAL_RETRIES,
+                && route.retries < MAX_MANUAL_RETRIES
+                && !superseded,
+            superseded,
             note_ids,
         }
     }

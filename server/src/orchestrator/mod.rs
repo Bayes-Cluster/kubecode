@@ -446,7 +446,7 @@ impl Orchestrator {
         project_id: &str,
     ) -> Result<Vec<(RouteKind, Option<String>)>, OrchestratorError> {
         let connection = self.connection();
-        let mut statement = connection.prepare(
+        let mut statement = connection.prepare(&format!(
             "SELECT r.kind,
                     CASE r.kind
                       WHEN 'task_review' THEN
@@ -455,15 +455,19 @@ impl Orchestrator {
                         (SELECT w.research_id FROM work_items w WHERE w.id = r.work_id)
                     END
              FROM message_routes r
-             WHERE r.project_id = ?1 AND r.state = 'failed'
+             WHERE r.project_id = ?1 AND r.state = 'failed' AND r.retries < ?2
                AND ((r.kind IN ('discussion', 'mention', 'ask', 'request')
                      AND r.source_kind = 'message'
                      AND EXISTS (SELECT 1 FROM channel_messages m
                                  WHERE m.id = r.source_id AND m.author_kind = 'researcher'))
-                    OR r.kind IN ('task_review', 'decision'))",
-        )?;
+                    OR (r.kind = 'task_review'
+                        AND EXISTS (SELECT 1 FROM task_reviews t
+                                    WHERE t.id = r.source_id AND {}))
+                    OR r.kind = 'decision')",
+            delivery::REVIEW_IS_CURRENT
+        ))?;
         Ok(statement
-            .query_map([project_id], |row| {
+            .query_map(rusqlite::params![project_id, MAX_MANUAL_RETRIES], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?

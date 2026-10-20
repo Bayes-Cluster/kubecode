@@ -103,4 +103,24 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     })
     expect(api.retryRoute).toHaveBeenCalledWith('p1', 'route1')
   })
+
+  it('lists an older verdict the Task moved past as superseded, never with Retry', async () => {
+    const gene = { id: 'g', name: 'Gene', handle: 'general', role: 'general' }
+    const old = { source_kind: 'review', source_id: 'rq0', route: routeDelivery({ route_id: 'old', state: 'failed', retryable: false, superseded: true, recipient: gene }) }
+    mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [], delivery_issues: [old] }), null)
+    expect(await panel().findByText('Your earlier decision did not reach Gene; the Task has moved on, so it is not sent late')).toBeInTheDocument()
+    expect(panel().queryByRole('button', { name: 'Retry delivery to Gene' })).not.toBeInTheDocument()
+  })
+
+  it('says a retry was refused because the Task moved on', async () => {
+    const gene = { id: 'g', name: 'Gene', handle: 'general', role: 'general' }
+    const issue = { source_kind: 'review', source_id: 'rq0', route: routeDelivery({ state: 'failed', retryable: true, recipient: gene }) }
+    const retryRoute = vi.fn().mockRejectedValue(new ApiError('route_superseded', 'moved on', 409))
+    mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [], delivery_issues: [issue] }), null, { retryRoute })
+    const retry = await panel().findByRole('button', { name: 'Retry delivery to Gene' })
+    await act(async () => {
+      fireEvent.click(retry)
+    })
+    expect(await panel().findByRole('alert')).toHaveTextContent('The Task has moved on since this decision; it is not sent late.')
+  })
 })

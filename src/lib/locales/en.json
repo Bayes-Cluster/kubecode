@@ -2630,6 +2630,8 @@
   "kubecode.attention.waitingInTask": "{name} is waiting for your permission",
   "kubecode.attention.waitingInputInTask": "{name} is waiting for your answer",
   "kubecode.delivery.decisionFailed": "Your decision did not reach {name}",
+  "kubecode.delivery.superseded": "Your earlier decision did not reach {name}; the Task has moved on, so it is not sent late",
+  "kubecode.delivery.supersededRefusal": "The Task has moved on since this decision; it is not sent late.",
   "kubecode.delivery.retry": "Retry delivery to {name}",
   "kubecode.delivery.retrying": "Still trying to reach {name} ({attempts} attempts)",
   "kubecode.delivery.targetGone": "{name}'s Session no longer exists.",

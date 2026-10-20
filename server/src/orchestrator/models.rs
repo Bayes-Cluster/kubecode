@@ -200,6 +200,11 @@ pub enum OrchestratorError {
     TargetGone,
     #[error("this route was already retried as often as it may be")]
     RetryLimit,
+    /// A review verdict the Task has moved past (a newer review step, or the
+    /// Task archived): delivering it late would tell the manager something
+    /// no longer true.
+    #[error("the Task has moved on since this decision; it is not delivered late")]
+    Superseded,
     #[error(transparent)]
     Channel(#[from] crate::channel_store::ChannelError),
     #[error(transparent)]
