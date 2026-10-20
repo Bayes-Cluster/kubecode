@@ -2573,6 +2573,7 @@
   "kubecode.task.activity.records": "Linked records",
   "kubecode.task.activity.empty": "Nothing has happened yet.",
   "kubecode.task.openSession": "Open session",
+  "kubecode.task.openSessionOf": "Open session: {title}",
   "kubecode.task.evidence.shownVersion": "Showing version {revision}",
   "kubecode.task.evidence.cannotAccept": "This version could not be shown, so it can't be accepted. Try again, or send the work back.",
   "kubecode.reference.untitled": "{kind} (no title)"
