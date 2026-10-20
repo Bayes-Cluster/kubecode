@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import {
   BellDot,
   Circle,
@@ -86,6 +86,8 @@ export function WorkbenchTitlebar({
   terminalOpen,
   titlebarTargetRef,
 }: WorkbenchTitlebarProps) {
+  // Set when a decision is chosen from the bell, so closing it leaves focus there.
+  const openedEntry = useRef(false)
   const toggleNavigation = () => {
     const nextOpen = togglePanel('sessions', sessionSidebarOpen)
     onSessionSidebarOpenChange(nextOpen)
@@ -153,12 +155,27 @@ export function WorkbenchTitlebar({
                 <span aria-hidden="true">{attention.total}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="kubecode-attention-menu">
+            <DropdownMenuContent
+              align="end"
+              className="kubecode-attention-menu"
+              // A chosen decision takes focus where it opens; the bell must not take it back.
+              onCloseAutoFocus={(event) => {
+                if (!openedEntry.current) return
+                openedEntry.current = false
+                event.preventDefault()
+              }}
+            >
               {attention.current.length > 0 && (
                 <>
                   <DropdownMenuLabel>{t('kubecode.attention.thisWorkspace')}</DropdownMenuLabel>
                   {attention.current.slice(0, BELL_ENTRIES).map((entry) => (
-                    <DropdownMenuItem key={entry.key} onSelect={() => onOpenTarget(entry.target)}>
+                    <DropdownMenuItem
+                      key={entry.key}
+                      onSelect={() => {
+                        openedEntry.current = true
+                        onOpenTarget(entry.target)
+                      }}
+                    >
                       <span className="kubecode-attention-menu-entry">
                         <strong>{entry.title}</strong>
                         {entry.detail && <small>{entry.detail}</small>}

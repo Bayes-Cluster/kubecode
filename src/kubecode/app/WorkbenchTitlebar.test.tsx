@@ -76,6 +76,22 @@ describe('WorkbenchTitlebar', () => {
     expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-1')
   })
 
+  it('leaves focus to the decision it opened, never back on the bell', async () => {
+    const entry = {
+      key: 'permission:q1',
+      title: 'Analyst wants to use pytest',
+      reason: { label: 'Permission', tone: 'warn' as const },
+      target: { place: { view: 'general' as const }, focus: 'permission:q1' },
+    }
+    titlebar({ attention: { current: [entry], others: [], total: 1 } })
+    const bell = screen.getByRole('button', { name: 'Needs you: 1' })
+    bell.focus()
+    fireEvent.pointerDown(bell, { button: 0, ctrlKey: false })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Analyst wants to use pytest/ }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bell).not.toHaveFocus()
+  })
+
   it('shows no bell when nothing waits', () => {
     titlebar()
     expect(screen.queryByRole('button', { name: /^Needs you: / })).not.toBeInTheDocument()
