@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "変更",
   "kubecode.work.stale.removed": "削除",
   "kubecode.work.stale.hint": "変更内容を確認し、作業を承認する前に最新バージョンを承認してください。",
+  "kubecode.work.stale.taskHint": "これはタスクの根拠です。変更後のバージョンは、タスクの「結果」で確認してから承認してください。",
   "kubecode.work.command.repin": "最新バージョンを承認",
   "kubecode.work.error.evidenceStale": "引用されたエビデンスは添付後に変更されました。内容を確認し、最新バージョンを承認してから、もう一度お試しください。",
   "kubecode.work.exitCode": "終了コード {code}",

@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "변경됨",
   "kubecode.work.stale.removed": "제거됨",
   "kubecode.work.stale.hint": "무엇이 바뀌었는지 확인한 후, 작업을 승인하기 전에 최신 버전을 승인하세요.",
+  "kubecode.work.stale.taskHint": "작업의 근거입니다. 변경된 버전은 작업의 '결과'에서 확인한 뒤 수락하세요.",
   "kubecode.work.command.repin": "최신 버전 승인",
   "kubecode.work.error.evidenceStale": "인용된 근거가 첨부 이후 변경되었습니다. 내용을 확인하고 최신 버전을 승인한 다음 다시 시도하세요.",
   "kubecode.work.exitCode": "종료 코드 {code}",

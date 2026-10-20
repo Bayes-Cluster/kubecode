@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "zmieniono",
   "kubecode.work.stale.removed": "usunięto",
   "kubecode.work.stale.hint": "Sprawdź, co się zmieniło, a następnie zaakceptuj bieżącą wersję, zanim zaakceptujesz pracę.",
+  "kubecode.work.stale.taskHint": "To dowody zadania. Zaakceptuj ich zmienioną wersję w Wynikach zadania, po sprawdzeniu jej tam.",
   "kubecode.work.command.repin": "Zaakceptuj bieżącą wersję",
   "kubecode.work.error.evidenceStale": "Zacytowane dowody zmieniły się od czasu dołączenia. Sprawdź je, zaakceptuj bieżącą wersję i spróbuj ponownie.",
   "kubecode.work.exitCode": "kod wyjścia {code}",

@@ -1928,6 +1928,7 @@
   "kubecode.work.stale.changed": "changed",
   "kubecode.work.stale.removed": "removed",
   "kubecode.work.stale.hint": "Look at what changed, then accept its current version before accepting the work.",
+  "kubecode.work.stale.taskHint": "This is a Task's evidence. Accept its changed version in the Task's Results, after looking at it there.",
   "kubecode.work.command.repin": "Accept current version",
   "kubecode.work.error.evidenceStale": "Cited evidence changed since it was attached. Look at it, accept its current version, then try again.",
   "kubecode.work.exitCode": "exit code {code}",

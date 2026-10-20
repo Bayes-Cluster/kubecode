@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "berubah",
   "kubecode.work.stale.removed": "dihapus",
   "kubecode.work.stale.hint": "Periksa apa yang berubah, lalu terima versi terbarunya sebelum menerima pekerjaan.",
+  "kubecode.work.stale.taskHint": "Ini bukti sebuah Tugas. Terima versi yang berubah di Hasil Tugas tersebut, setelah memeriksanya di sana.",
   "kubecode.work.command.repin": "Terima versi saat ini",
   "kubecode.work.error.evidenceStale": "Bukti yang dikutip berubah sejak dilampirkan. Periksa, terima versi terbarunya, lalu coba lagi.",
   "kubecode.work.exitCode": "kode keluar {code}",

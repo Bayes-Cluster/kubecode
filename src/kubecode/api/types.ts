@@ -1429,7 +1429,8 @@ export type WorkCard = {
   supersedes: string[]
   experiment_count: number
   last_activity_at: string
-  research: { id: string; title: string } | null
+  /** `task`: the question is an admitted Task, whose changed evidence is accepted in its Results. */
+  research: { id: string; title: string; task?: boolean } | null
   round: { id: string; number: number } | null
   team: { id: string; title: string } | null
   executor: {

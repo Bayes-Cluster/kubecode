@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "geändert",
   "kubecode.work.stale.removed": "entfernt",
   "kubecode.work.stale.hint": "Sehen Sie sich die Änderung an und übernehmen Sie die aktuelle Version, bevor Sie die Arbeit akzeptieren.",
+  "kubecode.work.stale.taskHint": "Dies sind Belege einer Aufgabe. Übernehmen Sie die geänderte Version in den Ergebnissen der Aufgabe, nachdem Sie sie dort angesehen haben.",
   "kubecode.work.command.repin": "Aktuelle Version übernehmen",
   "kubecode.work.error.evidenceStale": "Der zitierte Beleg hat sich seit dem Anhängen geändert. Sehen Sie ihn sich an, übernehmen Sie die aktuelle Version und versuchen Sie es erneut.",
   "kubecode.work.exitCode": "Exitcode {code}",

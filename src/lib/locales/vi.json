@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "đã thay đổi",
   "kubecode.work.stale.removed": "đã xóa",
   "kubecode.work.stale.hint": "Xem những gì đã thay đổi, rồi chấp nhận phiên bản hiện tại trước khi chấp nhận công việc.",
+  "kubecode.work.stale.taskHint": "Đây là bằng chứng của một Tác vụ. Hãy chấp nhận phiên bản đã thay đổi trong Kết quả của Tác vụ, sau khi xem nó ở đó.",
   "kubecode.work.command.repin": "Chấp nhận phiên bản hiện tại",
   "kubecode.work.error.evidenceStale": "Bằng chứng được trích dẫn đã thay đổi kể từ khi được đính kèm. Hãy xem lại, chấp nhận phiên bản hiện tại rồi thử lại.",
   "kubecode.work.exitCode": "mã thoát {code}",

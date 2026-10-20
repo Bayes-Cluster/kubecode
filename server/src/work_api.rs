@@ -192,6 +192,15 @@ struct NamedRef {
     title: String,
 }
 
+/// The question a card belongs to, and whether it is an admitted Task (whose
+/// changed evidence the researcher accepts in the Task's Results).
+#[derive(Debug, Serialize)]
+struct ResearchRef {
+    id: String,
+    title: String,
+    task: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct RoundRef {
     id: String,
@@ -235,7 +244,7 @@ struct RouteBrief {
 struct Card {
     #[serde(flatten)]
     summary: WorkSummary,
-    research: Option<NamedRef>,
+    research: Option<ResearchRef>,
     round: Option<RoundRef>,
     team: Option<NamedRef>,
     executor: Option<ExecutorRef>,
@@ -252,7 +261,7 @@ struct Card {
 struct Resolver<'a> {
     state: &'a AppState,
     project_id: &'a str,
-    research: HashMap<String, Option<NamedRef>>,
+    research: HashMap<String, Option<ResearchRef>>,
     rounds: HashMap<String, Option<RoundRef>>,
     teams: HashMap<String, Option<NamedRef>>,
     sessions: HashMap<String, Option<ExecutorRef>>,
@@ -272,7 +281,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn research(&mut self, id: &str) -> Option<NamedRef> {
+    fn research(&mut self, id: &str) -> Option<ResearchRef> {
         self.research
             .entry(id.to_owned())
             .or_insert_with(|| {
@@ -280,15 +289,21 @@ impl<'a> Resolver<'a> {
                     .research
                     .get(self.project_id, id)
                     .ok()
-                    .map(|question| NamedRef {
+                    .map(|question| ResearchRef {
+                        task: self
+                            .state
+                            .tasks
+                            .admission(self.project_id, &question.id)
+                            .is_ok_and(|admission| admission.is_some()),
                         id: question.id,
                         title: question.brief.title,
                     })
             })
             .as_ref()
-            .map(|r| NamedRef {
+            .map(|r| ResearchRef {
                 id: r.id.clone(),
                 title: r.title.clone(),
+                task: r.task,
             })
     }
 

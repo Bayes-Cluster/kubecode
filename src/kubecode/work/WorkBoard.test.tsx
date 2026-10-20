@@ -550,6 +550,22 @@ describe('WorkBoard analysis and evidence', () => {
     await waitFor(() => expect(workCommand).toHaveBeenCalledWith('p1', 'w1', 4, { command: 'repin', result_id: 'x' }))
   })
 
+  it('sends a Task\'s changed evidence to the Task\'s Results instead of re-pinning it here', async () => {
+    const card = workCard(
+      { id: 'w1', stage: 'review', state_revision: 4 },
+      { executor, assignment, research: { id: 'r1', title: 'Pruning', task: true } },
+    )
+    const { workCommand } = open(detailOf(card, {
+      results: [{ id: 'x', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'file', ref_id: 'notes.md', revision: 'a', created_at: '' }],
+      stale_evidence: [{ result_id: 'x', kind: 'file', ref_id: 'notes.md', status: 'changed' }],
+    }))
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    expect(await within(inspector).findByText('kubecode.work.stale.taskHint')).toBeInTheDocument()
+    expect(within(inspector).queryByRole('button', { name: 'kubecode.work.command.repin' })).not.toBeInTheDocument()
+    expect(workCommand).not.toHaveBeenCalled()
+  })
+
   it('explains a refused acceptance when evidence changed under the researcher', async () => {
     const card = workCard({ id: 'w1', stage: 'review', state_revision: 4 }, { executor, assignment })
     const workCommand = vi.fn().mockRejectedValue(new ApiError('work_evidence_stale', 'x', 409))

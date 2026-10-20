@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "zmenené",
   "kubecode.work.stale.removed": "odstránené",
   "kubecode.work.stale.hint": "Pozrite sa, čo sa zmenilo, a prijmite aktuálnu verziu, skôr než prijmete prácu.",
+  "kubecode.work.stale.taskHint": "Ide o dôkazy úlohy. Ich zmenenú verziu prijmite vo Výsledkoch úlohy, keď si ju tam pozriete.",
   "kubecode.work.command.repin": "Prijať aktuálnu verziu",
   "kubecode.work.error.evidenceStale": "Citované dôkazy sa zmenili od pripojenia. Pozrite si ich, prijmite aktuálnu verziu a skúste to znova.",
   "kubecode.work.exitCode": "návratový kód {code}",

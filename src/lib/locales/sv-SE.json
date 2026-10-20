@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "ändrat",
   "kubecode.work.stale.removed": "borttaget",
   "kubecode.work.stale.hint": "Titta på vad som har ändrats och godkänn sedan den aktuella versionen innan du godkänner arbetet.",
+  "kubecode.work.stale.taskHint": "Det här är belägg för en uppgift. Godkänn den ändrade versionen i uppgiftens Resultat, efter att ha tittat på den där.",
   "kubecode.work.command.repin": "Godkänn aktuell version",
   "kubecode.work.error.evidenceStale": "Det citerade belägget har ändrats sedan det bifogades. Titta på det, godkänn den aktuella versionen och försök sedan igen.",
   "kubecode.work.exitCode": "avslutskod {code}",

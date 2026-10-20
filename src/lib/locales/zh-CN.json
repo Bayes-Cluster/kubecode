@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "已更改",
   "kubecode.work.stale.removed": "已移除",
   "kubecode.work.stale.hint": "先查看发生了什么变化，再接受其当前版本，然后才能接受这项工作。",
+  "kubecode.work.stale.taskHint": "这是任务的证据。请在任务的“结果”中查看后再接受其变更后的版本。",
   "kubecode.work.command.repin": "接受当前版本",
   "kubecode.work.error.evidenceStale": "所引用的证据在附加后已发生变化。请查看它，接受其当前版本，然后重试。",
   "kubecode.work.exitCode": "退出码 {code}",

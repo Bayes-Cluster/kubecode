@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "змінено",
   "kubecode.work.stale.removed": "видалено",
   "kubecode.work.stale.hint": "Перегляньте, що змінилося, і прийміть поточну версію, перш ніж приймати роботу.",
+  "kubecode.work.stale.taskHint": "Це докази завдання. Прийміть їхню змінену версію в «Результатах» завдання, переглянувши її там.",
   "kubecode.work.command.repin": "Прийняти поточну версію",
   "kubecode.work.error.evidenceStale": "Цитовані докази змінилися після прикріплення. Перегляньте їх, прийміть поточну версію та повторіть спробу.",
   "kubecode.work.exitCode": "код виходу {code}",

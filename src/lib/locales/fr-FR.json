@@ -2187,6 +2187,7 @@
   "kubecode.work.stale.changed": "modifiée",
   "kubecode.work.stale.removed": "supprimée",
   "kubecode.work.stale.hint": "Examinez ce qui a changé, puis acceptez la version actuelle avant d'accepter le travail.",
+  "kubecode.work.stale.taskHint": "Ce sont les preuves d'une tâche. Acceptez leur version modifiée dans les Résultats de la tâche, après l'avoir consultée là-bas.",
   "kubecode.work.command.repin": "Accepter la version actuelle",
   "kubecode.work.error.evidenceStale": "Les preuves citées ont changé depuis leur rattachement. Examinez-les, acceptez leur version actuelle, puis réessayez.",
   "kubecode.work.exitCode": "code de sortie {code}",

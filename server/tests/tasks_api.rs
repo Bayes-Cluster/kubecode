@@ -1368,3 +1368,20 @@ async fn a_research_record_says_whether_it_is_a_task_and_in_which_stage() {
     let (_, body) = call(&env, Method::GET, &read(&draft.research_id), Value::Null).await;
     assert_eq!(body["task_stage"], Value::Null, "{body}");
 }
+
+/// The work board knows a Task's internal work, so it sends the researcher
+/// to the Task's Results to accept changed evidence (ADR 0230 §4).
+#[tokio::test]
+async fn a_work_card_says_its_question_is_a_task() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let (status, card) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/work/{}", env.project, task.work_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{card}");
+    assert_eq!(card["research"]["task"], true, "{card}");
+}
