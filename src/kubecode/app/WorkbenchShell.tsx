@@ -1072,12 +1072,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 <TaskBoardView
                   board={taskBoard.board}
                   drafts={taskBoard.drafts}
+                  locale={locale}
                   scrollKey={placeKey.view(projectId, 'board')}
                   selectedId={boardTask}
                   status={taskBoard.status}
                   t={t}
-                  onOpenDraft={(draft) => openPlace({ view: 'general' }, { inspect: { kind: 'task', id: draft.id } })}
-                  onOpenTask={(card) => inspect({ kind: 'task', id: card.id })}
+                  onOpenGeneral={() => openPlace({ view: 'general' })}
+                  onOpenTask={(id) => inspect({ kind: 'task', id })}
                   onReload={taskBoard.reload}
                 />
               </WithInspector>
