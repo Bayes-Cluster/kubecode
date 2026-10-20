@@ -341,19 +341,44 @@ verdicts (also on the `POST …/review` response), and `internal_work`
 `messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
 deprecated. `ResolvedRef` carries the record's `title`.
 
-Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
+Task board and details (ADRs 0225, 0230): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
-and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
-is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
-`ResearchWorkspace` in the Task panel of the inspector stack
-(`tasks/TaskPanel.tsx`, ADR 0228) and decides reviews through
-`POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
-chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
-`tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
-and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
-member through that Session's own MCP endpoint. The service-level counterpart is
-`server/tests/workspace_blueprint_acceptance.rs`.
+and `orchestration_updated` events and after a reconnect. The pure
+`tasks/taskLifecycle.ts` (next step, required action, condition tone, default
+section, progress, the board's first stage) and `tasks/taskReview.ts` (whether a
+changed record may be accepted at the displayed version, what blocks an
+acceptance, which pins move) are the rules every Task surface shares.
+`tasks/TaskBoardView.tsx` is the Kanban entry: proposals above the four stages,
+archived Tasks below, single-button cards (`TaskCardView`, `TaskStatusBadges`),
+a Needs-you filter, and — under a 640px container query — one stage at a time
+that follows the Task inspected last; its stage, filter and scroll are place
+memory. `tasks/TaskPanel.tsx` is the Task entry of the inspector stack: one
+header with the Task's badges, Discuss in General and More actions (archive or
+restore through `POST …/archive|restore`, refusals shown with their reason), a
+next-step line, and Overview (`TaskOverview`, `TaskQuestions`), Results
+(`TaskResults`) and Activity (`TaskActivity`) tabs; it reads the research
+bundle only when a section needs it, and its tab, feedback, outcome and answer
+drafts are kept under `placeKey.task`. `work/EvidencePanel.tsx` shows a cited
+record with `work/EvidenceViewer.tsx`, which reports a display (`onDisplayed`,
+with the read's own revision) only after the cited record itself rendered —
+never while loading, on a failure, for a removed record, a related record
+(handed to the stack as a `resource` entry through `onFollow`) or a failed
+"Load more" — and the panel records it in the stack's `InspectionRecord`.
+`TaskResults` enables "Accept the version you saw" only while that revision is
+the current one, re-pins every pin of the record at it through `…/repin`,
+reloads the Task once when the displayed version is newer than the list, and
+decides through `POST …/review`; its status links to the verdict in General.
+Going to General from a Task (`tasks/taskNavigation.ts`) keeps the Task beside
+General and replaces it over a narrow view. A legacy question that is a Task
+(on the board or archived) shows its stage and links to it, without
+resolve/reopen/archive or rounds (`ResearchWorkspace` `task`). `MessageItem`
+renders proposal messages and Task chips. The browser acceptance
+(`tests/smoke/research-workspace.spec.ts`, `tests/smoke/task-review.spec.ts`)
+uses `tests/smoke/agents.ts`: the fixture provider records each Session's MCP
+servers and prompts under `.local/playwright-fixtures-<port>`, and the test acts
+as a member through that Session's own MCP endpoint. The service-level
+counterpart is `server/tests/workspace_blueprint_acceptance.rs`.
 
 Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
 Project; where the researcher is in each Workspace is a location kept by the

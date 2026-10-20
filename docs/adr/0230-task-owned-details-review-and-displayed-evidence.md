@@ -65,17 +65,30 @@ approval, execution, review requests and new internal work. The board lists
 archived Tasks apart (`archived`: stage, accepted outcome), from where they can
 be restored.
 
-### 3. Task-owned details (browser, planned in #218's client steps)
+### 3. Task-owned details
 
 A Task is an inspector entry with one header of Task facts, a next-step line,
 and three sections: Overview (what waits on the researcher, goal, provenance,
 people, progress), Results (the review, versioned evidence, the decision, the
 outcome, findings, earlier reviews) and Activity (history linked to General,
 recent Task-scoped messages, execution and linked records). Research readers
-and editors are reused inside it; the research question view remains for
-questions that are not Tasks and, for a Task, shows the stage and links to it.
-"Discuss in General" opens the one General conversation filtered to the Task;
-it authorizes nothing.
+and editors are reused inside it, read only when a section needs them; the
+research question view remains for questions that are not Tasks and, for a Task
+(on the board or archived), shows the stage and links to it, with no resolve,
+reopen, archive or round of its own. "Discuss in General" opens the one General
+conversation filtered to the Task, at the open review's request message, with
+the composer focused; it authorizes nothing. Going to General from a Task
+keeps the Task beside General when both fit, and otherwise replaces it (never
+under a Task General happened to remember). The section a Task opens on (Results
+while a review is open, Overview otherwise) is decided once per opening, so a
+decision does not move the researcher away from its result.
+
+The board shows one lifecycle on every screen: proposals above the stages,
+archived Tasks below them, cards that are one button with no control inside
+(nothing is draggable), the required action, condition, changed brief and
+outcome as badges, and, on a narrow board, one stage at a time that follows the
+Task inspected last. Closing a Task returns focus to its card, found again by
+its focus key when a decision moved it to another column.
 
 ### 4. Evidence is accepted only at a successfully displayed version
 
@@ -85,13 +98,15 @@ longer current (`409 work_evidence_stale`). The revision the reads report (a
 file read's content hash, a context read's reference revision) is the one the
 acceptance check computes.
 
-In the browser (planned), the evidence reader reports a display only after it
+In the browser, the evidence reader reports a display only after it
 rendered a successful read of the cited record itself, with that read's
 revision; loading, a failed read, a removed record, a related record it moved
 on to, or a later "load more" failure never count, and a later failure does not
-revoke a display. The record is per inspector stack and in memory only.
+revoke a display; a related record opens as its own entry over the evidence.
+The record is per inspector stack and in memory only.
 "Accept the version you saw" is enabled only while the displayed revision is
-the current one, and re-pins every pin of that evidence at exactly it. Evidence
+the current one, and re-pins every pin of that evidence at exactly it; a display
+newer than the listed current version reloads the Task once. Evidence
 with no revision, or that cannot be displayed, cannot have a change accepted;
 the researcher sends the work back or, if it was removed, acknowledges that.
 
@@ -124,7 +139,7 @@ Message ids come from batched lookups over the existing client-message-id
 index. `stale_evidence` remains, deprecated. A resolved context reference
 carries the record's `title`.
 
-### 7. Place memory key (browser, planned)
+### 7. Place memory key
 
 `placeKey.task(project, task) = "<project>|task:<task>"` is added for the
 in-memory Task tab, review and answer drafts. No ADR 0228 key format changes,
