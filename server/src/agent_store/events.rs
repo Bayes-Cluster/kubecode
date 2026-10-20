@@ -137,72 +137,13 @@ impl AgentStore {
         cursor: u64,
     ) -> Result<Vec<SessionEvent>, StoreError> {
         self.get_conversation(conversation_id)?;
-        let cursor = i64::try_from(cursor).map_err(|_| {
-            StoreError::InvalidStoredValue("session event cursor exceeds SQLite range".into())
-        })?;
         let database = self.database.lock().expect("agent database mutex poisoned");
-        let mut statement = database.prepare(
-            "SELECT conversation_id, seq, kind, payload, created_at
-             FROM session_events WHERE conversation_id = ?1 AND seq > ?2 ORDER BY seq",
-        )?;
-        let rows = statement.query_map(params![conversation_id, cursor], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })?;
-        rows.map(|row| {
-            let (conversation_id, seq, kind, payload, created_at) = row?;
-            Ok(SessionEvent {
-                conversation_id,
-                seq: u64::try_from(seq).map_err(|_| {
-                    StoreError::InvalidStoredValue("negative session event sequence".into())
-                })?,
-                kind,
-                payload: serde_json::from_str(&payload)?,
-                created_at,
-            })
-        })
-        .collect()
+        session_events_after(&database, conversation_id, cursor)
     }
 
     pub fn events_after(&self, run_id: &str, seq: u64) -> Result<Vec<AgentEvent>, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
-        let mut statement = database.prepare(
-            "SELECT run_id, seq, kind, payload, created_at
-             FROM agent_events WHERE run_id = ?1 AND seq > ?2 ORDER BY seq",
-        )?;
-        let cursor = i64::try_from(seq).map_err(|_| {
-            StoreError::InvalidStoredValue("event cursor exceeds SQLite range".into())
-        })?;
-        let rows = statement.query_map(params![run_id, cursor], |row| {
-            let kind = row.get::<_, String>(2)?;
-            let payload = row.get::<_, String>(3)?;
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                kind,
-                payload,
-                row.get::<_, String>(4)?,
-            ))
-        })?;
-        rows.map(|row| {
-            let (run_id, stored_seq, kind, payload, created_at) = row?;
-            let seq = u64::try_from(stored_seq).map_err(|_| {
-                StoreError::InvalidStoredValue("negative event sequence in database".into())
-            })?;
-            Ok(AgentEvent {
-                run_id,
-                seq,
-                kind: AgentEventKind::from_str(&kind)?,
-                payload: serde_json::from_str(&payload)?,
-                created_at,
-            })
-        })
-        .collect()
+        run_events_after(&database, run_id, seq)
     }
 
     pub fn append_workspace_event(
@@ -319,6 +260,61 @@ pub(super) fn latest_workspace_event_id(database: &Connection) -> Result<u64, St
     )?;
     u64::try_from(id)
         .map_err(|_| StoreError::InvalidStoredValue("negative workspace event id".into()))
+}
+
+pub(super) fn session_events_after(
+    database: &Connection,
+    conversation_id: &str,
+    cursor: u64,
+) -> Result<Vec<SessionEvent>, StoreError> {
+    let cursor = i64::try_from(cursor).map_err(|_| {
+        StoreError::InvalidStoredValue("session event cursor exceeds SQLite range".into())
+    })?;
+    let mut statement = database.prepare(
+        "SELECT conversation_id, seq, kind, payload, created_at
+         FROM session_events WHERE conversation_id = ?1 AND seq > ?2 ORDER BY seq",
+    )?;
+    let rows = statement.query_map(params![conversation_id, cursor], stored_session_event_row)?;
+    rows.map(|row| deserialize_stored_session_event(row?))
+        .collect()
+}
+
+pub(super) fn run_events_after(
+    database: &Connection,
+    run_id: &str,
+    seq: u64,
+) -> Result<Vec<AgentEvent>, StoreError> {
+    let mut statement = database.prepare(
+        "SELECT run_id, seq, kind, payload, created_at
+         FROM agent_events WHERE run_id = ?1 AND seq > ?2 ORDER BY seq",
+    )?;
+    let cursor = i64::try_from(seq)
+        .map_err(|_| StoreError::InvalidStoredValue("event cursor exceeds SQLite range".into()))?;
+    let rows = statement.query_map(params![run_id, cursor], |row| {
+        let kind = row.get::<_, String>(2)?;
+        let payload = row.get::<_, String>(3)?;
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            kind,
+            payload,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (run_id, stored_seq, kind, payload, created_at) = row?;
+        let seq = u64::try_from(stored_seq).map_err(|_| {
+            StoreError::InvalidStoredValue("negative event sequence in database".into())
+        })?;
+        Ok(AgentEvent {
+            run_id,
+            seq,
+            kind: AgentEventKind::from_str(&kind)?,
+            payload: serde_json::from_str(&payload)?,
+            created_at,
+        })
+    })
+    .collect()
 }
 
 pub(super) fn append_session_event_transaction(

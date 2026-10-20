@@ -19,9 +19,10 @@ pub use ilink::{
 pub use media::{AGENT_MEDIA_KEEP, AgentMediaRef};
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
-    ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
-    IlinkAccountStatus, PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint,
-    RunStatus, SessionEvent, StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
+    ConversationHistorySnapshot, ConversationRelation, ConversationRelationship,
+    ConversationRevision, ExecutionMode, IlinkAccountStatus, PermissionMode, PromptQueueItem,
+    PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent, StartPromptOutcome, StoreError,
+    TerminalCause, TurnBoundary,
 };
 pub use turns::TurnText;
 

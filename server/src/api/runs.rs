@@ -225,20 +225,22 @@ pub(super) async fn list_conversation_history(
 ) -> Result<impl IntoResponse, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
     let store = state.agent_runtime.store();
-    let (runs, has_more) =
-        store.list_runs_page(&conversation_id, query.before.as_deref(), limit)?;
-    let mut events = BTreeMap::new();
-    for run in &runs {
-        events.insert(
-            run.id.clone(),
-            store
-                .events_after(&run.id, 0)?
-                .into_iter()
-                .map(safe_agent_event)
-                .collect(),
-        );
-    }
-    let all_session_events = store.session_events_after(&conversation_id, 0)?;
+    // One snapshot: the cursor covers exactly the events in this page.
+    let snapshot =
+        store.conversation_history_snapshot(&conversation_id, query.before.as_deref(), limit)?;
+    let runs = snapshot.runs;
+    let has_more = snapshot.has_more;
+    let events = runs
+        .iter()
+        .zip(snapshot.run_events)
+        .map(|(run, run_events)| {
+            (
+                run.id.clone(),
+                run_events.into_iter().map(safe_agent_event).collect(),
+            )
+        })
+        .collect::<BTreeMap<_, Vec<_>>>();
+    let all_session_events = snapshot.session_events;
     let session_events = runs.first().map_or_else(Vec::new, |first| {
         let start = all_session_events
             .iter()
@@ -277,7 +279,7 @@ pub(super) async fn list_conversation_history(
         events,
         session_events,
         next_cursor,
-        workspace_cursor: store.latest_workspace_event_id()?,
+        workspace_cursor: snapshot.workspace_cursor,
     }))
 }
 

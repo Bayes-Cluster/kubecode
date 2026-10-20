@@ -168,14 +168,7 @@ impl AgentStore {
 
     pub fn get_conversation(&self, conversation_id: &str) -> Result<Conversation, StoreError> {
         let database = self.database.lock().expect("agent database mutex poisoned");
-        database
-            .query_row(
-                &conversation_query("WHERE c.id = ?1"),
-                [conversation_id],
-                conversation_from_row,
-            )
-            .optional()?
-            .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))
+        conversation_by_id(&database, conversation_id)
     }
 
     /// A user-visible Session of `project_id`: not a hidden revision snapshot,
@@ -902,4 +895,18 @@ pub(super) fn transcript_context(events: &[SessionEvent]) -> String {
         }
     }
     transcript.trim().to_owned()
+}
+
+pub(super) fn conversation_by_id(
+    database: &rusqlite::Connection,
+    conversation_id: &str,
+) -> Result<Conversation, StoreError> {
+    database
+        .query_row(
+            &conversation_query("WHERE c.id = ?1"),
+            [conversation_id],
+            conversation_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::ConversationNotFound(conversation_id.to_owned()))
 }
