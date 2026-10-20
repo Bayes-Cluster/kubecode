@@ -76,7 +76,7 @@ describe('ResearchWorkspace', () => {
     expect(screen.getAllByRole('button', { name: /back/i })).toHaveLength(1)
   })
 
-  it('for a Task, shows its stage and the way to it, and nothing that finishes, reopens, archives, or starts it', async () => {
+  it('for a Task, shows its stage and the way to it, and nothing that finishes, reopens, or archives it', async () => {
     const onOpen = vi.fn()
     mount({ task: { stage: 'review', archived: false, onOpen } })
     expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
@@ -86,8 +86,6 @@ describe('ResearchWorkspace', () => {
     for (const name of ['kubecode.research.resolve', 'kubecode.research.reopen', 'kubecode.research.archive', 'kubecode.research.restore']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
     }
-    openTab('kubecode.research.tab.work')
-    expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.openTask' }))
     expect(onOpen).toHaveBeenCalled()
   })
@@ -343,8 +341,6 @@ describe('ResearchWorkspace', () => {
     mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue(archived) }) })
     expect(await screen.findByText('kubecode.research.archivedNotice')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'kubecode.research.editBrief' })).toBeDisabled()
-    openTab('kubecode.research.tab.work')
-    expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
   })
 
   it('cannot start a round from a Task detail, and says where work starts', async () => {

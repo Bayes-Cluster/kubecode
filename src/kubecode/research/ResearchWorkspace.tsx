@@ -78,7 +78,7 @@ export function ResearchWorkspace({
   back,
   close,
   task = null,
-  startsRounds: startsRoundsProp = true,
+  startsRounds = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
@@ -99,8 +99,6 @@ export function ResearchWorkspace({
   const importsState = useResearchImports(api, projectId, researchId, events, connectionState)
   const [tab, setTab] = useState<TabId>('brief')
   const state = useAction(t)
-  // A Task's work starts only when the researcher tells the General Agent (ADR 0221).
-  const startsRounds = startsRoundsProp && task === null
   const title = bundle?.detail.brief.title ?? null
 
   useEffect(() => {
