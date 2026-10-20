@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Conversation, KubecodeApi, ProjectContextItem } from '../api'
-import { MessageComposer } from './MessageComposer'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { MessageComposer, type MessageComposerProps } from './MessageComposer'
 
 const pickable = (id: string, title: string) => ({
   ref: { kind: 'research', id, revision: 3 },
@@ -139,5 +142,91 @@ describe('MessageComposer on the shared Composer', () => {
     expect(screen.getByRole('button', { name: 'kubecode.channel.send' })).toBeDisabled()
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('names its text box for focus return', () => {
+    const { box } = composer(undefined, { focusKey: 'composer:general' })
+    expect(box).toHaveAttribute('data-focus-key', 'composer:general')
+  })
+})
+
+describe('MessageComposer drafts kept for the place (ADR 0228 §4)', () => {
+  function placed(memory: PlaceMemory, children: ReactNode) {
+    return <PlaceMemoryProvider memory={memory}>{children}</PlaceMemoryProvider>
+  }
+
+  function keyed(draftKey: string, onSend: MessageComposerProps['onSend'] = vi.fn().mockResolvedValue(undefined)) {
+    return (
+      <MessageComposer
+        api={{} as unknown as KubecodeApi}
+        draftKey={draftKey}
+        mentionOptions={options}
+        placeholder="Message General"
+        projectId="p1"
+        sessions={[{ id: 's-analyst', title: 'Analyst' }] as unknown as Conversation[]}
+        t={t}
+        onSend={onSend}
+      />
+    )
+  }
+
+  const box = () => screen.getByRole('combobox', { name: 'Message General' }) as HTMLTextAreaElement
+
+  it('keeps the text, intent, and references when the composer is left and comes back', async () => {
+    const memory = createPlaceMemory()
+    const view = render(placed(memory, keyed('p1|general')))
+    fireEvent.change(box(), { target: { value: 'half a thought' } })
+    fireEvent.change(screen.getByLabelText('kubecode.channel.intent.label'), { target: { value: 'request' } })
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.attach' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick Pruning' }))
+
+    view.rerender(placed(memory, <p>elsewhere</p>))
+    view.rerender(placed(memory, keyed('p1|general')))
+    expect(box()).toHaveValue('half a thought')
+    expect(screen.getByLabelText('kubecode.channel.intent.label')).toHaveValue('request')
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+
+    // Another place has its own draft.
+    view.rerender(placed(memory, keyed('p1|general:task:r1')))
+    expect(box()).toHaveValue('')
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('replays the same message when a failed send is retried after coming back', async () => {
+    const memory = createPlaceMemory()
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(undefined)
+    const view = render(placed(memory, keyed('p1|general', onSend)))
+    fireEvent.change(box(), { target: { value: 'try me' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(box()).toHaveValue('try me'))
+
+    view.rerender(placed(memory, <p>elsewhere</p>))
+    view.rerender(placed(memory, keyed('p1|general', onSend)))
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).toBe(onSend.mock.calls[0][0].clientMessageId)
+    await waitFor(() => expect(box()).toHaveValue(''))
+
+    // Sent: nothing is left to come back to.
+    view.rerender(placed(memory, <p>elsewhere</p>))
+    view.rerender(placed(memory, keyed('p1|general', onSend)))
+    expect(box()).toHaveValue('')
+  })
+
+  it('puts a draft back into its place when the send fails after the place was left', async () => {
+    const memory = createPlaceMemory()
+    let fail: (cause: Error) => void = () => undefined
+    const onSend = vi.fn(() => new Promise<void>((_, reject) => { fail = reject }))
+    const view = render(placed(memory, keyed('p1|general', onSend)))
+    fireEvent.change(box(), { target: { value: 'in flight' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    view.rerender(placed(memory, <p>elsewhere</p>))
+    fail(new Error('network down'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    view.rerender(placed(memory, keyed('p1|general', onSend)))
+    await waitFor(() => expect(box()).toHaveValue('in flight'))
   })
 })

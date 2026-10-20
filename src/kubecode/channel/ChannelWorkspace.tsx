@@ -12,6 +12,7 @@ import type {
   ResearchSummary,
   WorkspaceEvent,
 } from '../api'
+import { placeKey, usePlaceState, type Landing, type ReadingPosition } from '../app/location/placeMemory'
 import { useAction } from '../research/useAction'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MessageComposer } from './MessageComposer'
@@ -30,12 +31,22 @@ export type ChannelWorkspaceProps = {
   /** A Thread to open on arrival (for example from a research question). */
   initialThreadId?: string | null
   /**
-   * The Task detail (or any other detail) shown beside the conversation. On a
-   * narrow screen it replaces the conversation, with its own way back.
+   * The inspector, beside the conversation or over it (ADR 0228 §3). Over it,
+   * the conversation stays mounted underneath; the inspector has the way back.
    */
   detail?: ReactNode
+  /** The detail covers the conversation (a phone): it is parked, inert, under it. */
+  detailCovers?: boolean
   /** A message to land on, and to return to when the detail closes. */
   focusMessageId?: string | null
+  /**
+   * How `focusMessageId` is arrived at: `focus` (a link, a closed detail)
+   * focuses the message, `quiet` only scrolls to it, `composer` focuses the
+   * composer. Transient; never part of the address.
+   */
+  landing?: Landing
+  /** Where the researcher is reading and what had focus, as it changes (ADR 0228 §4). */
+  onReadingPositionChange?: (position: ReadingPosition) => void
   /** Show only the messages about this Task (controlled by the route). */
   filter?: string | null
   onFilterChange?: (taskId: string | null) => void
@@ -45,7 +56,11 @@ export type ChannelWorkspaceProps = {
   onOpenTask?: (taskId: string, messageId: string) => void
   /** Task ids that are on the board, to mark proposals that are not. */
   tasksOnBoard?: ReadonlySet<string>
-  onClose: () => void
+  /**
+   * Opens a reference chip where references open everywhere (ADR 0228 §3):
+   * the shell's navigation. Without it, Tasks, Sessions, and Threads still open.
+   */
+  onOpenReference?: (reference: ProjectContextRef) => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
   /** Opens the one work board filtered to what came from a Thread. */
@@ -67,13 +82,16 @@ export function ChannelWorkspace({
   events,
   initialThreadId = null,
   detail = null,
+  detailCovers = false,
   focusMessageId = null,
+  landing = 'focus',
+  onReadingPositionChange,
   filter,
   onFilterChange,
   onThreadChange,
   onOpenTask,
   tasksOnBoard,
-  onClose,
+  onOpenReference,
   onOpenResearch,
   onOpenSession,
   onOpenWork,
@@ -90,7 +108,9 @@ export function ChannelWorkspace({
     setLocalFilter(next)
     onFilterChange?.(next)
   }, [onFilterChange])
-  const [replyTo, setReplyTo] = useState<ChannelMessage | null>(null)
+  // The unsent draft and its reply target belong to this view of General: its own for each Task.
+  const draftKey = placeKey.general(projectId, taskFilter)
+  const [replyTo, setReplyTo] = usePlaceState<ChannelMessage | null>(`${draftKey}#replyTo`, null)
   const feed = useMessageFeed(api, projectId, channel?.id ?? null, null, events, connectionState, taskFilter)
   const { reload: reloadThreads, threads } = useChannelThreads(
     api,
@@ -162,8 +182,43 @@ export function ChannelWorkspace({
     })
   }
 
+  // Where the reader is: the list reports the message, focus says composer or message.
+  const root = useRef<HTMLElement>(null)
+  // Nothing is known of the reading position until the list reports one.
+  const reading = useRef<ReadingPosition>({ messageId: null, atLatest: false, focus: null })
+  const report = (next: Partial<ReadingPosition>) => {
+    const position = { ...reading.current, ...next }
+    if (position.messageId === reading.current.messageId
+      && position.atLatest === reading.current.atLatest
+      && position.focus === reading.current.focus) return
+    reading.current = position
+    onReadingPositionChange?.(position)
+  }
+  const noteFocus = (target: EventTarget) => {
+    if (!(target instanceof Element)) return
+    const focus = target.closest('[data-focus-key^="composer:"]')
+      ? 'composer'
+      : target.closest('[data-message-id]') ? 'message' : null
+    report({ focus })
+  }
+
+  // Arriving in the composer: focus it once it is on screen.
+  const composerLanded = useRef(false)
+  useEffect(() => {
+    if (landing !== 'composer') {
+      composerLanded.current = false
+      return
+    }
+    if (composerLanded.current || !channel) return
+    const box = root.current?.querySelector<HTMLElement>('[data-focus-key="composer:general"]')
+    if (!box) return
+    composerLanded.current = true
+    box.focus({ preventScroll: true })
+  }, [channel, landing])
+
   const openReference = (reference: ProjectContextRef) => {
-    if (reference.kind === 'research') onOpenResearch(reference.id)
+    if (onOpenReference) onOpenReference(reference)
+    else if (reference.kind === 'research') onOpenResearch(reference.id)
     else if (reference.kind === 'session') onOpenSession(reference.id)
     else if (reference.kind === 'thread') setThreadId(reference.id)
   }
@@ -173,11 +228,12 @@ export function ChannelWorkspace({
       aria-label={t('kubecode.channel.title')}
       className="kubecode-channel-workspace"
       data-detail={detail !== null}
+      ref={root}
+      onFocusCapture={(event) => noteFocus(event.target)}
     >
-      <div className="kubecode-channel-main">
+      <div className="kubecode-channel-main" inert={detail !== null && detailCovers ? true : undefined}>
         <header className="kubecode-channel-header">
           <div>
-            <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.channel.back')}</Button>
             <h2>{channel?.is_default ? `# ${t('kubecode.channel.general')}` : channel?.name ?? t('kubecode.channel.title')}</h2>
             <p className="kubecode-research-muted">{t('kubecode.channel.subtitle')}</p>
           </div>
@@ -214,6 +270,8 @@ export function ChannelWorkspace({
           threadByRoot={threadByRoot}
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : focusMessageId}
+          focusOnLand={landing === 'focus'}
+          onReadingPositionChange={(position) => report(position)}
           onFilterTask={setTaskFilter}
           onBoard={tasksOnBoard ? (id) => tasksOnBoard.has(id) : undefined}
           onOpenTask={onOpenTask}
@@ -224,6 +282,8 @@ export function ChannelWorkspace({
         {channel && (
           <MessageComposer
             api={api}
+            draftKey={draftKey}
+            focusKey="composer:general"
             mentionOptions={mentionOptions}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}

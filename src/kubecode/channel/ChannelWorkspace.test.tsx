@@ -11,6 +11,8 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import { ApiError } from '../api'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { ChannelWorkspace } from './ChannelWorkspace'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
@@ -135,7 +137,6 @@ function view(
       connectionState={props.connection ?? 'live'}
       conversations={sessions}
       events={events}
-      onClose={vi.fn()}
       onOpenResearch={vi.fn()}
       onOpenSession={vi.fn()}
       projectId="p1"
@@ -279,7 +280,6 @@ describe('ChannelWorkspace', () => {
         connectionState="live"
         conversations={[]}
         events={[]}
-        onClose={vi.fn()}
         onOpenResearch={vi.fn()}
         onOpenSession={vi.fn()}
         projectId="p1"
@@ -333,7 +333,6 @@ describe('ChannelWorkspace details', () => {
         connectionState="live"
         conversations={[]}
         events={[]}
-        onClose={vi.fn()}
         onOpenResearch={onOpenResearch}
         onOpenSession={onOpenSession}
         projectId="p1"
@@ -358,7 +357,6 @@ describe('ChannelWorkspace details', () => {
         conversations={[]}
         events={[]}
         initialThreadId="t1"
-        onClose={vi.fn()}
         onOpenResearch={vi.fn()}
         onOpenSession={vi.fn()}
         projectId="p1"
@@ -380,7 +378,6 @@ describe('ChannelWorkspace work entry', () => {
         connectionState="live"
         conversations={[]}
         events={[]}
-        onClose={vi.fn()}
         onOpenResearch={vi.fn()}
         onOpenSession={vi.fn()}
         onOpenWork={onOpenWork}
@@ -504,7 +501,6 @@ describe('ChannelWorkspace work entry', () => {
         detail={<aside aria-label="Task details">Pruning details</aside>}
         events={[]}
         focusMessageId="m1"
-        onClose={vi.fn()}
         onOpenResearch={vi.fn()}
         onOpenSession={vi.fn()}
         projectId="p1"
@@ -546,7 +542,6 @@ describe('ChannelWorkspace work entry', () => {
         conversations={sessions}
         events={[]}
         initialThreadId={initialThreadId}
-        onClose={vi.fn()}
         onOpenResearch={vi.fn()}
         onOpenSession={vi.fn()}
         projectId="p1"
@@ -573,5 +568,118 @@ describe('ChannelWorkspace work entry', () => {
     expect(screen.queryByText('kubecode.task.proposalBadge:{"revision":9}')).not.toBeInTheDocument()
     expect(screen.getByText('kubecode.task.notOnBoardYet')).toBeInTheDocument()
     expect(screen.getByText('kubecode.task.proposalHint')).toBeInTheDocument()
+  })
+})
+
+describe('ChannelWorkspace keeps its place (ADR 0228 §4)', () => {
+  function placed(memory: PlaceMemory, s: ReturnType<typeof server>, extra: Partial<React.ComponentProps<typeof ChannelWorkspace>> = {}) {
+    return (
+      <PlaceMemoryProvider memory={memory}>
+        <ChannelWorkspace
+          api={s.api}
+          connectionState="live"
+          conversations={sessions}
+          events={[]}
+          onOpenResearch={vi.fn()}
+          onOpenSession={vi.fn()}
+          projectId="p1"
+          research={[question]}
+          t={t}
+          {...extra}
+        />
+      </PlaceMemoryProvider>
+    )
+  }
+
+  it('keeps the draft and the reply target of General and of each Task-scoped view when it is left', async () => {
+    const memory = createPlaceMemory()
+    const s = server([{ ...server().message(1, 'about pruning'), task_id: 'r1' }])
+    const v = render(placed(memory, s, { filter: null }))
+    await screen.findByText('about pruning')
+    fireEvent.click(within(screen.getByTestId('message-1')).getByRole('button', { name: 'kubecode.channel.replyToMessage' }))
+    fireEvent.change(screen.getByLabelText('kubecode.channel.composerPlaceholder'), { target: { value: 'for everyone' } })
+
+    v.rerender(<PlaceMemoryProvider memory={memory}><p>elsewhere</p></PlaceMemoryProvider>)
+    v.rerender(placed(memory, s, { filter: null }))
+    expect(await screen.findByLabelText('kubecode.channel.composerPlaceholder')).toHaveValue('for everyone')
+    expect(screen.getByText(/kubecode\.channel\.replyingTo/)).toBeInTheDocument()
+
+    // Looking at one Task is its own draft; the General one never moves there.
+    v.rerender(placed(memory, s, { filter: 'r1' }))
+    expect(screen.getByLabelText('kubecode.channel.composerPlaceholder')).toHaveValue('')
+    expect(screen.queryByText(/kubecode\.channel\.replyingTo/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('kubecode.channel.composerPlaceholder'), { target: { value: 'about r1' } })
+    v.rerender(placed(memory, s, { filter: null }))
+    expect(screen.getByLabelText('kubecode.channel.composerPlaceholder')).toHaveValue('for everyone')
+    v.rerender(placed(memory, s, { filter: 'r1' }))
+    expect(screen.getByLabelText('kubecode.channel.composerPlaceholder')).toHaveValue('about r1')
+  })
+
+  it('names its rows and its composer for scroll and focus return', async () => {
+    const s = server([server().message(1, 'a topic'), server().message(2, 'a note', { author_kind: 'system' })])
+    view(s)
+    await screen.findByText('a topic')
+    expect(screen.getByTestId('message-1')).toHaveAttribute('data-scroll-anchor', 'm1')
+    expect(screen.getByTestId('message-1')).toHaveAttribute('data-focus-key', 'message:m1')
+    expect(screen.getByTestId('message-2')).toHaveAttribute('data-scroll-anchor', 'm2')
+    expect(screen.getByLabelText('kubecode.channel.composerPlaceholder')).toHaveAttribute('data-focus-key', 'composer:general')
+  })
+
+  it('reports where the researcher is reading and what had focus', async () => {
+    const s = server(Array.from({ length: 6 }, (_, index) => server().message(index + 1, `message ${index + 1}`)))
+    const onReadingPositionChange = vi.fn()
+    view(s, { extra: { onReadingPositionChange } })
+    await screen.findByText('message 6')
+    const log = screen.getByRole('log')
+    let top = 0
+    Object.defineProperty(log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 240 })
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 })
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const id = this.getAttribute('data-message-id')
+      const y = id ? (Number(id.slice(1)) - 1) * 40 - top : 0
+      return { top: y, bottom: y + (id ? 40 : 100), height: id ? 40 : 100, left: 0, right: 0, width: 0, x: 0, y } as DOMRect
+    })
+    try {
+      // Focus alone says nothing of where the reader is.
+      fireEvent.focus(screen.getByLabelText('kubecode.channel.composerPlaceholder'))
+      expect(onReadingPositionChange).toHaveBeenLastCalledWith({ messageId: null, atLatest: false, focus: 'composer' })
+      fireEvent.focus(screen.getByLabelText('kubecode.channel.filterTask'))
+      top = 40
+      fireEvent.scroll(log)
+      // The message across the middle of the log (50px down) is m3.
+      await waitFor(() => expect(onReadingPositionChange).toHaveBeenLastCalledWith({ messageId: 'm3', atLatest: false, focus: null }))
+      fireEvent.focus(screen.getByLabelText('kubecode.channel.composerPlaceholder'))
+      expect(onReadingPositionChange).toHaveBeenLastCalledWith({ messageId: 'm3', atLatest: false, focus: 'composer' })
+      top = 140
+      fireEvent.scroll(log)
+      await waitFor(() => expect(onReadingPositionChange).toHaveBeenLastCalledWith(expect.objectContaining({ atLatest: true })))
+    } finally {
+      rect.mockRestore()
+    }
+  })
+
+  it('lands on a message quietly, or in the composer, when asked to', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const s = server([server().message(1, 'a topic'), server().message(2, 'a reply')])
+    const quiet = view(s, { extra: { focusMessageId: 'm1', landing: 'quiet' } })
+    await screen.findByText('a topic')
+    await waitFor(() => expect(scroll).toHaveBeenCalled())
+    expect(document.getElementById('message-m1')).not.toHaveFocus()
+    quiet.unmount()
+
+    view(s, { extra: { focusMessageId: 'm1', landing: 'composer' } })
+    await screen.findByText('a topic')
+    await waitFor(() => expect(screen.getByLabelText('kubecode.channel.composerPlaceholder')).toHaveFocus())
+  })
+
+  it('makes the conversation inert while a full-screen detail covers it', async () => {
+    const s = server([server().message(1, 'a topic')])
+    view(s, { extra: { detail: <aside aria-label="Task details" />, detailCovers: true } })
+    await screen.findByText('a topic')
+    const main = document.querySelector('.kubecode-channel-main')
+    expect(main).toHaveAttribute('inert')
+    expect(screen.getByText('a topic')).toBeInTheDocument()
   })
 })

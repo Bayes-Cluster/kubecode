@@ -45,7 +45,6 @@ function mount(overrides: Partial<ResearchWorkspaceProps> = {}) {
     connectionState: 'live',
     conversations: [],
     events: [],
-    onClose: vi.fn(),
     onConversationCreated: vi.fn(),
     onOpenSession: vi.fn(),
     projectId: 'p1',

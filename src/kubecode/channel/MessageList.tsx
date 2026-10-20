@@ -30,6 +30,27 @@ type MessageListProps = {
   sessions: Conversation[]
   t: Translator
   threadByRoot?: Map<string, ChannelThread>
+  /**
+   * Where the reader is (ADR 0228 §4): the message across the middle of the
+   * log, and whether they are at the newest one. Reported as they scroll.
+   */
+  onReadingPositionChange?: (position: { messageId: string | null; atLatest: boolean }) => void
+  /** Whether landing on `focusId` also focuses it (a link) or only scrolls (coming back). */
+  focusOnLand?: boolean
+}
+
+/** The message whose row is nearest the middle of the scroller. */
+function messageAtMiddle(scroller: HTMLElement): string | null {
+  const box = scroller.getBoundingClientRect()
+  const middle = box.top + (box.bottom - box.top) / 2
+  let best: { id: string; distance: number } | null = null
+  for (const row of scroller.querySelectorAll<HTMLElement>('[data-message-id]')) {
+    const rect = row.getBoundingClientRect()
+    const distance = middle < rect.top ? rect.top - middle : middle > rect.bottom ? middle - rect.bottom : 0
+    if (!best || distance < best.distance) best = { id: row.dataset.messageId ?? '', distance }
+    if (distance === 0) break
+  }
+  return best?.id ?? null
 }
 
 /** A scrollable page of messages that stays at the bottom while the reader is. */
@@ -48,26 +69,45 @@ export function MessageList({
   sessions,
   t,
   threadByRoot,
+  onReadingPositionChange,
+  focusOnLand = true,
 }: MessageListProps) {
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const newest = feed.messages.at(-1)?.seq ?? 0
   const byId = new Map(feed.messages.map((message) => [message.id, message]))
 
-  /** Scrolls to a message of this feed and focuses it so the jump is announced. */
-  const jump = (messageId: string) => {
+  /** Scrolls to a message of this feed and, unless told not to, focuses it so the jump is announced. */
+  const jump = (messageId: string, focus = true) => {
     const target = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
     if (!target) return
     stuck.current = false
     target.setAttribute('tabindex', '-1')
     target.scrollIntoView?.({ block: 'center' })
-    target.focus({ preventScroll: true })
+    if (focus) target.focus({ preventScroll: true })
+  }
+
+  // Where the reader is, measured at most once a frame while they scroll.
+  const reportRef = useRef(onReadingPositionChange)
+  useEffect(() => { reportRef.current = onReadingPositionChange })
+  const frame = useRef(0)
+  useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
+  const measure = () => {
+    if (!reportRef.current || frame.current) return
+    frame.current = window.requestAnimationFrame(() => {
+      frame.current = 0
+      const element = scroller.current
+      if (element) reportRef.current?.({ messageId: messageAtMiddle(element), atLatest: stuck.current })
+    })
   }
 
   useEffect(() => {
     const element = scroller.current
     if (element && stuck.current) element.scrollTop = element.scrollHeight
   }, [newest])
+
+  const focusOnLandRef = useRef(focusOnLand)
+  useEffect(() => { focusOnLandRef.current = focusOnLand })
 
   // Land on a linked message once, when it is in the loaded page.
   const landed = useRef<string | null>(null)
@@ -79,7 +119,8 @@ export function MessageList({
     }
     if (!present || landed.current === focusId) return
     landed.current = focusId
-    jump(focusId)
+    // Landing happens once per message; how it lands is read at that moment.
+    jump(focusId, focusOnLandRef.current)
   }, [focusId, present])
 
   return (
@@ -91,6 +132,7 @@ export function MessageList({
       onScroll={(event) => {
         const element = event.currentTarget
         stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
+        measure()
       }}
     >
       {feed.hasMore && (
