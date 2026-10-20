@@ -84,12 +84,15 @@ sub-session id, so early chunks land before a late registration and the name
 backfills. Tool-call persistence coalesces non-terminal updates by tool id into one
 row (flushed at terminal status), and raw input/output yield to structured
 content in persisted payloads. Transient conversation state (streaming flag, pending
-permission/elicitation wait with its deadline) broadcasts as whole-snapshot
+permission/elicitation wait, with its deadline when the server enforces one)
+broadcasts as whole-snapshot
 `conversation_state` frames on the same stream — at subscription-adjacent
 transitions, on boot recovery, and whenever a wait resolves — so any client
 converges from cursor + snapshots alone; a cleared wait publishes
-`"pending": null`. The pending-request timeout is tunable via
-`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes). Terminal output
+`"pending": null`. Only an input (elicitation) request times out, after
+`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes); a permission
+request waits until it is answered or its turn stops, so it reports no
+deadline (ADR 0232). Terminal output
 is additionally appended to durable per-terminal logs under
 `WorkspaceService`-managed state paths (strictly validated terminal ids, no
 path traversal); reads prefer the live ring and fall back to the durable

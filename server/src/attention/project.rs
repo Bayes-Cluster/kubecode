@@ -109,7 +109,7 @@ pub fn project(project_id: &str, cursor: u64, inputs: AttentionInputs) -> Attent
             detail,
             task,
         );
-        entry.deadline_ms = Some(request.deadline_ms);
+        entry.deadline_ms = request.deadline_ms;
         entry.conversation_id = Some(conversation.clone());
         match owner {
             Some(owner) => {

@@ -13,7 +13,7 @@ export type PermissionPromptProps = {
   /** The tool's title as the provider gave it; never its input. */
   tool: string
   options: PendingOption[]
-  /** When the request declines by itself (epoch milliseconds), or null. */
+  /** When the server declines the request by itself (epoch milliseconds); null when it enforces no deadline, as for permission requests. */
   deadlineMs: number | null
   /** Who asks and for which Task; "Permission required" when absent. */
   heading?: string
@@ -96,6 +96,8 @@ export function PermissionCountdown({ deadlineMs, t }: { deadlineMs: number; t: 
     const timer = window.setInterval(() => setRemaining(remainingSeconds(deadlineMs)), 1000)
     return () => window.clearInterval(timer)
   }, [deadlineMs])
+  // Past its deadline the server declines it and the prompt goes: never a "0 s".
+  if (remaining <= 0) return null
   const urgent = remaining < 30
   return (
     <span

@@ -36,9 +36,9 @@ pub(super) struct PendingPermission {
     /// Present only when the store could establish project/agent scope for
     /// the run; pairs with the always-class option ids that must persist it.
     pub(super) always_allow: Option<(AlwaysAllowContext, HashSet<String>)>,
-    /// When it was asked (store timestamp form) and when it stops waiting.
+    /// When it was asked (store timestamp form). A permission request waits
+    /// until it is answered or its turn stops: it has no deadline.
     pub(super) requested_at: String,
-    pub(super) deadline: std::time::Instant,
 }
 
 /// Builds the canonical kind-granular always-allow rule for a permission
@@ -129,8 +129,9 @@ pub struct PendingRequestView {
     pub request_id: String,
     pub run_id: String,
     pub requested_at: String,
-    /// Milliseconds left before it stops waiting.
-    pub deadline_ms: u64,
+    /// Milliseconds left before the server declines it; only an input
+    /// request has a deadline, a permission request waits until answered.
+    pub deadline_ms: Option<u64>,
     /// `user` (the researcher) or `leader` (a Team leader reviews it first).
     pub reviewer: String,
     /// The tool's title, for a permission.
@@ -156,7 +157,7 @@ impl PendingPermission {
             request_id: request_id.to_owned(),
             run_id: self.run_id.clone(),
             requested_at: self.requested_at.clone(),
-            deadline_ms: deadline_remaining_ms(self.deadline),
+            deadline_ms: None,
             reviewer: text_field(payload, "reviewer", 20).unwrap_or_else(|| "user".to_owned()),
             tool: text_field(payload, "tool", 200),
             options: payload
@@ -186,7 +187,7 @@ impl PendingElicitation {
             request_id: request_id.to_owned(),
             run_id: self.run_id.clone(),
             requested_at: self.requested_at.clone(),
-            deadline_ms: deadline_remaining_ms(self.deadline),
+            deadline_ms: Some(deadline_remaining_ms(self.deadline)),
             reviewer: "user".to_owned(),
             tool: None,
             options: Vec::new(),
@@ -213,9 +214,10 @@ pub(super) fn announce_wait_ended(store: &AgentStore, run_id: &str) {
     }
 }
 
-/// How long pending permission / elicitation requests wait before the
-/// server resolves them as declined (#111). Tunable via
-/// `KUBECODE_PENDING_REQUEST_TIMEOUT_MS`.
+/// How long a pending input (elicitation) request waits before the server
+/// resolves it as declined (#111). Tunable via
+/// `KUBECODE_PENDING_REQUEST_TIMEOUT_MS`. Permission requests have no
+/// timeout: they wait until answered or their turn stops (ADR 0232).
 pub(crate) fn pending_request_timeout() -> std::time::Duration {
     std::env::var("KUBECODE_PENDING_REQUEST_TIMEOUT_MS")
         .ok()
@@ -894,7 +896,6 @@ mod tests {
                         HashSet::from(["allow_always".to_owned()]),
                     )),
                     requested_at: String::new(),
-                    deadline: std::time::Instant::now(),
                 },
             );
 
@@ -963,7 +964,6 @@ mod tests {
                     sender,
                     always_allow: None,
                     requested_at: String::new(),
-                    deadline: std::time::Instant::now(),
                 },
             );
 
@@ -1016,7 +1016,6 @@ mod tests {
                     sender,
                     always_allow: None,
                     requested_at: String::new(),
-                    deadline: std::time::Instant::now(),
                 },
             );
 
@@ -1094,7 +1093,6 @@ mod tests {
                     sender: permission_sender,
                     always_allow: None,
                     requested_at: "2026-10-20 10:00:00.000".to_owned(),
-                    deadline,
                 },
             );
         let (input_sender, input_receiver) = oneshot::channel();
@@ -1131,7 +1129,11 @@ mod tests {
         assert_eq!(permission.reviewer, "user");
         assert_eq!(permission.options[0].id, "allow_once");
         assert_eq!(permission.requested_at, "2026-10-20 10:00:00.000");
-        assert!(permission.deadline_ms > 50_000);
+        // Only what the server enforces has a deadline: an input request
+        // declines by itself, a permission request waits until answered.
+        assert_eq!(permission.deadline_ms, None);
+        assert!(input.deadline_ms.is_some_and(|left| left > 50_000));
+        assert_eq!(serde_json::to_value(permission).unwrap()["deadline_ms"], Value::Null);
         let json = serde_json::to_string(&pending).expect("serialize");
         assert!(
             !json.contains("rm -rf"),

@@ -40,6 +40,13 @@ describe('PermissionPrompt', () => {
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith('allow'))
   })
 
+  it('shows no countdown without a deadline, and never a 0 s one once a deadline passed', () => {
+    const { rerender } = render(<PermissionPrompt deadlineMs={null} options={options} requestId="q1" t={t} tool="pytest" onResolve={vi.fn()} />)
+    expect(screen.queryByTestId('permission-countdown')).not.toBeInTheDocument()
+    rerender(<PermissionPrompt deadlineMs={Date.now() - 1_000} options={options} requestId="q1" t={t} tool="pytest" onResolve={vi.fn()} />)
+    expect(screen.queryByTestId('permission-countdown')).not.toBeInTheDocument()
+  })
+
   it('stays busy while the answer is recorded, and keeps the prompt when it is not', async () => {
     let fail!: (cause: unknown) => void
     const onResolve = vi.fn(() => new Promise<void>((_, reject) => { fail = reject }))

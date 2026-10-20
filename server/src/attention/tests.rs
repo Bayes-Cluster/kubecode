@@ -21,13 +21,13 @@ fn analyst() -> MemberRef {
     }
 }
 
-fn permission(request: &str, run: &str, deadline_ms: u64) -> PendingRequestView {
+fn permission(request: &str, run: &str) -> PendingRequestView {
     PendingRequestView {
         kind: PendingKind::Permission,
         request_id: request.into(),
         run_id: run.into(),
         requested_at: "2026-10-20 10:00:00".into(),
-        deadline_ms,
+        deadline_ms: None,
         reviewer: "user".into(),
         tool: Some("Shell".into()),
         options: vec![PendingOptionView {
@@ -107,7 +107,7 @@ fn one_decision_appears_once_with_its_task_member_and_binding() {
     let mut inputs = base();
     inputs
         .pending
-        .push((permission("req-1", "run-1", 60_000), "s-analyst".into()));
+        .push((permission("req-1", "run-1"), "s-analyst".into()));
     inputs.active_runs.push(ActiveRun {
         run_id: "run-1".into(),
         conversation_id: "s-analyst".into(),
@@ -122,7 +122,7 @@ fn one_decision_appears_once_with_its_task_member_and_binding() {
     assert_eq!(item.task.as_ref().unwrap().title, "Structured pruning");
     assert_eq!(item.member.as_ref().unwrap().handle, "analyst");
     assert_eq!(item.binding, Some(BindingView::Public));
-    assert_eq!(item.deadline_ms, Some(60_000));
+    assert_eq!(item.deadline_ms, None, "a permission request has no deadline");
     let json = serde_json::to_value(item).unwrap();
     assert_eq!(json["kind"], "permission");
     assert_eq!(json["tool"], "Shell");
@@ -137,39 +137,41 @@ fn a_dm_request_and_a_plain_session_are_attributed_as_such() {
     let mut inputs = base();
     inputs
         .pending
-        .push((permission("req-dm", "run-dm", 1_000), "s-analyst-dm".into()));
+        .push((permission("req-dm", "run-dm"), "s-analyst-dm".into()));
     inputs.pending.push((
-        permission("req-plain", "run-plain", 2_000),
+        permission("req-plain", "run-plain"),
         "s-plain".into(),
     ));
     inputs
         .session_titles
         .insert("s-plain".into(), "My chat".into());
-    let mut leader = permission("req-leader", "run-team", 500);
+    let mut leader = permission("req-leader", "run-team");
     leader.reviewer = "leader".into();
     inputs.pending.push((leader, "s-team".into()));
-    let mut input = permission("req-input", "run-dm", 3_000);
+    let mut input = permission("req-input", "run-dm");
     input.kind = PendingKind::Input;
+    input.deadline_ms = Some(3_000);
     input.tool = None;
     input.options.clear();
     input.message = Some("Choose".into());
     input.schema = Some(json!({"type": "object"}));
     inputs.pending.push((input, "s-analyst-dm".into()));
     let snapshot = project("p", 1, inputs);
-    // Deadline order; a request still with a Team leader is not the researcher's.
+    // What times out first, then the oldest; a request still with a Team
+    // leader is not the researcher's.
     assert_eq!(
         keys(&snapshot),
         [
+            "input:req-input",
             "permission:req-dm",
-            "permission:req-plain",
-            "input:req-input"
+            "permission:req-plain"
         ]
     );
-    assert_eq!(snapshot.items[0].binding, Some(BindingView::Dm));
-    assert!(snapshot.items[0].task.is_none(), "a DM carries no Task");
-    assert!(snapshot.items[1].member.is_none());
-    assert_eq!(snapshot.items[1].session_title.as_deref(), Some("My chat"));
-    let json = serde_json::to_value(&snapshot.items[2]).unwrap();
+    assert_eq!(snapshot.items[1].binding, Some(BindingView::Dm));
+    assert!(snapshot.items[1].task.is_none(), "a DM carries no Task");
+    assert!(snapshot.items[2].member.is_none());
+    assert_eq!(snapshot.items[2].session_title.as_deref(), Some("My chat"));
+    let json = serde_json::to_value(&snapshot.items[0]).unwrap();
     assert_eq!(
         (json["kind"].as_str(), json["message"].as_str()),
         (Some("input"), Some("Choose"))

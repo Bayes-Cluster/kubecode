@@ -408,8 +408,8 @@ async fn run_acp_session(
                                 option_ids,
                             )
                         });
-                    let deadline = std::time::Instant::now()
-                        + super::permissions::pending_request_timeout();
+                    // A permission request waits until it is answered or its
+                    // turn stops: it has no deadline, so none is announced.
                     let (sender, receiver) = oneshot::channel();
                     pending_permissions
                         .lock()
@@ -427,7 +427,6 @@ async fn run_acp_session(
                                 sender,
                                 always_allow,
                                 requested_at: crate::agent_store::utc_now(),
-                                deadline,
                             },
                         );
                     let _ = permission_runtime.store.append_workspace_event(
@@ -441,7 +440,6 @@ async fn run_acp_session(
                             "pending": {
                                 "kind": "permission",
                                 "request_id": request_id,
-                                "deadline_ms": super::permissions::deadline_remaining_ms(deadline),
                                 "request": request_payload,
                             },
                         }),
