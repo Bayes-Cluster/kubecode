@@ -50,6 +50,18 @@ describe('useMessageDeliveries', () => {
     await waitFor(() => expect(view.result.current.actions.refusals.get('rt')).toBe('gone'))
   })
 
+  it('says a member needs setup, and offers the retry again once a member changes', async () => {
+    const failed = messageDelivery({ message_id: 'msg1', state: 'failed', routes: [routeDelivery({ route_id: 'rt', state: 'failed', retryable: true })] })
+    const messageDeliveries = vi.fn().mockResolvedValue([failed])
+    const retryRoute = vi.fn().mockRejectedValue(new ApiError('route_needs_setup', 'setup', 409))
+    const view = setup([mine(1)], { messageDeliveries, retryRoute })
+    await waitFor(() => expect(view.result.current.deliveries.get('msg1')?.state).toBe('failed'))
+    await act(async () => view.result.current.actions.retry('rt', 'msg1'))
+    await waitFor(() => expect(view.result.current.actions.refusals.get('rt')).toBe('needsSetup'))
+    view.rerender({ events: [event(9, 'member_updated', { member_id: 'm1' })] })
+    await waitFor(() => expect(view.result.current.actions.refusals.has('rt')).toBe(false))
+  })
+
   it('reroutes a message that reached nobody', async () => {
     const saved = messageDelivery({ message_id: 'msg1', state: 'saved', routes: [] })
     const messageDeliveries = vi.fn()

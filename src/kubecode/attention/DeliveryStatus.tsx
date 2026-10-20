@@ -4,8 +4,8 @@ import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { MessageDelivery, RouteDelivery } from '../api'
-import { useDeliveryActions } from './deliveryContext'
-import { recipientName } from './deliveryWords'
+import { useDeliveryActions, type DeliveryRefusal } from './deliveryContext'
+import { recipientName, retryingText } from './deliveryWords'
 
 export type DeliveryStatusProps = {
   delivery: MessageDelivery
@@ -62,10 +62,23 @@ function FailedRoute({ body, messageId, route, t }: { body: string; messageId: s
         </>
       )}
       {refusal === 'limit' && <span>{t('kubecode.delivery.retryLimit')}</span>}
+      {refusal === 'needsSetup' && (
+        <>
+          <span>{t('kubecode.delivery.needsSetup', { name })}</span>
+          {actions && <Button size="xs" variant="ghost" onClick={actions.openMembers}>{t('kubecode.delivery.openMembers')}</Button>}
+        </>
+      )}
       {refusal === 'notRetryable' && <span>{t('kubecode.delivery.notRetryable')}</span>}
       {refusal === 'failed' && <span role="alert">{t('kubecode.delivery.retryFailed')}</span>}
     </div>
   )
+}
+
+/** Why Try again did not work: refused by the server, or never reached it. */
+function RerouteRefusal({ refusal, t }: { refusal: DeliveryRefusal | undefined; t: Translator }) {
+  if (!refusal) return null
+  if (refusal === 'failed') return <span className="kubecode-research-error" role="alert">{t('kubecode.delivery.retryFailed')}</span>
+  return <span>{t('kubecode.delivery.notRetryable')}</span>
 }
 
 /**
@@ -87,7 +100,7 @@ export function DeliveryStatus({ body, delivery, latest, locale = 'en', notes, t
     lines.push({ key: route.route_id, text: t('kubecode.delivery.busy', { name: recipientName(route, t) }) })
   }
   for (const route of by('retrying')) {
-    lines.push({ key: route.route_id, text: t('kubecode.delivery.retrying', { name: recipientName(route, t), attempts: route.attempts }) })
+    lines.push({ key: route.route_id, text: retryingText(route, t) })
   }
   if (by('sending').length > 0) lines.push({ key: 'sending', text: t('kubecode.delivery.sending', { names: names(by('sending'), locale, t) }) })
   for (const route of by('queued')) {
@@ -136,9 +149,7 @@ export function DeliveryStatus({ body, delivery, latest, locale = 'en', notes, t
               )}
             </>
           )}
-          {actions?.refusals.get(delivery.message_id) && (
-            <span>{t('kubecode.delivery.notRetryable')}</span>
-          )}
+          <RerouteRefusal refusal={actions?.refusals.get(delivery.message_id)} t={t} />
         </div>
       )}
       {details.length > 0 && (

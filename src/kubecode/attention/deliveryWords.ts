@@ -16,10 +16,20 @@ export function retryRefusal(cause: unknown, name: string, t: Translator): strin
   if (cause instanceof ApiError) {
     if (cause.code === 'route_target_gone') return t('kubecode.delivery.targetGone', { name })
     if (cause.code === 'retry_limit') return t('kubecode.delivery.retryLimit')
+    if (cause.code === 'route_needs_setup') return t('kubecode.delivery.needsSetup', { name })
     if (cause.code === 'route_superseded') return t('kubecode.delivery.supersededRefusal')
     if (cause.code === 'route_not_retryable' || cause.code === 'message_not_reroutable') return t('kubecode.delivery.notRetryable')
   }
   return t('kubecode.delivery.retryFailed')
+}
+
+/** "Still trying to reach {name} (3 attempts)", with the attempt count's plural. */
+export function retryingText(route: RouteDelivery, t: Translator): string {
+  return t('kubecode.delivery.retrying', {
+    name: recipientName(route, t),
+    attempts: route.attempts,
+    plural: route.attempts === 1 ? '' : 's',
+  })
 }
 
 export function isTargetGone(cause: unknown): boolean {

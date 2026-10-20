@@ -14,6 +14,7 @@ function refusalOf(cause: unknown): DeliveryRefusal {
   if (cause instanceof ApiError) {
     if (cause.code === 'route_target_gone') return 'gone'
     if (cause.code === 'retry_limit') return 'limit'
+    if (cause.code === 'route_needs_setup') return 'needsSetup'
     if (cause.code === 'route_not_retryable' || cause.code === 'message_not_reroutable') return 'notRetryable'
   }
   return 'failed'
@@ -74,6 +75,17 @@ export function useMessageDeliveries(
   const tick = useRefreshTick(events, connectionState, matches)
   const [manual, setManual] = useState(0)
   const ticket = useRef(0)
+  // A member's setup changed: what needed setup may go now, so its refusal is dropped.
+  const needsSetup = [...refusals.values()].includes('needsSetup')
+  const memberChanged = useCallback((event: WorkspaceEvent) => (
+    needsSetup && event.project_id === projectId && event.kind === 'member_updated'
+  ), [needsSetup, projectId])
+  const memberTick = useRefreshTick(events, connectionState, memberChanged)
+  const [seenMemberTick, setSeenMemberTick] = useState(memberTick)
+  if (seenMemberTick !== memberTick) {
+    setSeenMemberTick(memberTick)
+    if (needsSetup) setRefusals((current) => new Map([...current].filter(([, refusal]) => refusal !== 'needsSetup')))
+  }
 
   const merge = useCallback((list: MessageDelivery[]) => {
     if (list.length === 0) return

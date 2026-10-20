@@ -9,7 +9,7 @@ import { useInspectorServices } from '../app/inspector/inspectorContext'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { useAttention } from '../attention/attentionContext'
 import { askerName, attentionTarget } from '../attention/attentionTargets'
-import { recipientName, retryRefusal } from '../attention/deliveryWords'
+import { recipientName, retryingText, retryRefusal } from '../attention/deliveryWords'
 import { ExecutionStrip } from '../attention/ExecutionStrip'
 import { RoundPauseControl } from '../attention/RoundPauseControl'
 
@@ -44,7 +44,7 @@ function DeliveryIssue({ issue, onChanged, projectId }: { issue: SourceDelivery;
     <li className="kubecode-delivery-status" data-state={issue.route.state}>
       <span className={retrying ? 'kubecode-research-muted' : 'kubecode-research-error'}>
         {retrying
-          ? t('kubecode.delivery.retrying', { name, attempts: issue.route.attempts })
+          ? retryingText(issue.route, t)
           : t('kubecode.delivery.decisionFailed', { name })}
       </span>
       {!retrying && issue.route.retryable && (

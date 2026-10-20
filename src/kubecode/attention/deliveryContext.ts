@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 
 /** Why a retry or reroute was refused, so the line can say what to do instead. */
-export type DeliveryRefusal = 'gone' | 'limit' | 'notRetryable' | 'failed'
+export type DeliveryRefusal = 'gone' | 'limit' | 'notRetryable' | 'needsSetup' | 'failed'
 
 /** What the researcher can do about a message's delivery (ADR 0232); provided by General. */
 export type DeliveryActions = {
