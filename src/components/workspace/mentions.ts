@@ -4,12 +4,19 @@
  * `_` and `-`. Pure functions, so the rules are tested without a DOM.
  */
 
+import type { MemberRoleKind } from './MemberIdentity'
+
 export type MentionOption = {
   /** Stable id the caller maps to a Session or member. */
   id: string
   handle: string
   label: string
   detail?: string
+  /**
+   * Who the option is, shown as the shared identity (avatar, name, handle,
+   * role in words), and why it cannot receive a message yet, if it cannot.
+   */
+  identity?: { role: MemberRoleKind; roleLabel?: string; unavailable?: string }
 }
 
 const HANDLE_CHARS = 'A-Za-z0-9_-'

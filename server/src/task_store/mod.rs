@@ -34,9 +34,12 @@ use crate::research_store::{
 use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage, WorkStore};
 
 /// The task events that move a Task's stage. Every stage read filters on
-/// exactly these, so other events (archiving) never move a stage or the
-/// authorization watermark.
+/// exactly these, so other events (archiving) never move a stage.
 const STAGE_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted')";
+/// The task events after which an earlier instruction no longer authorizes the
+/// next step: the stage events, and restoring an archived Task, so nothing the
+/// researcher said before archiving it starts work after it comes back.
+const WATERMARK_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted', 'restored')";
 
 /// Why a step is refused while the researcher has archived the Task.
 const ARCHIVED: &str = "the Task is archived; the researcher restores it first";
@@ -278,6 +281,36 @@ impl TaskStore {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![project_id, research_id, kind, reference, watermark],
         )?;
+        Ok(())
+    }
+
+    /// Sets the research status an admitted Task's lifecycle implies, in the
+    /// same transaction as the step that implies it, announcing the research
+    /// change as the research store does (ADR 0230 §1).
+    fn mirror_status(
+        tx: &Transaction<'_>,
+        project_id: &str,
+        research_id: &str,
+        status: ResearchStatus,
+    ) -> Result<(), TaskError> {
+        let changed = tx.execute(
+            "UPDATE research_questions
+             SET status = ?3,
+                 resolved_at = CASE WHEN ?3 = 'resolved' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND project_id = ?2 AND status != ?3",
+            params![research_id, project_id, status.as_str()],
+        )?;
+        if changed > 0 {
+            tx.execute(
+                "INSERT INTO workspace_events (kind, project_id, payload)
+                 VALUES ('research_updated', ?1, ?2)",
+                params![
+                    project_id,
+                    json!({"research_id": research_id, "change": "status"}).to_string()
+                ],
+            )?;
+        }
         Ok(())
     }
 
@@ -603,15 +636,15 @@ impl TaskStore {
             .flatten())
     }
 
-    /// The newest General message at the time of the last stage change: an
-    /// instruction for the next step must be newer than this.
+    /// The newest General message at the time of the last stage change or
+    /// restore: an instruction for the next step must be newer than this.
     fn stage_watermark(&self, project_id: &str, research_id: &str) -> Result<u64, TaskError> {
         let seq: Option<i64> = self
             .connection()
             .query_row(
                 &format!(
                     "SELECT channel_seq FROM task_events
-                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {WATERMARK_EVENT_KINDS}
                      ORDER BY seq DESC LIMIT 1"
                 ),
                 params![project_id, research_id],
@@ -1154,8 +1187,9 @@ impl TaskStore {
                     "the brief changed after this instruction; ask the researcher again",
                 ));
             }
-            Some(_) => {}
-            None => {
+            // A record left without its round (a crash before the round began)
+            // is checked like a new one: the Task may have moved on since.
+            _ => {
                 match self
                     .stage(project_id, research_id)?
                     .unwrap_or(TaskStage::Ready)
@@ -1223,10 +1257,15 @@ impl TaskStore {
                 .assume_coordinator(project_id, &round.id, &session, &Actor::Researcher)?;
         }
         let finished = self.write(|tx| {
-            tx.execute(
+            let linked = tx.execute(
                 "UPDATE task_authorizations SET round_id = ?2 WHERE id = ?1 AND round_id IS NULL",
                 params![record.id, round.id],
             )?;
+            // An iterated question is open again, with the step that reopens
+            // it; an old instruction replayed does not reopen it.
+            if linked > 0 {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Open)?;
+            }
             let logged: i64 = tx.query_row(
                 "SELECT COUNT(*) FROM task_events
                  WHERE research_id = ?1 AND kind = 'execution_authorized' AND ref_id = ?2",
@@ -1251,14 +1290,6 @@ impl TaskStore {
                 Some((project_id.to_owned(), research_id.to_owned())),
             ))
         })?;
-        // An iterated question is open again; an old instruction replayed does not reopen it.
-        if created
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Open)
-        {
-            eprintln!("WARN: could not reopen an iterated question: {error}");
-        }
         self.acknowledge(
             project_id,
             caller,
@@ -1521,6 +1552,10 @@ impl TaskStore {
                 if accept { "review_accepted" } else { "review_returned" },
                 Some(&id),
             )?;
+            // A Done Task's question is resolved, in the same write.
+            if accept {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Resolved)?;
+            }
             let review = tx.query_row(
                 "SELECT id, research_id, request_id, accepted, outcome, reason, brief_revision, created_at
                  FROM task_reviews WHERE id = ?1",
@@ -1569,13 +1604,6 @@ impl TaskStore {
             },
         ) {
             eprintln!("WARN: could not record a Task review in the question's log: {error}");
-        }
-        if stored.accepted
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Resolved)
-        {
-            eprintln!("WARN: could not resolve the question of an accepted Task: {error}");
         }
         match self.channels.default_channel(project_id) {
             Ok(channel) => {
@@ -1796,11 +1824,17 @@ impl TaskStore {
     /// Archived Tasks and proposals, newest first: their stage (none for a
     /// proposal) and the accepted outcome, without composing a whole card.
     pub fn archived(&self, project_id: &str) -> Result<Vec<ArchivedTask>, TaskError> {
-        let mut archived: Vec<ArchivedTask> = Vec::new();
-        for summary in self.research.list(project_id, true)? {
-            if !summary.archived {
-                continue;
-            }
+        // Newest first and cut to the limit before anything else is read.
+        let mut summaries: Vec<_> = self
+            .research
+            .list(project_id, true)?
+            .into_iter()
+            .filter(|summary| summary.archived)
+            .collect();
+        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        summaries.truncate(MAX_ARCHIVED);
+        let mut archived: Vec<ArchivedTask> = Vec::with_capacity(summaries.len());
+        for summary in summaries {
             let stage = self.stage(project_id, &summary.id)?;
             let outcome = if stage == Some(TaskStage::Done) {
                 self.reviews(project_id, &summary.id)?
@@ -1819,17 +1853,32 @@ impl TaskStore {
                 updated_at: summary.updated_at,
             });
         }
-        archived.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        archived.truncate(MAX_ARCHIVED);
         Ok(archived)
     }
 
     // -- Archiving and status (ADR 0230) ---------------------------------------------------------------
 
+    /// Internal work of a question that is still active (not closed, not
+    /// done), as the card counts it.
+    fn active_work(
+        connection: &Connection,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<i64, TaskError> {
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM work_items
+             WHERE project_id = ?1 AND research_id = ?2
+               AND lifecycle = 'active' AND stage != 'done'",
+            params![project_id, research_id],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Whether the researcher may archive this Task (or proposal) now: not
-    /// while a review is open or internal work is active, so a Task never
-    /// disappears with a decision or running work under it. A draft, a Ready
-    /// or Done Task, and an idle Task in progress may be archived.
+    /// while a review is open or internal work is active (in any stage), so a
+    /// Task never disappears with a decision or running work under it. A
+    /// draft, and a Task in any stage with no open review and no active work,
+    /// may be archived.
     pub fn archive_availability(
         &self,
         project_id: &str,
@@ -1850,11 +1899,7 @@ impl TaskStore {
         {
             return Ok(refused("under_review"));
         }
-        if self.stage(project_id, research_id)? == Some(TaskStage::InProgress)
-            && self
-                .card(project_id, research_id)?
-                .is_some_and(|card| card.work.active > 0)
-        {
+        if Self::active_work(&self.connection(), project_id, research_id)? > 0 {
             return Ok(refused("work_active"));
         }
         Ok(Availability {
@@ -1894,8 +1939,8 @@ impl TaskStore {
             if current == archived {
                 return Ok(((), None));
             }
-            // The review check is repeated inside the transaction, so a review
-            // asked for meanwhile is never hidden.
+            // The checks are repeated inside the transaction, so a review asked
+            // for, or work started, meanwhile is never hidden.
             if archived {
                 let open: i64 = tx.query_row(
                     "SELECT COUNT(*) FROM task_review_requests
@@ -1905,6 +1950,9 @@ impl TaskStore {
                 )?;
                 if open > 0 {
                     return Err(TaskError::Active("under_review"));
+                }
+                if Self::active_work(tx, project_id, research_id)? > 0 {
+                    return Err(TaskError::Active("work_active"));
                 }
             }
             tx.execute(
@@ -2314,8 +2362,8 @@ impl TaskStore {
     }
 
     /// What waits on the researcher, under stable keys: an open review, each
-    /// open question of the Task's work, and a revised brief waiting for
-    /// approval. (Changed evidence under an open review is added by the
+    /// open question of the Task's open work, each suggested change of
+    /// direction not yet decided, and a revised brief waiting for approval. (Changed evidence under an open review is added by the
     /// reader that checks evidence.)
     pub fn pending(
         &self,
@@ -2333,11 +2381,12 @@ impl TaskStore {
                 });
             }
         }
+        // Only open work's questions, as the card counts them: closed work
+        // waits on no one.
         for summary in self.work.list(
             project_id,
             &WorkFilter {
                 research_id: Some(research_id.to_owned()),
-                include_closed: true,
                 limit: Some(200),
                 ..Default::default()
             },
@@ -2351,6 +2400,17 @@ impl TaskStore {
                         since: request.created_at,
                     });
                 }
+            }
+        }
+        // A suggested change of direction waits for the researcher to agree or decline.
+        for proposal in self.research.proposals(project_id, research_id)? {
+            if proposal.review.is_none() {
+                pending.push(PendingDecision {
+                    key: format!("suggestion:{}", proposal.entry.id),
+                    kind: "suggestion",
+                    ref_id: proposal.entry.id,
+                    since: proposal.entry.created_at,
+                });
             }
         }
         if self.admission(project_id, research_id)?.is_some() {

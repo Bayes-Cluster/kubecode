@@ -406,6 +406,8 @@ struct AuthorizingMessage {
     id: String,
     body: String,
     created_at: String,
+    /// The Task whose scope of General the message is in, if any.
+    task_id: Option<String>,
 }
 
 /// A review request with the General message that asked for it.
@@ -551,6 +553,7 @@ async fn detail(
                 id: message.id,
                 body: message.body.chars().take(600).collect(),
                 created_at: message.created_at,
+                task_id: message.task_id,
             });
         let mut internal_work = Vec::new();
         let mut open_questions = Vec::new();

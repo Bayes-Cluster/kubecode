@@ -68,10 +68,11 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0221](0221-tasks-and-human-authorized-admission.md) | Tasks, and admission authorized by the researcher through the General Agent |
 | [0222](0222-shared-workspace-controls-and-composer.md) | Shared Workspace controls and one Composer for General and direct messages |
 | [0223](0223-general-conversation-routing-and-direct-messages.md) | One General conversation, routed to members, with private direct messages |
-| [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes |
+| [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes (partially superseded by 0228) |
 | [0225](0225-task-board-inspector-and-browser-acceptance.md) | The Task board, the Task inspector, and browser acceptance with member fixtures |
 | [0226](0226-manager-launch-profile-review-routing-and-evidence-pins.md) | The manager's provider launch profile, review decisions routed to the manager, and review evidence pins |
 | [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls (proposed) |
+| [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack (proposed) |
 | [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
 | [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version (proposed) |
 | [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections (proposed) |

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { openExecutionHistory } from './shell'
+
 test.afterEach(async ({ page }) => {
   await page.evaluate(() => {
     (window as unknown as { __closeWorkspaceEvents?: () => void })
@@ -62,7 +64,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
     : requested.href.replace(/\/$/, '')
   await page.goto(workspaceUrl)
 
-  await expect(page.getByRole('navigation', { name: 'Projects' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Workspaces' })).toBeVisible()
   const projectName = `kubecode-playwright-${Date.now()}`
   const projectPath = `/tmp/${projectName}`
   await page.getByRole('button', { name: 'Add project' }).click()
@@ -79,9 +81,10 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   const projectId = projects.find((project) => project.name === projectName)?.id
   if (!projectId) throw new Error('Created smoke project was not returned by the API')
 
-  // A new Workspace opens in General; this flow is about the Sessions surface.
-  await page.getByRole('button', { name: 'Back to Sessions' }).click()
-  await page.getByRole('button', { name: 'Start an agent session' }).click()
+  // A new Workspace opens in General; this flow is about execution history, one step away.
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
+  const history = await openExecutionHistory(page)
+  await history.getByRole('button', { name: 'New session' }).click()
   await page.getByRole('combobox', { name: 'Agent' }).click()
   await page.getByRole('option', { name: 'OpenCode' }).click()
   await page.getByRole('textbox', { name: 'Session title' }).fill('Smoke session')
@@ -134,7 +137,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   }))
   expect(narrowDocument.scrollWidth).toBeLessThanOrEqual(narrowDocument.clientWidth)
   const sendButton = page.getByRole('button', { name: 'Send' })
-  const sessionsToggle = page.getByRole('button', { name: 'Toggle sessions' })
+  const sessionsToggle = page.getByRole('button', { name: 'Toggle navigation' })
   const contextToggle = page.getByRole('button', { name: 'Toggle context panel' })
   await expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
@@ -207,7 +210,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'false')
-  await page.getByRole('button', { name: 'Toggle sessions' }).click()
+  await page.getByRole('button', { name: 'Toggle navigation' }).click()
   await page.getByRole('button', { name: 'Toggle context panel' }).click()
   await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
   await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('aria-expanded', 'true')

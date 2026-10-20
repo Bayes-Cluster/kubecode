@@ -25,7 +25,6 @@ function mount(overrides: Partial<ResearchWorkspaceProps> = {}) {
     connectionState: 'live',
     conversations: [],
     events: [],
-    onClose: vi.fn(),
     onConversationCreated: vi.fn(),
     onOpenSession: vi.fn(),
     projectId: 'p1',
@@ -55,6 +54,71 @@ function event(id: number, kind: string, payload: Record<string, unknown> = {}):
 }
 
 describe('ResearchWorkspace', () => {
+  it('in the inspector, draws the Back and Close it is given in its one header, and reports its title', async () => {
+    const onBack = vi.fn()
+    const onCloseDetail = vi.fn()
+    const onTitle = vi.fn()
+    mount({
+      back: { label: 'Back to General', onBack },
+      close: { label: 'Close details', onClose: onCloseDetail },
+      onTitle,
+    })
+    // While loading, the way out is already there.
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
+    await waitFor(() => expect(onTitle).toHaveBeenCalledWith('Pruning'))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
+    expect(onBack).toHaveBeenCalledTimes(2)
+    expect(onCloseDetail).toHaveBeenCalledTimes(1)
+    // No way "back to Sessions" of its own: only the Back and Close it was given.
+    expect(screen.getAllByRole('button', { name: /back/i })).toHaveLength(1)
+  })
+
+  it('for a Task, shows its stage and the way to it, and nothing that finishes, reopens, or archives it', async () => {
+    const onOpenTask = vi.fn()
+    mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, task_stage: 'review' }) }), onOpenTask })
+    expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.stage.review')).toBeInTheDocument()
+    expect(screen.queryByText('kubecode.research.status.open')).not.toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.isTask')).toBeInTheDocument()
+    for (const name of ['kubecode.research.resolve', 'kubecode.research.reopen', 'kubecode.research.archive', 'kubecode.research.restore']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.openTask' }))
+    expect(onOpenTask).toHaveBeenCalled()
+  })
+
+  it('knows an archived Task from its record, however long the board\'s archived list is', async () => {
+    mount({
+      api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, archived: true, task_stage: 'done' }) }),
+      onOpenTask: vi.fn(),
+    })
+    expect(await screen.findByText('kubecode.task.stage.done')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'kubecode.task.openTask' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'kubecode.research.restore' })).not.toBeInTheDocument()
+  })
+
+  it('a question that is not a Task keeps its own status and controls', async () => {
+    mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, task_stage: null }) }), onOpenTask: vi.fn() })
+    expect(await screen.findByText('kubecode.research.status.open')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'kubecode.task.openTask' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'kubecode.research.resolve' })).toBeInTheDocument()
+  })
+
+  it('says in words why the server refused, never its code', async () => {
+    const setResearchState = vi.fn()
+      .mockRejectedValueOnce(new ApiError('task_owned', 'x', 409))
+      .mockRejectedValueOnce(new ApiError('task_active', 'the Task cannot be archived now: work_active', 409, null, 'work_active'))
+    mount({ api: fakeApi({ setResearchState }) })
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.resolve' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.task.ownedStatus')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.archive' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('kubecode.task.archiveBlocked.work_active'))
+    expect(screen.getByRole('alert')).not.toHaveTextContent('cannot be archived now')
+  })
+
   it('shows loading, then the brief with its revision', async () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('kubecode.research.loading')
@@ -196,7 +260,11 @@ describe('ResearchWorkspace', () => {
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /kubecode.research.accept/ }))
+    // A suggestion is agreed to or declined: never "Accept", which belongs to a Task's results.
+    expect(screen.getByRole('heading', { name: 'kubecode.research.suggestedChanges' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /kubecode.research.accept/ })).not.toBeInTheDocument()
+    const suggestion = screen.getByRole('group', { name: 'Drop single-GPU' })
+    fireEvent.click(within(suggestion).getByRole('button', { name: 'kubecode.research.agree' }))
     await waitFor(() => expect(reviewResearchProposal).toHaveBeenCalledWith('p1', 'rq-1', 'e-p', 'accepted'))
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.nothingToRecord' }))
     await waitFor(() => expect(declineResearchOutcome).toHaveBeenCalledWith('p1', 'rq-1', 't-1'))
@@ -299,8 +367,6 @@ describe('ResearchWorkspace', () => {
     mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue(archived) }) })
     expect(await screen.findByText('kubecode.research.archivedNotice')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'kubecode.research.editBrief' })).toBeDisabled()
-    openTab('kubecode.research.tab.work')
-    expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
   })
 
   it('cannot start a round from a Task detail, and says where work starts', async () => {
@@ -338,7 +404,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -428,7 +494,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -506,7 +572,7 @@ describe('ResearchWorkspace', () => {
     const getResearch = vi.fn().mockResolvedValue(detailFixture)
     const props: ResearchWorkspaceProps = {
       agents, api: fakeApi({ getResearch }), connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)

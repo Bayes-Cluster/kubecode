@@ -1226,7 +1226,10 @@ intents and Thread posts from older pages. A message read through the API also
 names the **members** behind its author and mentions, through any public
 Session they have had; that identity is presentation and grants nothing. A
 mention may name a member, resolved to its current public Session when the
-message is written and refused when the member cannot receive. See ADR 0229.
+message is written and refused when the member cannot receive. The browser
+shows whom a message goes to before it is sent, and keeps each unsent message
+(text, reply, Task, references) with the place it was written for. See ADR
+0229.
 
 ## Route
 
@@ -1279,36 +1282,57 @@ inside the Task. See ADR 0221.
 A Task has one state, its **stage**; it is completed only by the researcher
 accepting its results in review, and reopened only by asking the General Agent
 to iterate. **Archiving** is separate: it hides a Task (or a proposal) from the
-board, keeping everything, and is refused while a review is open or its work is
-active; it is recorded but never moves the stage. The Task's **read model**
-carries what waits on the researcher (each under a stable key), one
+board, keeping everything, and is refused while a review is open or any of its
+work is active; it is recorded but never moves the stage, and restoring makes
+every earlier instruction too old to start work. The Task's **read model**
+carries what waits on the researcher (each under a stable key: the review,
+open work's questions, suggested changes of direction, a revised brief,
+changed evidence), one
 **evidence** row per cited record with every pin of it, and a **history** whose
 steps link to the General messages that carried them. See ADR 0230.
 
-## Task board and inspector
+## Task board and details
 
 The **board** shows admitted Tasks only, in Ready, In progress, Review, and Done;
-waiting, blocked, paused, needs-input, a changed brief, and "waiting for you" are
-badges on a card, never columns. A Task's **inspector** gathers where it stands,
-who authorized it and who works on it, what waits on the researcher, and the
-review the manager asked for: its evidence, any that changed since it was
-attached (acceptance waits until it is looked at), and the researcher's decision
-— accept with what the result showed (a valid negative result completes the
-Task) or send back with a reason. Evidence the review request cites is pinned
-too, and changed evidence is accepted only at the version the researcher looked
-at. The decision is routed to the manager, so a Task sent back is replanned.
-See ADRs 0225 and 0226.
+waiting, blocked, paused, needs-input, a changed brief, the action asked of the
+researcher ("Review results", "Question for you") and the accepted outcome are
+badges on a card, never columns. Proposals are listed above the stages and
+archived Tasks below them; a card only opens its Task — nothing on the board
+drags, admits, starts, or finishes one. On a narrow board one stage is shown at
+a time. A Task's **details** have one header of Task facts (never the research
+question's Open/Resolved), a **next step**, and three sections: **Overview**
+(what waits on the researcher, the goal, who authorized it in General, the
+people, progress), **Results** (the review, its evidence, the decision, the
+outcome, findings, earlier reviews) and **Activity** (the history linked to
+General, recent Task-scoped messages, execution and linked records). Evidence
+that changed since it was cited is accepted only at a version the researcher was
+actually **shown** — a read that failed never counts — and every pin of it moves
+to that version; neither the work board's bare re-pin nor the coordinator can
+accept it. The decision (accept with what the result showed — a valid
+negative result completes the Task — or send back with feedback) is routed to
+the manager and posted in General, which the Task links to. **Discuss in
+General** opens the one General conversation narrowed to the Task; it
+authorizes nothing. See ADRs 0225, 0226 and 0230.
 
 ## Workspace views and routes
 
-The researcher's place is a **route**: a Project, a **view** (Sessions, General,
-Kanban, Resources, Members, a private conversation, or a legacy research
-workspace), and the ids that narrow it (a message, a Task, a filter, a member).
-Exactly one view fills the main pane; a Task, a member profile, or evidence
-opens in an on-demand **detail pane** beside its list (on a phone, instead of
-it). The route is written in the URL hash, so it survives a reload, Back, and a
-shared link under any base path. Files, Git, and the terminal are tools asked
-for beside these views, not a standing column. See ADR 0224.
+The researcher's place in a Workspace is a **location**: a **place** (General,
+with an optional message, Task filter and legacy Thread; Kanban; Resources;
+Members; a private conversation; execution history with its Session; or a
+legacy research workspace) and an **inspector stack** of ids (a Task, a member,
+evidence as a Task cited it, or a live resource). Each Workspace remembers its
+current view and the last location of every view it visited, so choosing a view
+or a Workspace returns to where the researcher was; one never visited opens
+General. Execution history — Sessions and Teams — is a secondary place reached
+only on request, never a default. The inspector belongs to the view it was
+opened from: opening from the view replaces what is inspected, opening from
+inside it pushes on top, Back pops one entry and Close returns to the view. It
+sits beside the view when both fit and replaces it otherwise, and the view and
+lower entries stay mounted underneath. The location is written in the URL hash,
+so it survives a reload, Back, and a shared link under any base path; drafts,
+scroll positions, and focus are a **place memory** kept in the page, never on
+disk. Files, Git, and the terminal are tools asked for beside these views, not a
+standing column. See ADRs 0224 and 0228.
 
 ## General routing and direct messages
 

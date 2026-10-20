@@ -10,8 +10,8 @@ export const TEMPLATE_LABELS: Record<MemberTemplate, Parameters<Translator>[0]> 
   custom: 'kubecode.members.template.custom',
 }
 
-export const STATE_LABELS: Record<MemberState, Parameters<Translator>[0]> = {
-  active: 'kubecode.members.state.active',
+/** Membership in words, only where it needs the researcher: an active member has no status (ADR 0229 §1). */
+export const STATE_LABELS: Record<Exclude<MemberState, 'active'>, Parameters<Translator>[0]> = {
   setup_required: 'kubecode.members.state.setup_required',
   removed: 'kubecode.members.state.removed',
 }

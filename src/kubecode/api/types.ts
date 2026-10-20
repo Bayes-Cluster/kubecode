@@ -451,6 +451,8 @@ export type ResearchDetail = {
   updated_at: string
   resolved_at: string | null
   links: ResearchLinkView[]
+  /** The stage of the Task this question is, if it was admitted; null otherwise (ADR 0230 §3). */
+  task_stage?: TaskStage | null
 }
 export type ResearchEntry = {
   id: string
@@ -1074,6 +1076,14 @@ export type ChannelMessage = {
   reply_to: string | null
   /** Hand-off depth: 0 for the researcher's own message. */
   hops: number
+  /**
+   * The member who wrote it, through any public Session the member has had
+   * (ADR 0229 §1); null for the researcher, Kubecode, or a Session that never
+   * was a member's. Presentation only: it grants nothing.
+   */
+  author_member_id?: string | null
+  /** The mentioned members, in the order of `mentions`; null where a Session is no member's. */
+  mention_member_ids?: Array<string | null>
 }
 export type ChannelMessagePage = { messages: ChannelMessage[]; has_more: boolean }
 export type ChannelThread = {
@@ -1091,12 +1101,17 @@ export type ChannelThread = {
   created_at: string
   updated_at: string
 }
+/** A recipient of a new message, named by member (ADR 0229 §2). */
+export type NewChannelMention = { member_id: string }
+/**
+ * A message the browser writes to General: always a plain message at the top
+ * level (ADR 0229 §5). The server still accepts intents and Thread posts from
+ * pages opened before that.
+ */
 export type NewChannelMessage = {
   body: string
-  threadId?: string | null
   clientMessageId?: string
-  intent?: ChannelIntent
-  mentions?: ChannelMention[]
+  mentions?: NewChannelMention[]
   references?: ProjectContextRef[]
   /** An earlier message of the conversation this one answers or cites. */
   replyTo?: string | null
@@ -1125,11 +1140,39 @@ export type TaskCard = {
   open_questions: number
   review_requested: boolean
   updated_at: string
+  /** The rounds that ran for it (legacy and authorized execution). */
+  rounds?: { id: string; number: number; brief_revision: number; phase: string }[]
+  /** Its internal work, counted. */
+  work?: TaskWorkRollup
+  /** The newest stage event (never archiving): what last happened to it. */
+  last_event?: TaskEventNote | null
+}
+export type TaskWorkRollup = {
+  total: number
+  active: number
+  in_review: number
+  done: number
+  needs_input: number
+  blocked: number
+}
+export type TaskEventKind =
+  | 'admitted' | 'execution_authorized' | 'review_requested' | 'review_returned' | 'review_accepted'
+  | 'archived' | 'restored'
+export type TaskEventNote = { seq: number; kind: TaskEventKind; ref_id: string | null; created_at: string }
+export type TaskParticipant = TaskCard['participants'][number]
+/** An archived Task (or proposal, with no stage), listed apart from the board. */
+export type TaskArchivedCard = {
+  id: string
+  title: string
+  stage: TaskStage | null
+  outcome: WorkOutcome | null
+  updated_at: string
 }
 export type TaskBoard = {
   cards: TaskCard[]
   stages: { stage: TaskStage; count: number }[]
   total: number
+  archived?: TaskArchivedCard[]
 }
 export type TaskDraft = {
   id: string
@@ -1139,6 +1182,8 @@ export type TaskDraft = {
   revision: number
   proposed_by: string
   updated_at: string
+  /** The newest General message that showed the current revision; none if it was never shown. */
+  shown_message_id?: string | null
 }
 
 /** One Task as the inspector reads it (ADR 0221). */
@@ -1159,6 +1204,10 @@ export type TaskReviewRequest = {
   state: 'open' | 'accepted' | 'returned'
   created_at: string
   resolved_at: string | null
+  /** The revision each cited `kind:id` had when the review was asked for. */
+  evidence_pins?: Record<string, string>
+  /** The General message that asked for the review. */
+  general_message_id?: string | null
 }
 export type TaskReviewRecord = {
   id: string
@@ -1169,6 +1218,8 @@ export type TaskReviewRecord = {
   reason: string | null
   brief_revision: number
   created_at: string
+  /** The General message that told the conversation; null if posting it failed. */
+  general_message_id?: string | null
 }
 export type TaskInternalWork = {
   id: string
@@ -1179,6 +1230,9 @@ export type TaskInternalWork = {
   attempts: number
   experiments: number
   assignee: { member_id: string; name: string; handle: string; role: string } | null
+  /** The Session the work is assigned to, to open its execution record. */
+  conversation_id?: string | null
+  updated_at?: string
 }
 export type TaskStaleEvidence = {
   /** The internal work it is attached to; empty for the review's own evidence. */
@@ -1193,15 +1247,73 @@ export type TaskStaleEvidence = {
   pinned: string
   current: string | null
 }
+export type TaskAuthorization = {
+  id: string
+  kind: 'admit' | 'execute' | 'revise'
+  message_id: string | null
+  brief_revision: number
+  origin: 'conversation' | 'legacy_round'
+  round_id: string | null
+  created_at: string
+}
+/** One pin of a cited record: by a work result, or by a review (`work_id` empty). */
+export type TaskEvidenceCitation = {
+  work_id: string
+  result_id: string
+  request_id?: string | null
+  pinned: string | null
+}
+/** One cited `kind:id`, once, with every pin of it (ADR 0230). */
+export type TaskEvidence = {
+  key: string
+  kind: string
+  ref_id: string
+  title: string | null
+  cited_by: TaskEvidenceCitation[]
+  current: string | null
+  status: 'current' | 'changed' | 'removed' | 'unpinned'
+  in_review: boolean
+  accepted: boolean
+}
+export type TaskActivityKind =
+  | 'proposed' | 'revised' | 'admitted' | 'revision_approved' | 'execution_authorized'
+  | 'review_requested' | 'review_returned' | 'review_accepted' | 'archived' | 'restored'
+/** One step of a Task's history, with the General message that carried it. */
+export type TaskActivity = {
+  at: string
+  kind: TaskActivityKind
+  actor: 'researcher' | 'manager' | 'member' | 'system'
+  member: TaskParticipant | null
+  brief_revision: number | null
+  ref_id: string | null
+  message_id: string | null
+  excerpt: string | null
+}
+/** Something that waits on the researcher, under a key that stays the same while it waits. */
+export type TaskPendingDecision = {
+  key: string
+  kind: 'review' | 'question' | 'suggestion' | 'brief_approval' | 'evidence_changed'
+  ref_id: string
+  since: string
+}
+export type TaskAvailability = { allowed: boolean; reason: 'under_review' | 'work_active' | 'archived' | null }
 export type TaskDetail = TaskCard & {
   brief: ResearchBrief
   revisions: TaskRevisionNote[]
-  authorizing_message: { id: string; body: string; created_at: string } | null
+  authorizations?: TaskAuthorization[]
+  /** `task_id`: the Task whose scope of General the message is in (null when it names none). */
+  authorizing_message: { id: string; body: string; created_at: string; task_id?: string | null } | null
   review_requests: TaskReviewRequest[]
   reviews: TaskReviewRecord[]
   internal_work: TaskInternalWork[]
   open_questions: Array<WorkDecisionRequest & { work_title: string }>
+  /** @deprecated use `evidence`, which lists every cited record once with all of its pins. */
   stale_evidence: TaskStaleEvidence[]
+  archived?: boolean
+  evidence?: TaskEvidence[]
+  timeline?: TaskActivity[]
+  pending?: TaskPendingDecision[]
+  actions?: { archive: TaskAvailability; restore: boolean }
 }
 
 /** A turn of the researcher's private conversation with a member (ADR 0223). */
@@ -1318,7 +1430,8 @@ export type WorkCard = {
   supersedes: string[]
   experiment_count: number
   last_activity_at: string
-  research: { id: string; title: string } | null
+  /** `task`: the question is an admitted Task, whose changed evidence is accepted in its Results. */
+  research: { id: string; title: string; task?: boolean } | null
   round: { id: string; number: number } | null
   team: { id: string; title: string } | null
   executor: {

@@ -1,13 +1,22 @@
-import { Share2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { ViewHeader } from '@/components/workspace/ViewHeader'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import type { KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
+import type { ChannelMessage, KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
+import { placeKey, usePlaceState } from '../app/location/placeMemory'
+import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
+import type { PlainDraft } from '../channel/generalDraft'
+import { Identity } from '../members/Identity'
+import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { DmShareDialog } from './DmShareDialog'
@@ -21,28 +30,30 @@ export type DmPaneProps = {
   projectId: string
   research: ResearchSummary[]
   t: Translator
-  onClose: () => void
   /** Called after part of the conversation was shared to General. */
-  onShared?: () => void
+  onShared?: (message: ChannelMessage) => void
 }
 
+const EMPTY_DRAFT: PlainDraft = { body: '', attempt: null }
+
 /**
- * The researcher's private conversation with one member. It looks and types
- * like General (the shared Composer) but is held in the member's own DM
- * Session: other members cannot read, search, mention, or cite it. Sharing
- * into General is a separate, previewed act.
+ * The researcher's private conversation with one member (ADR 0223, ADR 0229).
+ * It looks and types like General — the same identity, Markdown, and draft
+ * mechanics — but is held in the member's own DM Session: other members
+ * cannot read, search, mention, or cite it. Sharing into General is a
+ * separate, previewed act.
  */
 export function DmPane({
   api,
   connectionState,
   events,
   member,
-  onClose,
   onShared,
   projectId,
   research,
   t,
 }: DmPaneProps) {
+  const navigation = useContext(WorkspaceNavigationContext)
   const { reload, status, turns } = useDmTurns(
     api,
     projectId,
@@ -51,15 +62,16 @@ export function DmPane({
     events,
     connectionState,
   )
-  const [draft, setDraft] = useState('')
+  // The unsent private draft and its last attempt outlive the pane for the life of the page, never on disk.
+  const [draft, setDraft] = usePlaceState<PlainDraft>(`${placeKey.dm(projectId, member.id)}#draft`, EMPTY_DRAFT)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
-  const [shared, setShared] = useState(false)
-  // One id per typed message, kept until it is delivered, so a retry after a
-  // lost reply is the same message.
-  const attempt = useRef<{ id: string; text: string } | null>(null)
+  const [shared, setShared] = useState<ChannelMessage | null>(null)
   const log = useRef<HTMLDivElement>(null)
+  const you = researcherView(t)
+  const them = memberView(member, t)
+  const ready = member.state === 'active'
 
   // New turns, and the member's reply after a send, come into view.
   const newest = turns.at(-1)
@@ -70,21 +82,21 @@ export function DmPane({
   }, [turns.length, newestAssistant])
 
   const send = async () => {
-    const text = draft.trim()
-    if (!text || busy) return
-    const id = attempt.current?.text === text ? attempt.current.id : newClientMessageId()
-    attempt.current = { id, text }
+    const text = draft.body.trim()
+    if (!text || busy || !ready) return
+    // One id per typed message, kept until it is delivered, so a retry after a lost reply is the same message.
+    const id = draft.attempt?.signature === text ? draft.attempt.id : newClientMessageId()
+    setDraft((current) => ({ ...current, attempt: { id, signature: text } }))
     setBusy(true)
     setError(null)
     try {
       await api.sendMemberDm(projectId, member.id, text, id)
-      attempt.current = null
-      setDraft('')
-      setShared(false)
+      setDraft((current) => ({ body: current.body.trim() === text ? '' : current.body, attempt: null }))
+      setShared(null)
       reload()
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'dm_busy') {
-        setError(t('kubecode.dm.busy', { name: member.name }))
+        setError(t('kubecode.dm.busyKept', { name: member.name }))
       } else if (cause instanceof ApiError && cause.code === 'dm_failed') {
         setError(t('kubecode.dm.failed'))
       } else {
@@ -98,23 +110,38 @@ export function DmPane({
   return (
     <section aria-label={t('kubecode.dm.title', { name: member.name })} className="kubecode-channel-workspace">
       <div className="kubecode-channel-main">
-        <header className="kubecode-channel-header">
-          <div>
-            <Button size="xs" variant="ghost" onClick={onClose}>{t('kubecode.dm.back')}</Button>
-            <h2>{t('kubecode.dm.title', { name: member.name })}</h2>
-            <p className="kubecode-research-muted">{t('kubecode.dm.private', { name: member.name })}</p>
-          </div>
-          <Button
-            disabled={turns.length === 0}
-            size="xs"
-            variant="outline"
-            onClick={() => setSharing(true)}
-          >
-            <Share2 aria-hidden size={14} />
-            {t('kubecode.dm.share')}
-          </Button>
-        </header>
-        {shared && <p className="kubecode-research-muted" role="status">{t('kubecode.dm.shared')}</p>}
+        <ViewHeader
+          actions={(
+            <Button disabled={turns.length === 0} size="xs" variant="outline" onClick={() => setSharing(true)}>
+              <Icon role="command" source={WORKSPACE_COMMAND_ICONS.share.Icon} />
+              {t('kubecode.dm.share')}
+            </Button>
+          )}
+          className="kubecode-channel-header"
+          description={t('kubecode.dm.private', { name: member.name })}
+          icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.directMessage.Icon} />}
+          meta={(
+            <>
+              <Identity view={them} />
+              <StatusBadge tone="info">{t('kubecode.dm.privateBadge')}</StatusBadge>
+            </>
+          )}
+          title={t('kubecode.dm.title', { name: member.name })}
+        />
+        {shared && (
+          <p className="kubecode-research-muted" role="status">
+            {t('kubecode.dm.shared')}{' '}
+            {navigation && (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => navigation.openPlace({ view: 'general', message: shared.id }, { focus: `message:${shared.id}` })}
+              >
+                {t('kubecode.dm.showInGeneral')}
+              </Button>
+            )}
+          </p>
+        )}
         <div aria-label={t('kubecode.channel.messages')} className="kubecode-channel-messages" ref={log} role="log">
           {status === 'loading' && (
             <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
@@ -129,27 +156,61 @@ export function DmPane({
             <p className="kubecode-research-muted">{t('kubecode.dm.empty')}</p>
           )}
           {turns.map((turn) => (
-            <article className="kubecode-channel-message" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
-              <header><strong>{t('kubecode.channel.author.researcher')}</strong></header>
-              <p className="kubecode-channel-body">{turn.user}</p>
+            <article className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
+              <div className="kubecode-dm-side" data-side="researcher">
+                <Identity size="sm" view={you} />
+                <div className="kubecode-message-body"><MarkdownContent content={turn.user} images="text" /></div>
+              </div>
               {turn.assistant && (
-                <>
-                  <header><strong>{member.name}</strong></header>
-                  <p className="kubecode-channel-body">{turn.assistant}</p>
-                </>
+                <div className="kubecode-dm-side" data-side="member">
+                  <Identity size="sm" view={them} />
+                  <div className="kubecode-message-body"><MarkdownContent content={turn.assistant} images="text" /></div>
+                </div>
               )}
             </article>
           ))}
+          {newest && !newest.assistant && (
+            <p className="kubecode-research-muted" role="status">{t('kubecode.dm.waitingReply', { name: member.name })}</p>
+          )}
         </div>
         <Composer
-          below={error && <p className="kubecode-research-error" role="alert">{error}</p>}
+          below={(
+            <>
+              {ready
+                ? <p className="kubecode-composer-hint">{t('kubecode.dm.destination', { name: member.name })}</p>
+                : (
+                  <p className="kubecode-composer-warning" role="status">
+                    {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
+                    {navigation && (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
+                      >
+                        {t('kubecode.dm.fixInMembers')}
+                      </Button>
+                    )}
+                  </p>
+                )}
+              {error && (
+                <p className="kubecode-research-error" role="alert">
+                  {error}{' '}
+                  <Button disabled={busy} size="xs" variant="ghost" onClick={() => void send()}>
+                    {t('kubecode.vocab.command.retry')}
+                  </Button>
+                </p>
+              )}
+            </>
+          )}
           busy={busy}
           busyLabel={t('kubecode.dm.sending')}
+          disabled={!ready}
+          focusKey={`composer:dm:${member.id}`}
           label={t('kubecode.dm.placeholder', { name: member.name })}
           placeholder={t('kubecode.dm.placeholder', { name: member.name })}
           sendLabel={t('kubecode.channel.send')}
-          value={draft}
-          onChange={setDraft}
+          value={draft.body}
+          onChange={(body) => setDraft((current) => ({ ...current, body }))}
           onSend={send}
         />
       </div>
@@ -162,9 +223,9 @@ export function DmPane({
         t={t}
         turns={turns}
         onOpenChange={setSharing}
-        onShared={() => {
-          setShared(true)
-          onShared?.()
+        onShared={(message) => {
+          setShared(message)
+          onShared?.(message)
         }}
       />
     </section>

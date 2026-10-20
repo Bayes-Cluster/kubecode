@@ -318,25 +318,37 @@ A question whose round the researcher already started is admitted with
 
 Task lifecycle and read model (ADR 0230): every stage read filters
 `task_events` on one `STAGE_EVENT_KINDS` list, so the `archived`/`restored`
-events that `TaskStore::set_archived` logs never move a stage or the
-authorization watermark. `POST …/tasks/{id}/archive|restore` (204) and the
-research `archive|restore` routes share that rule: archiving is refused with
-`409 task_active` (`reason`: `under_review`, `work_active`) while a review is
-open or the Task's internal work is active, and the review check is repeated
-inside the archiving transaction (request_review checks the flag inside its
-own). An archived Task refuses admission, approval, execution, review requests
-and new internal work (`WorkStore::create`). `research/{id}/resolve|reopen`
-answer `409 task_owned` for an admitted Task; its research status is written
-only by the Task service. Every researcher re-pin names the looked-at
-`revision`. The read model adds `TaskCard.last_event`,
+events that `TaskStore::set_archived` logs never move a stage. The instruction
+watermark (`WATERMARK_EVENT_KINDS`) is the stage events plus `restored`, so
+nothing said before a Task was archived starts it after it is restored; a
+retried instruction whose execute record has no round yet is checked against
+the stage and watermark like a new one. `POST …/tasks/{id}/archive|restore`
+(204) and the research `archive|restore` routes share one rule: archiving is
+refused with `409 task_active` (`reason`: `under_review`, `work_active`) while
+a review is open or any of the question's internal work is active (in any
+stage), both checked inside the archiving transaction (request_review checks
+the flag inside its own). An archived Task refuses admission, approval,
+execution, review requests and new internal work (`WorkStore::create`).
+`research/{id}/resolve|reopen` answer `409 task_owned` for an admitted Task;
+its research status is written only by the Task service, in the same
+transaction as the review or start of execution that implies it. Every
+researcher re-pin of a Task's evidence names the looked-at `revision` — on
+`…/tasks/{id}/repin` and on the work board's `repin` command for a Task's
+internal work (`400` without it, `409 work_evidence_stale` when it moved on) —
+and the coordinator's `work_repin` refuses a Task's evidence, leaving it
+flagged. A research detail carries `task_stage` (null unless admitted) and a
+work card's `research` carries `task`. The read model adds `TaskCard.last_event`,
 `Draft.shown_message_id`, `TaskBoard.archived`, and on the detail `archived`,
 `evidence` (one row per cited `kind:id` with every pin, status and title, at
 most 64, titled through `Evidence::describe`/`ProjectContext::item`),
 `timeline` (events, approvals and brief revisions with the General message
-that carried each, at most 100), `pending` (keys `review:`, `question:`,
-`brief:`, `evidence:`), `actions`, `general_message_id` on review requests and
+that carried each, at most 100), `pending` (keys `review:`, `question:` — open
+work only, as the card counts —, `suggestion:` for a suggested change of
+direction not yet decided, `brief:`, `evidence:`), `actions`,
+`authorizing_message.task_id`, `general_message_id` on review requests and
 verdicts (also on the `POST …/review` response), and `internal_work`
-`conversation_id`/`updated_at`. Message ids come from batched, read-only
+`conversation_id`/`updated_at`. The archived list is cut to the newest 50
+before stages and outcomes are read. Message ids come from batched, read-only
 `ChannelStore` lookups (`messages_by_client_ids`, `proposal_messages`,
 `messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
 deprecated. `ResolvedRef` carries the record's `title`.
@@ -366,30 +378,96 @@ per retry or reroute and a note already written never aborts a pass. The DM
 send reports `admission`, `…/dm/pending` lists queued direct messages, and the
 Task detail adds `execution` (the round's pause policy) and `delivery_issues`.
 
-Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
+Task board and details (ADRs 0225, 0230): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
-and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
-is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
-`ResearchWorkspace` in the detail pane and decides reviews through
-`POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
-chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
-`tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
-and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
-member through that Session's own MCP endpoint. The service-level counterpart is
-`server/tests/workspace_blueprint_acceptance.rs`.
+and `orchestration_updated` events and after a reconnect. The pure
+`tasks/taskLifecycle.ts` (next step, required action, condition tone, default
+section, progress, the board's first stage) and `tasks/taskReview.ts` (whether a
+changed record may be accepted at the displayed version, what blocks an
+acceptance, which pins move) are the rules every Task surface shares.
+`tasks/TaskBoardView.tsx` is the Kanban entry: proposals above the four stages,
+archived Tasks below, single-button cards (`TaskCardView`, `TaskStatusBadges`),
+a Needs-you filter, and — under a 640px container query — one stage at a time
+that follows the Task inspected last; its stage, filter and scroll are place
+memory. `tasks/TaskPanel.tsx` is the Task entry of the inspector stack: one
+header with the Task's badges, Discuss in General and More actions (archive or
+restore through `POST …/archive|restore`, refusals shown with their reason), a
+next-step line, and Overview (`TaskOverview`, `TaskQuestions`), Results
+(`TaskResults`) and Activity (`TaskActivity`) tabs; it reads the research
+bundle only when a section needs it, and its tab, feedback, outcome and answer
+drafts are kept under `placeKey.task`. `work/EvidencePanel.tsx` shows a cited
+record with `work/EvidenceViewer.tsx`, which reports a display (`onDisplayed`,
+with the read's own revision) only after the cited record itself rendered —
+never while loading, on a failure, for a removed record, a related record
+(handed to the stack as a `resource` entry through `onFollow`) or a failed
+"Load more" — and the panel records it in the stack's `InspectionRecord`.
+`TaskResults` enables "Accept the version you saw" only while that revision is
+the current one, re-pins every pin of the record at it through `…/repin`,
+reloads the Task once when the displayed version is newer than the list (a pin
+that fails after an earlier one moved says only part was accepted), and
+decides through `POST …/review`, holding the other decision while one is
+recorded; its status links to the verdict in General, or says the decision was
+recorded but could not be posted when no verdict message is known.
+Going to General from a Task (`tasks/taskNavigation.ts`) keeps the Task beside
+General and replaces it over a narrow view. A legacy question that is a Task
+(its research detail's `task_stage`) shows its stage and links to it, without
+resolve/reopen/archive (`ResearchWorkspace` `onOpenTask`), and a refused
+research command is shown in the catalog's words. The work inspector sends a
+Task's changed evidence to the Task's Results instead of offering its re-pin. `MessageItem`
+renders proposal messages and Task chips. The browser acceptance
+(`tests/smoke/research-workspace.spec.ts`, `tests/smoke/task-review.spec.ts`)
+uses `tests/smoke/agents.ts`: the fixture provider records each Session's MCP
+servers and prompts under `.local/playwright-fixtures-<port>`, and the test acts
+as a member through that Session's own MCP endpoint. The service-level
+counterpart is `server/tests/workspace_blueprint_acceptance.rs`.
 
-Workspace shell (ADR 0224): `app/WorkbenchShell.tsx` keeps one `ViewState`
-(research, channel, work, dm, resources, members) beside the selected Session,
-derives the current `WorkspaceRoute` from it, and `useWorkspaceRouteSync`
-mirrors the route into the URL hash (`app/workspaceRoute.ts` parses strictly and
-formats ids and view names only). `app/WorkspaceNav.tsx` is the Workspace
-navigation (General, Kanban, Resources, Members, Needs you, roster) fed by
-`tasks/useTaskBoard.ts` (`GET …/tasks/board` and `…/drafts`) and `useMembers`;
-Threads and questions sit under a History disclosure. The detail area is a
-slot (`ChannelWorkspace detail`, `.kubecode-with-detail`) that shows a Task's
-research workspace or a `MemberProfile`; `ResourcesView` reuses the project
-context reader in a browsing mode. A route can name a message, read by id
+Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
+Project; where the researcher is in each Workspace is a location kept by the
+pure reducer in `app/location/workspaceLocation.ts` (a place — General with an
+optional message, Task filter and Thread, Kanban, Resources, Members, a private
+conversation, execution history with its Session, or a legacy question — plus an
+inspector stack of ids), remembered per Workspace and per view and stored by
+`useWorkspaceLocation` in `kubecode:workspace-location:v1` as formatted routes
+that the strict parser validates on read. A Workspace with no remembered place
+opens General; nothing falls back to the Sessions surface, which opens only
+through `openSession` (a Session row or search result, New session, a Session
+reference, a permission entry, a notification, or a link). Startup picks a
+link's Project, then the last one used, then the first (`pickInitialWorkspace`).
+`app/location/locationRoute.ts` maps locations to `WorkspaceRoute`s and back;
+`app/workspaceRoute.ts` parses strictly and formats ids and view names only,
+with deeper inspector entries as repeated `inspect=` tokens and file evidence
+never written. `useWorkspaceRouteSync` mirrors the route into the URL hash,
+reports a link still being reached as `pending` (the main pane shows "Opening
+Workspace…", never a Session), abandons a link to an unknown Project at once,
+and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
+the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you from
+`location/needsYou.ts`, Members, then the roster and Direct messages under
+their own headings), then a collapsed History and execution section with the
+Session search across all Workspaces, this Workspace's Sessions and Teams,
+Threads and questions. Reference chips in General and rows in Resources open
+through the shell's one `openReference` (`location/references.ts`): a Task or a
+record in the inspector of the view they were chosen in, a Thread in General
+with nothing over it, a work item on Kanban with its Task, and a Session as
+execution history. The inspector (`app/inspector/`) is one stack per
+inspector-hosting view (General, Kanban, Resources, Members, a private
+conversation): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
+(`tasks/TaskPanel.tsx`, `members/MemberPanel.tsx`, `work/EvidencePanel.tsx`,
+`resources/ResourcePanel.tsx`) with the Back and Close the shell computes, keeps
+lower entries mounted under `visibility: hidden` and `inert`, and is shown beside
+the view or over it by the width of the row (`useInspectorPresentation`, a
+container rule; the navigation overlay keeps its 980px viewport rule). Slices
+move the researcher through `location/WorkspaceNavigation.ts` and never import
+the shell. `location/placeMemory.ts` keeps what a place holds besides its address
+for the life of the page and never on disk: drafts and reply targets
+(`usePlaceState`, `usePlaceRef`, keyed by `placeKey`), list scroll positions
+(`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
+General's reading position is reported by `MessageList` and folded into its
+place when General is left, and written onto General's own history entry before
+the next place is pushed, so Back lands on it. `ResourcesView` reuses the
+project context reader in a browsing mode whose search, kind filter and preview
+are place memory too. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 
@@ -439,6 +517,40 @@ replied-to message fenced. `general_recent` reports `reply_to` and `to` (named
 members' handles through public Sessions only). The `ask`/`request` intents and
 Thread routes stay accepted for older pages.
 
+In the browser, `WorkbenchShell` reads the roster with removed members
+(`useMembers(…, { includeRemoved: true })`) into one `MemberDirectory`
+(`members/memberDirectory.ts`: by id, by current public Session for messages
+read without the projection, the live members with the manager first) and
+provides it through `MemberDirectoryContext`; views name people with
+`members/memberIdentity.ts` (`memberView`, `authorView`, `messageRecipients`,
+never "Agent") drawn by `members/Identity.tsx`, whose live-member name opens the
+profile through `useWorkspaceNavigation().inspect`. General's rules are pure
+modules under `channel/`: `generalDraft.ts` (one `GeneralDraft` of text, reply,
+Task, references, last attempt, and last failure; recipients read from the
+text outside quotes and code, removed members included, and unknown until the
+directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{member_id}` mentions and the
+Task as the first research reference), `timeline.ts` (days, author groups,
+collapsed routine notes, denial notes attached to their message or shown on
+their own, never collapsed),
+`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
+`MessageItem` also draws queued and delivered as quiet text), and
+`mentionOptions.ts`; `references/referenceLabels.ts` names references by title
+(`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
+place memory under `placeKey.general(p, filter) + '#draft'`, keys its
+composer by that place, and has no message types, Thread starts, or hidden
+references; `MessageComposer` is controlled by that draft (its failure and
+Try again included) and shows the To row (`components/workspace/RecipientRow`), the
+Task and reference chips, and why Send is blocked; `MessageList` renders the
+timeline through `MessageItem` (Markdown with inert images, Reply and
+`MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
+`ThreadPane` is read-only with "Reply in General" (only its Task link
+changes). Dates and times use the app locale's date locale
+(`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
+inline `$…$` as math only under remark-math's rules and never in code, and
+`renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+share as General will show it before posting.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
@@ -446,8 +558,9 @@ semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
 (arrow send; a stop that names its target), and `Composer` (text, `@mention`
 combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
 the line, nothing is sent while an input method composes). It knows nothing of
-channels or Tasks: `channel/MessageComposer` supplies the mention options and
-the intent and reference controls, and General and direct messages both use it.
+channels or Tasks: `channel/MessageComposer` supplies the members to mention,
+the recipients, and the reference controls, and General and direct messages
+both use it.
 The session composer shares the send and stop buttons.
 
 Workspace visual vocabulary (ADR 0227): `src/kubecode/icons/workspaceIcons.ts`

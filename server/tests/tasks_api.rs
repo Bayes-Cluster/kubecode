@@ -953,6 +953,78 @@ async fn a_work_evidence_repin_must_name_the_version_looked_at() {
     let _ = task.round;
 }
 
+/// Task evidence is accepted only at a version the researcher displayed: the
+/// work board's re-pin of a Task's internal work names it too, and the
+/// coordinator cannot re-pin it to make acceptance possible (ADR 0230 §4).
+#[tokio::test]
+async fn task_evidence_is_re_pinned_only_by_the_researcher_at_the_version_looked_at() {
+    let env = env();
+    let task = reviewing(&env).await;
+    std::fs::write(task.root.join("notes.md"), "pruning helps after all").unwrap();
+    let current = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    let commands = format!("/projects/{}/work/{}/commands", env.project, task.work_id);
+    let state = |env: &Env| {
+        env.state
+            .work
+            .get(&env.project, &task.work_id)
+            .unwrap()
+            .state_revision
+    };
+    // The work board's command names no version: refused for a Task's work.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let pinned = |env: &Env| {
+        env.state
+            .work
+            .results(&env.project, &task.work_id)
+            .unwrap()
+            .into_iter()
+            .find(|result| result.id == task.result_id)
+            .unwrap()
+            .revision
+    };
+    assert_ne!(pinned(&env).as_deref(), Some(current.as_str()));
+    // A version that is not the current one is refused as stale.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "revision": "an-older-one", "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "work_evidence_stale");
+    // The coordinator cannot re-pin a Task's evidence at all.
+    let refused = env
+        .agent(&env.general)
+        .repin(&task.work_id, &task.result_id);
+    let Err(AgentWorkError::Invalid(reason)) = refused else {
+        panic!("expected a refusal, got {refused:?}");
+    };
+    assert!(reason.contains("researcher"), "{reason}");
+    assert_ne!(pinned(&env).as_deref(), Some(current.as_str()));
+    // The version the researcher looked at, when current, is accepted.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "revision": current, "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(pinned(&env).as_deref(), Some(current.as_str()));
+}
+
 #[tokio::test]
 async fn archiving_is_separate_from_accepting() {
     let env = env();
@@ -1373,5 +1445,155 @@ async fn stopping_a_members_turn_leaves_its_assigned_work_open() {
             AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
         ),
         "{attempt:?}"
+    );
+}
+
+/// The question view decides from the research record itself whether a
+/// question is a Task, whatever the board lists (ADR 0230 §3).
+#[tokio::test]
+async fn a_research_record_says_whether_it_is_a_task_and_in_which_stage() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let draft = env
+        .agent(&env.general)
+        .task_propose(brief("Quantize"), Some("quant"))
+        .unwrap();
+    let read = |id: &str| format!("/projects/{}/research/{id}", env.project);
+    let (status, body) = call(&env, Method::GET, &read(&task.research_id), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["task_stage"], "review", "{body}");
+    let (_, body) = call(&env, Method::GET, &read(&draft.research_id), Value::Null).await;
+    assert_eq!(body["task_stage"], Value::Null, "{body}");
+}
+
+/// The work board knows a Task's internal work, so it sends the researcher
+/// to the Task's Results to accept changed evidence (ADR 0230 §4).
+#[tokio::test]
+async fn a_work_card_says_its_question_is_a_task() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let (status, card) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/work/{}", env.project, task.work_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{card}");
+    assert_eq!(card["research"]["task"], true, "{card}");
+}
+
+/// "Show the message" narrows General to the Task only when the authorizing
+/// message is in the Task's scope.
+#[tokio::test]
+async fn the_authorizing_message_says_whether_it_is_in_the_tasks_scope() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let detail = |id: String| {
+        let env = &env;
+        async move {
+            let (status, body) = call(
+                env,
+                Method::GET,
+                &format!("/projects/{}/tasks/{id}", env.project),
+                Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            body
+        }
+    };
+    let body = detail(task.research_id.clone()).await;
+    assert_eq!(
+        body["authorizing_message"]["task_id"],
+        Value::Null,
+        "{body}"
+    );
+    // An instruction that names the Task is in its scope.
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Quantize"), Some("quant"))
+        .unwrap();
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let (status, message) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/channels/{}/messages", env.project, channel.id),
+        json!({
+            "body": "Add this one to the board",
+            "references": [{"kind": "research", "id": proposal.research_id}],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{message}");
+    manager
+        .task_admit(
+            &proposal.research_id,
+            message["id"].as_str().unwrap(),
+            proposal.revision,
+        )
+        .unwrap();
+    let body = detail(proposal.research_id.clone()).await;
+    assert_eq!(
+        body["authorizing_message"]["task_id"],
+        json!(proposal.research_id),
+        "{body}"
+    );
+}
+
+/// A suggested change of direction waits on the researcher like any other
+/// decision, under a stable key, until it is decided.
+#[tokio::test]
+async fn a_suggested_change_of_direction_is_pending() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let published = env
+        .state
+        .research
+        .publish(
+            &env.project,
+            &task.research_id,
+            kubecode_server::research_store::NewPublication {
+                key: "suggest-1".into(),
+                author_kind: kubecode_server::research_store::AuthorKind::Agent,
+                author_ref: None,
+                producer: Default::default(),
+                round_id: None,
+                findings: Vec::new(),
+                proposals: vec!["Relax the single-GPU constraint".into()],
+            },
+        )
+        .unwrap();
+    let entry = published.proposals[0].id.clone();
+    let path = format!("/projects/{}/tasks/{}", env.project, task.research_id);
+    let (_, body) = call(&env, Method::GET, &path, Value::Null).await;
+    let keys: Vec<&str> = body["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pending| pending["key"].as_str().unwrap())
+        .collect();
+    assert!(
+        keys.contains(&format!("suggestion:{entry}").as_str()),
+        "{body}"
+    );
+    env.state
+        .research
+        .review_proposal(
+            &env.project,
+            &task.research_id,
+            &entry,
+            kubecode_server::research_store::ReviewDecision::Rejected,
+            None,
+        )
+        .unwrap();
+    let (_, body) = call(&env, Method::GET, &path, Value::Null).await;
+    assert!(
+        body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|pending| pending["kind"] != "suggestion"),
+        "{body}"
     );
 }

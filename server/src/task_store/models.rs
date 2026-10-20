@@ -174,7 +174,7 @@ pub struct TaskActivity {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingDecision {
     pub key: String,
-    /// `review`, `question`, `brief_approval`, or `evidence_changed`.
+    /// `review`, `question`, `suggestion`, `brief_approval`, or `evidence_changed`.
     pub kind: &'static str,
     pub ref_id: String,
     pub since: String,

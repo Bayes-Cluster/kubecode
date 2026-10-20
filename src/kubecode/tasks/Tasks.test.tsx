@@ -1,275 +1,239 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { KubecodeApi, TaskBoard, TaskCard, TaskDetail, TaskDraft } from '../api'
-import { ApiError } from '../api'
-import { TaskBoardView } from './TaskBoardView'
-import { TaskInspector } from './TaskInspector'
+import { createTranslator } from '@/lib/i18n'
 
-const t = ((key: string, values?: Record<string, string | number>) => (
-  values ? `${key}:${JSON.stringify(values)}` : key
-)) as never
+import type { TaskBoard, TaskCard, TaskDraft } from '../api'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { nextFrame, stubScrollGeometry } from '@/test/scrollGeometry'
+import { taskBoard, taskCard } from './taskFixtures'
+import { TaskBoardView, type TaskBoardViewProps } from './TaskBoardView'
 
-const card = (overrides: Partial<TaskCard>): TaskCard => ({
-  id: 'r1', project_id: 'p1', title: 'Pruning', question: '?', stage: 'ready', condition: 'none',
-  condition_reason: null, revision: 1, approved_revision: 1, admitted_at: '', origin: 'conversation',
-  authorizing_message_id: 'm1',
-  participants: [
-    { member_id: 'g', name: 'General', handle: 'general', role: 'general' },
-    { member_id: 'a', name: 'Analyst', handle: 'analyst', role: 'specialist' },
-  ],
-  open_questions: 0, review_requested: false, updated_at: '', ...overrides,
+const t = createTranslator('en')
+
+const card = (overrides: Partial<TaskCard>): TaskCard => taskCard({ title: 'Pruning', ...overrides })
+
+const board = (cards: TaskCard[], archived: TaskBoard['archived'] = []): TaskBoard => taskBoard(cards, archived)
+
+function view(props: Partial<TaskBoardViewProps> = {}) {
+  const handlers = { onOpenTask: vi.fn(), onOpenGeneral: vi.fn(), onReload: vi.fn() }
+  const rendered = render(
+    <TaskBoardView board={null} drafts={[]} status="ready" t={t} {...handlers} {...props} />,
+  )
+  return { ...rendered, ...handlers }
+}
+
+const draft = (overrides: Partial<TaskDraft> = {}): TaskDraft => ({
+  id: 'd1', project_id: 'p1', title: 'Quantize', question: '?', revision: 2, proposed_by: 'agent', updated_at: '', ...overrides,
 })
-
-const board = (cards: TaskCard[]): TaskBoard => ({ cards, stages: [], total: cards.length })
 
 describe('TaskBoardView', () => {
-  it('shows only the four stages, conditions on cards (never columns), and who manages and who executes', () => {
-    const onOpenTask = vi.fn()
-    render(
-      <TaskBoardView
-        board={board([
-          card({ id: 'r1', title: 'Ready one' }),
-          card({ id: 'r2', title: 'Running', stage: 'in_progress', condition: 'blocked', condition_reason: 'needs GPU' }),
-          card({ id: 'r3', title: 'Awaiting', stage: 'review', review_requested: true, revision: 3, approved_revision: 2 }),
-          card({ id: 'r4', title: 'Finished', stage: 'done' }),
-        ])}
-        drafts={[]}
-        status="ready"
-        t={t}
-        onClose={vi.fn()}
-        onOpenDraft={vi.fn()}
-        onOpenTask={onOpenTask}
-        onReload={vi.fn()}
-      />,
-    )
+  it('shows one lifecycle: four stages, with conditions, the action asked of you and progress on the cards', () => {
+    const { onOpenTask } = view({
+      board: board([
+        card({ id: 'r1', title: 'Ready one' }),
+        card({
+          id: 'r2', title: 'Running', stage: 'in_progress', condition: 'blocked', condition_reason: 'needs GPU',
+          work: { total: 2, active: 1, in_review: 0, done: 1, needs_input: 0, blocked: 1 },
+          last_event: { seq: 2, kind: 'execution_authorized', ref_id: null, created_at: '2026-10-20 09:30:00' },
+        }),
+        card({ id: 'r3', title: 'Awaiting', stage: 'review', review_requested: true, revision: 3, approved_revision: 2 }),
+        card({ id: 'r4', title: 'Finished', stage: 'done', outcome: 'refuted' }),
+        card({ id: 'r5', title: 'Asking', stage: 'in_progress', open_questions: 1 }),
+      ]),
+    })
+    expect(screen.getByRole('heading', { name: 'Kanban', level: 2 })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^back/i })).not.toBeInTheDocument()
     const columns = screen.getAllByRole('region').filter((region) => region.hasAttribute('data-stage'))
     expect(columns.map((column) => column.getAttribute('data-stage'))).toEqual(['ready', 'in_progress', 'review', 'done'])
-    const running = within(screen.getByRole('region', { name: 'kubecode.task.stage.in_progress' }))
-    expect(running.getByText('Running')).toBeInTheDocument()
-    expect(running.getByText('kubecode.work.condition.blocked')).toHaveAttribute('title', 'needs GPU')
-    const review = within(screen.getByRole('region', { name: 'kubecode.task.stage.review' }))
-    expect(review.getByText('kubecode.task.awaitingYou')).toBeInTheDocument()
-    expect(review.getByText('kubecode.task.briefChanged')).toBeInTheDocument()
-    expect(screen.getAllByText(/kubecode\.task\.manager: @general/).length).toBeGreaterThan(0)
+    const running = within(screen.getByRole('region', { name: 'In progress' }))
+    expect(running.getByText('Blocked')).toBeInTheDocument()
+    // Why, in words on the card itself (reachable on touch), in the app's language.
+    expect(running.getByText('All of its active work is blocked.')).toBeVisible()
+    expect(running.queryByText('needs GPU')).not.toBeInTheDocument()
+    expect(running.getByText('1 of 2 work items done')).toBeInTheDocument()
+    expect(running.getByText(/^Work started · /)).toBeInTheDocument()
+    expect(running.getAllByText('Analyst').length).toBeGreaterThan(0)
+    expect(running.getByText('Question for you')).toBeInTheDocument()
+    const review = within(screen.getByRole('region', { name: 'Review' }))
+    expect(review.getByText('Review results')).toBeInTheDocument()
+    expect(review.getByText('Brief changed')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Done' })).getByText('Valid negative result')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Ready' })).getByText('No work yet')).toBeInTheDocument()
+    expect(screen.queryByText(/Project manager/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('task-card-r4'))
-    expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'r4' }))
+    expect(onOpenTask).toHaveBeenCalledWith('r4')
   })
 
-  it('lists proposals apart from the board, loads, retries, and has no way to admit anything', () => {
-    const drafts: TaskDraft[] = [{
-      id: 'd1', project_id: 'p1', title: 'Quantize', question: '?', revision: 2, proposed_by: 'agent', updated_at: '',
-    }]
-    const onOpenDraft = vi.fn()
-    const onReload = vi.fn()
-    render(
-      <TaskBoardView
-        board={null}
-        drafts={drafts}
-        status="error"
-        t={t}
-        onClose={vi.fn()}
-        onOpenDraft={onOpenDraft}
-        onOpenTask={vi.fn()}
-        onReload={onReload}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.retry' }))
+  it('has no drag and no control that moves, admits or starts a Task: a card is one button', () => {
+    const { container } = view({
+      board: board([card({ id: 'r1' }), card({ id: 'r2', stage: 'review', review_requested: true })]),
+      drafts: [draft()],
+    })
+    expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(0)
+    for (const button of screen.getAllByTestId(/^task-card-/)) {
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.querySelectorAll('button, a, input, select, textarea, [tabindex]')).toHaveLength(0)
+    }
+    expect(screen.queryByRole('button', { name: /add to|admit|approve|confirm|start|move/i })).not.toBeInTheDocument()
+  })
+
+  it('lists proposals above the stages, apart from them, and opens one', () => {
+    const { onOpenTask } = view({ board: board([card({ id: 'r1' })]), drafts: [draft()] })
+    const drafts = screen.getByText('Proposals not on the board (1)').closest('details') as HTMLElement
+    const firstColumn = screen.getByRole('region', { name: 'Ready' })
+    expect(drafts.compareDocumentPosition(firstColumn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(drafts.closest('[data-stage]')).toBeNull()
+    expect(drafts).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Proposals not on the board (1)'))
+    fireEvent.click(within(drafts).getByRole('button', { name: /Quantize/ }))
+    expect(onOpenTask).toHaveBeenCalledWith('d1')
+  })
+
+  it('opens the proposals when nothing is on the board yet', () => {
+    view({ board: board([]), drafts: [draft()] })
+    expect(screen.getByText('Proposals not on the board (1)').closest('details')).toHaveAttribute('open')
+  })
+
+  it('shows one stage at a time on a narrow board, following the Task being inspected until another stage is picked', () => {
+    const cards = [card({ id: 'r1', stage: 'in_progress' }), card({ id: 'r2', stage: 'review', review_requested: true })]
+    const rendered = view({ board: board(cards) })
+    const stages = within(screen.getByRole('group', { name: 'Stage' }))
+    const selected = () => screen.getAllByRole('region')
+      .filter((region) => region.getAttribute('data-selected') === 'true')
+      .map((region) => region.getAttribute('data-stage'))
+    expect(selected()).toEqual(['review'])
+    expect(stages.getByRole('button', { name: 'Review · 1' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(stages.getByRole('button', { name: 'Ready · 0' }))
+    expect(selected()).toEqual(['ready'])
+    expect(within(screen.getByRole('region', { name: 'Ready' })).getByText('Nothing here.')).toBeInTheDocument()
+    rendered.rerender(<TaskBoardView board={board(cards)} drafts={[]} selectedId="r1" status="ready" t={t} onOpenGeneral={vi.fn()} onOpenTask={vi.fn()} onReload={vi.fn()} />)
+    expect(selected()).toEqual(['in_progress'])
+    // The inspected Task moves to Review: the stage follows it.
+    const moved = [card({ id: 'r1', stage: 'review', review_requested: true }), cards[1]]
+    rendered.rerender(<TaskBoardView board={board(moved)} drafts={[]} selectedId="r1" status="ready" t={t} onOpenGeneral={vi.fn()} onOpenTask={vi.fn()} onReload={vi.fn()} />)
+    expect(selected()).toEqual(['review'])
+    fireEvent.click(stages.getByRole('button', { name: 'In progress · 0' }))
+    expect(selected()).toEqual(['in_progress'])
+    expect(screen.getByTestId('task-card-r1')).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('returns focus to the card of the Task that was closed when nothing else holds it', () => {
+    const cards = [card({ id: 'r1', stage: 'done' })]
+    const props = { board: board(cards), drafts: [], status: 'ready' as const, t, onOpenGeneral: vi.fn(), onOpenTask: vi.fn(), onReload: vi.fn() }
+    const rendered = render(<TaskBoardView {...props} selectedId="r1" />)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    rendered.rerender(<TaskBoardView {...props} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+  })
+
+  it('keeps focus on a closed Task\'s card, and shows its stage, when the board learns it moved column after the close', () => {
+    const props = { drafts: [], status: 'ready' as const, t, onOpenGeneral: vi.fn(), onOpenTask: vi.fn(), onReload: vi.fn() }
+    const before = board([card({ id: 'r1', stage: 'review', review_requested: true }), card({ id: 'r2', stage: 'ready' })])
+    const rendered = render(<TaskBoardView {...props} board={before} selectedId="r1" />)
+    screen.getByTestId('task-card-r1').focus()
+    rendered.rerender(<TaskBoardView {...props} board={before} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+    const after = board([card({ id: 'r1', stage: 'in_progress' }), card({ id: 'r2', stage: 'ready' })])
+    rendered.rerender(<TaskBoardView {...props} board={after} selectedId={null} />)
+    expect(screen.getByRole('region', { name: 'In progress' })).toHaveAttribute('data-selected', 'true')
+    expect(screen.getByTestId('task-card-r1')).toHaveFocus()
+    // Once the researcher moves on, the board leaves focus alone.
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    screen.getByTestId('task-card-r2').focus()
+    rendered.rerender(<TaskBoardView {...props} board={board([card({ id: 'r1', stage: 'review' }), card({ id: 'r2', stage: 'ready' })])} selectedId={null} />)
+    expect(screen.getByTestId('task-card-r2')).toHaveFocus()
+  })
+
+  it('narrows to what needs the researcher, keeping counts of what is shown', () => {
+    view({ board: board([
+      card({ id: 'r1', title: 'Quiet' }),
+      card({ id: 'r2', title: 'Awaiting', stage: 'review', review_requested: true }),
+    ]) })
+    fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
+    expect(screen.queryByText('Quiet')).not.toBeInTheDocument()
+    expect(screen.getByText('Awaiting')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Stage' })).getByRole('button', { name: 'Ready · 0' })).toBeInTheDocument()
+  })
+
+  it('says once that nothing needs the researcher, instead of four empty columns', () => {
+    view({ board: board([card({ id: 'r1', title: 'Quiet' }), card({ id: 'r2', title: 'Busy', stage: 'in_progress' })]) })
+    fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
+    expect(screen.getByText('Nothing on the board needs you right now.')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing here.')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('region').filter((region) => region.hasAttribute('data-stage'))).toHaveLength(0)
+    fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
+    expect(screen.getByText('Quiet')).toBeInTheDocument()
+  })
+
+  it('says how a Task gets here when there is none, and goes to General', () => {
+    const { onOpenGeneral } = view({ board: board([]) })
+    expect(screen.getByText(/No Tasks yet/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Go to General' }))
+    expect(onOpenGeneral).toHaveBeenCalled()
+  })
+
+  it('lists archived Tasks apart, and opens one to restore it', () => {
+    const { onOpenTask } = view({ board: board([card({ id: 'r1' })], [
+      { id: 'r9', title: 'Old sweep', stage: 'done', outcome: 'supported', updated_at: '' },
+      { id: 'd9', title: 'Old idea', stage: null, outcome: null, updated_at: '' },
+    ]) })
+    const archived = screen.getByText('Archived (2)').closest('details') as HTMLElement
+    expect(archived.closest('[data-stage]')).toBeNull()
+    fireEvent.click(screen.getByText('Archived (2)'))
+    expect(within(archived).getByRole('button', { name: /Old idea.*Proposal/ })).toBeInTheDocument()
+    fireEvent.click(within(archived).getByRole('button', { name: /Old sweep.*Done.*Supports the hypothesis/ }))
+    expect(onOpenTask).toHaveBeenCalledWith('r9')
+  })
+
+  it('loads, and retries a board that failed', () => {
+    const loading = view({ status: 'loading' })
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Tasks…')
+    loading.unmount()
+    const { onReload } = view({ status: 'error' })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onReload).toHaveBeenCalled()
-    fireEvent.click(screen.getByText('kubecode.task.proposals:{"count":1}'))
-    fireEvent.click(screen.getByRole('button', { name: /Quantize/ }))
-    expect(onOpenDraft).toHaveBeenCalledWith(expect.objectContaining({ id: 'd1' }))
-    expect(screen.queryByRole('button', { name: /add|admit|confirm/i })).not.toBeInTheDocument()
   })
 })
 
-function detail(overrides: Partial<TaskDetail> = {}): TaskDetail {
-  return {
-    ...card({ stage: 'review', review_requested: true }),
-    brief: { title: 'Pruning', question: '?', motivation: '', hypotheses: [], constraints: [], evaluation_criteria: [] },
-    revisions: [], authorizing_message: { id: 'm1', body: 'please add it', created_at: '' },
-    review_requests: [{
-      id: 'rq1', research_id: 'r1', summary: 'Accuracy held at 0.91', evidence: ['artifact:results.csv'],
-      requested_by: 's', brief_revision: 1, state: 'open', created_at: '', resolved_at: null,
-    }],
-    reviews: [], internal_work: [], open_questions: [], stale_evidence: [], ...overrides,
-  } as TaskDetail
-}
-
-function inspector(value: TaskDetail | null, overrides: Record<string, unknown> = {}) {
-  const api = {
-    taskDetail: vi.fn().mockResolvedValue(value),
-    reviewTask: vi.fn().mockResolvedValue({}),
-    repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
-    answerWorkDecision: vi.fn().mockResolvedValue(undefined),
-    readProjectContext: vi.fn().mockRejectedValue(new Error('not needed')),
-    ...overrides,
-  } as unknown as KubecodeApi
-  if (value === null) {
-    (api.taskDetail as ReturnType<typeof vi.fn>).mockRejectedValue(new ApiError('task_not_found', 'x', 404))
-  }
-  const onShowMessage = vi.fn()
-  render(
-    <TaskInspector api={api} connectionState="live" events={[]} projectId="p1" t={t} taskId="r1" onShowMessage={onShowMessage} />,
+describe('TaskBoardView keeps its place (ADR 0228 §4)', () => {
+  const boardIn = (memory: PlaceMemory, cards: TaskCard[] | null) => (
+    <PlaceMemoryProvider memory={memory}>
+      <TaskBoardView
+        board={cards ? board(cards) : null}
+        drafts={[]}
+        scrollKey="p1|view:board"
+        status={cards ? 'ready' : 'loading'}
+        t={t}
+        onOpenGeneral={vi.fn()}
+        onOpenTask={vi.fn()}
+        onReload={vi.fn()}
+      />
+    </PlaceMemoryProvider>
   )
-  return { api, onShowMessage }
-}
 
-describe('TaskInspector', () => {
-  it('says a proposal is not on the board and where to put it there', async () => {
-    inspector(null)
-    expect(await screen.findByText('kubecode.task.notOnBoard')).toBeInTheDocument()
-  })
+  it('returns to where the board was scrolled once its cards are back, and names each card for focus return', async () => {
+    const restore = stubScrollGeometry()
+    try {
+      const memory = createPlaceMemory()
+      const cards = [card({ id: 'r1' }), card({ id: 'r2', title: 'Second' })]
+      const view = render(boardIn(memory, cards))
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-focus-key', 'card:r2')
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-scroll-anchor', 'card:r2')
+      const scroller = screen.getByRole('region', { name: 'Kanban' })
+      scroller.scrollTop = 130
+      fireEvent.scroll(scroller)
+      await act(nextFrame)
 
-  it('shows the authorization, a stale approval, and who works on it', async () => {
-    const { onShowMessage } = inspector(detail({ revision: 3, approved_revision: 2 }))
-    expect(await screen.findByText('please add it')).toBeInTheDocument()
-    expect(screen.getByText('kubecode.task.staleApproval:{"approved":2}')).toBeInTheDocument()
-    expect(screen.getByText('kubecode.task.revisions:{"revision":3,"approved":2}')).toBeInTheDocument()
-    expect(screen.getByText('kubecode.task.manager')).toBeInTheDocument()
-    expect(screen.getByText('kubecode.task.specialist')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.showMessage' }))
-    expect(onShowMessage).toHaveBeenCalledWith('m1')
-  })
-
-  it('accepts a negative finding with its outcome, and sending back needs a reason', async () => {
-    const { api } = inspector(detail())
-    await screen.findByText('Accuracy held at 0.91')
-    const accept = screen.getByRole('button', { name: 'kubecode.task.acceptResults' })
-    const sendBack = screen.getByRole('button', { name: 'kubecode.task.sendBack' })
-    expect(accept).toBeDisabled()
-    expect(sendBack).toBeDisabled()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'refuted' } })
-    expect(accept).toBeEnabled()
-    fireEvent.change(screen.getByLabelText('kubecode.task.reason'), { target: { value: 'pruning hurts accuracy' } })
-    fireEvent.click(accept)
-    await waitFor(() => expect(api.reviewTask).toHaveBeenCalledWith('p1', 'r1', {
-      requestId: 'rq1', accept: true, outcome: 'refuted', reason: 'pruning hurts accuracy',
-    }))
-    fireEvent.click(sendBack)
-    await waitFor(() => expect(api.reviewTask).toHaveBeenLastCalledWith('p1', 'r1', {
-      requestId: 'rq1', accept: false, reason: 'pruning hurts accuracy',
-    }))
-  })
-
-  it('refuses to accept while evidence changed, and re-pins only after it was looked at, at the version looked at', async () => {
-    const { api } = inspector(detail({
-      stale_evidence: [
-        { work_id: 'w1', result_id: 'res1', kind: 'artifact', ref_id: 'results.csv', status: 'changed', pinned: 'a', current: 'b' },
-      ],
-    }), { readProjectContext: vi.fn().mockResolvedValue({
-      ref: { kind: 'artifact', id: 'results.csv', revision: 'b' }, availability: 'changed', sections: [], notes: [], related: [],
-    }) })
-    await screen.findByText('kubecode.task.staleEvidenceTitle')
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'supported' } })
-    expect(screen.getByRole('button', { name: 'kubecode.task.acceptResults' })).toBeDisabled()
-    // Accepting the current version is not possible before it was looked at.
-    const accept = screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })
-    expect(accept).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.lookAtIt' }))
-    expect(accept).toBeEnabled()
-    fireEvent.click(accept)
-    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({ work_id: 'w1', result_id: 'res1' }), 'b'))
-  })
-
-  it('lets the researcher accept results when evidence no longer exists, only after saying they know', async () => {
-    const { api } = inspector(detail({
-      stale_evidence: [
-        { work_id: 'w1', result_id: 'res2', kind: 'artifact', ref_id: 'gone.csv', status: 'removed', pinned: 'a', current: null },
-        // Evidence the review itself cited, also gone.
-        { work_id: '', request_id: 'rq1', result_id: 'file:notes.md', kind: 'file', ref_id: 'notes.md', status: 'removed', pinned: 'a', current: null },
-      ],
-    }))
-    await screen.findByText('kubecode.task.staleEvidenceTitle')
-    expect(screen.getByText(/file:notes\.md/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'kubecode.task.acceptCurrent' })).not.toBeInTheDocument()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'refuted' } })
-    const accept = screen.getByRole('button', { name: 'kubecode.task.acceptResults' })
-    expect(accept).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(accept).toBeEnabled()
-    fireEvent.click(accept)
-    await waitFor(() => expect(api.reviewTask).toHaveBeenCalled())
-  })
-
-  it('reloads and says so when the server refuses an acceptance over changed evidence', async () => {
-    const reviewTask = vi.fn().mockRejectedValue(new ApiError('work_evidence_stale', 'x', 409))
-    const { api } = inspector(detail(), { reviewTask })
-    await screen.findByText('Accuracy held at 0.91')
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'supported' } })
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.acceptResults' }))
-    expect(await screen.findByText('kubecode.task.evidenceStale')).toBeInTheDocument()
-    await waitFor(() => expect((api.taskDetail as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1))
-  })
-
-  it('shows requests for input with their options and answers them in place', async () => {
-    const { api } = inspector(detail({
-      review_requests: [],
-      open_questions: [{
-        id: 'q1', work_id: 'w1', work_title: 'Sweep', question: 'Which ratio?', options: ['0.3', '0.5'],
-        impact: 'decides the sweep', asked_by: 's', state: 'open', answer: null, created_at: '',
-      }],
-    }))
-    expect(await screen.findByText('Which ratio?')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '0.5' }))
-    await waitFor(() => expect(api.answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', '0.5'))
-  })
-
-  it('accepts only the version that was looked at; a newer version must be looked at again', async () => {
-    const stale = (current: string) => detail({
-      stale_evidence: [
-        { work_id: 'w1', result_id: 'res1', kind: 'artifact', ref_id: 'results.csv', status: 'changed', pinned: 'a', current },
-      ],
-    })
-    const taskDetail = vi.fn()
-      .mockResolvedValueOnce(stale('b'))
-      .mockResolvedValue(stale('c'))
-    const api = {
-      taskDetail,
-      reviewTask: vi.fn(),
-      repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
-      answerWorkDecision: vi.fn(),
-      readProjectContext: vi.fn().mockRejectedValue(new Error('not needed')),
-    } as unknown as KubecodeApi
-    const props = { api, connectionState: 'live' as const, projectId: 'p1', t, taskId: 'r1', onShowMessage: vi.fn() }
-    const view = render(<TaskInspector {...props} events={[]} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.task.lookAtIt' }))
-    expect(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })).toBeEnabled()
-    // The evidence changes again while the researcher is reading: version C arrives.
-    view.rerender(<TaskInspector {...props} events={[{
-      id: 9, kind: 'task_updated', project_id: 'p1', conversation_id: null, run_id: null, payload: {}, created_at: '',
-    }]} />)
-    await waitFor(() => expect(taskDetail).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' })).toBeDisabled())
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.lookAtIt' }))
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' }))
-    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({
-      work_id: 'w1', result_id: 'res1',
-    }), 'c'))
-  })
-
-  it('shows evidence cited by both the work and the review once, and one look re-pins every pin of it', async () => {
-    const api = {
-      taskDetail: vi.fn().mockResolvedValue(detail({
-        stale_evidence: [
-          { work_id: 'w1', result_id: 'res1', kind: 'file', ref_id: 'results.csv', status: 'changed', pinned: 'a', current: 'b' },
-          { work_id: '', request_id: 'rq1', result_id: 'file:results.csv', kind: 'file', ref_id: 'results.csv', status: 'changed', pinned: 'a2', current: 'b' },
-        ],
-      })),
-      reviewTask: vi.fn(),
-      repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
-      answerWorkDecision: vi.fn(),
-      readProjectContext: vi.fn().mockRejectedValue(new Error('not needed')),
-    } as unknown as KubecodeApi
-    render(<TaskInspector api={api} connectionState="live" events={[]} projectId="p1" t={t} taskId="r1" onShowMessage={vi.fn()} />)
-    const looks = await screen.findAllByRole('button', { name: 'kubecode.task.lookAtIt' })
-    expect(looks).toHaveLength(1)
-    fireEvent.click(looks[0])
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.acceptCurrent' }))
-    await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledTimes(2))
-    expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({ work_id: 'w1', result_id: 'res1' }), 'b')
-    expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({
-      request_id: 'rq1', result_id: 'file:results.csv',
-    }), 'b')
+      view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+      view.rerender(boardIn(memory, null))
+      const again = screen.getByRole('region', { name: 'Kanban' })
+      expect(again.scrollTop).toBe(0)
+      view.rerender(boardIn(memory, cards))
+      expect(again.scrollTop).toBe(130)
+    } finally {
+      restore()
+    }
   })
 })

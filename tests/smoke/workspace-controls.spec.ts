@@ -16,6 +16,7 @@ const CONTROLS = [
   '.kubecode-decision-button:not(:disabled)',
   '.kubecode-reference-chip-open:is(button)',
   '.kubecode-reference-chip-remove',
+  '.kubecode-recipient-remove',
   'button.kubecode-member-identity-name',
 ].join(', ')
 
@@ -120,6 +121,11 @@ test.describe('on a phone', () => {
       .filter(({ box }) => !(box.width === 0 && box.height === 0))
       .map(({ box, name }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`))
     expect(small).toEqual([])
+    // A draft's recipients wrap at phone width, each removable, and a blocked send says why (ADR 0229).
+    const recipients = page.locator('.kubecode-control-matrix-narrow .kubecode-composer-to')
+    await expect(recipients).toBeVisible()
+    await expect(recipients.locator('.kubecode-recipient-remove')).toHaveCount(2)
+    await expect(page.locator('.kubecode-control-matrix-narrow .kubecode-composer-warning')).toBeVisible()
     // On touch, a stop says in text what it stops.
     await expect(page.locator('.kubecode-stop-button-text').first()).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

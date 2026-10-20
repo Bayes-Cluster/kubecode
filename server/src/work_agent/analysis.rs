@@ -512,11 +512,29 @@ impl WorkAgent {
 
     /// Re-pins one cited result to what it is now, after the coordinator has
     /// looked at the change. The earlier revision stays in earlier reviews.
+    /// A Task's evidence is not the coordinator's to accept: the researcher
+    /// accepts a changed version they displayed, in the Task's Results
+    /// (ADR 0230 §4), so the change stays flagged for them.
     pub fn repin(&self, work_id: &str, result_id: &str) -> Result<WorkSummary, AgentWorkError> {
         let (summary, role) = self.visible(work_id)?;
         let Role::Coordinator(actor) = role else {
             return Err(AgentWorkError::NotCoordinator);
         };
+        if let (Some(tasks), Some(research_id)) = (&self.tasks, summary.item.research_id.as_deref())
+            && tasks
+                .admission(&self.project_id, research_id)
+                .map_err(AgentWorkError::Task)?
+                .is_some()
+        {
+            let _ = self.work.flag_attention(
+                &self.project_id,
+                work_id,
+                "cited evidence changed since it was attached; review it before accepting",
+            );
+            return Err(invalid(
+                "this evidence belongs to a Task: only the researcher accepts a changed version, after looking at it in the Task's Results; ask them in General, or send the work back",
+            ));
+        }
         let result = summary
             .results
             .iter()

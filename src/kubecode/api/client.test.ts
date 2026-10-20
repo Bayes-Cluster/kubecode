@@ -5,6 +5,26 @@ import { KubecodeApi, apiBasePath, type RuntimeStatus } from '../api'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Kubecode API client', () => {
+  it('archives and restores a Task apart from deciding it, and reads the verdict\'s General message', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'v1', general_message_id: 'gm1' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'task_active', reason: 'under_review', message: 'x' }), { status: 409 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/base')
+
+    await expect(api.archiveTask('p/1', 'r/1')).resolves.toBeUndefined()
+    await expect(api.restoreTask('p/1', 'r/1')).resolves.toBeUndefined()
+    const verdict = await api.reviewTask('p/1', 'r/1', { requestId: 'rq', accept: false, reason: 'redo' })
+    const refused = await api.archiveTask('p/1', 'r/1').catch((cause: unknown) => cause)
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/base/api/v1/projects/p%2F1/tasks/r%2F1/archive', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/base/api/v1/projects/p%2F1/tasks/r%2F1/restore', expect.objectContaining({ method: 'POST' }))
+    expect(verdict.general_message_id).toBe('gm1')
+    expect(refused).toMatchObject({ code: 'task_active', reason: 'under_review', status: 409 })
+  })
+
   it('keeps every request below the Kubeflow notebook prefix', () => {
     expect(apiBasePath('/user/alice/kubecode/')).toBe('/user/alice/kubecode/api/v1')
     expect(apiBasePath('/')).toBe('/api/v1')
@@ -627,6 +647,52 @@ describe('Kubecode API client', () => {
         method: 'PATCH',
       }),
     )
+  })
+
+  it('posts a General message as a plain message naming members, never an intent or a Thread', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'm1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/b')
+
+    await api.postChannelMessage('p', 'c', {
+      body: 'over to you',
+      clientMessageId: 'cm1',
+      mentions: [{ member_id: 'analyst' }],
+      references: [{ kind: 'research', id: 'r1', revision: null }],
+      replyTo: 'm0',
+    })
+
+    expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/channels/c/messages')
+    expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toEqual({
+      body: 'over to you',
+      client_message_id: 'cm1',
+      mentions: [{ member_id: 'analyst' }],
+      references: [{ kind: 'research', id: 'r1', revision: null }],
+      reply_to: 'm0',
+    })
+    expect('startChannelThread' in api).toBe(false)
+  })
+
+  it('says which member a refused mention names, and why', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code: 'mention_unavailable', message: 'no', member_id: 'w', reason: 'needs_setup' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )))
+    await expect(new KubecodeApi('').postChannelMessage('p', 'c', { body: 'hi' })).rejects.toMatchObject({
+      code: 'mention_unavailable', reason: 'needs_setup', memberId: 'w', status: 400,
+    })
+  })
+
+  it('lists members with the removed ones when asked, so history keeps their names', async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ members: [], general_id: null })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/b')
+
+    await api.listMembers('p', true)
+    await api.listMembers('p')
+
+    expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/members?include_removed=true')
+    expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/members')
   })
 
   it('lists directories and creates, imports, and unregisters Projects', async () => {

@@ -10,6 +10,19 @@ vi.mock('./TerminalView', () => ({
   ),
 }))
 
+/**
+ * For tests about execution history: the Workspace was last left on its
+ * Sessions surface, and the address says so (ADR 0228 opens General otherwise).
+ */
+function startOnSessions(projectId = 'project-1') {
+  window.history.replaceState(null, '', `/#/p/${projectId}/sessions`)
+  localStorage.setItem('kubecode:workspace-location:v1', JSON.stringify({
+    lastProjectId: projectId,
+    seq: 1,
+    workspaces: { [projectId]: { current: 'sessions', at: 1, views: { sessions: `/p/${projectId}/sessions` } } },
+  }))
+}
+
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.unstubAllGlobals())
@@ -121,6 +134,7 @@ describe('Kubecode workspace', () => {
   )
 
   it('uses project and session navigation with the agent session as the primary workspace', async () => {
+    startOnSessions()
     const api = {
       listProjects: vi.fn().mockResolvedValue([
         { id: 'project-1', name: 'Demo', path: 'demo' },
@@ -137,16 +151,16 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New session' })).toBeInTheDocument()
     expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Toggle sessions' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
     const titlebarActions = container.querySelector('.kubecode-topbar-actions')
-    expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle sessions' }))
+    expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle navigation' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle terminal' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle context panel' }))
     expect(Array.from(titlebarActions?.querySelectorAll('.kubecode-layout-toggle') ?? []).map(
       (button) => button.getAttribute('aria-label'),
-    )).toEqual(['Toggle sessions', 'Toggle terminal', 'Toggle context panel'])
+    )).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
     expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'true')
@@ -193,6 +207,23 @@ describe('Kubecode workspace', () => {
       expect(document.documentElement.style.getPropertyValue('--kubecode-ui-font-size')).toBe('16px')
     })
   })
+
+  it.each(['/#/p/project-1/sessions', '/#/p/gone/general'])(
+    'shows the first-run screen with no Projects even when the address names a Workspace (%s)',
+    async (url) => {
+      window.history.replaceState(null, '', url)
+      const api = {
+        listProjects: vi.fn().mockResolvedValue([]),
+        listAgents: vi.fn().mockResolvedValue([]),
+      } as unknown as KubecodeApi
+
+      render(<KubecodeApp api={api} />)
+
+      expect(await screen.findByRole('heading', { name: 'Start with a project' })).toBeInTheDocument()
+      expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
+      window.history.replaceState(null, '', '/')
+    },
+  )
 
   it('persists the browser-wide teammate chat preference from Agent settings', async () => {
     const api = {
@@ -1265,7 +1296,7 @@ describe('Kubecode workspace', () => {
     await screen.findByRole('button', { name: 'Demo' })
     expect(container.querySelector('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
 
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle sessions' })
+    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
     const backdrop = screen.getByRole('button', { name: 'Close side panels' })
     expect(backdrop).toBeInTheDocument()
@@ -1316,7 +1347,7 @@ describe('Kubecode workspace', () => {
     const { container } = render(<KubecodeApp api={api} />)
 
     await screen.findByRole('button', { name: 'Demo' })
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle sessions' })
+    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
     expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('300px')
 
@@ -1326,6 +1357,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('restores the saved pane layout for a project', async () => {
+    startOnSessions()
     localStorage.setItem('kubecode:layout:project-1', JSON.stringify({
       contextOpen: true,
       contextWidth: 612,
@@ -1350,7 +1382,7 @@ describe('Kubecode workspace', () => {
     expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
   })
 
-  it('focuses global Project and Session search with the platform shortcut', async () => {
+  it('opens execution history and focuses the Session search with the platform shortcut', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/demo' }]),
       listAgents: vi.fn().mockResolvedValue([]),
@@ -1360,10 +1392,16 @@ describe('Kubecode workspace', () => {
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
 
-    render(<KubecodeApp api={api} />)
-    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    const { container } = render(<KubecodeApp api={api} />)
+    await screen.findByRole('button', { name: 'Demo' })
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
+    expect(screen.queryByRole('navigation', { name: 'Workspaces' })).not.toBeInTheDocument()
+
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
-    expect(search).toHaveFocus()
+    // The navigation opens, then execution history, then the search inside it.
+    const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
+    expect(container.querySelector('details.kubecode-history-nav')).toHaveAttribute('open')
+    await waitFor(() => expect(search).toHaveFocus())
   })
 
   it('opens the global palette without stealing quick open and runs host actions locally', async () => {
@@ -1381,7 +1419,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
-    const search = await screen.findByRole('textbox', { name: 'Search sessions' })
+    const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     search.focus()
     fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })
 
@@ -1459,6 +1497,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('shows functional session actions and preserves an Agent title separately', async () => {
+    startOnSessions()
     const deleteConversation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),
@@ -1573,6 +1612,7 @@ describe('Kubecode workspace', () => {
   })
 
   it('renders and resolves an ACP elicitation form from the active Agent run', async () => {
+    startOnSessions()
     const resolveElicitation = vi.fn().mockResolvedValue(undefined)
     const api = {
       listProjects: vi.fn().mockResolvedValue([{ id: 'project-1', name: 'Demo', path: '/srv/demo' }]),

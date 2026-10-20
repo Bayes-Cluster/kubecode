@@ -38,4 +38,15 @@ describe('control matrix (ADR 0227)', () => {
     expect(screen.getAllByRole('button', { name: "Stop Analyst's run" }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Pause new work on this Task' }).length).toBeGreaterThan(0)
   })
+
+  it('shows a composer whose recipients wrap and whose blocked send says why, in its longest language', () => {
+    render(<ControlMatrix t={createTranslator('en')} />)
+    const sample = document.querySelector<HTMLElement>('.kubecode-control-matrix-narrow .kubecode-composer-to')
+    expect(sample).not.toBeNull()
+    expect(sample?.closest('[lang]')).not.toBeNull()
+    expect(sample?.querySelectorAll('.kubecode-recipient-remove').length).toBe(2)
+    const blocked = sample?.closest('.kubecode-composer')?.querySelector('.kubecode-send-button')
+    expect(blocked).toBeDisabled()
+    expect(blocked).toHaveAccessibleDescription()
+  })
 })
