@@ -2,7 +2,7 @@
 type: ADR
 id: "0229"
 title: "Member identity in the conversation, member-following routes, and one public reply"
-status: proposed
+status: accepted
 date: 2026-10-20
 supersedes: "0223 Consequences, the sentence 'Routing is by Session, so a member whose Session is replaced while a route is pending has that route fail with a note instead of following the member.' Extends 0220 §1 and 0223 §1-§3 and §6."
 ---

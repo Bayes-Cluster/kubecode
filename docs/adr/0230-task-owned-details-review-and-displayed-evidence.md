@@ -2,7 +2,7 @@
 type: ADR
 id: "0230"
 title: "Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version"
-status: proposed
+status: accepted
 date: 2026-10-20
 supersedes: "0225 §3 (the Task inspector above a Task's full research workspace, with evidence opened inline); 0226 §3 only where a looked-at revision is required only for the review's own pins, and 0226 §4 (the revision recorded when 'Look at it' is clicked); 0212 §1 for admitted Tasks only (status changed directly by the researcher, and archiving as an unconditional command)"
 ---

@@ -71,9 +71,9 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes (partially superseded by 0228) |
 | [0225](0225-task-board-inspector-and-browser-acceptance.md) | The Task board, the Task inspector, and browser acceptance with member fixtures |
 | [0226](0226-manager-launch-profile-review-routing-and-evidence-pins.md) | The manager's provider launch profile, review decisions routed to the manager, and review evidence pins |
-| [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls (proposed) |
-| [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack (proposed) |
-| [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
-| [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version (proposed) |
-| [0231](0231-workspace-search-file-references-and-versioned-attachments.md) | Workspace search with a named scope, Project files as references, one preview surface, and versioned references (proposed) |
-| [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections (proposed) |
+| [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls |
+| [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack |
+| [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply |
+| [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version |
+| [0231](0231-workspace-search-file-references-and-versioned-attachments.md) | Workspace search with a named scope, Project files as references, one preview surface, and versioned references |
+| [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections |
