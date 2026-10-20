@@ -423,12 +423,31 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     inspect({ kind: 'task', id: taskId }, { mode: 'reset' })
   }, [inspect, patchGeneral])
 
+  /** A work item opens Kanban with its Task, once the work item says which Task that is. */
+  const openWork = useCallback((workId: string) => {
+    const requested = projectId
+    if (!requested) return
+    const taskOf = typeof api.workDetail === 'function'
+      ? api.workDetail(requested, workId).then((detail) => detail.item.research_id, () => null)
+      : Promise.resolve(null)
+    void taskOf.then((taskId) => {
+      if (projectIdRef.current !== requested) return
+      openPlace({ view: 'board' }, taskId ? { inspect: { kind: 'task', id: taskId } } : undefined)
+    })
+  }, [api, openPlace, projectId])
+
+  /**
+   * Every reference chip and Resources row opens here (ADR 0228 §3): a record
+   * in the inspector of the view it was chosen in, so General and Resources
+   * keep their place beside it.
+   */
   const openReference = useCallback((reference: ProjectContextRef) => {
     const target = inspectorTargetForReference(reference)
     if ('inspect' in target) inspect(target.inspect)
     else if ('place' in target) openPlace(target.place)
+    else if ('work' in target) openWork(target.work)
     else openSession(target.session)
-  }, [inspect, openPlace, openSession])
+  }, [inspect, openPlace, openSession, openWork])
 
   /** Opens the private conversation with a member. */
   const openDm = useCallback((member: Member) => {
@@ -1034,19 +1053,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               <WithInspector inspector={inspectorPane} presentation={presentation}>
                 <ResourcesView
                   api={api}
-                  canOpen={(reference) => ['research', 'session', 'thread', 'channel', 'work'].includes(reference.kind)}
                   projectId={projectId}
                   scrollKey={placeKey.view(projectId, 'resources')}
                   t={t}
-                  onOpen={(reference) => {
-                    if (reference.kind === 'research') {
-                      openPlace({ view: 'general' }, { inspect: { kind: 'task', id: reference.id } })
-                    }
-                    else if (reference.kind === 'thread') openPlace({ view: 'general', thread: reference.id })
-                    else if (reference.kind === 'channel') openPlace({ view: 'general' })
-                    else if (reference.kind === 'work') openPlace({ view: 'board' })
-                    else if (reference.kind === 'session') openSession(reference.id)
-                  }}
+                  onOpen={openReference}
                 />
               </WithInspector>
             ) : place.view === 'members' ? (
@@ -1081,6 +1091,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 onReadingPositionChange={(position) => readingRef.current.set(projectId, position)}
                 tasksOnBoard={taskBoard.board ? tasksOnBoard : undefined}
                 onFilterChange={(filter) => patchGeneral({ filter })}
+                onOpenReference={openReference}
                 onOpenResearch={(taskId) => inspect({ kind: 'task', id: taskId })}
                 onOpenSession={(nextConversationId) => openSession(nextConversationId)}
                 onOpenTask={openTaskFromMessage}

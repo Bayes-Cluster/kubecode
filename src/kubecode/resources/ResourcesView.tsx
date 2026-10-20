@@ -10,10 +10,11 @@ export type ResourcesViewProps = {
   api: KubecodeApi
   projectId: string
   t: Translator
-  /** Goes to the item itself: its Task, Session, Thread, or the board. */
+  /**
+   * Opens the item where references open (ADR 0228 §3): a record or a Task in
+   * this view's inspector, a Session, Thread, or work item where it lives.
+   */
   onOpen: (reference: ProjectContextRef) => void
-  /** Which kinds of record have somewhere to go. */
-  canOpen: (reference: ProjectContextRef) => boolean
   /** Where the results' scroll position is kept for the place (`placeKey.view`). */
   scrollKey?: string | null
 }
@@ -22,10 +23,10 @@ export type ResourcesViewProps = {
  * What the Workspace has produced and can cite: research, findings, work,
  * experiments, artifacts, imports, and Sessions, read-only. It is the same
  * reader the Composer's reference picker uses, so what is found here is what
- * can be cited in a message. Choosing a row previews it; the preview offers
- * going to the record.
+ * can be cited in a message. Choosing a row previews it; the preview opens
+ * the record in this view's inspector, beside the list.
  */
-export function ResourcesView({ api, canOpen, onOpen, projectId, scrollKey = null, t }: ResourcesViewProps) {
+export function ResourcesView({ api, onOpen, projectId, scrollKey = null, t }: ResourcesViewProps) {
   const results = useRef<HTMLDivElement>(null)
   // The results load after arrival; restoring waits for the rows it needs.
   useScrollMemory(results, scrollKey, { ready: true })
@@ -42,7 +43,6 @@ export function ResourcesView({ api, canOpen, onOpen, projectId, scrollKey = nul
         conversationId=""
         projectId={projectId}
         t={t}
-        canOpen={(item: ProjectContextItem) => canOpen(item.ref)}
         onOpen={(item: ProjectContextItem) => onOpen(item.ref)}
         onSelect={() => undefined}
         resultsRef={results}

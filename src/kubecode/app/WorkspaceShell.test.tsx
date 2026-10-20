@@ -107,6 +107,19 @@ const session = {
   manual_title: null, agent_title: null,
 }
 
+const contextItem = (kind: string, id: string, title: string) => ({
+  ref: { kind, id, revision: null },
+  title,
+  summary: '',
+  provenance: { state: null, author: null, updated_at: null },
+  availability: 'available',
+})
+
+const contextDocument = (kind: string, id: string, title: string) => ({
+  ref: { kind, id, revision: null }, detail: 'content', title, availability: 'available', provenance: {},
+  sections: [], related: [], next_cursor: null, notes: [],
+})
+
 /** Starts the app at `hash` (a Workspace link) and waits for the navigation. */
 async function start(hash: string, client = api()) {
   window.history.replaceState(null, '', `/${hash}`)
@@ -510,6 +523,51 @@ describe('Workspace navigation and routes', () => {
     // Well within the time a link is otherwise waited for.
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'), { timeout: 1_000 })
     expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+  })
+
+  it('opens a finding cited in General in the inspector beside the conversation', async () => {
+    await start('#/p/project-1/general', api({
+      listChannelMessages: vi.fn().mockResolvedValue({
+        messages: [message({ references: [{ kind: 'finding', id: 'f1', revision: null }] })],
+        has_more: false,
+      }),
+    }))
+    const references = await screen.findByRole('list', { name: 'References' })
+    fireEvent.click(within(references).getByRole('button', { name: /Finding/ }))
+    expect(await inspector('Resource details')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'evidence finding:f1' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(document.querySelector('.kubecode-session-context-row')).toHaveAttribute('data-inspector-layout', 'side')
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?inspect=resource~finding~f1'))
+  })
+
+  it.each([
+    ['finding', 'f1', 'Accuracy holds', 'Resource details', 'evidence finding:f1'],
+    ['artifact', 'a7', 'accuracy.csv', 'Resource details', 'evidence artifact:a7'],
+    ['research', 'r1', 'Pruning', 'Task details', 'task r1'],
+  ])('opens a Resources row (%s) in Resources’ own inspector beside the list', async (kind, id, title, aside, body) => {
+    await start('#/p/project-1/resources', api({
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem(kind, id, title)], next_cursor: null }),
+      readProjectContext: vi.fn().mockResolvedValue(contextDocument(kind, id, title)),
+    }))
+    fireEvent.click(await screen.findByRole('option', { name: new RegExp(title) }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
+    expect(await inspector(aside)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: body })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/p\/project-1\/resources\?/))
+  })
+
+  it('opens a work item from Resources on Kanban with its Task', async () => {
+    await start('#/p/project-1/resources', api({
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('work', 'w1', 'Sweep heads')], next_cursor: null }),
+      readProjectContext: vi.fn().mockResolvedValue(contextDocument('work', 'w1', 'Sweep heads')),
+      workDetail: vi.fn().mockResolvedValue({ item: { id: 'w1', research_id: 'r1' } }),
+    }))
+    fireEvent.click(await screen.findByRole('option', { name: /Sweep heads/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
+    expect(await inspector('Task details')).toBeInTheDocument()
   })
 
   it('keeps what is open when the current destination is chosen again', async () => {

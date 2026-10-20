@@ -36,7 +36,6 @@ function view(onOpen = vi.fn()) {
   render(
     <ResourcesView
       api={api}
-      canOpen={(reference) => reference.kind === 'research'}
       projectId="p1"
       t={t}
       onOpen={onOpen}
@@ -46,7 +45,7 @@ function view(onOpen = vi.fn()) {
 }
 
 describe('ResourcesView', () => {
-  it('previews a record read-only instead of attaching it, and offers Open only where there is somewhere to go', async () => {
+  it('previews a record read-only instead of attaching it, and opens every record from its preview', async () => {
     const { api, onOpen } = view()
     const row = await screen.findByRole('option', { name: /Pruning/ })
     fireEvent.click(row)
@@ -55,12 +54,12 @@ describe('ResourcesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.resources.open' }))
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'research', id: 'r1' }))
 
-    // A record with nowhere to go can only be previewed.
+    // A record opens in the inspector, so it has somewhere to go too.
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.projectWorkClosePreview' }))
     fireEvent.click(screen.getByRole('option', { name: /results\.csv/ }))
     await waitFor(() => expect(api.readProjectContext).toHaveBeenCalledTimes(2))
-    expect(screen.queryByRole('button', { name: 'kubecode.resources.open' })).not.toBeInTheDocument()
-    expect(onOpen).toHaveBeenCalledTimes(1)
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.resources.open' }))
+    expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'artifact', id: 'a1' }))
   })
 })
 
@@ -77,7 +76,7 @@ describe('ResourcesView keeps its place (ADR 0228 §4)', () => {
       } as unknown as KubecodeApi
       const resources = (
         <PlaceMemoryProvider memory={memory}>
-          <ResourcesView api={api} canOpen={() => false} projectId="p1" scrollKey="p1|view:resources" t={t} onOpen={vi.fn()} />
+          <ResourcesView api={api} projectId="p1" scrollKey="p1|view:resources" t={t} onOpen={vi.fn()} />
         </PlaceMemoryProvider>
       )
       const view = render(resources)

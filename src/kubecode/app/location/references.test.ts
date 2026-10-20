@@ -14,10 +14,14 @@ describe('references open the same way everywhere', () => {
     expect(inspectorTargetForReference({ kind: 'session', id: 's1' })).toEqual({ session: 's1' })
   })
 
+  it('opens a work item on Kanban with its Task, which only the work item knows', () => {
+    expect(inspectorTargetForReference({ kind: 'work', id: 'w1', revision: null })).toEqual({ work: 'w1' })
+  })
+
   it('opens every other record as a live resource', () => {
-    const others = PROJECT_CONTEXT_KINDS.filter((kind) => !['research', 'thread', 'channel', 'session'].includes(kind))
+    const others = PROJECT_CONTEXT_KINDS.filter((kind) => !['research', 'thread', 'channel', 'session', 'work'].includes(kind))
     expect(others).toEqual([
-      'round', 'import', 'finding', 'session_turn', 'team', 'team_task', 'experiment', 'artifact', 'work',
+      'round', 'import', 'finding', 'session_turn', 'team', 'team_task', 'experiment', 'artifact',
     ])
     for (const kind of others as ProjectContextKind[]) {
       expect(inspectorTargetForReference({ kind, id: 'x1', revision: 'rev' }), kind).toEqual({

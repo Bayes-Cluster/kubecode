@@ -56,6 +56,11 @@ export type ChannelWorkspaceProps = {
   onOpenTask?: (taskId: string, messageId: string) => void
   /** Task ids that are on the board, to mark proposals that are not. */
   tasksOnBoard?: ReadonlySet<string>
+  /**
+   * Opens a reference chip where references open everywhere (ADR 0228 §3):
+   * the shell's navigation. Without it, Tasks, Sessions, and Threads still open.
+   */
+  onOpenReference?: (reference: ProjectContextRef) => void
   onOpenResearch: (researchId: string) => void
   onOpenSession: (conversationId: string) => void
   /** Opens the one work board filtered to what came from a Thread. */
@@ -86,6 +91,7 @@ export function ChannelWorkspace({
   onThreadChange,
   onOpenTask,
   tasksOnBoard,
+  onOpenReference,
   onOpenResearch,
   onOpenSession,
   onOpenWork,
@@ -211,7 +217,8 @@ export function ChannelWorkspace({
   }, [channel, landing])
 
   const openReference = (reference: ProjectContextRef) => {
-    if (reference.kind === 'research') onOpenResearch(reference.id)
+    if (onOpenReference) onOpenReference(reference)
+    else if (reference.kind === 'research') onOpenResearch(reference.id)
     else if (reference.kind === 'session') onOpenSession(reference.id)
     else if (reference.kind === 'thread') setThreadId(reference.id)
   }
