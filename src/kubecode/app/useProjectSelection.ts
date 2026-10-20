@@ -32,6 +32,11 @@ export type ProjectSelectionOptions = {
   setDisableWorkspacesOpen: Dispatch<boolean>
   setError: Dispatch<string | null>
   applyProjectLayout: (projectId: string) => void
+  /**
+   * The Workspace to be in once one is removed, chosen as at startup (ADR
+   * 0228: the last one used if it is still registered, then the first).
+   */
+  nextWorkspace?: (remaining: Project[]) => string | null
 }
 
 export function useProjectSelection(
@@ -56,6 +61,7 @@ export function useProjectSelection(
     setDisableWorkspacesOpen,
     setError,
     applyProjectLayout,
+    nextWorkspace,
   } = options
 
   const project = projects.find((item) => item.id === projectId) ?? null
@@ -79,26 +85,28 @@ export function useProjectSelection(
     try {
       await api.unregisterProject(targetProject.id)
       const remainingProjects = projects.filter((item) => item.id !== targetProject.id)
-      const nextProjectId = remainingProjects[0]?.id ?? null
+      const nextProjectId = nextWorkspace ? nextWorkspace(remainingProjects) : remainingProjects[0]?.id ?? null
       setProjects(remainingProjects)
       setProjectRuns((current) => {
         const next = { ...current }
         delete next[targetProject.id]
         return next
       })
+      setAllConversations((current) => current.filter((item) => item.project_id !== targetProject.id))
+      trackEvent('kubecode_project_removed')
+      // Removing another Workspace leaves the one on screen as it is.
+      if (nextProjectId === projectId) return
       setConversations([])
       setTeams([])
-      setAllConversations((current) => current.filter((item) => item.project_id !== targetProject.id))
       setConversationId(null)
       setTerminals([])
       setTerminalsLoadedForProjectId(null)
       if (nextProjectId) applyProjectLayout(nextProjectId)
       setProjectId(nextProjectId)
-      trackEvent('kubecode_project_removed')
     } catch (cause) {
       setError(errorMessage(cause, t('kubecode.error')))
     }
-  }, [api, applyProjectLayout, project, projects, setAllConversations, setConversationId, setConversations, setError, setProjectId, setProjectRuns, setProjects, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
+  }, [api, applyProjectLayout, nextWorkspace, project, projectId, projects, setAllConversations, setConversationId, setConversations, setError, setProjectId, setProjectRuns, setProjects, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
 
   const setProjectWorkspacesEnabled = useCallback(async (enabled: boolean, targetProject = project) => {
     if (!targetProject) return

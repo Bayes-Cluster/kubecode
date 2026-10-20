@@ -268,7 +268,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     [taskBoard.board],
   )
 
+  // After a Workspace is removed, the next one is chosen as at startup: the last used, then the first.
+  const nextWorkspace = useCallback(
+    (remaining: Project[]) => pickInitialWorkspace(remaining, null, peekLocation()),
+    [peekLocation],
+  )
   const selection = useProjectSelection(api, t, {
+    nextWorkspace,
     projectId,
     projects,
     setProjects,

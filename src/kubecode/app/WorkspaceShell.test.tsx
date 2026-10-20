@@ -591,6 +591,43 @@ describe('Workspace navigation and routes', () => {
     expect(window.history.length).toBe(before)
   })
 
+  it('stays in the Workspace on screen when another one is removed', async () => {
+    await start('#/p/project-3/members', api({
+      listProjects: vi.fn().mockResolvedValue([
+        { id: 'project-1', name: 'Demo', path: '/demo' },
+        { id: 'project-2', name: 'Other', path: '/other' },
+        { id: 'project-3', name: 'Third', path: '/third' },
+      ]),
+      unregisterProject: vi.fn().mockResolvedValue(undefined),
+    }))
+    await screen.findByRole('heading', { name: 'Members', level: 2 })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for project Demo' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByText('Delete'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Demo' })).not.toBeInTheDocument())
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-3/members'))
+    expect(screen.getByRole('button', { name: 'Third' })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('opens the next Workspace as at startup when the one on screen is removed', async () => {
+    storeLocations({
+      lastProjectId: 'project-1',
+      seq: 2,
+      workspaces: { 'project-2': { current: 'resources', at: 2, views: { resources: '/p/project-2/resources' } } },
+    })
+    await start('#/p/project-1/board', api({ unregisterProject: vi.fn().mockResolvedValue(undefined) }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for project Demo' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    })
+    fireEvent.click(await screen.findByText('Delete'))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/resources'))
+  })
+
   it('abandons a link to a Project that is not registered at once', async () => {
     window.history.replaceState(null, '', '/#/p/project-9/board')
     render(<KubecodeApp api={api()} />)
