@@ -754,11 +754,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   /** The place named in the title bar; the Sessions surface titles itself. */
   const placeLabel = projectId && place.view !== 'sessions' ? placeName(place) : null
   // Execution history stays open while it holds what is on screen or being searched.
-  const historyShown = historyOpen
-    || place.view === 'sessions'
+  const historyPinned = place.view === 'sessions'
     || place.view === 'question'
     || (place.view === 'general' && Boolean(place.thread))
     || navigatorQuery.trim() !== ''
+  const historyShown = historyOpen || historyPinned
   const inspectorBottom = location.inspector[0]
   const boardTask = inspectorBottom?.kind === 'task' ? inspectorBottom.id : null
   const announcement = announcedProjectId !== null && announcedProjectId === projectId && project
@@ -911,6 +911,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             api={api}
             conversations={sessionCatalog}
             historyOpen={historyShown}
+            historyPinned={historyPinned}
             historySection={projectId ? (
               <>
                 <ChannelNavigator

@@ -18,6 +18,11 @@ export type ProjectNavigatorProps = {
   conversations: Conversation[]
   /** Whether "History and execution" is open. */
   historyOpen: boolean
+  /**
+   * It holds what is on screen (a Session, a question, a Thread) or the search
+   * has text: it stays open, and closing it is not offered.
+   */
+  historyPinned?: boolean
   /** The active Workspace's legacy Threads and research questions, inside execution history. */
   historySection?: ReactNode
   navigatorWidth: number
@@ -59,6 +64,7 @@ export function ProjectNavigator({
   api,
   conversations,
   historyOpen,
+  historyPinned = false,
   historySection,
   navigatorWidth,
   onAddProject,
@@ -122,6 +128,10 @@ export function ProjectNavigator({
             open={historyOpen}
             onToggle={(event) => {
               const open = event.currentTarget.open
+              if (!open && historyPinned) {
+                event.currentTarget.open = true
+                return
+              }
               if (open !== historyOpen) onHistoryOpenChange(open)
             }}
           >

@@ -128,6 +128,16 @@ describe('ProjectNavigator', () => {
     expect(history.open).toBe(true)
   })
 
+  it('stays open while it holds what is on screen, even when its summary is clicked', () => {
+    const { container, handlers } = navigator({ historyOpen: true, historyPinned: true })
+    const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
+    expect(history.open).toBe(true)
+    history.open = false
+    fireEvent(history, new Event('toggle'))
+    expect(history.open).toBe(true)
+    expect(handlers.onHistoryOpenChange).not.toHaveBeenCalled()
+  })
+
   it('searches every Workspace’s Sessions under plain headings', () => {
     navigator({ query: 'chat' })
     const nav = screen.getByRole('navigation', { name: 'Workspaces' })
