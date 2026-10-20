@@ -39,6 +39,15 @@ pub enum TaskError {
     State(&'static str),
     #[error("invalid input: {0}")]
     Invalid(&'static str),
+    /// The Task cannot be archived now; the reason is a code
+    /// (`under_review`, `work_active`, `archived`).
+    #[error("the Task cannot be archived now: {0}")]
+    Active(&'static str),
+    /// An admitted Task's status belongs to its lifecycle (ADR 0230).
+    #[error(
+        "a Task is finished by accepting its results and reopened by asking the General Agent to iterate"
+    )]
+    Owned,
     #[error(transparent)]
     Research(#[from] ResearchError),
     #[error(transparent)]
@@ -219,6 +228,26 @@ pub struct TaskBoard {
     pub cards: Vec<TaskCard>,
     pub stages: Vec<StageCount>,
     pub total: usize,
+    /// Archived Tasks and proposals, apart from the board, newest first.
+    pub archived: Vec<ArchivedTask>,
+}
+
+/// An archived Task (or proposal) as the board lists it apart.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArchivedTask {
+    pub id: String,
+    pub title: String,
+    /// `None` for an archived proposal that was never admitted.
+    pub stage: Option<TaskStage>,
+    pub outcome: Option<WorkOutcome>,
+    pub updated_at: String,
+}
+
+/// Whether an action is available now, and if not, why (a code).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Availability {
+    pub allowed: bool,
+    pub reason: Option<&'static str>,
 }
 
 /// A proposal that is not on the board.

@@ -426,6 +426,23 @@ async fn a_task_goes_from_discussion_to_an_accepted_negative_finding_and_iterate
         .unwrap()
         .to_owned();
     assert_eq!(detail["internal_work"].as_array().unwrap().len(), 1);
+    // A Task under review cannot be archived out of sight (ADR 0230).
+    let (status, body) = call(
+        &world,
+        Method::POST,
+        &format!("/projects/{project}/tasks/{task}/archive"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str(), body["reason"].as_str()),
+        (
+            StatusCode::CONFLICT,
+            Some("task_active"),
+            Some("under_review")
+        ),
+        "{body}"
+    );
 
     // 8. Evidence that changed cannot be accepted until it is re-pinned.
     std::fs::write(world.path.join("results.csv"), "accuracy\n0.50\n").unwrap();

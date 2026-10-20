@@ -270,9 +270,8 @@ async fn archive_research(
     Path((project_id, research_id)): Path<(String, String)>,
 ) -> Result<Json<ResearchDetail>, ResearchApiError> {
     check_project(&state, &project_id)?;
-    let question = state
-        .research
-        .set_archived(&project_id, &research_id, true)?;
+    // The same rule as the Task's own archive: no bypass (ADR 0230).
+    let question = state.tasks.set_archived(&project_id, &research_id, true)?;
     Ok(Json(detail(&state, &project_id, question)?))
 }
 
@@ -281,9 +280,7 @@ async fn restore_research(
     Path((project_id, research_id)): Path<(String, String)>,
 ) -> Result<Json<ResearchDetail>, ResearchApiError> {
     check_project(&state, &project_id)?;
-    let question = state
-        .research
-        .set_archived(&project_id, &research_id, false)?;
+    let question = state.tasks.set_archived(&project_id, &research_id, false)?;
     Ok(Json(detail(&state, &project_id, question)?))
 }
 
@@ -292,6 +289,10 @@ async fn resolve_research(
     Path((project_id, research_id)): Path<(String, String)>,
 ) -> Result<Json<ResearchDetail>, ResearchApiError> {
     check_project(&state, &project_id)?;
+    // An admitted Task is finished only by accepting its results (ADR 0230).
+    state
+        .tasks
+        .guard_status_command(&project_id, &research_id)?;
     let question =
         state
             .research
@@ -304,6 +305,9 @@ async fn reopen_research(
     Path((project_id, research_id)): Path<(String, String)>,
 ) -> Result<Json<ResearchDetail>, ResearchApiError> {
     check_project(&state, &project_id)?;
+    state
+        .tasks
+        .guard_status_command(&project_id, &research_id)?;
     let question = state
         .research
         .set_status(&project_id, &research_id, ResearchStatus::Open)?;
@@ -478,6 +482,8 @@ async fn unlink_research(
 
 pub(super) enum ResearchApiError {
     Research(ResearchError),
+    /// A Task's lifecycle rule (ADR 0230).
+    Task(crate::task_store::TaskError),
     Workspace(WorkspaceError),
     Store(StoreError),
     Runtime(RuntimeError),
@@ -515,6 +521,16 @@ impl From<crate::teams::TeamError> for ResearchApiError {
     }
 }
 
+impl From<crate::task_store::TaskError> for ResearchApiError {
+    fn from(error: crate::task_store::TaskError) -> Self {
+        match error {
+            crate::task_store::TaskError::Research(error) => Self::Research(error),
+            crate::task_store::TaskError::NotFound => Self::Research(ResearchError::NotFound),
+            other => Self::Task(other),
+        }
+    }
+}
+
 impl From<ResearchError> for ResearchApiError {
     fn from(error: ResearchError) -> Self {
         Self::Research(error)
@@ -532,6 +548,20 @@ impl IntoResponse for ResearchApiError {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
             Self::Team(error) => return error.into_response(),
+            Self::Task(error) => match &error {
+                crate::task_store::TaskError::Active(reason) => {
+                    extra.insert("reason".into(), json!(reason));
+                    (StatusCode::CONFLICT, "task_active", error.to_string())
+                }
+                crate::task_store::TaskError::Owned => {
+                    (StatusCode::CONFLICT, "task_owned", error.to_string())
+                }
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "task storage failed".to_owned(),
+                ),
+            },
             Self::Experiment(error) => match &error {
                 ExperimentError::NotFound => (
                     StatusCode::NOT_FOUND,

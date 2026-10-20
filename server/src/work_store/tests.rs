@@ -2355,3 +2355,40 @@ fn a_question_flags_the_task_until_answered_and_an_attention_flag_never_override
             .unwrap()
     );
 }
+
+#[test]
+fn new_work_under_an_archived_question_is_refused() {
+    let r = rig();
+    r.f.research
+        .set_archived(r.project(), &r.f.research_id, true)
+        .unwrap();
+    let actor = r.coordinator();
+    for new in [
+        NewWork {
+            title: "In the round",
+            round_id: Some(&r.f.round_id),
+            ..Default::default()
+        },
+        NewWork {
+            title: "On the question",
+            research_id: Some(&r.f.research_id),
+            ..Default::default()
+        },
+    ] {
+        let actor = if new.round_id.is_some() {
+            &actor
+        } else {
+            &Actor::Researcher
+        };
+        let refused = r.work.create(r.project(), new, actor);
+        assert!(
+            matches!(&refused, Err(WorkError::Invalid(text)) if text.contains("archived")),
+            "{refused:?}"
+        );
+    }
+    // Restored, it takes work again.
+    r.f.research
+        .set_archived(r.project(), &r.f.research_id, false)
+        .unwrap();
+    r.native("After restore");
+}

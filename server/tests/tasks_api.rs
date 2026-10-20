@@ -952,3 +952,118 @@ async fn a_work_evidence_repin_must_name_the_version_looked_at() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     let _ = task.round;
 }
+
+#[tokio::test]
+async fn archiving_is_separate_from_accepting() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let id = &task.research_id;
+    let tasks = format!("/projects/{}/tasks/{id}", env.project);
+    let research = format!("/projects/{}/research/{id}", env.project);
+    // Under review: refused through both routes, with the reason.
+    for path in [format!("{tasks}/archive"), format!("{research}/archive")] {
+        let (status, body) = call(&env, Method::POST, &path, Value::Null).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{path}: {body}");
+        assert_eq!(body["code"], "task_active", "{body}");
+        assert_eq!(body["reason"], "under_review", "{body}");
+    }
+    // Sent back with its work still active: refused for that reason.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{tasks}/review"),
+        json!({"request_id": task.request_id, "accept": false, "reason": "try 0.7"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = call(&env, Method::POST, &format!("{tasks}/archive"), Value::Null).await;
+    assert_eq!(
+        (status, body["reason"].as_str()),
+        (StatusCode::CONFLICT, Some("work_active")),
+        "{body}"
+    );
+    // Done: it can be archived, and keeps its outcome while hidden.
+    let item = env.state.work.get(&env.project, &task.work_id).unwrap();
+    env.state
+        .work
+        .close(
+            &env.project,
+            &task.work_id,
+            item.revision,
+            kubecode_server::work_store::Closure {
+                lifecycle: kubecode_server::work_store::WorkLifecycle::Canceled,
+                reason: "no longer needed",
+                superseded_by: None,
+            },
+            &kubecode_server::work_store::Actor::Researcher,
+        )
+        .unwrap();
+    let manager = env.agent(&env.general);
+    let second = manager
+        .task_request_review(id, "0.7 also diverges.", &[])
+        .unwrap();
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{tasks}/review"),
+        json!({"request_id": second.id, "accept": true, "outcome": "refuted"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = call(&env, Method::POST, &format!("{tasks}/archive"), Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let board = env.board(&env.project).await;
+    assert_eq!(board["total"], 0, "{board}");
+    assert_eq!(board["archived"][0]["id"], json!(id));
+    assert_eq!(board["archived"][0]["stage"], "done");
+    assert_eq!(board["archived"][0]["outcome"], "refuted");
+    // Restoring puts it back where it was.
+    let (status, body) = call(&env, Method::POST, &format!("{tasks}/restore"), Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let board = env.board(&env.project).await;
+    assert_eq!(board["cards"][0]["stage"], "done");
+    assert_eq!(board["archived"], json!([]));
+    let (status, _) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/tasks/no-such-task/archive", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_task_is_completed_only_by_review() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let research = format!("/projects/{}/research/{}", env.project, task.research_id);
+    for verb in ["resolve", "reopen"] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &format!("{research}/{verb}"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{verb}: {body}");
+        assert_eq!(body["code"], "task_owned", "{body}");
+    }
+    assert_eq!(env.board(&env.project).await["cards"][0]["stage"], "review");
+    // A draft is still a research question the researcher resolves directly.
+    let draft = env
+        .agent(&env.general)
+        .task_propose(brief("Quantize"), Some("quant"))
+        .unwrap();
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!(
+            "/projects/{}/research/{}/resolve",
+            env.project, draft.research_id
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}

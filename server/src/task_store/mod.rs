@@ -38,6 +38,11 @@ use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage
 /// authorization watermark.
 const STAGE_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted')";
 
+/// Why a step is refused while the researcher has archived the Task.
+const ARCHIVED: &str = "the Task is archived; the researcher restores it first";
+/// Archived Tasks the board lists apart.
+const MAX_ARCHIVED: usize = 50;
+
 /// Drafts waiting at once, so a loop cannot flood General.
 const MAX_DRAFTS: usize = 50;
 /// The proposal shown in General is shortened to this; the Task shows all of it.
@@ -741,7 +746,7 @@ impl TaskStore {
                 other => other.into(),
             })?;
         if question.archived {
-            return Err(TaskError::State("the question is archived"));
+            return Err(TaskError::State(ARCHIVED));
         }
         let message = self
             .channels
@@ -1296,6 +1301,14 @@ impl TaskStore {
             if admitted == 0 {
                 return Err(TaskError::State("the Task is not on the board"));
             }
+            let archived: bool = tx.query_row(
+                "SELECT archived FROM research_questions WHERE id = ?1",
+                [research_id],
+                |row| row.get(0),
+            )?;
+            if archived {
+                return Err(TaskError::State(ARCHIVED));
+            }
             if let Some(open) = tx
                 .query_row(
                     &format!("{REQUEST_SELECT} WHERE research_id = ?1 AND state = 'open'"),
@@ -1716,7 +1729,182 @@ impl TaskStore {
             cards,
             stages,
             total,
+            archived: self.archived(project_id)?,
         })
+    }
+
+    /// Archived Tasks and proposals, newest first: their stage (none for a
+    /// proposal) and the accepted outcome, without composing a whole card.
+    pub fn archived(&self, project_id: &str) -> Result<Vec<ArchivedTask>, TaskError> {
+        let mut archived: Vec<ArchivedTask> = Vec::new();
+        for summary in self.research.list(project_id, true)? {
+            if !summary.archived {
+                continue;
+            }
+            let stage = self.stage(project_id, &summary.id)?;
+            let outcome = if stage == Some(TaskStage::Done) {
+                self.reviews(project_id, &summary.id)?
+                    .into_iter()
+                    .rev()
+                    .find(|review| review.accepted)
+                    .map(|review| review.outcome)
+            } else {
+                None
+            };
+            archived.push(ArchivedTask {
+                id: summary.id,
+                title: summary.title,
+                stage,
+                outcome,
+                updated_at: summary.updated_at,
+            });
+        }
+        archived.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        archived.truncate(MAX_ARCHIVED);
+        Ok(archived)
+    }
+
+    // -- Archiving and status (ADR 0230) ---------------------------------------------------------------
+
+    /// Whether the researcher may archive this Task (or proposal) now: not
+    /// while a review is open or internal work is active, so a Task never
+    /// disappears with a decision or running work under it. A draft, a Ready
+    /// or Done Task, and an idle Task in progress may be archived.
+    pub fn archive_availability(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Availability, TaskError> {
+        let question = self.question(project_id, research_id)?;
+        let refused = |reason| Availability {
+            allowed: false,
+            reason: Some(reason),
+        };
+        if question.archived {
+            return Ok(refused("archived"));
+        }
+        if self
+            .review_requests(project_id, research_id)?
+            .iter()
+            .any(|request| request.state == "open")
+        {
+            return Ok(refused("under_review"));
+        }
+        if self.stage(project_id, research_id)? == Some(TaskStage::InProgress)
+            && self
+                .card(project_id, research_id)?
+                .is_some_and(|card| card.work.active > 0)
+        {
+            return Ok(refused("work_active"));
+        }
+        Ok(Availability {
+            allowed: true,
+            reason: None,
+        })
+    }
+
+    /// Archives a Task (hidden from the board, everything kept) or restores
+    /// it. Archiving is refused for the reasons `archive_availability` gives;
+    /// restoring always works. On an admitted Task the change is logged as an
+    /// `archived`/`restored` event, which is not a stage event. Idempotent.
+    pub fn set_archived(
+        &self,
+        project_id: &str,
+        research_id: &str,
+        archived: bool,
+    ) -> Result<ResearchQuestion, TaskError> {
+        if archived {
+            let availability = self.archive_availability(project_id, research_id)?;
+            match availability.reason {
+                // Already archived: nothing to do.
+                Some("archived") => return self.question(project_id, research_id),
+                Some(reason) => return Err(TaskError::Active(reason)),
+                None => {}
+            }
+        }
+        self.write(|tx| {
+            let current: bool = tx
+                .query_row(
+                    "SELECT archived FROM research_questions WHERE id = ?1 AND project_id = ?2",
+                    params![research_id, project_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or(TaskError::NotFound)?;
+            if current == archived {
+                return Ok(((), None));
+            }
+            // The review check is repeated inside the transaction, so a review
+            // asked for meanwhile is never hidden.
+            if archived {
+                let open: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM task_review_requests
+                     WHERE research_id = ?1 AND state = 'open'",
+                    [research_id],
+                    |row| row.get(0),
+                )?;
+                if open > 0 {
+                    return Err(TaskError::Active("under_review"));
+                }
+            }
+            tx.execute(
+                "UPDATE research_questions SET archived = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![research_id, archived],
+            )?;
+            // The research question's own event, as the research store announces it.
+            tx.execute(
+                "INSERT INTO workspace_events (kind, project_id, payload)
+                 VALUES ('research_updated', ?1, ?2)",
+                params![
+                    project_id,
+                    json!({
+                        "research_id": research_id,
+                        "change": if archived { "archived" } else { "restored" },
+                    })
+                    .to_string()
+                ],
+            )?;
+            let admitted: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM task_authorizations WHERE research_id = ?1 AND kind = 'admit'",
+                [research_id],
+                |row| row.get(0),
+            )?;
+            if admitted > 0 {
+                Self::log(
+                    tx,
+                    project_id,
+                    research_id,
+                    if archived { "archived" } else { "restored" },
+                    None,
+                )?;
+            }
+            Ok(((), Some((project_id.to_owned(), research_id.to_owned()))))
+        })?;
+        self.question(project_id, research_id)
+    }
+
+    /// The research status of an admitted Task mirrors its lifecycle and is
+    /// written only here (resolved on acceptance, open on iteration): a direct
+    /// resolve or reopen is refused. Drafts and plain questions keep ADR 0212.
+    pub fn guard_status_command(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<(), TaskError> {
+        if self.admission(project_id, research_id)?.is_some() {
+            return Err(TaskError::Owned);
+        }
+        Ok(())
+    }
+
+    fn question(&self, project_id: &str, research_id: &str) -> Result<ResearchQuestion, TaskError> {
+        self.research
+            .get(project_id, research_id)
+            .map_err(|error| match error {
+                crate::research_store::ResearchError::NotFound => TaskError::NotFound,
+                other => other.into(),
+            })
     }
 
     /// Proposals that are not on the board.

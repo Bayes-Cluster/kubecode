@@ -34,6 +34,14 @@ pub fn routes() -> Router<AppState> {
             "/projects/{project_id}/tasks/{research_id}/repin",
             post(repin),
         )
+        .route(
+            "/projects/{project_id}/tasks/{research_id}/archive",
+            post(archive),
+        )
+        .route(
+            "/projects/{project_id}/tasks/{research_id}/restore",
+            post(restore),
+        )
 }
 
 enum ApiError {
@@ -129,6 +137,11 @@ impl IntoResponse for ApiError {
                     error.to_string(),
                 ),
                 TaskError::State(_) => (StatusCode::CONFLICT, "task_state", error.to_string()),
+                TaskError::Active(reason) => {
+                    extra.insert("reason".into(), json!(reason));
+                    (StatusCode::CONFLICT, "task_active", error.to_string())
+                }
+                TaskError::Owned => (StatusCode::CONFLICT, "task_owned", error.to_string()),
                 TaskError::Database(_) | TaskError::Json(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal_error",
@@ -546,5 +559,40 @@ async fn repin(
     })
     .await
     .map_err(|_| ApiError::BadRequest("the evidence could not be accepted"))??;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Hides a Task from the board, keeping everything, unless a review is open or
+/// its work is active (ADR 0230). Archiving is not completing.
+async fn archive(
+    State(state): State<AppState>,
+    Path((project_id, research_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    set_archived(state, project_id, research_id, true).await
+}
+
+/// Puts an archived Task back on the board in the stage it had.
+async fn restore(
+    State(state): State<AppState>,
+    Path((project_id, research_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    set_archived(state, project_id, research_id, false).await
+}
+
+async fn set_archived(
+    state: AppState,
+    project_id: String,
+    research_id: String,
+    archived: bool,
+) -> Result<StatusCode, ApiError> {
+    check_project(&state, &project_id)?;
+    tokio::task::spawn_blocking(move || {
+        state
+            .tasks
+            .set_archived(&project_id, &research_id, archived)
+            .map(|_| ())
+    })
+    .await
+    .map_err(|_| ApiError::BadRequest("the Task could not be archived"))??;
     Ok(StatusCode::NO_CONTENT)
 }
