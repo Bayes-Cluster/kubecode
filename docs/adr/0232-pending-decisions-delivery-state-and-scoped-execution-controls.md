@@ -2,7 +2,7 @@
 type: ADR
 id: "0232"
 title: "Pending decisions, message delivery state, and scoped execution controls are server projections"
-status: proposed
+status: accepted
 date: 2026-10-20
 supersedes: "0224 §1, the sentence defining what Needs you gathers (Tasks in Review or with a request for input, and Sessions waiting for a permission answer), as carried by 0228's adapter; 0228 §1 where a permission request opens the Sessions surface, for Workspace members' Sessions; 0217 §1 where a failed route is final, for routes the researcher originated (discussion, mention, ask, request, task_review, decision); 0223 §1-2 where a message that reaches nobody is recorded only as a system note; 0229 §6, the sentences on a failed send (it restores the whole draft, and its failure and Try again are kept with the draft): a send the server has not acknowledged is now its own outbox row"
 ---

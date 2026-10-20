@@ -2,7 +2,7 @@
 type: ADR
 id: "0227"
 title: "One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls"
-status: proposed
+status: accepted
 date: 2026-10-19
 ---
 
@@ -125,7 +125,8 @@ long for its width wraps.
 The Workspace navigation's destinations adopt the vocabulary here. General,
 direct messages, the Task board and review, resources, and attention adopt it
 in their own slices (#216–#220) when they change those views, without changing
-what an action does. This ADR is accepted when those slices have landed.
+what an action does. Those slices have landed (#216–#220), and every one of
+those views now uses this vocabulary.
 
 ## Consequences
 

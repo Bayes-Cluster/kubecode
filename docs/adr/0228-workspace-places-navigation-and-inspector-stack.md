@@ -2,7 +2,7 @@
 type: ADR
 id: "0228"
 title: "Workspace places, secondary execution history, and one inspector stack"
-status: proposed
+status: accepted
 date: 2026-10-20
 supersedes: "0224 §1 (navigation composition: a tree of every Project's Sessions in the primary navigation), §2 where the Sessions surface is the main pane's default view, §3 (one on-demand detail area holding a single object, and a narrow screen hiding its list), and the Consequences' 'a Workspace with Sessions reopens on the Sessions surface'; extends 0224 §5 (route grammar)"
 ---
@@ -181,6 +181,6 @@ format, the place-memory keys and the reading position change only through a
 superseding ADR, because stored places and shared links depend on them.
 
 Sections 4 (tools on request) and 6 (landing on an old message) of ADR 0224,
-and its Kanban, Resources and Members views, remain in force. ADR 0227, still
-proposed, takes the wording "a detail screen that replaced its list or another
-detail" for its Back rule before it is accepted.
+and its Kanban, Resources and Members views, remain in force. ADR 0227 takes the
+wording "a detail screen that replaced its list or another detail" for its Back
+rule.

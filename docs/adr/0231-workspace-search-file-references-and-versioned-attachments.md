@@ -2,7 +2,7 @@
 type: ADR
 id: "0231"
 title: "Workspace search with a named scope, Project files as references, one preview surface, and versioned references"
-status: proposed
+status: accepted
 date: 2026-10-20
 supersedes: "0214 §3, the sentence 'Artifact items carry the revision recorded when the process ended and are listed as available', and the single `truncated` flag as the only scope signal of a search page; 0214 Validation status, the known limit 'the in-Composer preview is read-only and does not navigate to the object', for the Workspace composer only; 0224 §2, the Resources bullet (where 0228 has not already superseded it)"
 extends: "0214 §2 and §7 (adds the `file` kind), 0214 §3 (pages name their scope, reads name the revision they show, resolve returns titles), 0216 (researcher message references are pinned when posted), 0228 (Resources hosts the inspector; rows open through it), 0227 (ReferenceChip is the only rendering of a reference)"
