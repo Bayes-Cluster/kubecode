@@ -939,6 +939,8 @@ export type ProjectContextKind =
   | 'work'
   | 'thread'
   | 'channel'
+  /** A Project file by its Project-relative path (ADR 0231 §1): never routable. */
+  | 'file'
 export type ProjectContextDetail = 'summary' | 'content' | 'evidence'
 /** A typed pointer; `revision` is a change fingerprint, not a snapshot. */
 export type ProjectContextRef = { kind: ProjectContextKind; id: string; revision?: string | null }
@@ -960,6 +962,12 @@ export type ProjectContextPage = {
   items: ProjectContextItem[]
   next_cursor: string | null
   truncated: boolean
+  /** The kinds this page actually searched (ADR 0231 §2). */
+  searched?: ProjectContextKind[]
+  /** The kinds a cap or a bounded walk cut short. */
+  truncated_kinds?: ProjectContextKind[]
+  /** Matches per searched kind before paging; a lower bound for a truncated kind. */
+  counts?: Partial<Record<ProjectContextKind, number>>
 }
 export type ProjectContextSection = { heading: string; text: string; truncated: boolean }
 export type ProjectContextDocument = {
@@ -972,11 +980,15 @@ export type ProjectContextDocument = {
   related: ProjectContextItem[]
   next_cursor: string | null
   notes: string[]
+  /** The revision of the content the sections show; null when nothing is shown. */
+  shown_revision?: string | null
 }
 export type ProjectContextResolved = {
   ref: ProjectContextRef
   availability: ResearchSourceAvailability
   current_revision: string | null
+  /** What a visible record is called now; null for a missing, private, or foreign one. */
+  title?: string | null
 }
 
 /** Imported discussion (ADR 0214 §8): attributed source material, never a finding. */

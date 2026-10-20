@@ -1,11 +1,10 @@
 import type { ReferenceState } from '@/components/workspace/ReferenceChip'
 import type { WorkspaceObjectKind } from '@/kubecode/icons/workspaceIcons'
-import type { Translator } from '@/lib/i18n'
+import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type {
   ChannelThread,
   Conversation,
-  ProjectContextItem,
   ProjectContextKind,
   ProjectContextRef,
   ResearchSummary,
@@ -41,6 +40,7 @@ const OBJECT_KINDS: Record<ProjectContextKind, WorkspaceObjectKind> = {
   work: 'workItem',
   thread: 'thread',
   channel: 'message',
+  file: 'file',
 }
 
 /** The shared glyph for a kind of reference. */
@@ -48,15 +48,34 @@ export function objectKindOf(kind: ProjectContextKind): WorkspaceObjectKind {
   return OBJECT_KINDS[kind]
 }
 
+/**
+ * A kind in the Workspace's words: the shared vocabulary where it has one
+ * (Task, File, Finding…), else the reader's own kind name.
+ */
+const VOCABULARY: Partial<Record<ProjectContextKind, TranslationKey>> = {
+  research: 'kubecode.vocab.object.task',
+  file: 'kubecode.vocab.object.file',
+  finding: 'kubecode.vocab.object.finding',
+  experiment: 'kubecode.vocab.object.experiment',
+  artifact: 'kubecode.vocab.object.artifact',
+  import: 'kubecode.vocab.object.discussion',
+  thread: 'kubecode.vocab.object.thread',
+  session: 'kubecode.vocab.object.session',
+}
+
+export function kindLabelKey(kind: ProjectContextKind): TranslationKey {
+  return VOCABULARY[kind] ?? PROJECT_CONTEXT_KIND_LABELS[kind]
+}
+
 export function localReferenceLabels({ picked, research, sessions, t, threads }: {
   research: readonly ResearchSummary[]
   threads: readonly ChannelThread[]
   sessions: readonly Conversation[]
-  picked: readonly ProjectContextItem[]
+  picked: ReadonlyArray<{ ref: Pick<ProjectContextRef, 'kind' | 'id'>; title: string }>
   t: Translator
 }): ReferenceLabelSource {
   return (ref) => {
-    const kindLabel = ref.kind === 'research' ? t('kubecode.vocab.object.task') : t(PROJECT_CONTEXT_KIND_LABELS[ref.kind])
+    const kindLabel = t(kindLabelKey(ref.kind))
     const known = ref.kind === 'research' ? research.find((item) => item.id === ref.id)?.title
       : ref.kind === 'thread' ? threads.find((item) => item.id === ref.id)?.title
         : ref.kind === 'session' ? sessions.find((item) => item.id === ref.id)?.title

@@ -1144,6 +1144,19 @@ describe('Kubecode API client', () => {
       )
     })
 
+    it('names Project files only when asked and lets a newer search cancel an older one', async () => {
+      const fetch = vi.fn().mockImplementation(async () => ok({ items: [], next_cursor: null, truncated: false }))
+      vi.stubGlobal('fetch', fetch)
+      const api = new KubecodeApi('')
+      const controller = new AbortController()
+
+      await api.searchProjectContext('p', { query: 'summary', kinds: ['finding', 'file'], signal: controller.signal })
+
+      const [url, init] = fetch.mock.calls[0]
+      expect(url).toBe('/api/v1/projects/p/context/search?q=summary&kinds=finding%2Cfile')
+      expect(init.signal).toBe(controller.signal)
+    })
+
     it('reads a reference at a detail level and resolves in one POST', async () => {
       const fetch = vi.fn().mockImplementation(async () => ok([]))
       vi.stubGlobal('fetch', fetch)

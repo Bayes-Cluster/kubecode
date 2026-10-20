@@ -809,7 +809,7 @@ export class KubecodeApi {
   /** Read-only discovery over a Project's research, Sessions, Teams, and experiments. */
   searchProjectContext(
     projectId: string,
-    options: { query?: string; kinds?: ProjectContextKind[]; limit?: number; cursor?: string } = {},
+    options: { query?: string; kinds?: ProjectContextKind[]; limit?: number; cursor?: string; signal?: AbortSignal } = {},
   ): Promise<ProjectContextPage> {
     const params = query({
       q: options.query || undefined,
@@ -817,7 +817,8 @@ export class KubecodeApi {
       limit: options.limit,
       cursor: options.cursor,
     })
-    return this.request(`${this.projectPath(projectId)}/context/search${params ? `?${params}` : ''}`)
+    const path = `${this.projectPath(projectId)}/context/search${params ? `?${params}` : ''}`
+    return options.signal ? this.request(path, { signal: options.signal }) : this.request(path)
   }
 
   /** A progressive read: summary first, then content, then evidence. */
