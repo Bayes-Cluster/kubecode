@@ -8,6 +8,7 @@ import type { Translator } from '@/lib/i18n'
 import type { KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
+import { placeKey, usePlaceRef, usePlaceState } from '../app/location/placeMemory'
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { DmShareDialog } from './DmShareDialog'
@@ -49,14 +50,16 @@ export function DmPane({
     events,
     connectionState,
   )
-  const [draft, setDraft] = useState('')
+  // The unsent private draft outlives the pane for the life of the page, never on disk.
+  const place = placeKey.dm(projectId, member.id)
+  const [draft, setDraft] = usePlaceState(`${place}#draft`, '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
   const [shared, setShared] = useState(false)
   // One id per typed message, kept until it is delivered, so a retry after a
   // lost reply is the same message.
-  const attempt = useRef<{ id: string; text: string } | null>(null)
+  const attemptRef = usePlaceRef<{ id: string; text: string } | null>(`${place}#attempt`, null)
   const log = useRef<HTMLDivElement>(null)
 
   // New turns, and the member's reply after a send, come into view.
@@ -70,13 +73,13 @@ export function DmPane({
   const send = async () => {
     const text = draft.trim()
     if (!text || busy) return
-    const id = attempt.current?.text === text ? attempt.current.id : newClientMessageId()
-    attempt.current = { id, text }
+    const id = attemptRef.current?.text === text ? attemptRef.current.id : newClientMessageId()
+    attemptRef.current = { id, text }
     setBusy(true)
     setError(null)
     try {
       await api.sendMemberDm(projectId, member.id, text, id)
-      attempt.current = null
+      attemptRef.current = null
       setDraft('')
       setShared(false)
       reload()
@@ -142,6 +145,7 @@ export function DmPane({
           below={error && <p className="kubecode-research-error" role="alert">{error}</p>}
           busy={busy}
           busyLabel={t('kubecode.dm.sending')}
+          focusKey={`composer:dm:${member.id}`}
           label={t('kubecode.dm.placeholder', { name: member.name })}
           placeholder={t('kubecode.dm.placeholder', { name: member.name })}
           sendLabel={t('kubecode.channel.send')}

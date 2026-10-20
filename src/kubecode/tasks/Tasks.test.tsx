@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { KubecodeApi, TaskBoard, TaskCard, TaskDetail, TaskDraft } from '../api'
 import { ApiError } from '../api'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { nextFrame, stubScrollGeometry } from '@/test/scrollGeometry'
 import { TaskBoardView } from './TaskBoardView'
 import { TaskInspector } from './TaskInspector'
 
@@ -307,5 +310,46 @@ describe('TaskInspector', () => {
     expect(within(list).getByRole('button', { name: 'artifact:a1' })).not.toHaveAttribute('aria-expanded')
     expect(screen.queryByTestId('evidence-viewer')).not.toBeInTheDocument()
     expect(readProjectContext).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskBoardView keeps its place (ADR 0228 §4)', () => {
+  const boardIn = (memory: PlaceMemory, cards: TaskCard[] | null) => (
+    <PlaceMemoryProvider memory={memory}>
+      <TaskBoardView
+        board={cards ? board(cards) : null}
+        drafts={[]}
+        scrollKey="p1|view:board"
+        status={cards ? 'ready' : 'loading'}
+        t={t}
+        onOpenDraft={vi.fn()}
+        onOpenTask={vi.fn()}
+        onReload={vi.fn()}
+      />
+    </PlaceMemoryProvider>
+  )
+
+  it('returns to where the board was scrolled once its cards are back, and names each card for focus return', async () => {
+    const restore = stubScrollGeometry()
+    try {
+      const memory = createPlaceMemory()
+      const cards = [card({ id: 'r1' }), card({ id: 'r2', title: 'Second' })]
+      const view = render(boardIn(memory, cards))
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-focus-key', 'card:r2')
+      expect(screen.getByTestId('task-card-r2')).toHaveAttribute('data-scroll-anchor', 'card:r2')
+      const scroller = screen.getByRole('region', { name: 'kubecode.nav.board' })
+      scroller.scrollTop = 130
+      fireEvent.scroll(scroller)
+      await act(nextFrame)
+
+      view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+      view.rerender(boardIn(memory, null))
+      const again = screen.getByRole('region', { name: 'kubecode.nav.board' })
+      expect(again.scrollTop).toBe(0)
+      view.rerender(boardIn(memory, cards))
+      expect(again.scrollTop).toBe(130)
+    } finally {
+      restore()
+    }
   })
 })

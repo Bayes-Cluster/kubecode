@@ -1,7 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { KubecodeApi, ProjectContextItem } from '../api'
+import { nextFrame, stubScrollGeometry } from '@/test/scrollGeometry'
+import { createPlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { ResourcesView } from './ResourcesView'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
@@ -58,5 +61,40 @@ describe('ResourcesView', () => {
     await waitFor(() => expect(api.readProjectContext).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole('button', { name: 'kubecode.resources.open' })).not.toBeInTheDocument()
     expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ResourcesView keeps its place (ADR 0228 §4)', () => {
+  it('returns to where the results were scrolled, and names each row for focus return', async () => {
+    const restore = stubScrollGeometry()
+    try {
+      const memory = createPlaceMemory()
+      const api = {
+        searchProjectContext: vi.fn().mockResolvedValue({
+          items: [item('research', 'r1', 'Pruning'), item('artifact', 'a1', 'results.csv')],
+          next_cursor: null,
+        }),
+      } as unknown as KubecodeApi
+      const resources = (
+        <PlaceMemoryProvider memory={memory}>
+          <ResourcesView api={api} canOpen={() => false} projectId="p1" scrollKey="p1|view:resources" t={t} onOpen={vi.fn()} />
+        </PlaceMemoryProvider>
+      )
+      const view = render(resources)
+      const row = await screen.findByRole('option', { name: /results\.csv/ })
+      expect(row).toHaveAttribute('data-focus-key', 'resource:artifact:a1')
+      expect(row).toHaveAttribute('data-scroll-anchor', 'resource:artifact:a1')
+      const results = screen.getByTestId('project-work-results')
+      results.scrollTop = 220
+      fireEvent.scroll(results)
+      await act(nextFrame)
+
+      view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+      view.rerender(resources)
+      await screen.findByRole('option', { name: /results\.csv/ })
+      await waitFor(() => expect(screen.getByTestId('project-work-results').scrollTop).toBe(220))
+    } finally {
+      restore()
+    }
   })
 })

@@ -72,7 +72,9 @@ export function MessageItem({
       <details
         className="kubecode-channel-activity"
         data-author="system"
+        data-focus-key={`message:${message.id}`}
         data-message-id={message.id}
+        data-scroll-anchor={message.id}
         data-testid={`message-${message.seq}`}
       >
         <summary title={t('kubecode.channel.activity')}>
@@ -86,8 +88,10 @@ export function MessageItem({
     <article
       className="kubecode-channel-message"
       data-author={message.author_kind}
+      data-focus-key={`message:${message.id}`}
       data-kind={message.kind}
       data-message-id={message.id}
+      data-scroll-anchor={message.id}
       data-testid={`message-${message.seq}`}
       id={`message-${message.id}`}
     >

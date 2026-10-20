@@ -163,7 +163,12 @@ export function MemberRoster({
       )}
       <ul className="kubecode-member-list">
         {roster.members.map((member) => (
-          <li data-state={member.state} key={member.id}>
+          <li
+            data-focus-key={`member:${member.id}`}
+            data-scroll-anchor={`member:${member.id}`}
+            data-state={member.state}
+            key={member.id}
+          >
             <AiAgentIcon agent={member.spec.agent_id} size={18} />
             <div className="kubecode-member-main">
               {onOpenMember ? (

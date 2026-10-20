@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { DmTurn, KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
 import { ApiError } from '../api'
+import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { DmPane } from './DmPane'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
@@ -196,5 +198,44 @@ describe('DmPane', () => {
     }
     expect(share.mock.calls[0][2].clientMessageId).not.toBe(share.mock.calls[1][2].clientMessageId)
     expect(api.previewDmShare).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('DmPane drafts kept for the place (ADR 0228 §4)', () => {
+  const pane = (memory: PlaceMemory, api: Record<string, unknown>, member = analyst) => (
+    <PlaceMemoryProvider memory={memory}>
+      <DmPane
+        api={api as unknown as KubecodeApi}
+        connectionState="live"
+        events={[]}
+        member={member}
+        projectId="p1"
+        research={research}
+        t={t}
+      />
+    </PlaceMemoryProvider>
+  )
+
+  it('keeps the unsent private draft and a retried send’s id when the conversation is left, apart for each member', async () => {
+    const memory = createPlaceMemory()
+    const send = vi.fn().mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502)).mockResolvedValue(undefined)
+    const api = { memberDmTurns: vi.fn().mockResolvedValue([]), sendMemberDm: send }
+    const view = render(pane(memory, api))
+    const box = () => screen.getByRole('textbox', { name: titled('kubecode.dm.placeholder') })
+    expect(box()).toHaveAttribute('data-focus-key', 'composer:dm:m1')
+    fireEvent.change(box(), { target: { value: 'just between us' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.dm.failed')
+
+    view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+    view.rerender(pane(memory, api, { ...analyst, id: 'm2', name: 'Analyst' }))
+    expect(box()).toHaveValue('')
+
+    view.rerender(pane(memory, api))
+    expect(box()).toHaveValue('just between us')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send.mock.calls[1][3]).toBe(send.mock.calls[0][3])
+    await waitFor(() => expect(box()).toHaveValue(''))
   })
 })

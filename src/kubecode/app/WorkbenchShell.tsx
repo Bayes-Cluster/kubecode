@@ -69,6 +69,8 @@ import { WithInspector } from './inspector/WithInspector'
 import type { InspectMode, InspectorEntry } from './location/inspector'
 import { needsYouFromCurrentSources, type NeedsYouTarget } from './location/needsYou'
 import { locationFromRoute, routeFromLocation } from './location/locationRoute'
+import { createPlaceMemory, placeKey, type Landing, type ReadingPosition } from './location/placeMemory'
+import { PlaceMemoryProvider } from './location/PlaceMemoryProvider'
 import { inspectorTargetForReference } from './location/references'
 import { useDmTarget } from './location/useDmTarget'
 import { useWorkspaceLocation, type LocationDispatchOptions } from './location/useWorkspaceLocation'
@@ -165,8 +167,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // -- Where the researcher is (ADR 0228): one location per Workspace -----------------------
   const [locationStorage] = useState(browserStorage)
   const workspaceLocation = useWorkspaceLocation(projectId, locationStorage)
-  const { dispatch: dispatchLocation, location, peek: peekLocation } = workspaceLocation
+  const { dispatch: dispatchLocation, flush: flushLocation, location, peek: peekLocation } = workspaceLocation
   const { place } = location
+  // What a place keeps besides its address (drafts, scroll), for the life of the page.
+  const [placeMemory] = useState(createPlaceMemory)
+  // How General is arrived at next: a link or a closed detail focuses the message;
+  // coming back from the navigation on a wide screen leaves focus where it is.
+  const [landing, setLanding] = useState<Landing>('focus')
   // Files and Git are a column beside Sessions; beside the research views they
   // open when asked for and are gone again when the view is left.
   const onSessionsSurface = !projectId || place.view === 'sessions'
@@ -200,6 +207,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   const projectIdRef = useRef(projectId)
   useEffect(() => { projectIdRef.current = projectId }, [projectId])
+  const placeRef = useRef(place)
+  useEffect(() => { placeRef.current = place }, [place])
+  // Where the researcher is reading in each Workspace's General, as it reports it; no render, no route write.
+  const readingRef = useRef(new Map<string, ReadingPosition>())
+  // What had focus in General when it was last left, per Workspace.
+  const leftFocusRef = useRef(new Map<string, ReadingPosition['focus']>())
   const project = projects.find((item) => item.id === projectId) ?? null
   const conversation = conversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
@@ -312,10 +325,53 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   ), [attentionSessions, projectId, t, taskBoard.board, taskBoard.drafts])
 
   // -- Moving the researcher -----------------------------------------------------------------
+  /**
+   * Leaving General records where the researcher was reading in its place, as
+   * a quiet change, so coming back (or Back, or a reload) lands there again.
+   */
+  const foldReading = useCallback(() => {
+    const current = projectIdRef.current
+    if (!current || placeRef.current.view !== 'general') return
+    const reading = readingRef.current.get(current)
+    if (!reading) return
+    readingRef.current.delete(current)
+    leftFocusRef.current.set(current, reading.focus)
+    if (!reading.atLatest && !reading.messageId) return
+    dispatchLocation(
+      { type: 'patchGeneral', projectId: current, patch: { message: reading.atLatest ? null : reading.messageId } },
+      { history: 'replace' },
+    )
+  }, [dispatchLocation])
+
   /** A move the researcher made. */
   const move = useCallback((action: LocationAction, options?: LocationDispatchOptions) => {
+    const leaving = (action.type === 'go' && action.target.view !== 'general')
+      || (action.type === 'enterWorkspace' && action.projectId !== projectIdRef.current)
+    if (leaving) foldReading()
+    setLanding('focus')
     dispatchLocation(action, { user: true, ...options })
-  }, [dispatchLocation])
+  }, [dispatchLocation, foldReading])
+
+  /**
+   * Coming back by the navigation: on a wide screen focus stays on it; when
+   * the navigation sheet closes on a phone, focus goes to the message being
+   * read, or to the composer if that is where the researcher was.
+   */
+  const landFromNavigation = useCallback((nextProjectId: string) => {
+    if (!narrowLayout) setLanding('quiet')
+    else setLanding(leftFocusRef.current.get(nextProjectId) === 'composer' ? 'composer' : 'focus')
+  }, [narrowLayout])
+
+  // The last reading position is recorded when the page is hidden, and written at once.
+  useEffect(() => {
+    const onHide = () => {
+      foldReading()
+      setLanding('quiet')
+      flushLocation()
+    }
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [flushLocation, foldReading])
   const closeNavigatorSheet = useCallback(() => {
     if (narrowLayout) setSessionSidebarOpen(false)
   }, [narrowLayout])
@@ -356,10 +412,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const enterWorkspace = useCallback((nextProjectId: string, options: { fresh?: boolean } = {}) => {
     closeNavigatorSheet()
     if (nextProjectId === projectId && !options.fresh) return
-    selectProject(nextProjectId)
     move({ type: 'enterWorkspace', projectId: nextProjectId, fresh: options.fresh })
+    selectProject(nextProjectId)
+    landFromNavigation(nextProjectId)
     setAnnouncedProjectId(nextProjectId)
-  }, [closeNavigatorSheet, move, projectId, selectProject])
+  }, [closeNavigatorSheet, landFromNavigation, move, projectId, selectProject])
 
   const openTaskFromMessage = useCallback((taskId: string, messageId: string) => {
     patchGeneral({ message: messageId })
@@ -407,10 +464,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (projectId) dispatchLocation({ type: 'enterWorkspace', projectId })
   }, [dispatchLocation, projectId])
 
-  // The places of Workspaces that are no longer registered are forgotten.
+  // The places of Workspaces that are no longer registered are forgotten, with their drafts.
   useEffect(() => {
-    if (layoutHydrated) dispatchLocation({ type: 'prune', projectIds: projects.map((item) => item.id) })
-  }, [dispatchLocation, layoutHydrated, projects])
+    if (!layoutHydrated) return
+    const projectIds = projects.map((item) => item.id)
+    dispatchLocation({ type: 'prune', projectIds })
+    placeMemory.prune(projectIds)
+    for (const known of readingRef.current.keys()) {
+      if (!projectIds.includes(known)) readingRef.current.delete(known)
+    }
+  }, [dispatchLocation, layoutHydrated, placeMemory, projects])
 
   // A private conversation or a profile of a member who left falls back quietly.
   useEffect(() => {
@@ -801,6 +864,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   return (
     <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
+    <PlaceMemoryProvider memory={placeMemory}>
     <WorkspaceNavigationContext.Provider value={navigation}>
     <InspectorServicesContext.Provider value={inspectorServices}>
     <main className="kubecode-app">
@@ -915,7 +979,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   inspect({ kind: 'member', id: memberId })
                   closeNavigatorSheet()
                 }}
-                onOpen={(view) => openPlace({ view })}
+                onOpen={(view) => {
+                  openPlace({ view })
+                  landFromNavigation(projectId)
+                }}
                 onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
                 onOpenTarget={openNeedsYouTarget}
               />
@@ -936,6 +1003,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 <TaskBoardView
                   board={taskBoard.board}
                   drafts={taskBoard.drafts}
+                  scrollKey={placeKey.view(projectId, 'board')}
                   selectedId={boardTask}
                   status={taskBoard.status}
                   t={t}
@@ -967,6 +1035,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   api={api}
                   canOpen={(reference) => ['research', 'session', 'thread', 'channel', 'work'].includes(reference.kind)}
                   projectId={projectId}
+                  scrollKey={placeKey.view(projectId, 'resources')}
                   t={t}
                   onOpen={(reference) => {
                     if (reference.kind === 'research') {
@@ -988,6 +1057,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   defaults={memberDefaults}
                   events={reconciliation.workspaceEvents}
                   projectId={projectId}
+                  scrollKey={placeKey.view(projectId, 'members')}
                   t={t}
                   onDefaultsLoaded={setMemberDefaults}
                   onOpenDm={openDm}
@@ -1000,11 +1070,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 connectionState={reconciliation.connectionState}
                 conversations={sessionCatalog}
                 detail={inspectorPane}
+                detailCovers={presentation === 'screen'}
                 events={reconciliation.workspaceEvents}
                 filter={place.filter ?? null}
                 focusMessageId={place.message ?? null}
                 initialThreadId={place.thread ?? null}
                 key={projectId}
+                landing={landing}
+                onReadingPositionChange={(position) => readingRef.current.set(projectId, position)}
                 tasksOnBoard={taskBoard.board ? tasksOnBoard : undefined}
                 onFilterChange={(filter) => patchGeneral({ filter })}
                 onOpenResearch={(taskId) => inspect({ kind: 'task', id: taskId })}
@@ -1225,6 +1298,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     </main>
     </InspectorServicesContext.Provider>
     </WorkspaceNavigationContext.Provider>
+    </PlaceMemoryProvider>
     </SystemMessageProvider>
   )
 }

@@ -1,5 +1,5 @@
 import { CircleAlert, Eye, FlaskConical, Loader2 } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type Ref } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,6 +46,8 @@ type ComposerProjectWorkPickerProps = {
   canOpen?: (item: ProjectContextItem) => boolean
   projectId: string
   t: Translator
+  /** The scrolling list of results, so a view can keep its scroll position. */
+  resultsRef?: Ref<HTMLDivElement>
 }
 
 /**
@@ -60,6 +62,7 @@ export function ComposerProjectWorkPicker({
   onOpen,
   onSelect,
   projectId,
+  resultsRef,
   t,
 }: ComposerProjectWorkPickerProps) {
   const [query, setQuery] = useState('')
@@ -245,6 +248,7 @@ export function ComposerProjectWorkPicker({
         aria-busy={list.status === 'loading'}
         className="min-h-0 flex-1 overflow-y-auto p-2"
         data-testid="project-work-results"
+        ref={resultsRef}
       >
         {list.status === 'loading' ? (
           <p className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground" role="status">
@@ -272,6 +276,8 @@ export function ComposerProjectWorkPicker({
                     index === current && 'bg-accent text-accent-foreground',
                     !enabled && 'cursor-not-allowed opacity-60',
                   )}
+                  data-focus-key={`resource:${item.ref.kind}:${item.ref.id}`}
+                  data-scroll-anchor={`resource:${item.ref.kind}:${item.ref.id}`}
                   id={`${listboxId}-option-${index}`}
                   key={`${item.ref.kind}:${item.ref.id}`}
                   onClick={() => enabled && choose(item)}

@@ -34,6 +34,8 @@ export type WorkspaceLocationState = {
   takeHistoryMode(): HistoryMode
   /** Whether the researcher has moved, so their choice wins over a link the page was slow to read. */
   userMoved: boolean
+  /** Writes the remembered places now (a change made as the page is hidden). */
+  flush(): void
 }
 
 /**
@@ -111,5 +113,5 @@ export function useWorkspaceLocation(
 
   const location = useMemo(() => locationOf(memory, projectId), [memory, projectId])
 
-  return { memory, location, dispatch, peek, takeHistoryMode, userMoved }
+  return { memory, location, dispatch, flush, peek, takeHistoryMode, userMoved }
 }

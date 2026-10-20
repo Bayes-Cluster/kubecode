@@ -359,10 +359,22 @@ describe('Workspace navigation and routes', () => {
     expect(box).toBeInTheDocument()
     expect(document.querySelector('[data-message-id="m1"]')).toBeInTheDocument()
 
+    // Parked: still there, but out of reach until the inspector is gone.
+    expect(document.querySelector('.kubecode-channel-main')).toHaveAttribute('inert')
+
     fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
     await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument())
     expect(await composer()).toBe(box)
     expect(box).toHaveValue('Half a thought')
+    expect(document.querySelector('.kubecode-channel-main')).not.toHaveAttribute('inert')
+  })
+
+  it('parks the board under a full-screen Task on a phone', async () => {
+    narrowScreen()
+    await start('#/p/project-1/board?task=r1')
+    expect(await inspector('Task details')).toBeInTheDocument()
+    expect(document.querySelector('.kubecode-inspector-main')).toHaveAttribute('inert')
+    expect(screen.getByTestId('task-card-r1')).toBeInTheDocument()
   })
 
   it('offers no way "back" from any primary view', async () => {
@@ -582,3 +594,125 @@ describe('The Workspaces navigation', () => {
   })
 })
 
+describe('Returning to a place (ADR 0228 §4)', () => {
+  /** Six 40px messages in a 100px log; returns a setter for how far it is scrolled. */
+  function readableLog() {
+    const log = screen.getByRole('log', { name: 'Messages' })
+    let top = 0
+    Object.defineProperty(log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 240 })
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const id = this.getAttribute('data-message-id')
+      const y = id ? (Number(id.slice(1)) - 1) * 40 - top : 0
+      return { top: y, bottom: y + (id ? 40 : 100), height: id ? 40 : 100, left: 0, right: 0, width: 0, x: 0, y } as DOMRect
+    })
+    return (next: number) => {
+      top = next
+      fireEvent.scroll(log)
+    }
+  }
+
+  const six = () => api({
+    listChannelMessages: vi.fn().mockResolvedValue({
+      messages: Array.from({ length: 6 }, (_, index) => message({ id: `m${index + 1}`, seq: index + 1, body: `note ${index + 1}`, task_id: null })),
+      has_more: false,
+    }),
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('keeps each place’s draft across a view switch and a Workspace switch, never mixing them', async () => {
+    const { nav } = await start('#/p/project-1/general')
+    fireEvent.change(await composer(), { target: { value: 'Half a thought' } })
+
+    fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
+    await screen.findByRole('heading', { name: 'Kanban', level: 2 })
+    fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
+    expect(await composer()).toHaveValue('Half a thought')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Other' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
+    expect(await composer()).toHaveValue('')
+    fireEvent.change(await composer(), { target: { value: 'Elsewhere' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Demo' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
+    expect(await composer()).toHaveValue('Half a thought')
+    fireEvent.click(screen.getByRole('button', { name: 'Other' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
+    expect(await composer()).toHaveValue('Elsewhere')
+  })
+
+  it('keeps a private draft in its own conversation, never in General', async () => {
+    const analyst = member({ id: 'm-analyst', role: 'specialist', name: 'Analyst', handle: 'analyst', dm_conversation_id: 's-dm' })
+    const { nav } = await start('#/p/project-1/dm/m-analyst', api({
+      listMembers: vi.fn().mockResolvedValue({ members: [member({}), analyst], general_id: 'm-general' }),
+      memberDmTurns: vi.fn().mockResolvedValue([]),
+    }))
+    const privately = await screen.findByLabelText('Message Analyst privately', { selector: 'textarea' })
+    fireEvent.change(privately, { target: { value: 'Just between us' } })
+
+    fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
+    expect(await composer()).toHaveValue('')
+    const direct = await within(nav).findByRole('list', { name: 'Direct messages' })
+    fireEvent.click(within(direct).getByRole('button', { name: 'Analyst' }))
+    expect(await screen.findByLabelText('Message Analyst privately', { selector: 'textarea' })).toHaveValue('Just between us')
+  })
+
+  it('returns to the message being read, quietly, after a visit to Kanban', async () => {
+    const { nav } = await start('#/p/project-1/general', six())
+    await screen.findByText('note 6')
+    const scrollTo = readableLog()
+    scrollTo(40)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
+
+    fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board'))
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
+    // The position was folded in when General was left: Back and a reload land on it too.
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m3'))
+    await waitFor(() => expect(scroll).toHaveBeenCalled())
+    expect(document.activeElement?.getAttribute('data-message-id')).toBeNull()
+  })
+
+  it('follows the conversation again when the researcher was at the newest message', async () => {
+    const { nav } = await start('#/p/project-1/general/m/m2', six())
+    await screen.findByText('note 6')
+    const scrollTo = readableLog()
+    scrollTo(140)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
+    fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/resources'))
+    fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
+  })
+
+  it('records the reading position when the page is hidden', async () => {
+    await start('#/p/project-1/general', six())
+    await screen.findByText('note 6')
+    const scrollTo = readableLog()
+    scrollTo(80)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
+    act(() => { window.dispatchEvent(new Event('pagehide')) })
+    const stored = JSON.parse(localStorage.getItem('kubecode:workspace-location:v1') ?? '{}')
+    expect(stored.workspaces['project-1'].views.general).toBe('/p/project-1/general/m/m4')
+  })
+
+  it('on a phone, lands on the message being read once the navigation closes', async () => {
+    narrowScreen()
+    const { nav } = await start('#/p/project-1/general', six())
+    await screen.findByText('note 6')
+    const scrollTo = readableLog()
+    scrollTo(40)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
+    Element.prototype.scrollIntoView = vi.fn()
+    fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/resources'))
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
+    fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getAllByRole('button', { name: 'General' })[0])
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-message-id', 'm3'))
+  })
+})

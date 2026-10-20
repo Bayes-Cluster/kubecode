@@ -21,6 +21,7 @@ import type {
   ProjectContextItem,
   ProjectContextRef,
 } from '../api'
+import { usePlaceRef, usePlaceState } from '../app/location/placeMemory'
 import { ComposerProjectWorkPicker } from '../ComposerProjectWorkPicker'
 import { PROJECT_CONTEXT_KIND_LABELS } from '../projectContext'
 import { newClientMessageId } from '../session/sessionModel'
@@ -48,6 +49,14 @@ export type MessageComposerProps = {
   stop?: { target: string; onStop: () => void }
   /** Saves the message; resolves once it is stored. */
   onSend: (message: NewChannelMessage) => Promise<void>
+  /**
+   * The place this draft belongs to (`placeKey`): the unsent text, intent,
+   * references, and a retried send's id outlive the composer for the life of
+   * the page. Without it the draft is the composer's own.
+   */
+  draftKey?: string | null
+  /** Names the text box for focus return (`data-focus-key`). */
+  focusKey?: string
 }
 
 /**
@@ -66,15 +75,18 @@ export function MessageComposer({
   threadId = null,
   mentionOptions = [],
   replyTo = null,
+  draftKey = null,
+  focusKey,
 }: MessageComposerProps) {
-  const [body, setBody] = useState('')
-  const [intent, setIntent] = useState<ChannelIntent>('say')
-  const [askSession, setAskSession] = useState('')
-  const [references, setReferences] = useState<ProjectContextItem[]>([])
+  const kept = (part: string) => (draftKey ? `${draftKey}#${part}` : null)
+  const [body, setBody] = usePlaceState(kept('body'), '')
+  const [intent, setIntent] = usePlaceState<ChannelIntent>(kept('intent'), 'say')
+  const [askSession, setAskSession] = usePlaceState(kept('askSession'), '')
+  const [references, setReferences] = usePlaceState<ProjectContextItem[]>(kept('references'), [])
   const [picker, setPicker] = useState(false)
   // The id of the last attempt and the draft it carried: a retry of the same
   // draft replays the same message, an edited draft is a new message.
-  const attempt = useRef<{ id: string; signature: string } | null>(null)
+  const attemptRef = usePlaceRef<{ id: string; signature: string } | null>(kept('attempt'), null)
   const action = useAction(t)
   const asking = intent === 'ask'
   const ready = body.trim().length > 0 && (!asking || askSession !== '')
@@ -104,10 +116,10 @@ export function MessageComposer({
       mentioned,
       replyTo?.id ?? '',
     ])
-    const id = attempt.current?.signature === signature
-      ? attempt.current.id
+    const id = attemptRef.current?.signature === signature
+      ? attemptRef.current.id
       : newClientMessageId()
-    attempt.current = { id, signature }
+    attemptRef.current = { id, signature }
     // Clear at once so what the researcher types next is never lost to the
     // completion of this send; put the draft back if it fails and nothing new
     // has been typed. The client id stays until the send succeeds, so a retry
@@ -133,7 +145,7 @@ export function MessageComposer({
       })),
     }))
     if (sent) {
-      attempt.current = null
+      attemptRef.current = null
       replyTo?.onClear()
     } else {
       setBody((current) => (current === '' ? draft.body : `${draft.body}\n${current}`))
@@ -223,6 +235,7 @@ export function MessageComposer({
             />
           </>
         )}
+        focusKey={focusKey}
         label={placeholder}
         mentionLabel={t('kubecode.composer.mentions')}
         mentions={mentionOptions}

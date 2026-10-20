@@ -1,8 +1,11 @@
+import { useRef } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { TaskBoard, TaskCard, TaskDraft } from '../api'
+import { useScrollMemory } from '../app/location/placeMemory'
 import type { TaskBoardStatus } from './useTaskBoard'
 import { conditionLabel, stageLabel, TASK_STAGES } from './taskLabels'
 
@@ -16,6 +19,8 @@ export type TaskBoardViewProps = {
   onOpenDraft: (draft: TaskDraft) => void
   onOpenTask: (task: TaskCard) => void
   onReload: () => void
+  /** Where the board's scroll position is kept for the place (`placeKey.view`). */
+  scrollKey?: string | null
 }
 
 /**
@@ -30,12 +35,15 @@ export function TaskBoardView({
   onOpenDraft,
   onOpenTask,
   onReload,
+  scrollKey = null,
   selectedId = null,
   status,
   t,
 }: TaskBoardViewProps) {
+  const scroller = useRef<HTMLElement>(null)
+  useScrollMemory(scroller, scrollKey, { ready: board !== null })
   return (
-    <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board">
+    <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
       <header className="kubecode-channel-header">
         <div>
           <h2>{t('kubecode.nav.board')}</h2>
@@ -77,6 +85,8 @@ export function TaskBoardView({
                         <button
                           aria-current={selectedId === card.id ? 'true' : undefined}
                           className="kubecode-task-card"
+                          data-focus-key={`card:${card.id}`}
+                          data-scroll-anchor={`card:${card.id}`}
                           data-testid={`task-card-${card.id}`}
                           type="button"
                           onClick={() => onOpenTask(card)}

@@ -15,6 +15,8 @@ describe('WithInspector', () => {
     expect(host).toHaveAttribute('data-inspector-layout', 'screen')
     expect(screen.getByRole('complementary', { name: 'Task details' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'filter' })).toHaveValue('pruning')
+    // Covered, the view is parked out of reach: no focus, no reading, its state intact.
+    expect(host.querySelector('.kubecode-inspector-main')).toHaveAttribute('inert')
 
     view.rerender(
       <WithInspector inspector={null} presentation="side">
@@ -24,5 +26,14 @@ describe('WithInspector', () => {
     expect(host).toHaveAttribute('data-detail', 'false')
     expect(host).toHaveAttribute('data-inspector-layout', 'side')
     expect(screen.getByRole('textbox', { name: 'filter' })).toHaveValue('pruning')
+    expect(host.querySelector('.kubecode-inspector-main')).not.toHaveAttribute('inert')
+
+    // Beside the view, both stay in reach.
+    view.rerender(
+      <WithInspector inspector={<aside aria-label="Task details" />} presentation="side">
+        <input aria-label="filter" defaultValue="pruning" />
+      </WithInspector>,
+    )
+    expect(host.querySelector('.kubecode-inspector-main')).not.toHaveAttribute('inert')
   })
 })

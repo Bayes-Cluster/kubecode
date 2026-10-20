@@ -59,6 +59,16 @@ describe('useWorkspaceLocation', () => {
     expect(stored(storage).workspaces.p1.current).toBe('members')
   })
 
+  it('writes at once when asked, for a last change made as the page is hidden', () => {
+    const storage = memoryStorage()
+    const { result } = renderHook(() => useWorkspaceLocation('p1', storage))
+    act(() => {
+      result.current.dispatch({ type: 'go', projectId: 'p1', target: { view: 'board' } })
+      result.current.flush()
+    })
+    expect(stored(storage).workspaces.p1.current).toBe('board')
+  })
+
   it('never writes the places it only read', () => {
     const storage = memoryStorage()
     renderHook(() => useWorkspaceLocation('p1', storage))
