@@ -32,6 +32,35 @@ describe('DetailPane', () => {
     expect(opener).toHaveFocus()
   })
 
+  it('gives focus back to what replaced its opener, by its focus key, when the opener moved (a card that changed column)', () => {
+    function Moving() {
+      const [open, setOpen] = useState(false)
+      const [column, setColumn] = useState<'review' | 'done'>('review')
+      const card = (
+        <button data-focus-key="card:r1" type="button" onClick={() => setOpen(true)}>Pruning</button>
+      )
+      return (
+        <div>
+          <section key="review">{column === 'review' && card}</section>
+          <section key="done">{column === 'done' && card}</section>
+          {open && (
+            <DetailPane label="Task details" onEscape={() => setOpen(false)}>
+              <button type="button" onClick={() => setColumn('done')}>accept</button>
+            </DetailPane>
+          )}
+        </div>
+      )
+    }
+    render(<Moving />)
+    const opener = screen.getByRole('button', { name: 'Pruning' })
+    opener.focus()
+    fireEvent.click(opener)
+    fireEvent.click(screen.getByRole('button', { name: 'accept' }))
+    expect(opener.isConnected).toBe(false)
+    fireEvent.keyDown(screen.getByRole('button', { name: 'accept' }), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Pruning' })).toHaveFocus()
+  })
+
   it('hands Escape to its host, which decides what one level back is', () => {
     const onEscape = vi.fn()
     render(<Host onEscape={onEscape} />)

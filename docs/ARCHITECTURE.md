@@ -316,19 +316,86 @@ admission endpoint. A review request pins each `kind:id` it cites
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
-Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
+Task lifecycle and read model (ADR 0230): every stage read filters
+`task_events` on one `STAGE_EVENT_KINDS` list, so the `archived`/`restored`
+events that `TaskStore::set_archived` logs never move a stage. The instruction
+watermark (`WATERMARK_EVENT_KINDS`) is the stage events plus `restored`, so
+nothing said before a Task was archived starts it after it is restored; a
+retried instruction whose execute record has no round yet is checked against
+the stage and watermark like a new one. `POST …/tasks/{id}/archive|restore`
+(204) and the research `archive|restore` routes share one rule: archiving is
+refused with `409 task_active` (`reason`: `under_review`, `work_active`) while
+a review is open or any of the question's internal work is active (in any
+stage), both checked inside the archiving transaction (request_review checks
+the flag inside its own). An archived Task refuses admission, approval,
+execution, review requests and new internal work (`WorkStore::create`).
+`research/{id}/resolve|reopen` answer `409 task_owned` for an admitted Task;
+its research status is written only by the Task service, in the same
+transaction as the review or start of execution that implies it. Every
+researcher re-pin of a Task's evidence names the looked-at `revision` — on
+`…/tasks/{id}/repin` and on the work board's `repin` command for a Task's
+internal work (`400` without it, `409 work_evidence_stale` when it moved on) —
+and the coordinator's `work_repin` refuses a Task's evidence, leaving it
+flagged. A research detail carries `task_stage` (null unless admitted) and a
+work card's `research` carries `task`. The read model adds `TaskCard.last_event`,
+`Draft.shown_message_id`, `TaskBoard.archived`, and on the detail `archived`,
+`evidence` (one row per cited `kind:id` with every pin, status and title, at
+most 64, titled through `Evidence::describe`/`ProjectContext::item`),
+`timeline` (events, approvals and brief revisions with the General message
+that carried each, at most 100), `pending` (keys `review:`, `question:` — open
+work only, as the card counts —, `suggestion:` for a suggested change of
+direction not yet decided, `brief:`, `evidence:`), `actions`,
+`authorizing_message.task_id`, `general_message_id` on review requests and
+verdicts (also on the `POST …/review` response), and `internal_work`
+`conversation_id`/`updated_at`. The archived list is cut to the newest 50
+before stages and outcomes are read. Message ids come from batched, read-only
+`ChannelStore` lookups (`messages_by_client_ids`, `proposal_messages`,
+`messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
+deprecated. `ResolvedRef` carries the record's `title`.
+
+Task board and details (ADRs 0225, 0230): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
-and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
-is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
-`ResearchWorkspace` in the Task panel of the inspector stack
-(`tasks/TaskPanel.tsx`, ADR 0228) and decides reviews through
-`POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
-chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
-`tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
-and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
-member through that Session's own MCP endpoint. The service-level counterpart is
-`server/tests/workspace_blueprint_acceptance.rs`.
+and `orchestration_updated` events and after a reconnect. The pure
+`tasks/taskLifecycle.ts` (next step, required action, condition tone, default
+section, progress, the board's first stage) and `tasks/taskReview.ts` (whether a
+changed record may be accepted at the displayed version, what blocks an
+acceptance, which pins move) are the rules every Task surface shares.
+`tasks/TaskBoardView.tsx` is the Kanban entry: proposals above the four stages,
+archived Tasks below, single-button cards (`TaskCardView`, `TaskStatusBadges`),
+a Needs-you filter, and — under a 640px container query — one stage at a time
+that follows the Task inspected last; its stage, filter and scroll are place
+memory. `tasks/TaskPanel.tsx` is the Task entry of the inspector stack: one
+header with the Task's badges, Discuss in General and More actions (archive or
+restore through `POST …/archive|restore`, refusals shown with their reason), a
+next-step line, and Overview (`TaskOverview`, `TaskQuestions`), Results
+(`TaskResults`) and Activity (`TaskActivity`) tabs; it reads the research
+bundle only when a section needs it, and its tab, feedback, outcome and answer
+drafts are kept under `placeKey.task`. `work/EvidencePanel.tsx` shows a cited
+record with `work/EvidenceViewer.tsx`, which reports a display (`onDisplayed`,
+with the read's own revision) only after the cited record itself rendered —
+never while loading, on a failure, for a removed record, a related record
+(handed to the stack as a `resource` entry through `onFollow`) or a failed
+"Load more" — and the panel records it in the stack's `InspectionRecord`.
+`TaskResults` enables "Accept the version you saw" only while that revision is
+the current one, re-pins every pin of the record at it through `…/repin`,
+reloads the Task once when the displayed version is newer than the list (a pin
+that fails after an earlier one moved says only part was accepted), and
+decides through `POST …/review`, holding the other decision while one is
+recorded; its status links to the verdict in General, or says the decision was
+recorded but could not be posted when no verdict message is known.
+Going to General from a Task (`tasks/taskNavigation.ts`) keeps the Task beside
+General and replaces it over a narrow view. A legacy question that is a Task
+(its research detail's `task_stage`) shows its stage and links to it, without
+resolve/reopen/archive (`ResearchWorkspace` `onOpenTask`), and a refused
+research command is shown in the catalog's words. The work inspector sends a
+Task's changed evidence to the Task's Results instead of offering its re-pin. `MessageItem`
+renders proposal messages and Task chips. The browser acceptance
+(`tests/smoke/research-workspace.spec.ts`, `tests/smoke/task-review.spec.ts`)
+uses `tests/smoke/agents.ts`: the fixture provider records each Session's MCP
+servers and prompts under `.local/playwright-fixtures-<port>`, and the test acts
+as a member through that Session's own MCP endpoint. The service-level
+counterpart is `server/tests/workspace_blueprint_acceptance.rs`.
 
 Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
 Project; where the researcher is in each Workspace is a location kept by the

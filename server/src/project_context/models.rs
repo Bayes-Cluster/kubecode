@@ -159,6 +159,9 @@ pub struct ResolvedRef {
     pub reference: ContextRef,
     pub availability: Availability,
     pub current_revision: Option<String>,
+    /// What the record is called now; absent when it is gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Error)]

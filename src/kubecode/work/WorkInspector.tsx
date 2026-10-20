@@ -430,8 +430,11 @@ export function WorkInspector({
       {detail.stale_evidence.length > 0 && (
         <section aria-label={t('kubecode.work.stale.title')}>
           <h4>{t('kubecode.work.stale.title')}</h4>
-          <p className="kubecode-research-notice">{t('kubecode.work.stale.hint')}</p>
-          {native && detail.stale_evidence.map((entry) => (
+          {/* A Task's evidence is accepted only by the researcher, at a version they displayed, in its Results (ADR 0230 §4). */}
+          <p className="kubecode-research-notice">
+            {detail.research?.task ? t('kubecode.work.stale.taskHint') : t('kubecode.work.stale.hint')}
+          </p>
+          {native && !detail.research?.task && detail.stale_evidence.map((entry) => (
             <div className="kubecode-work-command-row" key={entry.result_id}>
               <span>{entry.kind}: {entry.ref_id}</span>
               <Button

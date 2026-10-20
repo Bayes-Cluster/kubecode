@@ -11,8 +11,8 @@ import type {
   TaskBoard,
   TaskDetail,
   TaskDraft,
+  TaskEvidenceCitation,
   TaskReviewRecord,
-  TaskStaleEvidence,
   WorkOutcome,
   DmSharePreview,
   DmTurn,
@@ -535,11 +535,27 @@ export class KubecodeApi {
     })
   }
 
-  /** Accepts the current version of one cited result, after looking at what changed. */
+  /**
+   * Hides a Task (or a proposal) from the board, keeping everything; refused
+   * with `task_active` (and a `reason`) while its review is open or its work runs.
+   */
+  archiveTask(projectId: string, researchId: string): Promise<void> {
+    return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/archive`, { method: 'POST' })
+  }
+
+  /** Puts an archived Task back on the board in the stage it had. */
+  restoreTask(projectId: string, researchId: string): Promise<void> {
+    return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/restore`, { method: 'POST' })
+  }
+
+  /**
+   * Accepts one cited record at the version the researcher was shown: every
+   * pin of it is moved to exactly `revision`, refused if that is no longer current.
+   */
   repinTaskEvidence(
     projectId: string,
     researchId: string,
-    evidence: Pick<TaskStaleEvidence, 'work_id' | 'result_id' | 'request_id'>,
+    evidence: Pick<TaskEvidenceCitation, 'work_id' | 'result_id' | 'request_id'>,
     revision: string,
   ): Promise<void> {
     return this.request(`${this.projectPath(projectId)}/tasks/${encodeURIComponent(researchId)}/repin`, {

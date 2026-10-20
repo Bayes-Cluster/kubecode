@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,7 @@ type Loaded = {
 type State = { status: 'loading' } | { status: 'error'; removed: boolean } | { status: 'ready'; data: Loaded }
 
 /** A record as it was actually shown: the revision is the one read, not the one cited. */
-export type DisplayedEvidence = { kind: string; id: string; revision: string | null }
+export type DisplayedEvidence = { kind: string; id: string; revision: string | null; title: string }
 
 export type EvidenceViewerProps = {
   api: KubecodeApi
@@ -50,9 +50,17 @@ export type EvidenceViewerProps = {
   target: EvidenceTarget
   /**
    * Called after a record rendered successfully, with the revision on screen.
-   * Never called for a read that failed or for a record that is gone.
+   * Never called while loading, for a read that failed, for a record that is
+   * gone, or for a related record the reader moved on to.
    */
   onDisplayed?: (shown: DisplayedEvidence) => void
+  /** Called once the cited record could not be read (failed, gone, or of a kind it cannot show). */
+  onFailed?: () => void
+  /**
+   * Opens a related record elsewhere (the inspector pushes it), so what was
+   * cited stays shown here. Without it, the related record replaces it.
+   */
+  onFollow?: (ref: { kind: string; id: string }) => void
 }
 
 /**
@@ -62,7 +70,7 @@ export type EvidenceViewerProps = {
  * (ProjectContext and the file reader), never copied, and a record the task
  * cited that has changed or vanished says so.
  */
-export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: EvidenceViewerProps) {
+export function EvidenceViewer({ api, onDisplayed, onFailed, onFollow, projectId, t, target }: EvidenceViewerProps) {
   // Following a related record replaces what is shown; a different target
   // (the host remounts this by key) starts over.
   const [followed, setFollowed] = useState<EvidenceTarget | null>(null)
@@ -72,6 +80,8 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
   const [loaded, setLoaded] = useState<{ key: string; result: State } | null>(null)
   const state: State = loaded && loaded.key === requestKey ? loaded.result : { status: 'loading' }
   const targetRevision = target.revision
+  // A failed "Load more" keeps what is shown; it is said next to it.
+  const [moreError, setMoreError] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -118,18 +128,31 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
     return () => { live = false }
   }, [api, current, projectId, requestKey])
 
-  // Reported after commit, when the content is on screen; a failed read, or a
-  // record the server reports as removed, never is.
-  const shown = state.status === 'ready' && state.data.availability !== 'removed'
+  // Reported after commit, when the cited record's content is on screen; a
+  // failed read, a record the server reports as removed, or a related record
+  // followed in place never is.
+  const shown = original && state.status === 'ready' && state.data.availability !== 'removed'
   const shownKind = shown ? current.kind : null
   const shownId = shown ? current.id : null
   const shownRevision = shown ? state.data.revision : null
+  const shownTitle = shown ? state.data.title : null
+  const reported = useRef<string | null>(null)
   useEffect(() => {
-    if (shownKind !== null && shownId !== null) onDisplayed?.({ kind: shownKind, id: shownId, revision: shownRevision })
-  }, [onDisplayed, shownId, shownKind, shownRevision])
+    if (shownKind === null || shownId === null || shownTitle === null) return
+    const key = `${requestKey}@${shownRevision ?? ''}`
+    if (reported.current === key) return
+    reported.current = key
+    onDisplayed?.({ kind: shownKind, id: shownId, revision: shownRevision, title: shownTitle })
+  }, [onDisplayed, requestKey, shownId, shownKind, shownRevision, shownTitle])
+
+  const failed = original && state.status === 'error'
+  useEffect(() => {
+    if (failed) onFailed?.()
+  }, [failed, onFailed])
 
   const more = async () => {
     if (state.status !== 'ready' || !state.data.cursor || !CONTEXT_KINDS.has(current.kind)) return
+    setMoreError(null)
     try {
       const page = await api.readProjectContext(
         projectId,
@@ -151,7 +174,7 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
         }
         : previous))
     } catch {
-      setLoaded({ key: requestKey, result: { status: 'error', removed: false } })
+      setMoreError(t('kubecode.work.evidence.moreFailed'))
     }
   }
 
@@ -169,7 +192,11 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
   const changed = data.availability === 'changed'
     || (original && targetRevision != null && data.revision != null && targetRevision !== data.revision)
   return (
-    <div className="kubecode-work-evidence" data-testid="evidence-viewer">
+    <div
+      className="kubecode-work-evidence"
+      data-shown-revision={original ? data.revision ?? undefined : undefined}
+      data-testid="evidence-viewer"
+    >
       <strong>{data.title}</strong>
       {changed && (
         <StatusBadge tone="warn">{t('kubecode.work.evidence.changed')}</StatusBadge>
@@ -197,6 +224,12 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
       {data.notes.map((note) => (
         <small className="kubecode-research-muted" key={note}>{note}</small>
       ))}
+      {moreError && (
+        <p className="kubecode-research-error" role="alert">
+          {moreError}{' '}
+          <Button size="xs" variant="ghost" onClick={() => void more()}>{t('kubecode.retry')}</Button>
+        </p>
+      )}
       {data.cursor && (
         <Button size="xs" variant="outline" onClick={() => void more()}>
           {t('kubecode.work.evidence.more')}
@@ -211,7 +244,14 @@ export function EvidenceViewer({ api, onDisplayed, projectId, t, target }: Evide
                 <Button
                   size="xs"
                   variant="ghost"
-                  onClick={() => setFollowed({ kind: item.ref.kind, id: item.ref.id })}
+                  onClick={() => {
+                    const ref = { kind: item.ref.kind, id: item.ref.id }
+                    if (onFollow) onFollow(ref)
+                    else {
+                      setMoreError(null)
+                      setFollowed(ref)
+                    }
+                  }}
                 >
                   {item.title}
                 </Button>

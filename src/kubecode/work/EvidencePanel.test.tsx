@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type KubecodeApi } from '../api'
@@ -13,9 +13,10 @@ function RecordProbe() {
   const record = useInspectionRecord()
   const shown = record.displayedRevision({ kind: 'artifact', id: 'a1' })
   const file = record.displayedRevision({ kind: 'file', id: 'results.csv' })
+  // `null`: displayed, with no revision.
   return (
     <InspectorPanel title="Pruning heads">
-      <p>artifact {shown === undefined ? 'never displayed' : `displayed ${shown}`}</p>
+      <p>artifact {shown === undefined ? 'never displayed' : `displayed ${String(shown)}`}</p>
       <p>file {file === undefined ? 'never displayed' : `displayed ${file}`}</p>
     </InspectorPanel>
   )
@@ -51,7 +52,8 @@ describe('EvidencePanel', () => {
     const readProjectContext = vi.fn().mockResolvedValue(document('b7'))
     mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
     expect(await screen.findByText('acc 0.91')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'artifact:a1', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'accuracy.csv', level: 3 })).toBeInTheDocument()
+    expect(screen.getByText('Showing version b7')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Back to Pruning heads' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('artifact displayed b7')).toBeInTheDocument())
     expect(readProjectContext).toHaveBeenCalledWith('p1', { kind: 'artifact', id: 'a1' }, 'content')
@@ -62,6 +64,29 @@ describe('EvidencePanel', () => {
     mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this record.')
     expect(screen.getByText('artifact never displayed')).toBeInTheDocument()
+    // Opened from a Task, it says what the failure means for the review.
+    expect(await screen.findByText(/This version could not be shown, so it can't be accepted/)).toBeInTheDocument()
+    expect(screen.queryByText(/Showing version/)).not.toBeInTheDocument()
+  })
+
+  it('records a record with no version as displayed without one', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document(null))
+    mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
+    await waitFor(() => expect(screen.getByText('artifact displayed null')).toBeInTheDocument())
+  })
+
+  it('opens a related record over the evidence, leaving the cited record as the one displayed', async () => {
+    const readProjectContext = vi.fn().mockImplementation((_project: string, ref: { kind: string }) => Promise.resolve(
+      ref.kind === 'artifact'
+        ? { ...document('b7'), related: [{ ref: { kind: 'finding', id: 'f1', revision: null }, title: 'Heads are redundant' }] }
+        : { ...document('f9'), ref: { kind: 'finding', id: 'f1', revision: 'f9' }, title: 'Heads are redundant', related: [] },
+    ))
+    mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
+    fireEvent.click(await screen.findByRole('button', { name: 'Heads are redundant' }))
+    expect(await screen.findByRole('complementary', { name: 'Resource details' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to accuracy.csv' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Pruning heads' }))
+    expect(screen.getByText('artifact displayed b7')).toBeInTheDocument()
   })
 
   it('never records evidence that is gone', async () => {

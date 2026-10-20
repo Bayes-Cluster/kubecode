@@ -5,6 +5,26 @@ import { KubecodeApi, apiBasePath, type RuntimeStatus } from '../api'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Kubecode API client', () => {
+  it('archives and restores a Task apart from deciding it, and reads the verdict\'s General message', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'v1', general_message_id: 'gm1' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'task_active', reason: 'under_review', message: 'x' }), { status: 409 }))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/base')
+
+    await expect(api.archiveTask('p/1', 'r/1')).resolves.toBeUndefined()
+    await expect(api.restoreTask('p/1', 'r/1')).resolves.toBeUndefined()
+    const verdict = await api.reviewTask('p/1', 'r/1', { requestId: 'rq', accept: false, reason: 'redo' })
+    const refused = await api.archiveTask('p/1', 'r/1').catch((cause: unknown) => cause)
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/base/api/v1/projects/p%2F1/tasks/r%2F1/archive', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/base/api/v1/projects/p%2F1/tasks/r%2F1/restore', expect.objectContaining({ method: 'POST' }))
+    expect(verdict.general_message_id).toBe('gm1')
+    expect(refused).toMatchObject({ code: 'task_active', reason: 'under_review', status: 409 })
+  })
+
   it('keeps every request below the Kubeflow notebook prefix', () => {
     expect(apiBasePath('/user/alice/kubecode/')).toBe('/user/alice/kubecode/api/v1')
     expect(apiBasePath('/')).toBe('/api/v1')

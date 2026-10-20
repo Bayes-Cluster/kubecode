@@ -292,3 +292,98 @@ async fn sessions_are_discoverable_and_pages_are_clamped_over_http() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// Acceptance compares the version the browser displayed with the revision the
+/// server checks (ADR 0230 §4): the reads that display evidence report the
+/// same revision `Evidence::current_revision` gives, and a file the reader
+/// cannot display is refused even though it has a revision.
+#[tokio::test]
+async fn the_content_read_reports_the_revision_acceptance_checks() {
+    let root = TempDir::new().expect("tempdir");
+    let database = root.path().join(".state/kubecode/kubecode.sqlite3");
+    let workspace = Arc::new(WorkspaceService::open(root.path(), &database).expect("workspace"));
+    let project = workspace.create_project(".", "alpha").expect("alpha").id;
+    let agents = Arc::new(AgentStore::open(&database).expect("agents"));
+    let teams = Arc::new(TeamStore::open(&database).expect("teams"));
+    let state = AppState::new(workspace, agents, teams);
+    let env = Env {
+        app: app_router(state.clone(), BASE),
+        _root: root,
+        project_id: project.clone(),
+        other_project_id: String::new(),
+    };
+    let evidence =
+        kubecode_server::work_agent::Evidence::new(state.context.clone(), state.workspace.clone());
+
+    // A context record: the read's own ref revision is the checked one.
+    let created = create_research(&env, "Structured pruning").await;
+    let id = created["id"].as_str().unwrap();
+    let (status, doc) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{project}/context/read?kind=research&id={id}&detail=content"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{doc}");
+    assert_eq!(
+        doc["ref"]["revision"].as_str(),
+        evidence
+            .current_revision(&project, "research", id)
+            .as_deref()
+    );
+    let (title, current) = evidence.describe(&project, "research", id);
+    assert_eq!(title.as_deref(), Some("Structured pruning"));
+    assert_eq!(current.as_deref(), doc["ref"]["revision"].as_str());
+    // Resolve names it too.
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{project}/context/resolve"),
+        json!({"refs": [{"kind": "research", "id": id}, {"kind": "research", "id": "gone"}]}),
+    )
+    .await;
+    assert_eq!(resolved[0]["title"], "Structured pruning");
+    assert!(resolved[1].get("title").is_none(), "{resolved}");
+
+    // A text file: GET /file reports the revision the checks use.
+    let path = state.workspace.project_path(&project).unwrap();
+    std::fs::write(path.join("results.csv"), "ratio,accuracy\n0.5,0.91\n").unwrap();
+    let (status, file) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{project}/file?path=results.csv"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{file}");
+    assert_eq!(
+        file["revision"].as_str(),
+        evidence
+            .current_revision(&project, "file", "results.csv")
+            .as_deref()
+    );
+    assert_eq!(
+        evidence.describe(&project, "file", "results.csv"),
+        (
+            Some("results.csv".to_owned()),
+            file["revision"].as_str().map(str::to_owned)
+        )
+    );
+    // A file that is not text has a revision but cannot be displayed, so a
+    // change to it can never be accepted at a displayed version.
+    std::fs::write(path.join("weights.bin"), [0xff_u8, 0xfe, 0x00, 0x80]).unwrap();
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{project}/file?path=weights.bin"),
+        Value::Null,
+    )
+    .await;
+    assert!(status.is_client_error(), "{status}");
+    assert!(
+        evidence
+            .current_revision(&project, "file", "weights.bin")
+            .is_some()
+    );
+}

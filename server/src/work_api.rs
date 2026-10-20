@@ -192,6 +192,15 @@ struct NamedRef {
     title: String,
 }
 
+/// The question a card belongs to, and whether it is an admitted Task (whose
+/// changed evidence the researcher accepts in the Task's Results).
+#[derive(Debug, Serialize)]
+struct ResearchRef {
+    id: String,
+    title: String,
+    task: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct RoundRef {
     id: String,
@@ -235,7 +244,7 @@ struct RouteBrief {
 struct Card {
     #[serde(flatten)]
     summary: WorkSummary,
-    research: Option<NamedRef>,
+    research: Option<ResearchRef>,
     round: Option<RoundRef>,
     team: Option<NamedRef>,
     executor: Option<ExecutorRef>,
@@ -252,7 +261,7 @@ struct Card {
 struct Resolver<'a> {
     state: &'a AppState,
     project_id: &'a str,
-    research: HashMap<String, Option<NamedRef>>,
+    research: HashMap<String, Option<ResearchRef>>,
     rounds: HashMap<String, Option<RoundRef>>,
     teams: HashMap<String, Option<NamedRef>>,
     sessions: HashMap<String, Option<ExecutorRef>>,
@@ -272,7 +281,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn research(&mut self, id: &str) -> Option<NamedRef> {
+    fn research(&mut self, id: &str) -> Option<ResearchRef> {
         self.research
             .entry(id.to_owned())
             .or_insert_with(|| {
@@ -280,15 +289,21 @@ impl<'a> Resolver<'a> {
                     .research
                     .get(self.project_id, id)
                     .ok()
-                    .map(|question| NamedRef {
+                    .map(|question| ResearchRef {
+                        task: self
+                            .state
+                            .tasks
+                            .admission(self.project_id, &question.id)
+                            .is_ok_and(|admission| admission.is_some()),
                         id: question.id,
                         title: question.brief.title,
                     })
             })
             .as_ref()
-            .map(|r| NamedRef {
+            .map(|r| ResearchRef {
                 id: r.id.clone(),
                 title: r.title.clone(),
+                task: r.task,
             })
     }
 
@@ -846,9 +861,12 @@ enum Command {
         reason: Option<String>,
     },
     /// Accepts the current state of one cited result as its evidence, after
-    /// the researcher has looked at what changed.
+    /// the researcher has looked at what changed. A Task's evidence names the
+    /// version that was looked at, and it must still be current (ADR 0230 §4).
     Repin {
         result_id: String,
+        #[serde(default)]
+        revision: Option<String>,
     },
     /// Cancels, abandons, or supersedes it, keeping its history.
     Close {
@@ -1006,7 +1024,10 @@ async fn command(
                         .publish_review(&project_id, &item, review);
                 }
             }
-            Command::Repin { result_id } => {
+            Command::Repin {
+                result_id,
+                revision,
+            } => {
                 let results = work.results(&project_id, &work_id)?;
                 let result = results
                     .iter()
@@ -1020,6 +1041,27 @@ async fn command(
                 let current = current.ok_or(ApiError::BadRequest(
                     "that evidence has no current version to accept",
                 ))?;
+                // A Task's evidence is accepted only at the version the
+                // researcher displayed, as in the Task's own Results.
+                let research_id = work.get(&project_id, &work_id)?.research_id;
+                let task_work = match research_id.as_deref() {
+                    Some(research_id) => blocking_state
+                        .tasks
+                        .admission(&project_id, research_id)
+                        .map_err(|_| ApiError::BadRequest("the Task could not be read"))?
+                        .is_some(),
+                    None => false,
+                };
+                if task_work && revision.is_none() {
+                    return Err(ApiError::BadRequest(
+                        "this is a Task's evidence: name the version that was looked at",
+                    ));
+                }
+                if revision.as_deref().is_some_and(|looked_at| looked_at != current) {
+                    return Err(ApiError::StaleEvidence(
+                        evidence_of(&blocking_state).stale(&project_id, &results),
+                    ));
+                }
                 work.repin_result(&project_id, &work_id, &result_id, Some(&current), ctx)?;
                 let remaining = work.results(&project_id, &work_id)?;
                 if evidence_of(&blocking_state)

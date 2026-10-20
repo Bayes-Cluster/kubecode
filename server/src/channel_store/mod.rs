@@ -14,6 +14,7 @@ mod tests;
 
 pub use models::*;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -279,6 +280,20 @@ fn load_by_client_id(
             ),
             params![channel_id, client_message_id, project_id],
             message_from_row,
+        )
+        .optional()?)
+}
+
+/// The Project's default channel, if it was created; never creates it.
+fn default_channel_id(
+    connection: &Connection,
+    project_id: &str,
+) -> Result<Option<String>, ChannelError> {
+    Ok(connection
+        .query_row(
+            "SELECT id FROM channels WHERE project_id = ?1 AND is_default = 1",
+            [project_id],
+            |row| row.get(0),
         )
         .optional()?)
 }
@@ -752,6 +767,96 @@ impl ChannelStore {
 
     pub fn message(&self, project_id: &str, message_id: &str) -> Result<Message, ChannelError> {
         load_message(&self.connection(), project_id, message_id)
+    }
+
+    /// The default channel's messages stored under these client message ids,
+    /// as `client id → (message id, seq)`. Unknown ids are skipped; nothing is
+    /// created. One indexed lookup per chunk of 100 ids.
+    pub fn messages_by_client_ids(
+        &self,
+        project_id: &str,
+        ids: &[String],
+    ) -> Result<HashMap<String, (String, u64)>, ChannelError> {
+        let connection = self.connection();
+        let mut found = HashMap::new();
+        let Some(channel) = default_channel_id(&connection, project_id)? else {
+            return Ok(found);
+        };
+        for chunk in ids.chunks(100) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let mut statement = connection.prepare(&format!(
+                "SELECT client_message_id, id, seq FROM channel_messages
+                 WHERE channel_id = ?1 AND client_message_id IN ({marks})"
+            ))?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&channel as &dyn rusqlite::ToSql)
+                    .chain(chunk.iter().map(|id| id as &dyn rusqlite::ToSql))
+                    .collect();
+            let rows = statement.query_map(params.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (row.get::<_, String>(1)?, row.get::<_, i64>(2)? as u64),
+                ))
+            })?;
+            for row in rows {
+                let (key, value) = row?;
+                found.insert(key, value);
+            }
+        }
+        Ok(found)
+    }
+
+    /// Every top-level General message that showed a revision of a research
+    /// question's proposal (`proposal:{id}:{revision}`, or a later
+    /// `…:again:…` copy), as `(client id, message id, seq)` in order.
+    pub fn proposal_messages(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<(String, String, u64)>, ChannelError> {
+        let connection = self.connection();
+        let Some(channel) = default_channel_id(&connection, project_id)? else {
+            return Ok(Vec::new());
+        };
+        let prefix = format!("proposal:{research_id}:");
+        let mut statement = connection.prepare(
+            "SELECT client_message_id, id, seq FROM channel_messages
+             WHERE channel_id = ?1 AND thread_id IS NULL AND author_kind = 'agent'
+               AND substr(client_message_id, 1, length(?2)) = ?2
+             ORDER BY seq",
+        )?;
+        Ok(statement
+            .query_map(params![channel, prefix], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? as u64))
+            })?
+            .collect::<Result<_, _>>()?)
+    }
+
+    /// These messages of the Project, in order; unknown ids are skipped.
+    pub fn messages_by_ids(
+        &self,
+        project_id: &str,
+        ids: &[String],
+    ) -> Result<Vec<Message>, ChannelError> {
+        let connection = self.connection();
+        let mut messages = Vec::new();
+        for chunk in ids.chunks(100) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let mut statement = connection.prepare(&format!(
+                "{MESSAGE_SELECT} WHERE project_id = ?1 AND id IN ({marks}) ORDER BY seq"
+            ))?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&project_id as &dyn rusqlite::ToSql)
+                    .chain(chunk.iter().map(|id| id as &dyn rusqlite::ToSql))
+                    .collect();
+            messages.extend(
+                statement
+                    .query_map(params.as_slice(), message_from_row)?
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+        messages.sort_by_key(|message| (message.channel_id.clone(), message.seq));
+        Ok(messages)
     }
 
     /// The message stored under a client message id in a channel, if any: what

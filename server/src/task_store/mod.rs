@@ -33,6 +33,24 @@ use crate::research_store::{
 };
 use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage, WorkStore};
 
+/// The task events that move a Task's stage. Every stage read filters on
+/// exactly these, so other events (archiving) never move a stage.
+const STAGE_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted')";
+/// The task events after which an earlier instruction no longer authorizes the
+/// next step: the stage events, and restoring an archived Task, so nothing the
+/// researcher said before archiving it starts work after it comes back.
+const WATERMARK_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted', 'restored')";
+
+/// Why a step is refused while the researcher has archived the Task.
+const ARCHIVED: &str = "the Task is archived; the researcher restores it first";
+/// Archived Tasks the board lists apart.
+const MAX_ARCHIVED: usize = 50;
+
+/// Steps a Task's history shows (the newest).
+const MAX_TIMELINE: usize = 100;
+/// The researcher's words quoted in a history step.
+const MAX_EXCERPT_CHARS: usize = 280;
+
 /// Drafts waiting at once, so a loop cannot flood General.
 const MAX_DRAFTS: usize = 50;
 /// The proposal shown in General is shortened to this; the Task shows all of it.
@@ -160,6 +178,20 @@ fn request_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewRequest> 
     })
 }
 
+/// A logged event, or `None` for a kind this version does not know.
+fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<TaskEventNote>> {
+    let kind: String = row.get(1)?;
+    let Some(kind) = TaskEventKind::parse(&kind) else {
+        return Ok(None);
+    };
+    Ok(Some(TaskEventNote {
+        seq: row.get::<_, i64>(0)? as u64,
+        kind,
+        ref_id: row.get(2)?,
+        created_at: row.get(3)?,
+    }))
+}
+
 /// The instruction's own words: what is left once quoted lines are removed.
 /// A message that only quotes someone (or an agent) is not an instruction.
 pub fn instruction_text(body: &str) -> String {
@@ -249,6 +281,36 @@ impl TaskStore {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![project_id, research_id, kind, reference, watermark],
         )?;
+        Ok(())
+    }
+
+    /// Sets the research status an admitted Task's lifecycle implies, in the
+    /// same transaction as the step that implies it, announcing the research
+    /// change as the research store does (ADR 0230 §1).
+    fn mirror_status(
+        tx: &Transaction<'_>,
+        project_id: &str,
+        research_id: &str,
+        status: ResearchStatus,
+    ) -> Result<(), TaskError> {
+        let changed = tx.execute(
+            "UPDATE research_questions
+             SET status = ?3,
+                 resolved_at = CASE WHEN ?3 = 'resolved' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND project_id = ?2 AND status != ?3",
+            params![research_id, project_id, status.as_str()],
+        )?;
+        if changed > 0 {
+            tx.execute(
+                "INSERT INTO workspace_events (kind, project_id, payload)
+                 VALUES ('research_updated', ?1, ?2)",
+                params![
+                    project_id,
+                    json!({"research_id": research_id, "change": "status"}).to_string()
+                ],
+            )?;
+        }
         Ok(())
     }
 
@@ -518,11 +580,11 @@ impl TaskStore {
         }
         let last: Option<String> = connection
             .query_row(
-                "SELECT kind FROM task_events
-                 WHERE project_id = ?1 AND research_id = ?2
-                   AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                'review_returned', 'review_accepted')
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT kind FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![project_id, research_id],
                 |row| row.get(0),
             )
@@ -534,17 +596,57 @@ impl TaskStore {
         }))
     }
 
-    /// The newest General message at the time of the last stage change: an
-    /// instruction for the next step must be newer than this.
+    /// Every logged event of a Task, oldest first.
+    pub fn events(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<TaskEventNote>, TaskError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT seq, kind, ref_id, created_at FROM task_events
+             WHERE project_id = ?1 AND research_id = ?2 ORDER BY seq",
+        )?;
+        Ok(statement
+            .query_map(params![project_id, research_id], event_from_row)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    /// The newest stage event: archiving is never one.
+    fn last_stage_event(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Option<TaskEventNote>, TaskError> {
+        Ok(self
+            .connection()
+            .query_row(
+                &format!(
+                    "SELECT seq, kind, ref_id, created_at FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
+                params![project_id, research_id],
+                event_from_row,
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// The newest General message at the time of the last stage change or
+    /// restore: an instruction for the next step must be newer than this.
     fn stage_watermark(&self, project_id: &str, research_id: &str) -> Result<u64, TaskError> {
         let seq: Option<i64> = self
             .connection()
             .query_row(
-                "SELECT channel_seq FROM task_events
-                 WHERE project_id = ?1 AND research_id = ?2
-                   AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                'review_returned', 'review_accepted')
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT channel_seq FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {WATERMARK_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![project_id, research_id],
                 |row| row.get(0),
             )
@@ -736,7 +838,7 @@ impl TaskStore {
                 other => other.into(),
             })?;
         if question.archived {
-            return Err(TaskError::State("the question is archived"));
+            return Err(TaskError::State(ARCHIVED));
         }
         let message = self
             .channels
@@ -1085,8 +1187,9 @@ impl TaskStore {
                     "the brief changed after this instruction; ask the researcher again",
                 ));
             }
-            Some(_) => {}
-            None => {
+            // A record left without its round (a crash before the round began)
+            // is checked like a new one: the Task may have moved on since.
+            _ => {
                 match self
                     .stage(project_id, research_id)?
                     .unwrap_or(TaskStage::Ready)
@@ -1154,10 +1257,15 @@ impl TaskStore {
                 .assume_coordinator(project_id, &round.id, &session, &Actor::Researcher)?;
         }
         let finished = self.write(|tx| {
-            tx.execute(
+            let linked = tx.execute(
                 "UPDATE task_authorizations SET round_id = ?2 WHERE id = ?1 AND round_id IS NULL",
                 params![record.id, round.id],
             )?;
+            // An iterated question is open again, with the step that reopens
+            // it; an old instruction replayed does not reopen it.
+            if linked > 0 {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Open)?;
+            }
             let logged: i64 = tx.query_row(
                 "SELECT COUNT(*) FROM task_events
                  WHERE research_id = ?1 AND kind = 'execution_authorized' AND ref_id = ?2",
@@ -1182,14 +1290,6 @@ impl TaskStore {
                 Some((project_id.to_owned(), research_id.to_owned())),
             ))
         })?;
-        // An iterated question is open again; an old instruction replayed does not reopen it.
-        if created
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Open)
-        {
-            eprintln!("WARN: could not reopen an iterated question: {error}");
-        }
         self.acknowledge(
             project_id,
             caller,
@@ -1291,6 +1391,14 @@ impl TaskStore {
             if admitted == 0 {
                 return Err(TaskError::State("the Task is not on the board"));
             }
+            let archived: bool = tx.query_row(
+                "SELECT archived FROM research_questions WHERE id = ?1",
+                [research_id],
+                |row| row.get(0),
+            )?;
+            if archived {
+                return Err(TaskError::State(ARCHIVED));
+            }
             if let Some(open) = tx
                 .query_row(
                     &format!("{REQUEST_SELECT} WHERE research_id = ?1 AND state = 'open'"),
@@ -1307,11 +1415,11 @@ impl TaskStore {
             }
             let last: Option<String> = tx
                 .query_row(
-                    "SELECT kind FROM task_events
-                     WHERE research_id = ?1
-                       AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                    'review_returned', 'review_accepted')
-                     ORDER BY seq DESC LIMIT 1",
+                    &format!(
+                        "SELECT kind FROM task_events
+                         WHERE research_id = ?1 AND kind IN {STAGE_EVENT_KINDS}
+                         ORDER BY seq DESC LIMIT 1"
+                    ),
                     [research_id],
                     |row| row.get(0),
                 )
@@ -1444,6 +1552,10 @@ impl TaskStore {
                 if accept { "review_accepted" } else { "review_returned" },
                 Some(&id),
             )?;
+            // A Done Task's question is resolved, in the same write.
+            if accept {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Resolved)?;
+            }
             let review = tx.query_row(
                 "SELECT id, research_id, request_id, accepted, outcome, reason, brief_revision, created_at
                  FROM task_reviews WHERE id = ?1",
@@ -1492,13 +1604,6 @@ impl TaskStore {
             },
         ) {
             eprintln!("WARN: could not record a Task review in the question's log: {error}");
-        }
-        if stored.accepted
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Resolved)
-        {
-            eprintln!("WARN: could not resolve the question of an accepted Task: {error}");
         }
         match self.channels.default_channel(project_id) {
             Ok(channel) => {
@@ -1677,6 +1782,7 @@ impl TaskStore {
             open_questions,
             review_requested: review_open,
             updated_at: question.updated_at.clone(),
+            last_event: self.last_stage_event(project_id, research_id)?,
         }))
     }
 
@@ -1711,7 +1817,202 @@ impl TaskStore {
             cards,
             stages,
             total,
+            archived: self.archived(project_id)?,
         })
+    }
+
+    /// Archived Tasks and proposals, newest first: their stage (none for a
+    /// proposal) and the accepted outcome, without composing a whole card.
+    pub fn archived(&self, project_id: &str) -> Result<Vec<ArchivedTask>, TaskError> {
+        // Newest first and cut to the limit before anything else is read.
+        let mut summaries: Vec<_> = self
+            .research
+            .list(project_id, true)?
+            .into_iter()
+            .filter(|summary| summary.archived)
+            .collect();
+        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        summaries.truncate(MAX_ARCHIVED);
+        let mut archived: Vec<ArchivedTask> = Vec::with_capacity(summaries.len());
+        for summary in summaries {
+            let stage = self.stage(project_id, &summary.id)?;
+            let outcome = if stage == Some(TaskStage::Done) {
+                self.reviews(project_id, &summary.id)?
+                    .into_iter()
+                    .rev()
+                    .find(|review| review.accepted)
+                    .map(|review| review.outcome)
+            } else {
+                None
+            };
+            archived.push(ArchivedTask {
+                id: summary.id,
+                title: summary.title,
+                stage,
+                outcome,
+                updated_at: summary.updated_at,
+            });
+        }
+        Ok(archived)
+    }
+
+    // -- Archiving and status (ADR 0230) ---------------------------------------------------------------
+
+    /// Internal work of a question that is still active (not closed, not
+    /// done), as the card counts it.
+    fn active_work(
+        connection: &Connection,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<i64, TaskError> {
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM work_items
+             WHERE project_id = ?1 AND research_id = ?2
+               AND lifecycle = 'active' AND stage != 'done'",
+            params![project_id, research_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Whether the researcher may archive this Task (or proposal) now: not
+    /// while a review is open or internal work is active (in any stage), so a
+    /// Task never disappears with a decision or running work under it. A
+    /// draft, and a Task in any stage with no open review and no active work,
+    /// may be archived.
+    pub fn archive_availability(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Availability, TaskError> {
+        let question = self.question(project_id, research_id)?;
+        let refused = |reason| Availability {
+            allowed: false,
+            reason: Some(reason),
+        };
+        if question.archived {
+            return Ok(refused("archived"));
+        }
+        if self
+            .review_requests(project_id, research_id)?
+            .iter()
+            .any(|request| request.state == "open")
+        {
+            return Ok(refused("under_review"));
+        }
+        if Self::active_work(&self.connection(), project_id, research_id)? > 0 {
+            return Ok(refused("work_active"));
+        }
+        Ok(Availability {
+            allowed: true,
+            reason: None,
+        })
+    }
+
+    /// Archives a Task (hidden from the board, everything kept) or restores
+    /// it. Archiving is refused for the reasons `archive_availability` gives;
+    /// restoring always works. On an admitted Task the change is logged as an
+    /// `archived`/`restored` event, which is not a stage event. Idempotent.
+    pub fn set_archived(
+        &self,
+        project_id: &str,
+        research_id: &str,
+        archived: bool,
+    ) -> Result<ResearchQuestion, TaskError> {
+        if archived {
+            let availability = self.archive_availability(project_id, research_id)?;
+            match availability.reason {
+                // Already archived: nothing to do.
+                Some("archived") => return self.question(project_id, research_id),
+                Some(reason) => return Err(TaskError::Active(reason)),
+                None => {}
+            }
+        }
+        self.write(|tx| {
+            let current: bool = tx
+                .query_row(
+                    "SELECT archived FROM research_questions WHERE id = ?1 AND project_id = ?2",
+                    params![research_id, project_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or(TaskError::NotFound)?;
+            if current == archived {
+                return Ok(((), None));
+            }
+            // The checks are repeated inside the transaction, so a review asked
+            // for, or work started, meanwhile is never hidden.
+            if archived {
+                let open: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM task_review_requests
+                     WHERE research_id = ?1 AND state = 'open'",
+                    [research_id],
+                    |row| row.get(0),
+                )?;
+                if open > 0 {
+                    return Err(TaskError::Active("under_review"));
+                }
+                if Self::active_work(tx, project_id, research_id)? > 0 {
+                    return Err(TaskError::Active("work_active"));
+                }
+            }
+            tx.execute(
+                "UPDATE research_questions SET archived = ?2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1",
+                params![research_id, archived],
+            )?;
+            // The research question's own event, as the research store announces it.
+            tx.execute(
+                "INSERT INTO workspace_events (kind, project_id, payload)
+                 VALUES ('research_updated', ?1, ?2)",
+                params![
+                    project_id,
+                    json!({
+                        "research_id": research_id,
+                        "change": if archived { "archived" } else { "restored" },
+                    })
+                    .to_string()
+                ],
+            )?;
+            let admitted: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM task_authorizations WHERE research_id = ?1 AND kind = 'admit'",
+                [research_id],
+                |row| row.get(0),
+            )?;
+            if admitted > 0 {
+                Self::log(
+                    tx,
+                    project_id,
+                    research_id,
+                    if archived { "archived" } else { "restored" },
+                    None,
+                )?;
+            }
+            Ok(((), Some((project_id.to_owned(), research_id.to_owned()))))
+        })?;
+        self.question(project_id, research_id)
+    }
+
+    /// The research status of an admitted Task mirrors its lifecycle and is
+    /// written only here (resolved on acceptance, open on iteration): a direct
+    /// resolve or reopen is refused. Drafts and plain questions keep ADR 0212.
+    pub fn guard_status_command(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<(), TaskError> {
+        if self.admission(project_id, research_id)?.is_some() {
+            return Err(TaskError::Owned);
+        }
+        Ok(())
+    }
+
+    fn question(&self, project_id: &str, research_id: &str) -> Result<ResearchQuestion, TaskError> {
+        self.research
+            .get(project_id, research_id)
+            .map_err(|error| match error {
+                crate::research_store::ResearchError::NotFound => TaskError::NotFound,
+                other => other.into(),
+            })
     }
 
     /// Proposals that are not on the board.
@@ -1728,6 +2029,16 @@ impl TaskStore {
                 .map(|revision| revision.author_kind.as_str().to_owned())
                 .unwrap_or_else(|_| "researcher".to_owned());
             let question = self.research.get(project_id, &summary.id)?;
+            // The newest showing of the current revision, first or again.
+            let exact = format!("proposal:{}:{}", summary.id, summary.revision);
+            let again = format!("{exact}:again:");
+            let shown_message_id = self
+                .channels
+                .proposal_messages(project_id, &summary.id)?
+                .into_iter()
+                .rev()
+                .find(|(key, _, _)| *key == exact || key.starts_with(&again))
+                .map(|(_, id, _)| id);
             drafts.push(Draft {
                 id: summary.id,
                 project_id: summary.project_id,
@@ -1736,9 +2047,345 @@ impl TaskStore {
                 revision: summary.revision,
                 proposed_by,
                 updated_at: summary.updated_at,
+                shown_message_id,
             });
         }
         Ok(drafts)
+    }
+
+    /// A Task's history, oldest first and at most the newest 100 steps: its
+    /// events, the approvals of revised briefs, and every brief revision, each
+    /// with the General message that carried it. Message ids come from two
+    /// batched lookups (proposals; review requests and verdicts) and the
+    /// researcher's words from one more.
+    pub fn timeline(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<TaskActivity>, TaskError> {
+        let events = self.events(project_id, research_id)?;
+        let authorizations = self.authorizations(project_id, research_id)?;
+        let requests = self.review_requests(project_id, research_id)?;
+        let reviews = self.reviews(project_id, research_id)?;
+        let revisions: Vec<(u64, String, Option<String>, String)> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT revision, author_kind, author_ref, created_at
+                 FROM research_brief_revisions WHERE research_id = ?1 ORDER BY revision",
+            )?;
+            statement
+                .query_map([research_id], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? as u64,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                    ))
+                })?
+                .collect::<Result<_, _>>()?
+        };
+        let proposals = self.channels.proposal_messages(project_id, research_id)?;
+        let keys: Vec<String> = requests
+            .iter()
+            .map(|request| format!("review-request:{}", request.id))
+            .chain(
+                reviews
+                    .iter()
+                    .map(|review| format!("task-review:{}", review.id)),
+            )
+            .collect();
+        let keyed = self.channels.messages_by_client_ids(project_id, &keys)?;
+        let authorizing: Vec<String> = authorizations
+            .iter()
+            .filter_map(|authorization| authorization.message_id.clone())
+            .collect();
+        let words: std::collections::HashMap<String, (String, u64)> = self
+            .channels
+            .messages_by_ids(project_id, &authorizing)?
+            .into_iter()
+            .map(|message| {
+                let excerpt = instruction_text(&message.body)
+                    .chars()
+                    .take(MAX_EXCERPT_CHARS)
+                    .collect();
+                (message.id, (excerpt, message.seq))
+            })
+            .collect();
+        let member = |session: &str| -> Option<(Participant, MemberRole)> {
+            let resolved = self.members.by_conversation(project_id, session).ok()??;
+            let role = resolved.member.role;
+            Some((
+                Participant {
+                    member_id: resolved.member.id,
+                    name: resolved.member.name,
+                    handle: resolved.member.handle,
+                    role: role.as_str().to_owned(),
+                },
+                role,
+            ))
+        };
+        let actor_of = |role: Option<MemberRole>| match role {
+            Some(MemberRole::General) => "manager",
+            Some(MemberRole::Specialist) => "member",
+            None => "system",
+        };
+        // (activity, position in the conversation) so steps logged within the
+        // same second keep the order in which General saw them.
+        let mut steps: Vec<(TaskActivity, u64)> = Vec::new();
+        let step = |at: &str, kind, actor, member: Option<Participant>| TaskActivity {
+            at: at.to_owned(),
+            kind,
+            actor,
+            member,
+            brief_revision: None,
+            ref_id: None,
+            message_id: None,
+            excerpt: None,
+        };
+        for (revision, author_kind, author_ref, created_at) in &revisions {
+            let exact = format!("proposal:{research_id}:{revision}");
+            let again = format!("{exact}:again:");
+            let shown = proposals
+                .iter()
+                .find(|(key, _, _)| *key == exact || key.starts_with(&again));
+            let (participant, role) = match author_ref.as_deref().and_then(member) {
+                Some((participant, role)) => (Some(participant), Some(role)),
+                None => (None, None),
+            };
+            let actor = if author_kind == "researcher" {
+                "researcher"
+            } else {
+                actor_of(role)
+            };
+            let kind = if *revision == 1 {
+                TaskActivityKind::Proposed
+            } else {
+                TaskActivityKind::Revised
+            };
+            let mut activity = step(created_at, kind, actor, participant);
+            activity.brief_revision = Some(*revision);
+            activity.message_id = shown.map(|(_, id, _)| id.clone());
+            steps.push((activity, shown.map_or(u64::MAX, |(_, _, seq)| *seq)));
+        }
+        for authorization in authorizations
+            .iter()
+            .filter(|authorization| authorization.kind == AuthorizationKind::Revise)
+        {
+            let mut activity = step(
+                &authorization.created_at,
+                TaskActivityKind::RevisionApproved,
+                "manager",
+                member(&authorization.acted_by).map(|(participant, _)| participant),
+            );
+            activity.brief_revision = Some(authorization.brief_revision);
+            activity.message_id = authorization.message_id.clone();
+            let said = authorization
+                .message_id
+                .as_ref()
+                .and_then(|id| words.get(id));
+            activity.excerpt = said.map(|(excerpt, _)| excerpt.clone());
+            steps.push((activity, said.map_or(u64::MAX, |(_, seq)| *seq)));
+        }
+        let channel_seq: std::collections::HashMap<u64, u64> = {
+            let connection = self.connection();
+            let mut statement = connection.prepare(
+                "SELECT seq, channel_seq FROM task_events WHERE project_id = ?1 AND research_id = ?2",
+            )?;
+            statement
+                .query_map(params![project_id, research_id], |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+                })?
+                .collect::<Result<_, _>>()?
+        };
+        for event in &events {
+            let mut position = channel_seq.get(&event.seq).copied().unwrap_or(u64::MAX);
+            let legacy = event.ref_id.as_deref() == Some("legacy");
+            let activity = match event.kind {
+                TaskEventKind::Admitted | TaskEventKind::ExecutionAuthorized => {
+                    let (kind, wanted) = if event.kind == TaskEventKind::Admitted {
+                        (TaskActivityKind::Admitted, AuthorizationKind::Admit)
+                    } else {
+                        (
+                            TaskActivityKind::ExecutionAuthorized,
+                            AuthorizationKind::Execute,
+                        )
+                    };
+                    let authorization = authorizations.iter().find(|authorization| {
+                        authorization.kind == wanted
+                            && (wanted == AuthorizationKind::Admit
+                                || authorization.round_id == event.ref_id)
+                    });
+                    let conversation = authorization.is_some_and(|authorization| {
+                        authorization.origin == AuthorizationOrigin::Conversation
+                    });
+                    let mut activity = step(
+                        &event.created_at,
+                        kind,
+                        if conversation { "manager" } else { "system" },
+                        authorization
+                            .and_then(|authorization| member(&authorization.acted_by))
+                            .map(|(participant, _)| participant),
+                    );
+                    if let Some(authorization) = authorization {
+                        activity.brief_revision = Some(authorization.brief_revision);
+                        activity.message_id = authorization.message_id.clone();
+                        if let Some((excerpt, seq)) = authorization
+                            .message_id
+                            .as_ref()
+                            .and_then(|id| words.get(id))
+                        {
+                            activity.excerpt = Some(excerpt.clone());
+                            position = *seq;
+                        }
+                    }
+                    if kind == TaskActivityKind::ExecutionAuthorized {
+                        activity.ref_id = event.ref_id.clone();
+                    }
+                    activity
+                }
+                TaskEventKind::ReviewRequested => {
+                    let request = requests
+                        .iter()
+                        .find(|request| Some(&request.id) == event.ref_id.as_ref());
+                    let mut activity = step(
+                        &event.created_at,
+                        TaskActivityKind::ReviewRequested,
+                        "manager",
+                        request
+                            .and_then(|request| member(&request.requested_by))
+                            .map(|(participant, _)| participant),
+                    );
+                    activity.brief_revision = request.map(|request| request.brief_revision);
+                    activity.ref_id = event.ref_id.clone();
+                    if let Some((id, seq)) = event
+                        .ref_id
+                        .as_ref()
+                        .and_then(|id| keyed.get(&format!("review-request:{id}")))
+                    {
+                        activity.message_id = Some(id.clone());
+                        position = *seq;
+                    }
+                    activity
+                }
+                TaskEventKind::ReviewReturned | TaskEventKind::ReviewAccepted => {
+                    let kind = if event.kind == TaskEventKind::ReviewAccepted {
+                        TaskActivityKind::ReviewAccepted
+                    } else {
+                        TaskActivityKind::ReviewReturned
+                    };
+                    let review = reviews
+                        .iter()
+                        .find(|review| Some(&review.id) == event.ref_id.as_ref());
+                    let mut activity = step(
+                        &event.created_at,
+                        kind,
+                        if legacy { "system" } else { "researcher" },
+                        None,
+                    );
+                    activity.brief_revision = review.map(|review| review.brief_revision);
+                    activity.ref_id = review.map(|review| review.id.clone());
+                    if let Some((id, seq)) = event
+                        .ref_id
+                        .as_ref()
+                        .and_then(|id| keyed.get(&format!("task-review:{id}")))
+                    {
+                        activity.message_id = Some(id.clone());
+                        position = *seq;
+                    }
+                    activity
+                }
+                TaskEventKind::Archived | TaskEventKind::Restored => {
+                    let kind = if event.kind == TaskEventKind::Archived {
+                        TaskActivityKind::Archived
+                    } else {
+                        TaskActivityKind::Restored
+                    };
+                    step(&event.created_at, kind, "researcher", None)
+                }
+            };
+            steps.push((activity, position));
+        }
+        // By time; within the same second, by where General saw it.
+        steps.sort_by(|(a, a_position), (b, b_position)| {
+            a.at.cmp(&b.at).then(a_position.cmp(b_position))
+        });
+        let skip = steps.len().saturating_sub(MAX_TIMELINE);
+        Ok(steps
+            .into_iter()
+            .skip(skip)
+            .map(|(activity, _)| activity)
+            .collect())
+    }
+
+    /// What waits on the researcher, under stable keys: an open review, each
+    /// open question of the Task's open work, each suggested change of
+    /// direction not yet decided, and a revised brief waiting for approval. (Changed evidence under an open review is added by the
+    /// reader that checks evidence.)
+    pub fn pending(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<PendingDecision>, TaskError> {
+        let mut pending = Vec::new();
+        for request in self.review_requests(project_id, research_id)? {
+            if request.state == "open" {
+                pending.push(PendingDecision {
+                    key: format!("review:{}", request.id),
+                    kind: "review",
+                    ref_id: request.id,
+                    since: request.created_at,
+                });
+            }
+        }
+        // Only open work's questions, as the card counts them: closed work
+        // waits on no one.
+        for summary in self.work.list(
+            project_id,
+            &WorkFilter {
+                research_id: Some(research_id.to_owned()),
+                limit: Some(200),
+                ..Default::default()
+            },
+        )? {
+            for request in self.work.decision_requests(project_id, &summary.item.id)? {
+                if request.state == "open" {
+                    pending.push(PendingDecision {
+                        key: format!("question:{}:{}", summary.item.id, request.id),
+                        kind: "question",
+                        ref_id: request.id,
+                        since: request.created_at,
+                    });
+                }
+            }
+        }
+        // A suggested change of direction waits for the researcher to agree or decline.
+        for proposal in self.research.proposals(project_id, research_id)? {
+            if proposal.review.is_none() {
+                pending.push(PendingDecision {
+                    key: format!("suggestion:{}", proposal.entry.id),
+                    kind: "suggestion",
+                    ref_id: proposal.entry.id,
+                    since: proposal.entry.created_at,
+                });
+            }
+        }
+        if self.admission(project_id, research_id)?.is_some() {
+            let question = self.question(project_id, research_id)?;
+            if question.revision > self.approved_revision(project_id, research_id)? {
+                let since = self
+                    .research
+                    .revision(project_id, research_id, question.revision)
+                    .map(|revision| revision.created_at)
+                    .unwrap_or_else(|_| question.updated_at.clone());
+                pending.push(PendingDecision {
+                    key: format!("brief:{}", question.revision),
+                    kind: "brief_approval",
+                    ref_id: question.revision.to_string(),
+                    since,
+                });
+            }
+        }
+        Ok(pending)
     }
 
     /// The brief's revisions with who wrote them and whether the researcher
