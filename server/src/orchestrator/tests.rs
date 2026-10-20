@@ -1656,4 +1656,224 @@ mod conversation_routing {
         crew.orchestrator.tick(&sink).unwrap();
         assert!(sink.deliveries().iter().all(|d| d.0 != dm));
     }
+
+    // -- Routes follow the member across a Session replacement (ADR 0229) -------------------------
+
+    /// Gives `member` a fresh public Session and returns it.
+    fn replace(crew: &Crew, project: &str, member: &Member) -> String {
+        public(
+            &crew
+                .members
+                .replace_session(project, &member.id, Binding::Public, None, &|_| true)
+                .unwrap(),
+        )
+    }
+
+    /// The only route of `kind` in the Project.
+    fn only_route(crew: &Crew, project: &str, kind: RouteKind) -> Route {
+        let mut routes: Vec<Route> = crew
+            .orchestrator
+            .routes(project, None, 200)
+            .unwrap()
+            .into_iter()
+            .filter(|route| route.kind == kind)
+            .collect();
+        assert_eq!(routes.len(), 1, "{routes:?}");
+        routes.remove(0)
+    }
+
+    /// Delivers until nothing is pending, far enough apart for every backoff.
+    fn drain(crew: &Crew, sink: &Recording) {
+        for step in 1..=MAX_ATTEMPTS as i64 + 2 {
+            crew.orchestrator
+                .deliver_due(sink, now_secs() + step * 1_000)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn a_route_pending_across_a_session_replacement_follows_the_member() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let old = public(&crew.analyst);
+        post(
+            &r,
+            None,
+            "@analyst how did the run go?",
+            &[&crew.analyst],
+            0,
+        );
+        // The analyst is busy: the route stays pending.
+        sink.script(vec![DeliveryOutcome::Busy]);
+        crew.orchestrator.tick(&sink).unwrap();
+        assert!(sink.deliveries().is_empty());
+        let new = replace(&crew, r.project(), &crew.analyst);
+        assert_ne!(old, new);
+        drain(&crew, &sink);
+        let delivered = sink.deliveries();
+        assert_eq!(delivered.len(), 1, "one delivery: {delivered:?}");
+        assert_eq!(delivered[0].0, new, "the member's current Session");
+        assert!(delivered[0].2.contains("how did the run go?"));
+        let route = only_route(&crew, r.project(), RouteKind::Mention);
+        assert_eq!(route.state, RouteState::Delivered);
+        assert_eq!(route.recipient.as_deref(), Some(new.as_str()));
+        assert_eq!(
+            route.target,
+            Target::Session { session_id: old },
+            "the route keeps what it was addressed to"
+        );
+    }
+
+    #[test]
+    fn a_route_to_a_member_removed_while_pending_fails_with_a_note() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        post(&r, None, "@writer please draft it", &[&crew.writer], 0);
+        sink.script(vec![DeliveryOutcome::Busy]);
+        crew.orchestrator.tick(&sink).unwrap();
+        crew.members.remove(r.project(), &crew.writer.id).unwrap();
+        drain(&crew, &sink);
+        assert!(sink.deliveries().is_empty(), "{:?}", sink.deliveries());
+        let route = only_route(&crew, r.project(), RouteKind::Mention);
+        assert_eq!(route.state, RouteState::Failed);
+        assert!(route.recipient.is_none());
+        let notes = thread_texts_all(&r);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("could not be delivered") && n.contains("removed")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn a_route_to_a_member_needing_setup_after_replacement_is_retried_then_fails_with_a_note() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        post(&r, None, "@analyst anything new?", &[&crew.analyst], 0);
+        sink.script(vec![DeliveryOutcome::Busy]);
+        crew.orchestrator.tick(&sink).unwrap();
+        replace(&crew, r.project(), &crew.analyst);
+        crew.members
+            .record_setup_error(&crew.analyst.id, "provider unavailable")
+            .unwrap();
+        // One attempt: retried, not failed.
+        crew.orchestrator
+            .deliver_due(&sink, now_secs() + 1_000)
+            .unwrap();
+        let route = only_route(&crew, r.project(), RouteKind::Mention);
+        assert_eq!(route.state, RouteState::Pending);
+        assert_eq!(route.attempts, 1);
+        assert!(
+            route
+                .last_error
+                .as_deref()
+                .is_some_and(|e| e.contains("needs setup"))
+        );
+        drain(&crew, &sink);
+        assert!(sink.deliveries().is_empty(), "{:?}", sink.deliveries());
+        let route = only_route(&crew, r.project(), RouteKind::Mention);
+        assert_eq!(route.state, RouteState::Failed);
+        assert_eq!(route.attempts, MAX_ATTEMPTS);
+        let notes = thread_texts_all(&r);
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("could not be delivered") && n.contains("needs setup")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn a_task_review_follows_a_replaced_manager() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let old = public(&crew.general);
+        let review = crate::task_store::TaskReview {
+            id: "review-1".into(),
+            research_id: r.f.research_id.clone(),
+            request_id: "request-1".into(),
+            accepted: false,
+            outcome: crate::work_store::WorkOutcome::Inconclusive,
+            reason: Some("Rerun with three seeds".into()),
+            brief_revision: 1,
+            created_at: String::new(),
+        };
+        crew.orchestrator
+            .route_task_review(r.project(), &old, &review, "Pruning")
+            .unwrap();
+        let new = replace(&crew, r.project(), &crew.general);
+        drain(&crew, &sink);
+        let delivered = sink.deliveries();
+        assert_eq!(delivered.len(), 1, "{delivered:?}");
+        assert_eq!(delivered[0].0, new);
+        assert!(delivered[0].2.contains("Rerun with three seeds"));
+        let route = only_route(&crew, r.project(), RouteKind::TaskReview);
+        assert_eq!(route.recipient.as_deref(), Some(new.as_str()));
+    }
+
+    #[test]
+    fn only_conversation_routes_follow_a_member() {
+        for kind in [
+            RouteKind::Discussion,
+            RouteKind::Mention,
+            RouteKind::AgentHandoff,
+            RouteKind::TaskReview,
+        ] {
+            assert!(kind.follows_member(), "{kind:?}");
+        }
+        for kind in [
+            RouteKind::Request,
+            RouteKind::Ask,
+            RouteKind::Dispatch,
+            RouteKind::Result,
+            RouteKind::Handoff,
+            RouteKind::Experiment,
+            RouteKind::Decision,
+        ] {
+            assert!(!kind.follows_member(), "{kind:?}");
+        }
+        // A legacy ask stays with the Session it asked (`was_asked` checks it).
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let old = public(&crew.analyst);
+        let thread = r.linked_thread(false);
+        r.ask(&thread, Intent::Ask, "ask-old", Some(&old));
+        crew.orchestrator.route_intents().unwrap();
+        let new = replace(&crew, r.project(), &crew.analyst);
+        drain(&crew, &sink);
+        let to: Vec<String> = sink.deliveries().into_iter().map(|d| d.0).collect();
+        assert_eq!(to, vec![old], "not {new}");
+    }
+
+    #[test]
+    fn depth_follows_the_member_across_replacement() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let deep = post(&r, Some(&crew.writer), "@analyst deep", &[&crew.analyst], 3);
+        sink.script(vec![DeliveryOutcome::Busy]);
+        crew.orchestrator.tick(&sink).unwrap();
+        let new = replace(&crew, r.project(), &crew.analyst);
+        drain(&crew, &sink);
+        assert_eq!(sink.deliveries().len(), 1);
+        assert_eq!(
+            crew.orchestrator
+                .next_hops(r.project(), &new, Some(&deep.id))
+                .unwrap(),
+            4,
+            "answering the message delivered to the new Session continues its chain"
+        );
+        assert_eq!(
+            crew.orchestrator
+                .next_hops(r.project(), &new, None)
+                .unwrap(),
+            4
+        );
+    }
 }

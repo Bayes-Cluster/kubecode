@@ -49,6 +49,20 @@ text_enum!(RouteKind {
     TaskReview => "task_review",
 });
 
+impl RouteKind {
+    /// Conversation routes are addressed to a member: if its Session is
+    /// replaced while the route is pending, the route goes to the member's
+    /// current public Session (ADR 0229). Ask (legacy, checked by `was_asked`
+    /// against the Session it asked), Dispatch and Handoff (work assignments)
+    /// keep their own rules.
+    pub fn follows_member(self) -> bool {
+        matches!(
+            self,
+            Self::Discussion | Self::Mention | Self::AgentHandoff | Self::TaskReview
+        )
+    }
+}
+
 // Where a route's payload came from.
 text_enum!(SourceKind {
     Message => "message",
