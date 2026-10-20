@@ -958,3 +958,39 @@ fn file_existence_is_a_metadata_check_that_refuses_links_folders_and_escapes() {
         );
     }
 }
+
+/// Run before merging changes to the file walk:
+/// `cargo test --release --test workspace -- --ignored a_file_search_of_a_large_project`.
+#[test]
+#[ignore = "builds a 50,000-file fixture; a manual performance check"]
+fn a_file_search_of_a_large_project_stays_within_its_budget() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("large-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    run_git(root, &["init"]);
+    fs::write(root.join(".gitignore"), "ignored/\n").expect("gitignore");
+    for directory in 0..500 {
+        let folder = root.join(format!("d{directory:03}/sub"));
+        fs::create_dir_all(&folder).expect("folder");
+        for file in 0..100 {
+            fs::write(folder.join(format!("f{file:03}.txt")), "x").expect("file");
+        }
+    }
+    let started = std::time::Instant::now();
+    let found = service
+        .search_project_files(&project.id, &words("f099"), 5_000, 200)
+        .expect("search");
+    let elapsed = started.elapsed();
+    eprintln!(
+        "file search: {} hits, truncated {}, {elapsed:?}",
+        found.hits.len(),
+        found.truncated
+    );
+    assert!(found.truncated, "the budget stops the walk");
+    assert!(
+        elapsed < std::time::Duration::from_millis(300),
+        "{elapsed:?}"
+    );
+}
