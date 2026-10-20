@@ -1554,7 +1554,7 @@
   "kubecode.teamAnswerPlaceholder": "Escribe tu respuesta para el líder del equipo",
   "kubecode.teamSubmitAnswer": "Enviar respuesta",
   "kubecode.teamYoloNativePermission": "Permiso nativo",
-  "kubecode.generalManagerMode": "El General Agent coordina, por lo que su modo es fijo",
+  "kubecode.generalManagerMode": "El Agente General coordina, por lo que su modo es fijo",
   "kubecode.vocab.destination.general": "General",
   "kubecode.vocab.destination.board": "Kanban",
   "kubecode.vocab.destination.resources": "Recursos",
