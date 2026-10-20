@@ -133,9 +133,10 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
 
   // On a phone, the conversation and the Task are separate screens.
   await page.setViewportSize({ width: 390, height: 800 })
-  // The navigation is an overlay on a phone; dismiss it to read the conversation.
-  await page.keyboard.press('Escape')
+  // Wait for the phone layout before acting on it; a link then closes the navigation sheet.
+  await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
   await page.evaluate((hash) => { window.location.hash = hash }, `#/p/${project.id}/general/m/${message.id}`)
+  await expect(page.getByRole('navigation', { name: 'Workspaces' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
   await expectContained(page)
   await page.locator(`[data-message-id="${message.id}"]`).getByRole('button', { name: /Task: Pruning heads/ }).click()
