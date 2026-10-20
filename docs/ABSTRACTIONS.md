@@ -1016,6 +1016,34 @@ current one, keeps a supplied one (the version the researcher saw), and refuses
 a record that no longer exists. A pinned message reference therefore always
 says which version was cited.
 
+In the browser (ADR 0231 §4–§6):
+
+- **One record reader.** `RecordPreview` over `useRecordDocument` is the only
+  read-only view of a record: the inspector's resource entry, Task evidence,
+  the Add context preview, and the Session picker's preview. It reads the
+  current version a page at a time, compares it with a cited revision, and
+  reports `onDisplayed({kind, id, revision, title})` with the `shown_revision`
+  once per revision, only after content is on screen. A change after opening is
+  announced, never swapped in.
+- **One search.** `useWorkspaceSearch` + `WorkspaceSearch` search explicit
+  sections (`searchScope.ts`): Tasks, Findings, Experiments and artifacts,
+  Discussions, Files, and Execution history (off by default); `channel` and
+  `session_turn` are never results. The scope is said in words; words,
+  sections, active row, and results are page memory only.
+- **Draft reference.** `DraftReference` is
+  `{ ref: {kind, id, revision}, title, seen: 'previewed' | 'listed' }`, kept in
+  `GeneralDraft.references`, one per record (another version replaces it), at
+  most 16; a Task becomes the draft's `task`. `previewed` carries the version
+  the preview displayed; `listed` the current version resolved when attached.
+- **Reference chip.** `ResourceReferenceChip` names a reference by kind, title
+  (never an id), the cited version in words (`formatVersion`), and its state —
+  changed since cited or attached, no longer exists, or not available here —
+  from a per-Workspace resolver that batches at most 32 refs and forgets what a
+  Workspace event touched.
+- **Attach target.** While a General draft waits for a reference from
+  Resources, `{ filter, focusKey }` sits in page memory; adding returns to that
+  General view with the composer focused and the caret restored.
+
 ## Context tools
 
 The `kubecode-context` tools are how an Agent uses context references. They are

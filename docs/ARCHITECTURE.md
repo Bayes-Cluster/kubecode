@@ -278,8 +278,9 @@ answer the request that was routed to a round it holds now; the answer's Thread
 is linked to that round. Files over the hashing limit are fingerprinted by size
 and modification time. The inspector opens an experiment (output tail,
 artifacts), an artifact, a cited file, or any ProjectContext record in place
-(`src/kubecode/work/EvidenceViewer.tsx`), marking a record that changed or
-vanished since it was cited.
+through the one record reader (`src/kubecode/resources/RecordPreview.tsx` over
+`useRecordDocument`, ADR 0231 §4; `work/EvidenceViewer.tsx` wraps it), marking
+a record that changed or vanished since it was cited.
 
 Workspace members (ADR 0220): `server/src/member_store/` owns the roster — one
 General Agent per Workspace (a partial unique index plus an idempotent
@@ -391,8 +392,10 @@ next-step line, and Overview (`TaskOverview`, `TaskQuestions`), Results
 (`TaskResults`) and Activity (`TaskActivity`) tabs; it reads the research
 bundle only when a section needs it, and its tab, feedback, outcome and answer
 drafts are kept under `placeKey.task`. `work/EvidencePanel.tsx` shows a cited
-record with `work/EvidenceViewer.tsx`, which reports a display (`onDisplayed`,
-with the read's own revision) only after the cited record itself rendered —
+record with `work/EvidenceViewer.tsx` (a wrapper over the one record reader,
+which reads the current version — files too, through the context reader — and
+compares it with the cited one), which reports a display (`onDisplayed`,
+with the read's `shown_revision`) only after the cited record itself rendered —
 never while loading, on a failure, for a removed record, a related record
 (handed to the stack as a `resource` entry through `onFollow`) or a failed
 "Load more" — and the panel records it in the stack's `InspectionRecord`.
@@ -459,9 +462,24 @@ for the life of the page and never on disk: drafts and reply targets
 (`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
 General's reading position is reported by `MessageList` and folded into its
 place when General is left, and written onto General's own history entry before
-the next place is pushed, so Back lands on it. `ResourcesView` reuses the
-project context reader in a browsing mode whose search, kind filter and preview
-are place memory too. A route can name a message, read by id
+the next place is pushed, so Back lands on it. Workspace search, previews, and
+references (ADR 0231) live in `src/kubecode/resources/`: one search core
+(`useWorkspaceSearch`, `WorkspaceSearch`, explicit sections from
+`searchScope.ts`, its words, sections, active row and results kept in place
+memory only) hosted by `ResourcesView` (a preview-first library whose rows
+open `ResourcePanel` in the inspector beside the list, never leaving it), the
+General composer's `AddContextDialog` (results beside the one `RecordPreview`;
+"Attach this version" or Enter for the current version), and the titlebar's
+`WorkspaceSearchLauncher` (the shell's `searchSlot`; a button to Resources on a
+phone; the palette's "Search this Workspace"). `attachTarget.ts` decides which
+General draft a reference found elsewhere joins and returns there;
+`draftReferences.ts` keeps one versioned reference per record in
+`GeneralDraft.references`. `ReferenceResolverProvider` (mounted by the shell
+per Workspace) batches resolves for every `ResourceReferenceChip` — in drafts
+and in messages — so chips are named, versioned, and say when they changed or
+are gone, and the composer refuses to send a removed one. The Session
+composer's `ComposerProjectWorkPicker` previews through the same reader and
+never offers a file. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 

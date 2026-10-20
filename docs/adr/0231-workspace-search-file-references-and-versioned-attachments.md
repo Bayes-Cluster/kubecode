@@ -31,9 +31,7 @@ the message they are writing. Before this decision:
 
 ## Decision
 
-This ADR covers the server and the browser. The server parts (§1, §2, §3, and
-the server half of §5) are implemented; the browser parts (§4, the browser
-half of §5, and §6) are planned and land in later slices of #219.
+This ADR covers the server and the browser; both are implemented in #219.
 
 ### 1. Project files are a reference kind
 
@@ -91,10 +89,24 @@ A search page states three things beside its items:
 - `counts`: matches per searched kind before paging, zero included, a lower
   bound for a truncated kind.
 
-The browser will search explicit sections: Tasks, findings, experiments and
-artifacts, discussions, files, and, when chosen, execution history. It will say
-so in words, say that titles, summaries, and file paths are matched, and say
-that message text and direct messages are never searched.
+The browser has one search (`useWorkspaceSearch` and `WorkspaceSearch`),
+hosted by Resources, the Add context dialog, and the titlebar. It always sends
+explicit kinds, grouped in sections: Tasks (`research`), findings,
+experiments and artifacts, discussions (`import`, `thread`), files, and, only
+when chosen, execution history (`session`, `team`, `team_task`, `work`,
+`round`). The conversation itself (`channel`) and Session turns are never
+results. A note names the sections and the Workspace in words, says that
+titles, summaries, and file paths are matched, and says that message text and
+direct messages are never searched. Each section shows its matches ("200+"
+when cut short), a cut-short kind is named, and with files on, the walk's
+skips are said. Searching is debounced (200 ms), a newer search cancels an
+older one, and a response for another Workspace, query, or scope is dropped.
+A relevant Workspace event only marks the results stale, with Refresh; rows
+never reflow under the reader. The titlebar search is its own control ("Search
+{Workspace}"), a popover of the top eight results that previews over the
+current view and carries its words to Resources; on a phone it is a button
+that opens Resources with the search focused, and the command palette has
+"Search this Workspace". Session search keeps its name and place.
 
 Results are identified by Workspace and reference and open within that
 Workspace. A result or resolution for a Workspace that is no longer active is
@@ -118,23 +130,39 @@ Resolve returns a record's current `title` only when the record is visible in
 this Project, including an artifact whose file is gone; never for a missing,
 private, or foreign record.
 
-### 4. One preview surface (planned)
+### 4. One preview surface
 
-Every read-only view of a Workspace record will be one component over the 0214
-reader: the inspector's resource entry (0228), evidence a Task cites at its
-pinned revision, the add-context step of the Workspace composer, and the
-Session composer's picker. File evidence is read through the context reader,
-with the fingerprint it is pinned with.
+Every read-only view of a Workspace record is one component, `RecordPreview`
+over `useRecordDocument`, on the 0214 content read: the inspector's resource
+entry (0228), evidence a Task cites (`EvidenceViewer` is now a wrapper, 0230),
+the Add context preview, and the Session composer picker's preview. File
+evidence is read through the context reader a page at a time, with the
+fingerprint it is pinned with, instead of the editor's file read.
 
-The preview reports the revision it displayed (`shown_revision`), only after a
-successful display. That report is what evidence acceptance (0226) and "attach
-this version" bind to. The preview never changes content under the reader:
-when the record changes, it says so and offers the current version.
+The preview always reads the current version and compares it with the
+revision that was cited ("Changed since it was cited"). It never asks for the
+pinned revision, because review acceptance (0230 §4) binds to the version the
+researcher actually saw, and that must be the one the server checks now.
 
-Choosing a record in Resources or Workspace search previews it in the
-inspector, beside the list or as a screen on narrow layouts. Going to the
+The preview reports the revision it displayed (`shown_revision`, or the
+reference's revision from a server before this ADR), once per revision and
+only after a commit that shows content: never while loading, for a failed
+read, for a record that is gone, or for a file with no text to show. That
+report is what evidence acceptance and "Attach this version" bind to. The
+preview never changes content under the reader: after a relevant Workspace
+event it resolves the record in the background and, if it moved on, says
+"This changed after you opened it" with "Show the current version". A file
+that changed between pages stops paging and says so. A 404, an unknown kind,
+or a record reported removed is "no longer exists".
+
+Resources is a preview-first library: choosing a result opens it in the
+inspector (`nav.inspect`, reset, returning focus to the row), beside the list
+or as a screen on narrow layouts, and the row stays selected. A Task opens as
+its Task, or as its brief while a draft waits for a reference. Going to the
 record's home (its Task, its Thread in General, its Session) is an explicit
-action inside the preview. Reference chips keep 0228's mapping.
+action inside the preview, through the shared reference mapping; reference
+chips keep 0228's mapping. The preview offers no Copy link: the address
+already names a routable record, and a file is never routable.
 
 ### 5. References carry the version that was seen
 
@@ -155,31 +183,60 @@ message, the server resolves every reference first (implemented):
 Agent posts (`general_post`, work posts) are unchanged. No schema changes:
 stored references already hold `{kind, id, revision}`.
 
-The Workspace composer will attach a reference with a revision (planned): the
-revision the preview displayed when the researcher previewed it, or the current
-revision resolved at the moment of attaching when they attached from the list.
-Every reference, in drafts and in messages, will show its kind, its title
-(never an id), the cited version, and in words whether it changed, no longer
-exists, or is not available here. A removed reference cannot be sent; a
-changed one is sent at the version that was seen. Revisions are fingerprints,
-not snapshots (0214 §2).
+The General composer attaches a reference with a revision: the revision the
+preview displayed when the researcher previewed it ("Attach this version",
+enabled only once the preview is displayed; Ctrl/⌘+Enter), or the current
+revision resolved at the moment of attaching when they pressed Enter on a
+result (a record that no longer exists is refused). Attaching another version
+of a record already cited replaces it; a message cites at most 16 records. A
+Task becomes what the message is about (its first reference when sent), not a
+second reference, and attaching it never authorizes admission or execution
+(0221). A version change is a new message for retries (the draft's signature
+includes revisions).
 
-Draft references will live in the in-memory place memory of 0228, at
-`<draftKey>#references`, one per record. Finding, previewing, browsing
-Resources, and attaching return to the same draft: the same Workspace, Task
-filter, Thread, reading position, focus, and caret. Attaching a Task links the
-message to it and never authorizes admission or execution (0221).
+Every reference, in drafts and in messages, is one `ResourceReferenceChip`
+over the 0227 `ReferenceChip`: its kind, its title (the server's, then what
+the page knows, then a file name or "<Kind> (no title)", never an id), the
+cited version in words ("Brief v3", "#3f2c1a9", "v4", "Large file", or none;
+never a raw fingerprint), and in words whether it changed since it was cited or
+attached, no longer exists, or is not available here (a private Session, which
+is never named). A resolver per Workspace batches resolves (at most 32 per
+request), caches them per reference and cited revision, forgets what a
+relevant event touched (a changed file by its path), and drops answers for a
+Workspace that is no longer active. A removed reference cannot be sent: Send
+says which one and moves focus to its chip, and the server's 400 stays the
+backstop. A changed one is sent at the version that was seen. Revisions are
+fingerprints, not snapshots (0214 §2).
 
-### 6. What stays private (planned)
+Draft references live in the General draft of 0229 (`GeneralDraft.references`,
+in the in-memory place memory of 0228 under the General place of its Task
+filter), one per record. Earlier Threads are read-only (0229), so General is
+the only composer that cites. Finding, previewing, browsing Resources, and
+attaching return to the same draft: the Add context dialog keeps its words,
+sections, and preview per draft and puts the caret back when it closes;
+"Browse in Resources" leaves an attach target (page memory only) that
+Resources announces with "Return to message" and "Stop adding", and "Add to
+message" in a preview returns to that General view with the composer focused
+and the caret where it was. From a preview beside General, the reference is
+added in place; on a phone, adding returns to the composer; from Kanban,
+Resources, or Members it goes to General's remembered draft ("Add to General
+message"); a private conversation and execution history offer no Add.
 
-The search query, the chosen sections, and the results will live only in page
-memory. They never go into routes, stored places, or analytics.
+### 6. What stays private
+
+The search query, the chosen sections, the active result, the results, the
+attach target, and the caret live only in page memory. They never go into
+routes, stored places, or analytics; a file path never enters a route
+(`isRoutableRecordKind` excludes `file`).
 
 ## Consequences
 
 - One reader means one set of loading, changed, removed, and unavailable rules
-  across Resources, review evidence, and both composers once the browser slices
-  land. Evidence files are read with the fingerprint they are pinned with.
+  across Resources, review evidence, and both composers. Evidence files are
+  read with the fingerprint they are pinned with, a page at a time, without
+  the editor's size limit.
+- The Session composer's picker keeps its own list, filters, and keyboard; it
+  previews through the one reader and never offers a Project file.
 - A search that includes files costs a bounded directory walk per request
   (about 34 ms for a 50,000-file Project in a debug build, measured by an
   ignored test in `server/tests/workspace.rs`). Its truncation is visible per
