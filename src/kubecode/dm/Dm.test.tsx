@@ -1,40 +1,53 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+
+import { createTranslator } from '@/lib/i18n'
 
 import type { DmTurn, KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
 import { ApiError } from '../api'
-import { createPlaceMemory, type PlaceMemory } from '../app/location/placeMemory'
+import { fakeNavigation } from '../app/inspector/inspectorTesting'
+import { createPlaceMemory, placeKey, usePlaceState, type PlaceMemory } from '../app/location/placeMemory'
 import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/location/WorkspaceNavigation'
+import { emptyGeneralDraft, type GeneralDraft } from '../channel/generalDraft'
+import { MessageComposer } from '../channel/MessageComposer'
+import { localReferenceLabels } from '../references/referenceLabels'
+import { memberDirectory, MemberDirectoryContext } from '../members/memberDirectory'
+import { channelMessage, general, member } from '../members/memberFixtures'
 import { DmPane } from './DmPane'
 
-const t = ((key: string, values?: Record<string, string | number>) => (
-  values ? `${key}:${JSON.stringify(values)}` : key
-)) as never
-
-const analyst: Member = {
-  id: 'm1', project_id: 'p1', role: 'specialist', template: 'analysis', name: 'Analyst',
-  handle: 'analyst', spec: { agent_id: 'opencode', config: {}, instructions: '' },
-  public_conversation_id: 's-public', dm_conversation_id: 's-dm', state: 'active',
-  setup_error: null, setup_code: null, revision: 1, created_at: '', updated_at: '', removed_at: null,
-}
-
+const t = createTranslator('en')
+const analyst: Member = member({ id: 'm1', name: 'Analyst', handle: 'analyst', public_conversation_id: 's-public', dm_conversation_id: 's-dm' })
+const team = memberDirectory({ members: [general, analyst], general_id: 'g' }, 'ready')
 const research = [{ id: 'r1', title: 'Pruning' }] as unknown as ResearchSummary[]
-
 const turn = (id: string, user: string, assistant: string): DmTurn => ({ run_id: id, user, assistant })
 
-function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, events: WorkspaceEvent[] = []) {
-  const api = {
+function context(children: ReactNode, { memory, navigation }: { memory?: PlaceMemory; navigation?: WorkspaceNavigation } = {}) {
+  const inner = (
+    <MemberDirectoryContext.Provider value={team}>
+      {navigation ? <WorkspaceNavigationContext.Provider value={navigation}>{children}</WorkspaceNavigationContext.Provider> : children}
+    </MemberDirectoryContext.Provider>
+  )
+  return memory ? <PlaceMemoryProvider memory={memory}>{inner}</PlaceMemoryProvider> : inner
+}
+
+function fakeApi(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}) {
+  return {
     memberDmTurns: vi.fn().mockResolvedValue([
-      turn('run-1', 'is 0.91 enough?', 'It is within a point.'),
+      turn('run-1', 'is 0.91 enough?', 'It is **within** a point.'),
       turn('run-2', 'what about the reviewer?', 'Mention it to them.'),
     ]),
     sendMemberDm: vi.fn().mockResolvedValue(undefined),
-    previewDmShare: vi.fn().mockResolvedValue({ text: 'EXACT TEXT', digest: 'd1', task_id: null }),
-    shareDm: vi.fn().mockResolvedValue({}),
+    previewDmShare: vi.fn().mockResolvedValue({ text: '> is 0.91 enough?\n\nIt is **within** a point.', digest: 'd1', task_id: 'r1' }),
+    shareDm: vi.fn().mockResolvedValue(channelMessage(7, { id: 'shared-1' })),
+    postChannelMessage: vi.fn(),
     ...overrides,
   }
-  const onShared = vi.fn()
-  const view = render(
+}
+
+function pane(api: ReturnType<typeof fakeApi>, extra: Partial<React.ComponentProps<typeof DmPane>> = {}, events: WorkspaceEvent[] = []) {
+  return (
     <DmPane
       api={api as unknown as KubecodeApi}
       connectionState="live"
@@ -43,110 +56,145 @@ function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, even
       projectId="p1"
       research={research}
       t={t}
-      onShared={onShared}
-    />,
+      {...extra}
+    />
   )
+}
+
+function setup(overrides: Partial<Record<keyof KubecodeApi, unknown>> = {}, options: { navigation?: WorkspaceNavigation; member?: Member } = {}) {
+  const api = fakeApi(overrides)
+  const onShared = vi.fn()
+  const view = render(context(pane(api, { onShared, member: options.member ?? analyst }), options))
   return { api, onShared, view }
 }
 
-const titled = (name: string) => `${name}:{"name":"Analyst"}`
+const box = () => screen.getByRole('textbox', { name: 'Message Analyst privately' }) as HTMLTextAreaElement
+
+async function openShare() {
+  fireEvent.click(screen.getByRole('button', { name: 'Share to General…' }))
+  return screen.findByRole('dialog')
+}
 
 describe('DmPane', () => {
-  it('shows the private conversation, says who can see it, and sends privately', async () => {
-    const { api } = setup()
+  it('shows who the conversation is with, that it is private, and both sides in Markdown', async () => {
+    setup()
     expect(await screen.findByText('is 0.91 enough?')).toBeInTheDocument()
-    expect(screen.getByText('It is within a point.')).toBeInTheDocument()
-    expect(screen.getByText(titled('kubecode.dm.private'))).toBeInTheDocument()
-    const box = screen.getByRole('textbox', { name: titled('kubecode.dm.placeholder') })
-    fireEvent.change(box, { target: { value: 'my private plan' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    await waitFor(() => expect(api.sendMemberDm).toHaveBeenCalledTimes(1))
-    expect(api.sendMemberDm).toHaveBeenCalledWith('p1', 'm1', 'my private plan', expect.any(String))
-    await waitFor(() => expect(box).toHaveValue(''))
+    expect(screen.getByRole('heading', { name: /Analyst/ })).toBeInTheDocument()
+    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.getByText(/Only you and Analyst see this/)).toBeInTheDocument()
+    expect(screen.getByText('within').tagName).toBe('STRONG')
+    const log = screen.getByRole('log')
+    expect(within(log).getAllByText('You')).toHaveLength(2)
+    expect(within(log).getAllByText('Specialist · Analysis').length).toBeGreaterThan(0)
+    expect(screen.getByText('Only Analyst sees this message.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mention someone' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add context' })).not.toBeInTheDocument()
   })
 
-  it('keeps one client id across a failed send, reports why, and starts a new one for new words', async () => {
+  it('sends privately and never into General, and waits visibly for the reply', async () => {
+    const { api } = setup({ memberDmTurns: vi.fn().mockResolvedValue([turn('run-1', 'thinking out loud', '')]) })
+    expect(await screen.findByText("Waiting for Analyst's reply")).toBeInTheDocument()
+    fireEvent.change(box(), { target: { value: 'my private plan' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(api.sendMemberDm).toHaveBeenCalledWith('p1', 'm1', 'my private plan', expect.any(String)))
+    await waitFor(() => expect(box()).toHaveValue(''))
+    expect(api.postChannelMessage).not.toHaveBeenCalled()
+  })
+
+  it('keeps the text when the member is still answering, keeps one id across retries, and a new one for new words', async () => {
     const send = vi.fn()
       .mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502))
       .mockRejectedValueOnce(new ApiError('dm_busy', 'x', 409))
       .mockResolvedValue(undefined)
     setup({ sendMemberDm: send })
     await screen.findByText('is 0.91 enough?')
-    const box = screen.getByRole('textbox', { name: titled('kubecode.dm.placeholder') })
-    fireEvent.change(box, { target: { value: 'hello' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.dm.failed')
-    expect(box).toHaveValue('hello')
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.dm.busy')
-    fireEvent.keyDown(box, { key: 'Enter' })
+    fireEvent.change(box(), { target: { value: 'hello' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('The message could not be delivered')
+    expect(box()).toHaveValue('hello')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+      'Analyst is still answering your last message. Your message is kept; try again in a moment.',
+    ))
+    expect(box()).toHaveValue('hello')
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(send).toHaveBeenCalledTimes(3))
     expect(send.mock.calls[1][3]).toBe(send.mock.calls[0][3])
     expect(send.mock.calls[2][3]).toBe(send.mock.calls[0][3])
-    await waitFor(() => expect(box).toHaveValue(''))
-    fireEvent.change(box, { target: { value: 'something else' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(box()).toHaveValue(''))
+    fireEvent.change(box(), { target: { value: 'something else' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(send).toHaveBeenCalledTimes(4))
     expect(send.mock.calls[3][3]).not.toBe(send.mock.calls[0][3])
+  })
+
+  it('cannot be written to while the member needs setup, and says where to fix it', async () => {
+    const navigation = fakeNavigation()
+    setup({}, { navigation, member: { ...analyst, state: 'setup_required' } })
+    await screen.findByText('is 0.91 enough?')
+    expect(box()).toBeDisabled()
+    expect(screen.getByText('Analyst needs setup before you can message them.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Fix in Members' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'members' }, { inspect: { kind: 'member', id: 'm1' } })
   })
 
   it('refreshes from the DM Session events only, and offers a retry when the turns cannot load', async () => {
     const turns = vi.fn()
       .mockRejectedValueOnce(new Error('down'))
       .mockResolvedValue([turn('run-1', 'is 0.91 enough?', 'ok')])
-    const { api, view } = setup({ memberDmTurns: turns })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.dm.loadFailed')
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.retry' }))
+    const api = fakeApi({ memberDmTurns: turns })
+    const view = render(context(pane(api)))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not be loaded.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('is 0.91 enough?')).toBeInTheDocument()
     const before = turns.mock.calls.length
     const event = (id: number, conversation: string): WorkspaceEvent => ({
-      id, kind: 'agent_event', project_id: 'p1', conversation_id: conversation, run_id: null,
-      payload: {}, created_at: '',
+      id, kind: 'agent_event', project_id: 'p1', conversation_id: conversation, run_id: null, payload: {}, created_at: '',
     })
-    const rerender = (events: WorkspaceEvent[]) => view.rerender(
-      <DmPane
-        api={api as unknown as KubecodeApi}
-        connectionState="live"
-        events={events}
-        member={analyst}
-        projectId="p1"
-        research={research}
-        t={t}
-      />,
-    )
-    rerender([event(1, 's-public')])
+    view.rerender(context(pane(api, {}, [event(1, 's-public')])))
     expect(turns.mock.calls.length).toBe(before)
-    rerender([event(1, 's-public'), event(2, 's-dm')])
+    view.rerender(context(pane(api, {}, [event(1, 's-public'), event(2, 's-dm')])))
     await waitFor(() => expect(turns.mock.calls.length).toBe(before + 1))
   })
+})
 
-  it('shares only the chosen turns after showing the exact text, and any change needs a new preview', async () => {
-    const { api, onShared } = setup()
+describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
+  it('previews the exact text as General will show it, with its recipient and Task, then posts and shows it in General', async () => {
+    const navigation = fakeNavigation()
+    const { api, onShared } = setup({}, { navigation })
     await screen.findByText('is 0.91 enough?')
-    fireEvent.click(screen.getByRole('button', { name: /kubecode.dm.share$/ }))
-    const dialog = await screen.findByRole('dialog')
-    // Nothing is chosen, so nothing can be previewed.
-    expect(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' })).toBeDisabled()
+    const dialog = await openShare()
+    expect(within(dialog).getByRole('button', { name: 'Preview' })).toBeDisabled()
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
+    expect(within(dialog).getByText('1 of 6 chosen')).toBeInTheDocument()
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'for everyone' } })
     fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'r1' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
-    expect(await within(dialog).findByText('EXACT TEXT')).toBeInTheDocument()
-    expect(api.previewDmShare).toHaveBeenCalledWith('p1', 'm1', {
-      runIds: ['run-1'], note: 'for everyone', taskId: 'r1',
-    })
-    // Editing the note makes the preview stale: it must be shown again.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    const card = await within(dialog).findByRole('region', { name: 'Preview' })
+    expect(api.previewDmShare).toHaveBeenCalledWith('p1', 'm1', { runIds: ['run-1'], note: 'for everyone', taskId: 'r1' })
+    expect(within(card).getByText('You')).toBeInTheDocument()
+    expect(within(card).getByText('To')).toBeInTheDocument()
+    expect(within(card).getByText('General')).toBeInTheDocument()
+    expect(within(card).getByText('Pruning')).toBeInTheDocument()
+    expect(within(card).getByText('within').tagName).toBe('STRONG')
+    expect(within(card).getByText('This will reach General, the project manager, like anything you write in General.')).toBeInTheDocument()
+    expect(within(card).getByText('Exact text')).toBeInTheDocument()
+    expect(card.querySelector('pre')).toHaveTextContent('> is 0.91 enough?')
+    // Editing makes the preview stale: it must be shown again.
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'for everyone!' } })
-    expect(within(dialog).queryByText('EXACT TEXT')).not.toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: 'kubecode.dm.shareConfirm' })).not.toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
-    await within(dialog).findByText('EXACT TEXT')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.shareConfirm' }))
+    expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Post to General' })).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    await within(dialog).findByRole('region', { name: 'Preview' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Post to General' }))
     await waitFor(() => expect(api.shareDm).toHaveBeenCalledWith('p1', 'm1', {
       runIds: ['run-1'], note: 'for everyone!', taskId: 'r1', digest: 'd1', clientMessageId: expect.any(String),
     }))
     await waitFor(() => expect(onShared).toHaveBeenCalled())
-    expect(await screen.findByText('kubecode.dm.shared')).toBeInTheDocument()
+    expect(await screen.findByText('Shared to General.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show in General' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'general', message: 'shared-1' }, { focus: 'message:shared-1' })
+    expect(api.postChannelMessage).not.toHaveBeenCalled()
   })
 
   it('drops the preview when the server says the conversation changed, and bounds the turns', async () => {
@@ -154,84 +202,84 @@ describe('DmPane', () => {
     const share = vi.fn().mockRejectedValue(new ApiError('dm_share_stale', 'x', 409))
     const { api } = setup({ memberDmTurns: vi.fn().mockResolvedValue(many), shareDm: share })
     await screen.findByText('question 0')
-    fireEvent.click(screen.getByRole('button', { name: /kubecode.dm.share$/ }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openShare()
     for (let index = 0; index < 8; index += 1) {
       fireEvent.click(within(dialog).getByRole('checkbox', { name: new RegExp(`question ${index}$`) }))
     }
-    expect(within(dialog).getAllByRole('checkbox').filter((box) => (box as HTMLInputElement).checked)).toHaveLength(6)
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
-    await within(dialog).findByText('EXACT TEXT')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.shareConfirm' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('kubecode.dm.shareStale')
-    expect(within(dialog).queryByText('EXACT TEXT')).not.toBeInTheDocument()
+    expect(within(dialog).getAllByRole('checkbox').filter((item) => (item as HTMLInputElement).checked)).toHaveLength(6)
+    expect(within(dialog).getByText('6 of 6 chosen')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    await within(dialog).findByRole('region', { name: 'Preview' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Post to General' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Preview it again')
+    expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
     expect(api.previewDmShare).toHaveBeenCalledTimes(1)
   })
 
   it('forgets the selection when closed, and a second share is a new message', async () => {
-    const share = vi.fn().mockResolvedValue({})
+    const share = vi.fn().mockResolvedValue(channelMessage(8))
     const { api } = setup({ shareDm: share })
     await screen.findByText('is 0.91 enough?')
-    const open = async () => {
-      fireEvent.click(screen.getByRole('button', { name: /kubecode.dm.share$/ }))
-      return screen.findByRole('dialog')
-    }
-    let dialog = await open()
+    let dialog = await openShare()
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
-    await within(dialog).findByText('EXACT TEXT')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.members.cancel' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    await within(dialog).findByRole('region', { name: 'Preview' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    dialog = await open()
-    // Reopened: nothing chosen, no stale preview that could be confirmed.
-    expect(within(dialog).queryByText('EXACT TEXT')).not.toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' })).toBeDisabled()
-    // Share the same turn twice on purpose: two confirmations, two ids.
+    dialog = await openShare()
+    expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Preview' })).toBeDisabled()
     for (let round = 0; round < 2; round += 1) {
       fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
-      fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.sharePreviewAction' }))
-      await within(dialog).findByText('EXACT TEXT')
-      fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.dm.shareConfirm' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+      await within(dialog).findByRole('region', { name: 'Preview' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Post to General' }))
       await waitFor(() => expect(share).toHaveBeenCalledTimes(round + 1))
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-      if (round === 0) dialog = await open()
+      if (round === 0) dialog = await openShare()
     }
     expect(share.mock.calls[0][2].clientMessageId).not.toBe(share.mock.calls[1][2].clientMessageId)
     expect(api.previewDmShare).toHaveBeenCalledTimes(3)
   })
 })
 
-describe('DmPane drafts kept for the place (ADR 0228 §4)', () => {
-  const pane = (memory: PlaceMemory, api: Record<string, unknown>, member = analyst) => (
-    <PlaceMemoryProvider memory={memory}>
-      <DmPane
-        api={api as unknown as KubecodeApi}
-        connectionState="live"
-        events={[]}
-        member={member}
+describe('DmPane drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => {
+  function GeneralComposer() {
+    const [draft, setDraft] = usePlaceState<GeneralDraft>(`${placeKey.general('p1')}#draft`, emptyGeneralDraft(null))
+    return (
+      <MessageComposer
+        api={{} as KubecodeApi}
+        directory={team}
+        draft={draft}
+        focusKey="composer:general"
+        labels={localReferenceLabels({ research: [], threads: [], sessions: [], picked: [], t })}
+        placeholder="Message the Workspace"
         projectId="p1"
-        research={research}
         t={t}
+        onDraftChange={setDraft}
+        onSend={vi.fn()}
       />
-    </PlaceMemoryProvider>
-  )
+    )
+  }
 
-  it('keeps the unsent private draft and a retried send’s id when the conversation is left, apart for each member', async () => {
+  it('keeps the private draft and a retried send’s id per member, and never shows it in General', async () => {
     const memory = createPlaceMemory()
     const send = vi.fn().mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502)).mockResolvedValue(undefined)
-    const api = { memberDmTurns: vi.fn().mockResolvedValue([]), sendMemberDm: send }
-    const view = render(pane(memory, api))
-    const box = () => screen.getByRole('textbox', { name: titled('kubecode.dm.placeholder') })
+    const api = fakeApi({ memberDmTurns: vi.fn().mockResolvedValue([]), sendMemberDm: send })
+    const view = render(context(pane(api), { memory }))
     expect(box()).toHaveAttribute('data-focus-key', 'composer:dm:m1')
     fireEvent.change(box(), { target: { value: 'just between us' } })
     fireEvent.keyDown(box(), { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.dm.failed')
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be delivered')
 
-    view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
-    view.rerender(pane(memory, api, { ...analyst, id: 'm2', name: 'Analyst' }))
+    view.rerender(context(<GeneralComposer />, { memory }))
+    expect(screen.getByRole('combobox', { name: 'Message the Workspace' })).toHaveValue('')
+    expect(document.body).not.toHaveTextContent('just between us')
+
+    view.rerender(context(pane(api, { member: { ...analyst, id: 'm2' } }), { memory }))
     expect(box()).toHaveValue('')
 
-    view.rerender(pane(memory, api))
+    view.rerender(context(pane(api), { memory }))
     expect(box()).toHaveValue('just between us')
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2))

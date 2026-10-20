@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -9,11 +10,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { DecisionButton } from '@/components/workspace/DecisionButton'
+import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import type { Translator } from '@/lib/i18n'
 
-import type { DmSharePreview, DmTurn, KubecodeApi, Member, ResearchSummary } from '../api'
+import type { ChannelMessage, DmSharePreview, DmTurn, KubecodeApi, Member, ResearchSummary } from '../api'
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
+import { Identity } from '../members/Identity'
+import { useMemberDirectory } from '../members/memberDirectory'
+import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
 
 /** Turns one share may carry (the server enforces the same bound). */
@@ -28,13 +34,50 @@ export type DmShareDialogProps = {
   t: Translator
   turns: DmTurn[]
   onOpenChange: (open: boolean) => void
-  onShared: () => void
+  /** The message it became in General. */
+  onShared: (message: ChannelMessage) => void
+}
+
+/**
+ * What a share would post, as General will show it (ADR 0229 §6): from the
+ * researcher, to the project manager, about its Task, rendered the same way,
+ * with the exact text a disclosure away.
+ */
+function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview; research: ResearchSummary[]; t: Translator }) {
+  const { manager } = useMemberDirectory()
+  const task = preview.task_id ? research.find((item) => item.id === preview.task_id) : undefined
+  return (
+    <section aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview">
+      <Identity size="sm" view={researcherView(t)} />
+      <p className="kubecode-message-recipients">
+        <span className="kubecode-message-recipients-label">{t('kubecode.channel.to')}</span>
+        {manager ? <Identity size="sm" view={memberView(manager, t)} /> : <span>{t('kubecode.channel.toManager')}</span>}
+      </p>
+      {preview.task_id && (
+        <ReferenceChip
+          kind="task"
+          kindLabel={t('kubecode.vocab.object.task')}
+          title={task?.title ?? t('kubecode.reference.untitled', { kind: t('kubecode.vocab.object.task') })}
+        />
+      )}
+      <div className="kubecode-message-body">
+        <MarkdownContent content={preview.text} images="text" />
+      </div>
+      <p className="kubecode-research-muted">
+        {t('kubecode.dm.shareRecipients', { name: manager?.name ?? t('kubecode.channel.general') })}
+      </p>
+      <details>
+        <summary>{t('kubecode.dm.shareExactText')}</summary>
+        <pre>{preview.text}</pre>
+      </details>
+    </section>
+  )
 }
 
 /**
  * Moves part of a private conversation into General, and only that part: the
- * researcher picks turns, may add a note, reads the exact text that would be
- * posted, and confirms that same text. Changing anything invalidates the
+ * researcher picks turns, may add a note, reads what would be posted as it
+ * will look, and confirms that same text. Changing anything invalidates the
  * preview, and the server refuses a confirmation of text that no longer matches.
  */
 export function DmShareDialog({
@@ -85,10 +128,10 @@ export function DmShareDialog({
     setError(null)
   }
 
-  const toggle = (runId: string) => changed(() => setChosen((current) => (
-    current.includes(runId)
-      ? current.filter((id) => id !== runId)
-      : current.length < MAX_TURNS ? [...current, runId] : current
+  const toggle = (runId: string) => changed(() => setChosen((selected) => (
+    selected.includes(runId)
+      ? selected.filter((id) => id !== runId)
+      : selected.length < MAX_TURNS ? [...selected, runId] : selected
   )))
 
   const run = async (action: () => Promise<void>) => {
@@ -110,13 +153,14 @@ export function DmShareDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent>
+      <DialogContent className="kubecode-dm-share">
         <DialogHeader>
           <DialogTitle>{t('kubecode.dm.shareTitle', { name: member.name })}</DialogTitle>
           <DialogDescription>{t('kubecode.dm.shareHelp')}</DialogDescription>
         </DialogHeader>
         <fieldset className="kubecode-dm-turns">
           <legend>{t('kubecode.dm.shareChoose')}</legend>
+          <p className="kubecode-research-muted">{t('kubecode.dm.shareCount', { count: chosen.length, max: MAX_TURNS })}</p>
           {turns.length === 0 && <p className="kubecode-research-muted">{t('kubecode.dm.empty')}</p>}
           {turns.map((turn) => (
             <label key={turn.run_id}>
@@ -147,30 +191,25 @@ export function DmShareDialog({
             </select>
           </label>
         )}
-        {preview && (
-          <section aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview">
-            <h4>{t('kubecode.dm.sharePreview')}</h4>
-            <pre>{preview.text}</pre>
-          </section>
-        )}
+        {preview && <DmSharePreviewCard preview={preview} research={research} t={t} />}
         {error && <p className="kubecode-research-error" role="alert">{error}</p>}
         <div className="kubecode-work-command-row">
           {preview ? (
-            <Button
-              disabled={busy}
-              size="sm"
-              onClick={() => void run(async () => {
-                await api.shareDm(projectId, member.id, {
+            <DecisionButton
+              busy={busy}
+              variant="primary"
+              onDecide={() => void run(async () => {
+                const message = await api.shareDm(projectId, member.id, {
                   ...request(),
                   digest: preview.digest,
                   clientMessageId: made?.clientMessageId,
                 })
-                onShared()
+                onShared(message)
                 close(false)
               })}
             >
               {t('kubecode.dm.shareConfirm')}
-            </Button>
+            </DecisionButton>
           ) : (
             <Button
               disabled={busy || chosen.length === 0}
