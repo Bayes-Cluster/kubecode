@@ -70,7 +70,8 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
     <li>
       <p><strong>{question.question}</strong> <small>({question.work_title})</small></p>
       {question.impact && <p className="kubecode-research-muted">{question.impact}</p>}
-      {question.options.length > 0 && (
+      {/* A question with options is answered with one of them (the server refuses anything else). */}
+      {question.options.length > 0 ? (
         <div className="kubecode-work-command-row">
           {question.options.map((option) => (
             <Button disabled={busy} key={option} size="xs" variant="outline" onClick={() => void send(option)}>
@@ -78,14 +79,17 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
             </Button>
           ))}
         </div>
+      ) : (
+        <>
+          <label>
+            <span className="sr-only">{t('kubecode.task.answerField')}</span>
+            <Textarea rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} />
+          </label>
+          <Button disabled={busy || answer.trim() === ''} size="xs" onClick={() => void send(answer.trim())}>
+            {t('kubecode.work.question.answer')}
+          </Button>
+        </>
       )}
-      <label>
-        <span className="sr-only">{t('kubecode.task.answerField')}</span>
-        <Textarea rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} />
-      </label>
-      <Button disabled={busy || answer.trim() === ''} size="xs" onClick={() => void send(answer.trim())}>
-        {t('kubecode.work.question.answer')}
-      </Button>
     </li>
   )
 }
