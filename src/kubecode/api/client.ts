@@ -588,9 +588,7 @@ export class KubecodeApi {
         method: 'POST',
         body: JSON.stringify({
           body: message.body,
-          thread_id: message.threadId ?? undefined,
           client_message_id: message.clientMessageId,
-          intent: message.intent,
           mentions: message.mentions,
           references: message.references,
           reply_to: message.replyTo ?? undefined,
@@ -608,18 +606,6 @@ export class KubecodeApi {
       `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/threads?${query({
         research_id: researchId,
       })}`,
-    )
-  }
-
-  startChannelThread(
-    projectId: string,
-    channelId: string,
-    rootMessageId: string,
-    title?: string,
-  ): Promise<ChannelThread> {
-    return this.request(
-      `${this.projectPath(projectId)}/channels/${encodeURIComponent(channelId)}/threads`,
-      { method: 'POST', body: JSON.stringify({ root_message_id: rootMessageId, title }) },
     )
   }
 

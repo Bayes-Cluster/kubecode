@@ -1074,6 +1074,14 @@ export type ChannelMessage = {
   reply_to: string | null
   /** Hand-off depth: 0 for the researcher's own message. */
   hops: number
+  /**
+   * The member who wrote it, through any public Session the member has had
+   * (ADR 0229 §1); null for the researcher, Kubecode, or a Session that never
+   * was a member's. Presentation only: it grants nothing.
+   */
+  author_member_id?: string | null
+  /** The mentioned members, in the order of `mentions`; null where a Session is no member's. */
+  mention_member_ids?: Array<string | null>
 }
 export type ChannelMessagePage = { messages: ChannelMessage[]; has_more: boolean }
 export type ChannelThread = {
@@ -1091,12 +1099,17 @@ export type ChannelThread = {
   created_at: string
   updated_at: string
 }
+/** A recipient of a new message, named by member (ADR 0229 §2). */
+export type NewChannelMention = { member_id: string }
+/**
+ * A message the browser writes to General: always a plain message at the top
+ * level (ADR 0229 §5). The server still accepts intents and Thread posts from
+ * pages opened before that.
+ */
 export type NewChannelMessage = {
   body: string
-  threadId?: string | null
   clientMessageId?: string
-  intent?: ChannelIntent
-  mentions?: ChannelMention[]
+  mentions?: NewChannelMention[]
   references?: ProjectContextRef[]
   /** An earlier message of the conversation this one answers or cites. */
   replyTo?: string | null

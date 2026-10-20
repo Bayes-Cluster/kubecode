@@ -629,6 +629,42 @@ describe('Kubecode API client', () => {
     )
   })
 
+  it('posts a General message as a plain message naming members, never an intent or a Thread', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'm1' })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/b')
+
+    await api.postChannelMessage('p', 'c', {
+      body: 'over to you',
+      clientMessageId: 'cm1',
+      mentions: [{ member_id: 'analyst' }],
+      references: [{ kind: 'research', id: 'r1', revision: null }],
+      replyTo: 'm0',
+    })
+
+    expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/channels/c/messages')
+    expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toEqual({
+      body: 'over to you',
+      client_message_id: 'cm1',
+      mentions: [{ member_id: 'analyst' }],
+      references: [{ kind: 'research', id: 'r1', revision: null }],
+      reply_to: 'm0',
+    })
+    expect('startChannelThread' in api).toBe(false)
+  })
+
+  it('lists members with the removed ones when asked, so history keeps their names', async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ members: [], general_id: null })))
+    vi.stubGlobal('fetch', fetch)
+    const api = new KubecodeApi('/b')
+
+    await api.listMembers('p', true)
+    await api.listMembers('p')
+
+    expect(fetch.mock.calls[0][0]).toBe('/b/api/v1/projects/p/members?include_removed=true')
+    expect(fetch.mock.calls[1][0]).toBe('/b/api/v1/projects/p/members')
+  })
+
   it('lists directories and creates, imports, and unregisters Projects', async () => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}')))
     vi.stubGlobal('fetch', fetch)
