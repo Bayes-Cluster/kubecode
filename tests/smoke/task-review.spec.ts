@@ -11,7 +11,8 @@ import { seedTaskInReview } from './taskFixtures'
  * lifecycle on a phone and a desktop board, sending work back with feedback
  * that reaches General, a read that failed never counting as a look at
  * changed evidence, acceptance only at the version that was shown, Discuss in
- * General with the Task's scope, and archiving apart from accepting. The
+ * General with the Task's scope (over the Task on a phone, beside it on a
+ * desktop), and archiving apart from accepting. The
  * Task is admitted and started by the researcher's own words (taskFixtures).
  */
 
@@ -74,6 +75,17 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await expectContained(page)
     await evidence.getByRole('button', { name: `Back to ${seed.taskTitle}` }).click()
     await expect(evidence).toHaveCount(0)
+
+    // 2b. On a phone, Discuss in General replaces the Task with General narrowed to it; Back returns to the Task.
+    await task.getByRole('button', { name: 'Discuss in General' }).click()
+    await expect.poll(() => page.url()).toContain(`filter=${seed.taskId}`)
+    await expect(task).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Show everything' })).toBeVisible()
+    await expectContained(page)
+    await page.goBack()
+    await expect.poll(() => page.url()).toContain(`/board?task=${seed.taskId}`)
+    await expect(task.getByRole('region', { name: 'Results for your review' })).toBeVisible()
+    await expect(task.getByRole('button', { name: 'Back to Kanban' })).toBeVisible()
 
     // 3. Sending back needs feedback; it reaches General, and the card follows its Task to In progress.
     const sendBack = review.getByRole('button', { name: 'Send back' })
