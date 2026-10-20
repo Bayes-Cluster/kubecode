@@ -372,7 +372,7 @@ decides through `POST …/review`; its status links to the verdict in General.
 Going to General from a Task (`tasks/taskNavigation.ts`) keeps the Task beside
 General and replaces it over a narrow view. A legacy question that is a Task
 (on the board or archived) shows its stage and links to it, without
-resolve/reopen/archive or rounds (`ResearchWorkspace` `task`). `MessageItem`
+resolve/reopen/archive (`ResearchWorkspace` `task`). `MessageItem`
 renders proposal messages and Task chips. The browser acceptance
 (`tests/smoke/research-workspace.spec.ts`, `tests/smoke/task-review.spec.ts`)
 uses `tests/smoke/agents.ts`: the fixture provider records each Session's MCP

@@ -75,7 +75,7 @@ recent Task-scoped messages, execution and linked records). Research readers
 and editors are reused inside it, read only when a section needs them; the
 research question view remains for questions that are not Tasks and, for a Task
 (on the board or archived), shows the stage and links to it, with no resolve,
-reopen, archive or round of its own. "Discuss in General" opens the one General
+reopen or archive of its own. "Discuss in General" opens the one General
 conversation filtered to the Task, at the open review's request message, with
 the composer focused; it authorizes nothing. Going to General from a Task
 keeps the Task beside General when both fit, and otherwise replaces it (never
