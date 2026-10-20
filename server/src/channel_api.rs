@@ -18,6 +18,7 @@ use crate::channel_store::{
     AuthorKind, Channel, ChannelError, ContextRef, Intent, Mention, Message, MessagePageView,
     MessageQuery, MessageView, NewMessage, Scope, Thread,
 };
+use crate::project_context::ContextError;
 use crate::workspace::WorkspaceError;
 
 pub fn routes() -> Router<AppState> {
@@ -48,6 +49,8 @@ pub fn routes() -> Router<AppState> {
 enum ChannelApiError {
     Channel(ChannelError),
     Workspace(WorkspaceError),
+    /// The Project context could not be read to pin a reference.
+    Context(String),
     /// A mention names a member who cannot receive messages (ADR 0229 §2).
     MentionUnavailable {
         member_id: String,
@@ -85,6 +88,14 @@ impl IntoResponse for ChannelApiError {
                 "not_found",
                 format!("project not found: {id}"),
             ),
+            Self::Context(detail) => {
+                eprintln!("WARN: a message reference could not be pinned: {detail}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "conversation storage failed".to_owned(),
+                )
+            }
             Self::Workspace(error) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
@@ -271,8 +282,7 @@ struct PostMessageRequest {
 fn resolve_mentions(
     state: &AppState,
     project_id: &str,
-    channel_id: &str,
-    client_message_id: Option<&str>,
+    stored: Option<&Message>,
     requested: &[MentionRequest],
 ) -> Result<Vec<Mention>, ChannelApiError> {
     if requested.len() > crate::channel_store::MAX_MENTIONS {
@@ -282,24 +292,16 @@ fn resolve_mentions(
         eprintln!("WARN: a mention could not be resolved: {error}");
         ChannelApiError::Channel(ChannelError::Invalid("a mention could not be resolved"))
     };
-    // Only a mention by member needs the roster and the stored message.
-    let (authors, stored) = if requested.iter().any(|mention| mention.member_id.is_some()) {
-        let authors = state
+    // Only a mention by member needs the roster.
+    let authors = if requested.iter().any(|mention| mention.member_id.is_some()) {
+        state
             .members
             .public_authors(project_id)
-            .map_err(lookup_failed)?;
-        let stored = match client_message_id.map(str::trim).filter(|id| !id.is_empty()) {
-            Some(key) => state
-                .channels
-                .by_client_message_id(project_id, channel_id, key)?
-                .map(|message| message.mentions)
-                .unwrap_or_default(),
-            None => Vec::new(),
-        };
-        (authors, stored)
+            .map_err(lookup_failed)?
     } else {
-        Default::default()
+        HashMap::new()
     };
+    let stored: &[Mention] = stored.map_or(&[], |message| &message.mentions);
     let mut resolved: Vec<Mention> = Vec::new();
     let mut named: Vec<&str> = Vec::new();
     for mention in requested {
@@ -380,20 +382,82 @@ fn refuse_private(
     Ok(())
 }
 
+/// Pins the references a researcher posts to the version they cite (ADR 0231
+/// §5): one without a revision gets the record's current revision, a supplied
+/// one is kept, and a record that no longer exists is refused. A replay of a
+/// stored message takes the revisions it was stored with, so it compares
+/// equal and replays instead of being resolved again. Synchronous: it reads
+/// stores and files, so callers run it off the async workers.
+pub(crate) fn pin_references(
+    state: &AppState,
+    project_id: &str,
+    requested: &[ContextRef],
+    stored: Option<&Message>,
+) -> Result<Vec<ContextRef>, ContextError> {
+    if let Some(stored) = stored {
+        return Ok(requested
+            .iter()
+            .enumerate()
+            .map(|(index, reference)| match stored.references.get(index) {
+                Some(kept)
+                    if reference.revision.is_none()
+                        && kept.kind == reference.kind
+                        && kept.id == reference.id =>
+                {
+                    kept.clone()
+                }
+                _ => reference.clone(),
+            })
+            .collect());
+    }
+    if requested.len() > crate::channel_store::MAX_REFERENCES {
+        return Err(ContextError::Invalid("too many references"));
+    }
+    state.context.pin(project_id, requested)
+}
+
+fn pin_failed(error: ContextError) -> ChannelApiError {
+    match error {
+        ContextError::Invalid(reason) => ChannelError::Invalid(reason).into(),
+        ContextError::NotFound => {
+            ChannelError::Invalid("a referenced record no longer exists").into()
+        }
+        ContextError::Source(detail) => ChannelApiError::Context(detail),
+    }
+}
+
 async fn post_message(
     State(state): State<AppState>,
     Path((project_id, channel_id)): Path<(String, String)>,
     Json(request): Json<PostMessageRequest>,
 ) -> Result<Response, ChannelApiError> {
     check_project(&state, &project_id)?;
-    let mentions = resolve_mentions(
-        &state,
-        &project_id,
-        &channel_id,
-        request.client_message_id.as_deref(),
-        &request.mentions,
-    )?;
+    // A retry of an accepted send replays what was stored, before anything is
+    // resolved again: a record removed since never fails the retry.
+    let stored = match request
+        .client_message_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        Some(key) => state
+            .channels
+            .by_client_message_id(&project_id, &channel_id, key)?,
+        None => None,
+    };
+    let mentions = resolve_mentions(&state, &project_id, stored.as_ref(), &request.mentions)?;
     refuse_private(&state, &project_id, &mentions, &request.references)?;
+    let references = {
+        let state = state.clone();
+        let project_id = project_id.clone();
+        let requested = request.references.clone();
+        tokio::task::spawn_blocking(move || {
+            pin_references(&state, &project_id, &requested, stored.as_ref())
+        })
+        .await
+        .map_err(|error| ChannelApiError::Context(error.to_string()))?
+        .map_err(pin_failed)?
+    };
     let (message, created): (Message, bool) = state.channels.post(
         &project_id,
         &channel_id,
@@ -404,7 +468,7 @@ async fn post_message(
             author_ref: None,
             intent: request.intent,
             mentions: &mentions,
-            references: &request.references,
+            references: &references,
             client_message_id: request.client_message_id.as_deref(),
             reply_to: request.reply_to.as_deref(),
             hops: 0,

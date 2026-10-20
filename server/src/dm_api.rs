@@ -437,7 +437,7 @@ async fn share(
             return Err(DmError::Stale);
         }
         let channel = state.channels.default_channel(&project_id)?;
-        let references: Vec<ContextRef> = request
+        let requested: Vec<ContextRef> = request
             .task_id
             .as_deref()
             .map(|id| vec![ContextRef::new(ContextKind::Research, id)])
@@ -446,6 +446,22 @@ async fn share(
             .client_message_id
             .clone()
             .unwrap_or_else(|| format!("dm-share:{}", preview.digest));
+        // The Task is cited at the version it has when shared; a confirmed
+        // share replays with the version it was stored with.
+        let stored = state
+            .channels
+            .by_client_message_id(&project_id, &channel.id, key.trim())?;
+        let references =
+            crate::channel_api::pin_references(&state, &project_id, &requested, stored.as_ref())
+                .map_err(|error| match error {
+                    crate::project_context::ContextError::Invalid(reason) => {
+                        DmError::Invalid(reason)
+                    }
+                    crate::project_context::ContextError::NotFound => {
+                        DmError::Invalid("that Task was not found")
+                    }
+                    crate::project_context::ContextError::Source(_) => DmError::Storage,
+                })?;
         let posted = state.channels.post(
             &project_id,
             &channel.id,

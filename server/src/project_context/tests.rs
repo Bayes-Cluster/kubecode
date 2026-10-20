@@ -2195,3 +2195,34 @@ fn resolve_names_visible_records_and_never_a_missing_or_foreign_one() {
     let json = serde_json::to_value(&foreign[0]).unwrap();
     assert!(json.as_object().unwrap().contains_key("title"));
 }
+
+#[test]
+fn pinning_fills_a_missing_revision_keeps_a_supplied_one_and_refuses_a_removed_record() {
+    let w = world();
+    fs::write(w.project_root().join("seen.txt"), "v1").unwrap();
+    let seen =
+        w.f.workspace
+            .execution_file_revision(&w.f.project_id, None, "seen.txt")
+            .unwrap();
+    fs::write(w.project_root().join("seen.txt"), "v2").unwrap();
+    let pinned = w
+        .context
+        .pin(
+            &w.f.project_id,
+            &[
+                ContextRef::new(ContextKind::Research, &w.f.research_id),
+                ContextRef::at(ContextKind::File, "seen.txt", &seen),
+            ],
+        )
+        .unwrap();
+    assert_eq!(pinned[0].revision.as_deref(), Some("1"));
+    assert_eq!(pinned[1].revision.as_deref(), Some(seen.as_str()));
+    assert!(matches!(
+        w.context.pin(
+            &w.f.project_id,
+            &[ContextRef::new(ContextKind::File, "never.txt")]
+        ),
+        Err(ContextError::Invalid(_))
+    ));
+    assert!(w.context.pin(&w.f.project_id, &[]).unwrap().is_empty());
+}

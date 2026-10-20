@@ -994,3 +994,104 @@ async fn a_mention_must_name_a_member_or_a_session() {
     // The legacy Session form still works.
     say(&env, &crew, "@analyst hi", &[&session(&crew.analyst)]).await;
 }
+
+#[tokio::test]
+async fn a_direct_message_stays_unfindable_in_every_section_and_a_share_cites_its_task_at_a_version()
+ {
+    let env = env();
+    let crew = crew(&env).await;
+    let analyst_id = crew.analyst["id"].as_str().unwrap().to_owned();
+    let base = format!("/projects/{}/members/{analyst_id}/dm", env.project);
+    let (_, opened) = call(&env, Method::POST, &base, Value::Null).await;
+    let dm = opened["dm_conversation_id"].as_str().unwrap().to_owned();
+    let run = env
+        .agents
+        .start_run(
+            &dm,
+            &env.project,
+            "zebrafinch hypothesis",
+            PermissionMode::Safe,
+        )
+        .unwrap();
+    env.agents
+        .append_runtime_update(
+            &dm,
+            "text_delta",
+            &json!({"text": "zebrafinch noted"}),
+            None,
+        )
+        .unwrap();
+    env.agents
+        .finish_run(&run.id, RunStatus::Completed, None, TerminalCause::EndTurn)
+        .unwrap();
+    let context = format!("/projects/{}/context", env.project);
+    let every = "research,round,finding,session,session_turn,team,team_task,import,experiment,artifact,work,thread,channel,file";
+    for query in ["zebrafinch", ""] {
+        let (status, page) = call(
+            &env,
+            Method::GET,
+            &format!("{context}/search?q={query}&kinds={every}&limit=50"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        let found = page["items"].to_string();
+        assert!(!found.contains(&dm), "a DM is never listed: {found}");
+        assert!(!found.contains("zebrafinch"), "{found}");
+    }
+    let (status, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("{context}/resolve"),
+        json!({"refs": [
+            {"kind": "session", "id": dm},
+            {"kind": "session_turn", "id": format!("{dm}/{}", run.id)},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resolved}");
+    for entry in resolved.as_array().unwrap() {
+        assert_eq!(entry["availability"], "removed");
+        assert_eq!(
+            entry["title"],
+            Value::Null,
+            "a private record is never named"
+        );
+    }
+
+    // A share that names a Task cites it at the version it had when shared.
+    let (_, question) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/research", env.project),
+        json!({"title": "Pruning", "question": "Does it hold?"}),
+    )
+    .await;
+    let task = question["id"].as_str().unwrap().to_owned();
+    let request = json!({"run_ids": [run.id], "task_id": task});
+    let (status, preview) = call(
+        &env,
+        Method::POST,
+        &format!("{base}/share/preview"),
+        request.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    let mut confirmed = request;
+    confirmed["digest"] = preview["digest"].clone();
+    let (status, posted) = call(
+        &env,
+        Method::POST,
+        &format!("{base}/share"),
+        confirmed.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{posted}");
+    assert_eq!(
+        posted["references"],
+        json!([{"kind": "research", "id": task, "revision": "1"}])
+    );
+    let (status, replay) = call(&env, Method::POST, &format!("{base}/share"), confirmed).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], posted["id"]);
+}

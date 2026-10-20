@@ -1342,6 +1342,32 @@ impl ProjectContext {
             .collect()
     }
 
+    /// The references a researcher posts, each pinned to a version (ADR 0231
+    /// §5): a reference without a revision gets its current one, a supplied
+    /// revision is kept (it is what the researcher saw, even if the record
+    /// changed since), and a record that no longer exists here is refused.
+    pub fn pin(
+        &self,
+        project_id: &str,
+        refs: &[ContextRef],
+    ) -> Result<Vec<ContextRef>, ContextError> {
+        if refs.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.resolve(project_id, refs)?
+            .into_iter()
+            .map(|resolved| match resolved.availability {
+                Availability::Removed => Err(ContextError::Invalid(
+                    "a referenced record no longer exists",
+                )),
+                _ => Ok(ContextRef {
+                    revision: resolved.reference.revision.or(resolved.current_revision),
+                    ..resolved.reference
+                }),
+            })
+            .collect()
+    }
+
     /// A progressive read: a summary first, then content, then evidence.
     pub fn read(
         &self,
