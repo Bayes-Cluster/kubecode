@@ -34,9 +34,12 @@ use crate::research_store::{
 use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage, WorkStore};
 
 /// The task events that move a Task's stage. Every stage read filters on
-/// exactly these, so other events (archiving) never move a stage or the
-/// authorization watermark.
+/// exactly these, so other events (archiving) never move a stage.
 const STAGE_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted')";
+/// The task events after which an earlier instruction no longer authorizes the
+/// next step: the stage events, and restoring an archived Task, so nothing the
+/// researcher said before archiving it starts work after it comes back.
+const WATERMARK_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted', 'restored')";
 
 /// Why a step is refused while the researcher has archived the Task.
 const ARCHIVED: &str = "the Task is archived; the researcher restores it first";
@@ -603,15 +606,15 @@ impl TaskStore {
             .flatten())
     }
 
-    /// The newest General message at the time of the last stage change: an
-    /// instruction for the next step must be newer than this.
+    /// The newest General message at the time of the last stage change or
+    /// restore: an instruction for the next step must be newer than this.
     fn stage_watermark(&self, project_id: &str, research_id: &str) -> Result<u64, TaskError> {
         let seq: Option<i64> = self
             .connection()
             .query_row(
                 &format!(
                     "SELECT channel_seq FROM task_events
-                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {WATERMARK_EVENT_KINDS}
                      ORDER BY seq DESC LIMIT 1"
                 ),
                 params![project_id, research_id],
@@ -1154,8 +1157,9 @@ impl TaskStore {
                     "the brief changed after this instruction; ask the researcher again",
                 ));
             }
-            Some(_) => {}
-            None => {
+            // A record left without its round (a crash before the round began)
+            // is checked like a new one: the Task may have moved on since.
+            _ => {
                 match self
                     .stage(project_id, research_id)?
                     .unwrap_or(TaskStage::Ready)

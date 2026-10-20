@@ -1069,7 +1069,8 @@ fn a_crash_between_the_record_and_the_round_is_finished_by_repeating_the_instruc
         .tasks
         .start_execution(r.project(), &r.general, &id, &go.id)
         .unwrap();
-    // Roll the world back to just after the authorization was recorded.
+    // Roll the world back to just after the authorization was recorded: the
+    // round's link and its event commit together, so neither is there.
     {
         let database = r.f.agents.database();
         let connection = database.lock().unwrap();
@@ -1077,6 +1078,12 @@ fn a_crash_between_the_record_and_the_round_is_finished_by_repeating_the_instruc
             .execute(
                 "UPDATE task_authorizations SET round_id = NULL WHERE id = ?1",
                 [&done.id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "DELETE FROM task_events WHERE research_id = ?1 AND kind = 'execution_authorized'",
+                [&id],
             )
             .unwrap();
     }
@@ -1443,7 +1450,7 @@ fn archive_availability_table() {
 }
 
 #[test]
-fn archive_events_never_move_the_stage_or_watermark() {
+fn archive_events_never_move_the_stage_and_only_restoring_moves_the_watermark() {
     let r = rig();
     let (id, _) = r.executing("Prune heads");
     let stage = r.tasks.stage(r.project(), &id).unwrap();
@@ -1452,13 +1459,15 @@ fn archive_events_never_move_the_stage_or_watermark() {
     r.tasks.set_archived(r.project(), &id, true).unwrap();
     // Archiving twice is one event.
     r.tasks.set_archived(r.project(), &id, true).unwrap();
-    r.say("and more");
-    r.tasks.set_archived(r.project(), &id, false).unwrap();
-    assert_eq!(r.tasks.stage(r.project(), &id).unwrap(), stage);
     assert_eq!(
         r.tasks.stage_watermark(r.project(), &id).unwrap(),
         watermark
     );
+    let said = r.say("and more");
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    assert_eq!(r.tasks.stage(r.project(), &id).unwrap(), stage);
+    // Restoring makes everything said before it too old to authorize.
+    assert_eq!(r.tasks.stage_watermark(r.project(), &id).unwrap(), said.seq);
     let kinds: Vec<String> =
         r.f.agents
             .database()
@@ -1511,6 +1520,13 @@ fn archived_task_refuses_manager_steps() {
             .map(|_| ())
     ));
     r.tasks.set_archived(r.project(), &id, false).unwrap();
+    // What was said while it was archived does not start it after restoring.
+    assert!(matches!(
+        r.tasks
+            .start_execution(r.project(), &r.general, &id, &go.id),
+        Err(TaskError::Stale(_))
+    ));
+    let go = r.say("Start it now");
     r.tasks
         .start_execution(r.project(), &r.general, &id, &go.id)
         .unwrap();
@@ -1936,3 +1952,99 @@ fn pending_decisions_have_stable_keys() {
         .unwrap();
     assert!(keys(&id).is_empty(), "decided");
 }
+
+impl Rig {
+    /// A Task executed once and accepted: Done.
+    fn done(&self, title: &str) -> String {
+        let (id, _) = self.executing(title);
+        let request = self.ask_review(&id, "done");
+        self.tasks
+            .review(
+                self.project(),
+                &id,
+                &request.id,
+                true,
+                WorkOutcome::Supported,
+                None,
+            )
+            .unwrap();
+        id
+    }
+}
+
+#[test]
+fn an_instruction_given_before_archiving_cannot_start_execution_after_restoring() {
+    let r = rig();
+    let id = r.done("Prune heads");
+    let iterate = r.say("Let's iterate on it");
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    let revived = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &iterate.id);
+    assert!(matches!(revived, Err(TaskError::Stale(_))), "{revived:?}");
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    assert_eq!(r.f.research.rounds(r.project(), &id).unwrap().len(), 1);
+    // A newer instruction, after the restore, does.
+    let fresh = r.say("Now iterate, please");
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &fresh.id)
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::InProgress)
+    );
+}
+
+#[test]
+fn an_execute_record_left_without_a_round_is_checked_against_the_task_as_it_is_now() {
+    let r = rig();
+    let id = r.done("Prune heads");
+    // The General Agent recorded "iterate" and crashed before its round began.
+    let old = r.say("Iterate on it");
+    let question = r.f.research.get(r.project(), &id).unwrap();
+    r.tasks
+        .write(|tx| {
+            TaskStore::insert_authorization(
+                tx,
+                r.project(),
+                &question,
+                AuthorizationKind::Execute,
+                &old.id,
+                &r.general,
+            )
+            .map(|record| (record, None))
+        })
+        .unwrap();
+    // Meanwhile another instruction ran a round that was accepted.
+    let newer = r.say("Iterate with 0.7 instead");
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &newer.id)
+        .unwrap();
+    let request = r.ask_review(&id, "0.7 done");
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    let rounds = r.f.research.rounds(r.project(), &id).unwrap().len();
+    // Repeating the old instruction now starts nothing.
+    let retried = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &old.id);
+    assert!(matches!(retried, Err(TaskError::Stale(_))), "{retried:?}");
+    assert_eq!(r.f.research.rounds(r.project(), &id).unwrap().len(), rounds);
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+}
+
