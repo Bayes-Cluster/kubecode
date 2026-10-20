@@ -334,8 +334,8 @@ describe('MessageComposer', () => {
 
   it('offers a named stop that does not block sending', async () => {
     const onStop = vi.fn()
-    render(<Harness stop={{ target: 'Analyst', onStop }} />)
-    fireEvent.click(screen.getByRole('button', { name: /Analyst/ }))
+    render(<Harness stop={{ label: "Stop Analyst's current turn", shortLabel: 'Stop', onStop }} />)
+    fireEvent.click(screen.getByRole('button', { name: "Stop Analyst's current turn" }))
     expect(onStop).toHaveBeenCalledTimes(1)
   })
 })

@@ -8,6 +8,7 @@ import type {
   ChannelMessage,
   ChannelThread,
   Conversation,
+  ExecutionView,
   KubecodeApi,
   NewChannelMessage,
   ResearchSummary,
@@ -20,6 +21,8 @@ import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { memberDirectory, MemberDirectoryContext, type MemberDirectory } from '../members/memberDirectory'
 import { analyst, channelMessage, general, writer } from '../members/memberFixtures'
+import { AttentionContext, type AttentionStore } from '../attention/attentionContext'
+import { execution, messageDelivery, routeDelivery, snapshot } from '../attention/attentionFixtures'
 import { ChannelWorkspace } from './ChannelWorkspace'
 
 const t = createTranslator('en')
@@ -497,6 +500,94 @@ describe('ChannelWorkspace Tasks and references', () => {
     expect(failed).toHaveTextContent('Not delivered')
     expect(failed).toHaveTextContent('writer needs setup')
     expect(screen.queryByText(/Activity/)).not.toBeInTheDocument()
+  })
+})
+
+describe('ChannelWorkspace delivery facts (ADR 0232)', () => {
+  it('says under the researcher\'s message to whom it was not delivered, folds the routing note, and retries the same route', async () => {
+    const s = server([
+      server().message(1, '@writer draft it', { mentions: [{ session_id: 's-w' }] }),
+      server().message(2, 'Kubecode could not deliver a message to @writer.', {
+        author_kind: 'system', kind: 'system', client_message_id: 'route-failed:rt1',
+      }),
+      server().message(3, 'On it.', { author_kind: 'agent' }),
+    ])
+    const failed = messageDelivery({
+      message_id: 'm1',
+      state: 'failed',
+      routes: [routeDelivery({ route_id: 'rt1', state: 'failed', retryable: true, recipient: { id: 'w', name: 'Writer', handle: 'writer', role: 'specialist' }, note_ids: ['m2'] })],
+    })
+    const messageDeliveries = vi.fn().mockResolvedValue([failed])
+    const retryRoute = vi.fn().mockResolvedValue({ route: { id: 'rt1', state: 'pending' }, retried: true, delivery: null })
+    Object.assign(s.calls, { messageDeliveries, retryRoute })
+    view(s)
+    await screen.findByText('@writer draft it')
+    expect(await within(row(1)).findByText('Not delivered to Writer')).toBeInTheDocument()
+    expect(messageDeliveries).toHaveBeenCalledWith('p1', ['m1'])
+    // The note is inside the message's Details, not a row of its own.
+    expect(screen.queryByTestId('message-2')).not.toBeInTheDocument()
+    expect(within(row(1)).getByText('Kubecode could not deliver a message to @writer.')).toBeInTheDocument()
+    fireEvent.click(within(row(1)).getByRole('button', { name: 'Retry delivery to Writer' }))
+    await waitFor(() => expect(retryRoute).toHaveBeenCalledWith('p1', 'rt1'))
+    // Nothing was posted again.
+    expect(s.posted).toHaveLength(0)
+  })
+
+  it('says Delivered only under the researcher\'s latest message', async () => {
+    const s = server([
+      server().message(1, 'first'),
+      server().message(2, 'second'),
+    ])
+    const messageDeliveries = vi.fn().mockResolvedValue([
+      messageDelivery({ message_id: 'm1', routes: [routeDelivery({ recipient: { id: 'g', name: 'Gene', handle: 'general', role: 'general' } })] }),
+      messageDelivery({ message_id: 'm2', routes: [routeDelivery({ recipient: { id: 'g', name: 'Gene', handle: 'general', role: 'general' } })] }),
+    ])
+    Object.assign(s.calls, { messageDeliveries })
+    view(s)
+    await screen.findByText('second')
+    expect(await within(row(2)).findByText('Delivered to Gene')).toBeInTheDocument()
+    expect(within(row(1)).queryByText('Delivered to Gene')).not.toBeInTheDocument()
+  })
+})
+
+describe('ChannelWorkspace while members work (ADR 0232)', () => {
+  const attention = (runs: ExecutionView[]): AttentionStore => ({
+    projectId: 'p1',
+    snapshot: snapshot({ executions: runs }),
+    status: 'ready',
+    forTask: () => [],
+    byKey: () => undefined,
+    executions: (scope) => ('binding' in scope && scope.binding === 'public' ? runs : []),
+    failures: () => [],
+    resolving: new Set(),
+    markResolving: vi.fn(),
+    reload: vi.fn(),
+  })
+
+  it('shows who is working above the composer, with one Stop beside Send when only one member works', async () => {
+    const s = server()
+    const cancelRun = vi.fn().mockResolvedValue(undefined)
+    Object.assign(s.calls, { cancelRun })
+    render(shell(<AttentionContext.Provider value={attention([execution()])}>{workspace(s)}</AttentionContext.Provider>))
+    await screen.findByText('No messages yet. Start the discussion.')
+    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('Analyst is working on Structured pruning')
+    const stops = screen.getAllByRole('button', { name: "Stop Analyst's current turn" })
+    expect(stops).toHaveLength(2)
+    // Sending stays possible while the member works.
+    fireEvent.change(box(), { target: { value: 'Meanwhile, a note' } })
+    send()
+    await waitFor(() => expect(s.posted).toHaveLength(1))
+    fireEvent.click(stops[1])
+    await waitFor(() => expect(cancelRun).toHaveBeenCalledWith('run1'))
+  })
+
+  it('leaves Stop to the strip when two members work, so it is never ambiguous', async () => {
+    const s = server()
+    const runs = [execution(), execution({ run_id: 'run2', conversation_id: 's2', member: { id: 'm9', name: 'Writer', handle: 'writer', role: 'specialist' } })]
+    render(shell(<AttentionContext.Provider value={attention(runs)}>{workspace(s)}</AttentionContext.Provider>))
+    await screen.findByText('No messages yet. Start the discussion.')
+    expect(screen.getAllByRole('button', { name: /^Stop / })).toHaveLength(2)
+    expect(within(screen.getByRole('region', { name: 'Working now' })).getAllByRole('button', { name: /^Stop / })).toHaveLength(2)
   })
 })
 

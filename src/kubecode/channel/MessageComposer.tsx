@@ -51,8 +51,8 @@ export type MessageComposerProps = {
   /** Saves the message; resolves with it once it is stored. */
   onSend: (message: NewChannelMessage) => Promise<ChannelMessage>
   onSent?: (message: ChannelMessage) => void
-  /** Stops one named task or agent; sending stays available while it runs. */
-  stop?: { target: string; onStop: () => void }
+  /** Stops one named turn (its label says whose); sending stays available while it runs. */
+  stop?: { label: string; shortLabel?: string; onStop: () => void }
 }
 
 /**
@@ -301,7 +301,7 @@ export function MessageComposer({
         placeholder={placeholder}
         sendDisabledReason={blocked ?? undefined}
         sendLabel={t('kubecode.channel.send')}
-        stop={stop && { label: t('kubecode.composer.stopTarget', { target: stop.target }), onStop: stop.onStop }}
+        stop={stop}
         textareaRef={setArea}
         value={draft.body}
         // Emptied by hand: the draft is given up, so the same words later are a new message.

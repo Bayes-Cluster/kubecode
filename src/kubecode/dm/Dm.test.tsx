@@ -15,6 +15,8 @@ import { MessageComposer } from '../channel/MessageComposer'
 import { localReferenceLabels } from '../references/referenceLabels'
 import { memberDirectory, MemberDirectoryContext, type MemberDirectory } from '../members/memberDirectory'
 import { channelMessage, general, member } from '../members/memberFixtures'
+import { AttentionContext } from '../attention/attentionContext'
+import { execution } from '../attention/attentionFixtures'
 import { DmPane } from './DmPane'
 
 const t = createTranslator('en')
@@ -157,6 +159,50 @@ describe('DmPane', () => {
     expect(turns.mock.calls.length).toBe(before)
     view.rerender(context(pane(api, {}, [event(1, 's-public'), event(2, 's-dm')])))
     await waitFor(() => expect(turns.mock.calls.length).toBe(before + 1))
+  })
+})
+
+describe('DmPane while the member is at work (ADR 0232)', () => {
+  it('shows a message queued behind the running reply as pending, also after a reload', async () => {
+    const pending = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ client_message_id: 'k1', text: 'and the ablation?', position: 1, created_at: '' }])
+    const { api, view } = setup({
+      sendMemberDm: vi.fn().mockResolvedValue({ state: 'delivered', admission: 'queued' }),
+      memberDmPending: pending,
+    })
+    await screen.findByText('is 0.91 enough?')
+    fireEvent.change(box(), { target: { value: 'and the ablation?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(api.sendMemberDm).toHaveBeenCalled())
+    const queued = await screen.findByText('Analyst will read this after the current reply')
+    expect(queued.closest('article')).toHaveTextContent('and the ablation?')
+    // A reload reads the queue from the server.
+    view.unmount()
+    render(context(pane(api)))
+    expect(await screen.findByText('Analyst will read this after the current reply')).toBeInTheDocument()
+  })
+
+  it('offers a Stop that names the member\'s reply while the member answers', async () => {
+    const store = {
+      projectId: 'p1',
+      snapshot: null,
+      status: 'ready' as const,
+      forTask: () => [],
+      byKey: () => undefined,
+      executions: (scope: { binding?: string }) => (scope.binding === 'dm' ? [execution({ binding: 'dm', conversation_id: 's-dm', tasks: [] })] : []),
+      failures: () => [],
+      resolving: new Set<string>(),
+      markResolving: vi.fn(),
+      reload: vi.fn(),
+    }
+    const api = fakeApi({ cancelRun: vi.fn().mockResolvedValue(undefined) })
+    render(context(<AttentionContext.Provider value={store as never}>{pane(api)}</AttentionContext.Provider>))
+    await screen.findByText('is 0.91 enough?')
+    const stops = screen.getAllByRole('button', { name: "Stop Analyst's reply" })
+    expect(stops.length).toBeGreaterThan(0)
+    fireEvent.click(stops[0])
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
   })
 })
 

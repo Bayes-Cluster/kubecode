@@ -1,13 +1,15 @@
-import type { ChannelMessage } from '../api'
+import type { ChannelMessage, MessageDelivery } from '../api'
 
 /**
  * What the browser says about a message's delivery (ADR 0229 §7). It says
- * only what it was told: a failure a note establishes. Per-route delivery
- * facts are a later source (#220) behind the same seam.
+ * only what it was told: a failure a note establishes, or — once the server's
+ * delivery facts for the message are loaded (ADR 0232) — those facts, with
+ * the routing notes they fold.
  */
 export type MessageDeliveryView =
   | { state: 'failed'; text: string }
   | { state: 'queued' | 'delivered'; recipients: string[] }
+  | { state: 'facts'; delivery: MessageDelivery; latest: boolean; notes: string[] }
 
 export type MessageDeliverySource = (
   message: ChannelMessage,
