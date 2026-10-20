@@ -111,22 +111,31 @@ describe('status icon families', () => {
   })
 
   it('renders every entry as a labeled root svg via the Icon primitive', () => {
-    for (const [familyName, family] of Object.entries(STATUS_ICON_FAMILIES)) {
-      for (const [state, entry] of Object.entries(family as Record<string, StatusIconEntry>)) {
-        const { container, getByRole } = render(
-          <TooltipProvider>
-            <Icon
-              label={`${familyName}.${state}`}
-              role="status"
-              size="secondary"
-              source={entry.Icon}
-            />
-          </TooltipProvider>,
-        )
-        expect(container.firstElementChild?.tagName.toLowerCase()).toBe('svg')
-        expect(getByRole('img', { name: `${familyName}.${state}` })).toBeInTheDocument()
-      }
+    // One tree for every entry: a render and a role query per entry made this
+    // test take seconds, and time out on a loaded machine.
+    const entries = Object.entries(STATUS_ICON_FAMILIES).flatMap(([familyName, family]) => (
+      Object.entries(family as Record<string, StatusIconEntry>).map(([state, entry]) => ({
+        name: `${familyName}.${state}`,
+        entry,
+      }))
+    ))
+    const { container, getByRole } = render(
+      <TooltipProvider>
+        {entries.map(({ entry, name }) => (
+          <span data-entry={name} key={name}>
+            <Icon label={name} role="status" size="secondary" source={entry.Icon} />
+          </span>
+        ))}
+      </TooltipProvider>,
+    )
+    for (const { name } of entries) {
+      const root = container.querySelector(`[data-entry="${name}"]`)?.firstElementChild
+      expect(root?.tagName.toLowerCase(), name).toBe('svg')
+      expect(root?.getAttribute('role'), name).toBe('img')
+      expect(root?.getAttribute('aria-label'), name).toBe(name)
     }
+    // The name is what assistive technology reads.
+    expect(getByRole('img', { name: entries[0].name })).toBeInTheDocument()
   })
 
   it('falls back to the pending glyph for unknown team task statuses', () => {

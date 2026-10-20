@@ -1032,6 +1032,22 @@ describe('Returning to a place (ADR 0228 §4)', () => {
     expect(stored.workspaces['project-1'].views.general).toBe('/p/project-1/general/m/m4')
   })
 
+  it('on a phone, a link that moves the place closes the navigation sheet so the place is visible', async () => {
+    narrowScreen()
+    await start('#/p/project-1/general', six())
+    await screen.findByText('note 6')
+    if (!screen.queryByRole('navigation', { name: 'Workspaces' })) {
+      fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
+    }
+    expect(await screen.findByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
+    act(() => {
+      window.history.pushState(null, '', '/#/p/project-1/resources')
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Workspaces' })).toBeNull())
+    expect(window.location.hash).toBe('#/p/project-1/resources')
+  })
+
   it('on a phone, lands on the message being read once the navigation closes', async () => {
     narrowScreen()
     const { nav } = await start('#/p/project-1/general', six())
