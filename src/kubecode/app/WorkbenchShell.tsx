@@ -5,6 +5,7 @@ import { trackEvent } from '@/lib/telemetry'
 
 import { Button } from '@/components/ui/button'
 import { ResizeHandle } from '@/components/ResizeHandle'
+import { ViewHeader } from '@/components/workspace/ViewHeader'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from '../AgentSessionWorkspace'
 import { GlobalCommandPalette } from '../GlobalCommandPalette'
@@ -527,7 +528,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   /** A Task's research record as the detail pane: brief, work, findings, evidence. */
   const taskPane = (taskId: string, close: () => void) => projectId ? (
-    <DetailPane key={taskId} label={t('kubecode.nav.taskDetail')} onClose={close}>
+    <DetailPane key={taskId} label={t('kubecode.nav.taskDetail')} onEscape={close}>
       <ResearchWorkspace
         agents={agents}
         api={api}
@@ -835,12 +836,21 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   onOpenMember={(member) => setViewState({ kind: 'members', projectId, memberId: member.id })}
                 />
                 {profileMember && (
-                  <MemberProfile
-                    member={profileMember}
-                    t={t}
-                    onClose={() => setViewState({ kind: 'members', projectId, memberId: null })}
-                    onOpenDm={(member) => void openDm(member)}
-                  />
+                  <DetailPane
+                    key={profileMember.id}
+                    label={profileMember.name}
+                    onEscape={() => setViewState({ kind: 'members', projectId, memberId: null })}
+                  >
+                    <ViewHeader
+                      close={{
+                        label: t('kubecode.nav.closeDetail'),
+                        onClose: () => setViewState({ kind: 'members', projectId, memberId: null }),
+                      }}
+                      level={3}
+                      title={profileMember.name}
+                    />
+                    <MemberProfile member={profileMember} t={t} onOpenDm={(member) => void openDm(member)} />
+                  </DetailPane>
                 )}
               </div>
             ) : channelView && projectId ? (

@@ -55,6 +55,28 @@ function event(id: number, kind: string, payload: Record<string, unknown> = {}):
 }
 
 describe('ResearchWorkspace', () => {
+  it('in the inspector, draws the Back and Close it is given in its one header, and reports its title', async () => {
+    const onBack = vi.fn()
+    const onCloseDetail = vi.fn()
+    const onTitle = vi.fn()
+    mount({
+      back: { label: 'Back to General', onBack },
+      close: { label: 'Close details', onClose: onCloseDetail },
+      onClose: undefined,
+      onTitle,
+    })
+    // While loading, the way out is already there.
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
+    await waitFor(() => expect(onTitle).toHaveBeenCalledWith('Pruning'))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
+    expect(onBack).toHaveBeenCalledTimes(2)
+    expect(onCloseDetail).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'kubecode.research.back' })).not.toBeInTheDocument()
+  })
+
   it('shows loading, then the brief with its revision', async () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('kubecode.research.loading')

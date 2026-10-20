@@ -4085,6 +4085,66 @@ button.kubecode-channel-reference:disabled { cursor: default; }
 .kubecode-detail-pane > p,
 .kubecode-detail-pane > button { margin-left: 14px; margin-right: 14px; }
 
+.kubecode-member-profile {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-2);
+}
+.kubecode-member-profile > .kubecode-detail-facts { padding: 0; }
+.kubecode-member-profile > h4,
+.kubecode-member-profile > p { margin: 0; }
+.kubecode-detail-pane > .kubecode-member-profile { padding: 0 14px 14px; }
+
+/*
+ * The inspector stack (ADR 0228 §3). Every entry is its own scroll container;
+ * the entries under the top one stay mounted and are parked with
+ * `visibility: hidden` (never `display: none`), so their scroll position,
+ * typed text, and in-flight reads survive Back.
+ */
+.kubecode-detail-pane.kubecode-inspector {
+  flex: 0 0 clamp(400px, 40%, 560px);
+  overflow: hidden;
+  position: relative;
+}
+.kubecode-inspector-entry {
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: absolute;
+}
+.kubecode-inspector-entry:focus { outline: none; }
+.kubecode-inspector-entry:focus-visible { box-shadow: inset 0 0 0 2px var(--state-focus-ring); }
+.kubecode-inspector-entry[data-top='false'] { visibility: hidden; }
+.kubecode-inspector-panel > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-4) var(--ws-space-2); }
+.kubecode-inspector-body { padding: 0 var(--ws-space-4) var(--ws-space-4); }
+.kubecode-inspector-main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * Over the view (a phone, or a row too narrow for both): the inspector fills
+ * the row and the view under it is parked, not removed, so its scroll and its
+ * inputs survive. The layout follows the row's width, not the viewport's.
+ */
+.kubecode-with-detail[data-inspector-layout='screen'],
+.kubecode-session-context-row[data-inspector-layout='screen'] .kubecode-channel-workspace { position: relative; }
+.kubecode-with-detail[data-inspector-layout='screen'][data-detail='true'] > .kubecode-inspector-main,
+.kubecode-session-context-row[data-inspector-layout='screen'] .kubecode-channel-workspace[data-detail='true'] .kubecode-channel-main {
+  inset: 0;
+  position: absolute;
+  visibility: hidden;
+}
+.kubecode-with-detail[data-inspector-layout='screen'] > .kubecode-inspector,
+.kubecode-session-context-row[data-inspector-layout='screen'] .kubecode-channel-workspace .kubecode-inspector {
+  border-left: 0;
+  flex: 1 1 auto;
+}
+
 .kubecode-resources,
 .kubecode-members-view {
   background: var(--surface-app);

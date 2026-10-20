@@ -1,8 +1,12 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
+import type { ViewHeaderProps } from '@/components/workspace/ViewHeader'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -31,11 +35,18 @@ export type ResearchWorkspaceProps = {
   events: WorkspaceEvent[]
   /** Replaces "Back to Sessions" where the workspace is a detail pane. */
   backLabel?: string
+  /** In the inspector: its Back, drawn in this header (ADR 0227 shape). Replaces `onClose`. */
+  back?: ViewHeaderProps['back']
+  /** In the inspector: its Close, drawn in this header (ADR 0227 shape). */
+  close?: ViewHeaderProps['close']
   /** What the researcher decides on, shown under the title (the Task inspector). */
   inspector?: ReactNode
   /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
   startsRounds?: boolean
-  onClose: () => void
+  /** The legacy question view's way out; the inspector passes `back`/`close` instead. */
+  onClose?: () => void
+  /** The loaded title, for the inspector's "Back to …" one level up. */
+  onTitle?: (title: string) => void
   onConversationCreated: (conversation: Conversation) => void
   onOpenSession: (conversationId: string) => void
   /** Opens a Workspace-conversation Thread; omitted when there is no conversation surface. */
@@ -64,12 +75,15 @@ export function ResearchWorkspace({
   events,
   onClose,
   backLabel,
+  back,
+  close,
   inspector,
   startsRounds = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
   onOpenThread,
+  onTitle,
   projectId,
   researchId,
   t,
@@ -85,12 +99,37 @@ export function ResearchWorkspace({
   const importsState = useResearchImports(api, projectId, researchId, events, connectionState)
   const [tab, setTab] = useState<TabId>('brief')
   const state = useAction(t)
+  const title = bundle?.detail.brief.title ?? null
+
+  useEffect(() => {
+    if (title) onTitle?.(title)
+  }, [onTitle, title])
+
+  const backControl = back ? (
+    <IconButton
+      icon={<Icon role="navigation" source={WORKSPACE_COMMAND_ICONS.back.Icon} />}
+      label={back.label}
+      size="md"
+      onClick={back.onBack}
+    />
+  ) : onClose ? (
+    <Button size="xs" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
+  ) : null
+  const closeControl = close ? (
+    <IconButton
+      icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.close.Icon} />}
+      label={close.label}
+      size="md"
+      onClick={close.onClose}
+    />
+  ) : null
 
   if (!bundle) {
     return (
       <section className="kubecode-research-workspace" aria-busy={status === 'loading'}>
         <header className="kubecode-research-header">
-          <Button size="sm" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
+          {backControl}
+          {closeControl}
         </header>
         {status === 'loading' && <p className="kubecode-empty-small" role="status">{t('kubecode.research.loading')}</p>}
         {status === 'error' && (
@@ -117,7 +156,7 @@ export function ResearchWorkspace({
     <section className="kubecode-research-workspace" aria-label={detail.brief.title}>
       <header className="kubecode-research-header">
         <div>
-          <Button size="xs" variant="ghost" onClick={onClose}>{backLabel ?? t('kubecode.research.back')}</Button>
+          {backControl}
           <h2>{detail.brief.title}</h2>
           <div className="kubecode-research-header-meta">
             <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>
@@ -138,6 +177,7 @@ export function ResearchWorkspace({
           {detail.archived
             ? <Button disabled={state.busy} size="sm" variant="outline" onClick={() => command('restore')}>{t('kubecode.research.restore')}</Button>
             : <Button disabled={state.busy} size="sm" variant="ghost" onClick={() => command('archive')}>{t('kubecode.research.archive')}</Button>}
+          {closeControl}
         </div>
       </header>
       {state.error && <p className="kubecode-research-error" role="alert">{state.error}</p>}
