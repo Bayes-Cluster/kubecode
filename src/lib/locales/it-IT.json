@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Fase",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Solo quelli in attesa di te",
+  "kubecode.task.nothingNeedsYou": "Al momento niente nella bacheca richiede il tuo intervento.",
   "kubecode.task.action.review": "Revisiona i risultati",
   "kubecode.task.action.answer": "Domanda per te",
   "kubecode.task.card.progress": "{done} di {total} lavori completati",

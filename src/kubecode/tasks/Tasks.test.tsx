@@ -157,6 +157,16 @@ describe('TaskBoardView', () => {
     expect(within(screen.getByRole('group', { name: 'Stage' })).getByRole('button', { name: 'Ready · 0' })).toBeInTheDocument()
   })
 
+  it('says once that nothing needs the researcher, instead of four empty columns', () => {
+    view({ board: board([card({ id: 'r1', title: 'Quiet' }), card({ id: 'r2', title: 'Busy', stage: 'in_progress' })]) })
+    fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
+    expect(screen.getByText('Nothing on the board needs you right now.')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing here.')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('region').filter((region) => region.hasAttribute('data-stage'))).toHaveLength(0)
+    fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
+    expect(screen.getByText('Quiet')).toBeInTheDocument()
+  })
+
   it('says how a Task gets here when there is none, and goes to General', () => {
     const { onOpenGeneral } = view({ board: board([]) })
     expect(screen.getByText(/No Tasks yet/)).toBeInTheDocument()

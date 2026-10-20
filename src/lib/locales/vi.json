@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Giai đoạn",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Chỉ mục cần bạn xử lý",
+  "kubecode.task.nothingNeedsYou": "Hiện không có gì trên bảng cần bạn xử lý.",
   "kubecode.task.action.review": "Xem xét kết quả",
   "kubecode.task.action.answer": "Câu hỏi dành cho bạn",
   "kubecode.task.card.progress": "Đã xong {done}/{total} hạng mục công việc",

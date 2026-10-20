@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Phase",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Nur, was auf Sie wartet",
+  "kubecode.task.nothingNeedsYou": "Auf dem Board wartet gerade nichts auf Sie.",
   "kubecode.task.action.review": "Ergebnisse prüfen",
   "kubecode.task.action.answer": "Frage an Sie",
   "kubecode.task.card.progress": "{done} von {total} Arbeitsschritten erledigt",

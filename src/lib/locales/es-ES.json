@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Fase",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Solo las que requieren tu atención",
+  "kubecode.task.nothingNeedsYou": "Ahora mismo nada del tablero te necesita.",
   "kubecode.task.action.review": "Revisar resultados",
   "kubecode.task.action.answer": "Pregunta para ti",
   "kubecode.task.card.progress": "{done} de {total} trabajos hechos",

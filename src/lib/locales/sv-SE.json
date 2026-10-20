@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Fas",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Bara det som väntar på dig",
+  "kubecode.task.nothingNeedsYou": "Inget på tavlan behöver dig just nu.",
   "kubecode.task.action.review": "Granska resultat",
   "kubecode.task.action.answer": "Fråga till dig",
   "kubecode.task.card.progress": "{done} av {total} arbetsmoment klara",

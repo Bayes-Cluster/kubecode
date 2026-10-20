@@ -2464,6 +2464,7 @@
   "kubecode.task.stagePicker": "Stage",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Needs you only",
+  "kubecode.task.nothingNeedsYou": "Nothing on the board needs you right now.",
   "kubecode.task.action.review": "Review results",
   "kubecode.task.action.answer": "Question for you",
   "kubecode.task.card.progress": "{done} of {total} work items done",

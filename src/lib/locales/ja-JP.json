@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "ステージ",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "対応が必要なものだけ",
+  "kubecode.task.nothingNeedsYou": "現在、ボード上にあなたの対応が必要なものはありません。",
   "kubecode.task.action.review": "結果を確認",
   "kubecode.task.action.answer": "あなたへの質問",
   "kubecode.task.card.progress": "作業 {total} 件中 {done} 件完了",

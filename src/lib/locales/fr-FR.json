@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Étape",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Seulement celles qui vous attendent",
+  "kubecode.task.nothingNeedsYou": "Rien sur le tableau n'a besoin de vous pour l'instant.",
   "kubecode.task.action.review": "Relire les résultats",
   "kubecode.task.action.answer": "Question pour vous",
   "kubecode.task.card.progress": "{done} travaux sur {total} terminés",

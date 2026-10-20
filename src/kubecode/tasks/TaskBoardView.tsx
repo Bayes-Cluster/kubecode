@@ -104,6 +104,8 @@ export function TaskBoardView({
   const cards = (board?.cards ?? []).filter((card) => !needsYou || requiredActionOf(card) !== null)
   const archived = board?.archived ?? []
   const empty = board !== null && board.cards.length === 0 && drafts.length === 0
+  // Filtered to what needs the researcher and nothing does: one sentence, not four empty columns.
+  const nothingNeedsYou = needsYou && board !== null && board.cards.length > 0 && cards.length === 0
 
   return (
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
@@ -158,7 +160,10 @@ export function TaskBoardView({
           </ul>
         </details>
       )}
-      {board && (
+      {nothingNeedsYou && (
+        <p className="kubecode-task-empty kubecode-research-muted" role="status">{t('kubecode.task.nothingNeedsYou')}</p>
+      )}
+      {board && !nothingNeedsYou && (
         <>
           <div aria-label={t('kubecode.task.stagePicker')} className="kubecode-task-stage-tabs" role="group">
             {TASK_STAGES.map((value) => (

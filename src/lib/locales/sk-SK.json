@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Fáza",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Iba čakajúce na vás",
+  "kubecode.task.nothingNeedsYou": "Na tabuli teraz nič nečaká na vás.",
   "kubecode.task.action.review": "Skontrolovať výsledky",
   "kubecode.task.action.answer": "Otázka pre vás",
   "kubecode.task.card.progress": "Hotové: {done} z {total} pracovných položiek",

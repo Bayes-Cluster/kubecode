@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "단계",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "확인이 필요한 항목만",
+  "kubecode.task.nothingNeedsYou": "지금은 보드에서 내 조치가 필요한 항목이 없습니다.",
   "kubecode.task.action.review": "결과 검토",
   "kubecode.task.action.answer": "답변이 필요한 질문",
   "kubecode.task.card.progress": "작업 항목 {total}개 중 {done}개 완료",

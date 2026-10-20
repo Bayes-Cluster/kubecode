@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "階段",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "只顯示需要你處理的",
+  "kubecode.task.nothingNeedsYou": "看板上目前沒有需要你處理的事項。",
   "kubecode.task.action.review": "審閱結果",
   "kubecode.task.action.answer": "有問題待你回答",
   "kubecode.task.card.progress": "已完成 {done}/{total} 項工作",

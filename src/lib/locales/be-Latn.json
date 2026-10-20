@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Etap",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Tolki toje, što patrabuje vas",
+  "kubecode.task.nothingNeedsYou": "Zaraz na doščy ničoha nie patrabuje vašaha ŭdziełu.",
   "kubecode.task.action.review": "Pravieryć vyniki",
   "kubecode.task.action.answer": "Pytańnie da vas",
   "kubecode.task.card.progress": "Vykanana {done} z {total} častak pracy",

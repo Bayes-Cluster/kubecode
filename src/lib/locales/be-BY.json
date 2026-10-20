@@ -1951,6 +1951,7 @@
   "kubecode.task.stagePicker": "Этап",
   "kubecode.task.stageTab": "{stage} · {count}",
   "kubecode.task.needsYouOnly": "Толькі тое, што патрабуе вас",
+  "kubecode.task.nothingNeedsYou": "Зараз на дошцы нічога не патрабуе вашага ўдзелу.",
   "kubecode.task.action.review": "Праверыць вынікі",
   "kubecode.task.action.answer": "Пытанне да вас",
   "kubecode.task.card.progress": "Выканана {done} з {total} частак працы",
