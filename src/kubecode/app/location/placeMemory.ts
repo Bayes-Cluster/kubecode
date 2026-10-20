@@ -33,6 +33,8 @@ export const placeKey = {
   thread: (projectId: string, threadId: string) => `${projectId}|thread:${threadId}`,
   dm: (projectId: string, memberId: string) => `${projectId}|dm:${memberId}`,
   view: (projectId: string, view: ViewKey) => `${projectId}|view:${view}`,
+  /** A Task's own details: its tab, review feedback and outcome, and answers (ADR 0230 §7). */
+  task: (projectId: string, taskId: string) => `${projectId}|task:${taskId}`,
 }
 
 /** Where the researcher is reading in General, as the conversation reports it. */

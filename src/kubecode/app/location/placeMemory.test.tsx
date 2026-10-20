@@ -32,10 +32,12 @@ describe('placeKey', () => {
       placeKey.thread('p1', 't1'),
       placeKey.dm('p1', 'm1'),
       placeKey.view('p1', 'board'),
+      placeKey.task('p1', 'r1'),
       placeKey.general('p2'),
     ]
     expect(keys).toEqual([
-      'p1|general', 'p1|general:task:r1', 'p1|general', 'p1|thread:t1', 'p1|dm:m1', 'p1|view:board', 'p2|general',
+      'p1|general', 'p1|general:task:r1', 'p1|general', 'p1|thread:t1', 'p1|dm:m1', 'p1|view:board', 'p1|task:r1',
+      'p2|general',
     ])
   })
 })

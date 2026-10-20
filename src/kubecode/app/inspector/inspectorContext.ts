@@ -110,6 +110,8 @@ export type InspectorServices = {
   api: KubecodeApi
   connectionState: WorkspaceConnectionState
   events: WorkspaceEvent[]
+  /** The app's language, for dates and times; English when absent. */
+  locale?: string
   /** The live roster of the active Workspace; empty while it loads. */
   roster: Member[]
   sessionCatalog: Conversation[]
