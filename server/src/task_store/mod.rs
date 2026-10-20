@@ -1830,10 +1830,27 @@ impl TaskStore {
 
     // -- Archiving and status (ADR 0230) ---------------------------------------------------------------
 
+    /// Internal work of a question that is still active (not closed, not
+    /// done), as the card counts it.
+    fn active_work(
+        connection: &Connection,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<i64, TaskError> {
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM work_items
+             WHERE project_id = ?1 AND research_id = ?2
+               AND lifecycle = 'active' AND stage != 'done'",
+            params![project_id, research_id],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Whether the researcher may archive this Task (or proposal) now: not
-    /// while a review is open or internal work is active, so a Task never
-    /// disappears with a decision or running work under it. A draft, a Ready
-    /// or Done Task, and an idle Task in progress may be archived.
+    /// while a review is open or internal work is active (in any stage), so a
+    /// Task never disappears with a decision or running work under it. A
+    /// draft, and a Task in any stage with no open review and no active work,
+    /// may be archived.
     pub fn archive_availability(
         &self,
         project_id: &str,
@@ -1854,11 +1871,7 @@ impl TaskStore {
         {
             return Ok(refused("under_review"));
         }
-        if self.stage(project_id, research_id)? == Some(TaskStage::InProgress)
-            && self
-                .card(project_id, research_id)?
-                .is_some_and(|card| card.work.active > 0)
-        {
+        if Self::active_work(&self.connection(), project_id, research_id)? > 0 {
             return Ok(refused("work_active"));
         }
         Ok(Availability {
@@ -1898,8 +1911,8 @@ impl TaskStore {
             if current == archived {
                 return Ok(((), None));
             }
-            // The review check is repeated inside the transaction, so a review
-            // asked for meanwhile is never hidden.
+            // The checks are repeated inside the transaction, so a review asked
+            // for, or work started, meanwhile is never hidden.
             if archived {
                 let open: i64 = tx.query_row(
                     "SELECT COUNT(*) FROM task_review_requests
@@ -1909,6 +1922,9 @@ impl TaskStore {
                 )?;
                 if open > 0 {
                     return Err(TaskError::Active("under_review"));
+                }
+                if Self::active_work(tx, project_id, research_id)? > 0 {
+                    return Err(TaskError::Active("work_active"));
                 }
             }
             tx.execute(

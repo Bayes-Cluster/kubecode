@@ -2048,3 +2048,46 @@ fn an_execute_record_left_without_a_round_is_checked_against_the_task_as_it_is_n
     );
 }
 
+#[test]
+fn a_task_with_active_work_is_never_archived_whatever_its_stage() {
+    let r = rig();
+    let (id, round) = r.executing("Prune heads");
+    let work = r.internal_work(&round, "Sweep");
+    let request = r.ask_review(&id, "done");
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    // Done, but its internal work is still active.
+    assert_eq!(r.availability(&id), (false, Some("work_active")));
+    assert!(matches!(
+        r.tasks.set_archived(r.project(), &id, true),
+        Err(TaskError::Active("work_active"))
+    ));
+    assert!(!r.f.research.get(r.project(), &id).unwrap().archived);
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "not needed",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+}
+
