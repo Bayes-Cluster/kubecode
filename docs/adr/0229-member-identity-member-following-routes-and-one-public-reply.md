@@ -96,14 +96,18 @@ members' handles through public Sessions only).
 Every message the browser writes to General is a plain message. Its recipients
 are the members it @mentions, ignoring mentions in quoted lines and code, or the
 project manager when it mentions none. A draft that names a member who cannot
-receive messages is blocked with the reason, so it never falls through to the
-manager.
+receive messages, or a member who was removed, is blocked with the reason, so it
+never falls through to the manager. Until the member directory is read (while
+it loads, or after it failed) whom a draft goes to is unknown, so Send is
+blocked with that reason rather than reading a mention as plain text. A draft
+that names no one is blocked while the project manager cannot receive it.
 
 The Task a draft is about is a visible chip, sent as the message's first
 research reference. Other references are named chips.
 
 The browser no longer starts Threads or posts into them. Existing Threads open
-read-only and continue in General by citation. The HTTP API still accepts the
+read-only and continue in General by citation; only their link to a Task can
+still change. The HTTP API still accepts the
 `ask`/`request` intents (ADR 0216 §3, 0217) and the Thread routes, for pages
 opened before the upgrade and for round execution history.
 
@@ -112,20 +116,30 @@ opened before the upgrade and for round execution history.
 A General draft (text, reply, Task, references and its last send attempt) is
 held in memory per Workspace and destination under the place keys of ADR 0228.
 General, General scoped to a Task, and each direct message have their own key.
-A failed send restores the whole draft, and retrying it reuses the client
-message id. Private text reaches General only through the DM share flow (ADR
+A failed send restores the whole draft without overwriting a Task chosen while
+it was in flight, and retrying it reuses the client message id. The failure and
+its Try again are kept with the draft, so a send that fails after the
+researcher left still says so on return. Emptying the text by hand forgets the
+attempt, so the same words typed later are a new message. Each view of General
+has its own composer, so a send in flight stays with the view it came from. Private text reaches General only through the DM share flow (ADR
 0223 §5), whose preview now shows the exact text with its recipient and Task.
 
 ### 7. Rich text, activity and delivery
 
 Message bodies use the existing safe Markdown renderer without raw HTML; images
 are shown as their alternative text, so a message cannot cause a remote fetch.
-Routine system notes collapse into an activity summary. A note saying a message
-could not be delivered is shown on that message.
+Inline `$…$` is math only under remark-math's rules (no space inside the
+delimiters, no digit after the closing one) and never inside code, so prices
+and shell variables stay text; formulas are bounded in size and macro
+expansion. Days and times follow the app's language. Routine system notes
+collapse into an activity summary. A note saying a message could not be
+delivered is shown on that message, or on its own when that message is not
+loaded; it is never collapsed.
 
 Delivery states come from a replaceable source. The browser shows a failure
 only when a note establishes it, and never claims a delivery it has not been
-told about.
+told about. A source that reports a message waiting or delivered is shown
+quietly, in words, without changing how a message is drawn.
 
 ### 8. How the browser holds these decisions
 

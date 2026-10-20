@@ -434,20 +434,28 @@ provides it through `MemberDirectoryContext`; views name people with
 never "Agent") drawn by `members/Identity.tsx`, whose live-member name opens the
 profile through `useWorkspaceNavigation().inspect`. General's rules are pure
 modules under `channel/`: `generalDraft.ts` (one `GeneralDraft` of text, reply,
-Task, references, and last attempt; recipients read from the text outside
-quotes and code; `withReply`; `toNewMessage` with `{member_id}` mentions and the
+Task, references, last attempt, and last failure; recipients read from the
+text outside quotes and code, removed members included, and unknown until the
+directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{member_id}` mentions and the
 Task as the first research reference), `timeline.ts` (days, author groups,
-collapsed routine notes, denial notes attached to their message),
-`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so), and
+collapsed routine notes, denial notes attached to their message or shown on
+their own, never collapsed),
+`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
+`MessageItem` also draws queued and delivered as quiet text), and
 `mentionOptions.ts`; `references/referenceLabels.ts` names references by title
 (`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
-place memory under `placeKey.general(p, filter) + '#draft'` and has no message
-types, Thread starts, or hidden references; `MessageComposer` is controlled by
-that draft and shows the To row (`components/workspace/RecipientRow`), the
+place memory under `placeKey.general(p, filter) + '#draft'`, keys its
+composer by that place, and has no message types, Thread starts, or hidden
+references; `MessageComposer` is controlled by that draft (its failure and
+Try again included) and shows the To row (`components/workspace/RecipientRow`), the
 Task and reference chips, and why Send is blocked; `MessageList` renders the
 timeline through `MessageItem` (Markdown with inert images, Reply and
 `MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
-`ThreadPane` is read-only with "Reply in General". `DmPane` keeps a per-member
+`ThreadPane` is read-only with "Reply in General" (only its Task link
+changes). Dates and times use the app locale's date locale
+(`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
+inline `$…$` as math only under remark-math's rules and never in code, and
+`renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
 `PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
 share as General will show it before posting.
 
