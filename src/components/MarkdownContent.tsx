@@ -28,18 +28,37 @@ function mathLink(latex: string, displayMode: boolean): string {
   return `[math](${scheme}${encodeURIComponent(latex.trim())})`
 }
 
-function replaceMathOutsideCodeFences(content: string): string {
+/**
+ * Inline `$…$` follows remark-math: the opening `$` is not escaped, doubled,
+ * or followed by whitespace, the closing one is not preceded by whitespace
+ * and not followed by a digit. So "$5 and $10" and shell variables stay text.
+ */
+const INLINE_DOLLAR_MATH = /(^|[^\\$])\$(?=[^\s$])([^$\n]*?[^\s\\$])\$(?![$\d])/g
+
+function replaceMathInText(text: string): string {
+  return text
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, latex: string) => `\n\n${mathLink(latex, true)}\n\n`)
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, latex: string) => `\n\n${mathLink(latex, true)}\n\n`)
+    .replace(/\\\(([^\n]*?)\\\)/g, (_, latex: string) => mathLink(latex, false))
+    .replace(INLINE_DOLLAR_MATH, (_, prefix: string, latex: string) => `${prefix}${mathLink(latex, false)}`)
+}
+
+/** A code span: a run of backticks, then anything up to the same run. */
+const CODE_SPAN = /(`+)[\s\S]*?[^`]\1(?!`)|(`+)\2(?!`)/g
+
+/** Math is read only in prose: never in fenced code or inline code spans. */
+function replaceMathOutsideCode(content: string): string {
   return content
     .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
     .map((part, index) => {
       if (index % 2 === 1) return part
-      return part
-        .replace(/\\\[([\s\S]*?)\\\]/g, (_, latex: string) => `\n\n${mathLink(latex, true)}\n\n`)
-        .replace(/\$\$([\s\S]*?)\$\$/g, (_, latex: string) => `\n\n${mathLink(latex, true)}\n\n`)
-        .replace(/\\\(([^\n]*?)\\\)/g, (_, latex: string) => mathLink(latex, false))
-        .replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (_, prefix: string, latex: string) => (
-          `${prefix}${mathLink(latex, false)}`
-        ))
+      let out = ''
+      let last = 0
+      for (const match of part.matchAll(CODE_SPAN)) {
+        out += replaceMathInText(part.slice(last, match.index)) + match[0]
+        last = match.index + match[0].length
+      }
+      return out + replaceMathInText(part.slice(last))
     })
     .join('')
 }
@@ -90,7 +109,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ content, images, onWikilinkC
   images: MarkdownImages
 }) {
   const processedContent = useMemo(
-    () => replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content),
+    () => replaceMathOutsideCode(onWikilinkClick ? preprocessWikilinks(content) : content),
     [content, onWikilinkClick],
   )
   const components = useMarkdownComponents(onWikilinkClick, images)
@@ -155,7 +174,7 @@ function useMarkdownComponents(onWikilinkClick: ((target: string) => void) | und
  */
 export const MarkdownContent = memo(function MarkdownContent({ content, images = 'render', onWikilinkClick }: MarkdownContentProps) {
   const blocks = useMemo(
-    () => splitMarkdownBlocks(replaceMathOutsideCodeFences(onWikilinkClick ? preprocessWikilinks(content) : content)),
+    () => splitMarkdownBlocks(replaceMathOutsideCode(onWikilinkClick ? preprocessWikilinks(content) : content)),
     [content, onWikilinkClick],
   )
 

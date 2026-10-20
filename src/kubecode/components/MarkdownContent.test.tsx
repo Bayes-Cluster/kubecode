@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { MarkdownContent } from '@/components/MarkdownContent'
+import { renderMathToHtml } from '@/utils/mathMarkdown'
 import { splitMarkdownBlocks } from '../../utils/markdownBlocks'
 
 describe('splitMarkdownBlocks', () => {
@@ -97,5 +98,47 @@ describe('MarkdownContent images (ADR 0229 §7)', () => {
     expect(container.querySelector('script')).toBeNull()
     expect(screen.getByText('bold').tagName).toBe('STRONG')
     expect(screen.getByText('go').getAttribute('href') ?? '').not.toContain('javascript')
+  })
+})
+
+describe('MarkdownContent math (ADR 0229 §7)', () => {
+  it('keeps prices and shell variables literal', () => {
+    const { container } = render(<MarkdownContent content={'It costs $5 and $10 a run. Set `$PATH` and `$HOME`, then echo $USER.'} images="text" />)
+    expect(container.querySelector('.ai-math-inline, .katex')).toBeNull()
+    expect(container).toHaveTextContent('It costs $5 and $10 a run. Set $PATH and $HOME, then echo $USER.')
+    expect(screen.getByText('$PATH').tagName).toBe('CODE')
+  })
+
+  it('keeps dollars literal inside inline code, even two of them', () => {
+    const { container } = render(<MarkdownContent content={'Run `echo $A $B` and ``a `$x$` b`` here.'} images="text" />)
+    expect(container.querySelector('.ai-math-inline, .katex')).toBeNull()
+    expect(screen.getByText('echo $A $B').tagName).toBe('CODE')
+    expect(screen.getByText('a `$x$` b').tagName).toBe('CODE')
+  })
+
+  it('does not take a closing dollar followed by a digit or spaces inside the delimiters as math', () => {
+    const { container } = render(<MarkdownContent content={'Between $ 5 $ and $x$2 nothing is math.'} images="text" />)
+    expect(container.querySelector('.ai-math-inline')).toBeNull()
+  })
+
+  it('still renders inline and display math', () => {
+    const { container } = render(<MarkdownContent content={'Accuracy $a_1 + b$ holds.\n\n$$\\sum_i x_i$$\n\nAnd \\(y\\) too.'} images="text" />)
+    expect(container.querySelectorAll('.ai-math-inline .katex')).toHaveLength(2)
+    expect(container.querySelectorAll('.ai-math-display .katex-display')).toHaveLength(1)
+  })
+})
+
+describe('renderMathToHtml bounds', () => {
+  it('caps sizes a message asks for, so math cannot cover the page', () => {
+    const html = renderMathToHtml({ latex: '\\rule{500em}{500em}', displayMode: true })
+    // The source stays in the annotation; what is drawn is capped.
+    const drawn = html.slice(html.indexOf('katex-html'))
+    expect(drawn).not.toContain('500em')
+    expect(drawn).toContain('border-right-width:10em;border-top-width:10em')
+  })
+
+  it('stops a macro that expands without end', () => {
+    const html = renderMathToHtml({ latex: '\\def\\a{\\a\\a}\\a', displayMode: false })
+    expect(html).toContain('katex-error')
   })
 })
