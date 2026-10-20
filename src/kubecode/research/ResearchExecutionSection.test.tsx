@@ -119,9 +119,9 @@ describe('ResearchExecutionSection', () => {
     const getResearchExecution = vi.fn().mockResolvedValueOnce(executionFixture()).mockResolvedValue(paused)
     mount({ api: fakeApi({ setResearchExecutionState, getResearchExecution }) })
     expect(await screen.findByText('kubecode.research.exec.pauseHint')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.exec.pause' }))
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.execution.pauseLaunches {"round":1}' }))
     await waitFor(() => expect(setResearchExecutionState).toHaveBeenCalledWith('p1', 'rq-1', 'round-1', 'pause'))
-    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.exec.resume' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.execution.resumeLaunches {"round":1}' }))
     await waitFor(() => expect(setResearchExecutionState).toHaveBeenCalledWith('p1', 'rq-1', 'round-1', 'resume'))
   })
 
@@ -275,7 +275,7 @@ describe('ResearchExecutionSection', () => {
     mount({ archived: true })
     await screen.findByText('kubecode.research.exec.title')
     expect(screen.queryByRole('button', { name: 'kubecode.research.exec.editEnvelope' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'kubecode.research.exec.pause' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'kubecode.execution.pauseLaunches {"round":1}' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'kubecode.research.exec.cancelAll' })).toBeInTheDocument()
   })
 
