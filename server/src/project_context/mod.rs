@@ -922,29 +922,46 @@ const CHANGED_NOTE: &str =
     "This source changed after the revision that was referenced; showing its current state.";
 
 /// A Project-relative file path: no leading `/`, no `\` or NUL, no empty,
-/// `.` or `..` component, and never inside a `.git` directory. Other dot
-/// paths are readable when named explicitly but are never listed.
+/// `.` or `..` component, never inside a `.git` directory, and never an
+/// environment file (`.env`, `.env.local`, …) that holds secrets. Other dot
+/// paths, environment templates included, are readable when named explicitly
+/// but are never listed.
 fn valid_file_id(id: &str) -> bool {
     !id.is_empty()
         && id.chars().count() <= MAX_ID_CHARS
         && !id.starts_with('/')
         && !id.contains(['\\', '\0'])
         && id.split('/').all(|part| {
-            !part.is_empty() && part != "." && part != ".." && !part.eq_ignore_ascii_case(".git")
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && !part.eq_ignore_ascii_case(".git")
+                && !is_environment_file(part)
         })
 }
 
-/// The path is not a regular file reached through no symlink in this Project.
+/// `.env` or `.env.<anything>`, except the templates projects commit
+/// (`.env.example`, `.env.sample`, `.env.template`), compared ignoring case.
+fn is_environment_file(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    match name.strip_prefix(".env") {
+        Some("") => true,
+        Some(rest) => {
+            rest.starts_with('.')
+                && ![".example", ".sample", ".template"]
+                    .iter()
+                    .any(|template| rest.ends_with(template))
+        }
+        None => false,
+    }
+}
+
+/// The path is not a regular file reached through no symlink in this Project,
+/// or it cannot be opened (for example, no read permission). Either way it is
+/// unavailable on its own, without failing the other references beside it.
 fn file_missing(error: &crate::workspace::WorkspaceError) -> bool {
     use crate::workspace::WorkspaceError as E;
-    match error {
-        E::InvalidPath(_) => true,
-        E::Io(error) => matches!(
-            error.kind(),
-            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-        ),
-        _ => false,
-    }
+    matches!(error, E::InvalidPath(_) | E::Io(_))
 }
 
 fn file_item(path: &str, revision: Option<String>, updated_at: Option<String>) -> ContextItem {
@@ -1495,7 +1512,19 @@ impl ProjectContext {
                 if doc.availability == Availability::Changed {
                     doc.note(CHANGED_NOTE);
                 }
-                doc.section_verbatim("Content", &page.text);
+                if page.utf8 {
+                    // An empty file is shown as an empty section: the reader
+                    // saw all of it.
+                    let (text, truncated) = clip(&page.text, SECTION_CHARS);
+                    doc.sections.push(Section {
+                        heading: "Content".into(),
+                        text,
+                        truncated,
+                    });
+                } else {
+                    // Nothing is shown, but the reader saw this version of it.
+                    doc.note("The file is not UTF-8 text, so no content is shown.");
+                }
                 if let Some(next) = page.next_offset {
                     doc.next_cursor = Some(encode_file_cursor(next, &page.revision));
                     doc.note(format!(
@@ -1506,21 +1535,6 @@ impl ProjectContext {
                     ));
                 }
                 doc.shown_revision = Some(page.revision);
-            }
-            Err(crate::workspace::WorkspaceError::UnsupportedText) => {
-                // Nothing is shown, but the reader saw this version of it.
-                match self
-                    .workspace
-                    .execution_file_revision(project_id, None, &reference.id)
-                {
-                    Ok(revision) => {
-                        doc.availability = compare(requested, &revision);
-                        doc.reference.revision = Some(revision.clone());
-                        doc.shown_revision = Some(revision);
-                    }
-                    Err(_) => doc.availability = Availability::Removed,
-                }
-                doc.note("The file is not UTF-8 text, so no content is shown.");
             }
             Err(_) => {
                 // Gone or unreadable between lookup and read: not usable context.

@@ -1952,6 +1952,114 @@ fn file_references_cannot_escape_name_git_follow_symlinks_or_block_on_a_fifo() {
     );
 }
 
+#[test]
+fn a_non_text_page_honours_its_cursor_and_reports_the_revision_it_read() {
+    let w = world();
+    let path = w.project_root().join("data.txt");
+    fs::write(&path, "a".repeat(20 * 1024)).unwrap();
+    let reference = ContextRef::new(ContextKind::File, "data.txt");
+    let first = w.read(&reference, Detail::Content);
+    let cursor = first.next_cursor.clone().expect("more to read");
+    // Replaced by bytes that are not text: the cursor's version is gone.
+    let mut binary = vec![0xffu8; 20 * 1024];
+    binary[0] = 0xfe;
+    fs::write(&path, &binary).unwrap();
+    let next = w
+        .context
+        .read(&w.f.project_id, &reference, Detail::Content, Some(&cursor))
+        .unwrap();
+    assert_eq!(next.availability, Availability::Changed);
+    assert!(next.shown_revision.is_none());
+    assert!(next.sections.is_empty());
+    // A first read of the binary file reports the version it read.
+    let fresh = w.read(&reference, Detail::Content);
+    let current =
+        w.f.workspace
+            .execution_file_revision(&w.f.project_id, None, "data.txt")
+            .unwrap();
+    assert_eq!(fresh.availability, Availability::Available);
+    assert_eq!(fresh.shown_revision.as_deref(), Some(current.as_str()));
+    assert!(fresh.notes.iter().any(|note| note.contains("not UTF-8")));
+}
+
+#[test]
+fn an_empty_file_is_shown_as_an_empty_section_at_its_version() {
+    let w = world();
+    fs::write(w.project_root().join("empty.txt"), "").unwrap();
+    let doc = w.read(
+        &ContextRef::new(ContextKind::File, "empty.txt"),
+        Detail::Content,
+    );
+    assert_eq!(doc.availability, Availability::Available);
+    assert_eq!(doc.sections.len(), 1);
+    assert_eq!(doc.sections[0].heading, "Content");
+    assert_eq!(doc.sections[0].text, "");
+    assert!(doc.shown_revision.is_some());
+}
+
+#[test]
+fn an_unreadable_file_is_unavailable_without_failing_the_other_references() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = world();
+    let locked = w.project_root().join("locked.txt");
+    fs::write(&locked, "secret").unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&locked).is_ok() {
+        // Running as root: permissions do not apply.
+        return;
+    }
+    fs::write(w.project_root().join("open.txt"), "x").unwrap();
+    let refs = [
+        ContextRef::new(ContextKind::File, "locked.txt"),
+        ContextRef::new(ContextKind::File, "open.txt"),
+    ];
+    let resolved = w.context.resolve(&w.f.project_id, &refs).unwrap();
+    assert_eq!(resolved[0].availability, Availability::Removed);
+    assert_eq!(resolved[1].availability, Availability::Available);
+    // Reading it says it could not be read rather than failing.
+    let doc = w.read(&refs[0], Detail::Content);
+    assert_eq!(doc.availability, Availability::Removed);
+    assert!(doc.shown_revision.is_none());
+    assert!(doc.sections.is_empty());
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[test]
+fn environment_files_are_never_read_but_their_templates_are() {
+    let w = world();
+    let root = w.project_root();
+    fs::create_dir_all(root.join("config")).unwrap();
+    for name in [".env", ".env.local", "config/.env.production", ".ENV"] {
+        fs::write(root.join(name), "TOKEN=secret").unwrap();
+    }
+    for name in [".env.example", ".env.sample", ".env.template", ".envrc.md"] {
+        fs::write(root.join(name), "TOKEN=").unwrap();
+    }
+    for refused in [".env", ".env.local", "config/.env.production", ".ENV"] {
+        let reference = ContextRef::new(ContextKind::File, refused);
+        assert!(
+            matches!(
+                w.context
+                    .read(&w.f.project_id, &reference, Detail::Content, None),
+                Err(ContextError::NotFound)
+            ),
+            "{refused} must not be readable"
+        );
+        let resolved = w
+            .context
+            .resolve(&w.f.project_id, std::slice::from_ref(&reference))
+            .unwrap();
+        assert_eq!(resolved[0].availability, Availability::Removed);
+    }
+    for allowed in [".env.example", ".env.sample", ".env.template", ".envrc.md"] {
+        let doc = w.read(
+            &ContextRef::new(ContextKind::File, allowed),
+            Detail::Content,
+        );
+        assert_eq!(doc.availability, Availability::Available, "{allowed}");
+    }
+}
+
 // -- A search names its scope (ADR 0231 §2) -------------------------------------------------------
 
 #[test]
