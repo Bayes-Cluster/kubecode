@@ -36,6 +36,12 @@ pub struct AgentStore {
     workspace_event_bus: WorkspaceEventBus,
 }
 
+/// Now as UTC text in the store's `%Y-%m-%d %H:%M:%f` form, so in-memory
+/// records sort with stored timestamps.
+pub fn utc_now() -> String {
+    prompt_queue::chrono_like_now()
+}
+
 impl AgentStore {
     pub fn open(database_path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let database = Arc::new(Database::open(database_path)?);

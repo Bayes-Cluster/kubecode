@@ -426,6 +426,8 @@ async fn run_acp_session(
                                 run_id: run_id.clone(),
                                 sender,
                                 always_allow,
+                                requested_at: crate::agent_store::utc_now(),
+                                deadline,
                             },
                         );
                     let _ = permission_runtime.store.append_workspace_event(
@@ -514,10 +516,14 @@ async fn run_acp_session(
                     let outcome = receiver
                         .await
                         .unwrap_or(RequestPermissionOutcome::Cancelled);
-                    pending_permissions
+                    let unanswered = pending_permissions
                         .lock()
                         .expect("pending permission mutex poisoned")
-                        .remove(&request_id);
+                        .remove(&request_id)
+                        .is_some();
+                    if unanswered {
+                        super::permissions::announce_wait_ended(&permission_store, &run_id);
+                    }
                     if matches!(outcome, RequestPermissionOutcome::Cancelled)
                         && let Some(teams) = permission_runtime.team_store()
                     {
@@ -571,6 +577,9 @@ async fn run_acp_session(
                             PendingElicitation {
                                 run_id: run_id.clone(),
                                 sender,
+                                request_payload: payload.clone(),
+                                requested_at: crate::agent_store::utc_now(),
+                                deadline,
                             },
                         );
                     let _ = elicitation_store.append_workspace_event(
@@ -594,10 +603,15 @@ async fn run_acp_session(
                         .ok()
                         .and_then(Result::ok)
                         .unwrap_or(ElicitationAction::Cancel);
-                    pending_elicitations
+                    // Still listed: nobody answered or stopped it, it timed out.
+                    let timed_out = pending_elicitations
                         .lock()
                         .expect("pending elicitation mutex poisoned")
-                        .remove(&request_id);
+                        .remove(&request_id)
+                        .is_some();
+                    if timed_out {
+                        super::permissions::announce_wait_ended(&elicitation_store, &run_id);
+                    }
                     let _ = elicitation_store.set_run_status(&run_id, RunStatus::Running);
                     let _ = elicitation_store.append_event(
                         &run_id,

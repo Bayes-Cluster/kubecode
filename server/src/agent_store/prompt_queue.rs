@@ -645,7 +645,7 @@ fn now_string() -> String {
     chrono_like_now()
 }
 
-fn chrono_like_now() -> String {
+pub(super) fn chrono_like_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     // SQLite's '%Y-%m-%d %H:%M:%f' UTC format, reproduced without pulling a
     // date library: millisecond precision from the unix epoch.
