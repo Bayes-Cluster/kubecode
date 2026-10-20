@@ -62,6 +62,20 @@ describe('WorkbenchTitlebar', () => {
     expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-2')
   })
 
+  it('lists five of this Workspace\'s decisions, and shows all of them in Needs you on request', async () => {
+    const entries = Array.from({ length: 7 }, (_, index) => ({
+      key: `question:d${index}`,
+      title: `Question ${index}`,
+      reason: { label: 'Question', tone: 'warn' as const },
+      target: { place: { view: 'board' as const }, focus: `question:d${index}` },
+    }))
+    const { handlers } = titlebar({ attention: { current: entries, others: [], total: 7 } })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Needs you: 7' }), { button: 0, ctrlKey: false })
+    expect(await screen.findAllByRole('menuitem', { name: /^Question \d/ })).toHaveLength(5)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Show all 7 in Needs you' }))
+    expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-1')
+  })
+
   it('shows no bell when nothing waits', () => {
     titlebar()
     expect(screen.queryByRole('button', { name: /^Needs you: / })).not.toBeInTheDocument()

@@ -166,6 +166,11 @@ export function WorkbenchTitlebar({
                       <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
                     </DropdownMenuItem>
                   ))}
+                  {attention.current.length > BELL_ENTRIES && project && (
+                    <DropdownMenuItem onSelect={() => onOpenWorkspaceNeeds(project.id)}>
+                      {t('kubecode.attention.showAll', { count: attention.current.length })}
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
               {attention.current.length > 0 && attention.others.length > 0 && <DropdownMenuSeparator />}

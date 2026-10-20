@@ -2663,6 +2663,7 @@
   "kubecode.delivery.reroute": "Try again",
   "kubecode.attention.bell": "Needs you: {count}",
   "kubecode.attention.thisWorkspace": "This Workspace",
+  "kubecode.attention.showAll": "Show all {count} in Needs you",
   "kubecode.attention.otherWorkspaces": "Other Workspaces",
   "kubecode.attention.otherWorkspace": "{workspace}: {count}"
 }

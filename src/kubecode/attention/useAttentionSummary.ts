@@ -4,8 +4,11 @@ import type { AttentionSummary, KubecodeApi, WorkspaceEvent } from '../api'
 import { useRefreshTick } from '../research/useResearch'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 
+/** The changes that can add or remove a decision: as the Workspace store's, General and research included. */
 const KINDS = new Set([
   'task_updated',
+  'research_updated',
+  'channel_updated',
   'work_updated',
   'member_updated',
   'orchestration_updated',
