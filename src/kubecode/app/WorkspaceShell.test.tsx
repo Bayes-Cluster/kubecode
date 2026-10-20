@@ -181,7 +181,7 @@ describe('Workspace navigation and routes', () => {
     expect(window.location.hash).toBe('#/p/project-1/sessions')
 
     fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/p/project-1/general')
     expect(within(nav).getAllByRole('button', { name: 'General' })[0]).toHaveAttribute('aria-current', 'page')
 
@@ -209,14 +209,14 @@ describe('Workspace navigation and routes', () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
     fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
-    await screen.findByRole('heading', { name: '# General' })
+    await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
     await screen.findByRole('heading', { name: 'Resources' })
     act(() => {
       window.history.replaceState(null, '', '#/p/project-1/general')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
   })
 
   it('gathers what waits for the researcher and opens the Task from it', async () => {
@@ -237,7 +237,7 @@ describe('Workspace navigation and routes', () => {
     const toggle = screen.getByRole('button', { name: 'Toggle context panel' })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
-    await screen.findByRole('heading', { name: '# General' })
+    await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Toggle context panel' }))
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
@@ -260,14 +260,14 @@ describe('Workspace navigation and routes', () => {
   it('opens General for a Workspace with no Sessions, and a link still decides first', async () => {
     window.history.replaceState(null, '', '/')
     const first = render(<KubecodeApp api={api()} />)
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/p/project-1/general')
     first.unmount()
 
     window.history.replaceState(null, '', '/#/p/project-1/resources')
     render(<KubecodeApp api={api()} />)
     expect(await screen.findByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '# General' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'General', exact: true, level: 2 })).not.toBeInTheDocument()
   })
 
   it('opens General for a Workspace with Sessions but no remembered place, and never renders a Session', async () => {
@@ -279,7 +279,7 @@ describe('Workspace navigation and routes', () => {
     })
     observer.observe(document.body, { childList: true, subtree: true })
     render(<KubecodeApp api={api({ listConversations: vi.fn().mockResolvedValue([session]) })} />)
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
     observer.disconnect()
     expect(sessions).toEqual([])
@@ -290,7 +290,7 @@ describe('Workspace navigation and routes', () => {
     expect(await inspector('Task details')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Other' }))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
     expect(screen.getByText('Other: General')).toHaveAttribute('role', 'status')
 
@@ -319,7 +319,7 @@ describe('Workspace navigation and routes', () => {
     const box = await composer()
     fireEvent.change(box, { target: { value: 'Half a thought' } })
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Task: r1' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Task Task (no title)' }))
     expect(await inspector('Task details')).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1?task=r1&filter=r1'))
 
@@ -370,7 +370,7 @@ describe('Workspace navigation and routes', () => {
     }))
     const box = await composer()
     fireEvent.change(box, { target: { value: 'Half a thought' } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Task: r1' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Task Task (no title)' }))
     expect(await inspector('Task details')).toBeInTheDocument()
     expect(document.querySelector('.kubecode-session-context-row')).toHaveAttribute('data-inspector-layout', 'screen')
     expect(screen.queryByRole('button', { name: 'Close details' })).not.toBeInTheDocument()
@@ -413,7 +413,7 @@ describe('Workspace navigation and routes', () => {
         expect(ways).toEqual([])
       }
     }
-    await screen.findByRole('heading', { name: '# General' })
+    await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     noBack()
     fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
     await screen.findByRole('heading', { name: 'Kanban', level: 2 })
@@ -433,7 +433,7 @@ describe('Workspace navigation and routes', () => {
     const { nav } = await start('#/p/project-1/general/m/m1', api({
       listConversations: vi.fn().mockResolvedValue([session]),
     }))
-    await screen.findByRole('heading', { name: '# General' })
+    await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     fireEvent.click(await screen.findByRole('button', { name: /^Earlier chat/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
     expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
@@ -455,7 +455,7 @@ describe('Workspace navigation and routes', () => {
 
   it.each([
     ['#/p/project-1/sessions/c/s1', () => screen.findByTestId('agent-session-workspace')],
-    ['#/p/project-1/general?thread=t1', () => screen.findByRole('complementary', { name: 'Thread' })],
+    ['#/p/project-1/general?thread=t1', () => screen.findByRole('complementary', { name: 'Earlier thread' })],
     ['#/p/project-1/members?member=m-analyst', () => screen.findByRole('complementary', { name: 'Analyst' })],
     ['#/p/project-1/question/r1', () => screen.findByRole('region', { name: 'task r1' })],
     ['#/p/project-1/general?task=r1&thread=t1', () => screen.findByRole('complementary', { name: 'Task details' })],
@@ -496,7 +496,7 @@ describe('Workspace navigation and routes', () => {
       pointerType: 'mouse',
     })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
     expect(screen.queryByTestId('agent-session-workspace')).not.toBeInTheDocument()
     expect(JSON.stringify(storedLocations().workspaces['project-1'])).not.toContain('s2')
@@ -526,13 +526,13 @@ describe('Workspace navigation and routes', () => {
     })
     window.history.replaceState(null, '', '/')
     render(<KubecodeApp api={api({ listConversations: vi.fn().mockResolvedValue([session]) })} />)
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
   })
 
   it('falls back to General when a private conversation cannot be opened', async () => {
     await start('#/p/project-1/dm/m-analyst', api({ openMemberDm: vi.fn().mockRejectedValue(new Error('gone')) }))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
   })
 
@@ -552,7 +552,7 @@ describe('Workspace navigation and routes', () => {
       listMembers: vi.fn().mockRejectedValue(new Error('roster down')),
       openMemberDm: vi.fn().mockRejectedValue(new Error('gone')),
     }))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
     expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
     expect(document.querySelector('.kubecode-topbar-error')).toHaveAttribute('aria-label', 'gone')
@@ -641,7 +641,7 @@ describe('Workspace navigation and routes', () => {
     render(<KubecodeApp api={api()} />)
     // Well within the time a link is otherwise waited for.
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'), { timeout: 1_000 })
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
   })
 
   it('opens a finding cited in General in the inspector beside the conversation', async () => {
@@ -655,7 +655,7 @@ describe('Workspace navigation and routes', () => {
     fireEvent.click(within(references).getByRole('button', { name: /Finding/ }))
     expect(await inspector('Resource details')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'evidence finding:f1' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     expect(document.querySelector('.kubecode-session-context-row')).toHaveAttribute('data-inspector-layout', 'side')
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?inspect=resource~finding~f1'))
   })
@@ -719,7 +719,7 @@ describe('Workspace navigation and routes', () => {
     }))
     expect(await inspector('Task details')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open thread t1' }))
-    expect(await screen.findByRole('complementary', { name: 'Thread' })).toBeInTheDocument()
+    expect(await screen.findByRole('complementary', { name: 'Earlier thread' })).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?thread=t1'))
   })
@@ -742,7 +742,7 @@ describe('Workspace navigation and routes', () => {
     expect(await screen.findByRole('region', { name: 'task r1' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show message m1' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1'))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'task r9' })).not.toBeInTheDocument()
   })
@@ -777,7 +777,7 @@ describe('Workspace navigation and routes', () => {
     }))
     await screen.findByRole('heading', { name: 'Kanban', level: 2 })
     await open()
-    expect(await screen.findByRole('complementary', { name: 'Thread' })).toBeInTheDocument()
+    expect(await screen.findByRole('complementary', { name: 'Earlier thread' })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?thread=t1'))
   })
 
@@ -852,7 +852,7 @@ describe('The Workspaces navigation', () => {
 
   it('remembers execution history being opened', async () => {
     await start('#/p/project-1/general')
-    await screen.findByRole('heading', { name: '# General' })
+    await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     act(() => {
       history().open = true
       history().dispatchEvent(new Event('toggle'))
@@ -962,7 +962,7 @@ describe('Returning to a place (ADR 0228 §4)', () => {
       await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }))
     })
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m3'))
-    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
   })
 
   it('follows the conversation again when the researcher was at the newest message', async () => {

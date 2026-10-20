@@ -66,7 +66,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
   // A fresh Workspace opens in General, with exactly one General Agent.
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await writeFile(`${projectPath}/results.csv`, 'accuracy\n0.91\n')
   const projects = await (await request.get(`${api}/projects`)).json() as Array<{ id: string; name: string }>
   projectId = projects.find((candidate) => candidate.name === projectName)?.id

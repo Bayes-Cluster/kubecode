@@ -18,7 +18,7 @@ export type WorkspaceNavProps = {
   /** The view on screen, so its entry is marked as current; nothing on execution history or a question. */
   active: ViewKey | null
   /** Live members (the roster), General Agent first. */
-  members: Member[]
+  members: readonly Member[]
   /** Everything that waits for the researcher, each saying where it opens. */
   needsYou: NeedsYouEntry[]
   t: Translator

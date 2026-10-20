@@ -62,12 +62,12 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   await selectWorkspace(page, projectName)
   const nav = workspaceNav(page)
   await expect(nav).toBeVisible()
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
 
   // General: the message carries its Task; opening it shows the Task beside the conversation.
   await openGeneral(page)
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`${workspaceUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?#/p/[^/]+/general$`))
   // Files and Git are not a permanent column beside the research views.
   await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
@@ -84,7 +84,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   // A reload lands on the same Task and message.
   await page.reload()
   await expect(page.getByRole('complementary', { name: 'Task details' }).getByRole('heading', { name: 'Pruning heads' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
 
   // Closing the Task returns to the message it was opened from.
   await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
@@ -113,7 +113,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
   await page.goBack()
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
 
   // The one board.
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
@@ -125,7 +125,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   await page.getByRole('button', { name: 'Add project' }).click()
   await page.getByRole('combobox', { name: 'Full path on this server' }).fill(`/tmp/${otherName}`)
   await page.getByRole('option', { name: `Create /tmp/${otherName}` }).click()
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await expect(page).toHaveURL(/\/general$/)
   await selectWorkspace(page, projectName)
   await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
@@ -136,7 +136,7 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
   // The navigation is an overlay on a phone; dismiss it to read the conversation.
   await page.keyboard.press('Escape')
   await page.evaluate((hash) => { window.location.hash = hash }, `#/p/${project.id}/general/m/${message.id}`)
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await expectContained(page)
   await page.locator(`[data-message-id="${message.id}"]`).getByRole('button', { name: /Task: Pruning heads/ }).click()
   const phoneDetail = inspector(page, 'Task details')

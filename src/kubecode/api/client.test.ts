@@ -653,6 +653,16 @@ describe('Kubecode API client', () => {
     expect('startChannelThread' in api).toBe(false)
   })
 
+  it('says which member a refused mention names, and why', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code: 'mention_unavailable', message: 'no', member_id: 'w', reason: 'needs_setup' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )))
+    await expect(new KubecodeApi('').postChannelMessage('p', 'c', { body: 'hi' })).rejects.toMatchObject({
+      code: 'mention_unavailable', reason: 'needs_setup', memberId: 'w', status: 400,
+    })
+  })
+
   it('lists members with the removed ones when asked, so history keeps their names', async () => {
     const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ members: [], general_id: null })))
     vi.stubGlobal('fetch', fetch)

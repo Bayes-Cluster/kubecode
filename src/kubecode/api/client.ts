@@ -120,6 +120,8 @@ export class ApiError extends Error {
   readonly stage: string | null
   /** Optional categorical refinement of `code` (e.g. why a binding was refused). */
   readonly reason: string | null
+  /** The member a refusal is about (a mention of one who cannot receive). */
+  readonly memberId: string | null
 
   constructor(
     code: string,
@@ -127,6 +129,7 @@ export class ApiError extends Error {
     status: number,
     stage: string | null = null,
     reason: string | null = null,
+    memberId: string | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -134,6 +137,7 @@ export class ApiError extends Error {
     this.status = status
     this.stage = stage
     this.reason = reason
+    this.memberId = memberId
   }
 }
 
@@ -1521,13 +1525,14 @@ export class KubecodeApi {
       const error = await response.json().catch(() => ({
         code: 'request_failed',
         message: response.statusText || `Request failed (${response.status})`,
-      })) as { code?: string; message?: string; stage?: string; reason?: string }
+      })) as { code?: string; message?: string; stage?: string; reason?: string; member_id?: string }
       throw new ApiError(
         error.code ?? 'request_failed',
         error.message ?? `Request failed (${response.status})`,
         response.status,
         error.stage ?? null,
         error.reason ?? null,
+        error.member_id ?? null,
       )
     }
     if (response.status === 204 || response.headers.get('content-length') === '0') {

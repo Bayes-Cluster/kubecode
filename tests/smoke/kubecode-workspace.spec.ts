@@ -82,7 +82,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   if (!projectId) throw new Error('Created smoke project was not returned by the API')
 
   // A new Workspace opens in General; this flow is about execution history, one step away.
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   const history = await openExecutionHistory(page)
   await history.getByRole('button', { name: 'New session' }).click()
   await page.getByRole('combobox', { name: 'Agent' }).click()
