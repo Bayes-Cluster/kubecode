@@ -792,6 +792,83 @@ fn valid_id(id: &str) -> Result<(), ContextError> {
     Ok(())
 }
 
+const CHANGED_NOTE: &str =
+    "This source changed after the revision that was referenced; showing its current state.";
+
+/// A Project-relative file path: no leading `/`, no `\` or NUL, no empty,
+/// `.` or `..` component, and never inside a `.git` directory. Other dot
+/// paths are readable when named explicitly but are never listed.
+fn valid_file_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.chars().count() <= MAX_ID_CHARS
+        && !id.starts_with('/')
+        && !id.contains(['\\', '\0'])
+        && id.split('/').all(|part| {
+            !part.is_empty() && part != "." && part != ".." && !part.eq_ignore_ascii_case(".git")
+        })
+}
+
+/// The path is not a regular file reached through no symlink in this Project.
+fn file_missing(error: &crate::workspace::WorkspaceError) -> bool {
+    use crate::workspace::WorkspaceError as E;
+    match error {
+        E::InvalidPath(_) => true,
+        E::Io(error) => matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+        ),
+        _ => false,
+    }
+}
+
+fn file_item(path: &str, revision: Option<String>, updated_at: Option<String>) -> ContextItem {
+    ContextItem {
+        reference: ContextRef {
+            kind: ContextKind::File,
+            id: path.to_owned(),
+            revision,
+        },
+        title: path.to_owned(),
+        // No server-authored prose: the path is the whole description.
+        summary: String::new(),
+        provenance: Provenance {
+            updated_at,
+            ..Provenance::default()
+        },
+        availability: Availability::Available,
+    }
+}
+
+/// A short tag of a file revision, carried by a file cursor.
+fn revision_tag(revision: &str) -> String {
+    hex::encode(Sha256::digest(revision.as_bytes()))[..16].to_owned()
+}
+
+fn encode_file_cursor(offset: u64, revision: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("f:{offset}:{}", revision_tag(revision)))
+}
+
+/// `None` for the first page; the byte offset and revision tag otherwise.
+fn decode_file_cursor(cursor: Option<&str>) -> Result<Option<(u64, String)>, ContextError> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(cursor)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| {
+            let rest = text.strip_prefix("f:")?;
+            let (offset, tag) = rest.split_once(':')?;
+            let offset = offset.parse().ok()?;
+            (tag.len() == 16 && tag.bytes().all(|b| b.is_ascii_hexdigit()))
+                .then(|| (offset, tag.to_owned()))
+        })
+        .map(Some)
+        .ok_or(ContextError::Invalid("the cursor is not valid"))
+}
+
 impl ContextDocument {
     fn new(item: &ContextItem, detail: Detail, availability: Availability) -> Self {
         Self {
@@ -804,6 +881,7 @@ impl ContextDocument {
             related: Vec::new(),
             next_cursor: None,
             notes: Vec::new(),
+            shown_revision: item.reference.revision.clone(),
         }
     }
 
@@ -938,7 +1016,22 @@ impl ProjectContext {
                 Err(crate::channel_store::ChannelError::NotFound) => None,
                 Err(error) => return Err(source_error(error)),
             },
+            ContextKind::File => self.file_lookup(project_id, id)?,
         })
+    }
+
+    /// A Project file by its Project-relative path, with its current
+    /// fingerprint (the one work evidence pins), or `None` when the path is
+    /// not a readable regular file reached through no symlink.
+    fn file_lookup(&self, project_id: &str, id: &str) -> Result<Option<ContextItem>, ContextError> {
+        if !valid_file_id(id) {
+            return Ok(None);
+        }
+        match self.workspace.execution_file_revision(project_id, None, id) {
+            Ok(revision) => Ok(Some(file_item(id, Some(revision), None))),
+            Err(error) if file_missing(&error) => Ok(None),
+            Err(error) => Err(source_error(error)),
+        }
     }
 
     fn conversation(
@@ -1129,19 +1222,32 @@ impl ProjectContext {
         detail: Detail,
         cursor: Option<&str>,
     ) -> Result<ContextDocument, ContextError> {
-        let item = self
-            .lookup(project_id, reference)?
-            .ok_or(ContextError::NotFound)?;
-        let current = item.reference.revision.clone().unwrap_or_default();
-        let availability = if item.availability == Availability::Removed {
-            Availability::Removed
+        let item = if reference.kind == ContextKind::File {
+            // A metadata check only: the page read below fingerprints the file
+            // from the same descriptor as its text.
+            valid_id(&reference.id)?;
+            (valid_file_id(&reference.id)
+                && self
+                    .workspace
+                    .execution_file_exists(project_id, None, &reference.id))
+            .then(|| file_item(&reference.id, None, None))
         } else {
-            compare(reference.revision.as_deref(), &current)
+            self.lookup(project_id, reference)?
+        }
+        .ok_or(ContextError::NotFound)?;
+        let availability = match &item.reference.revision {
+            _ if item.availability == Availability::Removed => Availability::Removed,
+            // A file's fingerprint arrives with its page, below.
+            None if reference.kind == ContextKind::File => Availability::Available,
+            current => compare(
+                reference.revision.as_deref(),
+                current.as_deref().unwrap_or_default(),
+            ),
         };
         let mut doc = ContextDocument::new(&item, detail, availability);
         doc.section("Summary", &item.summary);
         if availability == Availability::Changed {
-            doc.note("This source changed after the revision that was referenced; showing its current state.");
+            doc.note(CHANGED_NOTE);
         }
         let depth = level(detail);
         match reference.kind {
@@ -1178,9 +1284,87 @@ impl ProjectContext {
             ContextKind::Channel => {
                 self.read_channel(project_id, &reference.id, depth, cursor, &mut doc)?
             }
+            ContextKind::File => {
+                self.read_file(project_id, reference, cursor, &mut doc)?;
+            }
+        }
+        if doc.availability == Availability::Removed {
+            doc.shown_revision = None;
         }
         doc.bound();
         Ok(doc)
+    }
+
+    /// One page of a Project file. The cursor carries the offset and a tag of
+    /// the revision it was issued for, so a file that changes between pages
+    /// is reported as changed and two versions are never spliced together.
+    fn read_file(
+        &self,
+        project_id: &str,
+        reference: &ContextRef,
+        cursor: Option<&str>,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let position = decode_file_cursor(cursor)?;
+        let offset = position.as_ref().map_or(0, |(offset, _)| *offset);
+        let requested = reference.revision.as_deref();
+        match self.workspace.read_text_page(
+            project_id,
+            None,
+            &reference.id,
+            offset,
+            TEXT_READ_BYTES,
+        ) {
+            Ok(page) => {
+                doc.reference.revision = Some(page.revision.clone());
+                if let Some((_, tag)) = &position
+                    && *tag != revision_tag(&page.revision)
+                {
+                    doc.availability = Availability::Changed;
+                    doc.shown_revision = None;
+                    doc.note(
+                        "The file changed while it was being read; reopen it to read the current version.",
+                    );
+                    return Ok(());
+                }
+                doc.availability = compare(requested, &page.revision);
+                if doc.availability == Availability::Changed {
+                    doc.note(CHANGED_NOTE);
+                }
+                doc.section_verbatim("Content", &page.text);
+                if let Some(next) = page.next_offset {
+                    doc.next_cursor = Some(encode_file_cursor(next, &page.revision));
+                    doc.note(format!(
+                        "Showing bytes {}–{} of {}; read again with next_cursor for the rest.",
+                        offset + 1,
+                        next,
+                        page.size
+                    ));
+                }
+                doc.shown_revision = Some(page.revision);
+            }
+            Err(crate::workspace::WorkspaceError::UnsupportedText) => {
+                // Nothing is shown, but the reader saw this version of it.
+                match self
+                    .workspace
+                    .execution_file_revision(project_id, None, &reference.id)
+                {
+                    Ok(revision) => {
+                        doc.availability = compare(requested, &revision);
+                        doc.reference.revision = Some(revision.clone());
+                        doc.shown_revision = Some(revision);
+                    }
+                    Err(_) => doc.availability = Availability::Removed,
+                }
+                doc.note("The file is not UTF-8 text, so no content is shown.");
+            }
+            Err(_) => {
+                // Gone or unreadable between lookup and read: not usable context.
+                doc.availability = Availability::Removed;
+                doc.note("The file could not be read; it may have been removed.");
+            }
+        }
+        Ok(())
     }
 
     fn read_research(

@@ -1625,3 +1625,246 @@ fn a_message_cannot_pose_as_another_authors_line() {
         "the forged line is indented under its real message: {text}"
     );
 }
+
+// -- Project files as references (ADR 0231 §1) ----------------------------------------------------
+
+impl World {
+    fn project_root(&self) -> std::path::PathBuf {
+        self.f.workspace.project_path(&self.f.project_id).unwrap()
+    }
+
+    /// Every page of a file, in order, as (text, shown revision).
+    fn read_all_pages(&self, reference: &ContextRef) -> Vec<(String, Option<String>)> {
+        let mut pages = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let doc = self
+                .context
+                .read(
+                    &self.f.project_id,
+                    reference,
+                    Detail::Content,
+                    cursor.as_deref(),
+                )
+                .unwrap();
+            pages.push((self.text(&doc), doc.shown_revision.clone()));
+            match doc.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+        pages
+    }
+}
+
+#[test]
+fn a_file_reference_reads_and_resolves_with_the_work_evidence_fingerprint() {
+    let w = world();
+    let root = w.project_root();
+    fs::create_dir_all(root.join("results")).unwrap();
+    fs::write(
+        root.join("results/summary.csv"),
+        "model,accuracy\nbase,0.91\n",
+    )
+    .unwrap();
+    let reference = ContextRef::new(ContextKind::File, "results/summary.csv");
+    let fingerprint =
+        w.f.workspace
+            .execution_file_revision(&w.f.project_id, None, "results/summary.csv")
+            .unwrap();
+    let evidence = crate::work_agent::Evidence::new(
+        Arc::new(ProjectContext::new(
+            Arc::clone(&w.f.agents),
+            Arc::clone(&w.f.teams),
+            Arc::clone(&w.f.research),
+            Arc::clone(&w.f.experiments),
+            Arc::clone(&w.work),
+            Arc::clone(&w.channels),
+            Arc::clone(&w.f.workspace),
+        )),
+        Arc::clone(&w.f.workspace),
+    );
+    assert_eq!(
+        evidence.current_revision(&w.f.project_id, "file", "results/summary.csv"),
+        Some(fingerprint.clone()),
+        "work evidence pins files with the same fingerprint"
+    );
+
+    let doc = w.read(&reference, Detail::Summary);
+    assert_eq!(doc.title, "results/summary.csv");
+    assert_eq!(doc.availability, Availability::Available);
+    assert_eq!(
+        doc.reference.revision.as_deref(),
+        Some(fingerprint.as_str())
+    );
+    assert_eq!(doc.shown_revision.as_deref(), Some(fingerprint.as_str()));
+    assert_eq!(doc.sections.len(), 1);
+    assert_eq!(doc.sections[0].heading, "Content");
+    assert_eq!(doc.sections[0].text, "model,accuracy\nbase,0.91\n");
+    assert!(doc.next_cursor.is_none());
+
+    let resolved = w
+        .context
+        .resolve(&w.f.project_id, std::slice::from_ref(&reference))
+        .unwrap();
+    assert_eq!(resolved[0].availability, Availability::Available);
+    assert_eq!(
+        resolved[0].current_revision.as_deref(),
+        Some(fingerprint.as_str())
+    );
+
+    // A pinned reference to an earlier version reads the current text and says so.
+    let pinned = ContextRef::at(ContextKind::File, "results/summary.csv", &fingerprint);
+    fs::write(
+        root.join("results/summary.csv"),
+        "model,accuracy\nbase,0.50\n",
+    )
+    .unwrap();
+    let doc = w.read(&pinned, Detail::Content);
+    assert_eq!(doc.availability, Availability::Changed);
+    assert!(w.text(&doc).contains("0.50"));
+    assert_ne!(doc.shown_revision.as_deref(), Some(fingerprint.as_str()));
+    assert!(doc.notes.iter().any(|note| note.contains("changed")));
+    let resolved = w
+        .context
+        .resolve(&w.f.project_id, std::slice::from_ref(&pinned))
+        .unwrap();
+    assert_eq!(resolved[0].availability, Availability::Changed);
+
+    // Over the hashing cap the fingerprint is size and modification time.
+    let big = vec![b'x'; 8 * 1024 * 1024 + 1];
+    fs::write(root.join("big.txt"), &big).unwrap();
+    let doc = w.read(
+        &ContextRef::new(ContextKind::File, "big.txt"),
+        Detail::Content,
+    );
+    let revision = doc.shown_revision.clone().unwrap();
+    assert!(revision.starts_with("large:"), "{revision}");
+    assert_eq!(
+        Some(revision),
+        evidence.current_revision(&w.f.project_id, "file", "big.txt")
+    );
+    assert!(doc.next_cursor.is_some(), "a large file pages too");
+
+    fs::remove_file(root.join("results/summary.csv")).unwrap();
+    let resolved = w.context.resolve(&w.f.project_id, &[pinned]).unwrap();
+    assert_eq!(resolved[0].availability, Availability::Removed);
+}
+
+#[test]
+fn a_long_file_is_read_a_page_at_a_time_without_losing_boundary_characters() {
+    let w = world();
+    // Multi-byte characters straddle page edges, and whitespace sits on them.
+    let mut text = String::new();
+    while text.len() < 20 * 1024 {
+        text.push_str("é line with ünïcode ✓   \n    indented\n");
+    }
+    fs::write(w.project_root().join("notes.md"), &text).unwrap();
+    let pages = w.read_all_pages(&ContextRef::new(ContextKind::File, "notes.md"));
+    assert_eq!(pages.len(), 3, "20 KiB in 8 KiB pages");
+    let joined: String = pages.iter().map(|(text, _)| text.as_str()).collect();
+    assert_eq!(joined, text, "nothing at a page edge was lost or trimmed");
+    let first = pages[0].1.clone();
+    assert!(first.is_some());
+    assert!(pages.iter().all(|(_, shown)| *shown == first));
+}
+
+#[test]
+fn a_file_changed_between_pages_is_reported_changed_not_spliced() {
+    let w = world();
+    let path = w.project_root().join("log.txt");
+    fs::write(&path, "a".repeat(20 * 1024)).unwrap();
+    let reference = ContextRef::new(ContextKind::File, "log.txt");
+    let first = w.read(&reference, Detail::Content);
+    let cursor = first.next_cursor.clone().expect("more to read");
+    fs::write(&path, "b".repeat(20 * 1024)).unwrap();
+    let next = w
+        .context
+        .read(&w.f.project_id, &reference, Detail::Content, Some(&cursor))
+        .unwrap();
+    assert_eq!(next.availability, Availability::Changed);
+    assert!(
+        next.sections.is_empty(),
+        "no text of another version is shown"
+    );
+    assert!(next.next_cursor.is_none());
+    assert!(next.shown_revision.is_none());
+    assert!(next.notes.iter().any(|note| note.contains("changed while")));
+    // A forged or foreign cursor is refused rather than guessed at.
+    for forged in ["%%%", "Zjo1", &encode_cursor(10)] {
+        assert!(matches!(
+            w.context
+                .read(&w.f.project_id, &reference, Detail::Content, Some(forged)),
+            Err(ContextError::Invalid(_))
+        ));
+    }
+}
+
+#[test]
+fn file_references_cannot_escape_name_git_follow_symlinks_or_block_on_a_fifo() {
+    let w = world();
+    let root = w.project_root();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join(".git/config"), "[core]").unwrap();
+    fs::create_dir_all(root.join("sub/.git")).unwrap();
+    fs::write(root.join("sub/.git/HEAD"), "ref").unwrap();
+    let outside = root.parent().unwrap().join("outside-secret.txt");
+    fs::write(&outside, "secret").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("link.txt")).unwrap();
+    std::os::unix::fs::symlink(root.parent().unwrap(), root.join("up")).unwrap();
+    let fifo = root.join("pipe");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    fs::create_dir_all(root.join("folder")).unwrap();
+    // A dot file that is named explicitly is readable, as in work evidence.
+    fs::write(root.join(".env.example"), "KEY=").unwrap();
+    assert!(
+        w.context
+            .read(
+                &w.f.project_id,
+                &ContextRef::new(ContextKind::File, ".env.example"),
+                Detail::Content,
+                None
+            )
+            .is_ok()
+    );
+    let refused = [
+        "../outside-secret.txt",
+        "/etc/passwd",
+        ".git/config",
+        "sub/.git/HEAD",
+        "./notes",
+        "a//b",
+        "a\\b",
+        "link.txt",
+        "up/outside-secret.txt",
+        "pipe",
+        "folder",
+        "missing.txt",
+        ".state/kubecode.sqlite3",
+    ];
+    let refs: Vec<ContextRef> = refused
+        .iter()
+        .map(|id| ContextRef::new(ContextKind::File, *id))
+        .collect();
+    for reference in &refs {
+        assert!(
+            matches!(
+                w.context
+                    .read(&w.f.project_id, reference, Detail::Evidence, None),
+                Err(ContextError::NotFound)
+            ),
+            "{} must not be readable",
+            reference.id
+        );
+    }
+    let resolved = w.context.resolve(&w.f.project_id, &refs).unwrap();
+    assert!(
+        resolved
+            .iter()
+            .all(|r| r.availability == Availability::Removed && r.current_revision.is_none())
+    );
+}

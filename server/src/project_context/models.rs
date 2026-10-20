@@ -22,7 +22,9 @@ pub const MAX_ID_CHARS: usize = 512;
 
 macro_rules! text_enum {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+        #[derive(
+            Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+        )]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($variant),+
@@ -61,7 +63,28 @@ text_enum!(ContextKind {
     Work => "work",
     Thread => "thread",
     Channel => "channel",
+    File => "file",
 });
+
+impl ContextKind {
+    /// What a search covers when it names no kinds: every kind except Project
+    /// files, which are walked on disk only when a caller asks (ADR 0231 §1).
+    pub const DEFAULT_SEARCH: &'static [ContextKind] = &[
+        Self::Research,
+        Self::Round,
+        Self::Finding,
+        Self::Session,
+        Self::SessionTurn,
+        Self::Team,
+        Self::TeamTask,
+        Self::Import,
+        Self::Experiment,
+        Self::Artifact,
+        Self::Work,
+        Self::Thread,
+        Self::Channel,
+    ];
+}
 
 text_enum!(Detail {
     Summary => "summary",
@@ -151,6 +174,11 @@ pub struct ContextDocument {
     pub next_cursor: Option<String>,
     /// Plain-language caveats: a newer brief exists, a turn is still running...
     pub notes: Vec<String>,
+    /// The revision of the content the sections show: an older pinned brief,
+    /// the bytes of a file page. `None` when nothing of the record is shown
+    /// (removed, or changed while it was being paged).
+    #[serde(default)]
+    pub shown_revision: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
