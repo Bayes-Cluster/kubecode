@@ -284,6 +284,36 @@ impl TaskStore {
         Ok(())
     }
 
+    /// Sets the research status an admitted Task's lifecycle implies, in the
+    /// same transaction as the step that implies it, announcing the research
+    /// change as the research store does (ADR 0230 §1).
+    fn mirror_status(
+        tx: &Transaction<'_>,
+        project_id: &str,
+        research_id: &str,
+        status: ResearchStatus,
+    ) -> Result<(), TaskError> {
+        let changed = tx.execute(
+            "UPDATE research_questions
+             SET status = ?3,
+                 resolved_at = CASE WHEN ?3 = 'resolved' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND project_id = ?2 AND status != ?3",
+            params![research_id, project_id, status.as_str()],
+        )?;
+        if changed > 0 {
+            tx.execute(
+                "INSERT INTO workspace_events (kind, project_id, payload)
+                 VALUES ('research_updated', ?1, ?2)",
+                params![
+                    project_id,
+                    json!({"research_id": research_id, "change": "status"}).to_string()
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
     /// A unique-index violation is a lost race with the same request, not a
     /// storage fault.
     fn lost_race(error: rusqlite::Error, what: &'static str) -> TaskError {
@@ -1227,10 +1257,15 @@ impl TaskStore {
                 .assume_coordinator(project_id, &round.id, &session, &Actor::Researcher)?;
         }
         let finished = self.write(|tx| {
-            tx.execute(
+            let linked = tx.execute(
                 "UPDATE task_authorizations SET round_id = ?2 WHERE id = ?1 AND round_id IS NULL",
                 params![record.id, round.id],
             )?;
+            // An iterated question is open again, with the step that reopens
+            // it; an old instruction replayed does not reopen it.
+            if linked > 0 {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Open)?;
+            }
             let logged: i64 = tx.query_row(
                 "SELECT COUNT(*) FROM task_events
                  WHERE research_id = ?1 AND kind = 'execution_authorized' AND ref_id = ?2",
@@ -1255,14 +1290,6 @@ impl TaskStore {
                 Some((project_id.to_owned(), research_id.to_owned())),
             ))
         })?;
-        // An iterated question is open again; an old instruction replayed does not reopen it.
-        if created
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Open)
-        {
-            eprintln!("WARN: could not reopen an iterated question: {error}");
-        }
         self.acknowledge(
             project_id,
             caller,
@@ -1525,6 +1552,10 @@ impl TaskStore {
                 if accept { "review_accepted" } else { "review_returned" },
                 Some(&id),
             )?;
+            // A Done Task's question is resolved, in the same write.
+            if accept {
+                Self::mirror_status(tx, project_id, research_id, ResearchStatus::Resolved)?;
+            }
             let review = tx.query_row(
                 "SELECT id, research_id, request_id, accepted, outcome, reason, brief_revision, created_at
                  FROM task_reviews WHERE id = ?1",
@@ -1573,13 +1604,6 @@ impl TaskStore {
             },
         ) {
             eprintln!("WARN: could not record a Task review in the question's log: {error}");
-        }
-        if stored.accepted
-            && let Err(error) =
-                self.research
-                    .set_status(project_id, research_id, ResearchStatus::Resolved)
-        {
-            eprintln!("WARN: could not resolve the question of an accepted Task: {error}");
         }
         match self.channels.default_channel(project_id) {
             Ok(channel) => {

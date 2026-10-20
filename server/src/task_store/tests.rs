@@ -2091,3 +2091,83 @@ fn a_task_with_active_work_is_never_archived_whatever_its_stage() {
     r.tasks.set_archived(r.project(), &id, true).unwrap();
 }
 
+#[test]
+fn a_decision_and_the_status_it_implies_are_one_write() {
+    let r = rig();
+    let (id, _) = r.executing("Prune heads");
+    let request = r.ask_review(&id, "done");
+    let block = |on: bool| {
+        let database = r.f.agents.database();
+        let connection = database.lock().unwrap();
+        if on {
+            connection
+                .execute(
+                    "CREATE TEMP TRIGGER no_status BEFORE UPDATE OF status ON research_questions
+                     BEGIN SELECT RAISE(ABORT, 'status unavailable'); END",
+                    [],
+                )
+                .unwrap();
+        } else {
+            connection.execute("DROP TRIGGER no_status", []).unwrap();
+        }
+    };
+    // Accepting cannot leave a Done Task whose question is still open.
+    block(true);
+    assert!(
+        r.tasks
+            .review(
+                r.project(),
+                &id,
+                &request.id,
+                true,
+                WorkOutcome::Supported,
+                None
+            )
+            .is_err()
+    );
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Review),
+        "nothing was decided"
+    );
+    block(false);
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        r.f.research.get(r.project(), &id).unwrap().status,
+        ResearchStatus::Resolved
+    );
+    // Iterating cannot leave an In-progress Task whose question is resolved.
+    let iterate = r.say("Iterate on it");
+    block(true);
+    assert!(
+        r.tasks
+            .start_execution(r.project(), &r.general, &id, &iterate.id)
+            .is_err()
+    );
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    block(false);
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &iterate.id)
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::InProgress)
+    );
+    assert_eq!(
+        r.f.research.get(r.project(), &id).unwrap().status,
+        ResearchStatus::Open
+    );
+}
+
