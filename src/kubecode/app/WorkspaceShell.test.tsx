@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KubecodeApp } from '../App'
 
 import type { ChannelMessage, ChannelThread, KubecodeApi, Member, TaskCard } from '../api'
+import { permissionItem, reviewItem, snapshot } from '../attention/attentionFixtures'
 
 const member = (overrides: Partial<Member>): Member => ({
   id: 'm-general', project_id: 'project-1', role: 'general', template: 'general', name: 'General',
@@ -48,6 +49,10 @@ function api(overrides: Record<string, unknown> = {}) {
     }),
     taskBoard: vi.fn().mockResolvedValue({ cards: [card({})], stages: [], total: 1 }),
     taskDrafts: vi.fn().mockResolvedValue([]),
+    attention: vi.fn().mockResolvedValue(snapshot({
+      project_id: 'project-1',
+      items: [reviewItem({ project_id: 'project-1', task: { id: 'r1', title: 'Pruning' } })],
+    })),
     openMemberDm: vi.fn(),
     searchProjectContext: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
     memberDefaults: vi.fn().mockResolvedValue({ revision: 1, general: { agent_id: 'opencode', config: {}, instructions: '' }, templates: {} }),
@@ -243,6 +248,24 @@ describe('Workspace navigation and routes', () => {
     expect(within(nav).getByText('Review')).toBeInTheDocument()
     fireEvent.click(waiting)
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
+  })
+
+  it('opens a member’s permission request in the member’s private conversation', async () => {
+    const client = api({
+      attention: vi.fn().mockResolvedValue(snapshot({
+        project_id: 'project-1',
+        items: [permissionItem({ project_id: 'project-1', binding: 'dm', member: { id: 'm-analyst', name: 'Analyst', handle: 'analyst', role: 'specialist' } })],
+      })),
+      listMembers: vi.fn().mockResolvedValue({
+        members: [member({}), member({ id: 'm-analyst', role: 'specialist', name: 'Analyst', handle: 'analyst', dm_conversation_id: 'dm1' })],
+        general_id: 'm-general',
+      }),
+      memberDmTurns: vi.fn().mockResolvedValue([]),
+    })
+    render(<KubecodeApp api={client} />)
+    const nav = await screen.findByRole('region', { name: 'Workspace' })
+    fireEvent.click(await within(nav).findByRole('button', { name: /Analyst wants to use Run pytest -q/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst'))
   })
 
   it('keeps Files and Git out of the research views until asked for', async () => {

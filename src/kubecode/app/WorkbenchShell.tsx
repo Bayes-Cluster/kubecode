@@ -22,6 +22,10 @@ import { memberDirectory, MemberDirectoryContext } from '../members/memberDirect
 import { useMembers } from '../members/useMembers'
 import { ResourcesView } from '../resources/ResourcesView'
 import { useTaskBoard } from '../tasks/useTaskBoard'
+import { AttentionContext } from '../attention/attentionContext'
+import { attentionTarget, needsYouFromAttention } from '../attention/attentionTargets'
+import { useAttentionStore } from '../attention/useAttention'
+import { useAttentionSummary } from '../attention/useAttentionSummary'
 import { ChannelWorkspace } from '../channel/ChannelWorkspace'
 import { DmPane } from '../dm/DmPane'
 import { useChannelThreads, useDefaultChannel } from '../channel/useChannel'
@@ -34,7 +38,6 @@ import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
 import {
   KubecodeApi,
-  type AgentRun,
   type Conversation,
   type Member,
   type MemberDefaults,
@@ -68,7 +71,7 @@ import { INSPECTOR_PANELS } from './inspector/inspectorPanels'
 import { useInspectorPresentation } from './inspector/useInspectorPresentation'
 import { WithInspector } from './inspector/WithInspector'
 import type { InspectMode, InspectorEntry } from './location/inspector'
-import { needsYouFromCurrentSources, type NeedsYouTarget } from './location/needsYou'
+import type { NeedsYouTarget } from './location/needsYou'
 import { locationFromRoute, routeFromLocation } from './location/locationRoute'
 import { createPlaceMemory, placeKey, type Landing, type ReadingPosition } from './location/placeMemory'
 import { PlaceMemoryProvider } from './location/PlaceMemoryProvider'
@@ -325,17 +328,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setError,
   })
   const { agents, agentsRefreshing, layoutHydrated, refreshAgents } = bootstrap
-  const attentionSessions = useMemo(
-    () => sessionsRequiringInput(reconciliation.projectRuns, sessionCatalog),
-    [reconciliation.projectRuns, sessionCatalog],
-  )
-  /** What waits for the researcher in this Workspace, each saying where it opens. */
-  const needsYou = useMemo(() => needsYouFromCurrentSources(
-    taskBoard.board?.cards ?? [],
-    taskBoard.drafts,
-    attentionSessions.filter((item) => item.project_id === projectId),
-    t,
-  ), [attentionSessions, projectId, t, taskBoard.board, taskBoard.drafts])
+  /** What waits for the researcher in this Workspace (ADR 0232), one server projection. */
+  const attention = useAttentionStore(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
+  // The bell: the other Workspaces' counts (this one's entries are fresher, from its own snapshot).
+  const attentionSummary = useAttentionSummary(api, reconciliation.workspaceEvents, reconciliation.connectionState)
 
   // -- Moving the researcher -----------------------------------------------------------------
   /**
@@ -399,6 +395,28 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     narrowLayout,
     reservedWidth: contextVisible ? contextWidth : 0,
   })
+
+  /** Each decision once, worded, with the context that holds it. */
+  const needsYou = useMemo(
+    () => needsYouFromAttention(attention.snapshot, attention.resolving, t, { presentation }),
+    [attention.resolving, attention.snapshot, presentation, t],
+  )
+
+  const titlebarAttention = useMemo(() => {
+    const others = (attentionSummary?.workspaces ?? [])
+      .filter((counts) => counts.project_id !== projectId)
+      .map((counts) => ({
+        projectId: counts.project_id,
+        name: projects.find((candidate) => candidate.id === counts.project_id)?.name ?? counts.project_id,
+        count: counts.decisions + counts.setup + counts.permissions,
+      }))
+      .filter((other) => other.count > 0)
+    return {
+      current: needsYou,
+      others,
+      total: needsYou.length + others.reduce((sum, other) => sum + other.count, 0),
+    }
+  }, [attentionSummary, needsYou, projectId, projects])
 
   const openPlace = useCallback((target: PlaceTarget, options: OpenPlaceOptions = {}) => {
     if (!projectId) return
@@ -490,15 +508,42 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setSettingsOpen(false)
   }, [openPlace])
 
-  /** Opens what a Needs-you entry is about, where the entry says. */
+  /**
+   * Opens what a Needs-you entry is about, where the entry says, and focuses
+   * the decision there (ADR 0232). A Task opens on the section that holds it.
+   */
   const openNeedsYouTarget = useCallback((target: NeedsYouTarget) => {
-    if (target.session) openSession(target.session.conversationId, target.session.projectId)
-    else if (target.place) openPlace(target.place, target.inspect ? { inspect: target.inspect } : undefined)
-    else if (target.inspect) {
+    const { focus } = target
+    if (projectId && target.inspect?.kind === 'task' && focus) {
+      const section = focus.startsWith('review:') ? 'results' : focus.startsWith('question:') ? 'overview' : null
+      if (section) placeMemory.set(`${placeKey.task(projectId, target.inspect.id)}#tab`, section)
+    }
+    if (target.session) {
+      openSession(target.session.conversationId, target.session.projectId)
+      if (focus) pendingFocusRef.current = focus
+      closeNavigatorSheet()
+    } else if (target.place) {
+      openPlace(target.place, { ...(target.inspect ? { inspect: target.inspect } : { inspector: 'closed' as const }), focus })
+    } else if (target.inspect) {
       inspect(target.inspect)
+      if (focus) pendingFocusRef.current = focus
       closeNavigatorSheet()
     }
-  }, [closeNavigatorSheet, inspect, openPlace, openSession])
+  }, [closeNavigatorSheet, inspect, openPlace, openSession, placeMemory, projectId])
+
+  /**
+   * A notification opens what it is about: a decision of this Workspace where
+   * it is made (a member's prompt in General or the DM), otherwise the Session.
+   */
+  const openNotified = useCallback((nextProjectId: string, nextConversationId: string) => {
+    const waiting = nextProjectId === projectId
+      ? attention.snapshot?.items.find((item) => (
+        (item.kind === 'permission' || item.kind === 'input') && item.conversation_id === nextConversationId
+      ))
+      : undefined
+    if (waiting) openNeedsYouTarget(attentionTarget(waiting, presentation))
+    else openSession(nextConversationId, nextProjectId)
+  }, [attention.snapshot, openNeedsYouTarget, openSession, presentation, projectId])
 
   const navigation = useMemo<WorkspaceNavigation | null>(() => (projectId ? {
     projectId,
@@ -954,10 +999,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     <WorkspaceNavigationContext.Provider value={navigation}>
     <MemberDirectoryContext.Provider value={directory}>
     <InspectorServicesContext.Provider value={inspectorServices}>
+    <AttentionContext.Provider value={attention}>
     <main className="kubecode-app">
       <p className="sr-only" role="status">{announcement}</p>
       <WorkbenchTitlebar
-        attentionSessions={attentionSessions}
+        attention={titlebarAttention}
         connectionState={reconciliation.connectionState}
         contextOpen={contextVisible}
         conversation={conversation}
@@ -966,13 +1012,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         locale={locale}
         narrowLayout={narrowLayout}
         onContextOpenChange={setContextVisible}
-        onOpenSession={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
+        onOpenTarget={openNeedsYouTarget}
+        onOpenWorkspaceNeeds={(nextProjectId) => {
+          enterWorkspace(nextProjectId)
+          setSessionSidebarOpen(true)
+        }}
         onRetryConnection={reconciliation.retry}
         onSessionSidebarOpenChange={setSessionSidebarOpen}
         onTerminalOpenChange={setTerminalOpen}
         placeLabel={placeLabel}
         project={project}
-        projects={projects}
         sessionSidebarOpen={sessionSidebarOpen}
         t={t}
         terminalOpen={terminalOpen}
@@ -1061,7 +1110,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
                 members={liveMembers ?? NO_MEMBERS}
                 needsYou={needsYou}
+                needsYouIncomplete={(attention.snapshot?.incomplete.length ?? 0) > 0}
+                needsYouStatus={attention.status}
                 taskCount={taskBoard.board?.total ?? 0}
+                undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
+                onRetryNeedsYou={attention.reload}
                 t={t}
                 onInspectMember={(memberId) => {
                   inspect({ kind: 'member', id: memberId })
@@ -1246,7 +1299,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           untitledSession: t('kubecode.untitledSession'),
         }}
         events={reconciliation.workspaceEvents}
-        onOpenSession={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
+        onOpenSession={openNotified}
         preferences={notifications}
         projects={projects}
       />
@@ -1377,29 +1430,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         workspaceEvents={reconciliation.workspaceEvents}
       />
     </main>
+    </AttentionContext.Provider>
     </InspectorServicesContext.Provider>
     </MemberDirectoryContext.Provider>
     </WorkspaceNavigationContext.Provider>
     </PlaceMemoryProvider>
     </SystemMessageProvider>
   )
-}
-
-function sessionsRequiringInput(
-  projectRuns: Record<string, AgentRun[]>,
-  conversations: Conversation[],
-): Conversation[] {
-  const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
-  const requiringInput = new Map<string, Conversation>()
-  for (const runs of Object.values(projectRuns)) {
-    const latestRuns = new Map<string, AgentRun>()
-    for (const run of runs) latestRuns.set(run.conversation_id, run)
-    for (const run of latestRuns.values()) {
-      const conversation = conversationsById.get(run.conversation_id)
-      if (run.status === 'waiting_permission' && conversation) requiringInput.set(conversation.id, conversation)
-    }
-  }
-  return [...requiringInput.values()]
 }
 
 function notificationBody(

@@ -12,14 +12,15 @@ const project: Project = { id: 'project-1', name: 'Demo', path: '/demo', workspa
 function titlebar(overrides: Partial<WorkbenchTitlebarProps> = {}) {
   const handlers = {
     onContextOpenChange: vi.fn(),
-    onOpenSession: vi.fn(),
+    onOpenTarget: vi.fn(),
+    onOpenWorkspaceNeeds: vi.fn(),
     onRetryConnection: vi.fn(),
     onSessionSidebarOpenChange: vi.fn(),
     onTerminalOpenChange: vi.fn(),
   }
   const view = render(
     <WorkbenchTitlebar
-      attentionSessions={[]}
+      attention={{ current: [], others: [], total: 0 }}
       connectionState="live"
       contextOpen={false}
       conversation={null}
@@ -29,7 +30,6 @@ function titlebar(overrides: Partial<WorkbenchTitlebarProps> = {}) {
       narrowLayout={false}
       placeLabel={null}
       project={project}
-      projects={[project]}
       sessionSidebarOpen
       t={t}
       terminalOpen={false}
@@ -42,6 +42,31 @@ function titlebar(overrides: Partial<WorkbenchTitlebarProps> = {}) {
 }
 
 describe('WorkbenchTitlebar', () => {
+  it('has one bell for what needs the researcher in every Workspace, and opens each where it is decided', async () => {
+    const entry = {
+      key: 'permission:q1',
+      title: 'Analyst wants to use pytest',
+      reason: { label: 'Permission', tone: 'warn' as const },
+      target: { place: { view: 'general' as const }, focus: 'permission:q1' },
+    }
+    const { handlers } = titlebar({
+      attention: { current: [entry], others: [{ projectId: 'project-2', name: 'Other', count: 2 }], total: 3 },
+    })
+    const bell = screen.getByRole('button', { name: '3 things need you' })
+    fireEvent.pointerDown(bell, { button: 0, ctrlKey: false })
+    expect(await screen.findByText('This Workspace')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: /Analyst wants to use pytest/ }))
+    expect(handlers.onOpenTarget).toHaveBeenCalledWith(entry.target)
+    fireEvent.pointerDown(screen.getByRole('button', { name: '3 things need you' }), { button: 0, ctrlKey: false })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Other: 2' }))
+    expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-2')
+  })
+
+  it('shows no bell when nothing waits', () => {
+    titlebar()
+    expect(screen.queryByRole('button', { name: /things need you/ })).not.toBeInTheDocument()
+  })
+
   it('says which Workspace and place is on screen, and searches nothing it cannot name', () => {
     const { container } = titlebar({ placeLabel: 'Kanban' })
     const leading = container.querySelector('.kubecode-topbar-leading')
@@ -61,7 +86,7 @@ describe('WorkbenchTitlebar', () => {
     expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('Demo')
     rerender(
       <WorkbenchTitlebar
-        attentionSessions={[]}
+        attention={{ current: [], others: [], total: 0 }}
         connectionState="live"
         contextOpen={false}
         conversation={null}
@@ -71,14 +96,14 @@ describe('WorkbenchTitlebar', () => {
         narrowLayout={false}
         placeLabel={null}
         project={null}
-        projects={[]}
         searchSlot={<span>Scoped search</span>}
         sessionSidebarOpen
         t={t}
         terminalOpen={false}
         titlebarTargetRef={() => undefined}
         onContextOpenChange={vi.fn()}
-        onOpenSession={vi.fn()}
+        onOpenTarget={vi.fn()}
+        onOpenWorkspaceNeeds={vi.fn()}
         onRetryConnection={vi.fn()}
         onSessionSidebarOpenChange={vi.fn()}
         onTerminalOpenChange={vi.fn()}
