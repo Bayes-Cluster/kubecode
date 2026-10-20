@@ -1,15 +1,18 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { closeNavigationSheet, expectUrl, inspector, openGeneral, selectWorkspace, workspaceNav } from './shell'
+import { closeNavigationSheet, expectUrl, inspector, openGeneral, selectWorkspace, toggleNavigation, workspaceNav } from './shell'
 import { seedTaskInReview } from './taskFixtures'
 
 /**
  * Workspace places and the inspector stack (ADR 0228) against the real Runtime
- * under the non-root base path: a new Workspace opens General; each Workspace
- * comes back to its own place; General → Task → evidence → Back returns to the
- * same message with the unsent draft intact, on a desktop and on a 390px phone,
- * with the in-app Back and the browser's; links written before still resolve;
- * and no unrelated Session ever opens on the way.
+ * under the non-root base path: a new Workspace opens General, and so does one
+ * that already has a Session; each Workspace comes back to its own place;
+ * General → Task → evidence → Back returns to the same message with the unsent
+ * draft intact, on a desktop and on a 390px phone, with the in-app Back and the
+ * browser's; General's Task filter and the scroll of Kanban, Resources and
+ * Members survive a round trip; a member and a resource open in the inspector
+ * beside the view; links written before still resolve; and no unrelated
+ * Session ever opens on the way.
  */
 
 async function expectContained(page: Page) {
@@ -25,6 +28,29 @@ async function addProject(page: Page, projectPath: string, projectName: string) 
   await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
   await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('list', { name: 'Workspaces' }).getByRole('button', { name: projectName, exact: true })).toBeVisible({ timeout: 20_000 })
+}
+
+/**
+ * Scrolls a view's scroller part of the way down, clear of the bottom (which is
+ * remembered as "at the end"), and reports where it stopped; it must be able to
+ * scroll, or the round trip would prove nothing.
+ */
+async function scrollPartWay(page: Page, selector: string): Promise<number> {
+  const scroller = page.locator(selector).first()
+  await expect.poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(80)
+  const top = await scroller.evaluate((element) => {
+    element.scrollTop = Math.min(120, element.scrollHeight - element.clientHeight - 64)
+    element.dispatchEvent(new Event('scroll'))
+    return element.scrollTop
+  })
+  expect(top).toBeGreaterThan(0)
+  // The position is recorded on the next frame.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  return top
+}
+
+async function scrollOf(page: Page, selector: string): Promise<number> {
+  return page.locator(selector).first().evaluate((element) => element.scrollTop)
 }
 
 /** Whether the Sessions surface was ever on screen since the flag was last cleared. */
@@ -62,6 +88,17 @@ test('@smoke workspace navigation returns to each place, through the inspector s
   })
 
   try {
+    // A second Workspace that already has a Session: entering it must still open General.
+    const otherPath = `/tmp/${secondName}`
+    const created = await request.post(`${api}/projects`, { data: { kind: 'create', path: otherPath } })
+    expect(created.ok(), await created.text()).toBe(true)
+    const otherId = (await created.json() as { id: string }).id
+    registered.push(otherId)
+    const otherSession = await request.post(`${api}/projects/${otherId}/sessions`, {
+      data: { agent_id: 'opencode', title: 'Other execution' },
+    })
+    expect(otherSession.ok(), await otherSession.text()).toBe(true)
+
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(workspaceUrl)
 
@@ -138,6 +175,92 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(cited).toBeInViewport()
     await expect(page).toHaveURL(/\/general\/m\/[^?]+$/)
 
+    // 7a. General's Task filter survives a round trip; clearing it brings back the unfiltered draft.
+    const taskFilter = page.getByLabel('Show messages about')
+    await taskFilter.selectOption({ label: seed.taskTitle })
+    await expectUrl(page, `filter=${seed.taskId}`)
+    await nav.getByRole('button', { name: 'Resources' }).click()
+    await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
+    await openGeneral(page)
+    await expect(taskFilter).toHaveValue(seed.taskId)
+    await expectUrl(page, `filter=${seed.taskId}`)
+    await taskFilter.selectOption({ label: 'Everything' })
+    await expect(composer).toHaveValue(draft)
+    await expect(page).toHaveURL(/\/general(\/m\/[^?]+)?$/)
+
+    // 7b. A member's profile and a cited resource each open in the inspector beside General.
+    const notes = await request.post(`${api}/projects/${projectId}/research/${seed.evidenceId}/imports`, {
+      data: { origin: 'paste', label: 'Sweep notes', content: 'Heads 3 and 7 matter most.', client_request_id: `notes-${stamp}` },
+    })
+    expect(notes.ok(), await notes.text()).toBe(true)
+    const importId = (await notes.json() as { id: string }).id
+    const posted = await request.post(`${api}/projects/${projectId}/channels/${seed.channelId}/messages`, {
+      data: { body: 'The sweep notes are attached.', client_message_id: `notes-message-${stamp}`, references: [{ kind: 'import', id: importId }] },
+    })
+    expect(posted.ok(), await posted.text()).toBe(true)
+    const notesMessage = page.locator(`[data-message-id="${(await posted.json() as { id: string }).id}"]`)
+    const members = await (await request.get(`${api}/projects/${projectId}/members`)).json() as {
+      members: Array<{ name: string; role: string }>
+    }
+    const managerName = members.members.find((member) => member.role === 'general')?.name
+    if (!managerName) throw new Error('the Workspace has no General Agent')
+    await nav.getByRole('list', { name: 'Agents' }).getByRole('button', { name: managerName, exact: true }).click()
+    await expect(inspector(page, managerName)).toBeVisible()
+    await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+    await expectUrl(page, 'inspect=member~')
+    await inspector(page, managerName).getByRole('button', { name: 'Close details' }).click()
+    await expect(notesMessage).toBeVisible({ timeout: 30_000 })
+    await notesMessage.getByRole('list', { name: 'References' }).getByRole('button', { name: /Imported discussion/ }).click()
+    const resource = inspector(page, 'Resource details')
+    await expect(resource).toBeVisible()
+    await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+    await expect(page.locator('.kubecode-session-context-row')).toHaveAttribute('data-inspector-layout', 'side')
+    await expectUrl(page, `inspect=resource~import~${importId}`)
+    await resource.getByRole('button', { name: 'Close details' }).click()
+    await expect(page.getByRole('complementary', { name: 'Resource details' })).toHaveCount(0)
+
+    // 7c. Resources opens a row in its own inspector, beside the list.
+    await nav.getByRole('button', { name: 'Resources' }).click()
+    await page.getByRole('option', { name: /Sweep notes/ }).click()
+    await page.getByRole('region', { name: 'Project work preview' }).getByRole('button', { name: 'Open' }).click()
+    await expect(inspector(page, 'Resource details')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
+    await inspector(page, 'Resource details').getByRole('button', { name: 'Close details' }).click()
+
+    // 7d. Kanban, Resources and Members each come back scrolled where they were left (a
+    // short, narrow window, where the board's columns stack and every list overflows).
+    for (let index = 0; index < 8; index += 1) {
+      const more = await request.post(`${api}/projects/${projectId}/research/${seed.evidenceId}/imports`, {
+        data: { origin: 'paste', label: `Sweep log ${index + 1}`, content: `Run ${index + 1}.`, client_request_id: `log-${stamp}-${index}` },
+      })
+      expect(more.ok(), await more.text()).toBe(true)
+    }
+    await page.setViewportSize({ width: 900, height: 300 })
+    await closeNavigationSheet(page)
+    const go = async (view: string | RegExp) => {
+      await toggleNavigation(page)
+      await workspaceNav(page).getByRole('button', { name: view }).first().click()
+      await closeNavigationSheet(page)
+    }
+    for (const [view, scroller] of [
+      [/^Kanban/, '.kubecode-task-board'],
+      ['Resources', '[data-testid="project-work-results"]'],
+      ['Members', '.kubecode-members-view'],
+    ] as const) {
+      await go(view)
+      const left = await scrollPartWay(page, scroller)
+      await go('General')
+      await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+      await go(view)
+      await expect.poll(() => scrollOf(page, scroller)).toBe(left)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+    // The sheet was put away on the narrow window; on a wide one the navigation is a column again.
+    await toggleNavigation(page)
+    await expect(workspaceNav(page)).toBeVisible()
+    await openGeneral(page)
+    await expect(composer).toHaveValue(draft)
+
     // 8. The browser's Back walks the inspector stack one level at a time.
     await cited.getByRole('button', { name: /Task: Pruning heads/ }).click()
     await expect(task).toBeVisible()
@@ -150,11 +273,12 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(page.getByRole('complementary', { name: 'Task details' })).toHaveCount(0)
     await expect(composer).toHaveValue(draft)
 
-    // 9. A second Workspace opens General; the first comes back to its own place and draft.
-    await addProject(page, `/tmp/${secondName}`, secondName)
-    const otherId = await projectIdOf(secondName)
+    // 9. The second Workspace opens General, never its Session; the first comes back to its own place and draft.
+    await selectWorkspace(page, secondName)
     await expect(page).toHaveURL(new RegExp(`#/p/${otherId}/general$`))
+    await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
     await expect(composer).toHaveValue('')
+    expect(await sessionSeen(page)).toBe(false)
     await selectWorkspace(page, firstName)
     await expect(page).toHaveURL(new RegExp(`#/p/${projectId}/general/m/[^?]+$`))
     await expect(composer).toHaveValue(draft)
@@ -186,8 +310,18 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expectContained(page)
     await phoneTask.getByRole('region', { name: 'Results for your review' })
       .getByRole('button', { name: `research:${seed.evidenceId}` }).click()
-    await expect(inspector(page, 'Evidence details')).toBeVisible()
+    const phoneEvidence = inspector(page, 'Evidence details')
+    await expect(phoneEvidence).toBeVisible()
+    await expect(phoneEvidence.getByRole('button', { name: 'Close details' })).toHaveCount(0)
     await expectContained(page)
+    // The in-app Back leaves the evidence for the Task, one level.
+    await phoneEvidence.getByRole('button', { name: `Back to ${seed.taskTitle}` }).click()
+    await expect(phoneTask).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Evidence details' })).toHaveCount(0)
+    // So does the browser's.
+    await phoneTask.getByRole('region', { name: 'Results for your review' })
+      .getByRole('button', { name: `research:${seed.evidenceId}` }).click()
+    await expect(phoneEvidence).toBeVisible()
     await page.goBack()
     await expect(phoneTask).toBeVisible()
     await phoneTask.getByRole('button', { name: 'Back to General' }).click()
