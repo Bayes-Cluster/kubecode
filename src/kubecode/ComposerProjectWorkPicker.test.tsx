@@ -151,12 +151,13 @@ describe('ComposerProjectWorkPicker', () => {
     const preview = await screen.findByRole('region', { name: 'Project work preview' })
     expect(await within(preview).findByText('run-9 [completed] the sweep')).toBeInTheDocument()
     expect(within(preview).getByText('A turn is still running.')).toBeInTheDocument()
+    // Read live through the one record reader (ADR 0231 §4).
     expect(api.readProjectContext).toHaveBeenCalledWith(
-      'project-1', { kind: 'session', id: 'session-2', revision: '1' }, 'content',
+      'project-1', { kind: 'session', id: 'session-2' }, 'content',
     )
     // Previewing selected nothing.
     expect(onSelect).not.toHaveBeenCalled()
-    fireEvent.click(within(preview).getByRole('button', { name: 'Reference Session turn: Turn: the sweep' }))
+    fireEvent.click(within(preview).getByRole('button', { name: 'Turn: the sweep' }))
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({
       ref: { kind: 'session_turn', id: 'session-2/run-9', revision: '1' },
     }))
@@ -174,7 +175,7 @@ describe('ComposerProjectWorkPicker', () => {
     })
     await screen.findByRole('option')
     fireEvent.click(screen.getByRole('button', { name: 'Preview selected' }))
-    expect(await screen.findByText('The preview could not be loaded.')).toBeInTheDocument()
+    expect(await screen.findByText('Could not load this record.')).toBeInTheDocument()
   })
 
   it('shows an error when the search fails and loads further pages on request', async () => {
@@ -277,6 +278,23 @@ describe('ComposerProjectWorkPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     expect(await screen.findByText('Could not load more results.')).toBeInTheDocument()
     expect(screen.getByText('First')).toBeInTheDocument()
+  })
+
+  it('never offers a Project file, and says when a kind was cut short', async () => {
+    setup([
+      item('research', 'r1', 'Pruning'),
+      item('file', 'results/summary.csv', 'results/summary.csv'),
+    ], {
+      searchProjectContext: vi.fn().mockResolvedValue({
+        items: [item('research', 'r1', 'Pruning'), item('file', 'results/summary.csv', 'results/summary.csv')],
+        next_cursor: null,
+        truncated: true,
+        truncated_kinds: ['session'],
+      }),
+    })
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+    expect(screen.queryByText('results/summary.csv')).not.toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('Only the most recent Session were searched.')
   })
 
   it('shows the revision and says whether a source changed or was removed', async () => {

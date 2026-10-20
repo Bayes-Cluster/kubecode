@@ -44,14 +44,23 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('EvidenceViewer', () => {
   it('reports a file once it is on screen, at the revision the read returned, with the cited one labelled', async () => {
-    const readFile = vi.fn().mockResolvedValue({ content: 'acc,0.50', revision: 'c3', path: 'results.csv' })
-    const { onDisplayed } = mount({ kind: 'file', id: 'results.csv', revision: 'a1' }, { readFile })
+    // A file is read through the context reader, with the fingerprint evidence is pinned with (ADR 0231 §1).
+    const readProjectContext = vi.fn().mockResolvedValue(document({
+      ref: { kind: 'file', id: 'results.csv', revision: 'c3c3c3c3c3c3c3c3' },
+      title: 'results.csv',
+      sections: [{ heading: 'Content', text: 'acc,0.50', truncated: false }],
+      related: [],
+      shown_revision: 'c3c3c3c3c3c3c3c3',
+    }))
+    const { onDisplayed } = mount({ kind: 'file', id: 'results.csv', revision: 'a1a1a1a1a1a1a1a1' }, { readProjectContext })
     expect(onDisplayed).not.toHaveBeenCalled()
     expect(await screen.findByText('acc,0.50')).toBeInTheDocument()
-    await waitFor(() => expect(onDisplayed).toHaveBeenCalledWith({ kind: 'file', id: 'results.csv', revision: 'c3', title: 'results.csv' }))
+    expect(readProjectContext).toHaveBeenCalledWith('p1', { kind: 'file', id: 'results.csv' }, 'content')
+    await waitFor(() => expect(onDisplayed).toHaveBeenCalledWith({ kind: 'file', id: 'results.csv', revision: 'c3c3c3c3c3c3c3c3', title: 'results.csv' }))
     expect(onDisplayed).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Cited at revision a1')).toBeInTheDocument()
-    expect(screen.getByTestId('evidence-viewer')).toHaveAttribute('data-shown-revision', 'c3')
+    // Versions in words, never raw fingerprints.
+    expect(screen.getByText('Cited at revision #a1a1a1a')).toBeInTheDocument()
+    expect(screen.getByTestId('evidence-viewer')).toHaveAttribute('data-shown-revision', 'c3c3c3c3c3c3c3c3')
   })
 
   it('reports a Project record at its own reference revision', async () => {
@@ -65,8 +74,8 @@ describe('EvidenceViewer', () => {
     ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
     ['a record that is gone', () => Promise.reject(new ApiError('not_found', 'x', 404))],
   ])('never reports %s as displayed, and says it failed', async (_name, read) => {
-    const readFile = vi.fn().mockImplementation(read)
-    const { onDisplayed, onFailed } = mount({ kind: 'file', id: 'results.csv', revision: 'a1' }, { readFile })
+    const readProjectContext = vi.fn().mockImplementation(read)
+    const { onDisplayed, onFailed } = mount({ kind: 'file', id: 'results.csv', revision: 'a1' }, { readProjectContext })
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     await settle()
     expect(onDisplayed).not.toHaveBeenCalled()

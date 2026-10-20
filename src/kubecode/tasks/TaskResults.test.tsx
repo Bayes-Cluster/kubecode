@@ -7,7 +7,7 @@ import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import { INSPECTOR_PANELS, type InspectorPanelProps } from '../app/inspector/inspectorPanels'
 import { fakeNavigation, fakeServices, renderInspector } from '../app/inspector/inspectorTesting'
 import type { InspectorEntry } from '../app/location/inspector'
-import { evidenceRow, reviewRequest, taskDetail } from './taskFixtures'
+import { evidenceRow, fileDocument, reviewRequest, taskDetail } from './taskFixtures'
 import { TaskResults } from './TaskResults'
 import { useTaskDetail } from './useTaskDetail'
 
@@ -31,7 +31,7 @@ function mount(details: TaskDetail | TaskDetail[], overrides: Partial<Record<key
     taskDetail,
     reviewTask: vi.fn().mockResolvedValue({ id: 'v1', accepted: false, general_message_id: 'gm1' }),
     repinTaskEvidence: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockResolvedValue({ content: 'accuracy,0.50', revision: 'b', path: 'results.csv' }),
+    readProjectContext: vi.fn().mockResolvedValue(fileDocument('results.csv', 'accuracy,0.50', 'b')),
     ...overrides,
   } as unknown as KubecodeApi
   const navigation = fakeNavigation()
@@ -55,7 +55,7 @@ const backToTask = () => fireEvent.click(screen.getByRole('button', { name: 'Bac
 describe('TaskResults', () => {
   it('never accepts a version whose read failed: the button stays disabled and says why', async () => {
     const { api } = mount(taskDetail({ evidence: [changed('b')] }), {
-      readFile: vi.fn().mockRejectedValue(new ApiError('internal', 'x', 500)),
+      readProjectContext: vi.fn().mockRejectedValue(new ApiError('internal', 'x', 500)),
     })
     expect(await screen.findByText('Changed since cited')).toBeInTheDocument()
     expect(acceptShown()).toBeDisabled()
@@ -83,7 +83,7 @@ describe('TaskResults', () => {
   it('reloads once when the record changed after the list loaded, then accepts the version that was shown', async () => {
     const { api, taskDetail: load } = mount(
       [taskDetail({ evidence: [changed('b')] }), taskDetail({ evidence: [changed('c')] })],
-      { readFile: vi.fn().mockResolvedValue({ content: 'accuracy,0.40', revision: 'c', path: 'results.csv' }) },
+      { readProjectContext: vi.fn().mockResolvedValue(fileDocument('results.csv', 'accuracy,0.40', 'c')) },
     )
     await lookAt()
     await screen.findByText('Showing version c')

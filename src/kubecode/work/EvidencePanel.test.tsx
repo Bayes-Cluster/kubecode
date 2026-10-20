@@ -7,6 +7,7 @@ import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import { INSPECTOR_PANELS } from '../app/inspector/inspectorPanels'
 import { fakeServices, renderInspector } from '../app/inspector/inspectorTesting'
 import type { InspectorEntry } from '../app/location/inspector'
+import { fileDocument } from '../tasks/taskFixtures'
 
 /** Stands in for the Task under the evidence: it reads what the stack recorded. */
 function RecordProbe() {
@@ -109,8 +110,8 @@ describe('EvidencePanel', () => {
   })
 
   it('records a Project file at the revision it read', async () => {
-    const readFile = vi.fn().mockResolvedValue({ content: 'acc,0.91', revision: 'f9', path: 'results.csv' })
-    mount({ kind: 'evidence', ref: { kind: 'file', id: 'results.csv' } }, { readFile })
+    const readProjectContext = vi.fn().mockResolvedValue(fileDocument('results.csv', 'acc,0.91', 'f9'))
+    mount({ kind: 'evidence', ref: { kind: 'file', id: 'results.csv' } }, { readProjectContext })
     expect(await screen.findByText('acc,0.91')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('file displayed f9')).toBeInTheDocument())
     expect(screen.getByText('artifact never displayed')).toBeInTheDocument()

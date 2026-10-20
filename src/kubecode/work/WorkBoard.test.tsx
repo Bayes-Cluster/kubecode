@@ -8,6 +8,7 @@ import { ApiError } from '../api'
 import { WorkBoard } from './WorkBoard'
 import { moveRequest, StartKeys } from './workModel'
 import { boardOf, detailOf, workApi, workCard } from './workFixtures'
+import { fileDocument } from '../tasks/taskFixtures'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
   values ? `${key}:${JSON.stringify(values)}` : key
@@ -648,20 +649,21 @@ describe('WorkBoard evidence review', () => {
   })
 
   it('shows a cited file as it is now and says it changed since it was cited', async () => {
-    const readFile = vi.fn().mockResolvedValue({ path: 'notes.md', content: 'pruning hurts', revision: 'new-rev' })
+    // Read through the context reader, with the fingerprint evidence is pinned with (ADR 0231 §1).
+    const readProjectContext = vi.fn().mockResolvedValue(fileDocument('notes.md', 'pruning hurts', 'bbbbbbbbbbbbbbbb'))
     open(detailOf(card, {
       results: [{
         id: 'x', task_id: 'w1', attempt_id: null, role: 'evidence', kind: 'file', ref_id: 'notes.md',
-        revision: 'old-rev', created_at: '',
+        revision: 'aaaaaaaaaaaaaaaa', created_at: '',
       }],
-    }), { readFile })
+    }), { readProjectContext })
     fireEvent.click(await screen.findByTestId('work-card-w1'))
     const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
     fireEvent.click(await within(inspector).findByRole('button', { name: 'kubecode.work.evidence.view: notes.md' }))
     expect(await within(inspector).findByText('pruning hurts')).toBeInTheDocument()
-    expect(readFile).toHaveBeenCalledWith('p1', 'notes.md')
+    expect(readProjectContext).toHaveBeenCalledWith('p1', { kind: 'file', id: 'notes.md' }, 'content')
     expect(inspector).toHaveTextContent('kubecode.work.evidence.changed')
-    expect(inspector).toHaveTextContent('kubecode.work.evidence.pinned:{"revision":"old-rev"}')
+    expect(inspector).toHaveTextContent('kubecode.work.evidence.pinned:{"revision":"kubecode.reference.version.digest:{\\"revision\\":\\"aaaaaaa\\"}"}')
   })
 
   it('says plainly when a cited record is gone or cannot be read, and pages long output', async () => {
