@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import type { ProjectContextItem } from '../api'
+import type { DraftReference } from '../resources/draftReferences'
 import { memberDirectory } from '../members/memberDirectory'
 import { analyst, channelMessage, general, member, writer } from '../members/memberFixtures'
 import { authorView } from '../members/memberIdentity'
@@ -26,11 +26,9 @@ const fromAgent = (memberId: string | null, extra = {}) => channelMessage(4, {
   author_kind: 'agent', author_ref: 's-x', author_member_id: memberId, body: 'Ran the sweep; accuracy held.', ...extra,
 })
 const reply = (draft: GeneralDraft, message = fromAgent('a')) => withReply(draft, message, authorView(message, directory, [], t), directory)
-const picked = (kind: ProjectContextItem['ref']['kind'], id: string): ProjectContextItem => ({
-  ref: { kind, id, revision: 'v1' }, title: id, summary: '',
-  provenance: { author: null, updated_at: null, research_id: null, parent: null, state: null },
-  availability: 'available',
-} as ProjectContextItem)
+const picked = (kind: DraftReference['ref']['kind'], id: string): DraftReference => ({
+  ref: { kind, id, revision: 'v1' }, title: id, seen: 'listed',
+})
 
 describe('emptyGeneralDraft', () => {
   it('is about the Task General is showing', () => {

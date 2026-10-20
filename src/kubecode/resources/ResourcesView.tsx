@@ -1,57 +1,94 @@
-import { useRef, useState } from 'react'
+import { useContext, useRef, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import { ViewHeader } from '@/components/workspace/ViewHeader'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import type { KubecodeApi, ProjectContextItem, ProjectContextRef } from '../api'
-import { useScrollMemory } from '../app/location/placeMemory'
-import { ComposerProjectWorkPicker, type ProjectWorkListStatus } from '../ComposerProjectWorkPicker'
+import type { KubecodeApi, WorkspaceEvent } from '../api'
+import { InspectorServicesContext } from '../app/inspector/inspectorContext'
+import { placeKey, useScrollMemory } from '../app/location/placeMemory'
+import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
+import { useAttachTarget } from './attachTarget'
+import { previewEntryFor } from './referenceKinds'
+import type { WorkspaceSearchState } from './useWorkspaceSearch'
+import { WorkspaceSearch } from './WorkspaceSearch'
 
 export type ResourcesViewProps = {
   api: KubecodeApi
   projectId: string
+  workspaceName: string
+  events: readonly WorkspaceEvent[]
   t: Translator
-  /**
-   * Opens the item where references open (ADR 0228 §3): a record or a Task in
-   * this view's inspector, a Session, Thread, or work item where it lives.
-   */
-  onOpen: (reference: ProjectContextRef) => void
-  /**
-   * Where the place keeps the results' scroll position, the search, the kind
-   * filter, and the open preview (`placeKey.view`).
-   */
-  stateKey?: string | null
+  locale?: string
 }
 
 /**
- * What the Workspace has produced and can cite: research, findings, work,
- * experiments, artifacts, imports, and Sessions, read-only. It is the same
- * reader the Composer's reference picker uses, so what is found here is what
- * can be cited in a message. Choosing a row previews it; the preview opens
- * the record in this view's inspector, beside the list.
+ * Everything the Workspace has produced and can cite, as a preview-first
+ * library (ADR 0231 §4): choosing a result opens it in the inspector beside
+ * the list (or over it on a phone), and never leaves the view. Going where a
+ * record lives is an action inside its preview. While a General draft waits
+ * for a reference, the view says so and offers the way back.
  */
-export function ResourcesView({ api, onOpen, projectId, stateKey = null, t }: ResourcesViewProps) {
+export function ResourcesView({ api, events, locale, projectId, t, workspaceName }: ResourcesViewProps) {
+  const navigation = useWorkspaceNavigation()
+  const services = useContext(InspectorServicesContext)
+  const [target, setTarget] = useAttachTarget(projectId)
   const results = useRef<HTMLDivElement>(null)
+  const memoryKey = placeKey.view(projectId, 'resources')
   // The results load after arrival: the scroll position is put back once they are in.
-  const [listStatus, setListStatus] = useState<ProjectWorkListStatus>('loading')
-  useScrollMemory(results, stateKey, { ready: listStatus !== 'loading' })
+  const [status, setStatus] = useState<WorkspaceSearchState['status']>('loading')
+  useScrollMemory(results, memoryKey, { ready: status === 'ready' || status === 'idle' || status === 'error' })
+  const shown = navigation.location.inspector[0]
+  const selectedKey = shown?.kind === 'resource' ? `${shown.ref.kind}:${shown.ref.id}`
+    : shown?.kind === 'task' ? `research:${shown.id}` : null
+  const cards = services?.taskBoard?.board?.cards ?? []
+
   return (
     <section aria-label={t('kubecode.nav.resources')} className="kubecode-resources">
-      <header className="kubecode-channel-header">
-        <div>
-          <h2>{t('kubecode.nav.resources')}</h2>
-          <p className="kubecode-research-muted">{t('kubecode.resources.subtitle')}</p>
+      <ViewHeader
+        className="kubecode-channel-header"
+        description={t('kubecode.resources.description')}
+        icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.resources.Icon} />}
+        title={t('kubecode.nav.resources')}
+      />
+      {target && (
+        <div className="kubecode-attach-bar" role="status">
+          <span>{t('kubecode.resources.attachBanner', { place: t('kubecode.resources.placeGeneral') })}</span>
+          <Button
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setTarget(null)
+              navigation.openPlace({ view: 'general', filter: target.filter }, { inspector: 'closed', focus: target.focusKey })
+            }}
+          >
+            {t('kubecode.resources.returnToMessage')}
+          </Button>
+          <Button size="sm" type="button" variant="ghost" onClick={() => setTarget(null)}>
+            {t('kubecode.resources.stopAdding')}
+          </Button>
         </div>
-      </header>
-      <ComposerProjectWorkPicker
+      )}
+      <WorkspaceSearch
         api={api}
-        conversationId=""
+        events={events}
+        inputFocusKey="resources:search"
+        listRef={results}
+        locale={locale}
+        memoryKey={memoryKey}
+        mode="browse"
         projectId={projectId}
+        selectedKey={selectedKey}
         t={t}
-        onListStatusChange={setListStatus}
-        onOpen={(item: ProjectContextItem) => onOpen(item.ref)}
-        onSelect={() => undefined}
-        resultsRef={results}
-        stateKey={stateKey}
+        taskTitle={(id) => cards.find((card) => card.id === id)?.title}
+        workspaceName={workspaceName}
+        onChoose={(result, focusKey) => {
+          navigation.inspect(previewEntryFor(result.item.ref, { attaching: target !== null }), { mode: 'reset', from: focusKey })
+        }}
+        onStatusChange={setStatus}
       />
     </section>
   )

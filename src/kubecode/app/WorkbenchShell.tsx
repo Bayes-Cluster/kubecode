@@ -20,7 +20,9 @@ import { TaskBoardView } from '../tasks/TaskBoardView'
 import { MembersView } from '../members/MembersView'
 import { memberDirectory, MemberDirectoryContext } from '../members/memberDirectory'
 import { useMembers } from '../members/useMembers'
+import { ReferenceResolverProvider } from '../resources/ReferenceResolverProvider'
 import { ResourcesView } from '../resources/ResourcesView'
+import { WorkspaceSearchLauncher } from '../resources/WorkspaceSearchLauncher'
 import { useTaskBoard } from '../tasks/useTaskBoard'
 import { ChannelWorkspace } from '../channel/ChannelWorkspace'
 import { DmPane } from '../dm/DmPane'
@@ -500,6 +502,9 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     }
   }, [closeNavigatorSheet, inspect, openPlace, openSession])
 
+  // General's Task filter as this Workspace last showed it: where a reference found elsewhere lands.
+  const rememberedGeneralPlace = projectId ? workspaceLocation.memory.workspaces[projectId]?.views.general?.place : undefined
+  const rememberedGeneralFilter = rememberedGeneralPlace?.view === 'general' ? rememberedGeneralPlace.filter ?? null : null
   const navigation = useMemo<WorkspaceNavigation | null>(() => (projectId ? {
     projectId,
     location,
@@ -511,7 +516,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     openReference,
     openSession,
     switchWorkspace: enterWorkspace,
-  } : null), [enterWorkspace, inspect, location, openPlace, openReference, openSession, openTaskFromMessage, patchGeneral, presentation, projectId])
+    rememberedGeneral: () => ({ filter: rememberedGeneralFilter }),
+  } : null), [
+    enterWorkspace, inspect, location, openPlace, openReference, openSession, openTaskFromMessage, patchGeneral,
+    presentation, projectId, rememberedGeneralFilter,
+  ])
 
   // Every way the active Workspace changes (a row, a link, a Session elsewhere, a removal) makes it the last used.
   useEffect(() => {
@@ -858,6 +867,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const commandPaletteHostActions = createHostActionRegistry({
     addProject: () => setProjectDialog(true),
     focusSessionSearch: () => focusSessionSearchTarget.current?.(),
+    // Run by the palette below, where moving to Resources is an event, not render work.
+    searchWorkspace: () => undefined,
     newSession: () => setSessionDialog(true),
     openSettings: () => {
       setSettingsSection('general')
@@ -887,8 +898,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       'focus-session-search',
       'new-session',
       'open-settings',
+      'search-workspace',
     ].includes(action.id)
     setCommandPaletteOpen(false)
+    if (action.id === 'search-workspace') {
+      openPlace({ view: 'resources' }, { focus: 'resources:search' })
+      return
+    }
     action.execute()
   }
 
@@ -954,6 +970,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     <WorkspaceNavigationContext.Provider value={navigation}>
     <MemberDirectoryContext.Provider value={directory}>
     <InspectorServicesContext.Provider value={inspectorServices}>
+    <ReferenceResolverProvider api={api} events={reconciliation.workspaceEvents} projectId={projectId}>
     <main className="kubecode-app">
       <p className="sr-only" role="status">{announcement}</p>
       <WorkbenchTitlebar
@@ -973,6 +990,17 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         placeLabel={placeLabel}
         project={project}
         projects={projects}
+        searchSlot={projectId ? (
+          <WorkspaceSearchLauncher
+            api={api}
+            events={reconciliation.workspaceEvents}
+            key={projectId}
+            locale={locale}
+            narrow={narrowLayout}
+            t={t}
+            workspaceName={project?.name ?? t('kubecode.appName')}
+          />
+        ) : undefined}
         sessionSidebarOpen={sessionSidebarOpen}
         t={t}
         terminalOpen={terminalOpen}
@@ -1122,10 +1150,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               <WithInspector inspector={inspectorPane} presentation={presentation}>
                 <ResourcesView
                   api={api}
+                  events={reconciliation.workspaceEvents}
+                  locale={locale}
                   projectId={projectId}
-                  stateKey={placeKey.view(projectId, 'resources')}
                   t={t}
-                  onOpen={openReference}
+                  workspaceName={project?.name ?? t('kubecode.appName')}
                 />
               </WithInspector>
             ) : place.view === 'members' ? (
@@ -1171,6 +1200,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 projectId={projectId}
                 research={research.items}
                 t={t}
+                workspaceName={project?.name ?? t('kubecode.appName')}
               />
             ) : place.view === 'question' ? (
               <ResearchWorkspace
@@ -1377,6 +1407,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         workspaceEvents={reconciliation.workspaceEvents}
       />
     </main>
+    </ReferenceResolverProvider>
     </InspectorServicesContext.Provider>
     </MemberDirectoryContext.Provider>
     </WorkspaceNavigationContext.Provider>

@@ -78,6 +78,8 @@ export type ChannelWorkspaceProps = {
   t: Translator
   /** The app's language, for dates and times (the translator's language). */
   locale?: AppLocale
+  /** The Workspace's name, for what Add context searches. */
+  workspaceName?: string
 }
 
 /**
@@ -109,6 +111,7 @@ export function ChannelWorkspace({
   projectId,
   research,
   t,
+  workspaceName,
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const directory = useMemberDirectory()
@@ -347,10 +350,13 @@ export function ChannelWorkspace({
             api={api}
             directory={directory}
             draft={draft}
+            events={events}
+            filter={taskFilter}
             focusKey="composer:general"
             // Each view of General has its own composer: a send in flight stays with the view it was sent from.
             key={placeKey.general(projectId, taskFilter)}
             labels={labels}
+            locale={locale}
             placeholder={t('kubecode.channel.composerPlaceholder')}
             projectId={projectId}
             t={t}
@@ -358,6 +364,7 @@ export function ChannelWorkspace({
             onDraftChange={setDraft}
             onSend={send}
             onSent={sent}
+            workspaceName={workspaceName}
           />
         )}
       </div>

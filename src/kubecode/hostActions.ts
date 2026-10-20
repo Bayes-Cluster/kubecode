@@ -3,6 +3,8 @@ import type { TranslationKey } from '@/lib/i18n'
 export type HostActionHandlers = {
   addProject: () => void
   focusSessionSearch: () => void
+  /** Workspace search (ADR 0231 §2), separate from Session search. */
+  searchWorkspace: () => void
   newSession: () => void
   openSettings: () => void
   toggleContext: () => void
@@ -22,6 +24,7 @@ const HOST_ACTION_DEFINITIONS = [
   { id: 'new-session', handler: 'newSession', labelKey: 'kubecode.newSession', projectRequired: true },
   { id: 'open-settings', handler: 'openSettings', labelKey: 'kubecode.settings' },
   { id: 'focus-session-search', handler: 'focusSessionSearch', labelKey: 'kubecode.searchSessions' },
+  { id: 'search-workspace', handler: 'searchWorkspace', labelKey: 'kubecode.search.searchWorkspace', projectRequired: true },
   { id: 'toggle-navigator', handler: 'toggleNavigator', labelKey: 'kubecode.toggleNavigation' },
   { id: 'toggle-context', handler: 'toggleContext', labelKey: 'kubecode.toggleContext', projectRequired: true },
   { id: 'toggle-terminal', handler: 'toggleTerminal', labelKey: 'kubecode.toggleTerminal', projectRequired: true },

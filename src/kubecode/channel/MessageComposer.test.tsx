@@ -4,29 +4,42 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import { ApiError, type ChannelMessage, type KubecodeApi, type ProjectContextItem } from '../api'
+import { ApiError, type ChannelMessage, type KubecodeApi, type ProjectContextRef } from '../api'
 import { createPlaceMemory, placeKey, usePlaceState, type PlaceMemory } from '../app/location/placeMemory'
 import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { memberDirectory, type MemberDirectory } from '../members/memberDirectory'
 import { analyst, channelMessage, general, member, writer } from '../members/memberFixtures'
 import { localReferenceLabels } from '../references/referenceLabels'
+import type { AddContextDialogProps } from '../resources/AddContextDialog'
+import type { DraftReference } from '../resources/draftReferences'
+import { ReferenceResolverProvider } from '../resources/ReferenceResolverProvider'
 import { emptyGeneralDraft, type GeneralDraft } from './generalDraft'
 import { MessageComposer, type MessageComposerProps } from './MessageComposer'
 
-const pickable = (kind: 'research' | 'artifact', id: string, title: string) => ({
-  ref: { kind, id, revision: '3' },
+const pickable = (kind: 'research' | 'artifact', id: string, title: string, revision = '3'): DraftReference => ({
+  ref: { kind, id, revision },
   title,
-}) as unknown as ProjectContextItem
+  seen: 'previewed',
+})
 
-// The picker is covered by its own tests; here it only hands back a reference.
-vi.mock('../ComposerProjectWorkPicker', () => ({
-  ComposerProjectWorkPicker: ({ onSelect }: { onSelect: (item: ProjectContextItem) => void }) => (
-    <div>
-      <button type="button" onClick={() => onSelect(pickable('artifact', 'a1', 'results.csv'))}>pick results</button>
-      <button type="button" onClick={() => onSelect(pickable('artifact', 'a2', 'plot.png'))}>pick plot</button>
-      <button type="button" onClick={() => onSelect(pickable('research', 'r2', 'Quantization'))}>pick Quantization</button>
-    </div>
-  ),
+// Add context is covered by its own tests; here it only hands back a versioned reference and closes.
+vi.mock('../resources/AddContextDialog', () => ({
+  AddContextDialog: ({ onAttach, onCloseAutoFocus, onOpenChange, open }: AddContextDialogProps) => {
+    if (!open) return null
+    const pick = (reference: DraftReference) => {
+      onAttach(reference)
+      onOpenChange(false)
+      onCloseAutoFocus?.(new Event('close'))
+    }
+    return (
+      <div>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a1', 'results.csv'))}>pick results</button>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a1', 'results.csv', '4'))}>pick newer results</button>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a2', 'plot.png'))}>pick plot</button>
+        <button type="button" onClick={() => pick(pickable('research', 'r2', 'Quantization'))}>pick Quantization</button>
+      </div>
+    )
+  },
 }))
 
 const t = createTranslator('en')
@@ -212,6 +225,55 @@ describe('MessageComposer', () => {
     expect(within(about).getByText('Quantization')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove reference results.csv' }))
     expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(2)
+  })
+
+  it('names each attached reference by kind, title and version, replaces another version, and announces it', async () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
+    expect(screen.getByText('Added results.csv to your message.')).toBeInTheDocument()
+    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    expect(within(about).getByText('v3')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
+    expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(1)
+    expect(within(about).getByText('v4')).toBeInTheDocument()
+    expect(screen.getByText('Updated results.csv to the version you previewed.')).toBeInTheDocument()
+  })
+
+  it('puts the caret back where it was when Add context closes', async () => {
+    render(<Harness />)
+    type('compare with the baseline')
+    box().setSelectionRange(8, 8)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    box().setSelectionRange(0, 0)
+    fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
+    expect(box()).toHaveFocus()
+    expect(box().selectionStart).toBe(8)
+    expect(box().value).toBe('compare with the baseline')
+  })
+
+  it('will not send a reference to something that no longer exists, and says which', async () => {
+    const onSend = vi.fn().mockResolvedValue(saved())
+    const resolveProjectContext = vi.fn().mockImplementation((_p: string, refs: ProjectContextRef[]) => Promise.resolve(refs.map((ref) => ({
+      ref, availability: ref.id === 'a1' ? 'removed' : 'available', current_revision: null, title: null,
+    }))))
+    const initial: GeneralDraft = { ...emptyGeneralDraft(null), references: [pickable('artifact', 'a1', 'results.csv'), pickable('artifact', 'a2', 'plot.png')] }
+    render(
+      <ReferenceResolverProvider api={{ resolveProjectContext } as unknown as KubecodeApi} events={[]} projectId="p1">
+        <Harness initial={initial} onSend={onSend} />
+      </ReferenceResolverProvider>,
+    )
+    expect(await screen.findByText('No longer exists')).toBeInTheDocument()
+    type('see these')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('results.csv no longer exists. Remove it to send.')
+    expect(onSend).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove reference results.csv' })).toHaveFocus())
+    fireEvent.click(screen.getByRole('button', { name: 'Remove reference results.csv' }))
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'artifact', id: 'a2', revision: '3' }])
   })
 
   it('puts "@" at the caret for a mention', () => {

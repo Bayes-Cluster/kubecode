@@ -73,11 +73,11 @@ describe('reference kinds', () => {
 
     const thread = goToTargetFor({ kind: 'thread', id: 't1' }, provenance)
     thread?.run(navigation)
-    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'general', thread: 't1' }, { inspector: 'closed' })
+    expect(navigation.openReference).toHaveBeenCalledWith({ kind: 'thread', id: 't1' })
 
     const session = goToTargetFor({ kind: 'session', id: 's1' }, provenance)
     session?.run(navigation)
-    expect(navigation.openSession).toHaveBeenCalledWith('s1')
+    expect(navigation.openReference).toHaveBeenCalledWith({ kind: 'session', id: 's1' })
 
     expect(goToTargetFor({ kind: 'file', id: 'a.csv' }, provenance)).toBeNull()
     expect(goToTargetFor({ kind: 'research', id: 'r1' }, { ...provenance, research_id: 'r1' })?.label)

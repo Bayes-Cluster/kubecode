@@ -81,6 +81,8 @@ export function localReferenceLabels({ picked, research, sessions, t, threads }:
         : ref.kind === 'session' ? sessions.find((item) => item.id === ref.id)?.title
           : undefined
     const title = known
+      // A file is named by its path: that is its title everywhere.
+      || (ref.kind === 'file' ? ref.id : undefined)
       || picked.find((item) => item.ref.kind === ref.kind && item.ref.id === ref.id)?.title
       || t('kubecode.reference.untitled', { kind: kindLabel })
     return { kind: objectKindOf(ref.kind), kindLabel, title }

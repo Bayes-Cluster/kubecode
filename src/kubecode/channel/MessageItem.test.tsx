@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import type { ChannelThread } from '../api'
+import type { ChannelThread, KubecodeApi, ProjectContextRef } from '../api'
 import { memberDirectory } from '../members/memberDirectory'
 import { analyst, channelMessage, general, writer } from '../members/memberFixtures'
 import { authorView, memberView, messageRecipients, researcherView } from '../members/memberIdentity'
+import { ReferenceResolverProvider } from '../resources/ReferenceResolverProvider'
 import { MessageItem, type MessageItemProps } from './MessageItem'
 
 const t = createTranslator('en')
@@ -45,6 +46,43 @@ async function openMore(name: RegExp | string) {
   fireEvent.pointerDown(screen.getByRole('button', { name }), { button: 0, ctrlKey: false, pointerType: 'mouse' })
   return screen.findAllByRole('menuitem')
 }
+
+describe('MessageItem references', () => {
+  it('names each cited record by kind, title and the version cited, says when it changed, and never shows an id', async () => {
+    const resolveProjectContext = vi.fn().mockImplementation((_p: string, refs: ProjectContextRef[]) => Promise.resolve(refs.map((ref) => ({
+      ref, availability: 'changed', current_revision: 'ffffffffffffffff', title: 'results/summary.csv',
+    }))))
+    const message = channelMessage(4, { body: 'compare', task_id: null })
+    const on = {
+      reply: vi.fn(), openTask: vi.fn(), filterTask: vi.fn(), openReference: vi.fn(), openThread: vi.fn(),
+      jump: vi.fn(), copyLink: vi.fn(), copyText: vi.fn(),
+    }
+    const ref = { kind: 'file' as const, id: 'results/summary.csv', revision: '3f2c1a9e5b7d4c6a8e0f' }
+    render(
+      <ReferenceResolverProvider api={{ resolveProjectContext } as unknown as KubecodeApi} events={[]} projectId="p1">
+        <MessageItem
+          author={authorView(message, directory, [], t)}
+          cited={null}
+          coarse={false}
+          continued={false}
+          dateLocale="en-US"
+          delivery={null}
+          filtered={false}
+          message={message}
+          on={on}
+          recipients={messageRecipients(message, directory, [], t)}
+          references={[{ ref, kind: 'file', kindLabel: 'File', title: 'results/summary.csv' }]}
+          t={t}
+          task={null}
+        />
+      </ReferenceResolverProvider>,
+    )
+    const chip = await screen.findByRole('button', { name: 'File results/summary.csv #3f2c1a9 Changed since cited' })
+    expect(screen.getByRole('article')).not.toHaveTextContent('3f2c1a9e5b7d')
+    fireEvent.click(chip)
+    expect(on.openReference).toHaveBeenCalledWith(ref)
+  })
+})
 
 describe('MessageItem', () => {
   it('names its author and recipients as members, never by a Session id', () => {

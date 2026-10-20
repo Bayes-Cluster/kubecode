@@ -73,11 +73,12 @@ export function goToTargetFor(
   if (ref.kind === 'thread') {
     return {
       label: 'kubecode.resources.goTo.thread',
-      run: (navigation) => navigation.openPlace({ view: 'general', thread: ref.id }, { inspector: 'closed' }),
+      // The shared mapping: the Thread in General, without General's remembered Task or filter.
+      run: (navigation) => navigation.openReference({ kind: 'thread', id: ref.id }),
     }
   }
   if (ref.kind === 'session') {
-    return { label: 'kubecode.resources.goTo.session', run: (navigation) => navigation.openSession(ref.id) }
+    return { label: 'kubecode.resources.goTo.session', run: (navigation) => navigation.openReference({ kind: 'session', id: ref.id }) }
   }
   const task = ref.kind === 'research' ? ref.id : provenance?.research_id
   if (task) {
