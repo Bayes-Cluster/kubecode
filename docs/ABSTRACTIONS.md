@@ -1474,6 +1474,15 @@ view **header**. Stopping a run and pausing new work in a named scope are
 separate controls, and a research **decision** is always text-labelled and says
 why when it cannot be made. See ADR 0227.
 
+Conversation-shaped presentation — messages with authors, long research
+responses, inline citations, sources, recorded activity, tool calls, internal
+work steps, queues, and pending decisions — comes from adapted shadcn **AI
+Elements** that compose these primitives and share one token layer aligned with
+the Harness reference. They present server projections and never decide
+anything themselves: a confirmation's actions are decisions, a suggestion only
+fills a draft. Fixture prototypes of the main screens open at `#/prototypes`.
+See ADR 0233.
+
 ## Members and the General Agent
 
 A **member** is a durable identity in a Workspace: the **General Agent** (the
