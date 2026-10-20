@@ -565,6 +565,16 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(Object.keys(storedLocations().workspaces)).toEqual(['project-2']))
   })
 
+  it('reaches a link without a Project in the active Workspace at once, with no extra history entry', async () => {
+    window.history.replaceState(null, '', '/#/resources')
+    const before = window.history.length
+    render(<KubecodeApp api={api()} />)
+    // Well within the time a link is otherwise waited for.
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/resources'), { timeout: 1_000 })
+    expect(await screen.findByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
+    expect(window.history.length).toBe(before)
+  })
+
   it('abandons a link to a Project that is not registered at once', async () => {
     window.history.replaceState(null, '', '/#/p/project-9/board')
     render(<KubecodeApp api={api()} />)

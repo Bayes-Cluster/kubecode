@@ -13,6 +13,7 @@ function Probe({
   delayed = false,
   moved = false,
   reject = false,
+  fillProject = false,
   mode,
 }: {
   ready?: boolean
@@ -20,6 +21,8 @@ function Probe({
   moved?: boolean
   /** The shell cannot honour the route (an unknown Project). */
   reject?: boolean
+  /** The shell reads a link without a Project as one for the active Project. */
+  fillProject?: boolean
   mode?: HistoryMode | (() => HistoryMode)
 }) {
   const [route, set] = useState<WorkspaceRoute>({ project: 'p1', view: 'sessions' })
@@ -32,7 +35,7 @@ function Probe({
     apply: (next) => {
       applied.push(next)
       if (reject) return false
-      if (!delayed) set(next)
+      if (!delayed) set(fillProject ? { ...next, project: next.project ?? 'p1' } : next)
       return true
     },
   })
@@ -64,6 +67,16 @@ describe('useWorkspaceRouteSync', () => {
     render(<Probe />)
     expect(applied).toEqual([{ project: 'p1', view: 'general', message: 'msg-1', task: 'r1' }])
     expect(window.location.hash).toBe('#/p/p1/general/m/msg-1?task=r1')
+  })
+
+  it('reaches a link without a Project at once in the active Project, with no extra history entry', () => {
+    window.history.replaceState(null, '', '/user/alice/kubecode/#/general')
+    const before = window.history.length
+    render(<Probe fillProject />)
+    expect(applied).toEqual([{ project: null, view: 'general' }])
+    expect(pending()).toBe('no')
+    expect(window.location.hash).toBe('#/p/p1/general')
+    expect(window.history.length).toBe(before)
   })
 
   it('waits until the shell is ready, and ignores a damaged link', () => {

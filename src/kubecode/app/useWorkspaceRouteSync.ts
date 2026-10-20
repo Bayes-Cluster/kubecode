@@ -18,9 +18,13 @@ function coarse(route: WorkspaceRoute): string {
   return `${route.project ?? ''}|${route.view}`
 }
 
-/** The shell is at the requested place, or at the view it narrows. */
+/**
+ * The shell is at the requested place, or at the view it narrows. A link
+ * without a Project (`#/general`) names a place in the active Project.
+ */
 function reached(current: WorkspaceRoute, text: string, requested: WorkspaceRoute): boolean {
-  return text === formatWorkspaceRoute(requested) || coarse(current) === coarse(requested)
+  const wanted = requested.project === null ? { ...requested, project: current.project } : requested
+  return text === formatWorkspaceRoute(wanted) || coarse(current) === coarse(wanted)
 }
 
 /** A valid link in the address that names somewhere other than `text`. */
