@@ -1305,6 +1305,16 @@ impl ProjectContext {
         }
     }
 
+    /// One record as search lists it (title, summary, current revision), or
+    /// `None` when it does not exist in this Project.
+    pub fn item(
+        &self,
+        project_id: &str,
+        reference: &ContextRef,
+    ) -> Result<Option<ContextItem>, ContextError> {
+        self.lookup(project_id, reference)
+    }
+
     /// The availability of a reference and its current revision.
     pub fn resolve(
         &self,

@@ -1,0 +1,232 @@
+import { useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { MemberIdentity } from '@/components/workspace/MemberIdentity'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
+import type { Translator } from '@/lib/i18n'
+
+import type { ResearchBrief, TaskDetail } from '../api'
+import { useInspectorEntry, useInspectorServices } from '../app/inspector/inspectorContext'
+import { ResearchBriefPanel } from '../research/ResearchBriefPanel'
+import type { ResearchBundle } from '../research/useResearch'
+import { conditionLabel } from './taskLabels'
+import { hasOpenReview, progressOf } from './taskLifecycle'
+import { useGeneralFromTask } from './taskNavigation'
+import { TaskQuestions } from './TaskQuestions'
+
+export type TaskOverviewProps = {
+  /** An admitted Task; null for a proposal, which shows only its goal. */
+  detail: TaskDetail | null
+  bundle: ResearchBundle | null
+  projectId: string
+  /** The brief editor is shown instead of the goal. */
+  editing: boolean
+  onEdit: () => void
+  onEditDone: () => void
+  onChanged: () => void
+  onBundleChanged: () => void
+  onOpenResults: () => void
+  onDiscuss: () => void
+}
+
+/**
+ * What a Task is and what it needs (ADR 0230 §3): what waits on the
+ * researcher, the goal, who authorized it in General, who works on it, and
+ * how far the work is.
+ */
+export function TaskOverview({
+  bundle,
+  detail,
+  editing,
+  onBundleChanged,
+  onChanged,
+  onDiscuss,
+  onEdit,
+  onEditDone,
+  onOpenResults,
+  projectId,
+}: TaskOverviewProps) {
+  const { api, t } = useInspectorServices()
+  const [edited, setEdited] = useState(false)
+  const brief = detail?.brief ?? bundle?.detail.brief ?? null
+  const archived = detail ? Boolean(detail.archived) : Boolean(bundle?.detail.archived)
+  const review = hasOpenReview(detail)
+  const questions = (detail?.open_questions.length ?? 0) > 0
+  const approval = detail !== null && detail.revision > detail.approved_revision
+  const suggestions = detail?.pending?.some((item) => item.kind === 'suggestion') ?? false
+  return (
+    <div className="kubecode-task-overview">
+      {detail && (review || questions || approval || suggestions) && (
+        <section aria-label={t('kubecode.task.waitingOnYou')} className="kubecode-task-waiting">
+          <h4>{t('kubecode.task.waitingOnYou')}</h4>
+          {review && (
+            <p>
+              {t('kubecode.task.reviewReady')}{' '}
+              <Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.openResults')}</Button>
+            </p>
+          )}
+          {questions && <TaskQuestions detail={detail} projectId={projectId} onChanged={onChanged} />}
+          {suggestions && (
+            <p>
+              {t('kubecode.task.suggestionsWaiting')}{' '}
+              <Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>
+            </p>
+          )}
+          {approval && (
+            <p>
+              {t('kubecode.task.staleApproval', { approved: detail.approved_revision })}{' '}
+              <Button size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>
+            </p>
+          )}
+        </section>
+      )}
+
+      <section aria-label={t('kubecode.task.goal')} className="kubecode-task-goal">
+        <h4>{t('kubecode.task.goal')}</h4>
+        {editing && bundle ? (
+          <ResearchBriefPanel
+            api={api}
+            detail={bundle.detail}
+            startEditing
+            t={t}
+            onChanged={() => {
+              setEdited(true)
+              onBundleChanged()
+              onChanged()
+            }}
+            onDone={onEditDone}
+          />
+        ) : (
+          <>
+            {brief && <BriefSummary brief={brief} t={t} />}
+            <p className="kubecode-research-muted">
+              {detail
+                ? t('kubecode.task.workingRevision', { approved: detail.approved_revision })
+                : bundle ? t('kubecode.task.revision', { revision: bundle.detail.revision }) : null}
+              {!archived && (
+                <>
+                  {' '}
+                  <Button disabled={editing} size="xs" variant="ghost" onClick={onEdit}>{t('kubecode.research.editBrief')}</Button>
+                </>
+              )}
+            </p>
+            {edited && detail && detail.revision > detail.approved_revision && (
+              <p className="kubecode-research-notice" role="status">
+                {t('kubecode.task.briefEditedNotice', { revision: detail.revision, approved: detail.approved_revision })}
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
+      {detail && <Provenance detail={detail} t={t} />}
+      {detail && <People detail={detail} t={t} />}
+      {detail && <Progress detail={detail} t={t} />}
+    </div>
+  )
+}
+
+function BriefSummary({ brief, t }: { brief: ResearchBrief; t: Translator }) {
+  const lists: Array<[string, string[]]> = [
+    [t('kubecode.task.hypotheses'), brief.hypotheses],
+    [t('kubecode.task.criteria'), brief.evaluation_criteria],
+    [t('kubecode.task.constraints'), brief.constraints],
+  ]
+  return (
+    <dl className="kubecode-task-brief">
+      <dt>{t('kubecode.task.question')}</dt>
+      <dd>{brief.question}</dd>
+      {lists.filter(([, items]) => items.length > 0).map(([label, items]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function Provenance({ detail, t }: { detail: TaskDetail; t: Translator }) {
+  const general = useGeneralFromTask()
+  const message = detail.authorizing_message
+  return (
+    <p className="kubecode-task-provenance">
+      {detail.origin === 'legacy_round' || !message
+        ? t('kubecode.task.legacyOrigin')
+        : (
+          <>
+            <span>{t('kubecode.task.addedBy')}</span>{' '}
+            <q>{message.body}</q>{' '}
+            <Button
+              size="xs"
+              variant="ghost"
+              // Narrowed to the Task when the message is in its scope; otherwise all of General.
+              onClick={() => general({ message: message.id, filter: message.task_id === detail.id ? detail.id : null })}
+            >
+              {t('kubecode.task.showMessage')}
+            </Button>
+          </>
+        )}
+    </p>
+  )
+}
+
+function People({ detail, t }: { detail: TaskDetail; t: Translator }) {
+  const { push } = useInspectorEntry()
+  const manager = detail.participants.filter((member) => member.role === 'general')
+  const specialists = detail.participants.filter((member) => member.role !== 'general')
+  const open = (memberId: string) => push({ kind: 'member', id: memberId }, { from: `member:${memberId}` })
+  return (
+    <section aria-label={t('kubecode.task.people')} className="kubecode-task-people">
+      <h4>{t('kubecode.task.people')}</h4>
+      {detail.participants.length === 0
+        ? <p className="kubecode-research-muted">{t('kubecode.task.noParticipants')}</p>
+        : (
+          <ul>
+            {[...manager, ...specialists].map((member) => (
+              <li key={member.member_id}>
+                <MemberIdentity
+                  handle={member.handle}
+                  name={member.name}
+                  role={member.role === 'general' ? 'manager' : 'specialist'}
+                  roleLabel={member.role === 'general' ? t('kubecode.task.manager') : t('kubecode.task.specialist')}
+                  size="sm"
+                  onOpen={() => open(member.member_id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+    </section>
+  )
+}
+
+function Progress({ detail, t }: { detail: TaskDetail; t: Translator }) {
+  const progress = progressOf(detail.work)
+  return (
+    <section aria-label={t('kubecode.task.progress')} className="kubecode-task-progress">
+      <h4>{t('kubecode.task.progress')}</h4>
+      <p className="kubecode-research-muted">
+        {progress ? t('kubecode.task.card.progress', progress) : t('kubecode.task.card.noWork')}
+      </p>
+      {detail.internal_work.length > 0 && (
+        <ul className="kubecode-task-work">
+          {detail.internal_work.map((work) => {
+            const condition = conditionLabel(t, work.condition)
+            return (
+              <li key={work.id}>
+                <strong>{work.title}</strong>
+                <StatusBadge tone="muted">{t(`kubecode.work.stage.${work.stage}`)}</StatusBadge>
+                {condition && <StatusBadge tone="warn">{condition}</StatusBadge>}
+                {work.assignee && <small>@{work.assignee.handle}</small>}
+                <small className="kubecode-research-muted">
+                  {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}
+                </small>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}

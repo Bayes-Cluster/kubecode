@@ -11,7 +11,16 @@ import { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { ViewHeaderProps } from '@/components/workspace/ViewHeader'
 import type { Translator } from '@/lib/i18n'
 
-import type { AgentDescriptor, Conversation, KubecodeApi, Member, TeamSnapshot, WorkspaceEvent } from '../../api'
+import type {
+  AgentDescriptor,
+  Conversation,
+  KubecodeApi,
+  Member,
+  TaskBoard,
+  TaskDraft,
+  TeamSnapshot,
+  WorkspaceEvent,
+} from '../../api'
 import type { WorkspaceConnectionState } from '../../useWorkspaceEventStream'
 import type { InspectorEntry } from '../location/inspector'
 import type { InspectorPresentation } from './useInspectorPresentation'
@@ -110,10 +119,14 @@ export type InspectorServices = {
   api: KubecodeApi
   connectionState: WorkspaceConnectionState
   events: WorkspaceEvent[]
+  /** The app's language, for dates and times; English when absent. */
+  locale?: string
   /** The live roster of the active Workspace; empty while it loads. */
   roster: Member[]
   sessionCatalog: Conversation[]
   t: Translator
+  /** The Workspace's board, its proposals and its archived Tasks, as the board view has them. */
+  taskBoard?: { board: TaskBoard | null; drafts: TaskDraft[]; reload(): void }
   teams: TeamSnapshot[]
   /** A Session a panel started (a Task's discussion), for the shell's lists. */
   onConversationCreated(conversation: Conversation): void

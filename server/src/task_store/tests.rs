@@ -1069,7 +1069,8 @@ fn a_crash_between_the_record_and_the_round_is_finished_by_repeating_the_instruc
         .tasks
         .start_execution(r.project(), &r.general, &id, &go.id)
         .unwrap();
-    // Roll the world back to just after the authorization was recorded.
+    // Roll the world back to just after the authorization was recorded: the
+    // round's link and its event commit together, so neither is there.
     {
         let database = r.f.agents.database();
         let connection = database.lock().unwrap();
@@ -1077,6 +1078,12 @@ fn a_crash_between_the_record_and_the_round_is_finished_by_repeating_the_instruc
             .execute(
                 "UPDATE task_authorizations SET round_id = NULL WHERE id = ?1",
                 [&done.id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "DELETE FROM task_events WHERE research_id = ?1 AND kind = 'execution_authorized'",
+                [&id],
             )
             .unwrap();
     }
@@ -1298,4 +1305,952 @@ fn a_resolved_question_with_a_started_round_is_done_and_the_first_round_is_recor
         "the first round"
     );
     assert_eq!(card.rounds.len(), 2);
+}
+
+impl Rig {
+    /// An admitted Task: proposed, shown, and added on the researcher's word.
+    fn admitted(&self, title: &str) -> String {
+        let (id, revision, instruction) = self.instructed(title);
+        self.tasks
+            .admit(
+                self.project(),
+                &self.general,
+                &id,
+                &instruction.id,
+                revision,
+            )
+            .unwrap();
+        id
+    }
+
+    /// An admitted Task the researcher let execute; returns it and its round.
+    fn executing(&self, title: &str) -> (String, String) {
+        let id = self.admitted(title);
+        let go = self.say(&format!("Start {title}"));
+        let round = self
+            .tasks
+            .start_execution(self.project(), &self.general, &id, &go.id)
+            .unwrap()
+            .0
+            .round_id
+            .unwrap();
+        (id, round)
+    }
+
+    /// Internal work the manager plans in a Task's round (active until done).
+    fn internal_work(&self, round: &str, title: &str) -> String {
+        use crate::work_store::{CoordinatorAuth, NewWork};
+        let current = self
+            .work
+            .coordinator(self.project(), round)
+            .unwrap()
+            .expect("the manager coordinates the round");
+        let (item, _) = self
+            .work
+            .create(
+                self.project(),
+                NewWork {
+                    title,
+                    description: "do it",
+                    round_id: Some(round),
+                    ..Default::default()
+                },
+                &Actor::Coordinator(CoordinatorAuth {
+                    round_id: round.to_owned(),
+                    holder: current.holder,
+                    epoch: current.epoch,
+                }),
+            )
+            .unwrap();
+        item.id
+    }
+
+    fn ask_review(&self, id: &str, summary: &str) -> ReviewRequest {
+        self.tasks
+            .request_review(
+                self.project(),
+                &self.general,
+                id,
+                summary,
+                &[],
+                &Default::default(),
+            )
+            .unwrap()
+            .0
+    }
+
+    fn availability(&self, id: &str) -> (bool, Option<&'static str>) {
+        let availability = self.tasks.archive_availability(self.project(), id).unwrap();
+        (availability.allowed, availability.reason)
+    }
+}
+
+#[test]
+fn archive_availability_table() {
+    let r = rig();
+    let (draft, _) = r.proposed("A draft");
+    assert_eq!(r.availability(&draft), (true, None), "a draft");
+    let ready = r.admitted("Ready one");
+    assert_eq!(r.availability(&ready), (true, None), "Ready");
+
+    let (busy, round) = r.executing("Busy one");
+    r.internal_work(&round, "Sweep");
+    assert_eq!(
+        r.availability(&busy),
+        (false, Some("work_active")),
+        "In progress with active work"
+    );
+
+    let (idle, _) = r.executing("Idle one");
+    let request = r.ask_review(&idle, "first pass");
+    assert_eq!(
+        r.availability(&idle),
+        (false, Some("under_review")),
+        "an open review"
+    );
+    r.tasks
+        .review(
+            r.project(),
+            &idle,
+            &request.id,
+            false,
+            WorkOutcome::Unknown,
+            Some("try 0.7"),
+        )
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &idle).unwrap(),
+        Some(TaskStage::InProgress)
+    );
+    assert_eq!(
+        r.availability(&idle),
+        (true, None),
+        "In progress, sent back, with no active work"
+    );
+    let second = r.ask_review(&idle, "second pass");
+    r.tasks
+        .review(
+            r.project(),
+            &idle,
+            &second.id,
+            true,
+            WorkOutcome::Refuted,
+            None,
+        )
+        .unwrap();
+    assert_eq!(r.availability(&idle), (true, None), "Done");
+    r.tasks.set_archived(r.project(), &idle, true).unwrap();
+    assert_eq!(r.availability(&idle), (false, Some("archived")));
+    // A refused archive changes nothing.
+    assert!(matches!(
+        r.tasks.set_archived(r.project(), &busy, true),
+        Err(TaskError::Active("work_active"))
+    ));
+    assert!(!r.f.research.get(r.project(), &busy).unwrap().archived);
+}
+
+#[test]
+fn archive_events_never_move_the_stage_and_only_restoring_moves_the_watermark() {
+    let r = rig();
+    let (id, _) = r.executing("Prune heads");
+    let stage = r.tasks.stage(r.project(), &id).unwrap();
+    let watermark = r.tasks.stage_watermark(r.project(), &id).unwrap();
+    r.say("something else entirely");
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    // Archiving twice is one event.
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    assert_eq!(
+        r.tasks.stage_watermark(r.project(), &id).unwrap(),
+        watermark
+    );
+    let said = r.say("and more");
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    assert_eq!(r.tasks.stage(r.project(), &id).unwrap(), stage);
+    // Restoring makes everything said before it too old to authorize.
+    assert_eq!(r.tasks.stage_watermark(r.project(), &id).unwrap(), said.seq);
+    let kinds: Vec<String> =
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .prepare("SELECT kind FROM task_events WHERE research_id = ?1 ORDER BY seq")
+            .unwrap()
+            .query_map([&id], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+    assert_eq!(
+        kinds,
+        ["admitted", "execution_authorized", "archived", "restored"]
+    );
+    // The board shows it again, in the same stage.
+    let board = r.tasks.board(r.project()).unwrap();
+    assert_eq!(board.cards[0].stage, TaskStage::InProgress);
+}
+
+#[test]
+fn archived_task_refuses_manager_steps() {
+    let r = rig();
+    let archived = |result: Result<(), TaskError>| matches!(&result, Err(TaskError::State(text)) if text.contains("archived"));
+    // A shown proposal cannot be admitted while archived.
+    let (id, revision, instruction) = r.instructed("Prune heads");
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    assert!(archived(
+        r.tasks
+            .admit(r.project(), &r.general, &id, &instruction.id, revision)
+            .map(|_| ())
+    ));
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    r.tasks
+        .admit(r.project(), &r.general, &id, &instruction.id, revision)
+        .unwrap();
+
+    // An admitted Task can neither run nor have a revision approved while archived.
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    let go = r.say("Start it");
+    assert!(archived(
+        r.tasks
+            .start_execution(r.project(), &r.general, &id, &go.id)
+            .map(|_| ())
+    ));
+    let approve = r.say("Approve the new brief");
+    assert!(archived(
+        r.tasks
+            .approve_revision(r.project(), &r.general, &id, &approve.id, revision)
+            .map(|_| ())
+    ));
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    // What was said while it was archived does not start it after restoring.
+    assert!(matches!(
+        r.tasks
+            .start_execution(r.project(), &r.general, &id, &go.id),
+        Err(TaskError::Stale(_))
+    ));
+    let go = r.say("Start it now");
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &go.id)
+        .unwrap();
+
+    // Executing but idle: it may be archived, and then no review is asked for.
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    assert!(archived(
+        r.tasks
+            .request_review(
+                r.project(),
+                &r.general,
+                &id,
+                "done",
+                &[],
+                &Default::default()
+            )
+            .map(|_| ())
+    ));
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    r.ask_review(&id, "done");
+}
+
+#[test]
+fn status_commands_are_task_owned() {
+    let r = rig();
+    let (draft, _) = r.proposed("A draft");
+    r.tasks.guard_status_command(r.project(), &draft).unwrap();
+    let admitted = r.admitted("On the board");
+    assert!(matches!(
+        r.tasks.guard_status_command(r.project(), &admitted),
+        Err(TaskError::Owned)
+    ));
+}
+
+#[test]
+fn board_lists_archived_tasks_apart() {
+    let r = rig();
+    let (id, _) = r.executing("Prune heads");
+    let request = r.ask_review(&id, "done");
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Refuted,
+            None,
+        )
+        .unwrap();
+    let (draft, _) = r.proposed("A draft");
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    r.tasks.set_archived(r.project(), &draft, true).unwrap();
+    let board = r.tasks.board(r.project()).unwrap();
+    assert!(board.cards.is_empty());
+    assert_eq!(board.total, 0);
+    let done = board.archived.iter().find(|task| task.id == id).unwrap();
+    assert_eq!(
+        (done.stage, done.outcome),
+        (Some(TaskStage::Done), Some(WorkOutcome::Refuted))
+    );
+    assert_eq!(done.title, "Prune heads");
+    let proposal = board.archived.iter().find(|task| task.id == draft).unwrap();
+    assert_eq!((proposal.stage, proposal.outcome), (None, None));
+    assert!(
+        r.tasks
+            .drafts(r.project())
+            .unwrap()
+            .iter()
+            .all(|listed| listed.id != draft),
+        "an archived proposal is not a draft waiting for an answer"
+    );
+}
+
+#[test]
+fn card_carries_the_last_stage_event() {
+    let r = rig();
+    let last = |id: &str| {
+        r.tasks
+            .card(r.project(), id)
+            .unwrap()
+            .unwrap()
+            .last_event
+            .map(|event| (event.kind, event.ref_id))
+    };
+    let (id, revision, instruction) = r.instructed("Prune heads");
+    r.tasks
+        .admit(r.project(), &r.general, &id, &instruction.id, revision)
+        .unwrap();
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::Admitted, Some(instruction.id.clone())))
+    );
+    let go = r.say("Start it");
+    let round = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &go.id)
+        .unwrap()
+        .0
+        .round_id;
+    assert_eq!(last(&id), Some((TaskEventKind::ExecutionAuthorized, round)));
+    // Archiving and restoring in between are not what last happened to its stage.
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    assert_eq!(last(&id).unwrap().0, TaskEventKind::ExecutionAuthorized);
+    let request = r.ask_review(&id, "done");
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::ReviewRequested, Some(request.id.clone())))
+    );
+    let review = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            false,
+            WorkOutcome::Unknown,
+            Some("again"),
+        )
+        .unwrap();
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::ReviewReturned, Some(review.id)))
+    );
+    // Every event, archiving included, is in the log in order.
+    let kinds: Vec<TaskEventKind> = r
+        .tasks
+        .events(r.project(), &id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            TaskEventKind::Admitted,
+            TaskEventKind::ExecutionAuthorized,
+            TaskEventKind::Archived,
+            TaskEventKind::Restored,
+            TaskEventKind::ReviewRequested,
+            TaskEventKind::ReviewReturned,
+        ]
+    );
+}
+
+#[test]
+fn drafts_name_the_message_that_showed_the_current_revision() {
+    let r = rig();
+    let shown = |id: &str| {
+        r.tasks
+            .drafts(r.project())
+            .unwrap()
+            .into_iter()
+            .find(|draft| draft.id == id)
+            .unwrap()
+            .shown_message_id
+    };
+    let (id, first) = r
+        .tasks
+        .propose(r.project(), &r.general, brief("Prune heads"), Some("p"))
+        .map(|(question, message)| (question.id, message))
+        .unwrap();
+    assert_eq!(shown(&id), Some(first.id.clone()));
+    let again = r.tasks.show_again(r.project(), &r.general, &id).unwrap();
+    assert_eq!(shown(&id), Some(again.id.clone()), "the newest showing");
+    // The researcher edits the brief themselves: that revision was never shown.
+    r.f.research
+        .update_brief(
+            r.project(),
+            &id,
+            1,
+            &crate::research_store::BriefPatch {
+                question: Some("A sharper question?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(shown(&id), None);
+    let (_, revised) = r
+        .tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            2,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper still?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(shown(&id), Some(revised.id));
+}
+
+#[test]
+fn timeline_orders_and_links_every_step() {
+    let r = rig();
+    let (question, proposed) = r
+        .tasks
+        .propose(r.project(), &r.general, brief("Prune heads"), Some("p"))
+        .unwrap();
+    let id = question.id;
+    let (_, revised) = r
+        .tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            1,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    r.tasks.show_again(r.project(), &r.general, &id).unwrap();
+    let admit = r.say("Yes, add the pruning one to the board.");
+    r.tasks
+        .admit(r.project(), &r.general, &id, &admit.id, 2)
+        .unwrap();
+    let go = r.say("Go ahead and run it.");
+    let round = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &go.id)
+        .unwrap()
+        .0
+        .round_id;
+    let first = r.ask_review(&id, "first pass");
+    let returned = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &first.id,
+            false,
+            WorkOutcome::Unknown,
+            Some("again"),
+        )
+        .unwrap();
+    let second = r.ask_review(&id, "second pass");
+    let accepted = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &second.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+
+    let timeline = r.tasks.timeline(r.project(), &id).unwrap();
+    assert_eq!(
+        timeline.iter().map(|step| step.kind).collect::<Vec<_>>(),
+        [
+            TaskActivityKind::Proposed,
+            TaskActivityKind::Revised,
+            TaskActivityKind::Admitted,
+            TaskActivityKind::ExecutionAuthorized,
+            TaskActivityKind::ReviewRequested,
+            TaskActivityKind::ReviewReturned,
+            TaskActivityKind::ReviewRequested,
+            TaskActivityKind::ReviewAccepted,
+        ]
+    );
+    // A revision is carried by the FIRST message that showed it.
+    assert_eq!(
+        timeline[0].message_id.as_deref(),
+        Some(proposed.id.as_str())
+    );
+    assert_eq!(timeline[1].message_id.as_deref(), Some(revised.id.as_str()));
+    assert_eq!(timeline[1].brief_revision, Some(2));
+    assert_eq!(
+        (
+            timeline[0].actor,
+            timeline[0].member.as_ref().map(|m| m.handle.as_str())
+        ),
+        ("manager", Some("general"))
+    );
+    // Steps the researcher authorized carry their words.
+    assert_eq!(timeline[2].message_id.as_deref(), Some(admit.id.as_str()));
+    assert_eq!(
+        timeline[2].excerpt.as_deref(),
+        Some("Yes, add the pruning one to the board.")
+    );
+    assert_eq!(timeline[3].message_id.as_deref(), Some(go.id.as_str()));
+    assert_eq!(timeline[3].ref_id, round);
+    // Reviews carry the messages that asked for them and told General.
+    let keyed = r
+        .channels
+        .messages_by_client_ids(
+            r.project(),
+            &[
+                format!("review-request:{}", first.id),
+                format!("task-review:{}", returned.id),
+                format!("task-review:{}", accepted.id),
+            ],
+        )
+        .unwrap();
+    let message = |key: String| keyed.get(&key).map(|(id, _)| id.clone());
+    assert_eq!(
+        timeline[4].message_id,
+        message(format!("review-request:{}", first.id))
+    );
+    assert_eq!(
+        (timeline[5].actor, timeline[5].message_id.clone()),
+        (
+            "researcher",
+            message(format!("task-review:{}", returned.id))
+        )
+    );
+    assert_eq!(
+        timeline[7].message_id,
+        message(format!("task-review:{}", accepted.id))
+    );
+    assert!(timeline.iter().all(|step| step.message_id.is_some()));
+}
+
+#[test]
+fn a_legacy_task_s_history_has_no_messages() {
+    let r = rig();
+    // The Fixture's question has a Team round the researcher started: adopted
+    // as a legacy Task, with no authorizing message.
+    r.f.research
+        .round_mark_started(r.project(), &r.f.research_id, &r.f.round_id)
+        .unwrap();
+    r.tasks.adopt_legacy().unwrap();
+    let timeline = r.tasks.timeline(r.project(), &r.f.research_id).unwrap();
+    let admitted = timeline
+        .iter()
+        .find(|step| step.kind == TaskActivityKind::Admitted)
+        .expect("adopted");
+    assert_eq!(
+        (admitted.actor, admitted.message_id.as_ref()),
+        ("system", None)
+    );
+}
+
+#[test]
+fn pending_decisions_have_stable_keys() {
+    let r = rig();
+    let keys = |id: &str| -> Vec<String> {
+        r.tasks
+            .pending(r.project(), id)
+            .unwrap()
+            .into_iter()
+            .map(|pending| pending.key)
+            .collect()
+    };
+    let (id, round) = r.executing("Prune heads");
+    assert!(keys(&id).is_empty());
+    // An open question of the Task's work.
+    let work = r.internal_work(&round, "Sweep");
+    let (asked, _) = r
+        .work
+        .request_decision(
+            r.project(),
+            &work,
+            "q1",
+            &r.general,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(keys(&id), [format!("question:{work}:{}", asked.id)]);
+    assert_eq!(keys(&id), keys(&id), "stable across reads");
+    r.work
+        .answer_decision(r.project(), &asked.id, "0.5 and 0.7", "researcher")
+        .unwrap();
+    assert!(keys(&id).is_empty(), "answered");
+    // A revised brief waiting for approval.
+    let current = r.f.research.get(r.project(), &id).unwrap().revision;
+    r.tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            current,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(keys(&id), [format!("brief:{}", current + 1)]);
+    let approve = r.say("Approve the sharper brief.");
+    r.tasks
+        .approve_revision(r.project(), &r.general, &id, &approve.id, current + 1)
+        .unwrap();
+    assert!(keys(&id).is_empty(), "approved");
+    // An open review, until it is decided.
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "done differently",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let request = r.ask_review(&id, "done");
+    assert_eq!(keys(&id), [format!("review:{}", request.id)]);
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert!(keys(&id).is_empty(), "decided");
+}
+
+impl Rig {
+    /// A Task executed once and accepted: Done.
+    fn done(&self, title: &str) -> String {
+        let (id, _) = self.executing(title);
+        let request = self.ask_review(&id, "done");
+        self.tasks
+            .review(
+                self.project(),
+                &id,
+                &request.id,
+                true,
+                WorkOutcome::Supported,
+                None,
+            )
+            .unwrap();
+        id
+    }
+}
+
+#[test]
+fn an_instruction_given_before_archiving_cannot_start_execution_after_restoring() {
+    let r = rig();
+    let id = r.done("Prune heads");
+    let iterate = r.say("Let's iterate on it");
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    let revived = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &iterate.id);
+    assert!(matches!(revived, Err(TaskError::Stale(_))), "{revived:?}");
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    assert_eq!(r.f.research.rounds(r.project(), &id).unwrap().len(), 1);
+    // A newer instruction, after the restore, does.
+    let fresh = r.say("Now iterate, please");
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &fresh.id)
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::InProgress)
+    );
+}
+
+#[test]
+fn an_execute_record_left_without_a_round_is_checked_against_the_task_as_it_is_now() {
+    let r = rig();
+    let id = r.done("Prune heads");
+    // The General Agent recorded "iterate" and crashed before its round began.
+    let old = r.say("Iterate on it");
+    let question = r.f.research.get(r.project(), &id).unwrap();
+    r.tasks
+        .write(|tx| {
+            TaskStore::insert_authorization(
+                tx,
+                r.project(),
+                &question,
+                AuthorizationKind::Execute,
+                &old.id,
+                &r.general,
+            )
+            .map(|record| (record, None))
+        })
+        .unwrap();
+    // Meanwhile another instruction ran a round that was accepted.
+    let newer = r.say("Iterate with 0.7 instead");
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &newer.id)
+        .unwrap();
+    let request = r.ask_review(&id, "0.7 done");
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    let rounds = r.f.research.rounds(r.project(), &id).unwrap().len();
+    // Repeating the old instruction now starts nothing.
+    let retried = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &old.id);
+    assert!(matches!(retried, Err(TaskError::Stale(_))), "{retried:?}");
+    assert_eq!(r.f.research.rounds(r.project(), &id).unwrap().len(), rounds);
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+}
+
+#[test]
+fn a_task_with_active_work_is_never_archived_whatever_its_stage() {
+    let r = rig();
+    let (id, round) = r.executing("Prune heads");
+    let work = r.internal_work(&round, "Sweep");
+    let request = r.ask_review(&id, "done");
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    // Done, but its internal work is still active.
+    assert_eq!(r.availability(&id), (false, Some("work_active")));
+    assert!(matches!(
+        r.tasks.set_archived(r.project(), &id, true),
+        Err(TaskError::Active("work_active"))
+    ));
+    assert!(!r.f.research.get(r.project(), &id).unwrap().archived);
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "not needed",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+}
+
+#[test]
+fn a_decision_and_the_status_it_implies_are_one_write() {
+    let r = rig();
+    let (id, _) = r.executing("Prune heads");
+    let request = r.ask_review(&id, "done");
+    let block = |on: bool| {
+        let database = r.f.agents.database();
+        let connection = database.lock().unwrap();
+        if on {
+            connection
+                .execute(
+                    "CREATE TEMP TRIGGER no_status BEFORE UPDATE OF status ON research_questions
+                     BEGIN SELECT RAISE(ABORT, 'status unavailable'); END",
+                    [],
+                )
+                .unwrap();
+        } else {
+            connection.execute("DROP TRIGGER no_status", []).unwrap();
+        }
+    };
+    // Accepting cannot leave a Done Task whose question is still open.
+    block(true);
+    assert!(
+        r.tasks
+            .review(
+                r.project(),
+                &id,
+                &request.id,
+                true,
+                WorkOutcome::Supported,
+                None
+            )
+            .is_err()
+    );
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Review),
+        "nothing was decided"
+    );
+    block(false);
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        r.f.research.get(r.project(), &id).unwrap().status,
+        ResearchStatus::Resolved
+    );
+    // Iterating cannot leave an In-progress Task whose question is resolved.
+    let iterate = r.say("Iterate on it");
+    block(true);
+    assert!(
+        r.tasks
+            .start_execution(r.project(), &r.general, &id, &iterate.id)
+            .is_err()
+    );
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::Done)
+    );
+    block(false);
+    r.tasks
+        .start_execution(r.project(), &r.general, &id, &iterate.id)
+        .unwrap();
+    assert_eq!(
+        r.tasks.stage(r.project(), &id).unwrap(),
+        Some(TaskStage::InProgress)
+    );
+    assert_eq!(
+        r.f.research.get(r.project(), &id).unwrap().status,
+        ResearchStatus::Open
+    );
+}
+
+#[test]
+fn questions_of_closed_work_are_not_pending() {
+    let r = rig();
+    let (id, round) = r.executing("Prune heads");
+    let work = r.internal_work(&round, "Sweep");
+    r.work
+        .request_decision(
+            r.project(),
+            &work,
+            "q1",
+            &r.general,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(r.tasks.pending(r.project(), &id).unwrap().len(), 1);
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "not needed",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let card = r.tasks.card(r.project(), &id).unwrap().unwrap();
+    assert_eq!(card.open_questions, 0);
+    assert!(
+        r.tasks.pending(r.project(), &id).unwrap().is_empty(),
+        "what waits on the researcher agrees with the card"
+    );
+}
+
+#[test]
+fn the_archived_list_is_the_newest_fifty_tasks_and_proposals() {
+    let r = rig();
+    let done = r.done("Oldest done");
+    r.tasks.set_archived(r.project(), &done, true).unwrap();
+    let mut proposals = Vec::new();
+    for n in 0..MAX_ARCHIVED {
+        let (draft, _) = r.proposed(&format!("Draft {n}"));
+        r.tasks.set_archived(r.project(), &draft, true).unwrap();
+        proposals.push(draft);
+    }
+    let stamp = |id: &str, at: &str| {
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE research_questions SET updated_at = ?2 WHERE id = ?1",
+                params![id, at],
+            )
+            .unwrap();
+    };
+    stamp(&done, "2026-01-01 00:00:00");
+    for (n, draft) in proposals.iter().enumerate() {
+        stamp(draft, &format!("2026-02-01 00:00:{n:02}"));
+    }
+    let archived = r.tasks.archived(r.project()).unwrap();
+    assert_eq!(archived.len(), MAX_ARCHIVED);
+    assert!(
+        archived.iter().all(|task| task.id != done),
+        "the oldest falls off"
+    );
+    assert_eq!(archived[0].id, proposals[MAX_ARCHIVED - 1], "newest first");
+    // Bring the Task forward: it is listed with its stage and outcome.
+    stamp(&done, "2026-03-01 00:00:00");
+    let archived = r.tasks.archived(r.project()).unwrap();
+    assert_eq!(archived.len(), MAX_ARCHIVED);
+    assert_eq!(archived[0].id, done);
+    assert_eq!(
+        (archived[0].stage, archived[0].outcome),
+        (Some(TaskStage::Done), Some(WorkOutcome::Supported))
+    );
+    assert!(archived[1..].iter().all(|task| task.stage.is_none()));
 }

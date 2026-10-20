@@ -4412,22 +4412,48 @@
   padding: 12px 16px;
 }
 
-/* -- The one Kanban of Tasks and the Task inspector (ADR 0225) ------------- */
+/* -- The one Kanban of Tasks and a Task's details (ADR 0225, ADR 0230) ----- */
 .kubecode-task-board {
   background: var(--surface-app);
   color: var(--text-primary);
+  container-type: inline-size;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  gap: var(--ws-space-3);
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 12px 16px;
+  padding: var(--ws-space-3) var(--ws-space-4);
+}
+
+.kubecode-task-needs-you {
+  align-items: center;
+  display: inline-flex;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  min-height: var(--ws-touch-target);
+}
+
+.kubecode-task-empty {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-2);
+  max-width: var(--ws-reading-width);
+}
+
+.kubecode-task-drafts summary,
+.kubecode-task-archived summary,
+.kubecode-task-records summary {
+  cursor: pointer;
+  font: var(--ws-font-meta);
+  min-height: var(--ws-touch-target);
 }
 
 .kubecode-task-columns {
   display: grid;
-  gap: 12px;
+  gap: var(--ws-space-3);
   grid-template-columns: repeat(4, minmax(180px, 1fr));
 }
 
@@ -4436,12 +4462,13 @@
   align-items: center;
   display: flex;
   font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  margin: 0 0 6px;
+  gap: var(--ws-space-1);
+  margin: 0 0 var(--ws-space-1);
 }
 
 .kubecode-task-column ul,
-.kubecode-task-drafts ul { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.kubecode-task-drafts ul,
+.kubecode-task-archived ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
 
 .kubecode-task-card {
   background: var(--surface-subtle);
@@ -4451,35 +4478,96 @@
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: var(--ws-space-1);
+  min-height: var(--ws-touch-target);
+  padding: var(--ws-space-2) var(--ws-space-3);
   text-align: left;
   width: 100%;
 }
 
+.kubecode-task-card:focus-visible { outline: var(--ws-focus-ring); outline-offset: 2px; }
 .kubecode-task-card[aria-current='true'] { border-color: var(--text-primary); }
-.kubecode-task-card small { color: var(--text-secondary); overflow-wrap: anywhere; }
-.kubecode-task-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.kubecode-task-card strong { overflow-wrap: anywhere; }
+.kubecode-task-card small { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
+.kubecode-task-badges { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1); min-width: 0; }
+.kubecode-task-condition-reason { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
+/* On a card the reason takes its own line under the badges. */
+.kubecode-task-condition-reason[data-compact] { flex-basis: 100%; }
+.kubecode-task-card-people { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); font: var(--ws-font-meta); }
+.kubecode-task-card-person { align-items: center; display: inline-flex; gap: var(--ws-space-1); min-width: 0; }
 
-.kubecode-task-inspector {
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 0 12px;
+/* One stage at a time on a narrow board; the stage picker exists only there. */
+.kubecode-task-stage-tabs { display: none; }
+.kubecode-task-stage-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: var(--ws-font-meta);
+  min-height: var(--ws-touch-target);
+  padding: 0 var(--ws-space-2);
 }
 
-.kubecode-task-inspector h4 { font-size: var(--kubecode-ui-font-small); margin: 4px 0 0; }
-.kubecode-task-inspector-status { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
-.kubecode-task-provenance,
-.kubecode-task-participants { margin: 0; }
+.kubecode-task-stage-tab[aria-pressed='true'] { border-bottom-color: var(--text-primary); color: var(--text-primary); }
+.kubecode-task-stage-tab:focus-visible { outline: var(--ws-focus-ring); }
+
+@container (max-width: 980px) {
+  .kubecode-task-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 640px) {
+  .kubecode-task-stage-tabs { display: flex; gap: var(--ws-space-1); max-width: 100%; overflow-x: auto; }
+  .kubecode-task-columns { grid-template-columns: 1fr; }
+  .kubecode-task-column[data-selected='false'] { display: none; }
+  .kubecode-task-column h3 { display: none; }
+}
+
+/* A Task's details. */
+.kubecode-task-panel { display: flex; flex-direction: column; gap: var(--ws-space-2); min-width: 0; }
+.kubecode-task-next { font: var(--ws-font-body); margin: 0; overflow-wrap: anywhere; }
+.kubecode-task-next[data-tone='warn'] { color: var(--text-primary); font-weight: 600; }
+.kubecode-task-tabs { min-width: 0; }
+.kubecode-task-tabs [role='tablist'] {
+  background: var(--surface-app);
+  max-width: 100%;
+  overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.kubecode-task-overview,
+.kubecode-task-results,
+.kubecode-task-activity { display: flex; flex-direction: column; gap: var(--ws-space-3); padding-top: var(--ws-space-2); }
+
+.kubecode-task-overview h4,
+.kubecode-task-results h4,
+.kubecode-task-activity h4 { font-size: var(--kubecode-ui-font-small); margin: 0 0 var(--ws-space-1); }
+
+.kubecode-task-brief { display: flex; flex-direction: column; gap: var(--ws-space-1); margin: 0; }
+.kubecode-task-brief dt { color: var(--text-secondary); font: var(--ws-font-meta); }
+.kubecode-task-brief dd { margin: 0; overflow-wrap: anywhere; }
+.kubecode-task-brief ul { margin: 0; padding-left: var(--ws-space-4); }
+.kubecode-task-provenance { margin: 0; }
 .kubecode-task-provenance q { display: block; margin: 2px 0; overflow-wrap: anywhere; }
-.kubecode-task-participants { display: flex; flex-wrap: wrap; gap: 10px; }
+.kubecode-task-people ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
+
 .kubecode-task-work,
 .kubecode-task-reviews,
 .kubecode-task-evidence,
-.kubecode-task-questions ul { display: flex; flex-direction: column; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
-.kubecode-task-evidence { flex-direction: row; }
+.kubecode-task-timeline,
+.kubecode-task-recent ul,
+.kubecode-task-questions ul { display: flex; flex-direction: column; gap: var(--ws-space-2); list-style: none; margin: 0; padding: 0; }
+
+.kubecode-task-work li,
+.kubecode-task-timeline li,
+.kubecode-task-recent li { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1) var(--ws-space-2); min-width: 0; }
+.kubecode-task-timeline q { flex-basis: 100%; overflow-wrap: anywhere; }
+.kubecode-task-recent-message { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.kubecode-task-waiting,
 .kubecode-task-review,
 .kubecode-task-questions {
   background: var(--surface-subtle);
@@ -4487,16 +4575,34 @@
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--ws-space-2);
+  padding: var(--ws-space-2) var(--ws-space-3);
+}
+
+.kubecode-task-questions { background: transparent; border: 0; padding: 0; }
+.kubecode-task-evidence-row { display: flex; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
+.kubecode-task-version { align-items: flex-start; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
+.kubecode-task-review-summary { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1) var(--ws-space-2); }
+.kubecode-task-review-summary q { flex-basis: 100%; overflow-wrap: anywhere; }
+.kubecode-task-decided { margin: 0; }
+.kubecode-task-decided:focus-visible { outline: var(--ws-focus-ring); }
+
+.kubecode-task-outcome { border: 0; display: flex; flex-direction: column; gap: var(--ws-space-2); margin: 0; min-width: 0; padding: 0; }
+.kubecode-task-outcome legend { font-weight: 600; margin-bottom: var(--ws-space-1); padding: 0; }
+.kubecode-task-outcome-choice { display: flex; flex-direction: column; }
+.kubecode-task-outcome-choice label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-height: var(--ws-touch-target); }
+.kubecode-task-outcome-choice small { padding-left: calc(var(--ws-space-2) + 16px); }
+
+.kubecode-task-decisions { align-items: flex-start; background: var(--surface-subtle); display: flex; flex-wrap: wrap; gap: var(--ws-space-2); padding: var(--ws-space-2) 0; }
+[data-inspector-layout='screen'] .kubecode-task-decisions {
+  bottom: 0;
+  padding-bottom: calc(var(--ws-space-2) + env(safe-area-inset-bottom));
+  position: sticky;
 }
 
 .kubecode-task-field { display: flex; flex-direction: column; gap: 2px; }
 .kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 
-@media (max-width: 980px) {
-  .kubecode-task-columns { grid-template-columns: 1fr; }
-}
 
 @media (max-width: 900px) {
   .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }

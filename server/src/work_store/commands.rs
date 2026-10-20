@@ -589,6 +589,20 @@ impl WorkStore {
                     (new.research_id.map(str::to_owned), None)
                 }
             };
+            // An archived question takes no further writes (ADR 0212), new
+            // work included, until the researcher restores it (ADR 0230).
+            if let Some(research_id) = &research_id {
+                let archived: bool = tx.query_row(
+                    "SELECT archived FROM research_questions WHERE id = ?1",
+                    [research_id],
+                    |row| row.get(0),
+                )?;
+                if archived {
+                    return Err(WorkError::Invalid(
+                        "the question is archived; the researcher restores it first",
+                    ));
+                }
+            }
             let derived = match new.derived_from {
                 Some((kind, id)) => {
                     if !matches!(kind, "finding" | "work" | "thread" | "message") {

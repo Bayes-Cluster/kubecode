@@ -34,6 +34,14 @@ pub fn routes() -> Router<AppState> {
             "/projects/{project_id}/tasks/{research_id}/repin",
             post(repin),
         )
+        .route(
+            "/projects/{project_id}/tasks/{research_id}/archive",
+            post(archive),
+        )
+        .route(
+            "/projects/{project_id}/tasks/{research_id}/restore",
+            post(restore),
+        )
 }
 
 enum ApiError {
@@ -129,6 +137,11 @@ impl IntoResponse for ApiError {
                     error.to_string(),
                 ),
                 TaskError::State(_) => (StatusCode::CONFLICT, "task_state", error.to_string()),
+                TaskError::Active(reason) => {
+                    extra.insert("reason".into(), json!(reason));
+                    (StatusCode::CONFLICT, "task_active", error.to_string())
+                }
+                TaskError::Owned => (StatusCode::CONFLICT, "task_owned", error.to_string()),
                 TaskError::Database(_) | TaskError::Json(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal_error",
@@ -186,6 +199,177 @@ struct InternalWork {
     attempts: usize,
     experiments: usize,
     assignee: Option<crate::task_store::Participant>,
+    /// The Session the work is assigned to, to open its execution record.
+    conversation_id: Option<String>,
+    updated_at: String,
+}
+
+/// One cited `kind:id`, once, with every pin of it (ADR 0230).
+#[derive(Debug, Serialize)]
+struct TaskEvidence {
+    key: String,
+    kind: String,
+    ref_id: String,
+    /// What it is called now; `None` when not described (beyond the rows that
+    /// matter, or gone).
+    title: Option<String>,
+    cited_by: Vec<EvidenceCitation>,
+    current: Option<String>,
+    /// `current`, `changed`, `removed`, or `unpinned`.
+    status: &'static str,
+    /// Cited by the open review.
+    in_review: bool,
+    /// Cited by the review the researcher accepted (a Done Task).
+    accepted: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct EvidenceCitation {
+    /// The internal work it is attached to; empty for a review's own citation.
+    work_id: String,
+    /// A work result's id, or for a review the cited `kind:id`.
+    result_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+    pinned: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TaskActions {
+    archive: crate::task_store::Availability,
+    restore: bool,
+}
+
+/// Evidence rows the detail lists at most.
+const MAX_EVIDENCE_ROWS: usize = 64;
+
+/// Every piece of evidence the Task cites — the open review's own (or, once
+/// Done, the accepted review's), and its open internal work's results — one
+/// row per `kind:id` with all of its pins.
+fn evidence_rows(
+    state: &AppState,
+    project_id: &str,
+    research_id: &str,
+    requests: &[ReviewRequest],
+    reviews: &[TaskReview],
+    done: bool,
+) -> Result<Vec<TaskEvidence>, ApiError> {
+    let mut rows: Vec<TaskEvidence> = Vec::new();
+    let mut cite = |key: &str, citation: EvidenceCitation, in_review: bool, accepted: bool| {
+        let index = match rows.iter().position(|row| row.key == key) {
+            Some(index) => index,
+            None => {
+                let (kind, id) = key.split_once(':').unwrap_or((key, ""));
+                rows.push(TaskEvidence {
+                    key: key.to_owned(),
+                    kind: kind.to_owned(),
+                    ref_id: id.to_owned(),
+                    title: None,
+                    cited_by: Vec::new(),
+                    current: None,
+                    status: "unpinned",
+                    in_review: false,
+                    accepted: false,
+                });
+                rows.len() - 1
+            }
+        };
+        let row = &mut rows[index];
+        row.in_review |= in_review;
+        row.accepted |= accepted;
+        row.cited_by.push(citation);
+    };
+    let open = requests.iter().find(|request| request.state == "open");
+    let accepted = if done {
+        reviews
+            .iter()
+            .rev()
+            .find(|review| review.accepted)
+            .and_then(|review| {
+                requests
+                    .iter()
+                    .find(|request| request.id == review.request_id)
+            })
+    } else {
+        None
+    };
+    for (request, in_review) in open
+        .map(|request| (request, true))
+        .into_iter()
+        .chain(accepted.map(|request| (request, false)))
+    {
+        for entry in &request.evidence {
+            cite(
+                entry,
+                EvidenceCitation {
+                    work_id: String::new(),
+                    result_id: entry.clone(),
+                    request_id: Some(request.id.clone()),
+                    pinned: request.evidence_pins.get(entry).cloned(),
+                },
+                in_review,
+                !in_review,
+            );
+        }
+    }
+    // The results of the Task's open internal work (what `stale_of` checks).
+    for summary in state.work.list(
+        project_id,
+        &WorkFilter {
+            research_id: Some(research_id.to_owned()),
+            limit: Some(200),
+            ..Default::default()
+        },
+    )? {
+        for result in &summary.results {
+            cite(
+                &format!("{}:{}", result.kind, result.ref_id),
+                EvidenceCitation {
+                    work_id: summary.item.id.clone(),
+                    result_id: result.id.clone(),
+                    request_id: None,
+                    pinned: result.revision.clone(),
+                },
+                false,
+                false,
+            );
+        }
+    }
+    let evidence = evidence_of(state);
+    for row in &mut rows {
+        row.current = evidence.current_revision(project_id, &row.kind, &row.ref_id);
+        let pins: Vec<&String> = row
+            .cited_by
+            .iter()
+            .filter_map(|citation| citation.pinned.as_ref())
+            .collect();
+        row.status = match (&row.current, pins.is_empty()) {
+            (_, true) => "unpinned",
+            (None, false) => "removed",
+            (Some(current), false) if pins.iter().any(|pinned| *pinned != current) => "changed",
+            _ => "current",
+        };
+    }
+    let rank = |row: &TaskEvidence| {
+        if row.in_review {
+            0
+        } else if row.accepted {
+            1
+        } else if matches!(row.status, "changed" | "removed") {
+            2
+        } else {
+            3
+        }
+    };
+    rows.sort_by_key(rank);
+    rows.truncate(MAX_EVIDENCE_ROWS);
+    // Titles only for the rows the researcher has to look at.
+    for row in &mut rows {
+        if rank(row) < 3 {
+            row.title = evidence.describe(project_id, &row.kind, &row.ref_id).0;
+        }
+    }
+    Ok(rows)
 }
 
 #[derive(Debug, Serialize)]
@@ -212,6 +396,47 @@ struct AuthorizingMessage {
     id: String,
     body: String,
     created_at: String,
+    /// The Task whose scope of General the message is in, if any.
+    task_id: Option<String>,
+}
+
+/// A review request with the General message that asked for it.
+#[derive(Debug, Serialize)]
+struct ReviewRequestView {
+    #[serde(flatten)]
+    request: ReviewRequest,
+    general_message_id: Option<String>,
+}
+
+/// A review decision with the General message that told the conversation.
+#[derive(Debug, Serialize)]
+struct ReviewView {
+    #[serde(flatten)]
+    review: TaskReview,
+    general_message_id: Option<String>,
+}
+
+/// The General messages the Task service posted for review requests
+/// (`review-request:{id}`) and decisions (`task-review:{id}`), in one lookup.
+fn review_messages(
+    state: &AppState,
+    project_id: &str,
+    requests: &[ReviewRequest],
+    reviews: &[TaskReview],
+) -> Result<std::collections::HashMap<String, (String, u64)>, ApiError> {
+    let keys: Vec<String> = requests
+        .iter()
+        .map(|request| format!("review-request:{}", request.id))
+        .chain(
+            reviews
+                .iter()
+                .map(|review| format!("task-review:{}", review.id)),
+        )
+        .collect();
+    Ok(state
+        .channels
+        .messages_by_client_ids(project_id, &keys)
+        .map_err(TaskError::from)?)
 }
 
 #[derive(Debug, Serialize)]
@@ -222,11 +447,17 @@ struct Detail {
     revisions: Vec<RevisionNote>,
     authorizations: Vec<Authorization>,
     authorizing_message: Option<AuthorizingMessage>,
-    review_requests: Vec<ReviewRequest>,
-    reviews: Vec<TaskReview>,
+    review_requests: Vec<ReviewRequestView>,
+    reviews: Vec<ReviewView>,
     internal_work: Vec<InternalWork>,
     open_questions: Vec<OpenQuestion>,
+    /// Deprecated: `evidence` lists every cited record with all its pins.
     stale_evidence: Vec<TaskStale>,
+    archived: bool,
+    evidence: Vec<TaskEvidence>,
+    timeline: Vec<crate::task_store::TaskActivity>,
+    pending: Vec<crate::task_store::PendingDecision>,
+    actions: TaskActions,
 }
 
 fn stale_of(
@@ -308,6 +539,7 @@ async fn detail(
                 id: message.id,
                 body: message.body.chars().take(600).collect(),
                 created_at: message.created_at,
+                task_id: message.task_id,
             });
         let mut internal_work = Vec::new();
         let mut open_questions = Vec::new();
@@ -354,12 +586,65 @@ async fn detail(
                 attempts: summary.attempt_count,
                 experiments: summary.experiment_count,
                 assignee,
+                conversation_id: summary
+                    .assignment
+                    .as_ref()
+                    .map(|assignment| assignment.conversation_id.clone()),
+                updated_at: summary.item.updated_at,
             });
         }
+        let requests = state.tasks.review_requests(&project_id, &research_id)?;
+        let reviews = state.tasks.reviews(&project_id, &research_id)?;
+        let messages = review_messages(&state, &project_id, &requests, &reviews)?;
+        let message_of = |key: String| messages.get(&key).map(|(id, _)| id.clone());
+        let evidence = evidence_rows(
+            &state,
+            &project_id,
+            &research_id,
+            &requests,
+            &reviews,
+            card.stage == crate::task_store::TaskStage::Done,
+        )?;
+        let mut pending = state.tasks.pending(&project_id, &research_id)?;
+        if let Some(open) = requests.iter().find(|request| request.state == "open") {
+            pending.extend(
+                evidence
+                    .iter()
+                    .filter(|row| row.status == "changed")
+                    .map(|row| crate::task_store::PendingDecision {
+                        key: format!("evidence:{}", row.key),
+                        kind: "evidence_changed",
+                        ref_id: row.key.clone(),
+                        since: open.created_at.clone(),
+                    }),
+            );
+        }
         Ok(Detail {
+            archived: question.archived,
+            actions: TaskActions {
+                archive: state
+                    .tasks
+                    .archive_availability(&project_id, &research_id)?,
+                restore: question.archived,
+            },
+            timeline: state.tasks.timeline(&project_id, &research_id)?,
+            pending,
+            evidence,
             revisions: state.tasks.revisions(&project_id, &research_id)?,
-            review_requests: state.tasks.review_requests(&project_id, &research_id)?,
-            reviews: state.tasks.reviews(&project_id, &research_id)?,
+            review_requests: requests
+                .into_iter()
+                .map(|request| ReviewRequestView {
+                    general_message_id: message_of(format!("review-request:{}", request.id)),
+                    request,
+                })
+                .collect(),
+            reviews: reviews
+                .into_iter()
+                .map(|review| ReviewView {
+                    general_message_id: message_of(format!("task-review:{}", review.id)),
+                    review,
+                })
+                .collect(),
             stale_evidence: stale_of(&state, &project_id, &research_id)?,
             card,
             brief: question.brief,
@@ -392,9 +677,9 @@ async fn review(
     State(state): State<AppState>,
     Path((project_id, research_id)): Path<(String, String)>,
     Json(body): Json<ReviewRequestBody>,
-) -> Result<Json<TaskReview>, ApiError> {
+) -> Result<Json<ReviewView>, ApiError> {
     check_project(&state, &project_id)?;
-    let review = tokio::task::spawn_blocking(move || -> Result<TaskReview, ApiError> {
+    let review = tokio::task::spawn_blocking(move || -> Result<ReviewView, ApiError> {
         let outcome = match body.outcome.as_deref() {
             None => WorkOutcome::Unknown,
             Some(value) => {
@@ -437,7 +722,18 @@ async fn review(
             }
             state.orchestrator.wake();
         }
-        Ok(review)
+        // The verdict posted to General, so the decision can link to it; none
+        // if that best-effort post (or this lookup) failed: the decision is
+        // already recorded and must not be reported as failed.
+        let general_message_id =
+            review_messages(&state, &project_id, &[], std::slice::from_ref(&review))
+                .ok()
+                .and_then(|messages| messages.into_values().next())
+                .map(|(id, _)| id);
+        Ok(ReviewView {
+            review,
+            general_message_id,
+        })
     })
     .await
     .map_err(|_| ApiError::BadRequest("the review could not be recorded"))??;
@@ -513,9 +809,13 @@ async fn repin(
             .ok_or(ApiError::BadRequest(
                 "that evidence has no current version to accept",
             ))?;
-        if let Some(looked_at) = body.revision.as_deref()
-            && looked_at != current
-        {
+        // Work-attached evidence, like the review's own, is accepted only at
+        // the version the researcher looked at (ADR 0230 §4).
+        let looked_at = body
+            .revision
+            .as_deref()
+            .ok_or(ApiError::BadRequest("name the version that was looked at"))?;
+        if looked_at != current {
             return Err(ApiError::StaleEvidence(stale_of(
                 &state,
                 &project_id,
@@ -542,5 +842,40 @@ async fn repin(
     })
     .await
     .map_err(|_| ApiError::BadRequest("the evidence could not be accepted"))??;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Hides a Task from the board, keeping everything, unless a review is open or
+/// its work is active (ADR 0230). Archiving is not completing.
+async fn archive(
+    State(state): State<AppState>,
+    Path((project_id, research_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    set_archived(state, project_id, research_id, true).await
+}
+
+/// Puts an archived Task back on the board in the stage it had.
+async fn restore(
+    State(state): State<AppState>,
+    Path((project_id, research_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    set_archived(state, project_id, research_id, false).await
+}
+
+async fn set_archived(
+    state: AppState,
+    project_id: String,
+    research_id: String,
+    archived: bool,
+) -> Result<StatusCode, ApiError> {
+    check_project(&state, &project_id)?;
+    tokio::task::spawn_blocking(move || {
+        state
+            .tasks
+            .set_archived(&project_id, &research_id, archived)
+            .map(|_| ())
+    })
+    .await
+    .map_err(|_| ApiError::BadRequest("the Task could not be archived"))??;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -39,6 +39,15 @@ pub enum TaskError {
     State(&'static str),
     #[error("invalid input: {0}")]
     Invalid(&'static str),
+    /// The Task cannot be archived now; the reason is a code
+    /// (`under_review`, `work_active`, `archived`).
+    #[error("the Task cannot be archived now: {0}")]
+    Active(&'static str),
+    /// An admitted Task's status belongs to its lifecycle (ADR 0230).
+    #[error(
+        "a Task is finished by accepting its results and reopened by asking the General Agent to iterate"
+    )]
+    Owned,
     #[error(transparent)]
     Research(#[from] ResearchError),
     #[error(transparent)]
@@ -104,6 +113,72 @@ text_enum!(TaskCondition {
     Paused => "paused",
     NeedsInput => "needs_input",
 });
+
+// What a task event records: the stage events, and archiving (never a stage).
+text_enum!(TaskEventKind {
+    Admitted => "admitted",
+    ExecutionAuthorized => "execution_authorized",
+    ReviewRequested => "review_requested",
+    ReviewReturned => "review_returned",
+    ReviewAccepted => "review_accepted",
+    Archived => "archived",
+    Restored => "restored",
+});
+
+/// One logged task event.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaskEventNote {
+    pub seq: u64,
+    pub kind: TaskEventKind,
+    /// The authorizing message, round, review request, or review.
+    pub ref_id: Option<String>,
+    pub created_at: String,
+}
+
+// One step of a Task's history.
+text_enum!(TaskActivityKind {
+    Proposed => "proposed",
+    Revised => "revised",
+    Admitted => "admitted",
+    RevisionApproved => "revision_approved",
+    ExecutionAuthorized => "execution_authorized",
+    ReviewRequested => "review_requested",
+    ReviewReturned => "review_returned",
+    ReviewAccepted => "review_accepted",
+    Archived => "archived",
+    Restored => "restored",
+});
+
+/// One step of a Task's history, with the General message that carried it.
+#[derive(Clone, Debug, Serialize)]
+pub struct TaskActivity {
+    pub at: String,
+    pub kind: TaskActivityKind,
+    /// `researcher`, `manager`, `member`, or `system`.
+    pub actor: &'static str,
+    /// The member who acted, through any Session it has had.
+    pub member: Option<Participant>,
+    pub brief_revision: Option<u64>,
+    /// The round, review request, or review the step is about.
+    pub ref_id: Option<String>,
+    /// The General message that carried this step.
+    pub message_id: Option<String>,
+    /// The researcher's authorizing words, shortened (admission, execution,
+    /// and approval only).
+    pub excerpt: Option<String>,
+}
+
+/// Something that waits on the researcher, under a key that stays the same
+/// while it waits: `review:{request}`, `question:{work}:{request}`,
+/// `brief:{revision}`, or `evidence:{kind:id}`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PendingDecision {
+    pub key: String,
+    /// `review`, `question`, `suggestion`, `brief_approval`, or `evidence_changed`.
+    pub kind: &'static str,
+    pub ref_id: String,
+    pub since: String,
+}
 
 /// The record that the researcher authorized a step, and who acted on it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -206,6 +281,8 @@ pub struct TaskCard {
     pub open_questions: usize,
     pub review_requested: bool,
     pub updated_at: String,
+    /// The newest stage event (never archiving): what last happened to it.
+    pub last_event: Option<TaskEventNote>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -219,6 +296,26 @@ pub struct TaskBoard {
     pub cards: Vec<TaskCard>,
     pub stages: Vec<StageCount>,
     pub total: usize,
+    /// Archived Tasks and proposals, apart from the board, newest first.
+    pub archived: Vec<ArchivedTask>,
+}
+
+/// An archived Task (or proposal) as the board lists it apart.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArchivedTask {
+    pub id: String,
+    pub title: String,
+    /// `None` for an archived proposal that was never admitted.
+    pub stage: Option<TaskStage>,
+    pub outcome: Option<WorkOutcome>,
+    pub updated_at: String,
+}
+
+/// Whether an action is available now, and if not, why (a code).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Availability {
+    pub allowed: bool,
+    pub reason: Option<&'static str>,
 }
 
 /// A proposal that is not on the board.
@@ -232,6 +329,9 @@ pub struct Draft {
     /// Who wrote the first revision: `researcher`, `agent`, or `system`.
     pub proposed_by: String,
     pub updated_at: String,
+    /// The newest General message that showed the current revision; `None`
+    /// when it was never shown (for example after the researcher edited it).
+    pub shown_message_id: Option<String>,
 }
 
 /// One revision of a Task's brief and who wrote it, for the inspector.

@@ -792,8 +792,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     sessionCatalog,
     t,
     teams,
+    locale,
+    taskBoard: { board: taskBoard.board, drafts: taskBoard.drafts, reload: taskBoard.reload },
     onConversationCreated: handleConversationCreated,
-  }), [agents, api, handleConversationCreated, reconciliation.connectionState, reconciliation.workspaceEvents, rosterMembers, sessionCatalog, t, teams])
+  }), [
+    agents, api, handleConversationCreated, locale, reconciliation.connectionState, reconciliation.workspaceEvents,
+    rosterMembers, sessionCatalog, t, taskBoard.board, taskBoard.drafts, taskBoard.reload, teams,
+  ])
 
   /** What a place is called: in the inspector's "Back to …" and the switch announcement. */
   const placeName = (shown: Place): string => {
@@ -838,6 +843,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const historyShown = historyOpen || historyPinned
   const inspectorBottom = location.inspector[0]
   const boardTask = inspectorBottom?.kind === 'task' ? inspectorBottom.id : null
+  // A legacy question that is a Task is shown as that Task (ADR 0230 §1): its
+  // record says so, and this opens it.
+  const questionId = place.view === 'question' ? place.question : null
+  const openQuestionTask = questionId ? () => inspect({ kind: 'task', id: questionId }) : undefined
   const announcement = announcedProjectId !== null && announcedProjectId === projectId && project
     ? t('kubecode.nav.placeAnnouncement', { workspace: project.name, place: placeName(place) })
     : ''
@@ -1082,12 +1091,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 <TaskBoardView
                   board={taskBoard.board}
                   drafts={taskBoard.drafts}
+                  locale={locale}
                   scrollKey={placeKey.view(projectId, 'board')}
                   selectedId={boardTask}
                   status={taskBoard.status}
                   t={t}
-                  onOpenDraft={(draft) => openPlace({ view: 'general' }, { inspect: { kind: 'task', id: draft.id } })}
-                  onOpenTask={(card) => inspect({ kind: 'task', id: card.id })}
+                  onOpenGeneral={() => openPlace({ view: 'general' })}
+                  onOpenTask={(id) => inspect({ kind: 'task', id })}
                   onReload={taskBoard.reload}
                 />
               </WithInspector>
@@ -1177,6 +1187,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 projectId={projectId}
                 researchId={place.question}
                 t={t}
+                onOpenTask={openQuestionTask}
                 teams={teams}
               />
             ) : sessionsSurface}

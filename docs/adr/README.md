@@ -74,4 +74,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls (proposed) |
 | [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack (proposed) |
 | [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
+| [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version (proposed) |
 | [0231](0231-workspace-search-file-references-and-versioned-attachments.md) | Workspace search with a named scope, Project files as references, one preview surface, and versioned references (proposed) |
