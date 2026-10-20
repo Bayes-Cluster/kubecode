@@ -97,6 +97,17 @@ function server(initial: ChannelMessage[] = []) {
       return created
     }),
     listChannelThreads: vi.fn(async () => [...threads]),
+    // What a reply must never do: start a Thread, write privately, or admit or start a Task.
+    startChannelThread: vi.fn(async () => thread('never')),
+    openMemberDm: vi.fn(),
+    sendMemberDm: vi.fn(),
+    shareDm: vi.fn(),
+    createResearch: vi.fn(),
+    reviewTask: vi.fn(),
+    reviewResearchProposal: vi.fn(),
+    startResearchRound: vi.fn(),
+    createConversation: vi.fn(),
+    startStructuredRun: vi.fn(),
     listResearchRounds: vi.fn(async () => [{ id: 'round-1', research_id: 'r1', round: 1 }]),
     linkChannelThread: vi.fn(async (
       _p: string, id: string, revision: number, researchId: string | null, roundId: string | null = null,
@@ -329,7 +340,16 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     send()
     await screen.findByText('yes, add it')
     expect(s.posted[0]).toMatchObject({ replyTo: 'm1', mentions: [], references: [{ kind: 'research', id: 'r1', revision: null }] })
-    expect('startChannelThread' in s.calls).toBe(false)
+    // Nothing but the one plain message was written: no Thread, no private message, no Task admitted or started.
+    expect(s.calls.postChannelMessage).toHaveBeenCalledTimes(1)
+    expect(s.posted[0]).not.toHaveProperty('threadId')
+    expect(s.posted[0]).not.toHaveProperty('intent')
+    expect(s.threads).toHaveLength(0)
+    for (const spy of [
+      s.calls.startChannelThread, s.calls.openMemberDm, s.calls.sendMemberDm, s.calls.shareDm,
+      s.calls.createResearch, s.calls.reviewTask, s.calls.reviewResearchProposal, s.calls.startResearchRound,
+      s.calls.createConversation, s.calls.startStructuredRun,
+    ]) expect(spy).not.toHaveBeenCalled()
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText(/Replying to Analyst:/)).not.toBeInTheDocument())
   })

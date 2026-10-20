@@ -12,7 +12,12 @@ import { closeNavigationSheet, openGeneral, selectWorkspace, workspaceNav } from
  * deterministic fixtures acting through their own MCP endpoints (agents.ts).
  */
 
-type Roster = { members: Array<{ id: string; name: string; handle: string; role: string; public_conversation_id: string | null }> }
+type Roster = {
+  members: Array<{
+    id: string; name: string; handle: string; role: string
+    public_conversation_id: string | null; dm_conversation_id: string | null
+  }>
+}
 
 function urls() {
   const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
@@ -206,6 +211,12 @@ test.describe('on a desktop', () => {
       await expect(log(page).getByText('half a thought', { exact: true })).toHaveCount(1)
       await expect(composer(page)).toHaveValue('')
       await page.unroute('**/channels/*/messages')
+      // The reply to the proposal is a plain message: the proposal stays off the board, and nothing private is opened.
+      await expect(row(page, 'half a thought')).toContainText(manager.name)
+      await expect(proposed).toContainText('Not on the board yet')
+      const board = await (await request.get(`${api}/projects/${projectId}/tasks/board`)).json() as { cards: Array<{ id: string }> }
+      expect(board.cards.map((card) => card.id)).not.toContain(proposal.research_id)
+      expect((await roster(request, api, projectId)).members.map((member) => member.dm_conversation_id)).toEqual([null, null, null])
 
       // 8. A private draft never shows in General; sharing is previewed, then lands in General.
       await workspaceNav(page).getByRole('button', { name: 'Message Analyst privately' }).click()
