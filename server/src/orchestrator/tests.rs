@@ -1852,6 +1852,44 @@ mod conversation_routing {
     }
 
     #[test]
+    fn a_conversation_route_never_reaches_a_direct_message() {
+        let r = rig();
+        let crew = crew(&r);
+        let sink = Recording::default();
+        let dm = crew
+            .members
+            .ensure_dm_session(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap()
+            .dm_conversation_id
+            .unwrap();
+        let message = post(&r, None, "for the analyst only", &[], 0);
+        let channel = r.channel();
+        crew.orchestrator
+            .create_route(NewRoute {
+                project_id: r.project(),
+                kind: RouteKind::Mention,
+                source_kind: SourceKind::Message,
+                source_id: &message.id,
+                target: Target::Session { session_id: dm },
+                channel_id: Some(&channel.id),
+                thread_id: None,
+                work_id: None,
+                body: "a mention",
+            })
+            .unwrap();
+        drain(&crew, &sink);
+        assert!(
+            sink.deliveries().iter().all(|d| d.2 != "a mention"),
+            "{:?}",
+            sink.deliveries()
+        );
+        assert_eq!(
+            only_route(&crew, r.project(), RouteKind::Mention).state,
+            RouteState::Failed
+        );
+    }
+
+    #[test]
     fn depth_follows_the_member_across_replacement() {
         let r = rig();
         let crew = crew(&r);

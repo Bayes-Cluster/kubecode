@@ -33,7 +33,7 @@ use uuid::Uuid;
 use crate::agent_store::AgentStore;
 use crate::channel_store::{AuthorKind, ChannelStore, Claim, Intent, Message, NewMessage};
 use crate::database::Database;
-use crate::member_store::{Binding, Member, MemberStore};
+use crate::member_store::{Binding, Member, MemberState, MemberStore};
 use crate::research_store::{ResearchError, ResearchStore, RoundPhase};
 use crate::work_store::{Actor, WorkItem, WorkStore};
 
@@ -377,14 +377,15 @@ impl Orchestrator {
     ) -> Result<u8, OrchestratorError> {
         // Answering a message that was routed to this Session is causal: one
         // deeper than that message. Otherwise the newest message routed to it
-        // within the day sets the depth.
+        // within the day sets the depth. A route that followed its member to
+        // a replacement Session counts for the Session that received it.
         let inbound: Option<i64> = self
             .connection()
             .query_row(
                 "SELECT m.hops FROM message_routes r
                  JOIN channel_messages m ON m.id = r.source_id
                  WHERE r.project_id = ?1 AND r.source_kind = 'message'
-                   AND r.target_kind = 'session' AND r.target_ref = ?2
+                   AND r.target_kind = 'session' AND (r.target_ref = ?2 OR r.recipient = ?2)
                    AND r.kind IN ('discussion', 'mention', 'agent_handoff')
                    AND (r.source_id = ?3
                         OR (?3 IS NULL AND r.created_at > datetime('now', '-1 day')))
@@ -1130,6 +1131,7 @@ impl Orchestrator {
 
     /// The Session a route is for *now*. A coordinator route follows the
     /// round's current holder, so a handoff retargets what was pending. A
+    /// conversation route follows its member to a replacement Session. A
     /// dispatch is only for the attempt's current executor.
     fn recipient(&self, route: &Route) -> Result<String, RecipientError> {
         // What an experiment ended or a researcher answered concerns the task,
@@ -1157,6 +1159,7 @@ impl Orchestrator {
                 .map(|coordinator| coordinator.holder)
                 .ok_or_else(|| RecipientError::Unavailable("the round has no coordinator".into())),
             Target::Session { session_id } => {
+                let session_id = &self.member_session(route, session_id)?;
                 match self
                     .agents
                     .visible_conversation(&route.project_id, session_id)
@@ -1213,6 +1216,40 @@ impl Orchestrator {
                 }
                 Ok(session_id.clone())
             }
+        }
+    }
+
+    /// A conversation route is addressed to a member, not to one of its
+    /// Sessions (ADR 0229): when the Session it names is one the member has
+    /// since left, it goes to the member's current public Session. A removed
+    /// member is gone; one that needs setup may be fixed, so it is retried.
+    /// Any other route, and a Session that is no member's, is unchanged.
+    fn member_session(&self, route: &Route, session_id: &str) -> Result<String, RecipientError> {
+        let Some(members) = self
+            .members
+            .as_ref()
+            .filter(|_| route.kind.follows_member())
+        else {
+            return Ok(session_id.to_owned());
+        };
+        match members.by_conversation(&route.project_id, session_id) {
+            Ok(Some(resolved)) if resolved.binding == Binding::Dm => {
+                Err(RecipientError::Gone("a direct message is private".into()))
+            }
+            Ok(Some(resolved)) if !resolved.current => {
+                match (
+                    resolved.member.state,
+                    resolved.member.public_conversation_id,
+                ) {
+                    (MemberState::Removed, _) => {
+                        Err(RecipientError::Gone("the member was removed".into()))
+                    }
+                    (MemberState::Active, Some(next)) => Ok(next),
+                    _ => Err(RecipientError::Unavailable("the member needs setup".into())),
+                }
+            }
+            Ok(_) => Ok(session_id.to_owned()),
+            Err(error) => Err(RecipientError::Unavailable(error.to_string())),
         }
     }
 
