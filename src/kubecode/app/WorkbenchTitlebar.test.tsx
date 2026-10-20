@@ -52,19 +52,19 @@ describe('WorkbenchTitlebar', () => {
     const { handlers } = titlebar({
       attention: { current: [entry], others: [{ projectId: 'project-2', name: 'Other', count: 2 }], total: 3 },
     })
-    const bell = screen.getByRole('button', { name: '3 things need you' })
+    const bell = screen.getByRole('button', { name: 'Needs you: 3' })
     fireEvent.pointerDown(bell, { button: 0, ctrlKey: false })
     expect(await screen.findByText('This Workspace')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: /Analyst wants to use pytest/ }))
     expect(handlers.onOpenTarget).toHaveBeenCalledWith(entry.target)
-    fireEvent.pointerDown(screen.getByRole('button', { name: '3 things need you' }), { button: 0, ctrlKey: false })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Needs you: 3' }), { button: 0, ctrlKey: false })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Other: 2' }))
     expect(handlers.onOpenWorkspaceNeeds).toHaveBeenCalledWith('project-2')
   })
 
   it('shows no bell when nothing waits', () => {
     titlebar()
-    expect(screen.queryByRole('button', { name: /things need you/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Needs you: / })).not.toBeInTheDocument()
   })
 
   it('says which Workspace and place is on screen, and searches nothing it cannot name', () => {
