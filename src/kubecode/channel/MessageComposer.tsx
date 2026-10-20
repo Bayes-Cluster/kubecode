@@ -263,7 +263,7 @@ export function MessageComposer({
               recipients={toRecipients}
               onFocusAfterLast={focusText}
             />
-            {blocked && draft.body.trim() && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
+            {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
             <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
             {error && (
               <p className="kubecode-research-error" role="alert">
