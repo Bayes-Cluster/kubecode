@@ -2114,3 +2114,84 @@ fn the_page_counts_matches_per_kind_before_paging() {
     assert_eq!(json["counts"]["session"], 7);
     assert_eq!(json["searched"], json!(["finding", "session"]));
 }
+
+// -- What a read shows and what resolve names (ADR 0231 §3) ---------------------------------------
+
+#[test]
+fn shown_revision_is_the_pinned_brief_for_an_older_research_revision() {
+    let w = world();
+    w.f.research
+        .update_brief(
+            &w.f.project_id,
+            &w.f.research_id,
+            1,
+            &BriefPatch {
+                question: Some("A sharper question?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    let pinned = w.read(
+        &ContextRef::at(ContextKind::Research, &w.f.research_id, "1"),
+        Detail::Content,
+    );
+    assert_eq!(pinned.reference.revision.as_deref(), Some("2"), "current");
+    assert_eq!(pinned.shown_revision.as_deref(), Some("1"), "what is shown");
+    let live = w.read(
+        &ContextRef::new(ContextKind::Research, &w.f.research_id),
+        Detail::Content,
+    );
+    assert_eq!(live.shown_revision.as_deref(), Some("2"));
+    // An artifact shows the bytes it read.
+    let experiment = w.finished_experiment("shown.txt", "first");
+    let artifact = ContextRef::new(
+        ContextKind::Artifact,
+        format!("{}/shown.txt", experiment.id),
+    );
+    fs::write(w.project_root().join("shown.txt"), "second").unwrap();
+    let doc = w.read(&artifact, Detail::Content);
+    let current =
+        w.f.workspace
+            .execution_file_revision(&w.f.project_id, None, "shown.txt")
+            .unwrap();
+    assert_eq!(doc.shown_revision.as_deref(), Some(current.as_str()));
+    // A removed one shows nothing.
+    fs::remove_file(w.project_root().join("shown.txt")).unwrap();
+    let doc = w.read(&artifact, Detail::Content);
+    assert_eq!(doc.availability, Availability::Removed);
+    assert_eq!(doc.shown_revision, None);
+}
+
+#[test]
+fn resolve_names_visible_records_and_never_a_missing_or_foreign_one() {
+    let w = world();
+    let other = w.f.workspace.create_project(".", "gamma").unwrap();
+    let experiment = w.finished_experiment("gone.txt", "x");
+    fs::remove_file(w.project_root().join("gone.txt")).unwrap();
+    let refs = [
+        ContextRef::new(ContextKind::Research, &w.f.research_id),
+        ContextRef::at(ContextKind::Research, &w.f.research_id, "0"),
+        ContextRef::new(ContextKind::Artifact, format!("{}/gone.txt", experiment.id)),
+        ContextRef::new(ContextKind::File, "missing.txt"),
+    ];
+    let resolved = w.context.resolve(&w.f.project_id, &refs).unwrap();
+    assert_eq!(resolved[0].title.as_deref(), Some("Pruning"));
+    assert_eq!(resolved[1].availability, Availability::Changed);
+    assert_eq!(resolved[1].title.as_deref(), Some("Pruning"));
+    assert_eq!(resolved[2].availability, Availability::Removed);
+    assert_eq!(
+        resolved[2].title.as_deref(),
+        Some("gone.txt"),
+        "a visible record whose file is gone keeps its name"
+    );
+    assert_eq!(resolved[3].title, None);
+    let foreign = w.context.resolve(&other.id, &refs[..1]).unwrap();
+    assert_eq!(foreign[0].availability, Availability::Removed);
+    assert_eq!(
+        foreign[0].title, None,
+        "another Project's record is never named"
+    );
+    let json = serde_json::to_value(&foreign[0]).unwrap();
+    assert!(json.as_object().unwrap().contains_key("title"));
+}

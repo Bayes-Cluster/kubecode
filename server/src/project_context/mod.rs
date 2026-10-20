@@ -1321,6 +1321,7 @@ impl ProjectContext {
                         reference: reference.clone(),
                         availability: Availability::Removed,
                         current_revision: None,
+                        title: None,
                     },
                     Some(item) => {
                         let current = item.reference.revision.clone().unwrap_or_default();
@@ -1333,6 +1334,7 @@ impl ProjectContext {
                             reference: reference.clone(),
                             availability,
                             current_revision: item.reference.revision,
+                            title: Some(item.title),
                         }
                     }
                 })
@@ -1520,6 +1522,7 @@ impl ProjectContext {
                         other => source_error(other),
                     })?;
                 brief = old.brief;
+                doc.shown_revision = Some(pinned.to_string());
                 if let Some(first) = doc.sections.first_mut() {
                     first.text = summarize(&brief.question);
                 }
@@ -2334,6 +2337,7 @@ impl ProjectContext {
                     // The revision comes from the bytes just read, so the
                     // reference and the text always agree.
                     doc.availability = compare(requested, &revision);
+                    doc.shown_revision = Some(revision.clone());
                     doc.reference.revision = Some(revision);
                     doc.sections.push(Section {
                         heading: "Content".into(),

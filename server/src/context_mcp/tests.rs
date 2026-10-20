@@ -1125,3 +1125,93 @@ async fn a_queued_second_solo_round_never_replaces_the_round_being_worked() {
     assert_eq!(after["instruction"], "Second instruction");
     assert_eq!(after["brief_revision"], 2);
 }
+
+#[tokio::test]
+async fn context_search_finds_a_file_only_when_asked() {
+    let rig = rig();
+    let session = rig.prior_session();
+    let root = rig.f.workspace.project_path(&rig.f.project_id).unwrap();
+    std::fs::write(root.join("pruning-curve.csv"), "step,loss\n").unwrap();
+    let server = server_for(&rig.runtime, &session.id).unwrap();
+    let default = payload(
+        server
+            .context_search(Parameters(SearchInput {
+                query: Some("pruning".into()),
+                ..Default::default()
+            }))
+            .await,
+    );
+    assert!(
+        default["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["ref"]["kind"] != "file"),
+        "the default scope never walks the disk"
+    );
+    assert!(
+        !default["searched"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("file"))
+    );
+    let named = payload(
+        server
+            .context_search(Parameters(SearchInput {
+                query: Some("pruning".into()),
+                kinds: vec!["file".into()],
+                ..Default::default()
+            }))
+            .await,
+    );
+    assert_eq!(named["items"][0]["ref"]["kind"], "file");
+    assert_eq!(named["items"][0]["ref"]["id"], "pruning-curve.csv");
+}
+
+#[tokio::test]
+async fn context_read_reads_a_cited_file_and_refuses_dot_git() {
+    let rig = rig();
+    let session = rig.prior_session();
+    let root = rig.f.workspace.project_path(&rig.f.project_id).unwrap();
+    std::fs::write(root.join("notes.md"), "pruned to 50%\n").unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::write(root.join(".git/config"), "[core]\n").unwrap();
+    let server = server_for(&rig.runtime, &session.id).unwrap();
+    let doc = payload(
+        server
+            .context_read(Parameters(ReadInput {
+                kind: "file".into(),
+                id: "notes.md".into(),
+                revision: None,
+                detail: None,
+                cursor: None,
+            }))
+            .await,
+    );
+    assert_eq!(doc["sections"][0]["text"], "pruned to 50%\n");
+    assert_eq!(doc["shown_revision"], doc["ref"]["revision"]);
+    let refused = server
+        .context_read(Parameters(ReadInput {
+            kind: "file".into(),
+            id: ".git/config".into(),
+            revision: None,
+            detail: None,
+            cursor: None,
+        }))
+        .await
+        .expect_err("refused");
+    assert_eq!(refused.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+    let resolved = payload(
+        server
+            .context_resolve(Parameters(ResolveInput {
+                refs: vec![RefInput {
+                    kind: "file".into(),
+                    id: ".git/config".into(),
+                    revision: None,
+                }],
+            }))
+            .await,
+    );
+    assert_eq!(resolved[0]["availability"], "removed");
+    assert_eq!(resolved[0]["title"], Value::Null);
+}

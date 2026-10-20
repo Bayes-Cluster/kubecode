@@ -183,6 +183,27 @@ async fn malformed_requests_are_rejected_not_guessed() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
         assert_eq!(body["error"]["code"], "invalid_context_request");
     }
+    // A file path outside the Project, or inside Git, is simply not there.
+    for id in ["..%2Fx", "%2Fetc%2Fpasswd", ".git%2Fconfig"] {
+        let (status, body) = call(
+            &env,
+            Method::GET,
+            &format!("{base}/read?kind=file&id={id}"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{id}: {body}");
+    }
+    // A forged file cursor is refused rather than guessed at.
+    std::fs::write(env._root.path().join("alpha/notes.md"), "notes").unwrap();
+    let (status, body) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/read?kind=file&id=notes.md&cursor=ZjoxOnh4"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     let (status, _) = call(
         &env,
         Method::POST,
@@ -291,4 +312,100 @@ async fn sessions_are_discoverable_and_pages_are_clamped_over_http() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn file_search_read_and_resolve_over_http() {
+    let env = env();
+    let root = env._root.path().join("alpha");
+    std::fs::create_dir_all(root.join("results")).unwrap();
+    let text = "model,accuracy\n".repeat(1_200);
+    std::fs::write(root.join("results/summary.csv"), &text).unwrap();
+    let base = format!("/projects/{}/context", env.project_id);
+
+    let (status, page) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/search?q=summary&kinds=file"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(page["items"][0]["ref"]["kind"], "file");
+    assert_eq!(page["items"][0]["ref"]["id"], "results/summary.csv");
+    assert_eq!(page["items"][0]["title"], "results/summary.csv");
+    assert_eq!(page["searched"], json!(["file"]));
+
+    let mut joined = String::new();
+    let mut cursor: Option<String> = None;
+    let mut shown: Option<String> = None;
+    loop {
+        let mut path = format!("{base}/read?kind=file&id=results%2Fsummary.csv&detail=content");
+        if let Some(cursor) = &cursor {
+            path.push_str(&format!("&cursor={cursor}"));
+        }
+        let (status, doc) = call(&env, Method::GET, &path, Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "{doc}");
+        assert_eq!(doc["availability"], "available");
+        assert_eq!(doc["shown_revision"], doc["ref"]["revision"]);
+        // Every page shows the same version.
+        assert!(shown.is_none() || shown.as_deref() == doc["shown_revision"].as_str());
+        shown = doc["shown_revision"].as_str().map(str::to_owned);
+        joined.push_str(doc["sections"][0]["text"].as_str().unwrap());
+        match doc["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(joined, text);
+
+    let (status, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("{base}/resolve"),
+        json!({"refs": [
+            {"kind": "file", "id": "results/summary.csv", "revision": shown},
+            {"kind": "file", "id": "missing.csv"},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resolved}");
+    assert_eq!(resolved[0]["availability"], "available");
+    assert_eq!(resolved[0]["title"], "results/summary.csv");
+    assert_eq!(resolved[1]["availability"], "removed");
+    assert_eq!(resolved[1]["title"], Value::Null);
+}
+
+#[tokio::test]
+async fn the_page_names_its_scope_over_http() {
+    let env = env();
+    create_research(&env, "Scoped pruning").await;
+    std::fs::write(env._root.path().join("alpha/pruning.md"), "notes").unwrap();
+    let base = format!("/projects/{}/context", env.project_id);
+    let (status, page) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/search?q=pruning"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    let searched = page["searched"].as_array().unwrap();
+    assert!(searched.contains(&json!("research")));
+    assert!(
+        !searched.contains(&json!("file")),
+        "files are searched only when named"
+    );
+    assert_eq!(page["counts"]["research"], 1);
+    assert_eq!(page["truncated"], false);
+    assert_eq!(page["truncated_kinds"], json!([]));
+    let (_, page) = call(
+        &env,
+        Method::GET,
+        &format!("{base}/search?q=pruning&kinds=research,file"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(page["searched"], json!(["research", "file"]));
+    assert_eq!(page["counts"], json!({"research": 1, "file": 1}));
 }

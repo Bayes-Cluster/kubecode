@@ -204,6 +204,11 @@ pub struct ResolvedRef {
     pub reference: ContextRef,
     pub availability: Availability,
     pub current_revision: Option<String>,
+    /// The record's current title when it is visible in this Project (even
+    /// if its file is gone); `null` when it is missing, private, or another
+    /// Project's, so a reference never reveals what it cannot show.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Error)]
