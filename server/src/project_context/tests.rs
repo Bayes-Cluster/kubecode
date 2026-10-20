@@ -50,6 +50,19 @@ fn world() -> World {
     }
 }
 
+/// Another reader over the same stores.
+fn world_context(w: &World) -> ProjectContext {
+    ProjectContext::new(
+        Arc::clone(&w.f.agents),
+        Arc::clone(&w.f.teams),
+        Arc::clone(&w.f.research),
+        Arc::clone(&w.f.experiments),
+        Arc::clone(&w.work),
+        Arc::clone(&w.channels),
+        Arc::clone(&w.f.workspace),
+    )
+}
+
 impl World {
     fn search(&self, query: &str) -> ContextPage {
         self.context
@@ -195,6 +208,13 @@ fn search_discovers_every_kind_with_provenance() {
         task.provenance.parent.as_ref().unwrap().kind,
         ContextKind::Team
     );
+    let file = w
+        .kinds(ContextKind::File)
+        .into_iter()
+        .find(|item| item.reference.id == "kinds.txt")
+        .expect("the artifact's file is a Project file too");
+    assert_eq!(file.title, "kinds.txt");
+    assert!(file.provenance.updated_at.is_some());
 }
 
 #[test]
@@ -289,6 +309,8 @@ fn a_capped_search_keeps_the_newest_candidates_and_says_so() {
         )
         .unwrap();
     assert!(found.truncated);
+    assert_eq!(found.truncated_kinds, vec![ContextKind::Session]);
+    assert_eq!(found.searched, vec![ContextKind::Session]);
     assert!(
         found.items.iter().any(|i| i.title == newest),
         "the newest Session must survive the cap"
@@ -402,6 +424,7 @@ fn every_kind_is_denied_across_projects() {
         ),
         ContextRef::new(ContextKind::Session, &session.id),
         ContextRef::new(ContextKind::Round, &w.f.round_id),
+        ContextRef::new(ContextKind::File, "r.txt"),
     ];
     for reference in &refs {
         assert!(
@@ -468,6 +491,17 @@ fn deleted_sources_are_removed_and_changes_are_detected_for_every_kind() {
         Availability::Changed,
         "analysis changes an experiment"
     );
+    // A file's fingerprint follows its bytes.
+    let file_ref = pinned(&w, ContextKind::File, "e.txt");
+    fs::write(w.project_root().join("e.txt"), "2").unwrap();
+    let resolved_file = w
+        .context
+        .resolve(&w.f.project_id, std::slice::from_ref(&file_ref))
+        .unwrap();
+    assert_eq!(resolved_file[0].availability, Availability::Changed);
+    fs::remove_file(w.project_root().join("e.txt")).unwrap();
+    let resolved_file = w.context.resolve(&w.f.project_id, &[file_ref]).unwrap();
+    assert_eq!(resolved_file[0].availability, Availability::Removed);
     // Deleting a record that existed makes it removed, not an error.
     w.f.teams.delete_team(&w.f.team.id).unwrap();
     let gone = w
@@ -1038,6 +1072,62 @@ fn experiments_and_artifacts_resolve_under_the_execution_root() {
 }
 
 #[test]
+fn search_lists_a_deleted_artifact_or_file_as_removed() {
+    let w = world();
+    let experiment = w.finished_experiment("result.txt", "accuracy=0.91\n");
+    fs::write(w.project_root().join("kept.txt"), "kept").unwrap();
+    let page = w
+        .context
+        .search(
+            &w.f.project_id,
+            None,
+            &[ContextKind::Artifact, ContextKind::File],
+            Some(50),
+            None,
+        )
+        .unwrap();
+    assert!(
+        page.items
+            .iter()
+            .all(|item| item.availability == Availability::Available)
+    );
+    fs::remove_file(w.project_root().join("result.txt")).unwrap();
+    let page = w
+        .context
+        .search(
+            &w.f.project_id,
+            None,
+            &[ContextKind::Artifact, ContextKind::File],
+            Some(50),
+            None,
+        )
+        .unwrap();
+    let artifact = page
+        .items
+        .iter()
+        .find(|item| item.reference.kind == ContextKind::Artifact)
+        .unwrap();
+    assert_eq!(
+        artifact.reference.id,
+        format!("{}/result.txt", experiment.id)
+    );
+    assert_eq!(artifact.availability, Availability::Removed);
+    let files: Vec<&str> = page
+        .items
+        .iter()
+        .filter(|item| item.reference.kind == ContextKind::File)
+        .map(|item| item.reference.id.as_str())
+        .collect();
+    assert_eq!(files, ["kept.txt"], "a deleted file is no longer found");
+    // A file deleted after it was found is listed as removed on its page.
+    let mut item = file_item("kept.txt", None, None);
+    fs::remove_file(w.project_root().join("kept.txt")).unwrap();
+    w.context
+        .check_page(&w.f.project_id, std::slice::from_mut(&mut item));
+    assert_eq!(item.availability, Availability::Removed);
+}
+
+#[test]
 fn artifact_reads_are_bounded_and_cannot_escape() {
     let w = world();
     let experiment = w.finished_experiment("big.txt", &"x".repeat(100_000));
@@ -1129,7 +1219,10 @@ fn reading_never_changes_stored_state() {
         w.f.teams.get_team(&w.f.team.id).unwrap(),
         w.f.teams.get_task(&w.f.task_id).unwrap(),
     );
-    for item in w.search("").items {
+    fs::write(w.project_root().join("notes.md"), "notes").unwrap();
+    let files = w.kinds(ContextKind::File);
+    assert!(!files.is_empty());
+    for item in w.search("").items.into_iter().chain(files) {
         let _ = w
             .context
             .read(&w.f.project_id, &item.reference, Detail::Evidence, None);
@@ -1672,18 +1765,8 @@ fn a_file_reference_reads_and_resolves_with_the_work_evidence_fingerprint() {
         w.f.workspace
             .execution_file_revision(&w.f.project_id, None, "results/summary.csv")
             .unwrap();
-    let evidence = crate::work_agent::Evidence::new(
-        Arc::new(ProjectContext::new(
-            Arc::clone(&w.f.agents),
-            Arc::clone(&w.f.teams),
-            Arc::clone(&w.f.research),
-            Arc::clone(&w.f.experiments),
-            Arc::clone(&w.work),
-            Arc::clone(&w.channels),
-            Arc::clone(&w.f.workspace),
-        )),
-        Arc::clone(&w.f.workspace),
-    );
+    let evidence =
+        crate::work_agent::Evidence::new(Arc::new(world_context(&w)), Arc::clone(&w.f.workspace));
     assert_eq!(
         evidence.current_revision(&w.f.project_id, "file", "results/summary.csv"),
         Some(fingerprint.clone()),
@@ -1867,4 +1950,167 @@ fn file_references_cannot_escape_name_git_follow_symlinks_or_block_on_a_fifo() {
             .iter()
             .all(|r| r.availability == Availability::Removed && r.current_revision.is_none())
     );
+}
+
+// -- A search names its scope (ADR 0231 §2) -------------------------------------------------------
+
+#[test]
+fn files_are_searched_only_when_asked() {
+    let w = world();
+    fs::write(w.project_root().join("pruning-notes.md"), "notes").unwrap();
+    let default = w.search("pruning");
+    let expected: Vec<ContextKind> = ContextKind::DEFAULT_SEARCH
+        .iter()
+        .copied()
+        .filter(|kind| *kind != ContextKind::SessionTurn)
+        .collect();
+    assert_eq!(default.searched, expected);
+    assert!(!default.searched.contains(&ContextKind::File));
+    assert!(
+        default
+            .items
+            .iter()
+            .all(|item| item.reference.kind != ContextKind::File)
+    );
+    assert!(
+        !default.items.is_empty(),
+        "the research question still matches"
+    );
+    let files = w
+        .context
+        .search(
+            &w.f.project_id,
+            Some("pruning"),
+            &[ContextKind::Research, ContextKind::File],
+            Some(50),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        files.searched,
+        vec![ContextKind::Research, ContextKind::File]
+    );
+    let file = files
+        .items
+        .iter()
+        .find(|item| item.reference.kind == ContextKind::File)
+        .expect("a named kind is searched");
+    assert_eq!(file.reference.id, "pruning-notes.md");
+    assert_eq!(file.title, "pruning-notes.md");
+    assert!(file.summary.is_empty(), "no server-authored prose");
+    assert_eq!(file.reference.revision, None, "hits are not hashed");
+}
+
+#[test]
+fn a_file_search_is_bounded_and_names_file_as_truncated() {
+    let w = world();
+    for n in 0..20 {
+        fs::write(w.project_root().join(format!("f{n:02}.txt")), "x").unwrap();
+    }
+    let context = world_context(&w).with_file_scan_budget(5);
+    let page = context
+        .search(&w.f.project_id, None, &[ContextKind::File], Some(50), None)
+        .unwrap();
+    assert!(page.truncated);
+    assert_eq!(page.truncated_kinds, vec![ContextKind::File]);
+    let page = w
+        .context
+        .search(&w.f.project_id, None, &[ContextKind::File], Some(50), None)
+        .unwrap();
+    assert!(!page.truncated);
+    assert!(page.truncated_kinds.is_empty());
+}
+
+#[test]
+fn an_empty_query_lists_recent_files_first_with_store_formatted_timestamps() {
+    let w = world();
+    let root = w.project_root();
+    let finding = w.publish("A finding between two files", Vec::new());
+    let stamped =
+        w.f.research
+            .finding(&w.f.project_id, &finding)
+            .unwrap()
+            .created_at;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for (name, seconds) in [("older.txt", now - 3_600), ("newer.txt", now + 3_600)] {
+        fs::write(root.join(name), name).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(root.join(name))
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    }
+    let page = w
+        .context
+        .search(
+            &w.f.project_id,
+            None,
+            &[ContextKind::File, ContextKind::Finding],
+            Some(50),
+            None,
+        )
+        .unwrap();
+    let order: Vec<&str> = page
+        .items
+        .iter()
+        .map(|item| match item.reference.kind {
+            ContextKind::File => item.reference.id.as_str(),
+            _ => "finding",
+        })
+        .collect();
+    assert_eq!(order, ["newer.txt", "finding", "older.txt"], "{stamped}");
+    let newer = &page.items[0];
+    assert_eq!(
+        newer.provenance.updated_at.as_deref(),
+        Some(utc_timestamp(now + 3_600).as_str())
+    );
+    assert_eq!(stamped.len(), "YYYY-MM-DD HH:MM:SS".len());
+}
+
+#[test]
+fn utc_timestamps_match_the_stores_format() {
+    assert_eq!(utc_timestamp(0), "1970-01-01 00:00:00");
+    // A leap day.
+    assert_eq!(utc_timestamp(951_782_400), "2000-02-29 00:00:00");
+    assert_eq!(utc_timestamp(2_147_483_647), "2038-01-19 03:14:07");
+    assert_eq!(utc_timestamp(2_147_483_648), "2038-01-19 03:14:08");
+}
+
+#[test]
+fn the_page_counts_matches_per_kind_before_paging() {
+    let w = world();
+    for n in 0..7 {
+        w.f.agents
+            .create_conversation(
+                &w.f.project_id,
+                AgentId::OpenCode,
+                Some(&format!("counted {n}")),
+            )
+            .unwrap();
+    }
+    let page = w
+        .context
+        .search(
+            &w.f.project_id,
+            Some("counted"),
+            &[ContextKind::Session, ContextKind::Finding],
+            Some(3),
+            None,
+        )
+        .unwrap();
+    assert_eq!(page.items.len(), 3);
+    assert_eq!(page.counts.get(&ContextKind::Session), Some(&7));
+    assert_eq!(
+        page.counts.get(&ContextKind::Finding),
+        Some(&0),
+        "a searched kind with no matches is counted as zero"
+    );
+    assert!(page.truncated_kinds.is_empty());
+    let json = serde_json::to_value(&page).unwrap();
+    assert_eq!(json["counts"]["session"], 7);
+    assert_eq!(json["searched"], json!(["finding", "session"]));
 }

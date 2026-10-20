@@ -1,6 +1,8 @@
 //! Types of the Project context reader (ADR 0214). Everything is bounded:
 //! summaries, section text, page sizes, and the cursor.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -15,6 +17,10 @@ pub const MAX_RESOLVE: usize = 32;
 pub const SCAN_CAP: usize = 200;
 /// Candidates gathered across all owners for one search.
 pub const CANDIDATE_BUDGET: usize = 2_000;
+/// Directory entries one file search visits (ADR 0231 §1).
+pub const FILE_SCAN_ENTRIES: usize = 5_000;
+/// Files one search keeps, the most recently modified.
+pub const FILE_HIT_CAP: usize = SCAN_CAP;
 /// Characters in one whole document, across its sections.
 pub const MAX_DOCUMENT_CHARS: usize = 32 * 1024;
 pub const TURN_PAGE: usize = 10;
@@ -148,8 +154,19 @@ pub struct ContextItem {
 pub struct ContextPage {
     pub items: Vec<ContextItem>,
     pub next_cursor: Option<String>,
-    /// An owner had more candidates than one search scans.
+    /// Some kind was not searched completely: `truncated_kinds` is not empty.
     pub truncated: bool,
+    /// The kinds this search covered, in declaration order.
+    #[serde(default)]
+    pub searched: Vec<ContextKind>,
+    /// Searched kinds an owner's scan cap, the candidate budget, or the file
+    /// walk's budget cut short: more of them may exist than were matched.
+    #[serde(default)]
+    pub truncated_kinds: Vec<ContextKind>,
+    /// Matches per searched kind before paging (zero included); a lower bound
+    /// for a truncated kind.
+    #[serde(default)]
+    pub counts: BTreeMap<ContextKind, usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

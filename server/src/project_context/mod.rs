@@ -9,6 +9,7 @@ mod tests;
 
 pub use models::*;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use base64::Engine as _;
@@ -36,16 +37,71 @@ pub struct ProjectContext {
     /// Who the direct-message Sessions are, so private conversations are never
     /// listed, resolved, or read as shared Project context (ADR 0223).
     members: Option<Arc<crate::member_store::MemberStore>>,
+    /// Directory entries one file search visits.
+    file_scan_entries: usize,
 }
 
-/// Keeps the first `SCAN_CAP` entries (callers order newest first) and flags
-/// the page when anything was left out.
-fn cap<T>(mut items: Vec<T>, truncated: &mut bool) -> Vec<T> {
-    if items.len() > SCAN_CAP {
-        *truncated = true;
-        items.truncate(SCAN_CAP);
+/// The kinds whose candidates come from research questions.
+const RESEARCH_FAMILY: &[ContextKind] = &[
+    ContextKind::Research,
+    ContextKind::Import,
+    ContextKind::Finding,
+    ContextKind::Round,
+    ContextKind::Experiment,
+    ContextKind::Artifact,
+];
+const TEAM_FAMILY: &[ContextKind] = &[ContextKind::Team, ContextKind::TeamTask];
+
+/// Which searched kinds were not searched completely.
+struct Truncation<'a> {
+    wanted: &'a dyn Fn(ContextKind) -> bool,
+    kinds: BTreeSet<ContextKind>,
+}
+
+impl Truncation<'_> {
+    /// Marks the searched kinds among `family`: their owner left some out.
+    fn mark(&mut self, family: &[ContextKind]) {
+        self.kinds
+            .extend(family.iter().copied().filter(|kind| (self.wanted)(*kind)));
     }
-    items
+
+    /// Keeps the first `SCAN_CAP` entries (callers order newest first) and
+    /// marks `family` when anything was left out.
+    fn cap<T>(&mut self, mut items: Vec<T>, family: &[ContextKind]) -> Vec<T> {
+        if items.len() > SCAN_CAP {
+            self.mark(family);
+            items.truncate(SCAN_CAP);
+        }
+        items
+    }
+}
+
+/// `YYYY-MM-DD HH:MM:SS` in UTC, the format of the stores' `CURRENT_TIMESTAMP`,
+/// so file times sort among record times as plain strings.
+fn utc_timestamp(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let rest = seconds % 86_400;
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        rest / 3_600,
+        rest % 3_600 / 60,
+        rest % 60
+    )
 }
 
 fn digest(parts: &[&str]) -> String {
@@ -98,7 +154,14 @@ impl ProjectContext {
             channels,
             workspace,
             members: None,
+            file_scan_entries: FILE_SCAN_ENTRIES,
         }
+    }
+
+    #[cfg(test)]
+    fn with_file_scan_budget(mut self, entries: usize) -> Self {
+        self.file_scan_entries = entries;
+        self
     }
 
     /// Hides every member's direct-message Session from Project context: no
@@ -122,9 +185,11 @@ impl ProjectContext {
     // -- Search -----------------------------------------------------------------
 
     /// Metadata items matching `query` (every whole word must appear in the
-    /// title or summary), newest first within a relevance tier. An empty query
-    /// lists recent work. Each owner is scanned for at most `SCAN_CAP` recent
-    /// candidates; if one had more, the page says so.
+    /// title or summary; a file's title is its path), newest first within a
+    /// relevance tier. An empty query lists recent work. An empty `kinds`
+    /// searches `ContextKind::DEFAULT_SEARCH`: Project files are walked only
+    /// when named. Each owner is scanned for at most `SCAN_CAP` recent
+    /// candidates; the page names every kind that was cut short.
     pub fn search(
         &self,
         project_id: &str,
@@ -135,7 +200,18 @@ impl ProjectContext {
     ) -> Result<ContextPage, ContextError> {
         let limit = limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
         let offset = decode_cursor(cursor)?;
-        let wanted = |kind: ContextKind| kinds.is_empty() || kinds.contains(&kind);
+        let kinds = if kinds.is_empty() {
+            ContextKind::DEFAULT_SEARCH
+        } else {
+            kinds
+        };
+        let wanted = |kind: ContextKind| kinds.contains(&kind);
+        // A turn is read through its Session; search never lists one.
+        let searched: Vec<ContextKind> = ContextKind::ALL
+            .iter()
+            .copied()
+            .filter(|kind| wanted(*kind) && *kind != ContextKind::SessionTurn)
+            .collect();
         let words: Vec<String> = query
             .unwrap_or_default()
             .split_whitespace()
@@ -143,8 +219,12 @@ impl ProjectContext {
             .take(8)
             .collect();
         let mut candidates = Vec::new();
-        let mut truncated = false;
-        self.collect(project_id, &wanted, &mut candidates, &mut truncated)?;
+        let mut truncation = Truncation {
+            wanted: &wanted,
+            kinds: BTreeSet::new(),
+        };
+        self.collect(project_id, &words, &mut candidates, &mut truncation)?;
+        let truncated_kinds: Vec<ContextKind> = truncation.kinds.into_iter().collect();
         let mut scored: Vec<(u8, ContextItem)> = candidates
             .into_iter()
             .filter_map(|item| {
@@ -169,48 +249,78 @@ impl ProjectContext {
                     .then_with(|| a.1.reference.id.cmp(&b.1.reference.id))
             })
         });
+        let mut counts: BTreeMap<ContextKind, usize> =
+            searched.iter().map(|kind| (*kind, 0)).collect();
+        for (_, item) in &scored {
+            *counts.entry(item.reference.kind).or_default() += 1;
+        }
         let total = scored.len();
-        let items: Vec<ContextItem> = scored
+        let mut items: Vec<ContextItem> = scored
             .into_iter()
             .skip(offset)
             .take(limit)
             .map(|(_, item)| item)
             .collect();
+        self.check_page(project_id, &mut items);
         let next_cursor =
             (offset + items.len() < total).then(|| encode_cursor(offset + items.len()));
         Ok(ContextPage {
             items,
             next_cursor,
-            truncated,
+            truncated: !truncated_kinds.is_empty(),
+            searched,
+            truncated_kinds,
+            counts,
         })
+    }
+
+    /// Artifacts and files on a returned page are checked for existence with
+    /// a metadata check (no hashing), so a removed one is listed as removed.
+    fn check_page(&self, project_id: &str, items: &mut [ContextItem]) {
+        for item in items {
+            let present = match item.reference.kind {
+                ContextKind::File => {
+                    self.workspace
+                        .execution_file_exists(project_id, None, &item.reference.id)
+                }
+                ContextKind::Artifact => {
+                    let Some((experiment_id, path)) = item.reference.id.split_once('/') else {
+                        continue;
+                    };
+                    self.experiment(project_id, experiment_id)
+                        .ok()
+                        .flatten()
+                        .and_then(|experiment| self.execution_root(&experiment))
+                        .is_some_and(|root| {
+                            self.workspace
+                                .execution_file_exists(project_id, root.as_deref(), path)
+                        })
+                }
+                _ => continue,
+            };
+            if !present {
+                item.availability = Availability::Removed;
+            }
+        }
     }
 
     fn collect(
         &self,
         project_id: &str,
-        wanted: &dyn Fn(ContextKind) -> bool,
+        words: &[String],
         out: &mut Vec<ContextItem>,
-        truncated: &mut bool,
+        truncation: &mut Truncation<'_>,
     ) -> Result<(), ContextError> {
-        let need_research = [
-            ContextKind::Research,
-            ContextKind::Round,
-            ContextKind::Import,
-            ContextKind::Finding,
-            ContextKind::Experiment,
-            ContextKind::Artifact,
-        ]
-        .into_iter()
-        .any(wanted);
-        if need_research {
+        let wanted = truncation.wanted;
+        if RESEARCH_FAMILY.iter().copied().any(wanted) {
             // Newest first: the cap keeps the most recent candidates.
-            let questions = cap(
+            let questions = truncation.cap(
                 self.research.list(project_id, true).map_err(source_error)?,
-                truncated,
+                RESEARCH_FAMILY,
             );
             for question in &questions {
                 if out.len() >= CANDIDATE_BUDGET {
-                    *truncated = true;
+                    truncation.mark(RESEARCH_FAMILY);
                     break;
                 }
                 if wanted(ContextKind::Research) {
@@ -228,11 +338,11 @@ impl ProjectContext {
                     ));
                 }
                 if wanted(ContextKind::Import) {
-                    for import in cap(
+                    for import in truncation.cap(
                         self.research
                             .imports(project_id, &question.id)
                             .map_err(source_error)?,
-                        truncated,
+                        &[ContextKind::Import],
                     ) {
                         out.push(self.import_item(&import));
                     }
@@ -243,23 +353,21 @@ impl ProjectContext {
                         .findings(project_id, &question.id)
                         .map_err(source_error)?;
                     findings.reverse();
-                    for finding in cap(findings, truncated) {
+                    for finding in truncation.cap(findings, &[ContextKind::Finding]) {
                         out.push(self.finding_item(&finding));
                     }
                 }
-                if [
+                let round_family = &[
                     ContextKind::Round,
                     ContextKind::Experiment,
                     ContextKind::Artifact,
-                ]
-                .into_iter()
-                .any(wanted)
-                {
+                ];
+                if round_family.iter().copied().any(wanted) {
                     let rounds = self
                         .research
                         .rounds(project_id, &question.id)
                         .map_err(source_error)?;
-                    for round in cap(rounds, truncated) {
+                    for round in truncation.cap(rounds, round_family) {
                         if wanted(ContextKind::Round) {
                             out.push(self.round_item(&question.title, &round));
                         }
@@ -268,7 +376,10 @@ impl ProjectContext {
                                 .experiments
                                 .experiments(project_id, &question.id, &round.id)
                                 .map_err(source_error)?;
-                            for experiment in cap(experiments, truncated) {
+                            for experiment in truncation.cap(
+                                experiments,
+                                &[ContextKind::Experiment, ContextKind::Artifact],
+                            ) {
                                 if wanted(ContextKind::Experiment) {
                                     out.push(self.experiment_item(&experiment));
                                 }
@@ -297,18 +408,18 @@ impl ProjectContext {
                 let private = members.dm_session_ids().map_err(source_error)?;
                 conversations.retain(|conversation| !private.contains(&conversation.id));
             }
-            for conversation in cap(conversations, truncated) {
+            for conversation in truncation.cap(conversations, &[ContextKind::Session]) {
                 out.push(self.session_item(&conversation));
             }
         }
-        if wanted(ContextKind::Team) || wanted(ContextKind::TeamTask) {
-            let teams = cap(
+        if TEAM_FAMILY.iter().copied().any(wanted) {
+            let teams = truncation.cap(
                 self.teams.list_teams(project_id).map_err(source_error)?,
-                truncated,
+                TEAM_FAMILY,
             );
             for team in &teams {
                 if out.len() >= CANDIDATE_BUDGET {
-                    *truncated = true;
+                    truncation.mark(TEAM_FAMILY);
                     break;
                 }
                 if wanted(ContextKind::Team) {
@@ -317,7 +428,7 @@ impl ProjectContext {
                 if wanted(ContextKind::TeamTask) {
                     let mut tasks = self.teams.list_tasks(&team.id).map_err(source_error)?;
                     tasks.reverse();
-                    for task in cap(tasks, truncated) {
+                    for task in truncation.cap(tasks, &[ContextKind::TeamTask]) {
                         out.push(self.task_item(team, &task));
                     }
                 }
@@ -328,9 +439,9 @@ impl ProjectContext {
                 include_closed: true,
                 ..WorkFilter::default()
             };
-            for summary in cap(
+            for summary in truncation.cap(
                 self.work.list(project_id, &filter).map_err(source_error)?,
-                truncated,
+                &[ContextKind::Work],
             ) {
                 out.push(self.work_item(&summary));
             }
@@ -345,16 +456,31 @@ impl ProjectContext {
                     out.push(self.channel_item(&channel));
                 }
                 if wanted(ContextKind::Thread) {
-                    for thread in cap(
+                    for thread in truncation.cap(
                         self.channels
                             .threads(project_id, &channel.id, None)
                             .map_err(source_error)?,
-                        truncated,
+                        &[ContextKind::Thread],
                     ) {
                         out.push(self.thread_item(&thread));
                     }
                 }
             }
+        }
+        if wanted(ContextKind::File) {
+            let found = self
+                .workspace
+                .search_project_files(project_id, words, self.file_scan_entries, FILE_HIT_CAP)
+                .map_err(source_error)?;
+            if found.truncated {
+                truncation.mark(&[ContextKind::File]);
+            }
+            out.extend(
+                found
+                    .hits
+                    .into_iter()
+                    .map(|hit| file_item(&hit.path, None, hit.modified_unix.map(utc_timestamp))),
+            );
         }
         Ok(())
     }

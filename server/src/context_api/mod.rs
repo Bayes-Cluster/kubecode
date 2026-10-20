@@ -109,7 +109,7 @@ fn check_project(state: &AppState, project_id: &str) -> Result<(), ContextApiErr
 #[derive(Debug, Deserialize)]
 struct SearchQuery {
     q: Option<String>,
-    /// Comma-separated kinds; empty means every kind.
+    /// Comma-separated kinds; empty means every kind but `file`.
     kinds: Option<String>,
     limit: Option<usize>,
     cursor: Option<String>,
