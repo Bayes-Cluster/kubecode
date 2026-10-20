@@ -886,6 +886,24 @@ describe('Returning to a place (ADR 0228 §4)', () => {
     expect(document.activeElement?.getAttribute('data-message-id')).toBeNull()
   })
 
+  it('lands on the message being read with the browser Back after leaving General', async () => {
+    const { nav } = await start('#/p/project-1/general', six())
+    await screen.findByText('note 6')
+    const scrollTo = readableLog()
+    scrollTo(40)
+    await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
+
+    fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board'))
+    Element.prototype.scrollIntoView = vi.fn()
+    await act(async () => {
+      window.history.back()
+      await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }))
+    })
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m3'))
+    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+  })
+
   it('follows the conversation again when the researcher was at the newest message', async () => {
     const { nav } = await start('#/p/project-1/general/m/m2', six())
     await screen.findByText('note 6')

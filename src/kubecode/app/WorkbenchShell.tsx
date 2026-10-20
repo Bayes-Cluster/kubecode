@@ -81,6 +81,7 @@ import {
 } from './location/WorkspaceNavigation'
 import {
   hostsInspector,
+  locationOf,
   pickInitialWorkspace,
   viewKeyOf,
   type GeneralPatch,
@@ -89,7 +90,7 @@ import {
   type PlaceTarget,
 } from './location/workspaceLocation'
 import { useWorkspaceRouteSync } from './useWorkspaceRouteSync'
-import { parseWorkspaceRoute, type WorkspaceRoute } from './workspaceRoute'
+import { parseWorkspaceRoute, routeHash, type WorkspaceRoute } from './workspaceRoute'
 import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
 import { useWorkspaceBootstrap } from './useWorkspaceBootstrap'
@@ -330,6 +331,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   /**
    * Leaving General records where the researcher was reading in its place, as
    * a quiet change, so coming back (or Back, or a reload) lands there again.
+   * The address of General's own history entry takes the position at once,
+   * before the move away pushes the next place, so Back lands on it too.
    */
   const foldReading = useCallback(() => {
     const current = projectIdRef.current
@@ -343,7 +346,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       { type: 'patchGeneral', projectId: current, patch: { message: reading.atLatest ? null : reading.messageId } },
       { history: 'replace' },
     )
-  }, [dispatchLocation])
+    const shown = parseWorkspaceRoute(window.location.hash)
+    if (shown?.project === current && shown.view === 'general') {
+      const folded = routeFromLocation(current, locationOf(peekLocation(), current))
+      window.history.replaceState(window.history.state, '', routeHash(folded))
+    }
+  }, [dispatchLocation, peekLocation])
 
   /** A move the researcher made. */
   const move = useCallback((action: LocationAction, options?: LocationDispatchOptions) => {
