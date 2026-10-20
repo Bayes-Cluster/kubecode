@@ -77,8 +77,8 @@ describe('ResearchWorkspace', () => {
   })
 
   it('for a Task, shows its stage and the way to it, and nothing that finishes, reopens, or archives it', async () => {
-    const onOpen = vi.fn()
-    mount({ task: { stage: 'review', archived: false, onOpen } })
+    const onOpenTask = vi.fn()
+    mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, task_stage: 'review' }) }), onOpenTask })
     expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
     expect(screen.getByText('kubecode.task.stage.review')).toBeInTheDocument()
     expect(screen.queryByText('kubecode.research.status.open')).not.toBeInTheDocument()
@@ -87,14 +87,36 @@ describe('ResearchWorkspace', () => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
     }
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.openTask' }))
-    expect(onOpen).toHaveBeenCalled()
+    expect(onOpenTask).toHaveBeenCalled()
   })
 
-  it('says an admitted Task is finished by its review when the server refuses to resolve it', async () => {
-    const setResearchState = vi.fn().mockRejectedValue(new ApiError('task_owned', 'x', 409))
+  it('knows an archived Task from its record, however long the board\'s archived list is', async () => {
+    mount({
+      api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, archived: true, task_stage: 'done' }) }),
+      onOpenTask: vi.fn(),
+    })
+    expect(await screen.findByText('kubecode.task.stage.done')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'kubecode.task.openTask' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'kubecode.research.restore' })).not.toBeInTheDocument()
+  })
+
+  it('a question that is not a Task keeps its own status and controls', async () => {
+    mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue({ ...detailFixture, task_stage: null }) }), onOpenTask: vi.fn() })
+    expect(await screen.findByText('kubecode.research.status.open')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'kubecode.task.openTask' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'kubecode.research.resolve' })).toBeInTheDocument()
+  })
+
+  it('says in words why the server refused, never its code', async () => {
+    const setResearchState = vi.fn()
+      .mockRejectedValueOnce(new ApiError('task_owned', 'x', 409))
+      .mockRejectedValueOnce(new ApiError('task_active', 'the Task cannot be archived now: work_active', 409, null, 'work_active'))
     mount({ api: fakeApi({ setResearchState }) })
     fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.resolve' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.task.ownedStatus')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.research.archive' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('kubecode.task.archiveBlocked.work_active'))
+    expect(screen.getByRole('alert')).not.toHaveTextContent('cannot be archived now')
   })
 
   it('shows loading, then the brief with its revision', async () => {

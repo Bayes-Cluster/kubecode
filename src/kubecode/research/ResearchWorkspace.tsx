@@ -13,7 +13,6 @@ import type {
   AgentDescriptor,
   Conversation,
   KubecodeApi,
-  TaskStage,
   TeamSnapshot,
   WorkspaceEvent,
 } from '../api'
@@ -41,10 +40,11 @@ export type ResearchWorkspaceProps = {
   /** In the inspector: its Close, drawn in this header (ADR 0227 shape). */
   close?: ViewHeaderProps['close']
   /**
-   * The question is a Task (on the board or archived from it): its stage is
-   * its state, it is finished by its review, and it is opened as a Task.
+   * Opens the Task this question is, when its record says it is one (admitted,
+   * on the board or archived): then its stage is its state, it is finished by
+   * its review, and it is opened as a Task (ADR 0230 §3).
    */
-  task?: { stage: TaskStage; archived: boolean; onOpen: () => void } | null
+  onOpenTask?: () => void
   /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
   startsRounds?: boolean
   /** The loaded title, for the inspector's "Back to …" one level up. */
@@ -77,11 +77,11 @@ export function ResearchWorkspace({
   events,
   back,
   close,
-  task = null,
   startsRounds = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
+  onOpenTask,
   onOpenThread,
   onTitle,
   projectId,
@@ -143,6 +143,8 @@ export function ResearchWorkspace({
   }
 
   const { detail } = bundle
+  // Whether the question is a Task comes from its own record, never from a capped board list.
+  const task = detail.task_stage && onOpenTask ? { stage: detail.task_stage, onOpen: onOpenTask } : null
   const pendingDecisions = bundle.proposals.filter((proposal) => !proposal.review).length
     + bundle.outcomes.filter((outcome) => outcome.status === 'pending').length
   const command = (action: 'archive' | 'restore' | 'resolve' | 'reopen') => void state.run(async () => {
@@ -151,6 +153,8 @@ export function ResearchWorkspace({
     } catch (cause) {
       // An admitted Task's status is its lifecycle's (ADR 0230 §1).
       if (cause instanceof ApiError && cause.code === 'task_owned') throw new Error(t('kubecode.task.ownedStatus'))
+      // An archive a Task's rule refused says why in words (ADR 0230 §2).
+      if (cause instanceof ApiError && cause.code === 'task_active') throw new Error(archiveBlockedText(t, cause.reason))
       throw cause
     }
     reload()
@@ -292,4 +296,12 @@ export function ResearchWorkspace({
       </Tabs>
     </section>
   )
+}
+
+function archiveBlockedText(t: Translator, reason: string | null): string {
+  switch (reason) {
+    case 'work_active': return t('kubecode.task.archiveBlocked.work_active')
+    case 'archived': return t('kubecode.task.archiveBlocked.archived')
+    default: return t('kubecode.task.archiveBlocked.under_review')
+  }
 }

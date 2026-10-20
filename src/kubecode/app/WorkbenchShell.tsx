@@ -843,18 +843,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const historyShown = historyOpen || historyPinned
   const inspectorBottom = location.inspector[0]
   const boardTask = inspectorBottom?.kind === 'task' ? inspectorBottom.id : null
-  // A legacy question that is a Task (on the board, or archived from it) is shown as that Task (ADR 0230 §1).
+  // A legacy question that is a Task is shown as that Task (ADR 0230 §1): its
+  // record says so, and this opens it.
   const questionId = place.view === 'question' ? place.question : null
-  const questionStage = questionId
-    ? taskBoard.board?.cards.find((card) => card.id === questionId)?.stage
-      ?? taskBoard.board?.archived?.find((card) => card.id === questionId)?.stage
-      ?? null
-    : null
-  const questionTask = questionId && questionStage ? {
-    stage: questionStage,
-    archived: !taskBoard.board?.cards.some((card) => card.id === questionId),
-    onOpen: () => inspect({ kind: 'task', id: questionId }),
-  } : null
+  const openQuestionTask = questionId ? () => inspect({ kind: 'task', id: questionId }) : undefined
   const announcement = announcedProjectId !== null && announcedProjectId === projectId && project
     ? t('kubecode.nav.placeAnnouncement', { workspace: project.name, place: placeName(place) })
     : ''
@@ -1195,7 +1187,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 projectId={projectId}
                 researchId={place.question}
                 t={t}
-                task={questionTask}
+                onOpenTask={openQuestionTask}
                 teams={teams}
               />
             ) : sessionsSurface}

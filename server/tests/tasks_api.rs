@@ -1350,3 +1350,21 @@ async fn an_archived_task_detail_says_so() {
         .collect();
     assert_eq!(kinds, ["proposed", "admitted", "archived"]);
 }
+
+/// The question view decides from the research record itself whether a
+/// question is a Task, whatever the board lists (ADR 0230 §3).
+#[tokio::test]
+async fn a_research_record_says_whether_it_is_a_task_and_in_which_stage() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let draft = env
+        .agent(&env.general)
+        .task_propose(brief("Quantize"), Some("quant"))
+        .unwrap();
+    let read = |id: &str| format!("/projects/{}/research/{id}", env.project);
+    let (status, body) = call(&env, Method::GET, &read(&task.research_id), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["task_stage"], "review", "{body}");
+    let (_, body) = call(&env, Method::GET, &read(&draft.research_id), Value::Null).await;
+    assert_eq!(body["task_stage"], Value::Null, "{body}");
+}

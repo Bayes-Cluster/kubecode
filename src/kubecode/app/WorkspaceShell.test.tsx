@@ -56,18 +56,15 @@ function api(overrides: Record<string, unknown> = {}) {
 }
 
 vi.mock('../research/ResearchWorkspace', () => ({
-  ResearchWorkspace: ({ onOpenThread, researchId, task }: {
+  ResearchWorkspace: ({ onOpenTask, onOpenThread, researchId }: {
     onOpenThread?: (threadId: string) => void
+    onOpenTask?: () => void
     researchId: string
-    task?: { stage: string; archived: boolean; onOpen: () => void } | null
   }) => (
     <section aria-label={`task ${researchId}`}>
       {onOpenThread && <button type="button" onClick={() => onOpenThread('t1')}>Open thread t1</button>}
-      {task && (
-        <button type="button" onClick={task.onOpen}>
-          {`Open the Task (${task.stage}${task.archived ? ', archived' : ''})`}
-        </button>
-      )}
+      {/* The real view offers this only when the research record says it is a Task. */}
+      {onOpenTask && <button type="button" onClick={onOpenTask}>Open the Task</button>}
     </section>
   ),
 }))
@@ -489,27 +486,18 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe(hash))
   })
 
-  it('shows a legacy question that is a Task as that Task, on the board or archived, and opens it on Kanban', async () => {
+  it('opens a legacy question\'s Task on Kanban, whatever the board lists', async () => {
     await start('#/p/project-1/question/r1')
-    fireEvent.click(await screen.findByRole('button', { name: 'Open the Task (review)' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open the Task' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
     expect(await inspector('Task details')).toBeInTheDocument()
   })
 
-  it('treats an archived Task\'s question as the Task, and a question that never was one as a question', async () => {
-    const board = {
-      cards: [], stages: [], total: 0,
-      archived: [
-        { id: 'r2', title: 'Old sweep', stage: 'done', outcome: 'refuted', updated_at: '' },
-        { id: 'r3', title: 'Old idea', stage: null, outcome: null, updated_at: '' },
-      ],
-    }
-    const view = await start('#/p/project-1/question/r2', api({ taskBoard: vi.fn().mockResolvedValue(board) }))
-    expect(await screen.findByRole('button', { name: 'Open the Task (done, archived)' })).toBeInTheDocument()
-    view.unmount()
-    await start('#/p/project-1/question/r3', api({ taskBoard: vi.fn().mockResolvedValue(board) }))
-    expect(await screen.findByRole('region', { name: 'task r3' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Open the Task/ })).not.toBeInTheDocument()
+  it('offers an archived Task\'s question the way to it even when the board lists no such Task', async () => {
+    const board = { cards: [], stages: [], total: 0, archived: [] }
+    await start('#/p/project-1/question/r2', api({ taskBoard: vi.fn().mockResolvedValue(board) }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open the Task' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r2'))
   })
 
   it('reopens the Session execution history was left on, once the Sessions are read', async () => {

@@ -451,6 +451,8 @@ export type ResearchDetail = {
   updated_at: string
   resolved_at: string | null
   links: ResearchLinkView[]
+  /** The stage of the Task this question is, if it was admitted; null otherwise (ADR 0230 §3). */
+  task_stage?: TaskStage | null
 }
 export type ResearchEntry = {
   id: string

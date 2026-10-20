@@ -105,6 +105,9 @@ struct ResearchDetail {
     #[serde(flatten)]
     question: ResearchQuestion,
     links: Vec<LinkView>,
+    /// The stage of the Task this question is, if it was admitted; null for a
+    /// draft or a plain question (ADR 0230 §3).
+    task_stage: Option<crate::task_store::TaskStage>,
 }
 
 fn link_view(state: &AppState, project_id: &str, link: ResearchLink) -> LinkView {
@@ -152,7 +155,15 @@ fn detail(
         .into_iter()
         .map(|link| link_view(state, project_id, link))
         .collect();
-    Ok(ResearchDetail { question, links })
+    let task_stage = match state.tasks.admission(project_id, &question.id)? {
+        Some(_) => state.tasks.stage(project_id, &question.id)?,
+        None => None,
+    };
+    Ok(ResearchDetail {
+        question,
+        links,
+        task_stage,
+    })
 }
 
 pub(super) fn check_project(state: &AppState, project_id: &str) -> Result<(), ResearchApiError> {
