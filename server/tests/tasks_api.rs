@@ -953,6 +953,78 @@ async fn a_work_evidence_repin_must_name_the_version_looked_at() {
     let _ = task.round;
 }
 
+/// Task evidence is accepted only at a version the researcher displayed: the
+/// work board's re-pin of a Task's internal work names it too, and the
+/// coordinator cannot re-pin it to make acceptance possible (ADR 0230 §4).
+#[tokio::test]
+async fn task_evidence_is_re_pinned_only_by_the_researcher_at_the_version_looked_at() {
+    let env = env();
+    let task = reviewing(&env).await;
+    std::fs::write(task.root.join("notes.md"), "pruning helps after all").unwrap();
+    let current = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    let commands = format!("/projects/{}/work/{}/commands", env.project, task.work_id);
+    let state = |env: &Env| {
+        env.state
+            .work
+            .get(&env.project, &task.work_id)
+            .unwrap()
+            .state_revision
+    };
+    // The work board's command names no version: refused for a Task's work.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let pinned = |env: &Env| {
+        env.state
+            .work
+            .results(&env.project, &task.work_id)
+            .unwrap()
+            .into_iter()
+            .find(|result| result.id == task.result_id)
+            .unwrap()
+            .revision
+    };
+    assert_ne!(pinned(&env).as_deref(), Some(current.as_str()));
+    // A version that is not the current one is refused as stale.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "revision": "an-older-one", "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "work_evidence_stale");
+    // The coordinator cannot re-pin a Task's evidence at all.
+    let refused = env
+        .agent(&env.general)
+        .repin(&task.work_id, &task.result_id);
+    let Err(AgentWorkError::Invalid(reason)) = refused else {
+        panic!("expected a refusal, got {refused:?}");
+    };
+    assert!(reason.contains("researcher"), "{reason}");
+    assert_ne!(pinned(&env).as_deref(), Some(current.as_str()));
+    // The version the researcher looked at, when current, is accepted.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &commands,
+        json!({"command": "repin", "result_id": task.result_id, "revision": current, "expected_state_revision": state(&env)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(pinned(&env).as_deref(), Some(current.as_str()));
+}
+
 #[tokio::test]
 async fn archiving_is_separate_from_accepting() {
     let env = env();

@@ -846,9 +846,12 @@ enum Command {
         reason: Option<String>,
     },
     /// Accepts the current state of one cited result as its evidence, after
-    /// the researcher has looked at what changed.
+    /// the researcher has looked at what changed. A Task's evidence names the
+    /// version that was looked at, and it must still be current (ADR 0230 §4).
     Repin {
         result_id: String,
+        #[serde(default)]
+        revision: Option<String>,
     },
     /// Cancels, abandons, or supersedes it, keeping its history.
     Close {
@@ -1006,7 +1009,10 @@ async fn command(
                         .publish_review(&project_id, &item, review);
                 }
             }
-            Command::Repin { result_id } => {
+            Command::Repin {
+                result_id,
+                revision,
+            } => {
                 let results = work.results(&project_id, &work_id)?;
                 let result = results
                     .iter()
@@ -1020,6 +1026,27 @@ async fn command(
                 let current = current.ok_or(ApiError::BadRequest(
                     "that evidence has no current version to accept",
                 ))?;
+                // A Task's evidence is accepted only at the version the
+                // researcher displayed, as in the Task's own Results.
+                let research_id = work.get(&project_id, &work_id)?.research_id;
+                let task_work = match research_id.as_deref() {
+                    Some(research_id) => blocking_state
+                        .tasks
+                        .admission(&project_id, research_id)
+                        .map_err(|_| ApiError::BadRequest("the Task could not be read"))?
+                        .is_some(),
+                    None => false,
+                };
+                if task_work && revision.is_none() {
+                    return Err(ApiError::BadRequest(
+                        "this is a Task's evidence: name the version that was looked at",
+                    ));
+                }
+                if revision.as_deref().is_some_and(|looked_at| looked_at != current) {
+                    return Err(ApiError::StaleEvidence(
+                        evidence_of(&blocking_state).stale(&project_id, &results),
+                    ));
+                }
                 work.repin_result(&project_id, &work_id, &result_id, Some(&current), ctx)?;
                 let remaining = work.results(&project_id, &work_id)?;
                 if evidence_of(&blocking_state)
