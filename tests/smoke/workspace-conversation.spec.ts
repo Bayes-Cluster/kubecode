@@ -1,6 +1,26 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 
-import { openGeneral, openHistory } from './shell'
+import { MemberAgent, promptsOf, waitForPrompt } from './agents'
+import { closeNavigationSheet, openGeneral, selectWorkspace, workspaceNav } from './shell'
+
+/**
+ * General against the real Runtime under a non-root base path (ADR 0229):
+ * plain messages with visible recipients, mentions by member, identity that
+ * survives a Session replacement, one public reply, drafts kept per place and
+ * across a failed send, earlier Threads read-only, and private conversations
+ * that reach General only through the previewed share. The members are
+ * deterministic fixtures acting through their own MCP endpoints (agents.ts).
+ */
+
+type Roster = { members: Array<{ id: string; name: string; handle: string; role: string; public_conversation_id: string | null }> }
+
+function urls() {
+  const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
+  const workspaceUrl = requested.pathname === '/'
+    ? `${requested.origin}/user/local/kubecode`
+    : requested.href.replace(/\/$/, '')
+  return { workspaceUrl, api: `${workspaceUrl}/api/v1` }
+}
 
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => ({
@@ -10,72 +30,250 @@ async function expectContained(page: Page) {
   expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
 }
 
-/**
- * The shared Workspace conversation against the real Runtime under a non-root
- * base path: discuss in the default channel, keep the discussion across a
- * reload, move one topic into a Thread, and link that Thread to a research
- * question without losing a message. Saving a message never starts an Agent.
- */
-test('@smoke workspace conversation keeps a discussion, threads it, and links it to a question', async ({ page }) => {
-  const requested = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:41741')
-  const workspaceUrl = requested.pathname === '/'
-    ? `${requested.origin}/user/local/kubecode`
-    : requested.href.replace(/\/$/, '')
-  const projectName = `kubecode-conversation-${Date.now()}`
-  const projectPath = `/tmp/${projectName}`
+async function createProject(request: APIRequestContext, api: string, name: string): Promise<string> {
+  const created = await request.post(`${api}/projects`, { data: { kind: 'create', path: `/tmp/${name}` } })
+  expect(created.ok(), await created.text()).toBe(true)
+  return (await created.json() as { id: string }).id
+}
 
-  await page.goto(workspaceUrl)
-  await page.getByRole('button', { name: 'Add project' }).click()
-  await page.getByRole('combobox', { name: 'Full path on this server' }).fill(projectPath)
-  await page.getByRole('option', { name: `Create ${projectPath}` }).click()
-  await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
+async function roster(request: APIRequestContext, api: string, projectId: string): Promise<Roster> {
+  return (await (await request.get(`${api}/projects/${projectId}/members`)).json()) as Roster
+}
 
-  // Start from the channel: no question exists yet.
-  await openGeneral(page)
-  await expect(page.getByText('No messages yet. Start the discussion.')).toBeVisible()
-  await page.getByLabel('Message the Workspace').fill('Should we prune the attention heads?')
+const composer = (page: Page) => page.getByRole('combobox', { name: 'Message the Workspace' })
+const log = (page: Page) => page.getByRole('log', { name: 'Messages' })
+const row = (page: Page, text: string) => page.locator('article[data-message-id]').filter({ hasText: text })
+const toRow = (page: Page) => page.locator('.kubecode-composer-to')
+
+async function send(page: Page, text: string) {
+  await composer(page).fill(text)
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect(page.getByText('Should we prune the attention heads?')).toBeVisible()
-  await page.getByLabel('Message the Workspace').fill('Or quantize first?')
-  await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect(page.getByText('Or quantize first?')).toBeVisible()
+  await expect(log(page).getByText(text, { exact: true })).toBeVisible()
+}
 
-  // The discussion survives a reload.
-  await page.reload()
-  // Other specs leave Projects behind; choose ours explicitly after the reload.
-  await page.getByRole('button', { name: projectName, exact: true }).click()
-  await openGeneral(page)
-  await expect(page.getByText('Should we prune the attention heads?')).toBeVisible()
-  await expect(page.getByText('Or quantize first?')).toBeVisible()
+test.describe('on a desktop', () => {
+  // A mouse: Reply shows on hover beside More (the default project emulates touch).
+  test.use({ hasTouch: false })
 
-  // One topic becomes a Thread.
-  await page.getByTestId('message-1').getByRole('button', { name: 'Reply in thread' }).click()
-  const thread = page.getByRole('complementary', { name: 'Thread' })
-  await thread.getByLabel('Reply in this thread').fill('Start with magnitude pruning')
-  await thread.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect(thread.getByText('Start with magnitude pruning')).toBeVisible()
-  await expect(page.getByRole('log', { name: 'Messages' }).getByText('Start with magnitude pruning')).toHaveCount(0)
+  test('@smoke General names its members, routes by mention and reply, keeps drafts, and keeps private text private', async ({ page, request }) => {
+    test.setTimeout(240_000)
+    const { api, workspaceUrl } = urls()
+    const stamp = Date.now()
+    const projectName = `kubecode-conversation-${stamp}`
+    const otherName = `kubecode-conversation-other-${stamp}`
+    const registered: string[] = []
+    try {
+      const projectId = await createProject(request, api, projectName)
+      registered.push(projectId)
+      registered.push(await createProject(request, api, otherName))
+      await expect.poll(async () => (await roster(request, api, projectId)).members.filter((member) => member.role === 'general').length).toBe(1)
+      const manager = (await roster(request, api, projectId)).members.find((member) => member.role === 'general')!
+      for (const [name, template] of [['Analyst', 'analysis'], ['Writer', 'writing']]) {
+        const created = await request.post(`${api}/projects/${projectId}/members`, {
+          data: { name, template, client_request_id: `${name}-${stamp}` },
+        })
+        expect(created.ok(), await created.text()).toBe(true)
+      }
+      const members = await roster(request, api, projectId)
+      const analyst = members.members.find((member) => member.handle === 'analyst')!
+      const writer = members.members.find((member) => member.handle === 'writer')!
 
-  // A question is created later, and the Thread is linked to it.
-  await openHistory(page)
-  await page.getByRole('button', { name: 'New research question' }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Title', { exact: true }).fill('Pruning heads')
-  await dialog.getByLabel('Question', { exact: true }).fill('Does pruning heads keep accuracy?')
-  await dialog.getByRole('button', { name: 'Create question' }).click()
-  await expect(page.getByRole('heading', { name: 'Pruning heads' })).toBeVisible()
-  await openHistory(page)
-  await page.locator('.kubecode-channel-nav').getByRole('button', { name: /Should we prune/ }).click()
-  const reopened = page.getByRole('complementary', { name: 'Thread' })
-  await reopened.getByLabel('Research question').selectOption({ label: 'Pruning heads' })
-  await reopened.getByRole('button', { name: 'Link', exact: true }).click()
-  await expect(reopened.getByText('Linked to Pruning heads').first()).toBeVisible()
-  // Both original messages and the reply are still there.
-  await expect(reopened.getByText('Should we prune the attention heads?').first()).toBeVisible()
-  await expect(reopened.getByText('Start with magnitude pruning')).toBeVisible()
-  await expectContained(page)
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
 
-  // Narrow screens stack the Thread under the channel and stay contained.
-  await page.setViewportSize({ width: 390, height: 800 })
-  await expectContained(page)
+      // 1. No message types: a message names no one, so it goes to the project manager, as the To row says.
+      await expect(page.getByRole('combobox', { name: 'Message type' })).toHaveCount(0)
+      await expect(toRow(page)).toContainText('Project manager')
+      await send(page, 'Should we prune the attention heads?')
+      await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('aria-label', 'You')
+      await waitForPrompt(manager.public_conversation_id!, (text) => text.includes('Should we prune the attention heads?'))
+
+      // 2. Mentioning a member by @ shows them as the recipient, and only they are prompted.
+      await composer(page).pressSequentially('@ana')
+      await expect(page.getByRole('option', { name: /Specialist · Analysis/ })).toBeVisible()
+      await composer(page).press('Enter')
+      await expect(composer(page)).toHaveValue('@analyst ')
+      await expect(toRow(page).getByRole('list', { name: 'To' })).toContainText('Analyst')
+      await composer(page).pressSequentially('please size the sweep')
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      await expect(log(page).getByText('@analyst please size the sweep')).toBeVisible()
+      await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('please size the sweep'))
+      expect(promptsOf(manager.public_conversation_id!).some((text) => text.includes('please size the sweep'))).toBe(false)
+      await send(page, '@writer please draft the outline')
+      await waitForPrompt(writer.public_conversation_id!, (text) => text.includes('please draft the outline'))
+
+      // 3. General and two specialists stay distinct, also after a Session is replaced.
+      await new MemberAgent(request, analyst.public_conversation_id!).call('general_post', { body: 'Sweep sized: twelve runs.' })
+      await new MemberAgent(request, writer.public_conversation_id!).call('general_post', { body: 'Outline drafted.' })
+      await new MemberAgent(request, manager.public_conversation_id!).call('general_post', { body: 'Noted, tracking both.' })
+      const replaced = await request.post(`${api}/projects/${projectId}/members/${analyst.id}/session`, { data: {} })
+      expect(replaced.ok(), await replaced.text()).toBe(true)
+      const newAnalystSession = (await replaced.json() as { public_conversation_id: string }).public_conversation_id
+      expect(newAnalystSession).not.toBe(analyst.public_conversation_id)
+      await expect(row(page, 'Sweep sized: twelve runs.')).toHaveAttribute('aria-label', 'Analyst')
+      await expect(row(page, 'Outline drafted.')).toHaveAttribute('aria-label', 'Writer')
+      await expect(row(page, 'Noted, tracking both.')).toHaveAttribute('aria-label', manager.name)
+      await expect(row(page, '@writer please draft the outline')).toContainText('Writer')
+
+      // 4. Reply cites the old message and addresses the Analyst, whose new Session gets it with the citation.
+      const old = page.locator('article[data-author="agent"]').filter({ hasText: 'Sweep sized: twelve runs.' })
+      await old.hover()
+      await old.getByRole('button', { name: 'Reply to Analyst' }).click()
+      await expect(composer(page)).toHaveValue('@analyst ')
+      await expect(composer(page)).toBeFocused()
+      await expect(page.getByText('Replying to Analyst: Sweep sized: twelve runs.')).toBeVisible()
+      await expect(toRow(page).getByRole('list', { name: 'To' })).toContainText('Analyst')
+      await composer(page).pressSequentially('run all twelve')
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      await expect(log(page).getByText('@analyst run all twelve')).toBeVisible()
+      await waitForPrompt(newAnalystSession, (text) => text.includes('run all twelve') && text.includes('It replies to message'))
+      await new MemberAgent(request, newAnalystSession).call('general_post', { body: 'Running all twelve.' })
+      await expect(row(page, 'Running all twelve.')).toHaveAttribute('aria-label', 'Analyst')
+      await expect(page.locator('article[data-message-id][aria-label="Agent"]')).toHaveCount(0)
+      // The citation jumps back to the original and focuses it.
+      await row(page, '@analyst run all twelve').getByRole('button', { name: /In reply to Analyst: Sweep sized/ }).click()
+      await expect(old).toBeFocused()
+
+      // 5. An earlier Thread opens read-only; Reply in General cites its first message.
+      const channels = await (await request.get(`${api}/projects/${projectId}/channels`)).json() as Array<{ id: string }>
+      const page1 = await (await request.get(`${api}/projects/${projectId}/channels/${channels[0].id}/messages?limit=50`)).json() as {
+        messages: Array<{ id: string; body: string }>
+      }
+      const root = page1.messages.find((message) => message.body === 'Should we prune the attention heads?')!
+      const thread = await (await request.post(`${api}/projects/${projectId}/channels/${channels[0].id}/threads`, {
+        data: { root_message_id: root.id },
+      })).json() as { id: string }
+      const threadReply = await request.post(`${api}/projects/${projectId}/channels/${channels[0].id}/messages`, {
+        data: { body: 'Start with magnitude pruning', thread_id: thread.id, client_message_id: `thread-${stamp}` },
+      })
+      expect(threadReply.ok(), await threadReply.text()).toBe(true)
+      await page.reload()
+      await row(page, 'Should we prune the attention heads?').getByRole('button', { name: 'Earlier thread · 1 replies' }).click()
+      const pane = page.getByRole('complementary', { name: 'Earlier thread' })
+      await expect(pane.getByText(/read-only/)).toBeVisible()
+      await expect(pane.getByText('Start with magnitude pruning')).toBeVisible()
+      await expect(pane.getByRole('combobox', { name: 'Message the Workspace' })).toHaveCount(0)
+      await expect(pane.getByRole('textbox')).toHaveCount(0)
+      await pane.getByRole('button', { name: 'Reply in General' }).click()
+      await expect(pane).toHaveCount(0)
+      await expect(page.getByText('Replying to You: Should we prune the attention heads?')).toBeVisible()
+      await page.getByRole('button', { name: 'Cancel reply' }).click()
+
+      // 6. A draft with its Task and reply survives Kanban and another Workspace.
+      const proposal = await new MemberAgent(request, manager.public_conversation_id!).call<{ research_id: string; message_id: string }>('task_propose', {
+        title: 'Structured pruning',
+        question: 'Does structured pruning keep accuracy?',
+        success_criteria: ['accuracy within one point'],
+        client_request_id: `proposal-${stamp}`,
+      })
+      const proposed = page.locator(`[data-message-id="${proposal.message_id}"]`)
+      await expect(proposed).toBeVisible()
+      await proposed.hover()
+      await proposed.getByRole('button', { name: `Reply to ${manager.name}` }).click()
+      await expect(composer(page)).toHaveValue('')
+      await composer(page).fill('half a thought')
+      const about = page.locator('.kubecode-composer-about')
+      await expect(about).toContainText('Structured pruning')
+      await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
+      await openGeneral(page)
+      await expect(composer(page)).toHaveValue('half a thought')
+      await expect(about).toContainText('Structured pruning')
+      await expect(page.getByText(`Replying to ${manager.name}:`, { exact: false })).toBeVisible()
+      await selectWorkspace(page, otherName)
+      await expect(composer(page)).toHaveValue('')
+      await selectWorkspace(page, projectName)
+      await expect(composer(page)).toHaveValue('half a thought')
+      await expect(about).toContainText('Structured pruning')
+      await expect(page.getByText(`Replying to ${manager.name}:`, { exact: false })).toBeVisible()
+
+      // 7. A failed send restores the draft; Try again replays it once.
+      let aborted = false
+      await page.route('**/channels/*/messages', async (route) => {
+        if (route.request().method() === 'POST' && !aborted) {
+          aborted = true
+          await route.abort()
+          return
+        }
+        await route.continue()
+      })
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      const alert = page.getByRole('alert').filter({ has: page.getByRole('button', { name: 'Try again' }) })
+      await expect(alert).toBeVisible()
+      await expect(composer(page)).toHaveValue('half a thought')
+      await expect(about).toContainText('Structured pruning')
+      await expect(toRow(page)).toContainText('Project manager')
+      await alert.getByRole('button', { name: 'Try again' }).click()
+      await expect(log(page).getByText('half a thought', { exact: true })).toHaveCount(1)
+      await expect(composer(page)).toHaveValue('')
+      await page.unroute('**/channels/*/messages')
+
+      // 8. A private draft never shows in General; sharing is previewed, then lands in General.
+      await workspaceNav(page).getByRole('button', { name: 'Message Analyst privately' }).click()
+      const dm = page.getByRole('textbox', { name: 'Message Analyst privately' })
+      await dm.fill('secret plan')
+      await openGeneral(page)
+      await expect(composer(page)).toHaveValue('')
+      await expect(log(page)).not.toContainText('secret plan')
+      await workspaceNav(page).getByRole('button', { name: 'Message Analyst privately' }).click()
+      await expect(dm).toHaveValue('secret plan')
+      await expect(page.getByText('Only Analyst sees this message.')).toBeVisible()
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      await expect(dm).toHaveValue('')
+      await expect(page.getByRole('log').getByText('secret plan')).toBeVisible()
+      await page.getByRole('button', { name: 'Share to General…' }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByRole('checkbox', { name: /secret plan/ }).check()
+      await dialog.getByRole('button', { name: 'Preview' }).click()
+      const card = dialog.getByRole('region', { name: 'Preview' })
+      await expect(card).toContainText('To')
+      await expect(card).toContainText(manager.name)
+      await expect(card).toContainText('like anything you write in General')
+      await dialog.getByRole('button', { name: 'Post to General' }).click()
+      await page.getByRole('button', { name: 'Show in General' }).click()
+      await expect(page).toHaveURL(/\/general\/m\//)
+      await expect(page.locator('article[data-message-id]:focus')).toContainText('secret plan')
+    } finally {
+      for (const id of registered) await request.delete(`${api}/projects/${id}`)
+    }
+  })
+})
+
+test.describe('on a phone', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } })
+
+  test('@smoke General on a touch screen: More with Reply on every message, Enter breaks lines, and nothing scrolls sideways', async ({ page, request }) => {
+    test.setTimeout(120_000)
+    const { api, workspaceUrl } = urls()
+    const projectId = await createProject(request, api, `kubecode-conversation-phone-${Date.now()}`)
+    try {
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await closeNavigationSheet(page)
+      await expect(composer(page)).toBeVisible()
+      await expectContained(page)
+      // Enter breaks the line on a touch keyboard; the arrow sends.
+      await composer(page).fill('first line')
+      await composer(page).press('Enter')
+      await expect(composer(page)).toHaveValue('first line\n')
+      await composer(page).pressSequentially('second line')
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      const sent = row(page, 'second line')
+      await expect(sent).toBeVisible()
+      await expectContained(page)
+      // No hover toolbar: one persistent, touch-sized More, whose first item is Reply.
+      await expect(sent.getByRole('button', { name: 'Reply to You' })).toHaveCount(0)
+      const more = sent.getByRole('button', { name: "More actions for You's message" })
+      await expect(more).toBeVisible()
+      const box = await more.boundingBox()
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+      await more.click()
+      const items = page.getByRole('menuitem')
+      await expect(items.first()).toHaveText('Reply')
+      await items.first().click()
+      await expect(page.getByText(/Replying to You:/)).toBeVisible()
+      await expectContained(page)
+    } finally {
+      await request.delete(`${api}/projects/${projectId}`)
+    }
+  })
 })

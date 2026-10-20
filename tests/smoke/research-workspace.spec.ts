@@ -233,6 +233,14 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await waitForPrompt(generalConversation as string, (text) => text.includes('Started the sweep'))
   await manager.call('general_post', { body: 'Thanks @analyst, I will ask for your review now.', mentions: ['analyst'], task: taskId })
   await expect(page.getByText('Thanks @analyst, I will ask for your review now.')).toBeVisible()
+  // Each message names the member who wrote it and whom it went to, never "Agent" (ADR 0229 §1).
+  const managerName = (await roster()).members.find((member) => member.role === 'general') as unknown as { name: string }
+  const row = (text: string) => page.locator('article[data-message-id]').filter({ hasText: text })
+  await expect(row('Started the sweep; first results are in results.csv.')).toHaveAttribute('aria-label', 'Analyst')
+  await expect(row('Started the sweep; first results are in results.csv.')).toContainText('Handed to')
+  await expect(row('Thanks @analyst, I will ask for your review now.')).toHaveAttribute('aria-label', managerName.name)
+  await expect(row('Thanks @analyst, I will ask for your review now.')).toContainText('Analyst')
+  await expect(page.locator('article[data-message-id][aria-label="Agent"]')).toHaveCount(0)
 
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await page.getByTestId(`task-card-${taskId}`).click()

@@ -136,7 +136,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await composer.fill(draft)
 
     // 3. The Task opens beside the conversation; the draft stays.
-    await cited.getByRole('button', { name: /Task: Pruning heads/ }).click()
+    await cited.getByRole('button', { name: 'Task Pruning heads' }).click()
     const task = inspector(page, 'Task details')
     await expect(task).toBeVisible()
     await expect(page.locator('.kubecode-session-context-row')).toHaveAttribute('data-inspector-layout', 'side')
@@ -262,7 +262,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(composer).toHaveValue(draft)
 
     // 8. The browser's Back walks the inspector stack one level at a time.
-    await cited.getByRole('button', { name: /Task: Pruning heads/ }).click()
+    await cited.getByRole('button', { name: 'Task Pruning heads' }).click()
     await expect(task).toBeVisible()
     await review.getByRole('button', { name: `research:${seed.evidenceId}` }).click()
     await expect(evidence).toBeVisible()
@@ -301,7 +301,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     const phoneDraft = 'Thumbs say: check the heads'
     await composer.fill(phoneDraft)
     await expectContained(page)
-    await cited.getByRole('button', { name: /Task: Pruning heads/ }).click()
+    await cited.getByRole('button', { name: 'Task Pruning heads' }).click()
     const phoneTask = inspector(page, 'Task details')
     await expect(phoneTask).toBeVisible()
     await expect(log).toBeHidden()
