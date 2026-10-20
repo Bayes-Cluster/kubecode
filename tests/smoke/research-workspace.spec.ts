@@ -153,7 +153,10 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: claim.message_id, brief_revision: revised.revision,
   })).toContain("only the researcher's own message authorizes")
-  await say(page, '> Please add it to the Kanban.')
+  // A quoted line is shown as a quote, since messages are Markdown (ADR 0229 §7).
+  await page.getByLabel('Message the Workspace').fill('> Please add it to the Kanban.')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('log', { name: 'Messages' }).locator('blockquote').getByText('Please add it to the Kanban.', { exact: true })).toBeVisible()
   const quoted = await lastResearcherMessage(manager, 'Please add it to the Kanban.')
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: quoted.id, brief_revision: revised.revision,
