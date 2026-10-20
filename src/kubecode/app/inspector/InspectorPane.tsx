@@ -102,6 +102,20 @@ export function InspectorPane({
     section?.focus({ preventScroll: true })
   }, [keysText])
 
+  // The layout narrowing from beside the view to over it parks the view, and
+  // focus with it: the researcher continues in the inspector, at its heading.
+  const shownPresentation = useRef(presentation)
+  useLayoutEffect(() => {
+    const before = shownPresentation.current
+    shownPresentation.current = presentation
+    if (before === presentation || presentation !== 'screen' || !keysText) return
+    const section = sections.current.get(keysText.split('\n').at(-1) ?? '')
+    if (!section) return
+    const pane = section.closest('aside') ?? section
+    if (pane.contains(document.activeElement)) return
+    focusHeading(section)
+  }, [keysText, presentation])
+
   const setTitle = useCallback((key: string, text: string) => {
     setTitles((current) => (current[key] === text ? current : { ...current, [key]: text }))
   }, [])
@@ -179,6 +193,17 @@ export function InspectorPane({
       </DetailPane>
     </InspectionRecordContext.Provider>
   )
+}
+
+/** Focuses an entry's heading (made focusable for it), or the entry itself. */
+function focusHeading(section: HTMLElement) {
+  const heading = section.querySelector<HTMLElement>('.kubecode-view-header-title')
+  if (!heading) {
+    section.focus({ preventScroll: true })
+    return
+  }
+  if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1
+  heading.focus({ preventScroll: true })
 }
 
 function InspectorEntryFrame({

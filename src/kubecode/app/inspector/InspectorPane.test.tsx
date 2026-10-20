@@ -156,6 +156,36 @@ describe('InspectorPane header', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 
+  it('moves focus into the inspector when it comes to cover the view that had it', async () => {
+    const tree = (presentation: InspectorPresentation) => (
+      <InspectorServicesContext.Provider value={services}>
+        <button type="button">in the view</button>
+        <Host initial={[task]} presentation={presentation} />
+      </InspectorServicesContext.Provider>
+    )
+    const view = render(tree('side'))
+    await screen.findByRole('heading', { name: 'Pruning heads', level: 3 })
+    const outside = screen.getByRole('button', { name: 'in the view' })
+    outside.focus()
+    view.rerender(tree('side'))
+    expect(outside).toHaveFocus()
+    view.rerender(tree('screen'))
+    expect(screen.getByRole('heading', { name: 'Pruning heads', level: 3 })).toHaveFocus()
+  })
+
+  it('leaves focus inside the inspector where it is when the layout narrows', async () => {
+    const tree = (presentation: InspectorPresentation) => (
+      <InspectorServicesContext.Provider value={services}>
+        <Host initial={[task]} presentation={presentation} />
+      </InspectorServicesContext.Provider>
+    )
+    const view = render(tree('side'))
+    const note = await screen.findByRole('textbox', { name: 'note' })
+    note.focus()
+    view.rerender(tree('screen'))
+    expect(note).toHaveFocus()
+  })
+
   it('renders one header per entry: panels never draw their own back or close', async () => {
     const view = mount({ initial: [task, evidenceA1] })
     await screen.findByRole('button', { name: 'Back to Pruning heads' })
