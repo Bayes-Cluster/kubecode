@@ -91,7 +91,8 @@ describe('ResourcesView keeps its place (ADR 0228 §4)', () => {
       view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
       view.rerender(resources)
       await screen.findByRole('option', { name: /results\.csv/ })
-      await waitFor(() => expect(screen.getByTestId('project-work-results').scrollTop).toBe(220))
+      // Restoring waits for the results; give a loaded machine time to load them.
+      await waitFor(() => expect(screen.getByTestId('project-work-results').scrollTop).toBe(220), { timeout: 5000 })
     } finally {
       restore()
     }
