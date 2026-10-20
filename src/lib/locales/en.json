@@ -1941,6 +1941,7 @@
   "kubecode.work.evidence.related": "Related records",
   "kubecode.work.evidence.truncated": "Shortened; open the record for the rest.",
   "kubecode.work.evidence.more": "Load more",
+  "kubecode.work.evidence.moreFailed": "More of this record could not be loaded.",
   "kubecode.work.evidence.empty": "No content to show.",
   "kubecode.work.evidence.fileNote": "File content (read-only)",
   "kubecode.members.title": "Members",
@@ -2466,5 +2467,7 @@
   "kubecode.task.ackRemoved": "I know some evidence no longer exists, and I accept the results anyway.",
   "kubecode.task.answerField": "Your answer",
   "kubecode.task.lookFirst": "Look at it first",
+  "kubecode.task.evidence.shownVersion": "Showing version {revision}",
+  "kubecode.task.evidence.cannotAccept": "This version could not be shown, so it can't be accepted. Try again, or send the work back.",
   "kubecode.reference.untitled": "{kind} (no title)"
 }
