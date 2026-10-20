@@ -3,7 +3,15 @@ import { writeFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 import { launchPermissionsOf, MemberAgent, waitForPrompt } from './agents'
-import { dropEvents, installControlledEvents, openGeneral, restoreEvents, workspaceNav } from './shell'
+import {
+  closeNavigationSheet,
+  dropEvents,
+  inspector,
+  installControlledEvents,
+  openGeneral,
+  restoreEvents,
+  workspaceNav,
+} from './shell'
 
 /**
  * The Research Workspace end to end against the real Runtime under a non-root
@@ -261,6 +269,14 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(review.getByText('Structured pruning kept accuracy at 0.91')).toBeVisible()
   await expect(review.getByText(/Some evidence changed after it was attached/)).toBeVisible()
   await review.getByLabel('What the result showed').selectOption({ label: 'Valid negative result' })
+  // The evidence opens over the Task (ADR 0228); Back returns to the review as it was left.
+  await review.getByRole('button', { name: 'file:results.csv' }).click()
+  const evidence = inspector(page, 'Evidence details')
+  await expect(evidence).toBeVisible()
+  await evidence.getByRole('button', { name: /^Back to / }).click()
+  await expect(evidence).toHaveCount(0)
+  await expect(review.getByLabel('What the result showed').locator('option:checked')).toHaveText('Valid negative result')
+  await expect(review.getByRole('button', { name: 'file:results.csv' })).toBeFocused()
   await expect(review.getByRole('button', { name: 'Accept results' })).toBeDisabled()
   // It cannot be accepted at its current version before it was looked at.
   await expect(review.getByRole('button', { name: 'Accept the current version' })).toBeDisabled()
@@ -305,11 +321,24 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.keyboard.press('Escape')
   await page.evaluate((hash) => { window.location.hash = hash }, `#/p/${projectId}/board`)
   await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
-  const viewport = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }))
-  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  const contained = async () => {
+    const viewport = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }))
+    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  }
+  await contained()
+  // The Task is a screen of its own over the parked board, with the way back to it.
+  await closeNavigationSheet(page)
+  await page.getByTestId(`task-card-${taskId}`).click()
+  const phoneTask = inspector(page, 'Task details')
+  await expect(phoneTask).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeHidden()
+  await contained()
+  await phoneTask.getByRole('button', { name: 'Back to Kanban' }).click()
+  await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
+  await contained()
   } finally {
     // Projects are only unregistered; the temporary directory goes with the test.
     if (projectId) await request.delete(`${api}/projects/${projectId}`)

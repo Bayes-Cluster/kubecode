@@ -14,6 +14,37 @@ export async function openHistory(page: Page) {
   await expect(history).toHaveJSProperty('open', true)
 }
 
+/** Execution history (Sessions, Teams, the Session search), opened. */
+export async function openExecutionHistory(page: Page) {
+  await openHistory(page)
+  const history = page.locator('.kubecode-history-nav')
+  await expect(history.getByRole('textbox', { name: 'Search sessions' })).toBeVisible()
+  return history
+}
+
+/** The inspector showing `name` (an aside: "Task details", "Evidence details", a member's name). */
+export function inspector(page: Page, name: string) {
+  return page.getByRole('complementary', { name, exact: true })
+}
+
+/** Shows or hides the navigation (an overlay sheet on a phone). */
+export async function toggleNavigation(page: Page) {
+  await page.getByRole('button', { name: 'Toggle navigation' }).click()
+}
+
+/** On a phone the navigation is a sheet over the view: once the layout is narrow, put it away. */
+export async function closeNavigationSheet(page: Page) {
+  await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
+  const toggle = page.getByRole('button', { name: 'Toggle navigation' })
+  if (await toggle.getAttribute('aria-pressed') === 'true') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+}
+
+/** Enters a Workspace from the Workspaces list, at the place it was left in. */
+export async function selectWorkspace(page: Page, name: string) {
+  await page.getByRole('list', { name: 'Workspaces' }).getByRole('button', { name, exact: true }).click()
+}
+
 export async function openGeneral(page: Page) {
   await workspaceNav(page).getByRole('button', { name: 'General' }).first().click()
 }
