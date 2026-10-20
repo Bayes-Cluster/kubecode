@@ -1343,6 +1343,9 @@ fn only_a_denial_that_a_reroute_can_fix_is_rerouted() {
             expected,
             "{code}"
         );
-        assert_eq!(crate::channel_store::reroutable(Some(code)), expected == RerouteOutcome::Rearmed);
+        assert_eq!(
+            crate::channel_store::reroutable(Some(code)),
+            expected == RerouteOutcome::Rearmed
+        );
     }
 }

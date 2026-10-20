@@ -2744,7 +2744,9 @@ mod delivery_state {
             .finish_setup(r.project(), &crew.analyst.id, &|_| true)
             .unwrap();
         assert!(matches!(
-            crew.orchestrator.retry_route(r.project(), &failed.id).unwrap(),
+            crew.orchestrator
+                .retry_route(r.project(), &failed.id)
+                .unwrap(),
             RetryOutcome::Requeued(_)
         ));
     }

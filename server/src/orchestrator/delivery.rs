@@ -225,7 +225,10 @@ impl Orchestrator {
                 Err(_) => return Err(OrchestratorError::Unavailable),
             }
         }
-        match self.agents.visible_conversation(&route.project_id, &session) {
+        match self
+            .agents
+            .visible_conversation(&route.project_id, &session)
+        {
             Ok(Some(_)) => Ok(()),
             Ok(None) if conversation => Err(OrchestratorError::TargetGone),
             Ok(None) => Ok(()),
@@ -236,7 +239,11 @@ impl Orchestrator {
     /// The one conditional write that re-arms a failed route: only while it
     /// is failed and under the retry limit, so concurrent retries collapse
     /// and never pass the limit. Whether it changed the route.
-    pub(super) fn rearm(&self, project_id: &str, route_id: &str) -> Result<bool, OrchestratorError> {
+    pub(super) fn rearm(
+        &self,
+        project_id: &str,
+        route_id: &str,
+    ) -> Result<bool, OrchestratorError> {
         let changed = self.connection().execute(
             "UPDATE message_routes SET state = 'pending', attempts = 0, busy = 0,
                next_attempt_at = 0, lease_until = 0, last_error = NULL, retries = retries + 1

@@ -1133,7 +1133,10 @@ mod tests {
         // declines by itself, a permission request waits until answered.
         assert_eq!(permission.deadline_ms, None);
         assert!(input.deadline_ms.is_some_and(|left| left > 50_000));
-        assert_eq!(serde_json::to_value(permission).unwrap()["deadline_ms"], Value::Null);
+        assert_eq!(
+            serde_json::to_value(permission).unwrap()["deadline_ms"],
+            Value::Null
+        );
         let json = serde_json::to_string(&pending).expect("serialize");
         assert!(
             !json.contains("rm -rf"),

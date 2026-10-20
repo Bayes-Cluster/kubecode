@@ -122,7 +122,10 @@ fn one_decision_appears_once_with_its_task_member_and_binding() {
     assert_eq!(item.task.as_ref().unwrap().title, "Structured pruning");
     assert_eq!(item.member.as_ref().unwrap().handle, "analyst");
     assert_eq!(item.binding, Some(BindingView::Public));
-    assert_eq!(item.deadline_ms, None, "a permission request has no deadline");
+    assert_eq!(
+        item.deadline_ms, None,
+        "a permission request has no deadline"
+    );
     let json = serde_json::to_value(item).unwrap();
     assert_eq!(json["kind"], "permission");
     assert_eq!(json["tool"], "Shell");
@@ -138,10 +141,9 @@ fn a_dm_request_and_a_plain_session_are_attributed_as_such() {
     inputs
         .pending
         .push((permission("req-dm", "run-dm"), "s-analyst-dm".into()));
-    inputs.pending.push((
-        permission("req-plain", "run-plain"),
-        "s-plain".into(),
-    ));
+    inputs
+        .pending
+        .push((permission("req-plain", "run-plain"), "s-plain".into()));
     inputs
         .session_titles
         .insert("s-plain".into(), "My chat".into());
