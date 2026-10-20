@@ -22,6 +22,7 @@ describe('workbench layout preferences', () => {
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-1')).toEqual({
       expandedProjectIds: ['project-1'],
+      historyOpen: false,
       navigatorOpen: false,
       navigatorWidth: 357,
     })
@@ -36,6 +37,7 @@ describe('workbench layout preferences', () => {
   it('persists versioned navigator and project panel state independently', () => {
     writeWorkbenchNavigatorLayout(localStorage, {
       expandedProjectIds: ['project-1', 'project-2'],
+      historyOpen: true,
       navigatorOpen: true,
       navigatorWidth: 304,
     })
@@ -48,6 +50,7 @@ describe('workbench layout preferences', () => {
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-2')).toEqual({
       expandedProjectIds: ['project-1', 'project-2'],
+      historyOpen: true,
       navigatorOpen: true,
       navigatorWidth: 304,
     })
@@ -62,14 +65,32 @@ describe('workbench layout preferences', () => {
   it('normalizes invalid stored values without discarding valid project ids', () => {
     localStorage.setItem('kubecode:workbench-layout:v2', JSON.stringify({
       expandedProjectIds: ['project-1', 42, '', 'project-1'],
+      historyOpen: 'open',
       navigatorOpen: 'yes',
       navigatorWidth: Number.POSITIVE_INFINITY,
     }))
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-2')).toEqual({
       expandedProjectIds: ['project-1'],
+      historyOpen: false,
       navigatorOpen: true,
       navigatorWidth: 280,
     })
+  })
+
+  it('keeps execution history collapsed for a layout stored before it could be opened', () => {
+    localStorage.setItem('kubecode:workbench-layout:v2', JSON.stringify({
+      expandedProjectIds: [],
+      navigatorOpen: false,
+      navigatorWidth: 300,
+    }))
+
+    expect(readWorkbenchNavigatorLayout(localStorage, null)).toEqual({
+      expandedProjectIds: [],
+      historyOpen: false,
+      navigatorOpen: false,
+      navigatorWidth: 300,
+    })
+    expect(readWorkbenchNavigatorLayout(window.sessionStorage, null).historyOpen).toBe(false)
   })
 })

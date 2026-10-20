@@ -252,17 +252,13 @@ describe('what the controls draw (ADR 0227)', () => {
       <WorkspaceNav
         active="general"
         members={[]}
-        needsYouDrafts={[]}
-        needsYouSessions={[]}
-        needsYouTasks={[]}
+        needsYou={[]}
         t={t}
         taskCount={0}
+        onInspectMember={vi.fn()}
         onOpen={vi.fn()}
         onOpenDm={vi.fn()}
-        onOpenDraft={vi.fn()}
-        onOpenMember={vi.fn()}
-        onOpenSession={vi.fn()}
-        onOpenTask={vi.fn()}
+        onOpenTarget={vi.fn()}
       />,
     )
     const expected = {

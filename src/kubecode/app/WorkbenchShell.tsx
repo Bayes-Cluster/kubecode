@@ -67,6 +67,7 @@ import { INSPECTOR_PANELS } from './inspector/inspectorPanels'
 import { useInspectorPresentation } from './inspector/useInspectorPresentation'
 import { WithInspector } from './inspector/WithInspector'
 import type { InspectMode, InspectorEntry } from './location/inspector'
+import { needsYouFromCurrentSources, type NeedsYouTarget } from './location/needsYou'
 import { locationFromRoute, routeFromLocation } from './location/locationRoute'
 import { inspectorTargetForReference } from './location/references'
 import { useDmTarget } from './location/useDmTarget'
@@ -145,6 +146,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
+  // "History and execution": collapsed unless the researcher opened it.
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [navigatorQuery, setNavigatorQuery] = useState('')
@@ -248,13 +251,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     () => new Set((taskBoard.board?.cards ?? []).map((card) => card.id)),
     [taskBoard.board],
   )
-  /** What waits for the researcher: results to review and requested input. */
-  const needsYouTasks = useMemo(
-    () => (taskBoard.board?.cards ?? []).filter((card) => (
-      card.stage === 'review' || card.condition === 'needs_input'
-    )),
-    [taskBoard.board],
-  )
 
   const selection = useProjectSelection(api, t, {
     projectId,
@@ -290,6 +286,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setSessionSidebarOpen,
     setSessionSidebarWidth,
     setExpandedProjectIds,
+    setHistoryOpen,
     setProjectRuns: reconciliation.setProjectRuns,
     setWorkspaceCursor,
     setAllConversations,
@@ -306,6 +303,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     () => sessionsRequiringInput(reconciliation.projectRuns, sessionCatalog),
     [reconciliation.projectRuns, sessionCatalog],
   )
+  /** What waits for the researcher in this Workspace, each saying where it opens. */
+  const needsYou = useMemo(() => needsYouFromCurrentSources(
+    taskBoard.board?.cards ?? [],
+    taskBoard.drafts,
+    attentionSessions.filter((item) => item.project_id === projectId),
+    t,
+  ), [attentionSessions, projectId, t, taskBoard.board, taskBoard.drafts])
 
   // -- Moving the researcher -----------------------------------------------------------------
   /** A move the researcher made. */
@@ -374,6 +378,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     openPlace({ view: 'dm', member: member.id })
     setSettingsOpen(false)
   }, [openPlace])
+
+  /** Opens what a Needs-you entry is about, where the entry says. */
+  const openNeedsYouTarget = useCallback((target: NeedsYouTarget) => {
+    if (target.session) openSession(target.session.conversationId, target.session.projectId)
+    else if (target.place) openPlace(target.place, target.inspect ? { inspect: target.inspect } : undefined)
+    else if (target.inspect) {
+      inspect(target.inspect)
+      closeNavigatorSheet()
+    }
+  }, [closeNavigatorSheet, inspect, openPlace, openSession])
 
   const navigation = useMemo<WorkspaceNavigation | null>(() => (projectId ? {
     projectId,
@@ -496,10 +510,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
       expandedProjectIds,
+      historyOpen,
       navigatorOpen: sessionSidebarOpen,
       navigatorWidth: sessionSidebarWidth,
     })
-  }, [expandedProjectIds, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
+  }, [expandedProjectIds, historyOpen, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
 
   useEffect(() => {
     if (!layoutHydrated || !projectId) return
@@ -530,8 +545,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         || event.key.toLocaleLowerCase() !== 'k'
         || (!event.metaKey && !event.ctrlKey)) return
       event.preventDefault()
-      navigatorSearchRef.current?.focus()
-      navigatorSearchRef.current?.select()
+      focusSessionSearchTarget.current?.()
     }
     document.addEventListener('keydown', focusNavigatorSearch)
     return () => document.removeEventListener('keydown', focusNavigatorSearch)
@@ -554,14 +568,19 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     return () => document.removeEventListener('keydown', openCommandPalette, true)
   }, [])
 
+  // The Session search lives in execution history: the navigation and that
+  // section open first, and the search is focused once they are on screen.
   useEffect(() => {
     focusSessionSearchTarget.current = () => {
+      setSessionSidebarOpen(true)
+      if (narrowLayout) setContextVisible(false)
+      setHistoryOpen(true)
       window.requestAnimationFrame(() => {
         navigatorSearchRef.current?.focus()
         navigatorSearchRef.current?.select()
       })
     }
-  }, [])
+  }, [narrowLayout, setContextVisible])
 
   useEffect(() => {
     if (!narrowLayout || (!sessionSidebarOpen && !contextVisible)) return
@@ -669,6 +688,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       onReplace={(entry) => inspect(entry, { mode: 'replace' })}
     />
   ) : null
+  /** The place named in the title bar; the Sessions surface titles itself. */
+  const placeLabel = projectId && place.view !== 'sessions' ? placeName(place) : null
+  // Execution history stays open while it holds what is on screen or being searched.
+  const historyShown = historyOpen
+    || place.view === 'sessions'
+    || place.view === 'question'
+    || (place.view === 'general' && Boolean(place.thread))
+    || navigatorQuery.trim() !== ''
   const inspectorBottom = location.inspector[0]
   const boardTask = inspectorBottom?.kind === 'task' ? inspectorBottom.id : null
   const announcement = announcedProjectId !== null && announcedProjectId === projectId && project
@@ -787,14 +814,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         lastSuccessfulSyncAt={reconciliation.lastSuccessfulSyncAt}
         locale={locale}
         narrowLayout={narrowLayout}
-        navigatorQuery={navigatorQuery}
-        navigatorSearchRef={navigatorSearchRef}
         onContextOpenChange={setContextVisible}
-        onNavigatorQueryChange={setNavigatorQuery}
         onOpenSession={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
         onRetryConnection={reconciliation.retry}
         onSessionSidebarOpenChange={setSessionSidebarOpen}
         onTerminalOpenChange={setTerminalOpen}
+        placeLabel={placeLabel}
         project={project}
         projects={projects}
         sessionSidebarOpen={sessionSidebarOpen}
@@ -821,13 +846,35 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             activeProjectId={projectId}
             api={api}
             conversations={sessionCatalog}
-            expandedProjectIds={expandedProjectIds}
+            historyOpen={historyShown}
+            historySection={projectId ? (
+              <>
+                <ChannelNavigator
+                  active={false}
+                  onOpen={() => openPlace({ view: 'general' })}
+                  onOpenThread={(threadId) => openPlace({ view: 'general', thread: threadId })}
+                  t={t}
+                  threads={channelThreads.threads}
+                  threadsOnly
+                />
+                <ResearchNavigator
+                  activeResearchId={place.view === 'question' ? place.question : null}
+                  items={research.items}
+                  onNew={() => setResearchDialog(true)}
+                  onReload={research.reload}
+                  onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
+                  status={research.status}
+                  t={t}
+                />
+              </>
+            ) : null}
             navigatorWidth={sessionSidebarWidth}
             onAddProject={() => setProjectDialog(true)}
             onConversationCreated={handleConversationCreated}
             onConversationRemoved={handleConversationRemoved}
             onConversationUpdated={handleConversationUpdated}
             onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
+            onHistoryOpenChange={setHistoryOpen}
             onNewSession={(nextProjectId) => {
               if (nextProjectId !== projectId) enterWorkspace(nextProjectId)
               setSessionDialog(true)
@@ -839,70 +886,40 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             onProjectDelete={(nextProjectId) => void selection.deleteProject(
               projects.find((candidate) => candidate.id === nextProjectId),
             )}
-            onProjectSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
-            onProjectToggle={selection.toggleProjectExpanded}
             onProjectWorkspacesToggle={(nextProjectId) => {
               const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
-              if (selectedProject) {
-                void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
-              }
+              if (!selectedProject) return
+              // Disabling asks in a dialog about the Workspace it concerns, so that Workspace is entered first.
+              if (selectedProject.workspaces_enabled) enterWorkspace(nextProjectId)
+              void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
             }}
+            onQueryChange={setNavigatorQuery}
             onResize={resizeSessionSidebar}
             onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
+            onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
             projects={projects}
             projectRuns={reconciliation.projectRuns}
             query={navigatorQuery}
-            researchSection={projectId ? (
-              <>
-                <WorkspaceNav
-                  active={place.view}
-                  members={rosterMembers?.filter((member) => member.state !== 'removed') ?? NO_MEMBERS}
-                  needsYouDrafts={taskBoard.drafts}
-                  needsYouSessions={attentionSessions.filter((item) => item.project_id === projectId)}
-                  needsYouTasks={needsYouTasks}
-                  taskCount={taskBoard.board?.total ?? 0}
-                  t={t}
-                  onOpen={(view) => openPlace({ view })}
-                  onOpenDm={openDm}
-                  onOpenMember={(member) => {
-                    inspect({ kind: 'member', id: member.id })
-                    closeNavigatorSheet()
-                  }}
-                  onOpenDraft={(draft) => {
-                    // A proposal is discussed where it was made: in General, with its detail beside it.
-                    openPlace({ view: 'general' }, { inspect: { kind: 'task', id: draft.id } })
-                  }}
-                  onOpenSession={(item) => openSession(item.id, item.project_id)}
-                  onOpenTask={(task) => openPlace({ view: 'board' }, { inspect: { kind: 'task', id: task.id } })}
-                />
-                <details
-                  className="kubecode-history-nav"
-                  open={place.view === 'question' || (place.view === 'general' && Boolean(place.thread))}
-                >
-                  <summary>{t('kubecode.nav.history')}</summary>
-                  <ChannelNavigator
-                    active={false}
-                    onOpen={() => openPlace({ view: 'general' })}
-                    onOpenThread={(threadId) => openPlace({ view: 'general', thread: threadId })}
-                    t={t}
-                    threads={channelThreads.threads}
-                    threadsOnly
-                  />
-                  <ResearchNavigator
-                    activeResearchId={place.view === 'question' ? place.question : null}
-                    items={research.items}
-                    onNew={() => setResearchDialog(true)}
-                    onReload={research.reload}
-                    onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
-                    status={research.status}
-                    t={t}
-                  />
-                </details>
-              </>
-            ) : null}
+            searchRef={navigatorSearchRef}
             t={t}
             teams={teams}
             wechat={wechatBinding}
+            workspaceSection={projectId ? (
+              <WorkspaceNav
+                active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
+                members={rosterMembers?.filter((member) => member.state !== 'removed') ?? NO_MEMBERS}
+                needsYou={needsYou}
+                taskCount={taskBoard.board?.total ?? 0}
+                t={t}
+                onInspectMember={(memberId) => {
+                  inspect({ kind: 'member', id: memberId })
+                  closeNavigatorSheet()
+                }}
+                onOpen={(view) => openPlace({ view })}
+                onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
+                onOpenTarget={openNeedsYouTarget}
+              />
+            ) : null}
           />
         )}
 

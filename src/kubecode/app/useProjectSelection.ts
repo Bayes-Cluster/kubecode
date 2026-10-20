@@ -74,18 +74,6 @@ export function useProjectSelection(
     ))
   }, [applyProjectLayout, setActiveSessionPlan, setConversationId, setConversations, setExpandedProjectIds, setProjectId, setTeams, setTerminals, setTerminalsLoadedForProjectId])
 
-  const toggleProjectExpanded = useCallback((nextProjectId: string) => {
-    setExpandedProjectIds((current) => {
-      const expanded = current.includes(nextProjectId)
-      trackEvent('kubecode_navigator_project_toggled', {
-        next_state: expanded ? 'collapsed' : 'expanded',
-      })
-      return expanded
-        ? current.filter((candidate) => candidate !== nextProjectId)
-        : [...current, nextProjectId]
-    })
-  }, [setExpandedProjectIds])
-
   const deleteProject = useCallback(async (targetProject = project) => {
     if (!targetProject) return
     try {
@@ -149,6 +137,5 @@ export function useProjectSelection(
     project,
     selectProject,
     setProjectWorkspacesEnabled,
-    toggleProjectExpanded,
   }
 }

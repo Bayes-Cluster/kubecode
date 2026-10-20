@@ -3,7 +3,10 @@ import { createPreferenceStorage, type PreferenceStorage } from './preferenceSto
 export const WORKBENCH_LAYOUT_STORAGE_KEY = 'kubecode:workbench-layout:v2'
 
 export type WorkbenchNavigatorLayout = {
+  /** Stored for older layouts; the navigation no longer expands Projects (ADR 0228). */
   expandedProjectIds: string[]
+  /** Whether "History and execution" is open; collapsed unless the researcher opened it. */
+  historyOpen: boolean
   navigatorOpen: boolean
   navigatorWidth: number
 }
@@ -17,6 +20,7 @@ export type ProjectWorkbenchLayout = {
 
 const DEFAULT_NAVIGATOR_LAYOUT: WorkbenchNavigatorLayout = {
   expandedProjectIds: [],
+  historyOpen: false,
   navigatorOpen: true,
   navigatorWidth: 280,
 }
@@ -35,6 +39,7 @@ const navigatorLayoutStorage = createPreferenceStorage<WorkbenchNavigatorLayout,
     const legacy = initialProjectId ? record(read(legacyProjectLayoutKey(initialProjectId))) : null
     return legacy ? {
       expandedProjectIds: initialProjectId ? [initialProjectId] : [],
+      historyOpen: DEFAULT_NAVIGATOR_LAYOUT.historyOpen,
       navigatorOpen: booleanValue(legacy.sessionSidebarOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
       navigatorWidth: numericValue(legacy.sessionSidebarWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
     } : undefined
@@ -43,6 +48,7 @@ const navigatorLayoutStorage = createPreferenceStorage<WorkbenchNavigatorLayout,
     const stored = record(value)
     return stored ? {
       expandedProjectIds: normalizedProjectIds(stored.expandedProjectIds),
+      historyOpen: booleanValue(stored.historyOpen, DEFAULT_NAVIGATOR_LAYOUT.historyOpen),
       navigatorOpen: booleanValue(stored.navigatorOpen, DEFAULT_NAVIGATOR_LAYOUT.navigatorOpen),
       navigatorWidth: numericValue(stored.navigatorWidth, DEFAULT_NAVIGATOR_LAYOUT.navigatorWidth),
     } : undefined

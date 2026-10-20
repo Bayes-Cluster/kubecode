@@ -508,3 +508,77 @@ describe('Workspace navigation and routes', () => {
     expect(window.location.hash).toBe('#/p/project-1/board?task=r1')
   })
 })
+
+describe('The Workspaces navigation', () => {
+  function history() {
+    return document.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
+  }
+
+  it('is one navigation of Workspaces, and the title bar names the Workspace and the place', async () => {
+    const { container } = await start('#/p/project-1/board')
+    expect(screen.getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Kanban', level: 2 })
+    expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('Demo/Kanban')
+    expect(screen.queryByRole('textbox', { name: 'Search sessions' })?.closest('.kubecode-topbar')).toBeFalsy()
+    expect(screen.getAllByRole('button', { name: 'Demo' })).toHaveLength(1)
+    expect(history().open).toBe(false)
+  })
+
+  it('opens a member’s profile over the view from the roster, and Members from execution history', async () => {
+    const { nav } = await start('#/p/project-1/board')
+    await screen.findByRole('heading', { name: 'Kanban', level: 2 })
+    const roster = await within(nav).findByRole('list', { name: 'Agents' })
+    fireEvent.click(within(roster).getByRole('button', { name: 'Analyst' }))
+    expect(await inspector('Analyst')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?inspect=member~m-analyst'))
+
+    fireEvent.click(within(history()).getByRole('button', { name: 'New session' }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+  })
+
+  it('opens Members with the profile when execution history is on screen', async () => {
+    const { nav } = await start('#/p/project-1/sessions')
+    await screen.findByTestId('agent-session-workspace')
+    expect(history().open).toBe(true)
+    fireEvent.click(within(await within(nav).findByRole('list', { name: 'Agents' })).getByRole('button', { name: 'Analyst' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/members?member=m-analyst'))
+    expect(await inspector('Analyst')).toBeInTheDocument()
+  })
+
+  it('lists the private conversations, and marks the one on screen', async () => {
+    const analyst = member({ id: 'm-analyst', role: 'specialist', name: 'Analyst', handle: 'analyst', dm_conversation_id: 's-dm' })
+    const { nav } = await start('#/p/project-1/general', api({
+      listMembers: vi.fn().mockResolvedValue({ members: [member({}), analyst], general_id: 'm-general' }),
+      memberDmTurns: vi.fn().mockResolvedValue([]),
+    }))
+    const direct = await within(nav).findByRole('list', { name: 'Direct messages' })
+    fireEvent.click(within(direct).getByRole('button', { name: 'Analyst' }))
+    expect(await screen.findByRole('heading', { name: 'Private conversation with Analyst' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst')
+    expect(within(direct).getByRole('button', { name: 'Analyst' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('searches Sessions from execution history and opens the one chosen', async () => {
+    await start('#/p/project-1/resources', api({ listConversations: vi.fn().mockResolvedValue([session]) }))
+    await screen.findByRole('heading', { name: 'Resources', level: 2 })
+    const search = within(history()).getByRole('textbox', { name: 'Search sessions' })
+    fireEvent.change(search, { target: { value: 'earlier' } })
+    expect(history().open).toBe(true)
+    expect(within(history()).getByRole('heading', { name: 'Demo', level: 3 })).toBeInTheDocument()
+    fireEvent.click(await within(history()).findByRole('button', { name: /^Earlier chat/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
+  })
+
+  it('remembers execution history being opened', async () => {
+    await start('#/p/project-1/general')
+    await screen.findByRole('heading', { name: '# General' })
+    act(() => {
+      history().open = true
+      history().dispatchEvent(new Event('toggle'))
+    })
+    await waitFor(() => expect(
+      JSON.parse(localStorage.getItem('kubecode:workbench-layout:v2') ?? '{}').historyOpen,
+    ).toBe(true))
+  })
+})
+
