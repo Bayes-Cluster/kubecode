@@ -805,3 +805,150 @@ async fn a_reply_is_public_and_authorizes_nothing() {
         .unwrap();
     assert_eq!(env.board(&env.project).await["total"], 1);
 }
+
+/// A Task under review: admitted, executing, one piece of internal work
+/// assigned to the Analyst with `notes.md` attached as evidence, and an open
+/// review request that cites the same file.
+struct Reviewing {
+    research_id: String,
+    round: String,
+    work_id: String,
+    result_id: String,
+    request_id: String,
+    root: std::path::PathBuf,
+}
+
+async fn reviewing(env: &Env) -> Reviewing {
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Prune heads"), Some("prune"))
+        .unwrap();
+    let admit = env.say("Add it to the board").await;
+    manager
+        .task_admit(&proposal.research_id, &admit, proposal.revision)
+        .unwrap();
+    let go = env.say("Go ahead and start.").await;
+    let round = manager
+        .task_start(&proposal.research_id, &go)
+        .unwrap()
+        .round_id
+        .unwrap();
+    let work = manager
+        .create(NewTask {
+            round_id: Some(&round),
+            title: "Sweep ratios",
+            description: "Try them",
+            plan: None,
+            depends_on: &[],
+            from_thread: None,
+            client_request_id: Some("w1"),
+        })
+        .unwrap();
+    manager
+        .assign_member(&work.item.id, "@analyst", "your area")
+        .unwrap();
+    let root = env
+        .state
+        .workspace
+        .execution_path(&env.project, None)
+        .unwrap();
+    std::fs::write(root.join("notes.md"), "pruning hurts").unwrap();
+    let revision = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    let attempt = env
+        .state
+        .work
+        .begin_attempt(
+            &env.project,
+            &work.item.id,
+            Some("a1"),
+            &kubecode_server::work_store::Actor::Researcher,
+        )
+        .unwrap();
+    let result = env
+        .state
+        .work
+        .add_result(
+            &env.project,
+            &work.item.id,
+            NewResult {
+                attempt_id: Some(&attempt.id),
+                role: ResultRole::Evidence,
+                kind: "file",
+                ref_id: "notes.md",
+                revision: Some(&revision),
+            },
+            &kubecode_server::work_store::Actor::Executor {
+                conversation_id: env.specialist.clone(),
+            },
+        )
+        .unwrap();
+    let request = manager
+        .task_request_review(
+            &proposal.research_id,
+            "0.9 diverged; 0.5 holds.",
+            &["file:notes.md".into()],
+        )
+        .unwrap();
+    Reviewing {
+        research_id: proposal.research_id,
+        round,
+        work_id: work.item.id,
+        result_id: result.id,
+        request_id: request.id,
+        root,
+    }
+}
+
+#[tokio::test]
+async fn a_work_evidence_repin_must_name_the_version_looked_at() {
+    let env = env();
+    let task = reviewing(&env).await;
+    std::fs::write(task.root.join("notes.md"), "pruning helps after all").unwrap();
+    let current = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    let path = format!("/projects/{}/tasks/{}/repin", env.project, task.research_id);
+    // Work-attached evidence, like the review's own, names what was looked at.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"work_id": task.work_id, "result_id": task.result_id}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "invalid_task_request");
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"work_id": task.work_id, "result_id": task.result_id, "revision": "an-older-one"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "work_evidence_stale");
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"work_id": task.work_id, "result_id": task.result_id, "revision": current}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    // The review's own pin still asks for its version too.
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &path,
+        json!({"request_id": task.request_id, "result_id": "file:notes.md"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let _ = task.round;
+}

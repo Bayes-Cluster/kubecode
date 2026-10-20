@@ -513,9 +513,13 @@ async fn repin(
             .ok_or(ApiError::BadRequest(
                 "that evidence has no current version to accept",
             ))?;
-        if let Some(looked_at) = body.revision.as_deref()
-            && looked_at != current
-        {
+        // Work-attached evidence, like the review's own, is accepted only at
+        // the version the researcher looked at (ADR 0230 §4).
+        let looked_at = body
+            .revision
+            .as_deref()
+            .ok_or(ApiError::BadRequest("name the version that was looked at"))?;
+        if looked_at != current {
             return Err(ApiError::StaleEvidence(stale_of(
                 &state,
                 &project_id,
