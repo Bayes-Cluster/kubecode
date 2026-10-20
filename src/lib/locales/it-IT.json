@@ -1644,8 +1644,6 @@
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
   "kubecode.teamYoloFallback": "Non è stato possibile applicare YOLO; questa Team è in esecuzione in modalità Standard",
   "kubecode.sessionsLabel": "Sessioni",
-  "kubecode.expandProject": "Espandi progetto",
-  "kubecode.collapseProject": "Comprimi progetto",
   "kubecode.projectActionsFor": "Azioni per il progetto {name}",
   "kubecode.explorer": "Esplora risorse",
   "kubecode.agentPlan": "Piano dell’agente",

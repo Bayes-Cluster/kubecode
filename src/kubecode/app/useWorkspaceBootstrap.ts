@@ -27,7 +27,6 @@ export type WorkspaceBootstrapOptions = {
   setProjectId: Dispatch<string | null>
   setSessionSidebarOpen: Dispatch<boolean>
   setSessionSidebarWidth: Dispatch<number>
-  setExpandedProjectIds: Dispatch<string[]>
   /** Whether "History and execution" was left open. */
   setHistoryOpen?: Dispatch<boolean>
   setProjectRuns: Dispatch<Record<string, AgentRun[]>>
@@ -69,7 +68,6 @@ export function useWorkspaceBootstrap(
     setProjectId,
     setSessionSidebarOpen,
     setSessionSidebarWidth,
-    setExpandedProjectIds,
     setHistoryOpen,
     setProjectRuns,
     setWorkspaceCursor,
@@ -102,7 +100,6 @@ export function useWorkspaceBootstrap(
         const navigatorLayout = readWorkbenchNavigatorLayout(localStorage, initialProjectId)
         setSessionSidebarOpen(navigatorLayout.navigatorOpen)
         setSessionSidebarWidth(navigatorLayout.navigatorWidth)
-        setExpandedProjectIds(navigatorLayout.expandedProjectIds)
         setHistoryOpen?.(navigatorLayout.historyOpen)
         setLayoutHydrated(true)
         if (initialProjectId) applyProjectLayout(initialProjectId)
@@ -117,7 +114,7 @@ export function useWorkspaceBootstrap(
       })
       .catch((cause: unknown) => setError(errorMessage(cause, t('kubecode.error'))))
     return () => { current = false }
-  }, [api, applyProjectLayout, setError, setExpandedProjectIds, setHistoryOpen, setLayoutHydrated, setProjectId, setProjectRuns, setProjects, setSessionSidebarOpen, setSessionSidebarWidth, t])
+  }, [api, applyProjectLayout, setError, setHistoryOpen, setLayoutHydrated, setProjectId, setProjectRuns, setProjects, setSessionSidebarOpen, setSessionSidebarWidth, t])
 
   useEffect(() => {
     let current = true

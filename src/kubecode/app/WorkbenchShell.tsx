@@ -128,7 +128,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [allConversations, setAllConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [workspaceCursor, setWorkspaceCursor] = useState<number | null>(null)
-  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const [projectDialog, setProjectDialog] = useState(false)
   const [sessionDialog, setSessionDialog] = useState(false)
   const [researchDialog, setResearchDialog] = useState(false)
@@ -280,7 +279,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setProjects,
     setProjectId,
     setConversationId,
-    setExpandedProjectIds,
     setConversations,
     setTeams,
     setTerminals,
@@ -307,7 +305,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setProjectId,
     setSessionSidebarOpen,
     setSessionSidebarWidth,
-    setExpandedProjectIds,
     setHistoryOpen,
     setProjectRuns: reconciliation.setProjectRuns,
     setWorkspaceCursor,
@@ -627,12 +624,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   useEffect(() => {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
-      expandedProjectIds,
       historyOpen,
       navigatorOpen: sessionSidebarOpen,
       navigatorWidth: sessionSidebarWidth,
     })
-  }, [expandedProjectIds, historyOpen, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
+  }, [historyOpen, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
 
   useEffect(() => {
     if (!layoutHydrated || !projectId) return

@@ -21,7 +21,6 @@ describe('workbench layout preferences', () => {
     }))
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-1')).toEqual({
-      expandedProjectIds: ['project-1'],
       historyOpen: false,
       navigatorOpen: false,
       navigatorWidth: 357,
@@ -36,7 +35,6 @@ describe('workbench layout preferences', () => {
 
   it('persists versioned navigator and project panel state independently', () => {
     writeWorkbenchNavigatorLayout(localStorage, {
-      expandedProjectIds: ['project-1', 'project-2'],
       historyOpen: true,
       navigatorOpen: true,
       navigatorWidth: 304,
@@ -49,11 +47,12 @@ describe('workbench layout preferences', () => {
     })
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-2')).toEqual({
-      expandedProjectIds: ['project-1', 'project-2'],
       historyOpen: true,
       navigatorOpen: true,
       navigatorWidth: 304,
     })
+    // Projects are no longer expanded, so nothing about them is stored.
+    expect(JSON.parse(localStorage.getItem('kubecode:workbench-layout:v2') ?? '{}')).not.toHaveProperty('expandedProjectIds')
     expect(readProjectWorkbenchLayout(localStorage, 'project-1')).toEqual({
       contextOpen: true,
       contextWidth: 480,
@@ -62,7 +61,7 @@ describe('workbench layout preferences', () => {
     })
   })
 
-  it('normalizes invalid stored values without discarding valid project ids', () => {
+  it('normalizes invalid stored values, and ignores the expanded Projects older layouts stored', () => {
     localStorage.setItem('kubecode:workbench-layout:v2', JSON.stringify({
       expandedProjectIds: ['project-1', 42, '', 'project-1'],
       historyOpen: 'open',
@@ -71,7 +70,6 @@ describe('workbench layout preferences', () => {
     }))
 
     expect(readWorkbenchNavigatorLayout(localStorage, 'project-2')).toEqual({
-      expandedProjectIds: ['project-1'],
       historyOpen: false,
       navigatorOpen: true,
       navigatorWidth: 280,
@@ -86,7 +84,6 @@ describe('workbench layout preferences', () => {
     }))
 
     expect(readWorkbenchNavigatorLayout(localStorage, null)).toEqual({
-      expandedProjectIds: [],
       historyOpen: false,
       navigatorOpen: false,
       navigatorWidth: 300,

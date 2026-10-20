@@ -21,7 +21,6 @@ export type ProjectSelectionOptions = {
   setProjects: Dispatch<Project[]>
   setProjectId: Dispatch<string | null>
   setConversationId: Dispatch<string | null>
-  setExpandedProjectIds: Dispatch<string[]>
   setConversations: Dispatch<Conversation[]>
   setTeams: Dispatch<TeamSnapshot[]>
   setTerminals: Dispatch<TerminalInfo[]>
@@ -50,7 +49,6 @@ export function useProjectSelection(
     setProjects,
     setProjectId,
     setConversationId,
-    setExpandedProjectIds,
     setConversations,
     setTeams,
     setTerminals,
@@ -75,10 +73,7 @@ export function useProjectSelection(
     setTerminalsLoadedForProjectId(null)
     applyProjectLayout(nextProjectId)
     setProjectId(nextProjectId)
-    setExpandedProjectIds((current) => (
-      current.includes(nextProjectId) ? current : [...current, nextProjectId]
-    ))
-  }, [applyProjectLayout, setActiveSessionPlan, setConversationId, setConversations, setExpandedProjectIds, setProjectId, setTeams, setTerminals, setTerminalsLoadedForProjectId])
+  }, [applyProjectLayout, setActiveSessionPlan, setConversationId, setConversations, setProjectId, setTeams, setTerminals, setTerminalsLoadedForProjectId])
 
   const deleteProject = useCallback(async (targetProject = project) => {
     if (!targetProject) return
@@ -133,11 +128,8 @@ export function useProjectSelection(
       setConversations([])
       setProjectId(nextProjectId)
     }
-    setExpandedProjectIds((current) => (
-      current.includes(nextProjectId) ? current : [...current, nextProjectId]
-    ))
     setConversationId(nextConversationId)
-  }, [applyProjectLayout, projectId, setActiveSessionPlan, setConversationId, setConversations, setExpandedProjectIds, setProjectId, setTerminals, setTerminalsLoadedForProjectId])
+  }, [applyProjectLayout, projectId, setActiveSessionPlan, setConversationId, setConversations, setProjectId, setTerminals, setTerminalsLoadedForProjectId])
 
   return {
     deleteProject,

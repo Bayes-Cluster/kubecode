@@ -1644,8 +1644,6 @@
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
   "kubecode.teamYoloFallback": "Не вдалося застосувати YOLO; ця Team працює в режимі Standard",
   "kubecode.sessionsLabel": "Сеанси",
-  "kubecode.expandProject": "Розгорнути проєкт",
-  "kubecode.collapseProject": "Згорнути проєкт",
   "kubecode.projectActionsFor": "Дії для проєкту {name}",
   "kubecode.explorer": "Провідник",
   "kubecode.agentPlan": "План агента",

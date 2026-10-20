@@ -1029,8 +1029,6 @@
   "locale.skSK": "Slovak",
   "kubecode.appName": "Kubecode",
   "kubecode.sessionsLabel": "Sessions",
-  "kubecode.expandProject": "Expand project",
-  "kubecode.collapseProject": "Collapse project",
   "kubecode.projectActionsFor": "Actions for project {name}",
   "kubecode.addProject": "Add project",
   "kubecode.createProject": "Create project",

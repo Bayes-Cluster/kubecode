@@ -1644,8 +1644,6 @@
   "kubecode.teamYoloPermissionOpenCode": "OpenCode · allow",
   "kubecode.teamYoloFallback": "YOLO sa nepodarilo použiť; táto Team beží v režime Standard",
   "kubecode.sessionsLabel": "Relácie",
-  "kubecode.expandProject": "Rozbaliť projekt",
-  "kubecode.collapseProject": "Zbaliť projekt",
   "kubecode.projectActionsFor": "Akcie pre projekt {name}",
   "kubecode.explorer": "Prieskumník",
   "kubecode.agentPlan": "Plán agenta",
