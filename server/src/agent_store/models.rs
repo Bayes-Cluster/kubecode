@@ -247,6 +247,23 @@ pub struct SessionEvent {
     pub created_at: String,
 }
 
+/// One page of a conversation's recorded history read as a single snapshot:
+/// `workspace_cursor` is the newest workspace event committed when it was
+/// read, so the conversation's events streamed at or below it are recorded
+/// here and none streamed above it are (#103).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConversationHistorySnapshot {
+    /// Runs of the page, oldest first.
+    pub runs: Vec<AgentRun>,
+    /// Whether older runs exist before the page.
+    pub has_more: bool,
+    /// Each page run's recorded events, in `runs` order.
+    pub run_events: Vec<Vec<AgentEvent>>,
+    /// Every recorded session event of the conversation, oldest first.
+    pub session_events: Vec<SessionEvent>,
+    pub workspace_cursor: u64,
+}
+
 pub(super) fn to_sql_conversion_error(error: StoreError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
 }

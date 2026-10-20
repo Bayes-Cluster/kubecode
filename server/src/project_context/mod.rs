@@ -9,6 +9,7 @@ mod tests;
 
 pub use models::*;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use base64::Engine as _;
@@ -36,16 +37,71 @@ pub struct ProjectContext {
     /// Who the direct-message Sessions are, so private conversations are never
     /// listed, resolved, or read as shared Project context (ADR 0223).
     members: Option<Arc<crate::member_store::MemberStore>>,
+    /// Directory entries one file search visits.
+    file_scan_entries: usize,
 }
 
-/// Keeps the first `SCAN_CAP` entries (callers order newest first) and flags
-/// the page when anything was left out.
-fn cap<T>(mut items: Vec<T>, truncated: &mut bool) -> Vec<T> {
-    if items.len() > SCAN_CAP {
-        *truncated = true;
-        items.truncate(SCAN_CAP);
+/// The kinds whose candidates come from research questions.
+const RESEARCH_FAMILY: &[ContextKind] = &[
+    ContextKind::Research,
+    ContextKind::Import,
+    ContextKind::Finding,
+    ContextKind::Round,
+    ContextKind::Experiment,
+    ContextKind::Artifact,
+];
+const TEAM_FAMILY: &[ContextKind] = &[ContextKind::Team, ContextKind::TeamTask];
+
+/// Which searched kinds were not searched completely.
+struct Truncation<'a> {
+    wanted: &'a dyn Fn(ContextKind) -> bool,
+    kinds: BTreeSet<ContextKind>,
+}
+
+impl Truncation<'_> {
+    /// Marks the searched kinds among `family`: their owner left some out.
+    fn mark(&mut self, family: &[ContextKind]) {
+        self.kinds
+            .extend(family.iter().copied().filter(|kind| (self.wanted)(*kind)));
     }
-    items
+
+    /// Keeps the first `SCAN_CAP` entries (callers order newest first) and
+    /// marks `family` when anything was left out.
+    fn cap<T>(&mut self, mut items: Vec<T>, family: &[ContextKind]) -> Vec<T> {
+        if items.len() > SCAN_CAP {
+            self.mark(family);
+            items.truncate(SCAN_CAP);
+        }
+        items
+    }
+}
+
+/// `YYYY-MM-DD HH:MM:SS` in UTC, the format of the stores' `CURRENT_TIMESTAMP`,
+/// so file times sort among record times as plain strings.
+fn utc_timestamp(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let rest = seconds % 86_400;
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        rest / 3_600,
+        rest % 3_600 / 60,
+        rest % 60
+    )
 }
 
 fn digest(parts: &[&str]) -> String {
@@ -98,7 +154,14 @@ impl ProjectContext {
             channels,
             workspace,
             members: None,
+            file_scan_entries: FILE_SCAN_ENTRIES,
         }
+    }
+
+    #[cfg(test)]
+    fn with_file_scan_budget(mut self, entries: usize) -> Self {
+        self.file_scan_entries = entries;
+        self
     }
 
     /// Hides every member's direct-message Session from Project context: no
@@ -122,9 +185,11 @@ impl ProjectContext {
     // -- Search -----------------------------------------------------------------
 
     /// Metadata items matching `query` (every whole word must appear in the
-    /// title or summary), newest first within a relevance tier. An empty query
-    /// lists recent work. Each owner is scanned for at most `SCAN_CAP` recent
-    /// candidates; if one had more, the page says so.
+    /// title or summary; a file's title is its path), newest first within a
+    /// relevance tier. An empty query lists recent work. An empty `kinds`
+    /// searches `ContextKind::DEFAULT_SEARCH`: Project files are walked only
+    /// when named. Each owner is scanned for at most `SCAN_CAP` recent
+    /// candidates; the page names every kind that was cut short.
     pub fn search(
         &self,
         project_id: &str,
@@ -135,7 +200,18 @@ impl ProjectContext {
     ) -> Result<ContextPage, ContextError> {
         let limit = limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
         let offset = decode_cursor(cursor)?;
-        let wanted = |kind: ContextKind| kinds.is_empty() || kinds.contains(&kind);
+        let kinds = if kinds.is_empty() {
+            ContextKind::DEFAULT_SEARCH
+        } else {
+            kinds
+        };
+        let wanted = |kind: ContextKind| kinds.contains(&kind);
+        // A turn is read through its Session; search never lists one.
+        let searched: Vec<ContextKind> = ContextKind::ALL
+            .iter()
+            .copied()
+            .filter(|kind| wanted(*kind) && *kind != ContextKind::SessionTurn)
+            .collect();
         let words: Vec<String> = query
             .unwrap_or_default()
             .split_whitespace()
@@ -143,8 +219,12 @@ impl ProjectContext {
             .take(8)
             .collect();
         let mut candidates = Vec::new();
-        let mut truncated = false;
-        self.collect(project_id, &wanted, &mut candidates, &mut truncated)?;
+        let mut truncation = Truncation {
+            wanted: &wanted,
+            kinds: BTreeSet::new(),
+        };
+        self.collect(project_id, &words, &mut candidates, &mut truncation)?;
+        let truncated_kinds: Vec<ContextKind> = truncation.kinds.into_iter().collect();
         let mut scored: Vec<(u8, ContextItem)> = candidates
             .into_iter()
             .filter_map(|item| {
@@ -169,48 +249,78 @@ impl ProjectContext {
                     .then_with(|| a.1.reference.id.cmp(&b.1.reference.id))
             })
         });
+        let mut counts: BTreeMap<ContextKind, usize> =
+            searched.iter().map(|kind| (*kind, 0)).collect();
+        for (_, item) in &scored {
+            *counts.entry(item.reference.kind).or_default() += 1;
+        }
         let total = scored.len();
-        let items: Vec<ContextItem> = scored
+        let mut items: Vec<ContextItem> = scored
             .into_iter()
             .skip(offset)
             .take(limit)
             .map(|(_, item)| item)
             .collect();
+        self.check_page(project_id, &mut items);
         let next_cursor =
             (offset + items.len() < total).then(|| encode_cursor(offset + items.len()));
         Ok(ContextPage {
             items,
             next_cursor,
-            truncated,
+            truncated: !truncated_kinds.is_empty(),
+            searched,
+            truncated_kinds,
+            counts,
         })
+    }
+
+    /// Artifacts and files on a returned page are checked for existence with
+    /// a metadata check (no hashing), so a removed one is listed as removed.
+    fn check_page(&self, project_id: &str, items: &mut [ContextItem]) {
+        for item in items {
+            let present = match item.reference.kind {
+                ContextKind::File => {
+                    self.workspace
+                        .execution_file_exists(project_id, None, &item.reference.id)
+                }
+                ContextKind::Artifact => {
+                    let Some((experiment_id, path)) = item.reference.id.split_once('/') else {
+                        continue;
+                    };
+                    self.experiment(project_id, experiment_id)
+                        .ok()
+                        .flatten()
+                        .and_then(|experiment| self.execution_root(&experiment))
+                        .is_some_and(|root| {
+                            self.workspace
+                                .execution_file_exists(project_id, root.as_deref(), path)
+                        })
+                }
+                _ => continue,
+            };
+            if !present {
+                item.availability = Availability::Removed;
+            }
+        }
     }
 
     fn collect(
         &self,
         project_id: &str,
-        wanted: &dyn Fn(ContextKind) -> bool,
+        words: &[String],
         out: &mut Vec<ContextItem>,
-        truncated: &mut bool,
+        truncation: &mut Truncation<'_>,
     ) -> Result<(), ContextError> {
-        let need_research = [
-            ContextKind::Research,
-            ContextKind::Round,
-            ContextKind::Import,
-            ContextKind::Finding,
-            ContextKind::Experiment,
-            ContextKind::Artifact,
-        ]
-        .into_iter()
-        .any(wanted);
-        if need_research {
+        let wanted = truncation.wanted;
+        if RESEARCH_FAMILY.iter().copied().any(wanted) {
             // Newest first: the cap keeps the most recent candidates.
-            let questions = cap(
+            let questions = truncation.cap(
                 self.research.list(project_id, true).map_err(source_error)?,
-                truncated,
+                RESEARCH_FAMILY,
             );
             for question in &questions {
                 if out.len() >= CANDIDATE_BUDGET {
-                    *truncated = true;
+                    truncation.mark(RESEARCH_FAMILY);
                     break;
                 }
                 if wanted(ContextKind::Research) {
@@ -228,11 +338,11 @@ impl ProjectContext {
                     ));
                 }
                 if wanted(ContextKind::Import) {
-                    for import in cap(
+                    for import in truncation.cap(
                         self.research
                             .imports(project_id, &question.id)
                             .map_err(source_error)?,
-                        truncated,
+                        &[ContextKind::Import],
                     ) {
                         out.push(self.import_item(&import));
                     }
@@ -243,23 +353,21 @@ impl ProjectContext {
                         .findings(project_id, &question.id)
                         .map_err(source_error)?;
                     findings.reverse();
-                    for finding in cap(findings, truncated) {
+                    for finding in truncation.cap(findings, &[ContextKind::Finding]) {
                         out.push(self.finding_item(&finding));
                     }
                 }
-                if [
+                let round_family = &[
                     ContextKind::Round,
                     ContextKind::Experiment,
                     ContextKind::Artifact,
-                ]
-                .into_iter()
-                .any(wanted)
-                {
+                ];
+                if round_family.iter().copied().any(wanted) {
                     let rounds = self
                         .research
                         .rounds(project_id, &question.id)
                         .map_err(source_error)?;
-                    for round in cap(rounds, truncated) {
+                    for round in truncation.cap(rounds, round_family) {
                         if wanted(ContextKind::Round) {
                             out.push(self.round_item(&question.title, &round));
                         }
@@ -268,7 +376,10 @@ impl ProjectContext {
                                 .experiments
                                 .experiments(project_id, &question.id, &round.id)
                                 .map_err(source_error)?;
-                            for experiment in cap(experiments, truncated) {
+                            for experiment in truncation.cap(
+                                experiments,
+                                &[ContextKind::Experiment, ContextKind::Artifact],
+                            ) {
                                 if wanted(ContextKind::Experiment) {
                                     out.push(self.experiment_item(&experiment));
                                 }
@@ -297,18 +408,18 @@ impl ProjectContext {
                 let private = members.dm_session_ids().map_err(source_error)?;
                 conversations.retain(|conversation| !private.contains(&conversation.id));
             }
-            for conversation in cap(conversations, truncated) {
+            for conversation in truncation.cap(conversations, &[ContextKind::Session]) {
                 out.push(self.session_item(&conversation));
             }
         }
-        if wanted(ContextKind::Team) || wanted(ContextKind::TeamTask) {
-            let teams = cap(
+        if TEAM_FAMILY.iter().copied().any(wanted) {
+            let teams = truncation.cap(
                 self.teams.list_teams(project_id).map_err(source_error)?,
-                truncated,
+                TEAM_FAMILY,
             );
             for team in &teams {
                 if out.len() >= CANDIDATE_BUDGET {
-                    *truncated = true;
+                    truncation.mark(TEAM_FAMILY);
                     break;
                 }
                 if wanted(ContextKind::Team) {
@@ -317,7 +428,7 @@ impl ProjectContext {
                 if wanted(ContextKind::TeamTask) {
                     let mut tasks = self.teams.list_tasks(&team.id).map_err(source_error)?;
                     tasks.reverse();
-                    for task in cap(tasks, truncated) {
+                    for task in truncation.cap(tasks, &[ContextKind::TeamTask]) {
                         out.push(self.task_item(team, &task));
                     }
                 }
@@ -328,9 +439,9 @@ impl ProjectContext {
                 include_closed: true,
                 ..WorkFilter::default()
             };
-            for summary in cap(
+            for summary in truncation.cap(
                 self.work.list(project_id, &filter).map_err(source_error)?,
-                truncated,
+                &[ContextKind::Work],
             ) {
                 out.push(self.work_item(&summary));
             }
@@ -345,16 +456,31 @@ impl ProjectContext {
                     out.push(self.channel_item(&channel));
                 }
                 if wanted(ContextKind::Thread) {
-                    for thread in cap(
+                    for thread in truncation.cap(
                         self.channels
                             .threads(project_id, &channel.id, None)
                             .map_err(source_error)?,
-                        truncated,
+                        &[ContextKind::Thread],
                     ) {
                         out.push(self.thread_item(&thread));
                     }
                 }
             }
+        }
+        if wanted(ContextKind::File) {
+            let found = self
+                .workspace
+                .search_project_files(project_id, words, self.file_scan_entries, FILE_HIT_CAP)
+                .map_err(source_error)?;
+            if found.truncated {
+                truncation.mark(&[ContextKind::File]);
+            }
+            out.extend(
+                found
+                    .hits
+                    .into_iter()
+                    .map(|hit| file_item(&hit.path, None, hit.modified_unix.map(utc_timestamp))),
+            );
         }
         Ok(())
     }
@@ -792,6 +918,100 @@ fn valid_id(id: &str) -> Result<(), ContextError> {
     Ok(())
 }
 
+const CHANGED_NOTE: &str =
+    "This source changed after the revision that was referenced; showing its current state.";
+
+/// A Project-relative file path: no leading `/`, no `\` or NUL, no empty,
+/// `.` or `..` component, never inside a `.git` directory, and never an
+/// environment file (`.env`, `.env.local`, …) that holds secrets. Other dot
+/// paths, environment templates included, are readable when named explicitly
+/// but are never listed.
+fn valid_file_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.chars().count() <= MAX_ID_CHARS
+        && !id.starts_with('/')
+        && !id.contains(['\\', '\0'])
+        && id.split('/').all(|part| {
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && !part.eq_ignore_ascii_case(".git")
+                && !is_environment_file(part)
+        })
+}
+
+/// `.env` or `.env.<anything>`, except the templates projects commit
+/// (`.env.example`, `.env.sample`, `.env.template`), compared ignoring case.
+fn is_environment_file(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    match name.strip_prefix(".env") {
+        Some("") => true,
+        Some(rest) => {
+            rest.starts_with('.')
+                && ![".example", ".sample", ".template"]
+                    .iter()
+                    .any(|template| rest.ends_with(template))
+        }
+        None => false,
+    }
+}
+
+/// The path is not a regular file reached through no symlink in this Project,
+/// or it cannot be opened (for example, no read permission). Either way it is
+/// unavailable on its own, without failing the other references beside it.
+fn file_missing(error: &crate::workspace::WorkspaceError) -> bool {
+    use crate::workspace::WorkspaceError as E;
+    matches!(error, E::InvalidPath(_) | E::Io(_))
+}
+
+fn file_item(path: &str, revision: Option<String>, updated_at: Option<String>) -> ContextItem {
+    ContextItem {
+        reference: ContextRef {
+            kind: ContextKind::File,
+            id: path.to_owned(),
+            revision,
+        },
+        title: path.to_owned(),
+        // No server-authored prose: the path is the whole description.
+        summary: String::new(),
+        provenance: Provenance {
+            updated_at,
+            ..Provenance::default()
+        },
+        availability: Availability::Available,
+    }
+}
+
+/// A short tag of a file revision, carried by a file cursor.
+fn revision_tag(revision: &str) -> String {
+    hex::encode(Sha256::digest(revision.as_bytes()))[..16].to_owned()
+}
+
+fn encode_file_cursor(offset: u64, revision: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("f:{offset}:{}", revision_tag(revision)))
+}
+
+/// `None` for the first page; the byte offset and revision tag otherwise.
+fn decode_file_cursor(cursor: Option<&str>) -> Result<Option<(u64, String)>, ContextError> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(cursor)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|text| {
+            let rest = text.strip_prefix("f:")?;
+            let (offset, tag) = rest.split_once(':')?;
+            let offset = offset.parse().ok()?;
+            (tag.len() == 16 && tag.bytes().all(|b| b.is_ascii_hexdigit()))
+                .then(|| (offset, tag.to_owned()))
+        })
+        .map(Some)
+        .ok_or(ContextError::Invalid("the cursor is not valid"))
+}
+
 impl ContextDocument {
     fn new(item: &ContextItem, detail: Detail, availability: Availability) -> Self {
         Self {
@@ -804,6 +1024,7 @@ impl ContextDocument {
             related: Vec::new(),
             next_cursor: None,
             notes: Vec::new(),
+            shown_revision: item.reference.revision.clone(),
         }
     }
 
@@ -938,7 +1159,22 @@ impl ProjectContext {
                 Err(crate::channel_store::ChannelError::NotFound) => None,
                 Err(error) => return Err(source_error(error)),
             },
+            ContextKind::File => self.file_lookup(project_id, id)?,
         })
+    }
+
+    /// A Project file by its Project-relative path, with its current
+    /// fingerprint (the one work evidence pins), or `None` when the path is
+    /// not a readable regular file reached through no symlink.
+    fn file_lookup(&self, project_id: &str, id: &str) -> Result<Option<ContextItem>, ContextError> {
+        if !valid_file_id(id) {
+            return Ok(None);
+        }
+        match self.workspace.execution_file_revision(project_id, None, id) {
+            Ok(revision) => Ok(Some(file_item(id, Some(revision), None))),
+            Err(error) if file_missing(&error) => Ok(None),
+            Err(error) => Err(source_error(error)),
+        }
     }
 
     fn conversation(
@@ -1125,10 +1361,36 @@ impl ProjectContext {
                             reference: reference.clone(),
                             availability,
                             current_revision: item.reference.revision,
-                            title: (availability != Availability::Removed).then_some(item.title),
+                            title: Some(item.title),
                         }
                     }
                 })
+            })
+            .collect()
+    }
+
+    /// The references a researcher posts, each pinned to a version (ADR 0231
+    /// §5): a reference without a revision gets its current one, a supplied
+    /// revision is kept (it is what the researcher saw, even if the record
+    /// changed since), and a record that no longer exists here is refused.
+    pub fn pin(
+        &self,
+        project_id: &str,
+        refs: &[ContextRef],
+    ) -> Result<Vec<ContextRef>, ContextError> {
+        if refs.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.resolve(project_id, refs)?
+            .into_iter()
+            .map(|resolved| match resolved.availability {
+                Availability::Removed => Err(ContextError::Invalid(
+                    "a referenced record no longer exists",
+                )),
+                _ => Ok(ContextRef {
+                    revision: resolved.reference.revision.or(resolved.current_revision),
+                    ..resolved.reference
+                }),
             })
             .collect()
     }
@@ -1141,19 +1403,32 @@ impl ProjectContext {
         detail: Detail,
         cursor: Option<&str>,
     ) -> Result<ContextDocument, ContextError> {
-        let item = self
-            .lookup(project_id, reference)?
-            .ok_or(ContextError::NotFound)?;
-        let current = item.reference.revision.clone().unwrap_or_default();
-        let availability = if item.availability == Availability::Removed {
-            Availability::Removed
+        let item = if reference.kind == ContextKind::File {
+            // A metadata check only: the page read below fingerprints the file
+            // from the same descriptor as its text.
+            valid_id(&reference.id)?;
+            (valid_file_id(&reference.id)
+                && self
+                    .workspace
+                    .execution_file_exists(project_id, None, &reference.id))
+            .then(|| file_item(&reference.id, None, None))
         } else {
-            compare(reference.revision.as_deref(), &current)
+            self.lookup(project_id, reference)?
+        }
+        .ok_or(ContextError::NotFound)?;
+        let availability = match &item.reference.revision {
+            _ if item.availability == Availability::Removed => Availability::Removed,
+            // A file's fingerprint arrives with its page, below.
+            None if reference.kind == ContextKind::File => Availability::Available,
+            current => compare(
+                reference.revision.as_deref(),
+                current.as_deref().unwrap_or_default(),
+            ),
         };
         let mut doc = ContextDocument::new(&item, detail, availability);
         doc.section("Summary", &item.summary);
         if availability == Availability::Changed {
-            doc.note("This source changed after the revision that was referenced; showing its current state.");
+            doc.note(CHANGED_NOTE);
         }
         let depth = level(detail);
         match reference.kind {
@@ -1190,9 +1465,84 @@ impl ProjectContext {
             ContextKind::Channel => {
                 self.read_channel(project_id, &reference.id, depth, cursor, &mut doc)?
             }
+            ContextKind::File => {
+                self.read_file(project_id, reference, cursor, &mut doc)?;
+            }
+        }
+        if doc.availability == Availability::Removed {
+            doc.shown_revision = None;
         }
         doc.bound();
         Ok(doc)
+    }
+
+    /// One page of a Project file. The cursor carries the offset and a tag of
+    /// the revision it was issued for, so a file that changes between pages
+    /// is reported as changed and two versions are never spliced together.
+    fn read_file(
+        &self,
+        project_id: &str,
+        reference: &ContextRef,
+        cursor: Option<&str>,
+        doc: &mut ContextDocument,
+    ) -> Result<(), ContextError> {
+        let position = decode_file_cursor(cursor)?;
+        let offset = position.as_ref().map_or(0, |(offset, _)| *offset);
+        let requested = reference.revision.as_deref();
+        match self.workspace.read_text_page(
+            project_id,
+            None,
+            &reference.id,
+            offset,
+            TEXT_READ_BYTES,
+        ) {
+            Ok(page) => {
+                doc.reference.revision = Some(page.revision.clone());
+                if let Some((_, tag)) = &position
+                    && *tag != revision_tag(&page.revision)
+                {
+                    doc.availability = Availability::Changed;
+                    doc.shown_revision = None;
+                    doc.note(
+                        "The file changed while it was being read; reopen it to read the current version.",
+                    );
+                    return Ok(());
+                }
+                doc.availability = compare(requested, &page.revision);
+                if doc.availability == Availability::Changed {
+                    doc.note(CHANGED_NOTE);
+                }
+                if page.utf8 {
+                    // An empty file is shown as an empty section: the reader
+                    // saw all of it.
+                    let (text, truncated) = clip(&page.text, SECTION_CHARS);
+                    doc.sections.push(Section {
+                        heading: "Content".into(),
+                        text,
+                        truncated,
+                    });
+                } else {
+                    // Nothing is shown, but the reader saw this version of it.
+                    doc.note("The file is not UTF-8 text, so no content is shown.");
+                }
+                if let Some(next) = page.next_offset {
+                    doc.next_cursor = Some(encode_file_cursor(next, &page.revision));
+                    doc.note(format!(
+                        "Showing bytes {}–{} of {}; read again with next_cursor for the rest.",
+                        offset + 1,
+                        next,
+                        page.size
+                    ));
+                }
+                doc.shown_revision = Some(page.revision);
+            }
+            Err(_) => {
+                // Gone or unreadable between lookup and read: not usable context.
+                doc.availability = Availability::Removed;
+                doc.note("The file could not be read; it may have been removed.");
+            }
+        }
+        Ok(())
     }
 
     fn read_research(
@@ -1222,6 +1572,7 @@ impl ProjectContext {
                         other => source_error(other),
                     })?;
                 brief = old.brief;
+                doc.shown_revision = Some(pinned.to_string());
                 if let Some(first) = doc.sections.first_mut() {
                     first.text = summarize(&brief.question);
                 }
@@ -2036,6 +2387,7 @@ impl ProjectContext {
                     // The revision comes from the bytes just read, so the
                     // reference and the text always agree.
                     doc.availability = compare(requested, &revision);
+                    doc.shown_revision = Some(revision.clone());
                     doc.reference.revision = Some(revision);
                     doc.sections.push(Section {
                         heading: "Content".into(),

@@ -188,6 +188,24 @@ sharing the link all return to the same place. Files and Git open from the
 panel buttons in the title bar when you want them; they are not always on
 screen beside General or the board.
 
+### Finding and citing what the Workspace produced
+
+**Resources** and the search box in the title bar (*Search this Workspace*)
+look through Tasks, findings, experiments and artifacts, discussions, and
+Project files by title, summary, and file path; *History* (execution history)
+is searched only when you turn it on. The search always says what it covered, and message
+text and direct messages are never searched. Choosing a result previews it
+beside the list; it never takes you away, and *Open Task*, *Open Thread in
+General*, or *Open in execution history* in the preview go where it lives.
+
+To cite something in General, use **Add context** in the composer: find it,
+preview it, and choose **Attach this version**, or press Enter on a result to
+attach its current version. You return to the same draft, with the caret where
+it was. **Browse in Resources** looks there instead; **Add to message** in a
+preview brings you back. A cited item shows its name and version, and says
+*Changed since cited* or *No longer exists* when that happens. A message cannot
+be sent while it cites something that no longer exists.
+
 ## The Kanban and deciding on results
 
 **Kanban** shows only Tasks that are on the board, in four columns: Ready, In

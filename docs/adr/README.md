@@ -75,3 +75,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack (proposed) |
 | [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply (proposed) |
 | [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version (proposed) |
+| [0231](0231-workspace-search-file-references-and-versioned-attachments.md) | Workspace search with a named scope, Project files as references, one preview surface, and versioned references (proposed) |
+| [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections (proposed) |

@@ -1,23 +1,14 @@
-import { useEffect, useState } from 'react'
-
 import { LockKeyhole, ShieldAlert } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { createTranslator, type AppLocale, type Translator } from '@/lib/i18n'
+import { type AppLocale, type Translator } from '@/lib/i18n'
 
 import { AcpCommandMenu } from '../AcpCommandMenu'
 import { completeAcpCommand, type AcpCommand } from '../acpCommands'
 import { AgentControlMenu } from '../AgentControlMenu'
+import { ElicitationPrompt } from '../attention/ElicitationPrompt'
+import { PermissionPrompt } from '../attention/PermissionPrompt'
 import type { NativeSessionConfig, NativeSessionSelect } from '../agentSessionOptions'
 import type { AgentRun, AgentSessionState, Conversation, KubecodeApi } from '../api'
 import { ComposerAddMenu } from '../ComposerAddMenu'
@@ -28,9 +19,7 @@ import { SystemMessageNotice } from '../SystemMessageNotice'
 import type { TerminalContextSource } from '../TerminalWorkspace'
 import { SessionPlanSummary, type SessionPlanEntry } from './SessionPlanSummary'
 import {
-  elicitationComplete,
   nativeModeLockMessage,
-  permissionChoiceLabel,
   sideQuestionText,
   type ElicitationAnswer,
   type PendingElicitation,
@@ -61,8 +50,8 @@ type SessionComposerProps = {
   onChangeAgentConfig: (configId: string, value: string | boolean) => void
   onElicitationAnswerChange: (id: string, value: ElicitationAnswer) => void
   onOpenPlan?: () => void
-  onResolveElicitation: (accepted: boolean) => void
-  onResolvePermission: (requestId: string, optionId: string) => void
+  onResolveElicitation: (accepted: boolean) => Promise<void> | void
+  onResolvePermission: (requestId: string, optionId: string) => Promise<void> | void
   onSend: (text: string) => void
   onSendSideQuestion: (text: string) => void
   onStop: () => void
@@ -166,42 +155,15 @@ export function SessionComposer({
         />
       )}
       {pendingPermission && (
-        <div
-          aria-live="polite"
-          className="kubecode-permission-dock"
-          data-testid="permission-queue-card"
-          onKeyDown={(event) => {
-            // 1–9 keyboard option select (#111).
-            const digit = Number.parseInt(event.key, 10)
-            if (!Number.isNaN(digit) && digit >= 1 && digit <= pendingPermission.options.length) {
-              const option = pendingPermission.options[digit - 1]
-              void onResolvePermission(pendingPermission.requestId, option.id)
-            }
-          }}
-          tabIndex={0}
-        >
-          <div className="kubecode-permission-heading">
-            <ShieldAlert size={17} />
-            <strong>{t('kubecode.permissionRequired')}</strong>
-            {deadlineMs !== null && (
-              <PermissionCountdownChip deadlineMs={deadlineMs} />
-            )}
-          </div>
-          <code className="kubecode-permission-command">{pendingPermission.tool}</code>
-          <div className="kubecode-permission-actions">
-            {pendingPermission.options.map((option, index) => (
-              <Button
-                key={option.id}
-                size="sm"
-                title={`${index + 1} — ${option.label}`}
-                variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
-                onClick={() => void onResolvePermission(pendingPermission.requestId, option.id)}
-              >
-                {permissionChoiceLabel(option, t)}
-              </Button>
-            ))}
-          </div>
-        </div>
+        <PermissionPrompt
+          deadlineMs={deadlineMs}
+          key={pendingPermission.requestId}
+          options={pendingPermission.options}
+          requestId={pendingPermission.requestId}
+          t={t}
+          tool={pendingPermission.tool}
+          onResolve={(optionId) => onResolvePermission(pendingPermission.requestId, optionId)}
+        />
       )}
       {leaderReviewPending && (
         <div aria-live="polite" className="kubecode-permission-dock kubecode-permission-leader-review">
@@ -212,58 +174,14 @@ export function SessionComposer({
         </div>
       )}
       {pendingElicitation && (
-        <div className="kubecode-elicitation-dock">
-          <div className="kubecode-elicitation-heading">
-            <strong>{t('kubecode.answerAgentQuestion')}</strong>
-            <span>{pendingElicitation.message}</span>
-          </div>
-          <div className="kubecode-elicitation-fields">
-            {pendingElicitation.properties.map((property) => (
-              <label key={property.id} className="kubecode-elicitation-field">
-                <span>{property.label}{property.required ? ' *' : ''}</span>
-                {property.description && <small>{property.description}</small>}
-                {property.type === 'boolean' ? (
-                  <Switch
-                    aria-label={property.label}
-                    checked={Boolean(elicitationAnswers[property.id])}
-                    onCheckedChange={(value) => onElicitationAnswerChange(property.id, value)}
-                  />
-                ) : property.options.length > 0 ? (
-                  <Select
-                    value={String(elicitationAnswers[property.id] ?? '')}
-                    onValueChange={(value) => onElicitationAnswerChange(property.id, value)}
-                  >
-                    <SelectTrigger aria-label={property.label}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {property.options.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    aria-label={property.label}
-                    type={property.type === 'string' ? 'text' : 'number'}
-                    value={String(elicitationAnswers[property.id] ?? '')}
-                    onChange={(event) => onElicitationAnswerChange(property.id, event.target.value)}
-                  />
-                )}
-              </label>
-            ))}
-          </div>
-          <div className="kubecode-elicitation-actions">
-            <Button size="sm" variant="outline" onClick={() => void onResolveElicitation(false)}>
-              {t('kubecode.decline')}
-            </Button>
-            <Button
-              disabled={!elicitationComplete(pendingElicitation, elicitationAnswers)}
-              size="sm"
-              onClick={() => void onResolveElicitation(true)}
-            >
-              {t('kubecode.submitAnswers')}
-            </Button>
-          </div>
-        </div>
+        <ElicitationPrompt
+          answers={elicitationAnswers}
+          elicitation={pendingElicitation}
+          key={pendingElicitation.requestId}
+          t={t}
+          onAnswerChange={onElicitationAnswerChange}
+          onResolve={onResolveElicitation}
+        />
       )}
       {planEntries.length > 0 && (
         <SessionPlanSummary
@@ -410,31 +328,3 @@ export function SessionComposer({
 }
 
 
-function PermissionCountdownChip({ deadlineMs }: { deadlineMs: number }) {
-  const [remaining, setRemaining] = useState(() => computeRemaining(deadlineMs))
-  useEffect(() => {
-    const timer = window.setInterval(() => setRemaining(computeRemaining(deadlineMs)), 1000)
-    return () => window.clearInterval(timer)
-  }, [deadlineMs])
-  const urgent = remaining < 30
-  return (
-    <span
-      className={urgent ? 'text-destructive font-semibold' : 'text-muted-foreground'}
-      data-testid="permission-countdown"
-      data-urgent={urgent}
-    >
-      {formatRemaining(remaining, 'en')}
-    </span>
-  )
-}
-
-function computeRemaining(deadlineMs: number): number {
-  return Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000))
-}
-
-function formatRemaining(seconds: number, locale: AppLocale): string {
-  const translator = createTranslator(locale)
-  return seconds >= 60
-    ? translator('kubecode.permissionExpiresMinutes', { count: Math.ceil(seconds / 60) })
-    : translator('kubecode.permissionExpiresSeconds', { count: seconds })
-}

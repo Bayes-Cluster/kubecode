@@ -20,6 +20,8 @@ use crate::shared_media::{
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_SESSION_DIRECTORY_ENTRIES: usize = 512;
+/// Levels below the Project root a file search descends.
+pub const FILE_SCAN_DEPTH: usize = 16;
 const STATE_DIRECTORY: &str = ".state";
 
 #[derive(Debug, Error)]
@@ -125,6 +127,41 @@ pub struct DirectoryListing {
     pub path: String,
     pub parent: Option<String>,
     pub entries: Vec<DirectoryEntry>,
+}
+
+/// A Project file found by [`WorkspaceService::search_project_files`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileHit {
+    /// Project-relative, `/`-separated.
+    pub path: String,
+    pub size: u64,
+    pub modified_unix: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FileSearch {
+    pub hits: Vec<FileHit>,
+    /// The walk stopped at a budget, or matches were dropped by the cap.
+    pub truncated: bool,
+}
+
+/// A file search match ordered so the heap's top is the oldest match:
+/// (modification time, path, size).
+type OldestFirst = std::cmp::Reverse<(Option<u64>, std::cmp::Reverse<String>, u64)>;
+
+/// One page of a text file read by [`WorkspaceService::read_text_page`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextPage {
+    /// Empty when the file is not UTF-8 text.
+    pub text: String,
+    /// Whether the page is UTF-8 text. A file that is not has no text and no
+    /// next page, but its revision is still the one of the bytes read.
+    pub utf8: bool,
+    /// The byte after the last whole character shown; `None` at the end.
+    pub next_offset: Option<u64>,
+    /// The revision of the whole file, from the same descriptor as the text.
+    pub revision: String,
+    pub size: u64,
 }
 
 pub struct WorkspaceService {
@@ -979,7 +1016,10 @@ impl WorkspaceService {
             .to_string_lossy()
             .into_owned();
         if (actual_kind == EntryKind::Directory && is_generated_directory_name(&name))
-            || git_ignored_paths(&root, std::iter::once(normalized.as_str())).contains(&normalized)
+            || matches!(
+                git_ignored_paths(&root, vec![normalized.clone()]),
+                IgnoreCheck::Ignored(ignored) if ignored.contains(&normalized)
+            )
         {
             return Err(WorkspaceError::IneligibleContext(relative.to_owned()));
         }
@@ -1077,65 +1117,15 @@ impl WorkspaceService {
         Ok(revision(&bytes))
     }
 
-    /// A content revision for a file under an execution root (the Project, or
-    /// a Session's worktree), used for experiment artifacts. A file larger
-    /// than the hashing cap is identified by its size and modification time
-    /// instead of being reported as missing.
-    pub fn execution_file_revision(
+    /// The path of a regular file under an execution root (the Project, or a
+    /// Session's worktree), reached through no symlink. Returns the root, the
+    /// normalized relative path, and the candidate absolute path.
+    fn execution_candidate(
         &self,
         project_id: &str,
         workspace_path: Option<&str>,
         relative: &str,
-    ) -> Result<String, WorkspaceError> {
-        if relative.contains('\0') {
-            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
-        }
-        let root = self.execution_path(project_id, workspace_path)?;
-        let relative = normalize_relative(relative, false)?;
-        let mut candidate = root;
-        for component in relative.components() {
-            candidate.push(component.as_os_str());
-            if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
-                return Err(WorkspaceError::InvalidPath(path_string(&relative)));
-            }
-        }
-        let metadata = fs::symlink_metadata(&candidate)?;
-        if !metadata.is_file() {
-            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
-        }
-        if metadata.len() > MAX_ASSET_BYTES {
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0);
-            return Ok(format!("large:{}:{modified}", metadata.len()));
-        }
-        let mut bytes = Vec::new();
-        fs::File::open(&candidate)?
-            .take(MAX_ASSET_BYTES + 1)
-            .read_to_end(&mut bytes)?;
-        Ok(revision(&bytes))
-    }
-
-    /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
-    /// Project, or a Team's worktree), for read-only context (ADR 0214).
-    ///
-    /// The file is opened **once** without following a final symlink and
-    /// without blocking on a FIFO, then checked to be a regular file; the
-    /// returned content revision is computed from that same descriptor, so the
-    /// text and the revision always describe the same bytes even if the file is
-    /// replaced concurrently. Returns the text, whether it was cut, and the
-    /// revision (`execution_file_revision`'s value for the same bytes).
-    pub fn read_execution_text(
-        &self,
-        project_id: &str,
-        workspace_path: Option<&str>,
-        relative: &str,
-        max_bytes: usize,
-    ) -> Result<(String, bool, String), WorkspaceError> {
-        use std::os::unix::fs::OpenOptionsExt;
+    ) -> Result<(PathBuf, PathBuf, PathBuf), WorkspaceError> {
         if relative.contains('\0') {
             return Err(WorkspaceError::InvalidPath(relative.to_owned()));
         }
@@ -1148,17 +1138,54 @@ impl WorkspaceService {
                 return Err(WorkspaceError::InvalidPath(path_string(&relative)));
             }
         }
+        Ok((root, relative, candidate))
+    }
+
+    /// A content revision for a file under an execution root (the Project, or
+    /// a Session's worktree), used for experiment artifacts. A file larger
+    /// than the hashing cap is identified by its size and modification time
+    /// instead of being reported as missing.
+    pub fn execution_file_revision(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        let (file, metadata) = self.open_execution_file(project_id, workspace_path, relative)?;
+        if metadata.len() > MAX_ASSET_BYTES {
+            return Ok(large_revision(&metadata));
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_ASSET_BYTES + 1).read_to_end(&mut bytes)?;
+        Ok(revision(&bytes))
+    }
+
+    /// Opens a regular file under an execution root **once**, without
+    /// following a final symlink and without blocking on a FIFO, and returns
+    /// the handle with its own metadata. A parent swapped for a symlink after
+    /// the path was checked would resolve outside the root, so the opened
+    /// file must still live under it.
+    fn open_execution_file(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<(fs::File, fs::Metadata), WorkspaceError> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let (root, relative, candidate) =
+            self.execution_candidate(project_id, workspace_path, relative)?;
         let file = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(&candidate)?;
-        // A parent swapped for a symlink after the walk above would resolve
-        // outside the root; the opened file must still live under it.
-        let opened = fs::canonicalize(format!("/proc/self/fd/{}", {
-            use std::os::fd::AsRawFd;
-            file.as_raw_fd()
-        }))
-        .ok();
+            .open(&candidate)
+            .map_err(|error| {
+                if error.raw_os_error() == Some(libc::ELOOP) {
+                    WorkspaceError::InvalidPath(path_string(&relative))
+                } else {
+                    WorkspaceError::from(error)
+                }
+            })?;
+        let opened = fs::canonicalize(descriptor_path(&file)).ok();
         if opened.as_ref().is_some_and(|path| !path.starts_with(&root)) {
             return Err(WorkspaceError::InvalidPath(path_string(&relative)));
         }
@@ -1166,35 +1193,287 @@ impl WorkspaceService {
         if !metadata.is_file() {
             return Err(WorkspaceError::InvalidPath(path_string(&relative)));
         }
-        let mut bytes = Vec::new();
-        file.take(MAX_ASSET_BYTES + 1).read_to_end(&mut bytes)?;
-        let revision = if metadata.len() > MAX_ASSET_BYTES {
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0);
-            format!("large:{}:{modified}", metadata.len())
+        Ok((file, metadata))
+    }
+
+    /// Whether a regular file exists under an execution root, reached through
+    /// no symlink. A metadata check only: nothing is opened or hashed, so it
+    /// is cheap enough to run for every file and artifact on a search page.
+    pub fn execution_file_exists(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> bool {
+        self.execution_candidate(project_id, workspace_path, relative)
+            .and_then(|(_, _, candidate)| Ok(fs::symlink_metadata(candidate)?))
+            .is_ok_and(|metadata| metadata.is_file())
+    }
+
+    /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
+    /// Project, or a Team's worktree), for read-only context (ADR 0214).
+    /// Returns the text, whether it was cut, and the revision
+    /// (`execution_file_revision`'s value for the same bytes). This is the
+    /// first page of [`Self::read_text_page`].
+    pub fn read_execution_text(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+        max_bytes: usize,
+    ) -> Result<(String, bool, String), WorkspaceError> {
+        let page = self.read_text_page(project_id, workspace_path, relative, 0, max_bytes)?;
+        if !page.utf8 {
+            return Err(WorkspaceError::UnsupportedText);
+        }
+        Ok((page.text, page.next_offset.is_some(), page.revision))
+    }
+
+    /// One page of a UTF-8 text file under an execution root, starting at byte
+    /// `offset`, for read-only context (ADR 0214, ADR 0231).
+    ///
+    /// The file is opened **once** without following a final symlink and
+    /// without blocking on a FIFO, then checked to be a regular file; the
+    /// returned content revision is computed from that same descriptor, so the
+    /// text and the revision always describe the same bytes even if the file is
+    /// replaced concurrently. A start inside a character moves to the next
+    /// whole one and the page never ends inside one; `next_offset` is the byte
+    /// after the last whole character shown, or `None` at the end of the file.
+    /// A file that is not UTF-8 text is a page with `utf8: false`, no text,
+    /// and the revision of the bytes read.
+    pub fn read_text_page(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<TextPage, WorkspaceError> {
+        use std::io::{Seek, SeekFrom};
+        // A page always has room for one whole character.
+        let max_bytes = max_bytes.max(4);
+        let (mut file, metadata) =
+            self.open_execution_file(project_id, workspace_path, relative)?;
+        let size = metadata.len();
+        // The page plus up to three bytes of a character cut at its start.
+        let window = max_bytes as u64 + 3;
+        let (revision, bytes) = if size > MAX_ASSET_BYTES {
+            let mut bytes = Vec::new();
+            file.seek(SeekFrom::Start(offset.min(size)))?;
+            (&mut file).take(window).read_to_end(&mut bytes)?;
+            (large_revision(&metadata), bytes)
         } else {
-            revision(&bytes)
+            let mut whole = Vec::new();
+            (&mut file)
+                .take(MAX_ASSET_BYTES + 1)
+                .read_to_end(&mut whole)?;
+            let start = (offset.min(whole.len() as u64)) as usize;
+            let end = (start as u64 + window).min(whole.len() as u64) as usize;
+            (revision(&whole), whole[start..end].to_vec())
         };
-        let truncated = bytes.len() > max_bytes;
-        bytes.truncate(max_bytes);
-        // A cut can land inside a character; drop the partial tail only.
-        let text = match String::from_utf8(bytes) {
+        // A start inside a character moves to the next whole one; the file's
+        // first byte is never a continuation of something before it.
+        let skip = if offset == 0 {
+            0
+        } else {
+            bytes
+                .iter()
+                .take(3)
+                .take_while(|byte| (**byte & 0b1100_0000) == 0b1000_0000)
+                .count()
+        };
+        let start = offset.min(size) + skip as u64;
+        let mut page = bytes[skip..].to_vec();
+        page.truncate(max_bytes);
+        // More of the file follows this page.
+        let cut = start + (page.len() as u64) < size;
+        let text = match String::from_utf8(page) {
             Ok(text) => text,
             Err(error) => {
+                // A cut can land inside a character; drop the partial tail only.
                 let valid = error.utf8_error().valid_up_to();
+                let incomplete = error.utf8_error().error_len().is_none();
                 let bytes = error.into_bytes();
-                if truncated && bytes.len() - valid < 4 {
+                if cut && incomplete && bytes.len() - valid < 4 {
                     String::from_utf8_lossy(&bytes[..valid]).into_owned()
                 } else {
-                    return Err(WorkspaceError::UnsupportedText);
+                    // Not text: nothing is shown, but the revision still
+                    // describes the bytes just read.
+                    return Ok(TextPage {
+                        text: String::new(),
+                        utf8: false,
+                        next_offset: None,
+                        revision,
+                        size,
+                    });
                 }
             }
         };
-        Ok((text, truncated, revision))
+        let after = start + text.len() as u64;
+        Ok(TextPage {
+            next_offset: (after < size).then_some(after),
+            text,
+            utf8: true,
+            revision,
+            size,
+        })
+    }
+
+    /// Project files whose lowercase Project-relative path contains every word
+    /// (ADR 0231 §1), newest first. The walk is breadth first from the Project
+    /// root and bounded: it visits at most `scan_budget` directory entries and
+    /// `FILE_SCAN_DEPTH` levels, never follows a symlink, and skips hidden
+    /// (`.`-prefixed), generated, non-UTF-8 and Git-ignored entries before
+    /// descending into anything. At most `hit_cap` of the most recently
+    /// modified matches are kept. `truncated` says the walk or the cap left
+    /// something out.
+    pub fn search_project_files(
+        &self,
+        project_id: &str,
+        words: &[String],
+        scan_budget: usize,
+        hit_cap: usize,
+    ) -> Result<FileSearch, WorkspaceError> {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        let root = self.project_root(project_id)?;
+        let mut truncated = false;
+        let mut visited = 0usize;
+        let mut kept: BinaryHeap<OldestFirst> = BinaryHeap::new();
+        let mut level: Vec<String> = vec![String::new()];
+        let mut exhausted = false;
+        let in_git = inside_git_work_tree(&root);
+        for depth in 0.. {
+            if level.is_empty() {
+                break;
+            }
+            if depth >= FILE_SCAN_DEPTH {
+                truncated = true;
+                break;
+            }
+            // (relative path, is a directory)
+            let mut entries: Vec<(String, bool)> = Vec::new();
+            'directories: for directory in &level {
+                let absolute = if directory.is_empty() {
+                    root.clone()
+                } else {
+                    root.join(directory)
+                };
+                // Every component was a real directory when it was listed;
+                // one swapped for a symlink since then is not followed. The
+                // directory is opened once and listed through that handle, so
+                // a swap after the check cannot redirect the listing.
+                let Some(handle) = open_directory_within(&absolute) else {
+                    continue;
+                };
+                let Ok(listing) = fs::read_dir(descriptor_path(&handle)) else {
+                    continue;
+                };
+                for entry in listing {
+                    if visited >= scan_budget {
+                        truncated = true;
+                        exhausted = true;
+                        break 'directories;
+                    }
+                    visited += 1;
+                    let Ok(entry) = entry else {
+                        continue;
+                    };
+                    let name = entry.file_name();
+                    let Some(name) = name.to_str() else {
+                        continue;
+                    };
+                    if name.starts_with('.') {
+                        continue;
+                    }
+                    let Ok(file_type) = entry.file_type() else {
+                        continue;
+                    };
+                    let is_directory = file_type.is_dir();
+                    if file_type.is_symlink()
+                        || (is_directory && is_generated_directory_name(name))
+                        || (!is_directory && !file_type.is_file())
+                    {
+                        continue;
+                    }
+                    // A nested repository (a submodule or a checkout inside
+                    // the Project) has its own ignore rules, and Git refuses to
+                    // answer for paths inside a submodule: it is not searched.
+                    if is_directory && fs::symlink_metadata(entry.path().join(".git")).is_ok() {
+                        continue;
+                    }
+                    let path = if directory.is_empty() {
+                        name.to_owned()
+                    } else {
+                        format!("{directory}/{name}")
+                    };
+                    entries.push((path, is_directory));
+                }
+            }
+            let ignored = if entries.is_empty() || !in_git {
+                std::collections::BTreeSet::new()
+            } else {
+                match git_ignored_paths(
+                    &root,
+                    entries.iter().map(|(path, _)| path.clone()).collect(),
+                ) {
+                    IgnoreCheck::Ignored(ignored) => ignored,
+                    // Without an answer nothing on this level is known to be
+                    // safe to show: skip it, and say something was left out.
+                    IgnoreCheck::Failed => {
+                        truncated = true;
+                        break;
+                    }
+                }
+            };
+            let mut next = Vec::new();
+            for (path, is_directory) in entries {
+                if ignored.contains(&path) {
+                    continue;
+                }
+                if is_directory {
+                    next.push(path);
+                    continue;
+                }
+                let lowercase = path.to_lowercase();
+                if !words.iter().all(|word| lowercase.contains(word.as_str())) {
+                    continue;
+                }
+                let Ok(metadata) = fs::symlink_metadata(root.join(&path)) else {
+                    continue;
+                };
+                if !metadata.is_file() {
+                    continue;
+                }
+                kept.push(Reverse((
+                    modified_unix(&metadata),
+                    Reverse(path),
+                    metadata.len(),
+                )));
+                if kept.len() > hit_cap {
+                    kept.pop();
+                    truncated = true;
+                }
+            }
+            if exhausted {
+                break;
+            }
+            level = next;
+        }
+        let mut hits: Vec<FileHit> = kept
+            .into_iter()
+            .map(|Reverse((modified_unix, Reverse(path), size))| FileHit {
+                modified_unix,
+                path,
+                size,
+            })
+            .collect();
+        hits.sort_by(|a, b| {
+            b.modified_unix
+                .cmp(&a.modified_unix)
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        Ok(FileSearch { hits, truncated })
     }
 
     pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
@@ -1578,10 +1857,57 @@ fn git_command(cwd: &Path, args: &[&str]) -> Result<std::process::Output, Worksp
         .map_err(WorkspaceError::from)
 }
 
-fn git_ignored_paths<'a>(
+/// Opens `absolute` as a directory without following a final symlink and
+/// returns the handle only when it is the very directory named, reached
+/// through no symlinked component.
+fn open_directory_within(absolute: &Path) -> Option<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let handle = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(absolute)
+        .ok()?;
+    (fs::canonicalize(descriptor_path(&handle)).ok().as_deref() == Some(absolute)).then_some(handle)
+}
+
+/// The `/proc` path of an open handle, which names exactly what was opened.
+fn descriptor_path(handle: &fs::File) -> PathBuf {
+    use std::os::fd::AsRawFd;
+    PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd()))
+}
+
+/// How long one `git check-ignore` batch may take before it is abandoned.
+const IGNORE_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The outcome of asking Git which paths of one walk level are ignored.
+#[derive(Debug, PartialEq, Eq)]
+enum IgnoreCheck {
+    /// The paths Git ignores (possibly none).
+    Ignored(std::collections::BTreeSet<String>),
+    /// Git could not answer (it failed, was killed, or timed out); the caller
+    /// must not treat the batch as "nothing ignored".
+    Failed,
+}
+
+/// Whether `root` lies inside a Git work tree, so ignore rules apply.
+fn inside_git_work_tree(root: &Path) -> bool {
+    git_command(root, &["rev-parse", "--is-inside-work-tree"])
+        .is_ok_and(|output| output.status.success() && output.stdout.starts_with(b"true"))
+}
+
+/// Asks `git check-ignore` which of `paths` are ignored. Paths are written on
+/// their own thread while the answer is read on another, so neither side can
+/// fill a pipe and block the other; a batch that does not finish within
+/// [`IGNORE_CHECK_TIMEOUT`] kills Git. The child is always reaped.
+fn git_ignored_paths(cwd: &Path, paths: Vec<String>) -> IgnoreCheck {
+    git_ignored_paths_within(cwd, paths, IGNORE_CHECK_TIMEOUT)
+}
+
+fn git_ignored_paths_within(
     cwd: &Path,
-    paths: impl Iterator<Item = &'a str>,
-) -> std::collections::BTreeSet<String> {
+    paths: Vec<String>,
+    timeout: std::time::Duration,
+) -> IgnoreCheck {
     let mut command = Command::new("git");
     command
         .args(["check-ignore", "--stdin", "-z"])
@@ -1591,27 +1917,51 @@ fn git_ignored_paths<'a>(
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     let Ok(mut child) = command.spawn() else {
-        return std::collections::BTreeSet::new();
+        return IgnoreCheck::Failed;
     };
-    if let Some(mut stdin) = child.stdin.take() {
+    let (Some(mut stdin), Some(mut stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return IgnoreCheck::Failed;
+    };
+    // A write error (Git exited early) only ends the writer; the exit status
+    // below decides whether the answer is usable.
+    let writer = std::thread::spawn(move || {
         for path in paths {
             if stdin.write_all(path.as_bytes()).is_err() || stdin.write_all(&[0]).is_err() {
-                return std::collections::BTreeSet::new();
+                return;
             }
         }
+    });
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let read = stdout.read_to_end(&mut bytes).map(|_| bytes);
+        let _ = sender.send(read);
+    });
+    let answer = receiver.recv_timeout(timeout);
+    let finished = matches!(answer, Ok(Ok(_)));
+    if !finished {
+        // Closing our ends of the pipes is not enough for a stuck Git.
+        let _ = child.kill();
     }
-    let Ok(output) = child.wait_with_output() else {
-        return std::collections::BTreeSet::new();
+    let status = child.wait();
+    let _ = writer.join();
+    let _ = reader.join();
+    let (Ok(Ok(stdout)), Ok(status)) = (answer, status) else {
+        return IgnoreCheck::Failed;
     };
-    if !output.status.success() && output.status.code() != Some(1) {
-        return std::collections::BTreeSet::new();
+    // 0: some paths are ignored; 1: none are. Anything else is a failure.
+    if !status.success() && status.code() != Some(1) {
+        return IgnoreCheck::Failed;
     }
-    output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-        .map(|path| String::from_utf8_lossy(path).into_owned())
-        .collect()
+    IgnoreCheck::Ignored(
+        stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(|path| String::from_utf8_lossy(path).into_owned())
+            .collect(),
+    )
 }
 
 fn list_entries_in(
@@ -1653,7 +2003,11 @@ fn list_entries_in(
             ignored: false,
         });
     }
-    let ignored = git_ignored_paths(root, entries.iter().map(|entry| entry.path.as_str()));
+    // An annotation only: when Git cannot answer, nothing is marked ignored.
+    let ignored = match git_ignored_paths(root, entries.iter().map(|e| e.path.clone()).collect()) {
+        IgnoreCheck::Ignored(ignored) => ignored,
+        IgnoreCheck::Failed => std::collections::BTreeSet::new(),
+    };
     for entry in &mut entries {
         entry.ignored = ignored.contains(&entry.path);
     }
@@ -1771,6 +2125,24 @@ fn ensure_contained_or_same(
 
 fn revision(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+fn modified_unix(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs())
+}
+
+/// A file over the hashing cap is identified by its size and modification
+/// time; work evidence pins and context revisions use the same rule.
+fn large_revision(metadata: &fs::Metadata) -> String {
+    format!(
+        "large:{}:{}",
+        metadata.len(),
+        modified_unix(metadata).unwrap_or(0)
+    )
 }
 
 #[cfg(windows)]
@@ -1901,6 +2273,65 @@ mod tests {
         // resolve against their nearest existing ancestor.
         std::fs::remove_file(&absolute).expect("remove entry");
         classify_watched_path(&root, &absolute)
+    }
+
+    #[test]
+    fn a_walked_directory_is_opened_only_when_no_component_is_a_symlink() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        std::fs::create_dir_all(root.join("real/inner")).expect("dirs");
+        std::os::unix::fs::symlink(root.join("real"), root.join("link")).expect("symlink");
+        assert!(open_directory_within(&root.join("real/inner")).is_some());
+        assert!(open_directory_within(&root.join("link")).is_none());
+        assert!(open_directory_within(&root.join("link/inner")).is_none());
+        let handle = open_directory_within(&root.join("real")).expect("handle");
+        // Listing goes through the handle, not the path that was checked.
+        std::fs::rename(root.join("real"), root.join("moved")).expect("rename");
+        std::os::unix::fs::symlink(temp.path(), root.join("real")).expect("swap");
+        let names: Vec<String> = std::fs::read_dir(descriptor_path(&handle))
+            .expect("listing")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["inner"]);
+    }
+
+    #[test]
+    fn a_failed_ignore_check_is_reported_as_failed_not_as_nothing_ignored() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("git");
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init"]);
+        std::fs::write(root.join(".gitignore"), "*.log\n").expect("gitignore");
+        assert_eq!(
+            git_ignored_paths(&root, vec!["a.log".into(), "b.txt".into()]),
+            IgnoreCheck::Ignored(["a.log".to_owned()].into())
+        );
+        // Git refuses a path outside the repository for the whole batch.
+        assert_eq!(
+            git_ignored_paths(&root, vec!["../outside.log".into(), "a.log".into()]),
+            IgnoreCheck::Failed
+        );
+        // A batch that runs past its time limit is abandoned, not trusted.
+        let many: Vec<String> = (0..5_000).map(|n| format!("run_{n:06}.log")).collect();
+        assert_eq!(
+            git_ignored_paths_within(&root, many, std::time::Duration::ZERO),
+            IgnoreCheck::Failed
+        );
     }
 
     #[test]

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { ProjectContextKind } from '../../api'
 import { PROJECT_CONTEXT_KINDS } from '../../projectContext'
+import type { InspectorEntry } from './inspector'
+import { formatInspectorToken } from './locationRoute'
 import { inspectorTargetForReference } from './references'
 
 describe('references open the same way everywhere', () => {
@@ -18,6 +20,18 @@ describe('references open the same way everywhere', () => {
     expect(inspectorTargetForReference({ kind: 'work', id: 'w1', revision: null })).toEqual({ work: 'w1' })
   })
 
+  it('opens a cited record at the version it was cited, which no route ever carries', () => {
+    const file = inspectorTargetForReference({ kind: 'file', id: 'results/summary.csv', revision: 'aaaaaaaaaaaaaaaa' })
+    expect(file).toEqual({ inspect: { kind: 'resource', ref: { kind: 'file', id: 'results/summary.csv', revision: 'aaaaaaaaaaaaaaaa' } } })
+    // A file is never routable; any other record's route names it without its version.
+    expect(formatInspectorToken((file as { inspect: InspectorEntry }).inspect)).toBeNull()
+    const finding = inspectorTargetForReference({ kind: 'finding', id: 'f1', revision: '3' }) as { inspect: InspectorEntry }
+    expect(formatInspectorToken(finding.inspect)).toBe('resource~finding~f1')
+    expect(inspectorTargetForReference({ kind: 'finding', id: 'f1' })).toEqual({
+      inspect: { kind: 'resource', ref: { kind: 'finding', id: 'f1', revision: null } },
+    })
+  })
+
   it('opens every other record as a live resource', () => {
     const others = PROJECT_CONTEXT_KINDS.filter((kind) => !['research', 'thread', 'channel', 'session', 'work'].includes(kind))
     expect(others).toEqual([
@@ -25,7 +39,7 @@ describe('references open the same way everywhere', () => {
     ])
     for (const kind of others as ProjectContextKind[]) {
       expect(inspectorTargetForReference({ kind, id: 'x1', revision: 'rev' }), kind).toEqual({
-        inspect: { kind: 'resource', ref: { kind, id: 'x1' } },
+        inspect: { kind: 'resource', ref: { kind, id: 'x1', revision: 'rev' } },
       })
     }
   })

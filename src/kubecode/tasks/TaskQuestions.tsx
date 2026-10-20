@@ -7,6 +7,7 @@ import type { TaskDetail } from '../api'
 import { errorMessage } from '../app/errors'
 import { useInspectorServices } from '../app/inspector/inspectorContext'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
+import { resolveThrough, useAttention } from '../attention/attentionContext'
 
 type Question = TaskDetail['open_questions'][number]
 
@@ -52,12 +53,14 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
   onError: (error: string | null) => void
 }) {
   const { api, t } = useInspectorServices()
+  const attention = useAttention()
   const [answer, setAnswer] = usePlaceState(memoryKey, '')
   const send = async (text: string) => {
     onBusy(true)
     onError(null)
     try {
-      await api.answerWorkDecision(projectId, question.work_id, question.id, text)
+      // Answered once: Needs you, the bell and this panel resolve together (ADR 0232).
+      await resolveThrough(attention, `question:${question.id}`, () => api.answerWorkDecision(projectId, question.work_id, question.id, text))
       setAnswer('')
       onAnswered()
     } catch (cause) {
@@ -67,7 +70,7 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
     }
   }
   return (
-    <li>
+    <li data-focus-key={`question:${question.id}`} tabIndex={-1}>
       <p><strong>{question.question}</strong> <small>({question.work_title})</small></p>
       {question.impact && <p className="kubecode-research-muted">{question.impact}</p>}
       {/* A question with options is answered with one of them (the server refuses anything else). */}

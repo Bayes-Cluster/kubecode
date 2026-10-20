@@ -12,6 +12,7 @@ fi
 # It also records the permissions the process was launched with (ADR 0226).
 dump="${KUBECODE_PLAYWRIGHT_FIXTURE_DIR:-}"
 [ -z "$dump" ] || mkdir -p "$dump"
+asked=0
 
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/"\1"/p')
@@ -34,6 +35,19 @@ while IFS= read -r line; do
       # A prompt routed from the Workspace conversation is answered at once; the
       # long hold exists for the UI test that watches a run in progress.
       case "$line" in
+        # A prompt carrying the marker asks the researcher's permission to run
+        # a command (ADR 0232) and waits for the answer, or for the turn to be
+        # stopped, before it ends.
+        *'[smoke:permission]'*)
+          asked=$((asked + 1))
+          ask="perm-$$-$asked"
+          printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":\"$ask\",\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"playwright-session\",\"toolCall\":{\"toolCallId\":\"call-$asked\",\"title\":\"Run pytest -q\",\"kind\":\"execute\",\"status\":\"pending\"},\"options\":[{\"optionId\":\"allow\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"reject\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+          while IFS= read -r reply; do
+            case "$reply" in
+              *"\"id\":\"$ask\""*) break ;;
+            esac
+          done
+          ;;
         *'General conversation'*general_post*) ;;
         *'The researcher accepted the results of Task'*|*'The researcher sent Task'*) ;;
         *) sleep 20 ;;

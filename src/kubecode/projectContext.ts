@@ -2,11 +2,19 @@ import type { TranslationKey } from '@/lib/i18n'
 
 import type { ProjectContextItem, ProjectContextKind } from './api'
 
-/** Every reference kind the server's Project context reader understands (ADR 0214). */
+/**
+ * The record kinds of the server's Project context reader that are named by id
+ * (ADR 0214). `file` is a context kind too (ADR 0231 §1), but it is named by a
+ * Project-relative path, so it is deliberately not here: a path never enters a
+ * route, a stored place, or a Session composer's Project reference.
+ */
 export const PROJECT_CONTEXT_KINDS: string[] = [
   'research', 'round', 'import', 'finding', 'session', 'session_turn', 'team', 'team_task',
   'experiment', 'artifact', 'work', 'thread', 'channel',
 ]
+
+/** Context kinds whose id is a path: shown and cited, never routed or remembered. */
+export const NON_ROUTABLE_RECORD_KINDS = ['file'] as const
 
 /** Translation keys for each kind's label, so the copy lives in the locale catalogs. */
 export const PROJECT_CONTEXT_KIND_LABELS: Record<ProjectContextKind, TranslationKey> = {
@@ -23,6 +31,7 @@ export const PROJECT_CONTEXT_KIND_LABELS: Record<ProjectContextKind, Translation
   work: 'kubecode.projectWorkKindWork',
   thread: 'kubecode.projectWorkKindThread',
   channel: 'kubecode.projectWorkKindChannel',
+  file: 'kubecode.vocab.object.file',
 }
 
 /** The picker's filter groups. `null` kinds means every kind. */

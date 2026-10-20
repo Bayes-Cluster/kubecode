@@ -2840,3 +2840,89 @@ fn imports_and_removes_provider_sessions_locally() {
         Err(StoreError::ConversationNotFound(_))
     ));
 }
+
+#[test]
+fn history_snapshot_cursor_covers_exactly_the_events_in_the_page() {
+    // The browser drops live events at or below the page's workspace cursor
+    // as copies of recorded ones (#103), so the cursor and the page must come
+    // from one snapshot even while the agent keeps streaming.
+    let (_temp, store) = store();
+    let store = Arc::new(store);
+    let conversation = store
+        .create_conversation("project", AgentId::OpenCode, None)
+        .expect("conversation");
+    let run = store
+        .start_run(&conversation.id, "project", "Stream", PermissionMode::Safe)
+        .expect("run");
+    let writer = {
+        let store = Arc::clone(&store);
+        let conversation_id = conversation.id.clone();
+        let run_id = run.id.clone();
+        std::thread::spawn(move || {
+            for _ in 0..120 {
+                store
+                    .append_runtime_updates(
+                        &conversation_id,
+                        &[RuntimeUpdate {
+                            session_kind: "text_delta".into(),
+                            session_payload: json!({"run_id": run_id, "text": "x"}),
+                            run_event: Some(RuntimeRunEvent {
+                                run_id: run_id.clone(),
+                                kind: AgentEventKind::TextDelta,
+                                payload: json!({"text": "x"}),
+                            }),
+                            publish_session_state: false,
+                        }],
+                    )
+                    .expect("stream chunk");
+            }
+        })
+    };
+
+    let mut snapshots = 0;
+    // Workspace ids of the streamed chunks, read incrementally.
+    let mut chunk_ids = Vec::new();
+    let mut read_through = 0;
+    while !writer.is_finished() || snapshots == 0 {
+        let snapshot = store
+            .conversation_history_snapshot(&conversation.id, None, 50)
+            .expect("history snapshot");
+        let recorded = snapshot
+            .session_events
+            .iter()
+            .filter(|event| event.kind == "text_delta")
+            .count();
+        while read_through < snapshot.workspace_cursor {
+            let page = store
+                .workspace_events_after(read_through)
+                .expect("workspace events");
+            let Some(last) = page.last() else { break };
+            read_through = last.id;
+            chunk_ids.extend(
+                page.iter()
+                    .filter(|event| {
+                        event.kind == "text_delta"
+                            && event.conversation_id.as_deref() == Some(conversation.id.as_str())
+                    })
+                    .map(|event| event.id),
+            );
+        }
+        let covered = chunk_ids
+            .iter()
+            .filter(|id| **id <= snapshot.workspace_cursor)
+            .count();
+        assert_eq!(
+            recorded, covered,
+            "page and workspace cursor disagree after {snapshots} snapshots"
+        );
+        assert_eq!(
+            snapshot.run_events[0]
+                .iter()
+                .filter(|event| event.kind == AgentEventKind::TextDelta)
+                .count(),
+            recorded
+        );
+        snapshots += 1;
+    }
+    writer.join().expect("writer");
+}

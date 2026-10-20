@@ -308,6 +308,24 @@ impl ResearchStore {
             .collect()
     }
 
+    /// Every suggested change of direction in the Project's unarchived
+    /// questions that the researcher has not decided yet, oldest first: one
+    /// query for Needs you (ADR 0232).
+    pub fn open_proposals(&self, project_id: &str) -> Result<Vec<ResearchEntry>, ResearchError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT e.id, e.research_id, e.seq, e.kind, e.author_kind, e.author_ref, e.body,
+                    e.brief_revision, e.created_at
+             FROM research_entries e JOIN research_questions q ON q.id = e.research_id
+             WHERE q.project_id = ?1 AND q.archived = 0 AND e.kind = 'proposal'
+               AND NOT EXISTS (SELECT 1 FROM research_proposal_reviews r WHERE r.entry_id = e.id)
+             ORDER BY e.created_at, e.seq",
+        )?;
+        Ok(statement
+            .query_map([project_id], entry_from_row)?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Records the researcher's decision on a proposal, plus a `decision`
     /// entry in the log. Accepting never edits the brief: the researcher
     /// makes that change as an ordinary, revisioned brief edit. Repeating

@@ -4,29 +4,42 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import { ApiError, type ChannelMessage, type KubecodeApi, type ProjectContextItem } from '../api'
+import { ApiError, type ChannelMessage, type KubecodeApi, type ProjectContextRef } from '../api'
 import { createPlaceMemory, placeKey, usePlaceState, type PlaceMemory } from '../app/location/placeMemory'
 import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
 import { memberDirectory, type MemberDirectory } from '../members/memberDirectory'
 import { analyst, channelMessage, general, member, writer } from '../members/memberFixtures'
 import { localReferenceLabels } from '../references/referenceLabels'
+import type { AddContextDialogProps } from '../resources/AddContextDialog'
+import type { DraftReference } from '../resources/draftReferences'
+import { ReferenceResolverProvider } from '../resources/ReferenceResolverProvider'
 import { emptyGeneralDraft, type GeneralDraft } from './generalDraft'
 import { MessageComposer, type MessageComposerProps } from './MessageComposer'
 
-const pickable = (kind: 'research' | 'artifact', id: string, title: string) => ({
-  ref: { kind, id, revision: '3' },
+const pickable = (kind: 'research' | 'artifact', id: string, title: string, revision = '3'): DraftReference => ({
+  ref: { kind, id, revision },
   title,
-}) as unknown as ProjectContextItem
+  seen: 'previewed',
+})
 
-// The picker is covered by its own tests; here it only hands back a reference.
-vi.mock('../ComposerProjectWorkPicker', () => ({
-  ComposerProjectWorkPicker: ({ onSelect }: { onSelect: (item: ProjectContextItem) => void }) => (
-    <div>
-      <button type="button" onClick={() => onSelect(pickable('artifact', 'a1', 'results.csv'))}>pick results</button>
-      <button type="button" onClick={() => onSelect(pickable('artifact', 'a2', 'plot.png'))}>pick plot</button>
-      <button type="button" onClick={() => onSelect(pickable('research', 'r2', 'Quantization'))}>pick Quantization</button>
-    </div>
-  ),
+// Add context is covered by its own tests; here it only hands back a versioned reference and closes.
+vi.mock('../resources/AddContextDialog', () => ({
+  AddContextDialog: ({ onAttach, onCloseAutoFocus, onOpenChange, open }: AddContextDialogProps) => {
+    if (!open) return null
+    const pick = (reference: DraftReference) => {
+      onAttach(reference)
+      onOpenChange(false)
+      onCloseAutoFocus?.(new Event('close'))
+    }
+    return (
+      <div>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a1', 'results.csv'))}>pick results</button>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a1', 'results.csv', '4'))}>pick newer results</button>
+        <button type="button" onClick={() => pick(pickable('artifact', 'a2', 'plot.png'))}>pick plot</button>
+        <button type="button" onClick={() => pick(pickable('research', 'r2', 'Quantization'))}>pick Quantization</button>
+      </div>
+    )
+  },
 }))
 
 const t = createTranslator('en')
@@ -48,6 +61,7 @@ function Harness({ draftKey = placeKey.general('p1'), initial = emptyGeneralDraf
       placeholder="Message the Workspace"
       projectId="p1"
       t={t}
+      outboxKey={`${draftKey}#outbox`}
       onDraftChange={setDraft}
       onSend={vi.fn().mockResolvedValue(saved())}
       {...extra}
@@ -214,6 +228,55 @@ describe('MessageComposer', () => {
     expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(2)
   })
 
+  it('names each attached reference by kind, title and version, replaces another version, and announces it', async () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
+    expect(screen.getByText('Added results.csv to your message.')).toBeInTheDocument()
+    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    expect(within(about).getByText('v3')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
+    expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(1)
+    expect(within(about).getByText('v4')).toBeInTheDocument()
+    expect(screen.getByText('Updated results.csv to the version you previewed.')).toBeInTheDocument()
+  })
+
+  it('puts the caret back where it was when Add context closes', async () => {
+    render(<Harness />)
+    type('compare with the baseline')
+    box().setSelectionRange(8, 8)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    box().setSelectionRange(0, 0)
+    fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
+    expect(box()).toHaveFocus()
+    expect(box().selectionStart).toBe(8)
+    expect(box().value).toBe('compare with the baseline')
+  })
+
+  it('will not send a reference to something that no longer exists, and says which', async () => {
+    const onSend = vi.fn().mockResolvedValue(saved())
+    const resolveProjectContext = vi.fn().mockImplementation((_p: string, refs: ProjectContextRef[]) => Promise.resolve(refs.map((ref) => ({
+      ref, availability: ref.id === 'a1' ? 'removed' : 'available', current_revision: null, title: null,
+    }))))
+    const initial: GeneralDraft = { ...emptyGeneralDraft(null), references: [pickable('artifact', 'a1', 'results.csv'), pickable('artifact', 'a2', 'plot.png')] }
+    render(
+      <ReferenceResolverProvider api={{ resolveProjectContext } as unknown as KubecodeApi} events={[]} projectId="p1">
+        <Harness initial={initial} onSend={onSend} />
+      </ReferenceResolverProvider>,
+    )
+    expect(await screen.findByText('No longer exists')).toBeInTheDocument()
+    type('see these')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('results.csv no longer exists. Remove it to send.')
+    expect(onSend).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove reference results.csv' })).toHaveFocus())
+    fireEvent.click(screen.getByRole('button', { name: 'Remove reference results.csv' }))
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'artifact', id: 'a2', revision: '3' }])
+  })
+
   it('puts "@" at the caret for a mention', () => {
     render(<Harness />)
     type('hi')
@@ -234,7 +297,8 @@ describe('MessageComposer', () => {
     expect(box()).toHaveFocus()
   })
 
-  it('restores the text, reply, Task, references, and recipients after a failed send, and retries on the same id', async () => {
+  it('keeps a failed send as its own row: Send again replays the same id, and what is typed since is never touched', async () => {
+    // The first save committed on the server, but its answer was lost.
     const onSend = vi.fn()
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValue(saved())
@@ -247,43 +311,121 @@ describe('MessageComposer', () => {
     render(<Harness initial={initial} onSend={onSend} onSent={onSent} />)
     type('@analyst thanks')
     fireEvent.keyDown(box(), { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
-    await waitFor(() => expect(box().value).toBe('@analyst thanks'))
-    expect(screen.getByText('Replying to Analyst: Ran it')).toBeInTheDocument()
-    expect(screen.getByText('results.csv')).toBeInTheDocument()
-    expect(within(toRow()).getByRole('list', { name: 'To' })).toHaveTextContent('Analyst')
-    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Try again' }))
+    const unsent = await screen.findByRole('list', { name: 'Unsent messages' })
+    expect(await within(unsent).findByRole('alert')).toHaveTextContent('Not sent: network down')
+    expect(unsent).toHaveTextContent('@analyst thanks')
+    // The composer is free at once, and its new words are never merged with the failed send.
+    expect(box()).toHaveValue('')
+    type('next thought')
+    expect(within(unsent).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    fireEvent.click(within(unsent).getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    // The same client id: the server answers with the message it already saved, never a second one.
     expect(onSend.mock.calls[1][0].clientMessageId).toBe(onSend.mock.calls[0][0].clientMessageId)
-    expect(onSend.mock.calls[1][0]).toMatchObject({ replyTo: 'm4', mentions: [{ member_id: 'a' }] })
+    expect(onSend.mock.calls[1][0]).toMatchObject({ body: '@analyst thanks', replyTo: 'm4', mentions: [{ member_id: 'a' }] })
     await waitFor(() => expect(onSent).toHaveBeenCalledWith(saved()))
-    expect(box().value).toBe('')
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument())
+    expect(box()).toHaveValue('next thought')
   })
 
-  it('sends an edited draft as a new message', async () => {
+  it('sends while an earlier send is still on its way, each under its own id', async () => {
+    let answer: (message: ChannelMessage) => void = () => undefined
+    const onSend = vi.fn()
+      .mockImplementationOnce(() => new Promise<ChannelMessage>((resolve) => { answer = resolve }))
+      .mockResolvedValue(saved())
+    render(<Harness onSend={onSend} />)
+    type('first')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByText('Sending…')).toBeInTheDocument()
+    type('second')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
+    answer(saved('first'))
+    await waitFor(() => expect(screen.queryByText('Sending…')).not.toBeInTheDocument())
+  })
+
+  it('puts a failed send back in the empty composer on Edit, as a new message from then on', async () => {
     const onSend = vi.fn()
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValue(saved())
-    render(<Harness onSend={onSend} />)
+    render(<Harness initial={{ ...emptyGeneralDraft(null), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }} onSend={onSend} />)
     type('first wording')
     fireEvent.keyDown(box(), { key: 'Enter' })
-    await waitFor(() => expect(box().value).toBe('first wording'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    expect(box()).toHaveValue('first wording')
+    expect(screen.getByText('Replying to Analyst: Ran it')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument()
     type('second wording')
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
     expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
   })
 
-  it('forgets a failed attempt once the text is emptied by hand, so the same words typed later are a new message', async () => {
+  it('sends a failed send with a versioned reference again under the same id, citing the same versions, once', async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(saved())
+    const initial: GeneralDraft = { ...emptyGeneralDraft(null), task: 'r1', taskRevision: '2' }
+    render(<Harness initial={initial} onSend={onSend} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
+    type('compare with v4')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    const unsent = await screen.findByRole('list', { name: 'Unsent messages' })
+    expect(await within(unsent).findByRole('alert')).toHaveTextContent('Not sent: network down')
+    const pinned = [
+      { kind: 'research', id: 'r1', revision: '2' },
+      { kind: 'artifact', id: 'a1', revision: '4' },
+    ]
+    expect(onSend.mock.calls[0][0].references).toEqual(pinned)
+    // Meanwhile the next message attaches the earlier version of the same file.
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
+    fireEvent.click(within(unsent).getByRole('button', { name: 'Send again' }))
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument())
+    expect(onSend).toHaveBeenCalledTimes(2)
+    const [first, again] = onSend.mock.calls.map(([message]) => message)
+    expect(again.clientMessageId).toBe(first.clientMessageId)
+    expect(again).toEqual(first)
+    expect(again.references).toEqual(pinned)
+    // The new draft keeps its own version.
+    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    expect(within(about).getByText('v3')).toBeInTheDocument()
+  })
+
+  it('puts a failed send back on Edit with the versions it was attached at, Task included', async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(saved())
+    render(<Harness initial={{ ...emptyGeneralDraft(null), task: 'r1', taskRevision: '2' }} onSend={onSend} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
+    type('first wording')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Edit' })
+    // The Task is taken off the next message before the failed one is edited.
+    fireEvent.click(screen.getByRole('button', { name: 'Not about Pruning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('v4')).toBeInTheDocument()
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
+    expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
+    expect(onSend.mock.calls[1][0].references).toEqual([
+      { kind: 'research', id: 'r1', revision: '2' },
+      { kind: 'artifact', id: 'a1', revision: '4' },
+    ])
+  })
+
+  it('forgets a discarded send, so the same words typed later are a new message', async () => {
     const onSend = vi.fn()
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValue(saved())
     render(<Harness onSend={onSend} />)
     type('ship it')
     fireEvent.keyDown(box(), { key: 'Enter' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
-    type('')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument()
     type('ship it')
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
@@ -300,11 +442,11 @@ describe('MessageComposer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
     fireEvent.click(await screen.findByRole('button', { name: 'pick Quantization' }))
     fail(new Error('network down'))
-    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
-    expect(box()).toHaveValue('in flight')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not sent: network down')
+    expect(box()).toHaveValue('')
+    expect(screen.getByRole('list', { name: 'Unsent messages' })).toHaveTextContent('in flight')
     const about = document.querySelector('.kubecode-composer-about') as HTMLElement
     expect(within(about).getByText('Quantization')).toBeInTheDocument()
-    expect(within(about).queryByText('Pruning')).not.toBeInTheDocument()
   })
 
   it('keeps the draft and reads the members again when the server says a mention cannot receive', async () => {
@@ -317,8 +459,9 @@ describe('MessageComposer', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Writer can no longer receive messages. Your message was kept; remove the mention or fix Writer in Members.',
     )
-    expect(box().value).toBe('@writer draft the summary')
     expect(reload).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(box().value).toBe('@writer draft the summary')
   })
 
   it('names no one as "@" when the server refuses a mention of a member it does not know', async () => {
@@ -334,8 +477,8 @@ describe('MessageComposer', () => {
 
   it('offers a named stop that does not block sending', async () => {
     const onStop = vi.fn()
-    render(<Harness stop={{ target: 'Analyst', onStop }} />)
-    fireEvent.click(screen.getByRole('button', { name: /Analyst/ }))
+    render(<Harness stop={{ label: "Stop Analyst's current turn", shortLabel: 'Stop', onStop }} />)
+    fireEvent.click(screen.getByRole('button', { name: "Stop Analyst's current turn" }))
     expect(onStop).toHaveBeenCalledTimes(1)
   })
 })
@@ -352,22 +495,7 @@ describe('MessageComposer drafts kept for the place (ADR 0228 §4, ADR 0229 §6)
     expect(box()).toHaveValue('')
   })
 
-  it('puts a draft back into its place when the send fails after the place was left', async () => {
-    const memory = createPlaceMemory()
-    let fail: (cause: Error) => void = () => undefined
-    const onSend = vi.fn(() => new Promise<ChannelMessage>((_, reject) => { fail = reject }))
-    const view = render(placed(memory, <Harness onSend={onSend} />))
-    type('in flight')
-    fireEvent.keyDown(box(), { key: 'Enter' })
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
-    view.rerender(placed(memory, <p>elsewhere</p>))
-    fail(new Error('network down'))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    view.rerender(placed(memory, <Harness onSend={onSend} />))
-    await waitFor(() => expect(box()).toHaveValue('in flight'))
-  })
-
-  it('keeps the failure and Try again with the draft when the send fails after the place was left', async () => {
+  it('keeps a send that fails after the place was left as its row there, and sends it again under the same id', async () => {
     const memory = createPlaceMemory()
     let fail: (cause: Error) => void = () => undefined
     const onSend = vi.fn()
@@ -382,11 +510,11 @@ describe('MessageComposer drafts kept for the place (ADR 0228 §4, ADR 0229 §6)
     await new Promise((resolve) => setTimeout(resolve, 0))
     view.rerender(placed(memory, <Harness onSend={onSend} />))
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('network down')
-    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    expect(alert).toHaveTextContent('Not sent: network down')
+    expect(box()).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
     expect(onSend.mock.calls[1][0].clientMessageId).toBe(onSend.mock.calls[0][0].clientMessageId)
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
-    expect(box()).toHaveValue('')
   })
 })

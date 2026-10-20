@@ -1,94 +1,70 @@
 import { CircleAlert, Eye, FlaskConical, Loader2 } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState, type Ref } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
-import type {
-  KubecodeApi, ProjectContextDocument, ProjectContextItem, ProjectContextRef,
-} from './api'
-import { usePlaceState } from './app/location/placeMemory'
+import type { KubecodeApi, ProjectContextItem, ProjectContextKind, ProjectContextRef } from './api'
 import {
   PROJECT_CONTEXT_KIND_LABELS,
   PROJECT_WORK_FILTERS,
   isOwnSessionReference,
   type ProjectWorkFilter,
 } from './projectContext'
+import { RecordPreview } from './resources/RecordPreview'
 
 const SEARCH_DEBOUNCE_MS = 200
 const PAGE_SIZE = 20
-const RELATED_REFERENCES = 12
 
 type ListState = {
   items: ProjectContextItem[]
   loadMoreFailed: boolean
   nextCursor: string | null
   status: 'error' | 'loading' | 'ready'
+  /** The kinds the server cut short, so the list says it is not everything. */
+  truncatedKinds: ProjectContextKind[]
 }
 
 /** `scope` is the search the preview was opened from: a new search closes it. */
-type PreviewState =
-  | { status: 'closed' }
-  | { scope: string; status: 'error'; target: ProjectContextItem }
-  | { scope: string; status: 'loading'; target: ProjectContextItem }
-  | { document: ProjectContextDocument; scope: string; status: 'ready'; target: ProjectContextItem }
+type PreviewState = { status: 'closed' } | { scope: string; status: 'open'; target: ProjectContextItem }
 
 const CLOSED_PREVIEW: PreviewState = { status: 'closed' }
-
-export type ProjectWorkListStatus = 'error' | 'loading' | 'ready'
 
 type ComposerProjectWorkPickerProps = {
   api: KubecodeApi
   conversationId: string
   onSelect: (item: ProjectContextItem) => void
-  /**
-   * Browsing instead of attaching (the Resources view): choosing a row previews
-   * it, and the preview offers this action to go to the item itself.
-   */
-  onOpen?: (item: ProjectContextItem) => void
-  /** Whether an item has somewhere to go; the Open action is offered only then. */
-  canOpen?: (item: ProjectContextItem) => boolean
   projectId: string
   t: Translator
-  /** The scrolling list of results, so a view can keep its scroll position. */
-  resultsRef?: Ref<HTMLDivElement>
-  /**
-   * Where a view keeps the search, the kind filter, and the open preview
-   * (ADR 0228 §4), so leaving and coming back finds them again.
-   */
-  stateKey?: string | null
-  /** Reports whether the results are still loading, so a view can restore its scroll once they are in. */
-  onListStatusChange?: (status: ProjectWorkListStatus) => void
+  /** The app's language, to list kinds in words. */
+  locale?: string
 }
 
 /**
- * Discovers existing Project work and previews it read-only. Choosing a row
- * only hands its typed reference to the Composer; neither choosing nor
- * previewing starts an Agent or any other work.
+ * The Session composer's discovery of existing Project work (ADR 0214 §6),
+ * previewed through the one record reader (ADR 0231 §4). Choosing a row only
+ * hands its typed reference to the Composer; neither choosing nor previewing
+ * starts an Agent or any other work. Project files are never offered here: a
+ * Session cites files under its own execution root.
  */
 export function ComposerProjectWorkPicker({
   api,
   conversationId,
-  canOpen,
-  onOpen,
+  locale,
   onSelect,
   projectId,
-  resultsRef,
-  stateKey = null,
-  onListStatusChange,
   t,
 }: ComposerProjectWorkPickerProps) {
-  const [query, setQuery] = usePlaceState(stateKey && `${stateKey}#query`, '')
-  const [filter, setFilter] = usePlaceState<ProjectWorkFilter>(stateKey && `${stateKey}#filter`, 'all')
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<ProjectWorkFilter>('all')
   const [list, setList] = useState<ListState>({
-    items: [], loadMoreFailed: false, nextCursor: null, status: 'loading',
+    items: [], loadMoreFailed: false, nextCursor: null, status: 'loading', truncatedKinds: [],
   })
   const [activeIndex, setActiveIndex] = useState(0)
-  const [preview, setPreview] = usePlaceState<PreviewState>(stateKey && `${stateKey}#preview`, CLOSED_PREVIEW)
+  const [preview, setPreview] = useState<PreviewState>(CLOSED_PREVIEW)
   const requestRef = useRef(0)
-  const previewRequestRef = useRef(0)
   const listboxId = useId()
   const kinds = useMemo(
     () => PROJECT_WORK_FILTERS.find((entry) => entry.id === filter)?.kinds ?? undefined,
@@ -101,20 +77,23 @@ export function ComposerProjectWorkPicker({
     const timer = window.setTimeout(() => {
       // A new search replaces what is listed: rows from the previous query or
       // filter must not stay selectable while it loads.
-      setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'loading' })
-      // A preview kept from this very search (a view returned to) stays open.
+      setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'loading', truncatedKinds: [] })
       setPreview((current) => (current.status !== 'closed' && current.scope === scope ? current : CLOSED_PREVIEW))
       api.searchProjectContext(projectId, { query: query.trim(), kinds, limit: PAGE_SIZE })
         .then((page) => {
           if (request !== requestRef.current) return
           setList({
-            items: page.items, loadMoreFailed: false, nextCursor: page.next_cursor, status: 'ready',
+            items: page.items.filter((item) => item.ref.kind !== 'file'),
+            loadMoreFailed: false,
+            nextCursor: page.next_cursor,
+            status: 'ready',
+            truncatedKinds: page.truncated_kinds ?? [],
           })
           setActiveIndex(0)
         })
         .catch(() => {
           if (request === requestRef.current) {
-            setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'error' })
+            setList({ items: [], loadMoreFailed: false, nextCursor: null, status: 'error', truncatedKinds: [] })
           }
         })
     }, SEARCH_DEBOUNCE_MS)
@@ -123,11 +102,8 @@ export function ComposerProjectWorkPicker({
       // Invalidate the in-flight request when the query changes or the picker
       // unmounts, so a late response never lands in the wrong list.
       requestRef.current += 1
-      previewRequestRef.current += 1
     }
-  }, [api, kinds, projectId, query, scope, setPreview])
-
-  useEffect(() => { onListStatusChange?.(list.status) }, [list.status, onListStatusChange])
+  }, [api, kinds, projectId, query, scope])
 
   const rows = useMemo(
     () => list.items.filter((item) => !isOwnSessionReference(item.ref, conversationId)),
@@ -149,10 +125,11 @@ export function ComposerProjectWorkPicker({
     }).then((page) => {
       if (request !== requestRef.current) return
       setList((previous) => ({
-        items: [...previous.items, ...page.items],
+        items: [...previous.items, ...page.items.filter((item) => item.ref.kind !== 'file')],
         loadMoreFailed: false,
         nextCursor: page.next_cursor,
         status: 'ready',
+        truncatedKinds: previous.truncatedKinds,
       }))
     }).catch(() => {
       // Keep what is already listed; only the extra page failed.
@@ -162,29 +139,8 @@ export function ComposerProjectWorkPicker({
     })
   }
 
-  const browsing = onOpen !== undefined
-  const choose = (item: ProjectContextItem) => {
-    if (browsing) openPreview(item)
-    else onSelect(item)
-  }
-
-  function openPreview(target: ProjectContextItem) {
-    const request = ++previewRequestRef.current
-    setPreview({ scope, status: 'loading', target })
-    api.readProjectContext(projectId, target.ref, 'content').then((document) => {
-      if (request === previewRequestRef.current) setPreview({ document, scope, status: 'ready', target })
-    }).catch(() => {
-      if (request === previewRequestRef.current) setPreview({ scope, status: 'error', target })
-    })
-  }
-
-  // A preview still loading when the view was left is read again on return.
-  const resumed = useRef(false)
-  useEffect(() => {
-    if (resumed.current) return
-    resumed.current = true
-    if (preview.status === 'loading') openPreview(preview.target)
-  })
+  const choose = (item: ProjectContextItem) => onSelect(item)
+  const openPreview = (target: ProjectContextItem) => setPreview({ scope, status: 'open', target })
 
   const move = (direction: 1 | -1) => {
     if (enabledIndexes.length === 0) return
@@ -208,7 +164,7 @@ export function ComposerProjectWorkPicker({
           aria-controls={hasList ? listboxId : undefined}
           aria-expanded={hasList}
           aria-label={t('kubecode.searchProjectWork')}
-          autoFocus={!browsing}
+          autoFocus
           className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -228,10 +184,7 @@ export function ComposerProjectWorkPicker({
             } else if (event.key === 'ArrowRight' && activeItem && query === '') {
               event.preventDefault()
               openPreview(activeItem)
-            } else if (
-              // Browsing is not attaching: there Tab keeps moving focus.
-              (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && !browsing)) && activeItem
-            ) {
+            } else if ((event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && activeItem) {
               event.preventDefault()
               choose(activeItem)
             }
@@ -275,7 +228,6 @@ export function ComposerProjectWorkPicker({
         aria-busy={list.status === 'loading'}
         className="min-h-0 flex-1 overflow-y-auto p-2"
         data-testid="project-work-results"
-        ref={resultsRef}
       >
         {list.status === 'loading' ? (
           <p className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground" role="status">
@@ -342,6 +294,14 @@ export function ComposerProjectWorkPicker({
             })}
           </ul>
         )}
+        {ready && list.truncatedKinds.length > 0 && (
+          <p className="px-3 py-2 text-xs text-muted-foreground" role="note">
+            {t('kubecode.search.truncated', {
+              kinds: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' })
+                .format(list.truncatedKinds.map((kind) => t(PROJECT_CONTEXT_KIND_LABELS[kind]))),
+            })}
+          </p>
+        )}
         {ready && list.loadMoreFailed && (
           <p className="px-3 py-2 text-sm text-destructive" role="alert">
             {t('kubecode.projectWorkLoadMoreFailed')}
@@ -365,65 +325,22 @@ export function ComposerProjectWorkPicker({
             }
           }}
         >
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <strong className="min-w-0 truncate">{preview.target.title}</strong>
-            {onOpen && canOpen?.(preview.target) !== false && (
-              <Button onClick={() => onOpen(preview.target)} size="sm" type="button" variant="outline">
-                {t('kubecode.resources.open')}
-              </Button>
-            )}
+          <div className="mb-1 flex justify-end">
             <Button onClick={closePreview} size="sm" type="button" variant="ghost">
               {t('kubecode.projectWorkClosePreview')}
             </Button>
           </div>
           <div aria-live="polite">
-            {preview.status === 'loading' ? (
-              <p className="text-muted-foreground" role="status">{t('kubecode.loadingContext')}</p>
-            ) : preview.status === 'error' ? (
-              <p className="text-destructive" role="alert">{t('kubecode.projectWorkPreviewFailed')}</p>
-            ) : (
-              <>
-                <p className="mb-1 text-xs text-muted-foreground">
-                  {[
-                    kindLabel(preview.document.ref),
-                    preview.document.ref.revision && t('kubecode.projectWorkRevision', {
-                      revision: preview.document.ref.revision.slice(0, 8),
-                    }),
-                    preview.document.availability !== 'available'
-                      && unavailableLabel({ ...preview.target, availability: preview.document.availability }),
-                  ].filter(Boolean).join(' · ')}
-                </p>
-                {preview.document.sections.map((section, index) => (
-                  <div className="mb-2" key={`${index}:${section.heading}`}>
-                    <h4 className="text-xs font-medium text-muted-foreground">{section.heading}</h4>
-                    <p className="whitespace-pre-wrap break-words">{section.text}</p>
-                  </div>
-                ))}
-                {preview.document.notes.map((note, index) => (
-                  <p className="text-xs text-muted-foreground" key={`${index}:${note}`}>{note}</p>
-                ))}
-                {preview.document.related.filter((related) => (
-                  !isOwnSessionReference(related.ref, conversationId)
-                  && related.availability === 'available'
-                )).slice(0, RELATED_REFERENCES).map((related) => (
-                  <Button
-                    className="h-auto w-full justify-start px-2 py-1.5 text-left"
-                    key={`${related.ref.kind}:${related.ref.id}`}
-                    onClick={() => choose(related)}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <span className="min-w-0 truncate">
-                      {t('kubecode.projectWorkReferenceItem', {
-                        kind: kindLabel(related.ref),
-                        title: related.title,
-                      })}
-                    </span>
-                  </Button>
-                ))}
-              </>
-            )}
+            <RecordPreview
+              api={api}
+              compact
+              key={`${preview.target.ref.kind}:${preview.target.ref.id}`}
+              projectId={projectId}
+              t={t}
+              target={preview.target.ref}
+              canFollow={(related) => !isOwnSessionReference(related.ref, conversationId) && related.availability === 'available'}
+              onFollow={choose}
+            />
           </div>
         </section>
       )}

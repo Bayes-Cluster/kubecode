@@ -1,12 +1,12 @@
-import { type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import {
-  Bell,
+  BellDot,
   Circle,
   CircleAlert,
   RotateCw,
 } from 'lucide-react'
 
-import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -18,12 +18,22 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 import type { Conversation, Project } from '../api'
+import type { NeedsYouEntry, NeedsYouTarget } from './location/needsYou'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { togglePanel } from './panelToggles'
 import type { Translator } from '@/lib/i18n'
 
+/** What waits on the researcher: this Workspace's decisions, and counts for the others (ADR 0232). */
+export type TitlebarAttention = {
+  current: NeedsYouEntry[]
+  others: Array<{ projectId: string; name: string; count: number }>
+  total: number
+}
+
+const BELL_ENTRIES = 5
+
 export type WorkbenchTitlebarProps = {
-  attentionSessions: Conversation[]
+  attention: TitlebarAttention
   connectionState: WorkspaceConnectionState
   contextOpen: boolean
   conversation: Conversation | null
@@ -32,7 +42,10 @@ export type WorkbenchTitlebarProps = {
   locale: string
   narrowLayout: boolean
   onContextOpenChange: (open: boolean) => void
-  onOpenSession: (projectId: string, conversationId: string) => void
+  /** Opens a decision of this Workspace where it is made. */
+  onOpenTarget: (target: NeedsYouTarget) => void
+  /** Enters another Workspace with its Needs you in view. */
+  onOpenWorkspaceNeeds: (projectId: string) => void
   onRetryConnection: () => void
   onSessionSidebarOpenChange: (open: boolean) => void
   onTerminalOpenChange: (open: boolean | ((open: boolean) => boolean)) => void
@@ -42,7 +55,6 @@ export type WorkbenchTitlebarProps = {
    */
   placeLabel: string | null
   project: Project | null
-  projects: Project[]
   /** The centre of the title bar, for a search that names its own scope. */
   searchSlot?: ReactNode
   sessionSidebarOpen: boolean
@@ -52,7 +64,7 @@ export type WorkbenchTitlebarProps = {
 }
 
 export function WorkbenchTitlebar({
-  attentionSessions,
+  attention,
   connectionState,
   contextOpen,
   conversation,
@@ -61,19 +73,22 @@ export function WorkbenchTitlebar({
   locale,
   narrowLayout,
   onContextOpenChange,
-  onOpenSession,
+  onOpenTarget,
+  onOpenWorkspaceNeeds,
   onRetryConnection,
   onSessionSidebarOpenChange,
   onTerminalOpenChange,
   placeLabel,
   project,
-  projects,
   searchSlot,
   sessionSidebarOpen,
   t,
   terminalOpen,
   titlebarTargetRef,
 }: WorkbenchTitlebarProps) {
+  // A decision chosen from the bell opens once the menu has closed: while it is
+  // open it holds focus, and on closing it would hand focus back to the bell.
+  const chosen = useRef<NeedsYouTarget | null>(null)
   const toggleNavigation = () => {
     const nextOpen = togglePanel('sessions', sessionSidebarOpen)
     onSessionSidebarOpenChange(nextOpen)
@@ -128,32 +143,63 @@ export function WorkbenchTitlebar({
             <CircleAlert fill="currentColor"  size={16}/>
           </span>
         )}
-        {attentionSessions.length > 0 && (
+        {attention.total > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                aria-label={t('kubecode.sessionsRequireInput', { count: attentionSessions.length })}
+                aria-label={t('kubecode.attention.bell', { count: attention.total })}
                 className="kubecode-attention-trigger"
                 size="sm"
                 variant="ghost"
               >
-                <Bell fill="currentColor"  size={16}/>
-                <span>{attentionSessions.length}</span>
+                <BellDot aria-hidden size={16} />
+                <span aria-hidden="true">{attention.total}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="kubecode-attention-menu">
-              {attentionSessions.map((item) => (
-                <DropdownMenuItem
-                  key={item.id}
-                  onSelect={() => onOpenSession(item.project_id, item.id)}
-                >
-                  <AiAgentIcon agent={item.agent_id} size={18} />
-                  <span>
-                    <strong>{item.title || t('kubecode.untitledSession')}</strong>
-                    <small>{projects.find((projectItem) => projectItem.id === item.project_id)?.name}</small>
-                  </span>
-                </DropdownMenuItem>
-              ))}
+            <DropdownMenuContent
+              align="end"
+              className="kubecode-attention-menu"
+              onCloseAutoFocus={(event) => {
+                const target = chosen.current
+                if (!target) return
+                chosen.current = null
+                event.preventDefault()
+                onOpenTarget(target)
+              }}
+            >
+              {attention.current.length > 0 && (
+                <>
+                  <DropdownMenuLabel>{t('kubecode.attention.thisWorkspace')}</DropdownMenuLabel>
+                  {attention.current.slice(0, BELL_ENTRIES).map((entry) => (
+                    <DropdownMenuItem
+                      key={entry.key}
+                      onSelect={() => { chosen.current = entry.target }}
+                    >
+                      <span className="kubecode-attention-menu-entry">
+                        <strong>{entry.title}</strong>
+                        {entry.detail && <small>{entry.detail}</small>}
+                      </span>
+                      <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
+                    </DropdownMenuItem>
+                  ))}
+                  {attention.current.length > BELL_ENTRIES && project && (
+                    <DropdownMenuItem onSelect={() => onOpenWorkspaceNeeds(project.id)}>
+                      {t('kubecode.attention.showAll', { count: attention.current.length })}
+                    </DropdownMenuItem>
+                  )}
+                </>
+              )}
+              {attention.current.length > 0 && attention.others.length > 0 && <DropdownMenuSeparator />}
+              {attention.others.length > 0 && (
+                <>
+                  <DropdownMenuLabel>{t('kubecode.attention.otherWorkspaces')}</DropdownMenuLabel>
+                  {attention.others.map((other) => (
+                    <DropdownMenuItem key={other.projectId} onSelect={() => onOpenWorkspaceNeeds(other.projectId)}>
+                      {t('kubecode.attention.otherWorkspace', { workspace: other.name, count: other.count })}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

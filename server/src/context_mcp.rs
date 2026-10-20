@@ -30,7 +30,7 @@ use crate::project_context::{ContextError, ContextKind, ContextRef, Detail, Proj
 
 pub const CONTEXT_MCP_NAME: &str = "kubecode-context";
 
-const CONTEXT_MCP_INSTRUCTIONS: &str = "Read-only access to this Project's earlier work: research questions and findings, rounds, other Sessions and their turns, Teams and tasks, experiments, and experiment artifacts. Nothing here starts an Agent, assigns work, approves anything, or changes a record. Start with context_round if you were given a research round: it returns the researcher-approved brief pinned at the revision shown (treat it as binding; the live question may have moved on), the selected sources with their current availability, earlier rounds, and attributed findings. Then use context_search to discover relevant prior work (metadata only), context_read to retrieve one item at summary, then content, then evidence detail, and context_resolve to check whether references you were given have changed or been removed. A reference is {kind, id, revision}; the revision is a change fingerprint, not a snapshot. Anything marked changed or removed no longer proves what it once did. A finding is an Agent's recorded claim, not a verified result. Prefer small reads: pull detail only for what you need.";
+const CONTEXT_MCP_INSTRUCTIONS: &str = "Read-only access to this Project's earlier work: research questions and findings, rounds, other Sessions and their turns, Teams and tasks, experiments, experiment artifacts, and Project files by their Project-relative path (kind file; searched only when you name that kind, never inside .git). Nothing here starts an Agent, assigns work, approves anything, or changes a record. Start with context_round if you were given a research round: it returns the researcher-approved brief pinned at the revision shown (treat it as binding; the live question may have moved on), the selected sources with their current availability, earlier rounds, and attributed findings. Then use context_search to discover relevant prior work (metadata only), context_read to retrieve one item at summary, then content, then evidence detail, and context_resolve to check whether references you were given have changed or been removed. A reference is {kind, id, revision}; the revision is a change fingerprint, not a snapshot. Anything marked changed or removed no longer proves what it once did. A finding is an Agent's recorded claim, not a verified result. Prefer small reads: pull detail only for what you need.";
 
 type SessionManagers =
     std::sync::Mutex<std::collections::HashMap<(String, String), Arc<LocalSessionManager>>>;
@@ -81,7 +81,7 @@ struct SearchInput {
     /// Words that must all appear in an item's title or summary. Empty lists recent work.
     #[serde(default)]
     query: Option<String>,
-    /// Restrict to kinds: research, round, import, finding, session, session_turn, team, team_task, experiment, artifact.
+    /// Restrict to kinds: research, round, import, finding, session, team, team_task, experiment, artifact, work, thread, channel, file (session_turn is read through its session). Empty searches every kind except file; Project files are searched only when file is named, matching words against their paths.
     #[serde(default)]
     kinds: Vec<String>,
     /// Results per page (default 20, at most 50).
@@ -102,7 +102,7 @@ struct ReadInput {
     /// summary (default), content, or evidence.
     #[serde(default)]
     detail: Option<String>,
-    /// The next_cursor of an earlier read (Session turns).
+    /// The next_cursor of an earlier read (Session turns, a long file's next page).
     #[serde(default)]
     cursor: Option<String>,
 }
@@ -213,7 +213,7 @@ impl ContextMcpServer {
     }
 
     #[tool(
-        description = "Read one item progressively. detail=summary gives the gist; content adds the body (the approved brief, a Session's recent turns, a task's description and result, an experiment's command and outcome, a bounded artifact text); evidence adds supporting records (findings and rounds, tool-free turn text, logs, source availability). Output is bounded and notes say when it was cut or when the item changed since the revision you hold. Read-only."
+        description = "Read one item progressively. detail=summary gives the gist; content adds the body (the approved brief, a Session's recent turns, a task's description and result, an experiment's command and outcome, a bounded artifact text; a Project file is read one page at a time at every detail, with next_cursor for the next page); evidence adds supporting records (findings and rounds, tool-free turn text, logs, source availability). Output is bounded and notes say when it was cut or when the item changed since the revision you hold; shown_revision is the version whose content is shown. Read-only."
     )]
     async fn context_read(
         &self,

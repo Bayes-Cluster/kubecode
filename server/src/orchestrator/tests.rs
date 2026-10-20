@@ -1523,7 +1523,7 @@ mod conversation_routing {
         let message = post(&r, None, "what is the plan?", &[], 0);
         // A crash after the routes were written but before the message was
         // marked read: the next pass finds the routes already there.
-        assert!(crew.orchestrator.route_chatter(&message).unwrap());
+        assert!(crew.orchestrator.route_chatter(&message).unwrap().routed);
         crew.orchestrator.tick(&sink).unwrap();
         assert_eq!(sink.deliveries().len(), 1);
         // A reply in a legacy Thread is not conversation chatter.
@@ -2189,6 +2189,817 @@ mod conversation_routing {
                 foreign.id
             )),
             "{body}"
+        );
+    }
+}
+
+#[test]
+fn a_route_that_fails_again_is_noted_again_and_never_aborts_the_delivery_pass() {
+    let r = rig();
+    let thread = r.linked_thread(true);
+    r.ask(&thread, Intent::Request, "q1", None);
+    r.orchestrator.route_intents().unwrap();
+    let sink = Recording::default();
+    sink.script(vec![
+        DeliveryOutcome::Failed("provider unavailable".into());
+        MAX_ATTEMPTS as usize
+    ]);
+    for step in 0..MAX_ATTEMPTS {
+        r.orchestrator
+            .deliver_due(&sink, i64::from(step) * 10_000)
+            .unwrap();
+    }
+    let failed = r.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+    assert_eq!(failed.state, RouteState::Failed);
+    // The route is armed again, one attempt from failing, and another
+    // request waits behind it in the same pass.
+    let rearm = |retries: &str| {
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                &format!(
+                    "UPDATE message_routes SET state = 'pending', attempts = ?2, busy = 0,
+                       next_attempt_at = 0, lease_until = 0, last_error = NULL{retries}
+                     WHERE id = ?1"
+                ),
+                params![failed.id, MAX_ATTEMPTS - 1],
+            )
+            .unwrap();
+    };
+    rearm("");
+    r.ask(&thread, Intent::Request, "q2", None);
+    r.orchestrator.route_intents().unwrap();
+    sink.script(vec![
+        DeliveryOutcome::Failed("a different reason".into()),
+        DeliveryOutcome::Delivered,
+    ]);
+    let report = r
+        .orchestrator
+        .deliver_due(&sink, 100_000)
+        .expect("a note that already exists never aborts the pass");
+    assert_eq!((report.failed, report.delivered), (1, 1));
+    assert_eq!(
+        sink.deliveries().len(),
+        1,
+        "the request behind it was delivered"
+    );
+
+    // A counted retry fails with a third reason: noted under its own key.
+    rearm(", retries = retries + 1");
+    sink.script(vec![DeliveryOutcome::Failed("a third reason".into())]);
+    r.orchestrator.deliver_due(&sink, 200_000).unwrap();
+    let note = |key: &str| {
+        r.channels
+            .by_client_message_id(r.project(), &thread.channel_id, key)
+            .unwrap()
+            .map(|message| message.body)
+    };
+    assert!(
+        note(&format!("route-failed:{}", failed.id))
+            .unwrap()
+            .contains("provider unavailable")
+    );
+    assert!(
+        note(&format!("route-failed:{}:1", failed.id))
+            .unwrap()
+            .contains("a third reason")
+    );
+    assert_eq!(
+        r.orchestrator
+            .route(r.project(), &failed.id)
+            .unwrap()
+            .retries,
+        1
+    );
+    // Writing a routing note again under its key, whatever the text, is not
+    // an error; any other note keeps refusing a reused key.
+    r.orchestrator
+        .routing_note(
+            r.project(),
+            &thread.channel_id,
+            Some(&thread.id),
+            &format!("route-failed:{}", failed.id),
+            "something else entirely",
+        )
+        .unwrap();
+    assert!(
+        r.orchestrator
+            .note(
+                r.project(),
+                &thread.channel_id,
+                Some(&thread.id),
+                &format!("route-failed:{}", failed.id),
+                "something else entirely",
+            )
+            .is_err(),
+        "only routing notes treat a reused key as written"
+    );
+}
+
+// -- Delivery state of researcher messages (ADR 0232) ------------------------------------------------
+
+mod delivery_state {
+    use super::*;
+    use crate::channel_store::{AuthorKind, RerouteOutcome, RoutingMark};
+    use crate::member_store::{Member, MemberStore, NewMember};
+
+    struct Crew {
+        orchestrator: Orchestrator,
+        members: Arc<MemberStore>,
+        general: Member,
+        analyst: Member,
+    }
+
+    fn crew(r: &Rig) -> Crew {
+        let members = Arc::new(
+            MemberStore::from_database(r.f.agents.database(), Arc::clone(&r.f.agents)).unwrap(),
+        );
+        let general = members
+            .ensure_general(r.project(), &|_| true, AgentId::OpenCode)
+            .unwrap();
+        let analyst = members
+            .create_specialist(
+                r.project(),
+                NewMember {
+                    name: "Analyst".into(),
+                    ..Default::default()
+                },
+                &|_| true,
+                AgentId::OpenCode,
+            )
+            .unwrap();
+        let orchestrator = Orchestrator::new(
+            r.f.agents.database(),
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.work),
+            Arc::clone(&r.f.research),
+        )
+        .unwrap()
+        .with_members(Arc::clone(&members));
+        Crew {
+            orchestrator,
+            members,
+            general,
+            analyst,
+        }
+    }
+
+    fn say(r: &Rig, body: &str, mentions: &[&Member]) -> Message {
+        let mentions: Vec<Mention> = mentions
+            .iter()
+            .map(|member| Mention {
+                session_id: member.public_conversation_id.clone().unwrap(),
+            })
+            .collect();
+        r.channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body,
+                    mentions: &mentions,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0
+    }
+
+    fn route(state: RouteDeliveryState) -> RouteDelivery {
+        RouteDelivery {
+            route_id: "r".into(),
+            kind: RouteKind::Mention,
+            recipient: None,
+            recipient_session: None,
+            state,
+            attempts: 0,
+            busy: 0,
+            retries: 0,
+            last_error: None,
+            delivered_at: None,
+            retryable: false,
+            superseded: false,
+            note_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_message_state_comes_from_its_mark_and_its_routes() {
+        use MessageDeliveryState as M;
+        use RouteDeliveryState as R;
+        let mark = |routing: Option<&str>, issue: Option<&str>| RoutingMark {
+            routing: routing.map(str::to_owned),
+            issue: issue.map(str::to_owned),
+            reroutes: 0,
+            intent_claimed: false,
+        };
+        let done = mark(Some("done"), None);
+        for (mark, routes, expected) in [
+            (mark(Some("pending"), None), vec![], M::Saved),
+            (
+                mark(Some("denied"), Some("manager_unavailable")),
+                vec![],
+                M::Denied,
+            ),
+            (mark(None, None), vec![], M::Recorded),
+            (done.clone(), vec![route(R::Sending)], M::Sending),
+            (done.clone(), vec![route(R::Retrying)], M::Sending),
+            (done.clone(), vec![route(R::Busy)], M::Sending),
+            (done.clone(), vec![route(R::Queued)], M::Delivered),
+            (done.clone(), vec![route(R::Started)], M::Delivered),
+            (done.clone(), vec![route(R::Withdrawn)], M::Delivered),
+            (done.clone(), vec![route(R::Failed)], M::Failed),
+            (
+                done.clone(),
+                vec![route(R::Failed), route(R::Started)],
+                M::Partial,
+            ),
+            (
+                mark(Some("done"), Some("member_unavailable")),
+                vec![route(R::Started)],
+                M::Partial,
+            ),
+        ] {
+            assert_eq!(aggregate(&mark, &routes), expected, "{mark:?} {routes:?}");
+        }
+    }
+
+    #[test]
+    fn deliveries_report_saved_sending_admitted_and_failed_from_facts() {
+        let r = rig();
+        let crew = crew(&r);
+        let general = crew.general.public_conversation_id.clone().unwrap();
+        let hello = say(&r, "hello", &[]);
+        let state = |message: &Message| {
+            crew.orchestrator
+                .deliveries_for(r.project(), std::slice::from_ref(&message.id))
+                .unwrap()
+                .remove(0)
+        };
+        assert_eq!(state(&hello).state, MessageDeliveryState::Saved);
+
+        let before = r.f.agents.latest_workspace_event_id().unwrap();
+        crew.orchestrator.route_conversation().unwrap();
+        let sending = state(&hello);
+        assert_eq!(sending.state, MessageDeliveryState::Sending);
+        assert_eq!(sending.routes.len(), 1);
+        assert_eq!(
+            sending.routes[0].recipient.as_ref().unwrap().handle,
+            "general"
+        );
+        // The read is announced by id once the message is marked.
+        let routed =
+            r.f.agents
+                .workspace_events_after(before)
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == "orchestration_updated")
+                .map(|event| event.payload)
+                .collect::<Vec<_>>();
+        assert!(
+            routed
+                .iter()
+                .any(|payload| payload["message_id"] == hello.id.as_str()
+                    && payload["change"] == "routed"),
+            "{routed:?}"
+        );
+        assert!(routed.iter().all(|payload| payload.get("body").is_none()));
+
+        // Delivered: the Session's admission decides what it shows.
+        let sink = Recording::default();
+        crew.orchestrator.deliver_due(&sink, 0).unwrap();
+        let route_id = sending.routes[0].route_id.clone();
+        assert_eq!(
+            state(&hello).routes[0].state,
+            RouteDeliveryState::Withdrawn,
+            "delivered, but the Session has neither a run nor a queued prompt"
+        );
+        r.f.agents
+            .start_prompt_or_enqueue(
+                &general,
+                r.project(),
+                "prompt",
+                crate::agents::PermissionMode::Safe,
+                false,
+                Some(&format!("route:{route_id}:{general}")),
+            )
+            .unwrap();
+        let started = state(&hello);
+        assert_eq!(started.state, MessageDeliveryState::Delivered);
+        assert_eq!(started.routes[0].state, RouteDeliveryState::Started);
+
+        // A second message queued behind the running turn.
+        let again = say(&r, "and another thing", &[]);
+        crew.orchestrator.route_conversation().unwrap();
+        crew.orchestrator.deliver_due(&sink, 0).unwrap();
+        let second = state(&again).routes[0].route_id.clone();
+        r.f.agents
+            .start_prompt_or_enqueue(
+                &general,
+                r.project(),
+                "prompt",
+                crate::agents::PermissionMode::Safe,
+                false,
+                Some(&format!("route:{second}:{general}")),
+            )
+            .unwrap();
+        assert_eq!(state(&again).routes[0].state, RouteDeliveryState::Queued);
+
+        // A mention that cannot be delivered fails, retryably, with its note.
+        let ask = say(&r, "@analyst look", &[&crew.analyst]);
+        crew.orchestrator.route_conversation().unwrap();
+        sink.script(vec![
+            DeliveryOutcome::Failed("provider unavailable".into());
+            MAX_ATTEMPTS as usize
+        ]);
+        for step in 0..MAX_ATTEMPTS {
+            crew.orchestrator
+                .deliver_due(&sink, i64::from(step + 1) * 10_000)
+                .unwrap();
+        }
+        let failed = state(&ask);
+        assert_eq!(failed.state, MessageDeliveryState::Failed);
+        assert!(failed.routes[0].retryable);
+        assert_eq!(failed.routes[0].note_ids.len(), 1);
+
+        // Only the researcher's own messages are projected.
+        let note = r
+            .channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body: "a note",
+                    author_kind: Some(AuthorKind::System),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0;
+        assert!(
+            crew.orchestrator
+                .deliveries_for(r.project(), &[note.id])
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    fn fail_all(r: &Rig, crew: &Crew, from: i64) {
+        let sink = Recording::default();
+        sink.script(vec![
+            DeliveryOutcome::Failed("provider unavailable".into());
+            MAX_ATTEMPTS as usize
+        ]);
+        for step in 0..MAX_ATTEMPTS {
+            crew.orchestrator
+                .deliver_due(&sink, from + i64::from(step) * 10_000)
+                .unwrap();
+        }
+        let _ = r;
+    }
+
+    #[test]
+    fn the_researcher_retries_a_failed_route_under_the_same_identity() {
+        let r = rig();
+        let crew = crew(&r);
+        let hello = say(&r, "hello", &[]);
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let failed = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(failed.state, RouteState::Failed);
+
+        let RetryOutcome::Requeued(route) = crew
+            .orchestrator
+            .retry_route(r.project(), &failed.id)
+            .unwrap()
+        else {
+            panic!("a failed discussion route is re-armed");
+        };
+        assert_eq!(
+            route.id, failed.id,
+            "the same route, so the same delivery key"
+        );
+        assert_eq!(
+            (route.state, route.attempts, route.retries),
+            (RouteState::Pending, 0, 1)
+        );
+        assert!(matches!(
+            crew.orchestrator
+                .retry_route(r.project(), &failed.id)
+                .unwrap(),
+            RetryOutcome::AlreadyMoving(_)
+        ));
+        let sink = Recording::default();
+        crew.orchestrator.deliver_due(&sink, 1_000_000).unwrap();
+        assert_eq!(sink.deliveries().len(), 1);
+        assert_eq!(sink.deliveries()[0].1, failed.id);
+        let delivery = crew
+            .orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&hello.id))
+            .unwrap()
+            .remove(0);
+        assert_eq!(delivery.routes[0].retries, 1);
+
+        // Unknown, or of another Project.
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), "missing"),
+            Err(OrchestratorError::NotFound)
+        ));
+        assert!(matches!(
+            crew.orchestrator.retry_route("other", &failed.id),
+            Err(OrchestratorError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn only_what_the_researcher_originated_is_retried_and_only_three_times() {
+        let r = rig();
+        let crew = crew(&r);
+        // An agent hand-off that failed stays final.
+        let handoff = r
+            .channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body: "@analyst over to you",
+                    author_kind: Some(AuthorKind::Agent),
+                    author_ref: crew.general.public_conversation_id.as_deref(),
+                    mentions: &[Mention {
+                        session_id: crew.analyst.public_conversation_id.clone().unwrap(),
+                    }],
+                    hops: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0;
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let route = crew.orchestrator.routes(r.project(), None, 5).unwrap();
+        let route = route
+            .iter()
+            .find(|route| route.source_id == handoff.id)
+            .unwrap();
+        assert_eq!(route.kind, RouteKind::AgentHandoff);
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), &route.id),
+            Err(OrchestratorError::NotRetryable)
+        ));
+
+        // A mention: three retries, then no more.
+        let mention = say(&r, "@analyst look", &[&crew.analyst]);
+        crew.orchestrator.route_conversation().unwrap();
+        let mut from = 100_000;
+        fail_all(&r, &crew, from);
+        let id = crew
+            .orchestrator
+            .routes(r.project(), None, 10)
+            .unwrap()
+            .into_iter()
+            .find(|route| route.source_id == mention.id)
+            .unwrap()
+            .id;
+        for _ in 0..MAX_MANUAL_RETRIES {
+            assert!(matches!(
+                crew.orchestrator.retry_route(r.project(), &id).unwrap(),
+                RetryOutcome::Requeued(_)
+            ));
+            from += 1_000_000;
+            fail_all(&r, &crew, from);
+        }
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), &id),
+            Err(OrchestratorError::RetryLimit)
+        ));
+        // Each failure after a retry left its own note, and none aborted a pass.
+        let delivery = crew
+            .orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&mention.id))
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            delivery.routes[0].note_ids.len(),
+            1 + MAX_MANUAL_RETRIES as usize
+        );
+        assert!(!delivery.routes[0].retryable);
+    }
+
+    /// The limit is part of the one conditional write, so two retries racing
+    /// past the read of `retries` can never re-arm a route a fourth time.
+    #[test]
+    fn the_retry_limit_is_enforced_by_the_conditional_write_itself() {
+        let r = rig();
+        let crew = crew(&r);
+        say(&r, "hello", &[]);
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let failed = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE message_routes SET retries = ?2 WHERE id = ?1",
+                rusqlite::params![failed.id, MAX_MANUAL_RETRIES],
+            )
+            .unwrap();
+        // As if another retry had been counted after this one read the row.
+        assert!(!crew.orchestrator.rearm(r.project(), &failed.id).unwrap());
+        let after = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(
+            (after.state, after.retries),
+            (RouteState::Failed, MAX_MANUAL_RETRIES)
+        );
+    }
+
+    /// A member that needs setup is not gone: the retry says why it cannot
+    /// go now, and goes once setup is fixed.
+    #[test]
+    fn a_retry_to_a_member_that_needs_setup_waits_for_the_fix_and_is_never_gone() {
+        let r = rig();
+        let crew = crew(&r);
+        say(&r, "@analyst look", &[&crew.analyst]);
+        crew.orchestrator.route_conversation().unwrap();
+        fail_all(&r, &crew, 0);
+        let failed = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(failed.state, RouteState::Failed);
+        crew.members
+            .record_setup_error(&crew.analyst.id, "the provider rejected an option")
+            .unwrap();
+        assert!(matches!(
+            crew.orchestrator.retry_route(r.project(), &failed.id),
+            Err(OrchestratorError::NeedsSetup)
+        ));
+        let unchanged = crew.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        assert_eq!(
+            (unchanged.state, unchanged.retries),
+            (RouteState::Failed, 0),
+            "no retry is used up"
+        );
+        crew.members
+            .finish_setup(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap();
+        assert!(matches!(
+            crew.orchestrator
+                .retry_route(r.project(), &failed.id)
+                .unwrap(),
+            RetryOutcome::Requeued(_)
+        ));
+    }
+
+    #[test]
+    fn a_route_whose_session_is_gone_is_not_retried() {
+        let r = rig();
+        let thread = r.linked_thread(false);
+        let stranger = r.session("plain");
+        r.ask(&thread, Intent::Ask, "q-gone", Some(&stranger));
+        r.orchestrator.route_intents().unwrap();
+        let route = r.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE message_routes SET state = 'failed' WHERE id = ?1",
+                [&route.id],
+            )
+            .unwrap();
+        r.f.agents.delete_conversation(&stranger).unwrap();
+        assert!(matches!(
+            r.orchestrator.retry_route(r.project(), &route.id),
+            Err(OrchestratorError::TargetGone)
+        ));
+    }
+
+    /// An orchestrator over a roster that has no project manager yet.
+    fn without_manager(r: &Rig) -> (Orchestrator, Arc<MemberStore>) {
+        let members = Arc::new(
+            MemberStore::from_database(r.f.agents.database(), Arc::clone(&r.f.agents)).unwrap(),
+        );
+        let orchestrator = Orchestrator::new(
+            r.f.agents.database(),
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.work),
+            Arc::clone(&r.f.research),
+        )
+        .unwrap()
+        .with_members(Arc::clone(&members));
+        (orchestrator, members)
+    }
+
+    fn mark(r: &Rig, message: &Message) -> RoutingMark {
+        r.channels
+            .routing_marks(r.project(), std::slice::from_ref(&message.id))
+            .unwrap()
+            .remove(&message.id)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_message_that_reaches_nobody_is_recorded_as_denied_with_its_reason() {
+        let r = rig();
+        let (orchestrator, _members) = without_manager(&r);
+        let lonely = say(&r, "anyone there?", &[]);
+        orchestrator.route_conversation().unwrap();
+        let denied = mark(&r, &lonely);
+        assert_eq!(denied.routing.as_deref(), Some("denied"));
+        assert_eq!(denied.issue.as_deref(), Some("manager_unavailable"));
+        let delivery = orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&lonely.id))
+            .unwrap()
+            .remove(0);
+        assert_eq!(delivery.state, MessageDeliveryState::Denied);
+        let denial = delivery.denial.unwrap();
+        assert_eq!(denial.code, "manager_unavailable");
+        assert!(denial.reroutable);
+        assert!(denial.note_id.is_some(), "the note is still written");
+        // Rerouted while nothing changed, it is denied each time, three times at most.
+        for _ in 0..3 {
+            assert_eq!(
+                r.channels
+                    .reroute(r.project(), &r.channel().id, &lonely.id)
+                    .unwrap(),
+                RerouteOutcome::Rearmed
+            );
+            orchestrator.route_conversation().unwrap();
+        }
+        assert_eq!(mark(&r, &lonely).reroutes, 3);
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &lonely.id)
+                .unwrap(),
+            RerouteOutcome::NotReroutable
+        );
+        let denial = orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&lonely.id))
+            .unwrap()
+            .remove(0)
+            .denial
+            .unwrap();
+        assert!(!denial.reroutable);
+        assert!(denial.note_id.is_some());
+
+        // A private Session, and one reachable member with one that is not.
+        let crew = crew(&r);
+        let dm = crew
+            .orchestrator
+            .members
+            .as_ref()
+            .unwrap()
+            .ensure_dm_session(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap()
+            .dm_conversation_id
+            .unwrap();
+        let private = r
+            .channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body: "psst",
+                    mentions: &[Mention { session_id: dm }],
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0;
+        crew.orchestrator.route_conversation().unwrap();
+        let marked = mark(&r, &private);
+        assert_eq!(
+            (marked.routing.as_deref(), marked.issue.as_deref()),
+            (Some("denied"), Some("dm_private"))
+        );
+        // Reading it again would deny it again: Try again is not offered.
+        let denial = crew
+            .orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&private.id))
+            .unwrap()
+            .remove(0)
+            .denial
+            .unwrap();
+        assert_eq!(denial.code, "dm_private");
+        assert!(!denial.reroutable);
+    }
+
+    #[test]
+    fn a_denied_message_is_rerouted_once_setup_is_fixed() {
+        let r = rig();
+        let (orchestrator, members) = without_manager(&r);
+        let lonely = say(&r, "anyone there?", &[]);
+        orchestrator.route_conversation().unwrap();
+        // Rerouting before anything changed is denied again, noted under a new key.
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &lonely.id)
+                .unwrap(),
+            RerouteOutcome::Rearmed
+        );
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &lonely.id)
+                .unwrap(),
+            RerouteOutcome::AlreadyPending
+        );
+        orchestrator.route_conversation().unwrap();
+        let again = mark(&r, &lonely);
+        assert_eq!(
+            (again.routing.as_deref(), again.reroutes),
+            (Some("denied"), 1)
+        );
+        assert!(
+            r.channels
+                .by_client_message_id(
+                    r.project(),
+                    &r.channel().id,
+                    &format!("route-denied:{}:1", lonely.id)
+                )
+                .unwrap()
+                .is_some()
+        );
+        // The manager is set up: the next reroute reaches it.
+        members
+            .ensure_general(r.project(), &|_| true, AgentId::OpenCode)
+            .unwrap();
+        r.channels
+            .reroute(r.project(), &r.channel().id, &lonely.id)
+            .unwrap();
+        orchestrator.route_conversation().unwrap();
+        assert_eq!(mark(&r, &lonely).routing.as_deref(), Some("done"));
+        let delivery = orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&lonely.id))
+            .unwrap()
+            .remove(0);
+        assert_eq!(delivery.routes.len(), 1);
+        assert_eq!(delivery.routes[0].kind, RouteKind::Discussion);
+        assert_eq!(delivery.state, MessageDeliveryState::Sending);
+        // Routed now: there is nothing to reroute, and never a third time.
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &lonely.id)
+                .unwrap(),
+            RerouteOutcome::NotReroutable
+        );
+    }
+
+    #[test]
+    fn one_reachable_and_one_unreachable_member_is_partial_and_rerouted_once() {
+        let r = rig();
+        let crew = crew(&r);
+        let members = crew.orchestrator.members.clone().unwrap();
+        members
+            .record_setup_error(&crew.analyst.id, "provider refused")
+            .unwrap();
+        let writer = members
+            .create_specialist(
+                r.project(),
+                NewMember {
+                    name: "Writer".into(),
+                    ..Default::default()
+                },
+                &|_| true,
+                AgentId::OpenCode,
+            )
+            .unwrap();
+        let both = say(
+            &r,
+            "@analyst @writer both of you",
+            &[&crew.analyst, &writer],
+        );
+        crew.orchestrator.route_conversation().unwrap();
+        let partial = mark(&r, &both);
+        assert_eq!(
+            (partial.routing.as_deref(), partial.issue.as_deref()),
+            (Some("done"), Some("member_unavailable"))
+        );
+        // Setup fixed: rerouting reaches the Analyst; the Writer is not routed twice.
+        members
+            .finish_setup(r.project(), &crew.analyst.id, &|_| true)
+            .unwrap();
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &both.id)
+                .unwrap(),
+            RerouteOutcome::Rearmed
+        );
+        crew.orchestrator.route_conversation().unwrap();
+        let delivery = crew
+            .orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&both.id))
+            .unwrap()
+            .remove(0);
+        assert_eq!(delivery.routes.len(), 2, "{:?}", delivery.routes);
+        assert!(delivery.denial.is_none());
+        // Routed to everyone it names: nothing is left to reroute.
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &r.channel().id, &both.id)
+                .unwrap(),
+            RerouteOutcome::NotReroutable
         );
     }
 }

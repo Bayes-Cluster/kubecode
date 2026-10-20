@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Conversation, Member, TaskCard } from '../api'
-import { needsYouFromCurrentSources } from './location/needsYou'
+import { createTranslator } from '@/lib/i18n'
+
+import type { Member } from '../api'
+import { permissionItem, proposalItem, questionItem, snapshot } from '../attention/attentionFixtures'
+import { needsYouFromAttention } from '../attention/attentionTargets'
 import { WorkspaceNav, type WorkspaceNavProps } from './WorkspaceNav'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
@@ -14,13 +17,6 @@ const member = (overrides: Partial<Member>): Member => ({
   spec: { agent_id: 'opencode', config: {}, instructions: '' }, public_conversation_id: 's1',
   dm_conversation_id: null, state: 'active', setup_error: null, setup_code: null, revision: 1,
   created_at: '', updated_at: '', removed_at: null, ...overrides,
-})
-
-const task = (overrides: Partial<TaskCard>): TaskCard => ({
-  id: 'r1', project_id: 'p1', title: 'Pruning', question: '?', stage: 'review', condition: 'none',
-  condition_reason: null, revision: 1, approved_revision: 1, admitted_at: '', origin: 'conversation',
-  authorizing_message_id: null, participants: [], open_questions: 0, review_requested: true,
-  updated_at: '', ...overrides,
 })
 
 function nav(overrides: Partial<WorkspaceNavProps> = {}) {
@@ -82,31 +78,38 @@ describe('WorkspaceNav', () => {
     expect(within(group).queryAllByRole('button').filter((button) => button.hasAttribute('aria-current'))).toEqual([])
   })
 
-  it('gathers what waits for the researcher and opens where each one says', () => {
-    const entries = needsYouFromCurrentSources(
-      [task({}), task({ id: 'r2', title: 'Quant', stage: 'in_progress', condition: 'needs_input' })],
-      [{ id: 'd1', project_id: 'p1', title: 'Quantize first', question: '?', revision: 2, proposed_by: 'agent', updated_at: '' }],
-      [{ id: 's9', project_id: 'p1', title: 'Fix build' } as unknown as Conversation],
-      t,
+  it('lists each decision once, from the server projection, and opens where each one says', () => {
+    // One permission, asked on behalf of a Task, is one row: not a Task row and a Session row.
+    const entries = needsYouFromAttention(
+      snapshot({ items: [permissionItem(), questionItem(), proposalItem()] }),
+      new Set(),
+      createTranslator('en'),
+      { presentation: 'screen' },
     )
-    const handlers = nav({ needsYou: entries })
+    const handlers = nav({ needsYou: entries, needsYouStatus: 'ready' })
     const summary = screen.getByText('kubecode.nav.needsYou').closest('summary')
-    expect(summary).toHaveTextContent('4')
+    expect(summary).toHaveTextContent('3')
     expect(summary?.closest('details')).toHaveAttribute('open')
+    expect(screen.getAllByRole('button', { name: /Structured pruning|Run pytest/ })).toHaveLength(2)
 
-    fireEvent.click(screen.getByRole('button', { name: /Pruning/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' } })
+    fireEvent.click(screen.getByRole('button', { name: /Run pytest/ }))
+    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general' }, focus: 'permission:q1' })
+    fireEvent.click(screen.getByRole('button', { name: /Which ratios/ }))
+    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({
+      place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'question:d1',
+    })
     fireEvent.click(screen.getByRole('button', { name: /Quantize first/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general' }, inspect: { kind: 'task', id: 'd1' } })
-    fireEvent.click(screen.getByRole('button', { name: /Fix build/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ session: { projectId: 'p1', conversationId: 's9' } })
-    for (const reason of ['kubecode.nav.needsReview', 'kubecode.nav.needsInput', 'kubecode.nav.needsProposal', 'kubecode.nav.needsPermission']) {
-      expect(screen.getByText(reason)).toBeInTheDocument()
-    }
+    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general', message: 'msg1' }, focus: 'message:msg1' })
+  })
+
+  it('says on General how many of the researcher’s messages were not delivered', () => {
+    nav({ undeliveredGeneral: 2 })
+    const general = screen.getByRole('button', { name: /^kubecode\.channel\.general/ })
+    expect(general).toHaveTextContent('kubecode.nav.notDelivered:{"count":2}')
   })
 
   it('says nothing is waiting, and keeps the disclosure closed', () => {
-    nav()
+    nav({ needsYouStatus: 'ready' })
     expect(screen.getByText('kubecode.nav.needsYouNone')).toBeInTheDocument()
     expect(screen.getByText('kubecode.nav.needsYou').closest('details')).not.toHaveAttribute('open')
   })

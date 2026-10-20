@@ -39,6 +39,24 @@ pub struct DecisionRequest {
     pub answered_at: Option<String>,
 }
 
+/// An open question with the work and Task it concerns.
+#[derive(Clone, Debug, Serialize)]
+pub struct OpenDecision {
+    pub request: DecisionRequest,
+    pub work_title: String,
+    pub research_id: Option<String>,
+}
+
+/// An open assignment: a Session working on a piece of work.
+#[derive(Clone, Debug, Serialize)]
+pub struct OpenAssignment {
+    pub conversation_id: String,
+    pub work_id: String,
+    pub work_title: String,
+    pub research_id: Option<String>,
+    pub started_at: String,
+}
+
 const REQUEST_SELECT: &str = "SELECT id, project_id, work_id, thread_id, question, options_json,
         impact, asked_by, state, answer, answered_by, created_at, answered_at
     FROM decision_requests";
@@ -267,6 +285,51 @@ impl WorkStore {
         ))?;
         Ok(statement
             .query_map(params![work_id, project_id], request_from_row)?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Every open question of a Project, with its work's title and the Task
+    /// (research question) it belongs to: what the attention projection lists.
+    pub fn open_decisions(&self, project_id: &str) -> Result<Vec<OpenDecision>, WorkError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT d.id, d.project_id, d.work_id, d.thread_id, d.question, d.options_json,
+                    d.impact, d.asked_by, d.state, d.answer, d.answered_by, d.created_at,
+                    d.answered_at, w.title, w.research_id
+             FROM decision_requests d JOIN work_items w ON w.id = d.work_id
+             WHERE d.project_id = ?1 AND d.state = 'open'
+             ORDER BY d.created_at, d.rowid",
+        )?;
+        Ok(statement
+            .query_map([project_id], |row| {
+                Ok(OpenDecision {
+                    request: request_from_row(row)?,
+                    work_title: row.get(13)?,
+                    research_id: row.get(14)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Every assignment still open in a Project: which Session works on what.
+    pub fn open_assignments(&self, project_id: &str) -> Result<Vec<OpenAssignment>, WorkError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT a.conversation_id, a.task_id, w.title, w.research_id, a.started_at
+             FROM work_assignments a JOIN work_items w ON w.id = a.task_id
+             WHERE w.project_id = ?1 AND a.ended_at IS NULL
+             ORDER BY a.started_at DESC, a.rowid DESC",
+        )?;
+        Ok(statement
+            .query_map([project_id], |row| {
+                Ok(OpenAssignment {
+                    conversation_id: row.get(0)?,
+                    work_id: row.get(1)?,
+                    work_title: row.get(2)?,
+                    research_id: row.get(3)?,
+                    started_at: row.get(4)?,
+                })
+            })?
             .collect::<Result<Vec<_>, _>>()?)
     }
 

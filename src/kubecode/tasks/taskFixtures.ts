@@ -3,7 +3,7 @@
  * only what it is about. Not used by the app.
  */
 
-import type { TaskBoard, TaskCard, TaskDetail, TaskEvidence, TaskReviewRequest } from '../api'
+import type { ProjectContextDocument, TaskBoard, TaskCard, TaskDetail, TaskEvidence, TaskReviewRequest } from '../api'
 
 export function taskCard(overrides: Partial<TaskCard> = {}): TaskCard {
   return {
@@ -99,4 +99,20 @@ export function taskDetail(overrides: Partial<TaskDetail> = {}): TaskDetail {
     actions: { archive: { allowed: false, reason: 'under_review' }, restore: false },
     ...overrides,
   } as TaskDetail
+}
+
+/** A Project file as the context reader returns it (ADR 0231 §1): one page, at `revision`. */
+export function fileDocument(path: string, text: string, revision: string): ProjectContextDocument {
+  return {
+    ref: { kind: 'file', id: path, revision },
+    detail: 'content',
+    title: path,
+    availability: 'available',
+    provenance: { author: null, updated_at: null, research_id: null, parent: null, state: null },
+    sections: [{ heading: 'Content', text, truncated: false }],
+    related: [],
+    next_cursor: null,
+    notes: [],
+    shown_revision: revision,
+  }
 }

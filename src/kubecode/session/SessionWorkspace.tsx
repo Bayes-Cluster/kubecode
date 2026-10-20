@@ -56,6 +56,7 @@ import { useComposerController } from './useComposerController'
 import { useSessionEvents } from './useSessionEvents'
 import { useSessionHistory } from './useSessionHistory'
 import { useSessionState } from './useSessionState'
+import { resolveThrough, useAttention } from '../attention/attentionContext'
 
 type AgentSessionWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -112,6 +113,8 @@ export function AgentSessionWorkspace({
   team,
   titlebarTarget,
 }: AgentSessionWorkspaceProps) {
+  // A permission answered here resolves in Needs you and the bell at once (ADR 0232).
+  const attention = useAttention()
   const [error, setError] = useState<string | null>(null)
   const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -722,8 +725,16 @@ export function AgentSessionWorkspace({
               [id]: value,
             }))}
             onOpenPlan={onOpenPlan}
-            onResolveElicitation={(accepted) => void resolveElicitation(accepted)}
-            onResolvePermission={(requestId, optionId) => void api.resolvePermission(requestId, optionId)}
+            onResolveElicitation={(accepted) => resolveThrough(
+              attention,
+              `input:${pendingElicitation?.requestId ?? ''}`,
+              () => resolveElicitation(accepted),
+            )}
+            onResolvePermission={(requestId, optionId) => resolveThrough(
+              attention,
+              `permission:${requestId}`,
+              () => api.resolvePermission(requestId, optionId),
+            )}
             onSend={(text) => void composer.send(text)}
             onSendSideQuestion={(text) => void composer.sendSideQuestion(text)}
             onStop={() => void stop()}

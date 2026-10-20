@@ -325,3 +325,241 @@ async fn another_project_cannot_reach_the_conversation() {
     let (status, _) = call(&env, Method::GET, "/projects/missing/channels", Value::Null).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+// -- References carry the version that was seen (#219, ADR 0231 §5) ------------------
+
+async fn create_research(env: &Env, title: &str) -> String {
+    let (status, body) = call(
+        env,
+        Method::POST,
+        &format!("/projects/{}/research", env.project_id),
+        json!({"title": title, "question": "Does pruning keep accuracy?"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["id"].as_str().unwrap().to_owned()
+}
+
+fn project_file(env: &Env, path: &str) -> std::path::PathBuf {
+    env.root.path().join("alpha").join(path)
+}
+
+#[tokio::test]
+async fn a_researcher_reference_without_a_revision_is_pinned_to_the_current_one() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    let task = create_research(&env, "Pruning").await;
+    std::fs::write(project_file(&env, "notes.md"), "pruned to 50%").unwrap();
+    // The Task filter's own reference has no revision.
+    let (status, message) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "about this", "references": [
+            {"kind": "research", "id": task, "revision": null},
+            {"kind": "file", "id": "notes.md"},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{message}");
+    assert_eq!(
+        message["references"][0],
+        json!({"kind": "research", "id": task, "revision": "1"})
+    );
+    assert_eq!(message["references"][1]["kind"], "file");
+    assert_eq!(message["references"][1]["id"], "notes.md");
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/context/resolve", env.project_id),
+        json!({"refs": [{"kind": "file", "id": "notes.md"}]}),
+    )
+    .await;
+    assert_eq!(
+        message["references"][1]["revision"], resolved[0]["current_revision"],
+        "a file is pinned with its fingerprint"
+    );
+    // It is still a message about the Task.
+    let (_, filtered) = call(
+        &env,
+        Method::GET,
+        &format!("{messages}?task_id={task}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(filtered["messages"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_supplied_revision_is_kept_even_if_it_changed() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::write(project_file(&env, "results.csv"), "v1").unwrap();
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/context/resolve", env.project_id),
+        json!({"refs": [{"kind": "file", "id": "results.csv"}]}),
+    )
+    .await;
+    let seen = resolved[0]["current_revision"].as_str().unwrap().to_owned();
+    std::fs::write(project_file(&env, "results.csv"), "v2").unwrap();
+    let (status, message) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "compare with", "references": [
+            {"kind": "file", "id": "results.csv", "revision": seen},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{message}");
+    assert_eq!(
+        message["references"][0]["revision"], seen,
+        "what the researcher saw"
+    );
+    let (status, reply) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "in a reply", "reply_to": message["id"], "references": [
+            {"kind": "file", "id": "results.csv"},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{reply}");
+    assert_ne!(reply["references"][0]["revision"], seen);
+}
+
+#[tokio::test]
+async fn citing_a_missing_file_or_a_removed_record_is_refused() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::write(project_file(&env, "gone.txt"), "x").unwrap();
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/context/resolve", env.project_id),
+        json!({"refs": [{"kind": "file", "id": "gone.txt"}]}),
+    )
+    .await;
+    let seen = resolved[0]["current_revision"].clone();
+    std::fs::remove_file(project_file(&env, "gone.txt")).unwrap();
+    for references in [
+        json!([{"kind": "file", "id": "never-there.txt"}]),
+        json!([{"kind": "file", "id": "gone.txt", "revision": seen}]),
+        json!([{"kind": "file", "id": "../outside.txt"}]),
+        json!([{"kind": "file", "id": ".git/config"}]),
+        json!([{"kind": "research", "id": "no-such-task"}]),
+    ] {
+        let (status, body) = call(
+            &env,
+            Method::POST,
+            &messages,
+            json!({"body": "see this", "references": references}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{references}: {body}");
+        assert_eq!(body["code"], "invalid_conversation");
+    }
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert!(page["messages"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_file_reference_round_trips_with_its_revision() {
+    let mut env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::create_dir_all(project_file(&env, "results")).unwrap();
+    std::fs::write(project_file(&env, "results/summary.csv"), "a,b").unwrap();
+    let (status, posted) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({"body": "the summary", "references": [{"kind": "file", "id": "results/summary.csv"}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{posted}");
+    restart(&mut env);
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    assert_eq!(page["messages"][0]["references"], posted["references"]);
+    assert!(posted["references"][0]["revision"].is_string());
+}
+
+#[tokio::test]
+async fn a_retry_with_the_same_client_id_returns_the_stored_message_after_the_record_was_removed() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::write(project_file(&env, "draft.md"), "draft").unwrap();
+    let request = json!({
+        "body": "see the draft",
+        "client_message_id": "c-ref-1",
+        "references": [{"kind": "file", "id": "draft.md"}],
+    });
+    let (status, first) = call(&env, Method::POST, &messages, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    std::fs::remove_file(project_file(&env, "draft.md")).unwrap();
+    let (status, replay) = call(&env, Method::POST, &messages, request).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay["id"], first["id"]);
+    assert_eq!(replay["references"], first["references"]);
+    // The same key with other words is still a different message.
+    let (status, reused) = call(
+        &env,
+        Method::POST,
+        &messages,
+        json!({
+            "body": "other words",
+            "client_message_id": "c-ref-1",
+            "references": [{"kind": "file", "id": "draft.md"}],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{reused}");
+}
+
+#[tokio::test]
+async fn a_send_again_with_its_pinned_reference_replays_one_message_with_its_delivery() {
+    let env = env();
+    let channel = default_channel(&env).await;
+    let messages = format!("/projects/{}/channels/{channel}/messages", env.project_id);
+    std::fs::write(project_file(&env, "results.csv"), "v1").unwrap();
+    let (_, resolved) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/context/resolve", env.project_id),
+        json!({"refs": [{"kind": "file", "id": "results.csv"}]}),
+    )
+    .await;
+    let seen = resolved[0]["current_revision"].as_str().unwrap().to_owned();
+    // The browser's outbox row: the same client id and the same pinned version.
+    let request = json!({
+        "body": "compare with this",
+        "client_message_id": "c-outbox-1",
+        "references": [{"kind": "file", "id": "results.csv", "revision": seen}],
+    });
+    let (status, first) = call(&env, Method::POST, &messages, request.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    // The answer was lost; the file changed before Send again.
+    std::fs::write(project_file(&env, "results.csv"), "v2").unwrap();
+    let (status, again) = call(&env, Method::POST, &messages, request).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["id"], first["id"]);
+    assert_eq!(
+        again["references"],
+        json!([{"kind": "file", "id": "results.csv", "revision": seen}])
+    );
+    let (_, page) = call(&env, Method::GET, &messages, Value::Null).await;
+    let listed = page["messages"].as_array().unwrap();
+    assert_eq!(listed.len(), 1, "no duplicate: {page}");
+    assert_eq!(listed[0]["references"], again["references"]);
+    assert!(
+        page["deliveries"].is_object(),
+        "the page carries the delivery of the researcher's messages: {page}"
+    );
+}

@@ -2053,6 +2053,99 @@ impl TaskStore {
         Ok(drafts)
     }
 
+    /// Every open review request of a Project.
+    pub fn open_review_requests(&self, project_id: &str) -> Result<Vec<ReviewRequest>, TaskError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(&format!(
+            "{REQUEST_SELECT} WHERE project_id = ?1 AND state = 'open' ORDER BY created_at, rowid"
+        ))?;
+        Ok(statement
+            .query_map([project_id], request_from_row)?
+            .collect::<Result<_, _>>()?)
+    }
+
+    /// Proposals waiting for the researcher's word: an unarchived question
+    /// whose current revision the General Agent showed in General (`showings`,
+    /// from `ChannelStore::proposal_showings`) and that is not admitted yet.
+    /// A revised brief of an admitted Task is [`awaiting_briefs`](Self::awaiting_briefs).
+    pub fn awaiting_proposals(
+        &self,
+        project_id: &str,
+        showings: &std::collections::HashMap<(String, u64), String>,
+    ) -> Result<Vec<AwaitingProposal>, TaskError> {
+        let mut awaiting = Vec::new();
+        for summary in self.research.list(project_id, false)? {
+            let Some(message_id) = showings.get(&(summary.id.clone(), summary.revision)) else {
+                continue;
+            };
+            if self.admission(project_id, &summary.id)?.is_some() {
+                continue;
+            }
+            awaiting.push(AwaitingProposal {
+                research_id: summary.id,
+                title: summary.title,
+                revision: summary.revision,
+                message_id: message_id.clone(),
+                created_at: summary.updated_at,
+            });
+        }
+        Ok(awaiting)
+    }
+
+    /// Every admitted Task of the Project whose brief waits for approval
+    /// (see [`brief_awaiting`](Self::brief_awaiting)), with the General
+    /// message that showed the revision when one did.
+    pub fn awaiting_briefs(
+        &self,
+        project_id: &str,
+        showings: &std::collections::HashMap<(String, u64), String>,
+    ) -> Result<Vec<AwaitingBrief>, TaskError> {
+        let mut awaiting = Vec::new();
+        for summary in self.research.list(project_id, false)? {
+            let Some((revision, approved_revision, since)) =
+                self.brief_awaiting(project_id, &summary.id)?
+            else {
+                continue;
+            };
+            awaiting.push(AwaitingBrief {
+                message_id: showings.get(&(summary.id.clone(), revision)).cloned(),
+                research_id: summary.id,
+                title: summary.title,
+                revision,
+                approved_revision,
+                since,
+            });
+        }
+        Ok(awaiting)
+    }
+
+    /// The revision an admitted, unarchived Task that is not Done waits to
+    /// have approved, with the approved one and when it was written: the one
+    /// rule the Task panel and Needs you share (ADR 0232).
+    pub fn brief_awaiting(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Option<(u64, u64, String)>, TaskError> {
+        if self.admission(project_id, research_id)?.is_none() {
+            return Ok(None);
+        }
+        let question = self.question(project_id, research_id)?;
+        let approved = self.approved_revision(project_id, research_id)?;
+        if question.archived
+            || question.revision <= approved
+            || self.stage(project_id, research_id)? == Some(TaskStage::Done)
+        {
+            return Ok(None);
+        }
+        let since = self
+            .research
+            .revision(project_id, research_id, question.revision)
+            .map(|revision| revision.created_at)
+            .unwrap_or_else(|_| question.updated_at.clone());
+        Ok(Some((question.revision, approved, since)))
+    }
+
     /// A Task's history, oldest first and at most the newest 100 steps: its
     /// events, the approvals of revised briefs, and every brief revision, each
     /// with the General message that carried it. Message ids come from two
@@ -2350,7 +2443,7 @@ impl TaskStore {
             for request in self.work.decision_requests(project_id, &summary.item.id)? {
                 if request.state == "open" {
                     pending.push(PendingDecision {
-                        key: format!("question:{}:{}", summary.item.id, request.id),
+                        key: format!("question:{}", request.id),
                         kind: "question",
                         ref_id: request.id,
                         since: request.created_at,
@@ -2369,21 +2462,13 @@ impl TaskStore {
                 });
             }
         }
-        if self.admission(project_id, research_id)?.is_some() {
-            let question = self.question(project_id, research_id)?;
-            if question.revision > self.approved_revision(project_id, research_id)? {
-                let since = self
-                    .research
-                    .revision(project_id, research_id, question.revision)
-                    .map(|revision| revision.created_at)
-                    .unwrap_or_else(|_| question.updated_at.clone());
-                pending.push(PendingDecision {
-                    key: format!("brief:{}", question.revision),
-                    kind: "brief_approval",
-                    ref_id: question.revision.to_string(),
-                    since,
-                });
-            }
+        if let Some((revision, _, since)) = self.brief_awaiting(project_id, research_id)? {
+            pending.push(PendingDecision {
+                key: format!("brief:{research_id}:{revision}"),
+                kind: "brief_approval",
+                ref_id: revision.to_string(),
+                since,
+            });
         }
         Ok(pending)
     }

@@ -84,12 +84,15 @@ sub-session id, so early chunks land before a late registration and the name
 backfills. Tool-call persistence coalesces non-terminal updates by tool id into one
 row (flushed at terminal status), and raw input/output yield to structured
 content in persisted payloads. Transient conversation state (streaming flag, pending
-permission/elicitation wait with its deadline) broadcasts as whole-snapshot
+permission/elicitation wait, with its deadline when the server enforces one)
+broadcasts as whole-snapshot
 `conversation_state` frames on the same stream — at subscription-adjacent
 transitions, on boot recovery, and whenever a wait resolves — so any client
 converges from cursor + snapshots alone; a cleared wait publishes
-`"pending": null`. The pending-request timeout is tunable via
-`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes). Terminal output
+`"pending": null`. Only an input (elicitation) request times out, after
+`KUBECODE_PENDING_REQUEST_TIMEOUT_MS` (default five minutes); a permission
+request waits until it is answered or its turn stops, so it reports no
+deadline (ADR 0232). Terminal output
 is additionally appended to durable per-terminal logs under
 `WorkspaceService`-managed state paths (strictly validated terminal ids, no
 path traversal); reads prefer the live ring and fall back to the durable
@@ -131,17 +134,40 @@ Project context discovery (ADR 0214) is a read-only service, not a store.
 `server/src/project_context/` composes the research, Session, Team, and
 experiment stores and `WorkspaceService` in `AppState` and answers `search`,
 `read`, and `resolve` over typed references (`research`, `round`, `finding`,
-`session`, `session_turn`, `team`, `team_task`, `experiment`, `artifact`). It
+`session`, `session_turn`, `team`, `team_task`, `import`, `experiment`,
+`artifact`, `work`, `thread`, `channel`, and `file`). It
 keeps no data and no index, so an answer can never drift from its owner; every
 call takes the Project first and treats another Project's record as missing.
 `server/src/context_api/` exposes it under
 `/api/v1/projects/{project_id}/context/{search,read,resolve}`. Reads are
 bounded (summaries of 280 characters, sections of 8 KiB, page cap of 50, a
-200-candidate scan per owner flagged `truncated`), progressive
+200-candidate scan per owner), progressive
 (`summary` → `content` → `evidence`), and passive: they never start an Agent,
-assign work, approve a brief, or grant execution. Artifacts are read as bounded
+assign work, approve a brief, or grant execution. A search page names its scope
+(ADR 0231 §2): `searched` (the kinds covered; an empty request covers every
+kind but `file`), `truncated_kinds` (the kinds a cap or budget cut short, with
+`truncated` true exactly when it is not empty), and `counts` (matches per kind
+before paging). Artifacts and files on a returned page get a metadata-only
+existence check, so a removed one is listed as removed. Artifacts are read as bounded
 UTF-8 text through `WorkspaceService::read_execution_text` under the execution
-root of the Team that ran the experiment, with no symlink traversal.
+root of the Team that ran the experiment, with no symlink traversal. Project
+files (ADR 0231 §1) are a `file` reference whose id is a Project-relative path
+(never through `.git` or a symlink, and never an `.env` file) and whose
+revision is the fingerprint work evidence pins, taken from one handle opened
+without following a symlink or blocking. They are searched only when the kind
+is named, by `WorkspaceService::search_project_files` (a breadth-first walk
+bounded at 5,000 entries and 16 levels that lists each directory through a
+handle opened without following a symlink, skips hidden, generated, and
+Git-ignored entries and nested repositories, and keeps the 200 newest path
+matches). `git check-ignore` is fed and drained on separate threads under a
+10-second limit that kills and reaps Git; a level Git does not answer for is
+left out and reported as cut short, never treated as nothing ignored. Files
+are read a page at a time by
+`WorkspaceService::read_text_page` with a cursor bound to the file's revision,
+so a file that changes between pages is reported changed instead of spliced.
+A read names `shown_revision`, the revision whose content it shows (the pinned
+brief, the bytes of a page); `resolve` returns a record's `title` only when the
+record is visible in the Project, never for a missing, private, or foreign one.
 `AgentStore::read_turn_text` gives cross-Session turn reads a bounded view of
 the canonical event log without copying it.
 
@@ -171,7 +197,9 @@ Composer kind (`composer_catalog.rs`, `api/composer.rs`, the preflight in
 `agent_runtime/dispatch.rs`): the picker in `ComposerProjectWorkPicker` searches
 and previews through `/context/search` and `/context/read`, and registration,
 validation, and dispatch re-resolve the typed reference server-side, so the
-browser never supplies authority or content.
+browser never supplies authority or content It
+does not accept a `file` Project reference: a Session composer cites files
+under its own execution root.
 
 Imported discussion (ADR 0214 §8) lives in `research_store/imports.rs` and is
 exposed by `research_api/imports.rs`: immutable, attributed source material per
@@ -259,8 +287,9 @@ answer the request that was routed to a round it holds now; the answer's Thread
 is linked to that round. Files over the hashing limit are fingerprinted by size
 and modification time. The inspector opens an experiment (output tail,
 artifacts), an artifact, a cited file, or any ProjectContext record in place
-(`src/kubecode/work/EvidenceViewer.tsx`), marking a record that changed or
-vanished since it was cited.
+through the one record reader (`src/kubecode/resources/RecordPreview.tsx` over
+`useRecordDocument`, ADR 0231 §4; `work/EvidenceViewer.tsx` wraps it), marking
+a record that changed or vanished since it was cited.
 
 Workspace members (ADR 0220): `server/src/member_store/` owns the roster — one
 General Agent per Workspace (a partial unique index plus an idempotent
@@ -353,6 +382,87 @@ before stages and outcomes are read. Message ids come from batched, read-only
 `messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
 deprecated. `ResolvedRef` carries the record's `title`.
 
+Pending decisions and delivery state (ADR 0232): `server/src/attention/` is one
+read model of what waits on the researcher. `collect` reads the workspace event
+cursor first, then the runtime's pending permission and input maps
+(`AgentRuntime::pending_requests`, never tool input; a Team leader's request
+counts once escalated, and escalation now updates the waiting entry), open
+questions on work inside a Task (`WorkStore::open_decisions`), open review
+requests, undecided suggestions (`ResearchStore::open_proposals`), every
+admitted Task's brief revised past its approved revision
+(`TaskStore::awaiting_briefs`, the rule `TaskStore::pending` shares through
+`brief_awaiting`, with the General message when one showed it), proposals the
+General Agent showed that are not on the board yet
+(`TaskStore::awaiting_proposals` over `ChannelStore::proposal_showings`),
+members needing setup, active runs, member Sessions' latest failed turn, queued
+prompts and failed researcher-originated routes; the pure `project` keys each
+decision (`permission:`, `input:`, `question:<request>`, `review:`,
+`suggestion:<entry>`, `brief:<task>:<revision>`, `proposal:<task>:<revision>`,
+`setup:`, the keys the Task detail's `pending` uses too) so it appears once,
+orders and caps the list, and reports a failing source in `incomplete`. Only
+input requests carry `deadline_ms`; a permission request has none, because the
+runtime never times it out. `attention_api.rs` serves
+`GET …/projects/{p}/attention` and `GET …/attention/summary`; decisions are
+still answered on their own endpoints. `orchestrator/delivery.rs` projects each
+researcher message from its routing mark (`routing` pending, done or `denied`,
+with `routing_issue` and `reroutes`), its routes, and the recipient Session's
+admission of `route:<route>:<recipient>` (started, queued, withdrawn):
+`GET …/deliveries?message_ids=`, a `deliveries` map on message pages,
+`POST …/routes/{id}/retry` (same route id, researcher kinds only, at most three
+times with the limit inside the conditional `UPDATE`; `route_target_gone`,
+`route_needs_setup` without using a retry, `route_unavailable`, and
+`route_superseded` for a review verdict that is no longer its Task's last step
+or whose Task is archived, which `RouteDelivery.superseded` also reports) and
+`POST …/messages/{m}/reroute` (only for `manager_unavailable` and
+`member_unavailable`; `Denial.reroutable` follows the code). Failure and denial notes are keyed
+per retry or reroute and a note already written never aborts a pass. The DM
+send reports `admission`, `…/dm/pending` lists queued direct messages, and the
+Task detail adds `execution` (the round's pause policy) and `delivery_issues`.
+
+Attention in the browser (ADR 0232): `attention/useAttention.ts` keeps one
+snapshot of `GET …/attention` per Workspace, refetched (250 ms debounce) on the
+events that can change it — Task, research, work, member, channel and
+orchestration updates, permission and input requests and answers, run start
+and completion, and `conversation_state` that carries `pending` — and after a
+reconnect; a response older than the newest applied one, by request ticket or
+by cursor, is dropped, and a failed read keeps the last snapshot. The shell
+provides it through `AttentionContext`; `markResolving(key, call)` runs an
+answer and keeps the key busy until a snapshot requested after the call omits
+it (10 s fallback), so Needs you, the bell, the Task panel, the strip and the
+Session prompt resolve together and nothing is removed locally.
+`attention/attentionTargets.ts` turns items into `NeedsYouEntry` (title, badge,
+detail, group, and a target with a `focus` key: `question:`/`review:` on the
+Task inspector, whose tab the shell sets first, `suggestion:` in its Results and
+`brief:` in its Overview; `message:` for a proposal, or a revised brief General
+showed, in General; `permission:`/`input:` in General's or the DM's Working-now strip, or
+the Session itself; `member-setup:` on Members). The titlebar bell counts this
+Workspace's entries and the others' from `GET …/attention/summary`
+(`useAttentionSummary`, 1 s debounce); a notification click opens the waiting
+item of that Session when there is one; past five entries the bell offers all of
+them in Needs you. An input request in a member's DM is titled there by who
+asks, never by what. `useNeedsYouAnnouncement` feeds the shell's always-mounted
+status region with what newly waits and what was resolved. `PermissionPrompt` and
+`ElicitationPrompt` are shared by `SessionComposer` and
+`attention/ExecutionStrip.tsx`, which lists `executions` for a scope (General's
+members, one DM, or a Task without prompts) with a `StopButton` named for the
+turn it ends (`DELETE /runs/{id}`, busy until the run leaves the snapshot), the
+scope's member prompts (busy while their key is resolving), and failed turns
+with "Open {name} in Members" until dismissed (place memory); under 720 px it
+shows a one-line summary and caps and scrolls its body.
+General and the DM composer offer that Stop only when exactly one turn runs.
+`attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
+researcher's top-level messages on screen, again on `orchestration_updated`
+naming one of them (or `channel_updated` while one is saved or sending), and
+runs Retry (`POST …/routes/{id}/retry`) and Try again (`POST …/reroute`) once
+each in flight, telling a refusal from a request that failed and dropping a
+"needs setup" refusal when a member changes; `foldRoutingNotes` removes the notes a loaded delivery names
+from the timeline and keeps their text for its Details. `dm/useDmPending.ts`
+reads `…/dm/pending` so a message queued behind a running reply stays visible.
+`tasks/TaskWork.tsx` adds `RoundPauseControl` ("Pause new work on {task}",
+`PUT …/rounds/{r}/execution-policy` with the shown revision, never re-sent on a
+conflict), the Task's waiting line with Show, its Working-now rows, and its
+`delivery_issues` with Retry.
+
 Task board and details (ADRs 0225, 0230): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
@@ -372,8 +482,10 @@ next-step line, and Overview (`TaskOverview`, `TaskQuestions`), Results
 (`TaskResults`) and Activity (`TaskActivity`) tabs; it reads the research
 bundle only when a section needs it, and its tab, feedback, outcome and answer
 drafts are kept under `placeKey.task`. `work/EvidencePanel.tsx` shows a cited
-record with `work/EvidenceViewer.tsx`, which reports a display (`onDisplayed`,
-with the read's own revision) only after the cited record itself rendered —
+record with `work/EvidenceViewer.tsx` (a wrapper over the one record reader,
+which reads the current version — files too, through the context reader — and
+compares it with the cited one), which reports a display (`onDisplayed`,
+with the read's `shown_revision`) only after the cited record itself rendered —
 never while loading, on a failure, for a removed record, a related record
 (handed to the stack as a `resource` entry through `onFollow`) or a failed
 "Load more" — and the panel records it in the stack's `InspectionRecord`.
@@ -417,8 +529,9 @@ reports a link still being reached as `pending` (the main pane shows "Opening
 Workspace…", never a Session), abandons a link to an unknown Project at once,
 and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
 the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
-`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you from
-`location/needsYou.ts`, Members, then the roster and Direct messages under
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you —
+`attention/NeedsYouList.tsx` over `NeedsYouEntry` from `location/needsYou.ts` —
+Members, then the roster and Direct messages under
 their own headings), then a collapsed History and execution section with the
 Session search across all Workspaces, this Workspace's Sessions and Teams,
 Threads and questions. Reference chips in General and rows in Resources open
@@ -440,9 +553,24 @@ for the life of the page and never on disk: drafts and reply targets
 (`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
 General's reading position is reported by `MessageList` and folded into its
 place when General is left, and written onto General's own history entry before
-the next place is pushed, so Back lands on it. `ResourcesView` reuses the
-project context reader in a browsing mode whose search, kind filter and preview
-are place memory too. A route can name a message, read by id
+the next place is pushed, so Back lands on it. Workspace search, previews, and
+references (ADR 0231) live in `src/kubecode/resources/`: one search core
+(`useWorkspaceSearch`, `WorkspaceSearch`, explicit sections from
+`searchScope.ts`, its words, sections, active row and results kept in place
+memory only) hosted by `ResourcesView` (a preview-first library whose rows
+open `ResourcePanel` in the inspector beside the list, never leaving it), the
+General composer's `AddContextDialog` (results beside the one `RecordPreview`;
+"Attach this version" or Enter for the current version), and the titlebar's
+`WorkspaceSearchLauncher` (the shell's `searchSlot`; a button to Resources on a
+phone; the palette's "Search this Workspace"). `attachTarget.ts` decides which
+General draft a reference found elsewhere joins and returns there;
+`draftReferences.ts` keeps one versioned reference per record in
+`GeneralDraft.references`. `ReferenceResolverProvider` (mounted by the shell
+per Workspace) batches resolves for every `ResourceReferenceChip` — in drafts
+and in messages — so chips are named, versioned, and say when they changed or
+are gone, and the composer refuses to send a removed one. The Session
+composer's `ComposerProjectWorkPicker` previews through the same reader and
+never offers a file. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 
@@ -462,7 +590,13 @@ conversation with a member: `POST …/members/{id}/dm` (opens the DM Session),
 configured and briefed), and `…/dm/share/preview` + `…/dm/share` (the exact
 text, confirmed by digest, posted as the researcher's own message).
 `ProjectContext::with_members` hides every DM Session from search, resolve, and
-read; `channel_api` refuses mentions and citations of one. The browser surface
+read; `channel_api` refuses mentions and citations of one. A researcher's
+General or Thread message and a DM share pin their references first
+(`channel_api::pin_references` over `ProjectContext::pin`, ADR 0231 §5): a
+reference without a revision gets the current one, a supplied revision is kept,
+a removed record is refused with a 400, and a retried client message id replays
+the stored message before anything is resolved again. Agent posts are
+unchanged. The browser surface
 is `src/kubecode/dm/` (`DmPane`, `DmShareDialog`) beside the channel's task
 filter, citations, and collapsed routing notes.
 
@@ -507,14 +641,19 @@ directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{memb
 Task as the first research reference), `timeline.ts` (days, author groups,
 collapsed routine notes, denial notes attached to their message or shown on
 their own, never collapsed),
-`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
-`MessageItem` also draws queued and delivered as quiet text), and
+`delivery.ts` (`MessageDeliverySource`: the server's delivery facts once
+loaded, otherwise a failure only when a note says so; `MessageItem` draws
+facts through `attention/DeliveryStatus` and notes as before), and
 `mentionOptions.ts`; `references/referenceLabels.ts` names references by title
 (`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
 place memory under `placeKey.general(p, filter) + '#draft'`, keys its
 composer by that place, and has no message types, Thread starts, or hidden
-references; `MessageComposer` is controlled by that draft (its failure and
-Try again included) and shows the To row (`components/workspace/RecipientRow`), the
+references; `MessageComposer` is controlled by that draft and keeps each send
+in `channel/outbox.ts`'s `useOutbox`, drawn by `OutboxRows` (place memory under `… + '#outbox'`):
+the draft clears at once, a send is a row ("Sending…", or "Not sent" with Send
+again under the same client message id with the same pinned references and
+Task revision, Edit and Discard) until the server
+has it, and nothing is merged back into the draft. It shows the To row (`components/workspace/RecipientRow`), the
 Task and reference chips, and why Send is blocked; `MessageList` renders the
 timeline through `MessageItem` (Markdown with inert images, Reply and
 `MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
@@ -523,7 +662,8 @@ changes). Dates and times use the app locale's date locale
 (`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
 inline `$…$` as math only under remark-math's rules and never in code, and
 `renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
-`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'` and its unsent messages in the
+same outbox under `… + '#outbox'`, and `DmShareDialog` previews a
 share as General will show it before posting.
 
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
@@ -1141,6 +1281,11 @@ and `.git` metadata paths never enter that payload.
 Ordinary paths produce `file_changed`, which invalidates the affected Files
 scopes and marks Git dirty. A batch containing only `.git` metadata produces a
 Git-only `git_changed`; a full Files invalidation reconciles both projections.
+
+`orchestration_updated` carries `message_id` (for routes a message carries, and
+`routed`/`denied` once a message is read) so a sender's view refreshes only that
+message; an attention snapshot carries the cursor read before its sources, so a
+client drops a snapshot older than one it has.
 Explicit API invalidations remain immediate even when watching is unavailable.
 Watch registrations start with persisted Projects, follow register/unregister,
 and use generations to reject late callbacks. Registration, callback, and

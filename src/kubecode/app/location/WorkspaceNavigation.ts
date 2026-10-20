@@ -39,9 +39,14 @@ export type WorkspaceNavigation = {
   openTaskFromMessage(taskId: string, messageId: string): void
   /** Opens a reference the same way everywhere (`inspectorTargetForReference`). */
   openReference(ref: ProjectContextRef): void
-  /** The only way into execution history. */
-  openSession(conversationId: string, projectId?: string): void
+  /** The only way into execution history; `focus` is a `data-focus-key` to focus on arrival. */
+  openSession(conversationId: string, projectId?: string, options?: { focus?: string }): void
   switchWorkspace(projectId: string): void
+  /**
+   * General as this Workspace last showed it (its Task filter), so what is
+   * added from elsewhere lands in the draft the researcher will find there.
+   */
+  rememberedGeneral?(): { filter: string | null }
 }
 
 export const WorkspaceNavigationContext = createContext<WorkspaceNavigation | null>(null)

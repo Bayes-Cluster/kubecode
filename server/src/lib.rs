@@ -4,6 +4,8 @@ pub mod agent_store;
 pub mod agents;
 pub mod api;
 pub mod app_state;
+pub mod attention;
+pub mod attention_api;
 pub mod channel_api;
 pub mod channel_store;
 pub mod composer_catalog;

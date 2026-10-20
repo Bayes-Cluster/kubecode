@@ -16,6 +16,8 @@ export type DecisionButtonProps = {
   disabledReason?: string
   className?: string
   testId?: string
+  /** A longer description, such as the provider's own wording of an option. */
+  title?: string
 }
 
 const VARIANTS = { primary: 'default', secondary: 'outline', destructive: 'destructive' } as const
@@ -32,6 +34,7 @@ export function DecisionButton({
   disabledReason,
   onDecide,
   testId,
+  title,
   variant = 'secondary',
 }: DecisionButtonProps) {
   const reasonId = useId()
@@ -46,6 +49,7 @@ export function DecisionButton({
         data-variant={variant}
         disabled={Boolean(disabledReason) && !busy}
         size="sm"
+        title={title}
         type="button"
         variant={VARIANTS[variant]}
         onClick={(event) => {

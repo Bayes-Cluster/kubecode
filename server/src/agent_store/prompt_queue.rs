@@ -645,7 +645,7 @@ fn now_string() -> String {
     chrono_like_now()
 }
 
-fn chrono_like_now() -> String {
+pub(super) fn chrono_like_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     // SQLite's '%Y-%m-%d %H:%M:%f' UTC format, reproduced without pulling a
     // date library: millisecond precision from the unix epoch.
@@ -981,5 +981,111 @@ mod tests {
         assert_eq!(first["content"], "queued");
         assert_eq!(first["client_message_id"], "client-q");
         assert!(first["position"].is_i64());
+    }
+}
+
+#[cfg(test)]
+mod attention_tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::agent_store::Admission;
+    use crate::agents::{AgentId, PermissionMode, RunStatus};
+    use crate::workspace::WorkspaceService;
+
+    #[test]
+    fn admission_active_latest_and_queued_reads_name_what_a_session_is_doing() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let database = temp.path().join("kubecode.sqlite3");
+        let workspace =
+            Arc::new(WorkspaceService::open(temp.path(), &database).expect("workspace"));
+        let project = workspace.create_project(".", "alpha").expect("project").id;
+        let other = workspace.create_project(".", "beta").expect("project").id;
+        let store = Arc::new(AgentStore::open(&database).expect("store"));
+        let busy = store
+            .create_conversation(&project, AgentId::OpenCode, Some("Analyst"))
+            .expect("conversation")
+            .id;
+        let idle = store
+            .create_conversation(&project, AgentId::OpenCode, None)
+            .expect("conversation")
+            .id;
+        let elsewhere = store
+            .create_conversation(&other, AgentId::OpenCode, None)
+            .expect("conversation")
+            .id;
+        let admit = |conversation: &str, project: &str, key: &str| {
+            store
+                .start_prompt_or_enqueue(
+                    conversation,
+                    project,
+                    "work",
+                    PermissionMode::Safe,
+                    false,
+                    Some(key),
+                )
+                .expect("admission")
+        };
+        let StartPromptOutcome::Started(run) = admit(&busy, &project, "route:r1:busy") else {
+            panic!("an idle Session starts");
+        };
+        admit(&busy, &project, "route:r2:busy");
+        admit(&busy, &project, "route:dm:k1:busy");
+        admit(&elsewhere, &other, "elsewhere");
+        let finished = store
+            .start_run(&idle, &project, "done", PermissionMode::Safe)
+            .expect("run");
+        store
+            .finish_run(
+                &finished.id,
+                RunStatus::Failed,
+                Some("provider error"),
+                crate::agent_store::TerminalCause::Error,
+            )
+            .expect("finish");
+        store
+            .start_internal_run(&idle, &project, "internal", PermissionMode::Safe)
+            .ok();
+
+        // Admission by delivery key: started, queued (with its position), none.
+        assert!(matches!(
+            store.prompt_admission("route:r1:busy").unwrap(),
+            Some(Admission::Started { run_id, status: RunStatus::Running }) if run_id == run.id
+        ));
+        assert!(matches!(
+            store.prompt_admission("route:r2:busy").unwrap(),
+            Some(Admission::Queued { position: 1, .. })
+        ));
+        assert!(store.prompt_admission("route:none").unwrap().is_none());
+
+        // Active runs of this Project only, internal ones excluded.
+        let active = store.active_runs(&project).unwrap();
+        assert_eq!(active.len(), 1, "{active:?}");
+        assert_eq!(
+            (
+                active[0].run_id.as_str(),
+                active[0].conversation_id.as_str()
+            ),
+            (run.id.as_str(), busy.as_str())
+        );
+        assert_eq!(active[0].title, "Analyst");
+        // The latest non-internal run per Session, with how it ended.
+        let latest = store.latest_runs(&[busy.clone(), idle.clone()]).unwrap();
+        let of = |conversation: &str| {
+            latest
+                .iter()
+                .find(|run| run.conversation_id == conversation)
+                .unwrap()
+                .status
+        };
+        assert_eq!(of(&idle), RunStatus::Failed);
+        assert_eq!(of(&busy), RunStatus::Running);
+        // Queued prompts per Session, and the private ones of a DM.
+        let counts = store.queued_counts(&[busy.clone(), idle.clone()]).unwrap();
+        assert_eq!(counts.get(&busy), Some(&2));
+        assert_eq!(counts.get(&idle), None);
+        let dm = store.dm_queued(&busy).unwrap();
+        assert_eq!(dm.len(), 1);
+        assert_eq!(dm[0].client_message_id.as_deref(), Some("route:dm:k1:busy"));
     }
 }

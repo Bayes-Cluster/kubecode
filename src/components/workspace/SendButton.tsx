@@ -81,26 +81,35 @@ export type StopButtonProps = {
   shortLabel?: string
   onStop: () => void
   testId?: string
+  /** What stopping leaves running, read after the name. */
+  description?: string
+  /** The stop is being requested: it keeps focus and ignores clicks. */
+  busy?: boolean
 }
 
 /**
  * Stops one named run now. It is separate from sending and always says what
  * it stops; on touch screens, where there are no tooltips, it says so in text.
  */
-export function StopButton({ label, onStop, shortLabel, testId }: StopButtonProps) {
+export function StopButton({ busy = false, description, label, onStop, shortLabel, testId }: StopButtonProps) {
+  const descriptionId = useId()
   return (
     <TooltipProvider>
+      {description && <span className="sr-only" id={descriptionId}>{description}</span>}
       <ActionTooltip copy={{ label }}>
         <Button
+          aria-busy={busy || undefined}
+          aria-describedby={description ? descriptionId : undefined}
+          aria-disabled={busy || undefined}
           aria-label={label}
           className="kubecode-stop-button"
           data-testid={testId}
           size="sm"
           type="button"
           variant="outline"
-          onClick={onStop}
+          onClick={unlessBusy(busy, onStop)}
         >
-          <Stop aria-hidden fill="currentColor" size={ICON_SIZES.status} />
+          {busy ? <Spinner /> : <Stop aria-hidden fill="currentColor" size={ICON_SIZES.status} />}
           <span aria-hidden="true" className="kubecode-stop-button-text">{shortLabel ?? label}</span>
         </Button>
       </ActionTooltip>

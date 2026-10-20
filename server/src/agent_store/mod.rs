@@ -1,3 +1,4 @@
+mod attention;
 mod composer;
 mod conversations;
 mod events;
@@ -10,6 +11,7 @@ mod revisions;
 mod runs;
 mod turns;
 
+pub use attention::{ActiveRun, Admission, LatestRun};
 pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventBus};
 pub use ilink::{
     ILINK_DEDUPE_KEEP, ILINK_QUICK_PROMPT_SLOTS, IlinkAccount, IlinkCredentialRecord, IlinkPeer,
@@ -17,9 +19,10 @@ pub use ilink::{
 pub use media::{AGENT_MEDIA_KEEP, AgentMediaRef};
 pub use models::{
     AgentEvent, AgentEventKind, AgentId, AgentRun, ComposerRunDispatch, Conversation,
-    ConversationRelation, ConversationRelationship, ConversationRevision, ExecutionMode,
-    IlinkAccountStatus, PermissionMode, PromptQueueItem, PromptQueueStatus, RunCheckpoint,
-    RunStatus, SessionEvent, StartPromptOutcome, StoreError, TerminalCause, TurnBoundary,
+    ConversationHistorySnapshot, ConversationRelation, ConversationRelationship,
+    ConversationRevision, ExecutionMode, IlinkAccountStatus, PermissionMode, PromptQueueItem,
+    PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent, StartPromptOutcome, StoreError,
+    TerminalCause, TurnBoundary,
 };
 pub use turns::TurnText;
 
@@ -34,6 +37,12 @@ use crate::database::{Database, ensure_column};
 pub struct AgentStore {
     database: Arc<Database>,
     workspace_event_bus: WorkspaceEventBus,
+}
+
+/// Now as UTC text in the store's `%Y-%m-%d %H:%M:%f` form, so in-memory
+/// records sort with stored timestamps.
+pub fn utc_now() -> String {
+    prompt_queue::chrono_like_now()
 }
 
 impl AgentStore {

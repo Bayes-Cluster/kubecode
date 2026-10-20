@@ -1,6 +1,8 @@
 //! Types of the Project context reader (ADR 0214). Everything is bounded:
 //! summaries, section text, page sizes, and the cursor.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -15,6 +17,10 @@ pub const MAX_RESOLVE: usize = 32;
 pub const SCAN_CAP: usize = 200;
 /// Candidates gathered across all owners for one search.
 pub const CANDIDATE_BUDGET: usize = 2_000;
+/// Directory entries one file search visits (ADR 0231 §1).
+pub const FILE_SCAN_ENTRIES: usize = 5_000;
+/// Files one search keeps, the most recently modified.
+pub const FILE_HIT_CAP: usize = SCAN_CAP;
 /// Characters in one whole document, across its sections.
 pub const MAX_DOCUMENT_CHARS: usize = 32 * 1024;
 pub const TURN_PAGE: usize = 10;
@@ -22,7 +28,9 @@ pub const MAX_ID_CHARS: usize = 512;
 
 macro_rules! text_enum {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+        #[derive(
+            Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+        )]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($variant),+
@@ -61,7 +69,28 @@ text_enum!(ContextKind {
     Work => "work",
     Thread => "thread",
     Channel => "channel",
+    File => "file",
 });
+
+impl ContextKind {
+    /// What a search covers when it names no kinds: every kind except Project
+    /// files, which are walked on disk only when a caller asks (ADR 0231 §1).
+    pub const DEFAULT_SEARCH: &'static [ContextKind] = &[
+        Self::Research,
+        Self::Round,
+        Self::Finding,
+        Self::Session,
+        Self::SessionTurn,
+        Self::Team,
+        Self::TeamTask,
+        Self::Import,
+        Self::Experiment,
+        Self::Artifact,
+        Self::Work,
+        Self::Thread,
+        Self::Channel,
+    ];
+}
 
 text_enum!(Detail {
     Summary => "summary",
@@ -125,8 +154,19 @@ pub struct ContextItem {
 pub struct ContextPage {
     pub items: Vec<ContextItem>,
     pub next_cursor: Option<String>,
-    /// An owner had more candidates than one search scans.
+    /// Some kind was not searched completely: `truncated_kinds` is not empty.
     pub truncated: bool,
+    /// The kinds this search covered, in declaration order.
+    #[serde(default)]
+    pub searched: Vec<ContextKind>,
+    /// Searched kinds an owner's scan cap, the candidate budget, or the file
+    /// walk's budget cut short: more of them may exist than were matched.
+    #[serde(default)]
+    pub truncated_kinds: Vec<ContextKind>,
+    /// Matches per searched kind before paging (zero included); a lower bound
+    /// for a truncated kind.
+    #[serde(default)]
+    pub counts: BTreeMap<ContextKind, usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -151,6 +191,11 @@ pub struct ContextDocument {
     pub next_cursor: Option<String>,
     /// Plain-language caveats: a newer brief exists, a turn is still running...
     pub notes: Vec<String>,
+    /// The revision of the content the sections show: an older pinned brief,
+    /// the bytes of a file page. `None` when nothing of the record is shown
+    /// (removed, or changed while it was being paged).
+    #[serde(default)]
+    pub shown_revision: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -159,8 +204,10 @@ pub struct ResolvedRef {
     pub reference: ContextRef,
     pub availability: Availability,
     pub current_revision: Option<String>,
-    /// What the record is called now; absent when it is gone.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The record's current title when it is visible in this Project (even
+    /// if its file is gone); `null` when it is missing, private, or another
+    /// Project's, so a reference never reveals what it cannot show.
+    #[serde(default)]
     pub title: Option<String>,
 }
 

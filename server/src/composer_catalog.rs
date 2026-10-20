@@ -1179,7 +1179,9 @@ pub fn parse_project_context_selector(
 ) -> Option<(crate::project_context::ContextKind, &str)> {
     let (kind, id) = selector.split_once(':')?;
     let kind = crate::project_context::ContextKind::parse(kind)?;
-    (!id.is_empty()).then_some((kind, id))
+    // A Session composer cites files under its own execution root (which may
+    // be a worktree), never through a Project `file` reference (ADR 0231 §1).
+    (!id.is_empty() && kind != crate::project_context::ContextKind::File).then_some((kind, id))
 }
 
 /// The fingerprint a reference was selected at, as a 64-hex digest.
@@ -1289,6 +1291,14 @@ fn truncate_display(value: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_composer_project_reference_cannot_name_a_file() {
+        // A Session composer cites files under its own execution root, so a
+        // Project `file` reference would be a second file contract there.
+        assert!(parse_project_context_selector("file:results/summary.csv").is_none());
+        assert!(parse_project_context_selector("finding:f1").is_some());
+    }
 
     #[test]
     fn projects_safe_bounded_catalog_with_collision_safe_identity() {

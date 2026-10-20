@@ -240,6 +240,43 @@ impl MessagePageView {
     }
 }
 
+/// How the orchestrator read a message: `routing` is `pending`, `done`, or
+/// `None` for a message that is never routed; `issue` names why it reached
+/// nobody (or not everyone it named).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct RoutingMark {
+    pub routing: Option<String>,
+    pub issue: Option<String>,
+    pub reroutes: u32,
+    pub intent_claimed: bool,
+}
+
+/// Reroutes of one message at most (ADR 0232).
+pub const MAX_REROUTES: u32 = 3;
+
+/// The denials a reroute can fix: a project manager or a member that was not
+/// available may be by now. A private direct message, or a request that was
+/// refused, would be denied again (ADR 0232).
+pub const REROUTABLE_ISSUES: [&str; 2] = ["manager_unavailable", "member_unavailable"];
+
+/// Whether a denial with this code may be read again; a denial recorded
+/// before codes were kept counts as the manager's.
+pub fn reroutable(code: Option<&str>) -> bool {
+    code.is_none_or(|code| REROUTABLE_ISSUES.contains(&code))
+}
+
+/// What a reroute did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RerouteOutcome {
+    /// It will be read again.
+    Rearmed,
+    /// It is already waiting to be read.
+    AlreadyPending,
+    /// Not a denied researcher message, or rerouted too often.
+    NotReroutable,
+}
+
 /// The result of claiming a message's intent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Claim {

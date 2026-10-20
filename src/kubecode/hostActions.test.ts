@@ -6,6 +6,7 @@ function handlers(): HostActionHandlers {
   return {
     addProject: vi.fn(),
     focusSessionSearch: vi.fn(),
+    searchWorkspace: vi.fn(),
     newSession: vi.fn(),
     openSettings: vi.fn(),
     toggleContext: vi.fn(),
@@ -23,6 +24,7 @@ describe('host action registry', () => {
       'new-session',
       'open-settings',
       'focus-session-search',
+      'search-workspace',
       'toggle-navigator',
       'toggle-context',
       'toggle-terminal',
@@ -32,6 +34,17 @@ describe('host action registry', () => {
       enabled: false,
     })
     expect(registered.find((action) => action.id === 'open-settings')?.enabled).toBe(true)
+  })
+
+  it('searches the Workspace apart from Session search, only with a Workspace open', () => {
+    const local = handlers()
+    const without = createHostActionRegistry(local, { hasProject: false })
+    expect(without.find((action) => action.id === 'search-workspace')).toMatchObject({
+      enabled: false, labelKey: 'kubecode.search.searchWorkspace',
+    })
+    createHostActionRegistry(local, { hasProject: true }).find((action) => action.id === 'search-workspace')?.execute()
+    expect(local.searchWorkspace).toHaveBeenCalledOnce()
+    expect(local.focusSessionSearch).not.toHaveBeenCalled()
   })
 
   it('names the left panel for what it holds: the navigation', () => {

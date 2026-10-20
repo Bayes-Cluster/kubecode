@@ -191,7 +191,8 @@ test.describe('on a desktop', () => {
       await expect(about).toContainText('Structured pruning')
       await expect(page.getByText(`Replying to ${manager.name}:`, { exact: false })).toBeVisible()
 
-      // 7. A failed send restores the draft; Try again replays it once.
+      // 7. A failed send stays as its own outbox row (ADR 0232 §5): the composer is
+      // free, the Task stays chosen, and Send again replays the message once.
       let aborted = false
       await page.route('**/channels/*/messages', async (route) => {
         if (route.request().method() === 'POST' && !aborted) {
@@ -202,12 +203,14 @@ test.describe('on a desktop', () => {
         await route.continue()
       })
       await page.getByRole('button', { name: 'Send', exact: true }).click()
-      const alert = page.getByRole('alert').filter({ has: page.getByRole('button', { name: 'Try again' }) })
-      await expect(alert).toBeVisible()
-      await expect(composer(page)).toHaveValue('half a thought')
+      const unsent = page.getByRole('list', { name: 'Unsent messages' })
+      await expect(unsent.getByRole('alert')).toContainText('Not sent:')
+      await expect(unsent).toContainText('half a thought')
+      await expect(composer(page)).toHaveValue('')
       await expect(about).toContainText('Structured pruning')
       await expect(toRow(page)).toContainText('Project manager')
-      await alert.getByRole('button', { name: 'Try again' }).click()
+      await unsent.getByRole('button', { name: 'Send again' }).click()
+      await expect(unsent).toHaveCount(0)
       await expect(log(page).getByText('half a thought', { exact: true })).toHaveCount(1)
       await expect(composer(page)).toHaveValue('')
       await page.unroute('**/channels/*/messages')

@@ -198,6 +198,7 @@ export function MemberRoster({
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}
+                data-focus-key={`member-setup:${member.id}`}
                 disabled={busy}
                 size="xs"
                 variant="outline"

@@ -80,7 +80,7 @@ export function ResearchFindingsPanel({
               }
               const held = review.busy ? t('kubecode.task.blocked.deciding') : undefined
               return (
-                <li key={proposal.entry.id}>
+                <li data-focus-key={`suggestion:${proposal.entry.id}`} key={proposal.entry.id} tabIndex={-1}>
                   <p>{proposal.entry.body}</p>
                   <span className="kubecode-research-muted">
                     {authorLabel(t, proposal.entry.author_kind)} · {t('kubecode.research.revisionShort', { revision: proposal.entry.brief_revision })}

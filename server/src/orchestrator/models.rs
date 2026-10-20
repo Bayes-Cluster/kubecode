@@ -120,6 +120,9 @@ pub struct Route {
     pub last_error: Option<String>,
     /// The Session that received it.
     pub recipient: Option<String>,
+    /// How often the researcher re-armed it after it failed.
+    #[serde(default)]
+    pub retries: u32,
     pub created_at: String,
     pub delivered_at: Option<String>,
 }
@@ -174,6 +177,9 @@ pub enum RecipientError {
     Hold(String),
 }
 
+/// Why a route to a member that needs setup waits (retried once it is fixed).
+pub const NEEDS_SETUP: &str = "the member needs setup";
+
 /// How long a held route waits before its conditions are looked at again.
 pub const HOLD_SECS: i64 = 30;
 
@@ -189,6 +195,25 @@ pub enum OrchestratorError {
     NotFound,
     #[error("invalid orchestration input: {0}")]
     Invalid(&'static str),
+    /// Only routes the researcher originated are retried (ADR 0232).
+    #[error("this kind of route is not retried")]
+    NotRetryable,
+    /// The Session the route names no longer exists.
+    #[error("the Session this was for no longer exists")]
+    TargetGone,
+    #[error("this route was already retried as often as it may be")]
+    RetryLimit,
+    /// A review verdict the Task has moved past (a newer review step, or the
+    /// Task archived): delivering it late would tell the manager something
+    /// no longer true.
+    #[error("the Task has moved on since this decision; it is not delivered late")]
+    Superseded,
+    /// The member it is for needs setup: it can be retried once that is fixed.
+    #[error("the member this was for needs setup")]
+    NeedsSetup,
+    /// The recipient could not be looked up just now: try again.
+    #[error("the recipient could not be checked just now")]
+    Unavailable,
     #[error(transparent)]
     Channel(#[from] crate::channel_store::ChannelError),
     #[error(transparent)]

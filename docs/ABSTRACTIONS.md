@@ -973,8 +973,9 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
 
 A **context reference** is `{ kind, id, revision? }` and points at an existing
 object in one Project: a research question, round, finding, Session, Session
-turn (`conversation_id/run_id`), Team, task, experiment, or experiment artifact
-(`experiment_id/path`). The `revision` is a *fingerprint*, not a snapshot: it
+turn (`conversation_id/run_id`), Team, task, imported discussion, experiment,
+experiment artifact (`experiment_id/path`), work item, Thread, channel, or
+Project file (`file`, a Project-relative path; ADR 0231). The `revision` is a *fingerprint*, not a snapshot: it
 detects that something changed, it cannot restore old content, so the reader
 reports `available`, `changed`, or `removed` and never invents the old bytes.
 A **live** reference (no revision) reads the current state; a **pinned**
@@ -990,6 +991,68 @@ another Project is indistinguishable from a missing one, hidden snapshots and
 subagent threads are not Sessions, and a turn still running is readable but
 marked partial. Reading is passive and never writes. A finding read carries its
 basis: it is an Agent's recorded claim, not a verified result.
+
+A search page names its scope: `searched` (the kinds covered; an empty request
+covers every kind but `file`, so the disk is walked only when files are
+asked for), `truncated_kinds` (the kinds a scan cap or budget cut short), and
+`counts` (matches per kind before paging). A read names `shown_revision`, the
+revision whose content its sections show, which can differ from the current
+revision in `ref` (an older pinned brief) and is absent when nothing of the
+record is shown. A resolved reference carries the record's `title` only when it
+is visible here.
+
+| Kind | Id | Revision |
+| --- | --- | --- |
+| `file` | Project-relative path, never inside `.git`, never an `.env` or `.env.*` file (templates such as `.env.example` excepted), reached through no symlink | SHA-256 of the bytes, or `large:<size>:<mtime>` above 8 MiB (the work-evidence fingerprint) |
+
+A file is found by the words of its path, listed newest first, and never listed
+when hidden, generated, Git-ignored, or inside a nested repository (it is still
+readable when named). A file that cannot be opened is unavailable on its own;
+an empty file is one empty section; a file that is not text shows nothing but
+names the version it read. It
+is read a page at a time with a cursor bound to its revision, so a page of
+another version is reported as `changed`, never spliced in.
+
+A reference a researcher posts in General, in a Thread, or with a direct
+message share is **pinned**: the server fills a missing revision with the
+current one, keeps a supplied one (the version the researcher saw), and refuses
+a record that no longer exists. A pinned message reference therefore always
+says which version was cited.
+
+In the browser (ADR 0231 §4–§6):
+
+- **One record reader.** `RecordPreview` over `useRecordDocument` is the only
+  read-only view of a record: the inspector's resource entry, Task evidence,
+  the Add context preview, and the Session picker's preview. It reads the
+  current version a page at a time, compares it with a cited revision, and
+  reports `onDisplayed({kind, id, revision, title})` with the `shown_revision`
+  once per revision, only after content is on screen, and `onCleared()`
+  whenever nothing is (loading, reading again, failed, gone), so a host offers
+  only the version on screen. A change after opening is announced, never
+  swapped in. A reference chip opens its record with the cited revision on the
+  inspector entry (never in a route), and only a cited revision can be
+  "changed since it was cited".
+- **One search.** `useWorkspaceSearch` + `WorkspaceSearch` search explicit
+  sections (`searchScope.ts`): Tasks, Findings, Experiments and artifacts,
+  Discussions, Files, and History (execution history, off by default);
+  `channel` and `session_turn` are never results. The scope is said in words,
+  from the kinds the server reports it `searched`; words, sections, active
+  row, and results are page memory only.
+- **Draft reference.** `DraftReference` is
+  `{ ref: {kind, id, revision}, title, seen: 'previewed' | 'listed' }`, kept in
+  `GeneralDraft.references`, one per record (another version replaces it), at
+  most 16; a Task becomes the draft's `task`, at the version attached
+  (`taskRevision`, sent with it; none for a Task from the filter or a reply),
+  and a different Task replaces it with an announcement that says so. `previewed` carries the version
+  the preview displayed; `listed` the current version resolved when attached.
+- **Reference chip.** `ResourceReferenceChip` names a reference by kind, title
+  (never an id), the cited version in words (`formatVersion`), and its state —
+  changed since cited or attached, no longer exists, or not available here —
+  from a per-Workspace resolver that batches at most 32 refs and forgets what a
+  Workspace event touched.
+- **Attach target.** While a General draft waits for a reference from
+  Resources, `{ filter, focusKey }` sits in page memory; adding returns to that
+  General view with the composer focused and the caret restored.
 
 ## Context tools
 
@@ -1045,9 +1108,19 @@ the board reads.
 One pure reducer applies Agent Chat conversation events regardless of their
 source: live SSE delivery, history hydration, and reconnect replay all feed
 `reduceConversation`, so every path produces identical transcript state from an
-identical sequence. Events carry a namespaced `source:seq` key; folding is
-idempotent per key across channels without letting one channel's sequence space
-shadow the other's.
+identical sequence. Events carry a namespaced `source:seq` key, so one
+channel's sequence space never shadows the other's.
+
+A live event and the recorded event it mirrors have different keys, so the
+cross-channel overlap is settled by the history page's workspace cursor
+instead. The server reads a page and that cursor under one hold of the
+database, and a recorded event that is also streamed commits its workspace
+event in the same transaction, so the cursor covers exactly the events in the
+page. Hydration stores it in the reducer state as the covered cursor, and a
+live event at or below it is a copy and does not fold, whether it was buffered
+during the fetch, was still in flight on an event stream slower than the
+history response, or comes back in a reconnect replay. A page without a cursor
+covers nothing, and each hydration replaces the covered cursor with its own.
 
 Transcript events that arrive before their run row are buffered per run and
 replay in order the moment the row attaches, so a live stream racing its own
@@ -1134,6 +1207,37 @@ optional durable Team identity (`team_id`, `team_role`, `team_title`, and
 to render cross-Project input-required navigation. Rich Team snapshots remain a
 separate task/member view and are independently recoverable after a partial load
 or SSE reconnect.
+
+**Pending decisions** are a server projection: the decisions only the
+researcher can make (a member's permission or input request, a question on a
+Task's work, a review, a suggested change of direction, a revised brief
+awaiting approval, a proposal shown in General, a member's setup), each keyed
+by its decision identity — the key the Task panel uses too — so it appears once
+wherever it is referred to. Only an input request has a deadline; a permission
+request waits until answered or its turn stops.
+A Task's condition, a run's waiting status, or an unread message is never one.
+A source that cannot be read makes the snapshot incomplete, never empty. In the
+browser one **attention store** per Workspace holds the newest snapshot; Needs
+you (Decisions, then Setup), the title bar's bell (this Workspace and counts
+for the others), the Task panel, the **Working now** strip and the Session
+prompt all read it, and an answer keeps its item **resolving** until a newer
+snapshot drops it, so every surface clears together. Each item opens the
+context that holds the decision and focuses it there. See ADR 0232.
+
+An **outbox row** is a send the server has not acknowledged, in General or a
+DM: apart from the draft, under the client message id it was first sent with,
+so Send again is the same message and nothing typed meanwhile is merged into
+it. A General row keeps its references and Task at the versions they were
+attached at (ADR 0231 §5), so Send again cites the same versions and Edit puts
+them back. A **route retry** re-arms a failed route the researcher originated under the
+same identity, at most three times; a review verdict its Task has moved past is
+**superseded** and never delivered late.
+
+**Working now** lists a scope's member turns (General, one DM, or a Task) with
+what they work on and what is queued. **Stop** ends one named turn now and says
+that the member's assigned work stays open; **Pause new work on a Task** is the
+executing round's policy and lets running work continue. Neither is
+Workspace-wide.
 
 Notification preferences are versioned browser-local state. Workspace events
 map to completion, attention, or error categories. The browser's native
@@ -1233,7 +1337,14 @@ a Session, and is resolved to the round's current coordinator when it is
 delivered, so a handoff retargets pending routes. A route is `pending`,
 `delivered` (the Session has the event), or `failed` (visible, with the reason,
 in the conversation). Delivery is neither task completion nor experiment
-analysis.
+analysis. A researcher's message has a **delivery state** built only from facts —
+saved, recorded, sending, delivered (queued, started, or withdrawn at the
+Session), partial, failed, or denied (it reached nobody, with the reason). The
+researcher may **retry** a failed route they originated, under the same route,
+and **reroute** a denied message once its recipients are set up; each is
+bounded and never makes a second turn. The browser shows only those states,
+says "Delivered" only under the researcher's latest message, and folds a
+route's notes into the message they are about. See ADR 0232.
 
 ## Round limits
 

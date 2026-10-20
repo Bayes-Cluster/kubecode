@@ -1166,7 +1166,16 @@ done"#,
     })
     .await
     .expect("permission request");
+    // What waits on the researcher, without the tool's input.
+    let pending = runtime.pending_requests();
+    assert_eq!(pending.len(), 1, "{pending:?}");
+    assert_eq!(pending[0].request_id, permission_request_id);
+    assert_eq!(pending[0].run_id, run.id);
+    assert_eq!(pending[0].tool.as_deref(), Some("Shell"));
+    assert_eq!(pending[0].options[0].id, "allow_once");
+    assert!(!serde_json::to_string(&pending).unwrap().contains("pwd"));
     assert!(runtime.resolve_permission(&permission_request_id, "allow_once"));
+    assert!(runtime.pending_requests().is_empty());
 
     let elicitation_request_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -1184,7 +1193,12 @@ done"#,
     })
     .await
     .expect("elicitation request");
+    let pending = runtime.pending_requests();
+    assert_eq!(pending.len(), 1, "{pending:?}");
+    assert_eq!(pending[0].message.as_deref(), Some("Choose a value"));
+    assert!(pending[0].schema.as_ref().unwrap()["properties"]["name"].is_object());
     assert!(runtime.resolve_elicitation(&elicitation_request_id, None));
+    assert!(runtime.pending_requests().is_empty());
 
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         loop {

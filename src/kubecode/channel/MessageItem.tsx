@@ -8,9 +8,11 @@ import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icon
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage, ChannelThread, ProjectContextRef } from '../api'
+import { DeliveryStatus } from '../attention/DeliveryStatus'
 import { Identity } from '../members/Identity'
 import type { IdentityView, RecipientsView } from '../members/memberIdentity'
 import type { ReferenceLabel } from '../references/referenceLabels'
+import { ResourceReferenceChip } from '../resources/ResourceReferenceChip'
 import { intentLabel } from './channelLabels'
 import type { MessageDeliveryView } from './delivery'
 import { messageDate, shortTime } from './timeline'
@@ -196,12 +198,12 @@ export function MessageItem({
             )}
             {references.map((reference) => (
               <li key={`${reference.ref.kind}:${reference.ref.id}`}>
-                <ReferenceChip
-                  kind={reference.kind}
-                  kindLabel={reference.kindLabel}
-                  state={reference.state}
-                  title={reference.title}
-                  version={reference.version}
+                {/* Named, versioned, and resolved against the server (ADR 0231 §5). */}
+                <ResourceReferenceChip
+                  basis="cited"
+                  knownTitle={reference.title}
+                  reference={reference.ref}
+                  t={t}
                   onOpen={() => on.openReference(reference.ref)}
                 />
               </li>
@@ -213,6 +215,16 @@ export function MessageItem({
             <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS.thread.Icon} />
             {t('kubecode.channel.legacyThread.open', { count: replies, plural: replies === 1 ? 'y' : 'ies' })}
           </button>
+        )}
+        {delivery?.state === 'facts' && (
+          <DeliveryStatus
+            body={message.body}
+            delivery={delivery.delivery}
+            latest={delivery.latest}
+            locale={dateLocale}
+            notes={delivery.notes}
+            t={t}
+          />
         )}
         {delivery?.state === 'failed' && (
           <p className="kubecode-message-delivery" data-delivery="failed">

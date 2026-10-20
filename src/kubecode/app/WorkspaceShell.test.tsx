@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KubecodeApp } from '../App'
 
 import type { ChannelMessage, ChannelThread, KubecodeApi, Member, TaskCard } from '../api'
+import { permissionItem, reviewItem, snapshot } from '../attention/attentionFixtures'
 
 const member = (overrides: Partial<Member>): Member => ({
   id: 'm-general', project_id: 'project-1', role: 'general', template: 'general', name: 'General',
@@ -48,6 +49,10 @@ function api(overrides: Record<string, unknown> = {}) {
     }),
     taskBoard: vi.fn().mockResolvedValue({ cards: [card({})], stages: [], total: 1 }),
     taskDrafts: vi.fn().mockResolvedValue([]),
+    attention: vi.fn().mockResolvedValue(snapshot({
+      project_id: 'project-1',
+      items: [reviewItem({ project_id: 'project-1', task: { id: 'r1', title: 'Pruning' } })],
+    })),
     openMemberDm: vi.fn(),
     searchProjectContext: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
     memberDefaults: vi.fn().mockResolvedValue({ revision: 1, general: { agent_id: 'opencode', config: {}, instructions: '' }, templates: {} }),
@@ -105,6 +110,13 @@ vi.mock('../tasks/TaskPanel', async () => {
     },
   }
 })
+
+// The record reader is covered by its own tests; here it only names what it shows.
+vi.mock('../resources/RecordPreview', () => ({
+  RecordPreview: ({ target }: { target: { kind: string; id: string } }) => (
+    <section aria-label={`evidence ${target.kind}:${target.id}`} />
+  ),
+}))
 
 vi.mock('../work/EvidenceViewer', () => ({
   EvidenceViewer: ({ target }: { target: { kind: string; id: string } }) => (
@@ -245,6 +257,33 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
   })
 
+  it('opens a member’s permission request in the member’s private conversation', async () => {
+    const client = api({
+      attention: vi.fn().mockResolvedValue(snapshot({
+        project_id: 'project-1',
+        items: [permissionItem({ project_id: 'project-1', binding: 'dm', member: { id: 'm-analyst', name: 'Analyst', handle: 'analyst', role: 'specialist' } })],
+      })),
+      listMembers: vi.fn().mockResolvedValue({
+        members: [member({}), member({ id: 'm-analyst', role: 'specialist', name: 'Analyst', handle: 'analyst', dm_conversation_id: 'dm1' })],
+        general_id: 'm-general',
+      }),
+      memberDmTurns: vi.fn().mockResolvedValue([]),
+    })
+    render(<KubecodeApp api={client} />)
+    const nav = await screen.findByRole('region', { name: 'Workspace' })
+    fireEvent.click(await within(nav).findByRole('button', { name: /Analyst wants to use Run pytest -q/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst'))
+  })
+
+  it('announces what newly needs the researcher in the shell\'s status region, with the navigation sheet closed', async () => {
+    narrowScreen()
+    const { nav } = await start('#/p/project-1/general')
+    const shellStatus = () => document.querySelector('main.kubecode-app > [role="status"]')
+    await waitFor(() => expect(shellStatus()).toHaveTextContent('Review the results of Pruning needs you'))
+    // Needs you, folded away in the sheet, has no live region of its own to lose it in.
+    expect(nav.querySelector('.kubecode-needs-you [role="status"]')).toBeNull()
+  })
+
   it('keeps Files and Git out of the research views until asked for', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
@@ -309,7 +348,7 @@ describe('Workspace navigation and routes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Other' }))
     expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
-    expect(screen.getByText('Other: General')).toHaveAttribute('role', 'status')
+    expect(screen.getByText('Other: General').closest('[role="status"]')).toBe(document.querySelector('main.kubecode-app > [role="status"]'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Demo' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
@@ -695,52 +734,59 @@ describe('Workspace navigation and routes', () => {
     ['finding', 'f1', 'Accuracy holds', 'Resource details', 'evidence finding:f1'],
     ['artifact', 'a7', 'accuracy.csv', 'Resource details', 'evidence artifact:a7'],
     ['research', 'r1', 'Pruning', 'Task details', 'task r1'],
-  ])('opens a Resources row (%s) in Resources’ own inspector beside the list', async (kind, id, title, aside, body) => {
+  ])('opens a Resources row (%s) in Resources’ own inspector beside the list, never leaving it', async (kind, id, title, aside, body) => {
     await start('#/p/project-1/resources', api({
       searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem(kind, id, title)], next_cursor: null }),
       readProjectContext: vi.fn().mockResolvedValue(contextDocument(kind, id, title)),
     }))
     fireEvent.click(await screen.findByRole('option', { name: new RegExp(title) }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(await inspector(aside)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: body })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: new RegExp(title) })).toHaveAttribute('aria-selected', 'true')
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/p\/project-1\/resources\?/))
+    // A routable record is named by kind and id only; the words searched never are.
+    if (kind !== 'research') expect(window.location.hash).toContain(`inspect=resource~${kind}~${id}`)
   })
 
-  it('keeps the Resources search, kind filter, and preview after a visit to Kanban', async () => {
+  it('keeps the Resources search, sections, and preview after a visit to Kanban', async () => {
+    const search = vi.fn().mockResolvedValue({ items: [contextItem('finding', 'f1', 'Accuracy holds')], next_cursor: null })
     const { nav } = await start('#/p/project-1/resources', api({
-      searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('finding', 'f1', 'Accuracy holds')], next_cursor: null }),
-      readProjectContext: vi.fn().mockResolvedValue({
-        ...contextDocument('finding', 'f1', 'Accuracy holds'),
-        sections: [{ heading: 'Claim', text: 'Pruning keeps 0.91', truncated: false }],
-      }),
+      searchProjectContext: search,
+      readProjectContext: vi.fn().mockResolvedValue(contextDocument('finding', 'f1', 'Accuracy holds')),
     }))
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Search Project work' }), { target: { value: 'accuracy' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Findings' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Search Demo' }), { target: { value: 'accuracy' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Files/ }))
     fireEvent.click(await screen.findByRole('option', { name: /Accuracy holds/ }))
-    expect(await screen.findByText('Pruning keeps 0.91')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'evidence finding:f1' })).toBeInTheDocument()
 
     fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
     await screen.findByRole('heading', { name: 'Kanban', level: 2 })
     fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
     await screen.findByRole('heading', { name: 'Resources', level: 2 })
-    expect(screen.getByRole('combobox', { name: 'Search Project work' })).toHaveValue('accuracy')
-    expect(screen.getByRole('button', { name: 'Findings' })).toHaveAttribute('aria-pressed', 'true')
-    await screen.findByRole('option', { name: /Accuracy holds/ })
-    expect(screen.getByText('Pruning keeps 0.91')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Search Demo' })).toHaveValue('accuracy')
+    expect(screen.getByRole('button', { name: /^Files/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(await screen.findByRole('option', { name: /Accuracy holds/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('region', { name: 'evidence finding:f1' })).toBeInTheDocument()
+    // The words searched never reach the address.
+    expect(window.location.hash).not.toContain('accuracy')
   })
 
-  it('opens a work item from Resources on Kanban with its Task', async () => {
+  it('previews a work item from execution history beside Resources instead of leaving', async () => {
     await start('#/p/project-1/resources', api({
       searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('work', 'w1', 'Sweep heads')], next_cursor: null }),
       readProjectContext: vi.fn().mockResolvedValue(contextDocument('work', 'w1', 'Sweep heads')),
-      workDetail: vi.fn().mockResolvedValue({ item: { id: 'w1', research_id: 'r1' } }),
     }))
+    fireEvent.click(within(await screen.findByRole('group', { name: 'Search in' })).getByRole('button', { name: /^History/ }))
     fireEvent.click(await screen.findByRole('option', { name: /Sweep heads/ }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
-    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
-    expect(await inspector('Task details')).toBeInTheDocument()
+    expect(await inspector('Resource details')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'evidence work:w1' })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/resources?inspect=resource~work~w1'))
+  })
+
+  it('names the Workspace in the titlebar search, apart from Session search', async () => {
+    await start('#/p/project-1/general')
+    expect(screen.getByRole('button', { name: 'Search Demo' })).toBeInTheDocument()
   })
 
   it('opens a Thread from a Task as the Thread pane, not under General’s remembered Task', async () => {
@@ -791,7 +837,7 @@ describe('Workspace navigation and routes', () => {
     ['a reference in Resources', async () => {
       fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getByRole('button', { name: 'Resources' }))
       fireEvent.click(await screen.findByRole('option', { name: /Pruning thread/ }))
-      fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Thread in General' }))
     }],
   ])('opens a Thread from %s without General’s remembered Task or filter', async (_, open) => {
     storeLocations({
