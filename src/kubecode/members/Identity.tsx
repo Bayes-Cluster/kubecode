@@ -14,6 +14,8 @@ export type IdentityProps = {
   activity?: ReactNode
   /** The `data-focus-key` to return to when the profile closes. */
   from?: string
+  /** Opens the profile another way (a view with its own handler); only for a live member. */
+  onOpen?: () => void
   className?: string
 }
 
@@ -22,7 +24,7 @@ export type IdentityProps = {
  * live member's name opens their profile in the inspector; the researcher,
  * Kubecode, removed members, and agents that are no member are plain text.
  */
-export function Identity({ activity, className, from, meta, size, view }: IdentityProps) {
+export function Identity({ activity, className, from, meta, onOpen, size, view }: IdentityProps) {
   const navigation = useContext(WorkspaceNavigationContext)
   const memberId = view.memberId
   return (
@@ -36,9 +38,9 @@ export function Identity({ activity, className, from, meta, size, view }: Identi
       role={view.role}
       roleLabel={view.roleLabel}
       size={size}
-      onOpen={navigation && memberId
+      onOpen={!memberId ? undefined : onOpen ?? (navigation
         ? () => navigation.inspect({ kind: 'member', id: memberId }, from ? { from } : undefined)
-        : undefined}
+        : undefined)}
     />
   )
 }

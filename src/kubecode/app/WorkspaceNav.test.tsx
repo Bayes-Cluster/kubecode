@@ -124,6 +124,8 @@ describe('WorkspaceNav', () => {
       .not.toBeInTheDocument()
     expect(within(roster).getByText('kubecode.members.state.setup_required')).toBeInTheDocument()
     expect(within(roster).queryByText('kubecode.members.state.active')).not.toBeInTheDocument()
+    // The same identity as everywhere: the role in words.
+    expect(within(roster).getAllByText(/kubecode\.identity\.specialist/).length).toBeGreaterThan(0)
   })
 
   it('lists the private conversations that exist, and marks the open one', () => {
