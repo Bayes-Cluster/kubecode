@@ -33,6 +33,11 @@ use crate::research_store::{
 };
 use crate::work_store::{Actor, WorkCondition, WorkFilter, WorkOutcome, WorkStage, WorkStore};
 
+/// The task events that move a Task's stage. Every stage read filters on
+/// exactly these, so other events (archiving) never move a stage or the
+/// authorization watermark.
+const STAGE_EVENT_KINDS: &str = "('admitted', 'execution_authorized', 'review_requested', 'review_returned', 'review_accepted')";
+
 /// Drafts waiting at once, so a loop cannot flood General.
 const MAX_DRAFTS: usize = 50;
 /// The proposal shown in General is shortened to this; the Task shows all of it.
@@ -518,11 +523,11 @@ impl TaskStore {
         }
         let last: Option<String> = connection
             .query_row(
-                "SELECT kind FROM task_events
-                 WHERE project_id = ?1 AND research_id = ?2
-                   AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                'review_returned', 'review_accepted')
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT kind FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![project_id, research_id],
                 |row| row.get(0),
             )
@@ -540,11 +545,11 @@ impl TaskStore {
         let seq: Option<i64> = self
             .connection()
             .query_row(
-                "SELECT channel_seq FROM task_events
-                 WHERE project_id = ?1 AND research_id = ?2
-                   AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                'review_returned', 'review_accepted')
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT channel_seq FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![project_id, research_id],
                 |row| row.get(0),
             )
@@ -1307,11 +1312,11 @@ impl TaskStore {
             }
             let last: Option<String> = tx
                 .query_row(
-                    "SELECT kind FROM task_events
-                     WHERE research_id = ?1
-                       AND kind IN ('admitted', 'execution_authorized', 'review_requested',
-                                    'review_returned', 'review_accepted')
-                     ORDER BY seq DESC LIMIT 1",
+                    &format!(
+                        "SELECT kind FROM task_events
+                         WHERE research_id = ?1 AND kind IN {STAGE_EVENT_KINDS}
+                         ORDER BY seq DESC LIMIT 1"
+                    ),
                     [research_id],
                     |row| row.get(0),
                 )
