@@ -197,7 +197,7 @@ async fn list_messages(
     State(state): State<AppState>,
     Path((project_id, channel_id)): Path<(String, String)>,
     Query(query): Query<MessagesQuery>,
-) -> Result<Json<MessagePageView>, ChannelApiError> {
+) -> Result<Json<MessagePageResponse>, ChannelApiError> {
     check_project(&state, &project_id)?;
     let scope = match (query.thread_id.as_deref(), query.task_id.as_deref()) {
         (Some(thread_id), _) => Scope::Thread(thread_id),
@@ -216,10 +216,36 @@ async fn list_messages(
             task: query.task_id.as_deref(),
         },
     )?;
-    Ok(Json(MessagePageView::project(
-        page,
-        &authors(&state, &project_id),
-    )))
+    // The delivery of the researcher's messages on this page (ADR 0232).
+    // Presentation: a failed read leaves it out instead of failing the page.
+    let ids: Vec<String> = page
+        .messages
+        .iter()
+        .filter(|message| message.author_kind == AuthorKind::Researcher)
+        .map(|message| message.id.clone())
+        .collect();
+    let deliveries = state
+        .orchestrator
+        .deliveries_for(&project_id, &ids)
+        .unwrap_or_else(|error| {
+            eprintln!("WARN: message deliveries could not be read: {error}");
+            Vec::new()
+        })
+        .into_iter()
+        .map(|delivery| (delivery.message_id.clone(), delivery))
+        .collect();
+    Ok(Json(MessagePageResponse {
+        page: MessagePageView::project(page, &authors(&state, &project_id)),
+        deliveries,
+    }))
+}
+
+/// A page of messages with the delivery state of the researcher's own.
+#[derive(Debug, serde::Serialize)]
+struct MessagePageResponse {
+    #[serde(flatten)]
+    page: MessagePageView,
+    deliveries: std::collections::BTreeMap<String, crate::orchestrator::MessageDelivery>,
 }
 
 /// One message, so a link to it can land on it however old it is.

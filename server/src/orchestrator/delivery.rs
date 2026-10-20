@@ -1,0 +1,300 @@
+//! The delivery state of the researcher's messages (ADR 0232), from facts
+//! only: how the orchestrator read the message, its routes, and whether the
+//! recipient Session admitted the prompt under the route's delivery key.
+//! "Delivered" keeps ADR 0217's meaning: the Session has it.
+
+use rusqlite::params_from_iter;
+use serde::Serialize;
+
+use super::*;
+use crate::attention::MemberRef;
+use crate::channel_store::RoutingMark;
+
+/// Times the researcher may re-arm one failed route.
+pub const MAX_MANUAL_RETRIES: u32 = 3;
+/// Route kinds the researcher originated, and so may retry.
+pub const RETRYABLE: [RouteKind; 6] = [
+    RouteKind::Discussion,
+    RouteKind::Mention,
+    RouteKind::Ask,
+    RouteKind::Request,
+    RouteKind::TaskReview,
+    RouteKind::Decision,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteDeliveryState {
+    /// Waiting for its first attempt.
+    Sending,
+    /// An attempt failed and another is due.
+    Retrying,
+    /// The recipient was busy; it is tried again.
+    Busy,
+    /// Delivered, and waiting in the Session's queue.
+    Queued,
+    /// Delivered, and the Session's turn started.
+    Started,
+    /// Delivered, but neither a turn nor a queued prompt exists any more.
+    Withdrawn,
+    Failed,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RouteDelivery {
+    pub route_id: String,
+    pub kind: RouteKind,
+    pub recipient: Option<MemberRef>,
+    pub recipient_session: Option<String>,
+    pub state: RouteDeliveryState,
+    pub attempts: u32,
+    pub busy: u32,
+    pub retries: u32,
+    pub last_error: Option<String>,
+    pub delivered_at: Option<String>,
+    pub retryable: bool,
+    /// The routing notes about this route, which the browser folds in.
+    pub note_ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageDeliveryState {
+    /// Saved; the orchestrator has not read it yet.
+    Saved,
+    /// Recorded and never routed (a Thread reply, for example).
+    Recorded,
+    Sending,
+    Delivered,
+    /// Some recipients have it, not all.
+    Partial,
+    Failed,
+    /// It reached nobody.
+    Denied,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Denial {
+    /// `manager_unavailable`, `member_unavailable`, `dm_private`, or `request_refused`.
+    pub code: String,
+    pub reroutable: bool,
+    pub note_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MessageDelivery {
+    pub message_id: String,
+    pub state: MessageDeliveryState,
+    pub routes: Vec<RouteDelivery>,
+    pub denial: Option<Denial>,
+}
+
+/// One route of a source that is not a message (a review decision, an answer).
+#[derive(Clone, Debug, Serialize)]
+pub struct SourceDelivery {
+    pub source_kind: SourceKind,
+    pub source_id: String,
+    pub route: RouteDelivery,
+}
+
+/// Reroutes of one denied message at most.
+pub const MAX_REROUTES: u32 = 3;
+
+/// A message's state from its mark and its routes. Pure.
+pub fn aggregate(mark: &RoutingMark, routes: &[RouteDelivery]) -> MessageDeliveryState {
+    use RouteDeliveryState as R;
+    match mark.routing.as_deref() {
+        Some("pending") => return MessageDeliveryState::Saved,
+        Some("denied") => return MessageDeliveryState::Denied,
+        _ => {}
+    }
+    if routes.is_empty() {
+        return MessageDeliveryState::Recorded;
+    }
+    let reached = routes
+        .iter()
+        .any(|route| matches!(route.state, R::Queued | R::Started | R::Withdrawn));
+    if routes.iter().any(|route| route.state == R::Failed) {
+        return if reached {
+            MessageDeliveryState::Partial
+        } else {
+            MessageDeliveryState::Failed
+        };
+    }
+    if routes
+        .iter()
+        .any(|route| matches!(route.state, R::Sending | R::Retrying | R::Busy))
+    {
+        return MessageDeliveryState::Sending;
+    }
+    if mark.issue.is_some() {
+        return MessageDeliveryState::Partial;
+    }
+    MessageDeliveryState::Delivered
+}
+
+impl Orchestrator {
+    /// The delivery of one route, from its row, the recipient's admission of
+    /// `route:{id}:{recipient}`, and the notes written about it.
+    fn route_delivery(
+        &self,
+        route: &Route,
+        notes: &std::collections::HashMap<String, (String, u64)>,
+    ) -> RouteDelivery {
+        let recipient_session = route.recipient.clone().or_else(|| match &route.target {
+            Target::Session { session_id } => Some(session_id.clone()),
+            Target::Coordinator { .. } => None,
+        });
+        let recipient = recipient_session.as_deref().and_then(|session| {
+            let resolved = self
+                .members
+                .as_ref()?
+                .by_conversation(&route.project_id, session)
+                .ok()??;
+            Some(MemberRef {
+                id: resolved.member.id,
+                name: resolved.member.name,
+                handle: resolved.member.handle,
+                role: resolved.member.role.as_str().to_owned(),
+            })
+        });
+        let state = match route.state {
+            RouteState::Pending if route.busy > 0 => RouteDeliveryState::Busy,
+            RouteState::Pending if route.attempts > 0 => RouteDeliveryState::Retrying,
+            RouteState::Pending => RouteDeliveryState::Sending,
+            RouteState::Failed => RouteDeliveryState::Failed,
+            RouteState::Delivered => match route.recipient.as_deref().and_then(|session| {
+                self.agents
+                    .prompt_admission(&format!("route:{}:{session}", route.id))
+                    .ok()
+                    .flatten()
+            }) {
+                Some(crate::agent_store::Admission::Started { .. }) => RouteDeliveryState::Started,
+                Some(crate::agent_store::Admission::Queued { .. }) => RouteDeliveryState::Queued,
+                None => RouteDeliveryState::Withdrawn,
+            },
+        };
+        let note_ids = route_note_keys(route)
+            .iter()
+            .filter_map(|key| notes.get(key).map(|(id, _)| id.clone()))
+            .collect();
+        RouteDelivery {
+            route_id: route.id.clone(),
+            kind: route.kind,
+            recipient,
+            recipient_session,
+            state,
+            attempts: route.attempts,
+            busy: route.busy,
+            retries: route.retries,
+            last_error: route.last_error.clone(),
+            delivered_at: route.delivered_at.clone(),
+            retryable: state == RouteDeliveryState::Failed
+                && RETRYABLE.contains(&route.kind)
+                && route.retries < MAX_MANUAL_RETRIES,
+            note_ids,
+        }
+    }
+
+    /// Routes whose source is one of these messages.
+    fn routes_of_messages(
+        &self,
+        project_id: &str,
+        message_ids: &[String],
+    ) -> Result<Vec<Route>, OrchestratorError> {
+        let connection = self.connection();
+        let mut routes = Vec::new();
+        for chunk in message_ids.chunks(100) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let mut statement = connection.prepare(&format!(
+                "{ROUTE_SELECT} WHERE source_kind = 'message' AND source_id IN ({marks})
+                   AND project_id = ?{} ORDER BY created_at, rowid",
+                chunk.len() + 1
+            ))?;
+            let values: Vec<&str> = chunk
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(project_id))
+                .collect();
+            routes.extend(
+                statement
+                    .query_map(params_from_iter(values), route_from_row)?
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+        Ok(routes)
+    }
+
+    /// The delivery of each of these messages that the researcher wrote, in
+    /// the order asked; other messages are skipped.
+    pub fn deliveries_for(
+        &self,
+        project_id: &str,
+        message_ids: &[String],
+    ) -> Result<Vec<MessageDelivery>, OrchestratorError> {
+        let messages: Vec<Message> = self
+            .channels
+            .messages_by_ids(project_id, message_ids)?
+            .into_iter()
+            .filter(|message| message.author_kind == AuthorKind::Researcher)
+            .collect();
+        let ids: Vec<String> = messages.iter().map(|message| message.id.clone()).collect();
+        let marks = self.channels.routing_marks(project_id, &ids)?;
+        let routes = self.routes_of_messages(project_id, &ids)?;
+        let mut keys: Vec<String> = routes.iter().flat_map(route_note_keys).collect();
+        for (id, mark) in &marks {
+            keys.extend(denial_note_keys(id, mark.reroutes));
+        }
+        let notes = self.channels.messages_by_client_ids(project_id, &keys)?;
+        let mut deliveries = Vec::new();
+        for id in message_ids {
+            let Some(mark) = marks.get(id) else {
+                continue;
+            };
+            let routes: Vec<RouteDelivery> = routes
+                .iter()
+                .filter(|route| route.source_id == *id)
+                .map(|route| self.route_delivery(route, &notes))
+                .collect();
+            let denial =
+                (mark.routing.as_deref() == Some("denied") || mark.issue.is_some()).then(|| {
+                    Denial {
+                        code: mark
+                            .issue
+                            .clone()
+                            .unwrap_or_else(|| "manager_unavailable".to_owned()),
+                        reroutable: mark.reroutes < MAX_REROUTES,
+                        note_id: denial_note_keys(id, mark.reroutes)
+                            .iter()
+                            .rev()
+                            .find_map(|key| notes.get(key).map(|(id, _)| id.clone())),
+                    }
+                });
+            deliveries.push(MessageDelivery {
+                message_id: id.clone(),
+                state: aggregate(mark, &routes),
+                routes,
+                denial,
+            });
+        }
+        Ok(deliveries)
+    }
+}
+
+/// The keys of the notes written about a route: its failures, one per retry,
+/// and the delivery note of a request.
+fn route_note_keys(route: &Route) -> Vec<String> {
+    let mut keys = vec![
+        format!("route-failed:{}", route.id),
+        format!("route-delivered:{}", route.id),
+    ];
+    keys.extend((1..=route.retries).map(|retry| format!("route-failed:{}:{retry}", route.id)));
+    keys
+}
+
+/// The keys of a message's denial notes, one per reroute.
+pub(super) fn denial_note_keys(message_id: &str, reroutes: u32) -> Vec<String> {
+    let mut keys = vec![format!("route-denied:{message_id}")];
+    keys.extend((1..=reroutes).map(|reroute| format!("route-denied:{message_id}:{reroute}")));
+    keys
+}

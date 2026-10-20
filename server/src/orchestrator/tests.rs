@@ -2284,3 +2284,250 @@ fn a_route_that_fails_again_is_noted_again_and_never_aborts_the_delivery_pass() 
         )
         .unwrap();
 }
+
+// -- Delivery state of researcher messages (ADR 0232) ------------------------------------------------
+
+mod delivery_state {
+    use super::*;
+    use crate::channel_store::{AuthorKind, RoutingMark};
+    use crate::member_store::{Member, MemberStore, NewMember};
+
+    struct Crew {
+        orchestrator: Orchestrator,
+        general: Member,
+        analyst: Member,
+    }
+
+    fn crew(r: &Rig) -> Crew {
+        let members = Arc::new(
+            MemberStore::from_database(r.f.agents.database(), Arc::clone(&r.f.agents)).unwrap(),
+        );
+        let general = members
+            .ensure_general(r.project(), &|_| true, AgentId::OpenCode)
+            .unwrap();
+        let analyst = members
+            .create_specialist(
+                r.project(),
+                NewMember {
+                    name: "Analyst".into(),
+                    ..Default::default()
+                },
+                &|_| true,
+                AgentId::OpenCode,
+            )
+            .unwrap();
+        let orchestrator = Orchestrator::new(
+            r.f.agents.database(),
+            Arc::clone(&r.f.agents),
+            Arc::clone(&r.channels),
+            Arc::clone(&r.work),
+            Arc::clone(&r.f.research),
+        )
+        .unwrap()
+        .with_members(members);
+        Crew {
+            orchestrator,
+            general,
+            analyst,
+        }
+    }
+
+    fn say(r: &Rig, body: &str, mentions: &[&Member]) -> Message {
+        let mentions: Vec<Mention> = mentions
+            .iter()
+            .map(|member| Mention {
+                session_id: member.public_conversation_id.clone().unwrap(),
+            })
+            .collect();
+        r.channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body,
+                    mentions: &mentions,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0
+    }
+
+    fn route(state: RouteDeliveryState) -> RouteDelivery {
+        RouteDelivery {
+            route_id: "r".into(),
+            kind: RouteKind::Mention,
+            recipient: None,
+            recipient_session: None,
+            state,
+            attempts: 0,
+            busy: 0,
+            retries: 0,
+            last_error: None,
+            delivered_at: None,
+            retryable: false,
+            note_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_message_state_comes_from_its_mark_and_its_routes() {
+        use MessageDeliveryState as M;
+        use RouteDeliveryState as R;
+        let mark = |routing: Option<&str>, issue: Option<&str>| RoutingMark {
+            routing: routing.map(str::to_owned),
+            issue: issue.map(str::to_owned),
+            reroutes: 0,
+            intent_claimed: false,
+        };
+        let done = mark(Some("done"), None);
+        for (mark, routes, expected) in [
+            (mark(Some("pending"), None), vec![], M::Saved),
+            (
+                mark(Some("denied"), Some("manager_unavailable")),
+                vec![],
+                M::Denied,
+            ),
+            (mark(None, None), vec![], M::Recorded),
+            (done.clone(), vec![route(R::Sending)], M::Sending),
+            (done.clone(), vec![route(R::Retrying)], M::Sending),
+            (done.clone(), vec![route(R::Busy)], M::Sending),
+            (done.clone(), vec![route(R::Queued)], M::Delivered),
+            (done.clone(), vec![route(R::Started)], M::Delivered),
+            (done.clone(), vec![route(R::Withdrawn)], M::Delivered),
+            (done.clone(), vec![route(R::Failed)], M::Failed),
+            (
+                done.clone(),
+                vec![route(R::Failed), route(R::Started)],
+                M::Partial,
+            ),
+            (
+                mark(Some("done"), Some("member_unavailable")),
+                vec![route(R::Started)],
+                M::Partial,
+            ),
+        ] {
+            assert_eq!(aggregate(&mark, &routes), expected, "{mark:?} {routes:?}");
+        }
+    }
+
+    #[test]
+    fn deliveries_report_saved_sending_admitted_and_failed_from_facts() {
+        let r = rig();
+        let crew = crew(&r);
+        let general = crew.general.public_conversation_id.clone().unwrap();
+        let hello = say(&r, "hello", &[]);
+        let state = |message: &Message| {
+            crew.orchestrator
+                .deliveries_for(r.project(), std::slice::from_ref(&message.id))
+                .unwrap()
+                .remove(0)
+        };
+        assert_eq!(state(&hello).state, MessageDeliveryState::Saved);
+
+        let before = r.f.agents.latest_workspace_event_id().unwrap();
+        crew.orchestrator.route_conversation().unwrap();
+        let sending = state(&hello);
+        assert_eq!(sending.state, MessageDeliveryState::Sending);
+        assert_eq!(sending.routes.len(), 1);
+        assert_eq!(
+            sending.routes[0].recipient.as_ref().unwrap().handle,
+            "general"
+        );
+        // The read is announced by id once the message is marked.
+        let routed =
+            r.f.agents
+                .workspace_events_after(before)
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == "orchestration_updated")
+                .map(|event| event.payload)
+                .collect::<Vec<_>>();
+        assert!(
+            routed
+                .iter()
+                .any(|payload| payload["message_id"] == hello.id.as_str()
+                    && payload["change"] == "routed"),
+            "{routed:?}"
+        );
+        assert!(routed.iter().all(|payload| payload.get("body").is_none()));
+
+        // Delivered: the Session's admission decides what it shows.
+        let sink = Recording::default();
+        crew.orchestrator.deliver_due(&sink, 0).unwrap();
+        let route_id = sending.routes[0].route_id.clone();
+        assert_eq!(
+            state(&hello).routes[0].state,
+            RouteDeliveryState::Withdrawn,
+            "delivered, but the Session has neither a run nor a queued prompt"
+        );
+        r.f.agents
+            .start_prompt_or_enqueue(
+                &general,
+                r.project(),
+                "prompt",
+                crate::agents::PermissionMode::Safe,
+                false,
+                Some(&format!("route:{route_id}:{general}")),
+            )
+            .unwrap();
+        let started = state(&hello);
+        assert_eq!(started.state, MessageDeliveryState::Delivered);
+        assert_eq!(started.routes[0].state, RouteDeliveryState::Started);
+
+        // A second message queued behind the running turn.
+        let again = say(&r, "and another thing", &[]);
+        crew.orchestrator.route_conversation().unwrap();
+        crew.orchestrator.deliver_due(&sink, 0).unwrap();
+        let second = state(&again).routes[0].route_id.clone();
+        r.f.agents
+            .start_prompt_or_enqueue(
+                &general,
+                r.project(),
+                "prompt",
+                crate::agents::PermissionMode::Safe,
+                false,
+                Some(&format!("route:{second}:{general}")),
+            )
+            .unwrap();
+        assert_eq!(state(&again).routes[0].state, RouteDeliveryState::Queued);
+
+        // A mention that cannot be delivered fails, retryably, with its note.
+        let ask = say(&r, "@analyst look", &[&crew.analyst]);
+        crew.orchestrator.route_conversation().unwrap();
+        sink.script(vec![
+            DeliveryOutcome::Failed("provider unavailable".into());
+            MAX_ATTEMPTS as usize
+        ]);
+        for step in 0..MAX_ATTEMPTS {
+            crew.orchestrator
+                .deliver_due(&sink, i64::from(step + 1) * 10_000)
+                .unwrap();
+        }
+        let failed = state(&ask);
+        assert_eq!(failed.state, MessageDeliveryState::Failed);
+        assert!(failed.routes[0].retryable);
+        assert_eq!(failed.routes[0].note_ids.len(), 1);
+
+        // Only the researcher's own messages are projected.
+        let note = r
+            .channels
+            .post(
+                r.project(),
+                &r.channel().id,
+                NewMessage {
+                    body: "a note",
+                    author_kind: Some(AuthorKind::System),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0;
+        assert!(
+            crew.orchestrator
+                .deliveries_for(r.project(), &[note.id])
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

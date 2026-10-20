@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
             get(get_policy).put(set_policy),
         )
         .route("/projects/{project_id}/routes", get(list_routes))
+        .route("/projects/{project_id}/deliveries", get(deliveries))
 }
 
 enum ApiError {
@@ -29,6 +30,7 @@ enum ApiError {
     Orchestrator(OrchestratorError),
     Workspace(WorkspaceError),
     RoundNotFound,
+    BadRequest(&'static str),
 }
 
 impl From<WorkError> for ApiError {
@@ -53,6 +55,11 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut extra = serde_json::Map::new();
         let (status, code, message) = match self {
+            Self::BadRequest(reason) => (
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                reason.to_owned(),
+            ),
             Self::RoundNotFound => (
                 StatusCode::NOT_FOUND,
                 "round_not_found",
@@ -174,4 +181,48 @@ async fn list_routes(
         filter,
         query.limit.unwrap_or(50),
     )?))
+}
+
+/// Ids the delivery read accepts at once.
+const MAX_DELIVERY_IDS: usize = 100;
+
+fn safe_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+        && !id.contains("..")
+}
+
+#[derive(Debug, Deserialize)]
+struct DeliveriesQuery {
+    #[serde(default)]
+    message_ids: String,
+}
+
+/// The delivery state of the researcher's messages, by id (ADR 0232).
+async fn deliveries(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Query(query): Query<DeliveriesQuery>,
+) -> Result<Json<Vec<crate::orchestrator::MessageDelivery>>, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let ids: Vec<String> = query
+        .message_ids
+        .split(',')
+        .map(str::trim)
+        .map(str::to_owned)
+        .collect();
+    if ids.len() > MAX_DELIVERY_IDS {
+        return Err(ApiError::BadRequest("ask for at most 100 messages"));
+    }
+    if !ids.iter().all(|id| safe_id(id)) {
+        return Err(ApiError::BadRequest("message ids are malformed"));
+    }
+    let deliveries =
+        tokio::task::spawn_blocking(move || state.orchestrator.deliveries_for(&project_id, &ids))
+            .await
+            .map_err(|_| ApiError::BadRequest("deliveries could not be read"))??;
+    Ok(Json(deliveries))
 }

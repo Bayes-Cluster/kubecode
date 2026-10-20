@@ -994,3 +994,68 @@ async fn a_mention_must_name_a_member_or_a_session() {
     // The legacy Session form still works.
     say(&env, &crew, "@analyst hi", &[&session(&crew.analyst)]).await;
 }
+
+#[tokio::test]
+async fn deliveries_are_read_by_message_and_listed_on_researcher_messages_only() {
+    let env = env();
+    let crew = crew(&env).await;
+    let hello = say(&env, &crew, "hello", &[]).await;
+    let id = hello["id"].as_str().unwrap().to_owned();
+    let deliveries = format!("/projects/{}/deliveries", env.project);
+    let (status, saved) = call(
+        &env,
+        Method::GET,
+        &format!("{deliveries}?message_ids={id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved[0]["message_id"], json!(id));
+    assert_eq!(saved[0]["state"], "saved");
+
+    let sink = Recording::default();
+    env.state.orchestrator.tick(&sink).unwrap();
+    env.state.orchestrator.tick(&sink).unwrap();
+    let (_, delivered) = call(
+        &env,
+        Method::GET,
+        &format!("{deliveries}?message_ids={id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(delivered[0]["state"], "delivered", "{delivered}");
+    assert_eq!(delivered[0]["routes"][0]["kind"], "discussion");
+    assert_eq!(delivered[0]["routes"][0]["recipient"]["handle"], "general");
+
+    // The page carries the delivery of the researcher's messages only.
+    let by_agent = agent_says(&env, &crew, &session(&crew.analyst), "a report");
+    let (_, page) = call(&env, Method::GET, &messages_path(&env, &crew), Value::Null).await;
+    assert_eq!(page["deliveries"][&id]["state"], "delivered", "{page}");
+    assert!(page["deliveries"].get(&by_agent).is_none(), "{page}");
+    assert_eq!(page["messages"].as_array().unwrap().len(), 2);
+
+    // Bounded, well-formed ids only.
+    let many = (0..101)
+        .map(|n| format!("m{n}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    for query in [many.as_str(), "a%20b", "..%2Fx", ""] {
+        let (status, body) = call(
+            &env,
+            Method::GET,
+            &format!("{deliveries}?message_ids={query}"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
+        assert_eq!(body["code"], "invalid_request");
+    }
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/nope/deliveries?message_ids={id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

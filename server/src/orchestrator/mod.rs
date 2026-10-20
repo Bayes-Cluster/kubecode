@@ -14,11 +14,16 @@
 //! cannot be routed never blocks the others.
 
 mod analysis;
+mod delivery;
 mod models;
 mod sink;
 #[cfg(test)]
 mod tests;
 
+pub use delivery::{
+    Denial, MAX_MANUAL_RETRIES, MAX_REROUTES, MessageDelivery, MessageDeliveryState, RETRYABLE,
+    RouteDelivery, RouteDeliveryState, SourceDelivery, aggregate,
+};
 pub use models::*;
 pub use sink::{
     MemberDelivery, Prepared, RuntimeSink, SessionConfigurator, runtime_member_delivery,
@@ -247,6 +252,26 @@ impl Orchestrator {
                 "route_id": route.id,
                 "work_id": route.work_id,
                 "thread_id": route.thread_id,
+                // The message a route carries, so its sender's view refreshes it.
+                "message_id": (route.source_kind == SourceKind::Message).then_some(&route.source_id),
+                "change": change,
+            }),
+        );
+    }
+
+    /// A content-free `orchestration_updated` event about a message's read
+    /// (`routed` or `denied`), once the message is marked.
+    fn announce_message(&self, message: &Message, change: &str) {
+        let _ = self.agents.append_workspace_event(
+            "orchestration_updated",
+            Some(&message.project_id),
+            None,
+            None,
+            &json!({
+                "route_id": null,
+                "work_id": null,
+                "thread_id": message.thread_id,
+                "message_id": message.id,
                 "change": change,
             }),
         );
@@ -519,11 +544,13 @@ impl Orchestrator {
                     report.routed += 1;
                     self.channels
                         .mark_routed(&message.project_id, &message.id)?;
+                    self.announce_message(&message, "routed");
                 }
                 Ok(false) => {
                     report.denied += 1;
                     self.channels
                         .mark_routed(&message.project_id, &message.id)?;
+                    self.announce_message(&message, "denied");
                 }
                 // Storage trouble is transient: the message stays unread and the
                 // next pass tries again, so it is never lost.
