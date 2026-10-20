@@ -2630,6 +2630,7 @@
   "kubecode.execution.pauseLaunches": "Pause experiment launches in round {round}",
   "kubecode.execution.resumeLaunches": "Resume experiment launches in round {round}",
   "kubecode.attention.show": "Show",
+  "kubecode.attention.showRequest": "Show {name}'s request",
   "kubecode.attention.waitingInTask": "{name} is waiting for your permission",
   "kubecode.attention.waitingInputInTask": "{name} is waiting for your answer",
   "kubecode.delivery.decisionFailed": "Your decision did not reach {name}",

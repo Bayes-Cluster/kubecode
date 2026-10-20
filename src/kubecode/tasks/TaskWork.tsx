@@ -86,19 +86,21 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
         <ul className="kubecode-task-waiting">
           {waiting.map((item) => {
             const target = attentionTarget(item, navigation?.presentation ?? 'screen')
+            const name = askerName(item, t)
             return (
               <li key={item.key}>
                 <span>
-                  {t(item.kind === 'permission' ? 'kubecode.attention.waitingInTask' : 'kubecode.attention.waitingInputInTask', {
-                    name: askerName(item, t),
-                  })}
+                  {t(item.kind === 'permission' ? 'kubecode.attention.waitingInTask' : 'kubecode.attention.waitingInputInTask', { name })}
                 </span>
                 {navigation && (
                   <Button
+                    aria-label={t('kubecode.attention.showRequest', { name })}
                     size="xs"
                     variant="outline"
                     onClick={() => {
-                      if (target.session) navigation.openSession(target.session.conversationId, target.session.projectId)
+                      if (target.session) {
+                        navigation.openSession(target.session.conversationId, target.session.projectId, { focus: target.focus })
+                      }
                       else if (target.place) {
                         navigation.openPlace(target.place, {
                           ...(target.inspect ? { inspect: target.inspect } : {}),

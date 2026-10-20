@@ -88,10 +88,18 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     const line = await panel().findByText('Analyst is waiting for your permission', { selector: '.kubecode-task-waiting *' })
     // The Task panel never draws a second prompt.
     expect(screen.queryByTestId('permission-queue-card')).not.toBeInTheDocument()
-    fireEvent.click(within(line.closest('.kubecode-task-waiting') as HTMLElement).getByRole('button', { name: 'Show' }))
+    fireEvent.click(within(line.closest('.kubecode-task-waiting') as HTMLElement).getByRole('button', { name: "Show Analyst's request" }))
     expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'general' }, { inspect: { kind: 'task', id: 'r1' }, focus: 'permission:q1' })
     // Its work can be stopped from here, by name.
     expect(panel().getByRole('button', { name: "Stop Analyst's current turn" })).toBeInTheDocument()
+  })
+
+  it('opens a Session\'s request in that Session, focused on the prompt', async () => {
+    const item = permissionItem({ member: null, binding: null, conversation_id: 's9', session_title: 'Fix build', task: { id: 'r1', title: 'Pruning heads' } })
+    const store = attentionStore(snapshot({ items: [item] }))
+    const { navigation } = mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [] }), store)
+    fireEvent.click(await panel().findByRole('button', { name: "Show Fix build's request" }))
+    expect(navigation.openSession).toHaveBeenCalledWith('s9', 'p1', { focus: 'permission:q1' })
   })
 
   it('says a decision did not reach its recipient, and retries it on request', async () => {

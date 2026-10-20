@@ -443,9 +443,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [move, projectId])
 
   /** The only way into execution history: the Sessions surface with this Session. */
-  const openSession = useCallback((nextConversationId: string, nextProjectId?: string) => {
+  const openSession = useCallback((nextConversationId: string, nextProjectId?: string, options: { focus?: string } = {}) => {
     const target = nextProjectId ?? projectId
     if (!target) return
+    if (options.focus) pendingFocusRef.current = options.focus
     showSessionIn(target, nextConversationId)
     move({ type: 'go', projectId: target, target: { view: 'sessions', conversation: nextConversationId } })
   }, [move, projectId, showSessionIn])
