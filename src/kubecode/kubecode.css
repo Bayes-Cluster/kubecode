@@ -3905,71 +3905,11 @@
   overflow-y: auto;
 }
 
-.kubecode-channel-message {
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-}
-
-.kubecode-channel-message:hover { background: var(--surface-hover); }
-.kubecode-channel-message[data-kind='system'] { color: var(--text-secondary); font-style: italic; }
-
-.kubecode-channel-message > header {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.kubecode-channel-message time {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-tiny);
-}
-
 .kubecode-channel-body {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-
-.kubecode-channel-mentions {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-small);
-  margin: 0;
-}
-
-.kubecode-channel-references {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.kubecode-channel-reference {
-  align-items: center;
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  display: inline-flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  max-width: 100%;
-  padding: 1px 8px;
-}
-
-button.kubecode-channel-reference { cursor: pointer; }
-button.kubecode-channel-reference:disabled { cursor: default; }
-.kubecode-channel-reference span { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
-.kubecode-channel-reference button { background: transparent; border: 0; cursor: pointer; display: inline-flex; padding: 0; }
-
-.kubecode-channel-thread-button { align-self: flex-start; }
-
-.kubecode-channel-task { margin: 0; }
 
 .kubecode-channel-citation {
   align-items: center;
@@ -3992,22 +3932,17 @@ button.kubecode-channel-reference:disabled { cursor: default; }
 
 .kubecode-channel-citation:hover { color: var(--text-primary); }
 
-/* Low-level activity (routing notes) stays a quiet, expandable line. */
-.kubecode-channel-activity {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-small);
-}
-
-.kubecode-channel-activity summary { cursor: pointer; }
-.kubecode-channel-activity p { margin: 4px 0 0; }
-
 .kubecode-channel-filter {
   align-items: center;
   color: var(--text-secondary);
   display: flex;
+  flex-wrap: wrap;
   font-size: var(--kubecode-ui-font-small);
-  gap: 8px;
+  gap: var(--ws-space-2);
+  min-width: 0;
 }
+
+.kubecode-channel-filter label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-width: 0; }
 
 .kubecode-channel-replying {
   align-items: center;
@@ -4045,14 +3980,259 @@ button.kubecode-channel-reference:disabled { cursor: default; }
   padding: 8px;
 }
 
-.kubecode-dm-preview h4 { font-size: var(--kubecode-ui-font-small); margin: 0 0 4px; }
+.kubecode-dm-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-2);
+  min-width: 0;
+}
+
 .kubecode-dm-preview pre { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.kubecode-dm-preview summary { color: var(--text-secondary); cursor: pointer; font: var(--ws-font-meta); }
+.kubecode-dm-share { max-height: calc(100dvh - 32px); overflow-y: auto; }
 
 .kubecode-channel-composer {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
+}
+
+/* -- General: messages, recipients, and the composer (ADR 0229) -------------- */
+.kubecode-message-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.kubecode-message {
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-1);
+  max-width: var(--ws-reading-width);
+  min-width: 0;
+  padding: var(--ws-space-2);
+}
+
+.kubecode-message[data-continued='true'] { padding-top: 0; }
+.kubecode-message:hover,
+.kubecode-message:focus-within { background: var(--surface-hover); }
+.kubecode-message[data-kind='system'] { color: var(--text-secondary); }
+
+.kubecode-message-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-2);
+  min-width: 0;
+}
+
+/* A continued message keeps its author for assistive technology only. */
+.kubecode-message[data-continued='true'] .kubecode-message-author {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.kubecode-message-toolbar {
+  display: inline-flex;
+  gap: var(--ws-space-1);
+  margin-left: auto;
+  opacity: 0;
+}
+
+.kubecode-message:hover .kubecode-message-toolbar,
+.kubecode-message:focus-within .kubecode-message-toolbar,
+.kubecode-message-toolbar[data-coarse='true'] { opacity: 1; }
+
+.kubecode-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-1);
+  min-width: 0;
+  padding-left: calc(var(--ws-avatar-md) + var(--ws-space-2));
+}
+
+.kubecode-message-body { min-width: 0; overflow-wrap: anywhere; }
+.kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
+.kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
+
+.kubecode-message-recipients {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.kubecode-message-references,
+.kubecode-composer-about ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-1);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.kubecode-message-delivery {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  margin: 0;
+}
+
+.kubecode-legacy-thread-link {
+  align-items: center;
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-1);
+  min-height: var(--ws-touch-target);
+  padding: 0;
+}
+
+.kubecode-legacy-thread-link:hover { color: var(--text-primary); }
+.kubecode-legacy-thread-note {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--ws-font-meta);
+  margin: 0;
+  padding: var(--ws-space-2);
+}
+
+.kubecode-legacy-thread-topic { color: var(--text-secondary); overflow-wrap: anywhere; }
+.kubecode-legacy-thread-actions { display: flex; justify-content: flex-end; }
+
+.kubecode-activity-group {
+  color: var(--text-secondary);
+  font: var(--ws-font-meta);
+  padding: 0 var(--ws-space-2);
+}
+
+.kubecode-activity-group summary { cursor: pointer; min-height: var(--ws-touch-target); }
+.kubecode-activity-group ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0 0 0 var(--ws-space-3); }
+.kubecode-activity-group li { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); overflow-wrap: anywhere; }
+
+.kubecode-date-separator {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  margin: var(--ws-space-2) 0;
+}
+
+.kubecode-date-separator::before,
+.kubecode-date-separator::after {
+  border-top: 1px solid var(--border-subtle);
+  content: '';
+  flex: 1 1 auto;
+}
+
+.kubecode-new-messages {
+  bottom: var(--ws-space-2);
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.kubecode-inert-image {
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-secondary);
+  padding: 0 var(--ws-space-1);
+}
+
+.kubecode-composer-about,
+.kubecode-composer-to {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  min-width: 0;
+}
+
+.kubecode-composer-about-label,
+.kubecode-composer-to-label { color: var(--text-secondary); }
+
+.kubecode-composer-to-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-2);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.kubecode-recipient {
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  gap: var(--ws-space-1);
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 0 0 var(--ws-space-1);
+}
+
+.kubecode-recipient-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: var(--ws-touch-target);
+  min-width: var(--ws-touch-target);
+}
+
+.kubecode-recipient-remove:hover { color: var(--text-primary); }
+.kubecode-recipient-remove:focus-visible { border-radius: var(--radius-md); box-shadow: var(--ws-focus-ring); outline: none; }
+
+.kubecode-composer-warning { color: var(--feedback-warning-text); font: var(--ws-font-meta); margin: 0; }
+.kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
+.kubecode-channel-outside { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
+.kubecode-mention-unavailable { color: var(--text-secondary); }
+
+.kubecode-member-provider {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+  gap: var(--ws-space-1);
+}
+
+.kubecode-dm-turn { display: flex; flex-direction: column; gap: var(--ws-space-2); max-width: var(--ws-reading-width); padding: var(--ws-space-2); }
+.kubecode-dm-side { display: flex; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
+.kubecode-dm-side .kubecode-message-body { padding-left: calc(var(--ws-avatar-sm) + var(--ws-space-2)); }
+
+@media (pointer: coarse) {
+  .kubecode-message-toolbar { opacity: 1; }
+}
+
+@media (max-width: 980px) {
+  .kubecode-message-content { padding-left: 0; }
 }
 
 /* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
