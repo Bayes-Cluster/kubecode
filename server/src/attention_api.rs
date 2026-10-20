@@ -20,11 +20,32 @@ pub fn routes() -> Router<AppState> {
         .route("/attention/summary", get(summary))
 }
 
-fn error(status: StatusCode, code: &str, message: String) -> Response {
-    (status, Json(json!({"code": code, "message": message}))).into_response()
+/// A refusal from this API, kept small so handlers' `Result`s stay cheap to move.
+struct AttentionError {
+    status: StatusCode,
+    code: &'static str,
+    message: String,
 }
 
-fn workspace_error(failure: WorkspaceError) -> Response {
+impl IntoResponse for AttentionError {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(json!({"code": self.code, "message": self.message})),
+        )
+            .into_response()
+    }
+}
+
+fn error(status: StatusCode, code: &'static str, message: String) -> AttentionError {
+    AttentionError {
+        status,
+        code,
+        message,
+    }
+}
+
+fn workspace_error(failure: WorkspaceError) -> AttentionError {
     match failure {
         WorkspaceError::ProjectNotFound(id) => error_not_found(&id),
         other => error(
@@ -35,7 +56,7 @@ fn workspace_error(failure: WorkspaceError) -> Response {
     }
 }
 
-fn error_not_found(id: &str) -> Response {
+fn error_not_found(id: &str) -> AttentionError {
     error(
         StatusCode::NOT_FOUND,
         "not_found",
@@ -46,7 +67,7 @@ fn error_not_found(id: &str) -> Response {
 async fn attention(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
-) -> Result<Json<AttentionSnapshot>, Response> {
+) -> Result<Json<AttentionSnapshot>, AttentionError> {
     state
         .workspace
         .project_path(&project_id)
@@ -102,7 +123,7 @@ fn counts(snapshot: &AttentionSnapshot) -> WorkspaceCounts {
     counts
 }
 
-async fn summary(State(state): State<AppState>) -> Result<Json<Summary>, Response> {
+async fn summary(State(state): State<AppState>) -> Result<Json<Summary>, AttentionError> {
     let summary = tokio::task::spawn_blocking(move || -> Result<Summary, WorkspaceError> {
         let cursor = state
             .agent_runtime
