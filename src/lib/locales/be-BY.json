@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Паказаць або схаваць навігацыю",
   "kubecode.nav.opening": "Адкрыццё працоўнай прасторы…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Працоўныя прасторы",
   "kubecode.nav.directMessages": "Асабістыя паведамленні",
   "kubecode.inspector.backTo": "Назад: {place}",

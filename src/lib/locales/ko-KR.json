@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "탐색 표시 전환",
   "kubecode.nav.opening": "워크스페이스를 여는 중…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "워크스페이스",
   "kubecode.nav.directMessages": "다이렉트 메시지",
   "kubecode.inspector.backTo": "{place}(으)로 돌아가기",

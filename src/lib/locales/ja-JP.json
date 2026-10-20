@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "ナビゲーションの表示を切り替え",
   "kubecode.nav.opening": "ワークスペースを開いています…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "ワークスペース",
   "kubecode.nav.directMessages": "ダイレクトメッセージ",
   "kubecode.inspector.backTo": "{place} に戻る",

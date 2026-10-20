@@ -2360,6 +2360,7 @@
   "kubecode.nav.closeDetail": "Close details",
   "kubecode.nav.opening": "Opening Workspace…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Workspaces",
   "kubecode.nav.directMessages": "Direct messages",
   "kubecode.inspector.backTo": "Back to {place}",

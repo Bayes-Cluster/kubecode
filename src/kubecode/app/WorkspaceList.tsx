@@ -47,62 +47,74 @@ export function WorkspaceList({
   if (projects.length === 0) {
     return <p className="kubecode-empty-small">{t('kubecode.selectProject')}</p>
   }
+  const rows = projects.map((project) => {
+    const status = projectStatuses[project.id]
+      ?? sessionsRunState(conversations.filter((conversation) => conversation.project_id === project.id))
+    return { project, status, label: projectStatusLabel(status, t) }
+  })
   return (
-    <ul aria-label={t('kubecode.nav.workspaces')} className="kubecode-workspace-list">
-      {projects.map((project) => {
-        const active = project.id === activeProjectId
-        const status = projectStatuses[project.id]
-          ?? sessionsRunState(conversations.filter((conversation) => conversation.project_id === project.id))
-        return (
-          <li className="kubecode-workspace-row" data-active={active} key={project.id}>
-            <Button
-              aria-current={active ? 'true' : undefined}
-              className="kubecode-workspace-row-main"
-              data-active={active}
-              data-session-status={status ?? undefined}
-              data-workspaces-enabled={project.workspaces_enabled}
-              title={project.name}
-              variant="ghost"
-              onClick={() => onWorkspaceSelect(project.id)}
-            >
-              <Folder size={16} />
-              <span>{project.name}</span>
-            </Button>
-            <span
-              aria-label={projectStatusLabel(status, t)}
-              className="kubecode-navigator-status"
-              data-status={status ?? undefined}
-              role="status"
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  aria-label={t('kubecode.projectActionsFor', { name: project.name })}
-                  className="kubecode-workspace-row-actions"
-                  size="icon-xs"
-                  variant="ghost"
-                >
-                  <Ellipsis size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
-                  <Plus size={16} /> {t('kubecode.newSession')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
-                  {project.workspaces_enabled
-                    ? t('kubecode.disableWorkspaces')
-                    : t('kubecode.enableWorkspaces')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={() => onProjectDelete(project.id)}>
-                  <Trash2 size={16} /> {t('kubecode.delete')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </li>
-        )
-      })}
-    </ul>
+    <>
+      <ul aria-label={t('kubecode.nav.workspaces')} className="kubecode-workspace-list">
+        {rows.map(({ label, project, status }) => {
+          const active = project.id === activeProjectId
+          return (
+            <li className="kubecode-workspace-row" data-active={active} key={project.id}>
+              <Button
+                aria-current={active ? 'true' : undefined}
+                className="kubecode-workspace-row-main"
+                data-active={active}
+                data-session-status={status ?? undefined}
+                data-workspaces-enabled={project.workspaces_enabled}
+                title={project.name}
+                variant="ghost"
+                onClick={() => onWorkspaceSelect(project.id)}
+              >
+                <Folder size={16} />
+                <span>{project.name}</span>
+              </Button>
+              <span
+                aria-hidden={label ? undefined : true}
+                aria-label={label}
+                className="kubecode-navigator-status"
+                data-status={status ?? undefined}
+                role={label ? 'img' : undefined}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label={t('kubecode.projectActionsFor', { name: project.name })}
+                    className="kubecode-workspace-row-actions"
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <Ellipsis size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
+                    <Plus size={16} /> {t('kubecode.newSession')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
+                    {project.workspaces_enabled
+                      ? t('kubecode.disableWorkspaces')
+                      : t('kubecode.enableWorkspaces')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => onProjectDelete(project.id)}>
+                    <Trash2 size={16} /> {t('kubecode.delete')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </li>
+          )
+        })}
+      </ul>
+      {/* One live region for the list: each Workspace's run state, so a change is announced once. */}
+      <p className="sr-only" role="status">
+        {rows.filter((row) => row.label).map(({ label, project }) => (
+          <span key={project.id}>{t('kubecode.nav.workspaceStatus', { workspace: project.name, status: label ?? '' })} </span>
+        ))}
+      </p>
+    </>
   )
 }

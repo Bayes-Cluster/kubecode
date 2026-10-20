@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Показати або сховати навігацію",
   "kubecode.nav.opening": "Відкриття робочого простору…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Робочі простори",
   "kubecode.nav.directMessages": "Особисті повідомлення",
   "kubecode.inspector.backTo": "Назад: {place}",

@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Pakazać abo schavać navihacyju",
   "kubecode.nav.opening": "Adkryccio pracoŭnaj prastory…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Pracoŭnyja prastory",
   "kubecode.nav.directMessages": "Asabistyja paviedamleńni",
   "kubecode.inspector.backTo": "Nazad: {place}",

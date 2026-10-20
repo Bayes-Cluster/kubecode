@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Hiện hoặc ẩn điều hướng",
   "kubecode.nav.opening": "Đang mở không gian làm việc…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Không gian làm việc",
   "kubecode.nav.directMessages": "Tin nhắn trực tiếp",
   "kubecode.inspector.backTo": "Quay lại {place}",

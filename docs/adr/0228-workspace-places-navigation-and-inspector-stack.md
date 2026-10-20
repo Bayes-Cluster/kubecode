@@ -38,7 +38,8 @@ researcher to exactly where they were.
 ### 1. One navigation, with execution history secondary
 
 The navigation lists the **Workspaces**, one row per registered Project with its
-run status in words and its actions. Then come the selected Workspace's places in this order:
+run status in words and its actions; one live region for the whole list
+announces run states, rather than one per row. Then come the selected Workspace's places in this order:
 **General**, **Kanban**, **Resources**, **Needs you**, then **Members**. Below
 them, under visible headings, are the Workspace's **Agents** (its members) and
 its **Direct messages**. A member's name opens their profile in the inspector;

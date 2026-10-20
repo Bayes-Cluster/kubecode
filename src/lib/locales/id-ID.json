@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Tampilkan atau sembunyikan navigasi",
   "kubecode.nav.opening": "Membuka ruang kerja…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Ruang kerja",
   "kubecode.nav.directMessages": "Pesan langsung",
   "kubecode.inspector.backTo": "Kembali ke {place}",

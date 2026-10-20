@@ -55,8 +55,11 @@ describe('WorkspaceList', () => {
     expect(other).not.toHaveAttribute('aria-current')
     expect(other).not.toHaveAttribute('data-session-status')
     expect(other).toHaveAttribute('data-workspaces-enabled', 'true')
-    // The run state is in words, not colour alone.
-    expect(screen.getByRole('status', { name: 'Running' })).toBeInTheDocument()
+    // The run state is in words, not colour alone, and one live region says it for the list.
+    expect(within(demo.closest('li') as HTMLElement).getByRole('img', { name: 'Running' })).toBeInTheDocument()
+    expect(within(other.closest('li') as HTMLElement).queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('Demo: Running')
 
     fireEvent.click(other)
     expect(handlers.onWorkspaceSelect).toHaveBeenCalledWith('project-2')
@@ -69,7 +72,8 @@ describe('WorkspaceList', () => {
     list({ conversations: [waiting] })
     expect(screen.getByRole('button', { name: 'Other' }))
       .toHaveAttribute('data-session-status', 'waiting_permission')
-    expect(screen.getByRole('status', { name: 'Permission required' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Permission required' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Other: Permission required')
   })
 
   it('offers New session, Enable workspaces, and Delete for a Project', async () => {

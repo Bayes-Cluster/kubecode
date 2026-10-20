@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "显示或隐藏导航",
   "kubecode.nav.opening": "正在打开工作区…",
   "kubecode.nav.placeAnnouncement": "{workspace}：{place}",
+  "kubecode.nav.workspaceStatus": "{workspace}：{status}",
   "kubecode.nav.workspaces": "工作区",
   "kubecode.nav.directMessages": "私信",
   "kubecode.inspector.backTo": "返回{place}",

@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Zobraziť alebo skryť navigáciu",
   "kubecode.nav.opening": "Otvára sa pracovný priestor…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Pracovné priestory",
   "kubecode.nav.directMessages": "Priame správy",
   "kubecode.inspector.backTo": "Späť na {place}",

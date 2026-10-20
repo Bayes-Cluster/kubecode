@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Navigation ein-/ausblenden",
   "kubecode.nav.opening": "Arbeitsbereich wird geöffnet…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Arbeitsbereiche",
   "kubecode.nav.directMessages": "Direktnachrichten",
   "kubecode.inspector.backTo": "Zurück zu {place}",

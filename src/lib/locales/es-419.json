@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Mostrar u ocultar la navegación",
   "kubecode.nav.opening": "Abriendo el espacio de trabajo…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Espacios de trabajo",
   "kubecode.nav.directMessages": "Mensajes directos",
   "kubecode.inspector.backTo": "Volver a {place}",

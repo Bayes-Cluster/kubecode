@@ -1249,6 +1249,7 @@
   "kubecode.toggleNavigation": "Visa eller dölj navigeringen",
   "kubecode.nav.opening": "Öppnar arbetsytan…",
   "kubecode.nav.placeAnnouncement": "{workspace}: {place}",
+  "kubecode.nav.workspaceStatus": "{workspace}: {status}",
   "kubecode.nav.workspaces": "Arbetsytor",
   "kubecode.nav.directMessages": "Direktmeddelanden",
   "kubecode.inspector.backTo": "Tillbaka till {place}",
