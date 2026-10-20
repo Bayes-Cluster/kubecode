@@ -1385,3 +1385,61 @@ async fn a_work_card_says_its_question_is_a_task() {
     assert_eq!(status, StatusCode::OK, "{card}");
     assert_eq!(card["research"]["task"], true, "{card}");
 }
+
+/// "Show the message" narrows General to the Task only when the authorizing
+/// message is in the Task's scope.
+#[tokio::test]
+async fn the_authorizing_message_says_whether_it_is_in_the_tasks_scope() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let detail = |id: String| {
+        let env = &env;
+        async move {
+            let (status, body) = call(
+                env,
+                Method::GET,
+                &format!("/projects/{}/tasks/{id}", env.project),
+                Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            body
+        }
+    };
+    let body = detail(task.research_id.clone()).await;
+    assert_eq!(
+        body["authorizing_message"]["task_id"],
+        Value::Null,
+        "{body}"
+    );
+    // An instruction that names the Task is in its scope.
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Quantize"), Some("quant"))
+        .unwrap();
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let (status, message) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/channels/{}/messages", env.project, channel.id),
+        json!({
+            "body": "Add this one to the board",
+            "references": [{"kind": "research", "id": proposal.research_id}],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{message}");
+    manager
+        .task_admit(
+            &proposal.research_id,
+            message["id"].as_str().unwrap(),
+            proposal.revision,
+        )
+        .unwrap();
+    let body = detail(proposal.research_id.clone()).await;
+    assert_eq!(
+        body["authorizing_message"]["task_id"],
+        json!(proposal.research_id),
+        "{body}"
+    );
+}

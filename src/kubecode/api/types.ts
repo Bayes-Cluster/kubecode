@@ -1301,7 +1301,8 @@ export type TaskDetail = TaskCard & {
   brief: ResearchBrief
   revisions: TaskRevisionNote[]
   authorizations?: TaskAuthorization[]
-  authorizing_message: { id: string; body: string; created_at: string } | null
+  /** `task_id`: the Task whose scope of General the message is in (null when it names none). */
+  authorizing_message: { id: string; body: string; created_at: string; task_id?: string | null } | null
   review_requests: TaskReviewRequest[]
   reviews: TaskReviewRecord[]
   internal_work: TaskInternalWork[]

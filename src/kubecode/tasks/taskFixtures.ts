@@ -86,7 +86,7 @@ export function taskDetail(overrides: Partial<TaskDetail> = {}): TaskDetail {
     },
     revisions: [],
     authorizations: [],
-    authorizing_message: { id: 'm1', body: 'That looks right. Please add it.', created_at: '2026-10-20 09:00:00' },
+    authorizing_message: { id: 'm1', body: 'That looks right. Please add it.', created_at: '2026-10-20 09:00:00', task_id: 'r1' },
     review_requests: [reviewRequest()],
     reviews: [],
     internal_work: [],

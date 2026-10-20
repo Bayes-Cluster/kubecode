@@ -153,7 +153,8 @@ function Provenance({ detail, t }: { detail: TaskDetail; t: Translator }) {
             <Button
               size="xs"
               variant="ghost"
-              onClick={() => general({ message: message.id })}
+              // Narrowed to the Task when the message is in its scope; otherwise all of General.
+              onClick={() => general({ message: message.id, filter: message.task_id === detail.id ? detail.id : null })}
             >
               {t('kubecode.task.showMessage')}
             </Button>

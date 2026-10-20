@@ -123,8 +123,9 @@ describe('TaskPanel', () => {
     expect(panel().getByText('Work follows brief revision 2')).toBeInTheDocument()
     expect(panel().getByText('That looks right. Please add it.')).toBeInTheDocument()
     fireEvent.click(panel().getByRole('button', { name: 'Show the message' }))
+    // The message names the Task, so General opens narrowed to it.
     expect(navigation.openPlace).toHaveBeenCalledWith(
-      { view: 'general', message: 'm1', thread: null, filter: null },
+      { view: 'general', message: 'm1', thread: null, filter: 'r1' },
       { inspector: 'keep' },
     )
     expect(panel().getByText('Project manager')).toBeInTheDocument()
@@ -132,6 +133,18 @@ describe('TaskPanel', () => {
     expect(await screen.findByText('member profile')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Back to Pruning heads' }))
     expect(panel().getByRole('tab', { name: 'Overview', selected: true })).toBeInTheDocument()
+  })
+
+  it('shows an authorizing message outside the Task\'s scope in all of General', async () => {
+    const { navigation } = mount(taskDetail({
+      stage: 'ready', review_requested: false, review_requests: [],
+      authorizing_message: { id: 'm1', body: 'Yes, add it.', created_at: '2026-10-20 09:00:00', task_id: null },
+    }))
+    fireEvent.click(await panel().findByRole('button', { name: 'Show the message' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith(
+      { view: 'general', message: 'm1', thread: null, filter: null },
+      { inspector: 'keep' },
+    )
   })
 
   it('discusses the Task in General, at the review request when one is open', async () => {
