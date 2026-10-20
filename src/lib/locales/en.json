@@ -2326,6 +2326,7 @@
   "kubecode.channel.citationMissing": "In reply to an earlier message",
   "kubecode.channel.activity": "Routing note",
   "kubecode.channel.handedTo": "Handed to {names}",
+  "kubecode.channel.handedOff": "Handed to",
   "kubecode.channel.description": "Your team's conversation. Messages go to the project manager unless you @mention someone.",
   "kubecode.channel.to": "To",
   "kubecode.channel.toManager": "General · Project manager",
