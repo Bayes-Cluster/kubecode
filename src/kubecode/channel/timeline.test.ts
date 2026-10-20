@@ -54,13 +54,15 @@ describe('buildTimeline', () => {
     expect(shape(items)).toEqual(['date:Today', 'm1', 'activity:m2,m3', 'm4', 'm5', 'activity:m6'])
   })
 
-  it('shows a denial note on the message it is about, or in activity when that message is not loaded', () => {
+  it('shows a denial note on the message it is about, or on its own, never collapsed, when that message is not loaded', () => {
     const items = buildTimeline([
       at(1, '2026-10-20 12:00:00'),
       note(2, '2026-10-20 12:00:10', { client_message_id: 'route-denied:m1', body: 'Your message was not delivered: x.' }),
       note(3, '2026-10-20 12:00:20', { client_message_id: 'handoff-denied:m0', body: 'A hand-off was not delivered.' }),
+      note(4, '2026-10-20 12:00:30', { body: 'routed' }),
+      note(5, '2026-10-20 12:00:40', { client_message_id: 'route-failed:route-9', body: 'This could not be delivered: removed.' }),
     ], { locale: 'en-US', now, t })
-    expect(shape(items)).toEqual(['date:Today', 'm1[m2]', 'activity:m3'])
+    expect(shape(items)).toEqual(['date:Today', 'm1[m2]', 'm3', 'activity:m4', 'm5'])
     const first = items[1]
     expect(first.kind === 'message' && notesDelivery(first.message, first.notes)).toEqual({
       state: 'failed', text: 'Your message was not delivered: x.',

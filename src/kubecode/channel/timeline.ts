@@ -2,7 +2,8 @@
  * General as the researcher reads it (ADR 0229 §7): days apart, one author's
  * consecutive messages together, routine Kubecode notes collapsed into
  * activity, and a note that a message was not delivered shown on that
- * message. Pure, so the rules are tested without a DOM.
+ * message, or on its own when that message is not loaded: a failure is never
+ * collapsed. Pure, so the rules are tested without a DOM.
  */
 
 import type { Translator } from '@/lib/i18n'
@@ -45,8 +46,13 @@ export function deliveryNoteSource(note: ChannelMessage): string | null {
   return match ? match[1] : null
 }
 
-/** A Kubecode note with no Task is routine: it collapses into activity. */
-const isRoutine = (message: ChannelMessage) => message.author_kind === 'system' && !message.task_id
+/** A note that something was not delivered: always shown, never collapsed into activity. */
+const DELIVERY_FAILURE = /^(?:route-denied|handoff-denied|route-failed):/
+
+/** A Kubecode note with no Task that reports no failure is routine: it collapses into activity. */
+const isRoutine = (message: ChannelMessage) => (
+  message.author_kind === 'system' && !message.task_id && !DELIVERY_FAILURE.test(message.client_message_id ?? '')
+)
 
 const authorKey = (message: ChannelMessage) => (
   `${message.author_kind}:${message.author_member_id ?? message.author_ref ?? ''}`
@@ -68,13 +74,14 @@ export function buildTimeline(
       day = dayKey(date)
       items.push({ kind: 'date', key: `date:${day}`, label: dayLabel(date, now, locale, t) })
     }
+    // A failure about a loaded message is shown on it; one about a message not loaded stands on its own.
+    const source = deliveryNoteSource(message)
+    const owner = source ? byId.get(source) : undefined
+    if (owner) {
+      owner.notes.push(message)
+      continue
+    }
     if (isRoutine(message)) {
-      const source = deliveryNoteSource(message)
-      const owner = source ? byId.get(source) : undefined
-      if (owner) {
-        owner.notes.push(message)
-        continue
-      }
       const last = items.at(-1)
       if (last?.kind === 'activity') last.messages.push(message)
       else items.push({ kind: 'activity', key: `activity:${message.id}`, messages: [message] })
