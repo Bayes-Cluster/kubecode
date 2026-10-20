@@ -16,8 +16,10 @@ export type ViewHeaderProps = {
   /** The view's own actions, at the end of the title row. */
   actions?: ReactNode
   /**
-   * Only on a detail screen that replaced its list (a phone, a detail opened
-   * from elsewhere): returns there. A Workspace view is never "back" anywhere.
+   * Only on a detail screen that replaced its list or another detail (a phone,
+   * a detail opened from elsewhere, evidence opened from a Task in the
+   * inspector, ADR 0228): returns there. A Workspace view is never "back"
+   * anywhere.
    */
   back?: { label: string; onBack: () => void }
   /** Closes a detail shown beside its list. */

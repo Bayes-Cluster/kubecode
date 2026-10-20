@@ -321,7 +321,8 @@ Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
 and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
 is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
-`ResearchWorkspace` in the detail pane and decides reviews through
+`ResearchWorkspace` in the Task panel of the inspector stack
+(`tasks/TaskPanel.tsx`, ADR 0228) and decides reviews through
 `POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
 chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
 `tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
@@ -329,17 +330,45 @@ and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
 member through that Session's own MCP endpoint. The service-level counterpart is
 `server/tests/workspace_blueprint_acceptance.rs`.
 
-Workspace shell (ADR 0224): `app/WorkbenchShell.tsx` keeps one `ViewState`
-(research, channel, work, dm, resources, members) beside the selected Session,
-derives the current `WorkspaceRoute` from it, and `useWorkspaceRouteSync`
-mirrors the route into the URL hash (`app/workspaceRoute.ts` parses strictly and
-formats ids and view names only). `app/WorkspaceNav.tsx` is the Workspace
-navigation (General, Kanban, Resources, Members, Needs you, roster) fed by
-`tasks/useTaskBoard.ts` (`GET …/tasks/board` and `…/drafts`) and `useMembers`;
-Threads and questions sit under a History disclosure. The detail area is a
-slot (`ChannelWorkspace detail`, `.kubecode-with-detail`) that shows a Task's
-research workspace or a `MemberProfile`; `ResourcesView` reuses the project
-context reader in a browsing mode. A route can name a message, read by id
+Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
+Project; where the researcher is in each Workspace is a location kept by the
+pure reducer in `app/location/workspaceLocation.ts` (a place — General with an
+optional message, Task filter and Thread, Kanban, Resources, Members, a private
+conversation, execution history with its Session, or a legacy question — plus an
+inspector stack of ids), remembered per Workspace and per view and stored by
+`useWorkspaceLocation` in `kubecode:workspace-location:v1` as formatted routes
+that the strict parser validates on read. A Workspace with no remembered place
+opens General; nothing falls back to the Sessions surface, which opens only
+through `openSession` (a Session row or search result, New session, a Session
+reference, a permission entry, a notification, or a link). Startup picks a
+link's Project, then the last one used, then the first (`pickInitialWorkspace`).
+`app/location/locationRoute.ts` maps locations to `WorkspaceRoute`s and back;
+`app/workspaceRoute.ts` parses strictly and formats ids and view names only,
+with deeper inspector entries as repeated `inspect=` tokens and file evidence
+never written. `useWorkspaceRouteSync` mirrors the route into the URL hash,
+reports a link still being reached as `pending` (the main pane shows "Opening
+Workspace…", never a Session), abandons a link to an unknown Project at once,
+and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
+the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Members, Needs you from
+`location/needsYou.ts`, the roster, Direct messages), then a collapsed History
+and execution section with the Session search, this Workspace's Sessions and
+Teams, Threads and questions. The inspector (`app/inspector/`) is one stack per
+inspector-hosting view (General, Kanban, Resources, Members, a private
+conversation): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
+(`tasks/TaskPanel.tsx`, `members/MemberPanel.tsx`, `work/EvidencePanel.tsx`,
+`resources/ResourcePanel.tsx`) with the Back and Close the shell computes, keeps
+lower entries mounted under `visibility: hidden` and `inert`, and is shown beside
+the view or over it by the width of the row (`useInspectorPresentation`, a
+container rule; the navigation overlay keeps its 980px viewport rule). Slices
+move the researcher through `location/WorkspaceNavigation.ts` and never import
+the shell. `location/placeMemory.ts` keeps what a place holds besides its address
+for the life of the page and never on disk: drafts and reply targets
+(`usePlaceState`, `usePlaceRef`, keyed by `placeKey`), list scroll positions
+(`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
+General's reading position is reported by `MessageList` and folded into its
+place when General is left. `ResourcesView` reuses the project context reader in
+a browsing mode. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 

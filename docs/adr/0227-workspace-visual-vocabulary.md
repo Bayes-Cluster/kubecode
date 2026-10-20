@@ -89,7 +89,7 @@ Colors stay the existing semantic tokens, so both themes follow.
 - **`ViewHeader`**: a page's, view's, or detail's title (levels 1–3), optional
   icon, description, a `meta` row for status badges, and actions. A detail
   beside its list has a Close; a Back appears only on a detail screen that
-  replaced its list.
+  replaced its list or another detail.
 - **`MoreActions`**: one labelled menu for a row's secondary actions, so rows
   show their primary action and nothing else by default.
 - **`DecisionButton`**: a research decision — adding to the board, accepting
