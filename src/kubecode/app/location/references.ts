@@ -23,7 +23,8 @@ export function inspectorTargetForReference(ref: ProjectContextRef): ReferenceTa
     case 'channel': return { place: { view: 'general' } }
     case 'session': return { session: ref.id }
     case 'work': return { work: ref.id }
-    // A resource is shown live: a chip's revision is a change fingerprint, not a pin.
-    default: return { inspect: { kind: 'resource', ref: { kind: ref.kind, id: ref.id } } }
+    // Shown live, beside the version the chip cites, so the preview can say it changed.
+    // The cited version stays in the page: a route names a resource without it, and never a file.
+    default: return { inspect: { kind: 'resource', ref: { kind: ref.kind, id: ref.id, revision: ref.revision ?? null } } }
   }
 }

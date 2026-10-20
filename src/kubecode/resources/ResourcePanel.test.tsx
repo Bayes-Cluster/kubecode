@@ -165,6 +165,52 @@ describe('ResourcePanel', () => {
     expect(await screen.findByText("Attaching a Task links your message to it. It doesn't approve or start anything.")).toBeInTheDocument()
   })
 
+  /** Shows version aaaa, which then changes while more is loading; the next read is `next`. */
+  async function readAgain(next: () => Promise<ProjectContextDocument>) {
+    const read = vi.fn()
+      .mockResolvedValueOnce({ ...file('aaaaaaaaaaaaaaaa'), next_cursor: 'c1' })
+      .mockResolvedValueOnce({ ...file('aaaaaaaaaaaaaaaa'), availability: 'changed', sections: [], next_cursor: null, shown_revision: null })
+      .mockImplementationOnce(next)
+    const navigation = fakeNavigation({ location: { place: { view: 'general' }, inspector: [] } })
+    const view = mount({ kind: 'resource', ref: { kind: 'file', id: 'results/summary.csv' } }, read, navigation)
+    const add = screen.getByRole('button', { name: 'Add to message' })
+    await waitFor(() => expect(add).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Show the current version' }))
+    return { ...view, add }
+  }
+
+  it('offers nothing while it reads the current version again, then only the version that shows', async () => {
+    let finish: (doc: ProjectContextDocument) => void = () => undefined
+    const { add, memory } = await readAgain(() => new Promise((resolve) => { finish = resolve }))
+    await waitFor(() => expect(add).toBeDisabled())
+    expect(add).toHaveAccessibleDescription('Available once the preview has loaded.')
+    finish(file('bbbbbbbbbbbbbbbb'))
+    await waitFor(() => expect(add).toBeEnabled())
+    fireEvent.click(add)
+    expect(draftOf(memory)?.references).toEqual([
+      { ref: { kind: 'file', id: 'results/summary.csv', revision: 'bbbbbbbbbbbbbbbb' }, title: 'results/summary.csv', seen: 'previewed' },
+    ])
+  })
+
+  it('offers nothing once the record is gone, though a version was shown before', async () => {
+    await readAgain(() => Promise.resolve({ ...file('cccccccccccccccc'), availability: 'removed' as const, sections: [] }))
+    expect(await screen.findByText('This item is no longer available.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to message' })).not.toBeInTheDocument()
+  })
+
+  it('offers nothing once the record cannot be read, though a version was shown before', async () => {
+    const { add } = await readAgain(() => Promise.reject(new Error('offline')))
+    expect(await screen.findByText('Could not load this record.')).toBeInTheDocument()
+    expect(add).toBeDisabled()
+  })
+
+  it('opens a cited record at the version it was cited, and says when it changed since', async () => {
+    mount({ kind: 'resource', ref: { kind: 'file', id: 'results/summary.csv', revision: 'aaaaaaaaaaaaaaaa' } }, vi.fn().mockResolvedValue(file('bbbbbbbbbbbbbbbb')))
+    expect(await screen.findByText('Cited version: #aaaaaaa')).toBeInTheDocument()
+    expect(screen.getByText('Changed since it was cited.')).toBeInTheDocument()
+  })
+
   it('a record that is gone keeps Back and Close and says it is no longer available', async () => {
     const read = vi.fn().mockResolvedValue(finding({ availability: 'removed', sections: [] }))
     mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read)

@@ -144,6 +144,56 @@ describe('AddContextDialog', () => {
     expect(screen.getByRole('button', { name: 'Back to results' })).toBeInTheDocument()
   })
 
+  it('never attaches a version the preview is not showing: choosing another result and coming back reads it again', async () => {
+    const other: ProjectContextItem = { ...fileItem(), ref: { kind: 'file', id: 'notes.md', revision: null }, title: 'notes.md' }
+    let finishAgain: (doc: ProjectContextDocument) => void = () => undefined
+    const readProjectContext = vi.fn()
+      .mockResolvedValueOnce(fileDoc('aaaaaaaaaaaaaaaa'))
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishAgain = resolve }))
+    const { onAttach } = mount({ searchProjectContext: search([fileItem(), other]), readProjectContext })
+    fireEvent.click(await screen.findByRole('option', { name: /results\/summary\.csv/ }))
+    const attach = await screen.findByRole('button', { name: 'Attach this version' })
+    await waitFor(() => expect(attach).toBeEnabled())
+    fireEvent.click(screen.getByRole('option', { name: /notes\.md/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach this version' })).toBeDisabled())
+    // Back to the first: its earlier version is not what is on screen now.
+    fireEvent.click(screen.getByRole('option', { name: /results\/summary\.csv/ }))
+    expect(await screen.findByText('Loading…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Attach this version' })).toBeDisabled()
+    finishAgain(fileDoc('bbbbbbbbbbbbbbbb'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach this version' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Attach this version' }))
+    expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({ ref: { kind: 'file', id: 'results/summary.csv', revision: 'bbbbbbbbbbbbbbbb' } }))
+  })
+
+  it('reopened with the same preview, offers only the version it reads again', async () => {
+    let finishAgain: (doc: ProjectContextDocument) => void = () => undefined
+    const readProjectContext = vi.fn()
+      .mockResolvedValueOnce(fileDoc('aaaaaaaaaaaaaaaa'))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishAgain = resolve }))
+    const { onAttach } = mount({ searchProjectContext: search([fileItem()]), readProjectContext })
+    fireEvent.click(await screen.findByRole('option'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach this version' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'reopen' }))
+    const attach = await screen.findByRole('button', { name: 'Attach this version' })
+    expect(attach).toBeDisabled()
+    finishAgain(fileDoc('bbbbbbbbbbbbbbbb'))
+    await waitFor(() => expect(attach).toBeEnabled())
+    fireEvent.click(attach)
+    expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({ ref: { kind: 'file', id: 'results/summary.csv', revision: 'bbbbbbbbbbbbbbbb' } }))
+  })
+
+  it('offers nothing for a record the preview finds gone', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue({ ...fileDoc('aaaaaaaaaaaaaaaa'), availability: 'removed', sections: [] })
+    mount({ searchProjectContext: search([fileItem()]), readProjectContext })
+    fireEvent.click(await screen.findByRole('option'))
+    expect(await screen.findByText('This record no longer exists.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Attach this version' })).toBeDisabled()
+  })
+
   it('hands the draft to Resources and says where to return', async () => {
     const { memory, navigation } = mount({ searchProjectContext: search([]) })
     fireEvent.click(screen.getByRole('button', { name: 'Browse in Resources' }))

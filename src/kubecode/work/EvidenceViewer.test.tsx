@@ -59,7 +59,7 @@ describe('EvidenceViewer', () => {
     await waitFor(() => expect(onDisplayed).toHaveBeenCalledWith({ kind: 'file', id: 'results.csv', revision: 'c3c3c3c3c3c3c3c3', title: 'results.csv' }))
     expect(onDisplayed).toHaveBeenCalledTimes(1)
     // Versions in words, never raw fingerprints.
-    expect(screen.getByText('Cited at revision #a1a1a1a')).toBeInTheDocument()
+    expect(screen.getByText('Cited version: #a1a1a1a')).toBeInTheDocument()
     expect(screen.getByTestId('evidence-viewer')).toHaveAttribute('data-shown-revision', 'c3c3c3c3c3c3c3c3')
   })
 

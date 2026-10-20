@@ -70,6 +70,7 @@ export function AddContextDialog({
   const [, setAttachTarget] = useAttachTarget(projectId)
   const memoryKey = `${placeMemoryKey}#search`
   const [previewed, setPreviewed] = usePlaceState<Previewed | null>(`${memoryKey}#preview`, null)
+  // What the preview has on screen now, and nothing else: forgotten whenever it reads again, fails, or closes.
   const [shown, setShown] = useState<DisplayedRecord | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const reasonId = useId()
@@ -89,7 +90,7 @@ export function AddContextDialog({
       return
     }
     setRefusal(null)
-    onOpenChange(false)
+    changeOpen(false)
   }
   const attachShown = () => {
     if (!reference || !shownHere || reason) return
@@ -118,9 +119,15 @@ export function AddContextDialog({
     searchArea.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus()
   }
   const onDisplayed = useCallback((displayed: DisplayedRecord) => setShown(displayed), [])
+  const forgetShown = useCallback(() => setShown(null), [])
+  const changeOpen = (next: boolean) => {
+    // Reopened, the preview reads again: the version seen before is not on screen yet.
+    if (!next) setShown(null)
+    onOpenChange(next)
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         className="kubecode-add-context-dialog"
         onCloseAutoFocus={onCloseAutoFocus}
@@ -152,6 +159,7 @@ export function AddContextDialog({
               onAttachCurrent={(result) => void attachCurrent(result)}
               onChoose={(result) => {
                 setRefusal(null)
+                setShown(null)
                 setPreviewed({ kind: result.item.ref.kind, id: result.item.ref.id, title: result.item.title })
               }}
             />
@@ -186,7 +194,9 @@ export function AddContextDialog({
                   projectId={projectId}
                   t={t}
                   target={previewed}
+                  onCleared={forgetShown}
                   onDisplayed={onDisplayed}
+                  onFailed={forgetShown}
                 />
                 <div className="kubecode-add-context-actions">
                   <Button
@@ -214,7 +224,7 @@ export function AddContextDialog({
             onClick={() => {
               onLeave?.()
               setAttachTarget({ filter, focusKey: 'composer:general' })
-              onOpenChange(false)
+              changeOpen(false)
               navigation.openPlace({ view: 'resources' }, { focus: 'resources:search' })
             }}
           >

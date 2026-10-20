@@ -29,15 +29,24 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
   const navigation = useWorkspaceNavigation()
   const attachment = useAttachToDraft(t)
   const { id, kind } = entry.ref
-  const [shown, setShown] = useState<DisplayedRecord | null>(null)
+  // The version a Task or message cited, when the record was opened from a citation.
+  const cited = entry.ref.revision ?? null
+  // What is on screen now, and nothing else: forgotten whenever the preview reads again or fails.
+  const [displayed, setDisplayed] = useState<DisplayedRecord | null>(null)
+  const shown = displayed && displayed.kind === kind && displayed.id === id ? displayed : null
   const [removed, setRemoved] = useState(false)
   const [provenance, setProvenance] = useState<ProjectContextDocument['provenance'] | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const describedBy = useId()
 
-  const onDisplayed = useCallback((displayed: DisplayedRecord) => setShown(displayed), [])
+  const onDisplayed = useCallback((next: DisplayedRecord) => {
+    setDisplayed(next)
+    setRemoved(false)
+  }, [])
+  const onCleared = useCallback(() => setDisplayed(null), [])
   const onLoaded = useCallback((doc: ProjectContextDocument) => setProvenance(doc.provenance), [])
   const onFailed = useCallback((reason: 'failed' | 'removed') => {
+    setDisplayed(null)
     if (reason === 'removed') setRemoved(true)
   }, [])
   const onFollow = useCallback((item: ProjectContextItem) => {
@@ -50,13 +59,14 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
   const reference = shown ? { kind, id, revision: shown.revision } : null
   const already = reference !== null && attachment !== null && attachment.has(reference)
   const full = attachment?.full === true && kind !== 'research'
-  const reason = !shown ? t('kubecode.resources.waitForPreview')
+  const reason = removed ? t('kubecode.resources.removedCannotAdd')
+    : !shown ? t('kubecode.resources.waitForPreview')
     : already ? t('kubecode.resources.alreadyAdded')
       : full ? t('kubecode.resources.limitReached', { count: MAX_DRAFT_REFERENCES })
         : t('kubecode.resources.addsVersion', { place: attachment?.place ?? '' })
 
   const add = () => {
-    if (!attachment || !reference || !shown) return
+    if (!attachment || !reference || !shown || removed) return
     const result = attachment.attach({ ref: reference, title: shown.title, seen: 'previewed' })
     if (result === 'added') setAnnouncement(t('kubecode.resources.added', { title: shown.title }))
     else if (result === 'replaced') setAnnouncement(t('kubecode.resources.updated', { title: shown.title }))
@@ -69,7 +79,7 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
           {attachment && (
             <Button
               aria-describedby={describedBy}
-              disabled={!shown || already || full}
+              disabled={!shown || removed || already || full}
               size="sm"
               type="button"
               onClick={add}
@@ -100,11 +110,13 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
       <p className="sr-only" role="status">{announcement}</p>
       <RecordPreview
         api={api}
+        cited={cited}
         events={events}
         key={`${kind}:${id}`}
         projectId={projectId}
         t={t}
         target={{ kind, id }}
+        onCleared={onCleared}
         onDisplayed={onDisplayed}
         onFailed={onFailed}
         onFollow={onFollow}

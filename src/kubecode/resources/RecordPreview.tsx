@@ -30,6 +30,12 @@ export type RecordPreviewProps = {
    * gone, or for a file that has no text to show.
    */
   onDisplayed?: (shown: DisplayedRecord) => void
+  /**
+   * Called whenever none of the record is on screen: on mount while it
+   * loads, while it is read again, and once a read failed or found it gone.
+   * A host that offers the version on screen forgets it here.
+   */
+  onCleared?: () => void
   /** Called once the record could not be read: `removed` when it is gone or of a kind it cannot show. */
   onFailed?: (reason: 'failed' | 'removed') => void
   /** The first page as read, for what a host shows around it (provenance). */
@@ -57,6 +63,7 @@ export function RecordPreview({
   cited = null,
   compact = false,
   events = [],
+  onCleared,
   onDisplayed,
   onFailed,
   onFollow,
@@ -80,6 +87,13 @@ export function RecordPreview({
     reported.current = key
     onDisplayed?.({ kind: target.kind, id: target.id, revision: shownRevision, title: shownTitle })
   }, [onDisplayed, projectId, shownRevision, shownTitle, target.id, target.kind])
+  const onScreen = shownTitle !== null
+  useEffect(() => {
+    if (onScreen) return
+    // Whatever shows next is reported, even the same version again.
+    reported.current = null
+    onCleared?.()
+  }, [onCleared, onScreen])
 
   // A file with no text to show (not UTF-8) was read, but nothing of it could be shown: that is a failed display.
   const unreadable = ready !== null && !displayed
@@ -111,7 +125,8 @@ export function RecordPreview({
   }
   const { doc } = state
   const version = formatVersion(target.kind, shownRevision, t)
-  const changed = doc.availability === 'changed' || (cited !== null && shownRevision !== null && cited !== shownRevision)
+  // Only something that was cited can have changed since it was cited.
+  const changed = cited !== null && shownRevision !== null && cited !== shownRevision
   const citedVersion = cited ? formatVersion(target.kind, cited, t) : undefined
   const showCurrent = onShowCurrent ?? state.reload
   return (

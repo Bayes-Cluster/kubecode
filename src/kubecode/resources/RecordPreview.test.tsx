@@ -169,6 +169,43 @@ describe('RecordPreview', () => {
     expect(onFollow).toHaveBeenCalledWith(related)
   })
 
+  it('says nothing changed when nothing cited it, and names the cited version in words', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document({ availability: 'changed' }))
+    const view = mount({ readProjectContext })
+    await screen.findByText('model,accuracy')
+    expect(screen.queryByText('Changed since it was cited.')).not.toBeInTheDocument()
+    view.unmount()
+    mount({ readProjectContext: vi.fn().mockResolvedValue(document()) }, { cited: '3f2c1a9e5b7d4c6a' })
+    expect(await screen.findByText('Cited version: #3f2c1a9')).toBeInTheDocument()
+    expect(screen.queryByText('Changed since it was cited.')).not.toBeInTheDocument()
+  })
+
+  it('shows an empty file as displayed, at its version', async () => {
+    const { onDisplayed } = mount({ readProjectContext: vi.fn().mockResolvedValue(document({ sections: [{ heading: 'Content', text: '', truncated: false }] })) })
+    await waitFor(() => expect(onDisplayed).toHaveBeenCalledWith(expect.objectContaining({ revision: '3f2c1a9e5b7d4c6a' })))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says when nothing is on screen: while loading and while reading again', async () => {
+    const onCleared = vi.fn()
+    let finish: (doc: ProjectContextDocument) => void = () => undefined
+    const readProjectContext = vi.fn()
+      .mockResolvedValueOnce(document({ next_cursor: 'c1' }))
+      .mockResolvedValueOnce(document({ availability: 'changed', sections: [], next_cursor: null, shown_revision: null }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const { onDisplayed } = mount({ readProjectContext }, { onCleared })
+    expect(onCleared).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onDisplayed).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Show the current version' }))
+    // Reading again: nothing is on screen until the new version is.
+    await waitFor(() => expect(onCleared).toHaveBeenCalledTimes(2))
+    await act(async () => finish(document()))
+    // The same version shown again is reported again.
+    await waitFor(() => expect(onDisplayed).toHaveBeenCalledTimes(2))
+    expect(onDisplayed).toHaveBeenLastCalledWith(expect.objectContaining({ revision: '3f2c1a9e5b7d4c6a' }))
+  })
+
   it('drops a read that lands after the target changed', async () => {
     let resolveFirst: (value: ProjectContextDocument) => void = () => undefined
     const readProjectContext = vi.fn()
