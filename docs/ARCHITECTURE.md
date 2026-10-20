@@ -131,17 +131,34 @@ Project context discovery (ADR 0214) is a read-only service, not a store.
 `server/src/project_context/` composes the research, Session, Team, and
 experiment stores and `WorkspaceService` in `AppState` and answers `search`,
 `read`, and `resolve` over typed references (`research`, `round`, `finding`,
-`session`, `session_turn`, `team`, `team_task`, `experiment`, `artifact`). It
+`session`, `session_turn`, `team`, `team_task`, `import`, `experiment`,
+`artifact`, `work`, `thread`, `channel`, and `file`). It
 keeps no data and no index, so an answer can never drift from its owner; every
 call takes the Project first and treats another Project's record as missing.
 `server/src/context_api/` exposes it under
 `/api/v1/projects/{project_id}/context/{search,read,resolve}`. Reads are
 bounded (summaries of 280 characters, sections of 8 KiB, page cap of 50, a
-200-candidate scan per owner flagged `truncated`), progressive
+200-candidate scan per owner), progressive
 (`summary` → `content` → `evidence`), and passive: they never start an Agent,
-assign work, approve a brief, or grant execution. Artifacts are read as bounded
+assign work, approve a brief, or grant execution. A search page names its scope
+(ADR 0231 §2): `searched` (the kinds covered; an empty request covers every
+kind but `file`), `truncated_kinds` (the kinds a cap or budget cut short, with
+`truncated` true exactly when it is not empty), and `counts` (matches per kind
+before paging). Artifacts and files on a returned page get a metadata-only
+existence check, so a removed one is listed as removed. Artifacts are read as bounded
 UTF-8 text through `WorkspaceService::read_execution_text` under the execution
-root of the Team that ran the experiment, with no symlink traversal.
+root of the Team that ran the experiment, with no symlink traversal. Project
+files (ADR 0231 §1) are a `file` reference whose id is a Project-relative path
+(never through `.git` or a symlink) and whose revision is the fingerprint work
+evidence pins. They are searched only when the kind is named, by
+`WorkspaceService::search_project_files` (a breadth-first walk bounded at 5,000
+entries and 16 levels that skips hidden, generated, and Git-ignored entries and
+keeps the 200 newest path matches), and read a page at a time by
+`WorkspaceService::read_text_page` with a cursor bound to the file's revision,
+so a file that changes between pages is reported changed instead of spliced.
+A read names `shown_revision`, the revision whose content it shows (the pinned
+brief, the bytes of a page); `resolve` returns a record's `title` only when the
+record is visible in the Project, never for a missing, private, or foreign one.
 `AgentStore::read_turn_text` gives cross-Session turn reads a bounded view of
 the canonical event log without copying it.
 
@@ -171,7 +188,9 @@ Composer kind (`composer_catalog.rs`, `api/composer.rs`, the preflight in
 `agent_runtime/dispatch.rs`): the picker in `ComposerProjectWorkPicker` searches
 and previews through `/context/search` and `/context/read`, and registration,
 validation, and dispatch re-resolve the typed reference server-side, so the
-browser never supplies authority or content.
+browser never supplies authority or content It
+does not accept a `file` Project reference: a Session composer cites files
+under its own execution root.
 
 Imported discussion (ADR 0214 §8) lives in `research_store/imports.rs` and is
 exposed by `research_api/imports.rs`: immutable, attributed source material per
@@ -395,7 +414,13 @@ conversation with a member: `POST …/members/{id}/dm` (opens the DM Session),
 configured and briefed), and `…/dm/share/preview` + `…/dm/share` (the exact
 text, confirmed by digest, posted as the researcher's own message).
 `ProjectContext::with_members` hides every DM Session from search, resolve, and
-read; `channel_api` refuses mentions and citations of one. The browser surface
+read; `channel_api` refuses mentions and citations of one. A researcher's
+General or Thread message and a DM share pin their references first
+(`channel_api::pin_references` over `ProjectContext::pin`, ADR 0231 §5): a
+reference without a revision gets the current one, a supplied revision is kept,
+a removed record is refused with a 400, and a retried client message id replays
+the stored message before anything is resolved again. Agent posts are
+unchanged. The browser surface
 is `src/kubecode/dm/` (`DmPane`, `DmShareDialog`) beside the channel's task
 filter, citations, and collapsed routing notes.
 

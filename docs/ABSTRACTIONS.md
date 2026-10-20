@@ -973,8 +973,9 @@ editing, discussing, archiving, or linking an RQ never starts an Agent.
 
 A **context reference** is `{ kind, id, revision? }` and points at an existing
 object in one Project: a research question, round, finding, Session, Session
-turn (`conversation_id/run_id`), Team, task, experiment, or experiment artifact
-(`experiment_id/path`). The `revision` is a *fingerprint*, not a snapshot: it
+turn (`conversation_id/run_id`), Team, task, imported discussion, experiment,
+experiment artifact (`experiment_id/path`), work item, Thread, channel, or
+Project file (`file`, a Project-relative path; ADR 0231). The `revision` is a *fingerprint*, not a snapshot: it
 detects that something changed, it cannot restore old content, so the reader
 reports `available`, `changed`, or `removed` and never invents the old bytes.
 A **live** reference (no revision) reads the current state; a **pinned**
@@ -990,6 +991,30 @@ another Project is indistinguishable from a missing one, hidden snapshots and
 subagent threads are not Sessions, and a turn still running is readable but
 marked partial. Reading is passive and never writes. A finding read carries its
 basis: it is an Agent's recorded claim, not a verified result.
+
+A search page names its scope: `searched` (the kinds covered; an empty request
+covers every kind but `file`, so the disk is walked only when files are
+asked for), `truncated_kinds` (the kinds a scan cap or budget cut short), and
+`counts` (matches per kind before paging). A read names `shown_revision`, the
+revision whose content its sections show, which can differ from the current
+revision in `ref` (an older pinned brief) and is absent when nothing of the
+record is shown. A resolved reference carries the record's `title` only when it
+is visible here.
+
+| Kind | Id | Revision |
+| --- | --- | --- |
+| `file` | Project-relative path, never inside `.git`, reached through no symlink | SHA-256 of the bytes, or `large:<size>:<mtime>` above 8 MiB (the work-evidence fingerprint) |
+
+A file is found by the words of its path, listed newest first, and never listed
+when hidden, generated, or Git-ignored (it is still readable when named). It
+is read a page at a time with a cursor bound to its revision, so a page of
+another version is reported as `changed`, never spliced in.
+
+A reference a researcher posts in General, in a Thread, or with a direct
+message share is **pinned**: the server fills a missing revision with the
+current one, keeps a supplied one (the version the researcher saw), and refuses
+a record that no longer exists. A pinned message reference therefore always
+says which version was cited.
 
 ## Context tools
 
