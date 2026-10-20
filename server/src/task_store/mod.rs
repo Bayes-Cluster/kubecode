@@ -2005,6 +2005,50 @@ impl TaskStore {
         Ok(drafts)
     }
 
+    /// Every open review request of a Project.
+    pub fn open_review_requests(&self, project_id: &str) -> Result<Vec<ReviewRequest>, TaskError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(&format!(
+            "{REQUEST_SELECT} WHERE project_id = ?1 AND state = 'open' ORDER BY created_at, rowid"
+        ))?;
+        Ok(statement
+            .query_map([project_id], request_from_row)?
+            .collect::<Result<_, _>>()?)
+    }
+
+    /// Proposals waiting for the researcher's word: an unarchived question
+    /// whose current revision the General Agent showed in General (`showings`,
+    /// from `ChannelStore::proposal_showings`) and that is not admitted yet,
+    /// or is admitted, not Done, with that revision not yet approved.
+    pub fn awaiting_proposals(
+        &self,
+        project_id: &str,
+        showings: &std::collections::HashMap<(String, u64), String>,
+    ) -> Result<Vec<AwaitingProposal>, TaskError> {
+        let mut awaiting = Vec::new();
+        for summary in self.research.list(project_id, false)? {
+            let Some(message_id) = showings.get(&(summary.id.clone(), summary.revision)) else {
+                continue;
+            };
+            let admitted = self.admission(project_id, &summary.id)?.is_some();
+            if admitted
+                && (self.stage(project_id, &summary.id)? == Some(TaskStage::Done)
+                    || self.approved_revision(project_id, &summary.id)? >= summary.revision)
+            {
+                continue;
+            }
+            awaiting.push(AwaitingProposal {
+                research_id: summary.id,
+                title: summary.title,
+                revision: summary.revision,
+                message_id: message_id.clone(),
+                admitted,
+                created_at: summary.updated_at,
+            });
+        }
+        Ok(awaiting)
+    }
+
     /// A Task's history, oldest first and at most the newest 100 steps: its
     /// events, the approvals of revised briefs, and every brief revision, each
     /// with the General message that carried it. Message ids come from two

@@ -1228,3 +1228,29 @@ fn batched_lookups_find_proposals_reviews_and_messages_in_order() {
             .is_empty()
     );
 }
+
+#[test]
+fn routing_marks_report_how_researcher_messages_were_read() {
+    let r = rig();
+    let channel = r.channel();
+    let pending = r.say(&channel, "hello");
+    let read = r.say(&channel, "read me");
+    r.channels.mark_routed(r.project(), &read.id).unwrap();
+    let marks = r
+        .channels
+        .routing_marks(
+            r.project(),
+            &[pending.id.clone(), read.id.clone(), "missing".into()],
+        )
+        .unwrap();
+    assert_eq!(marks.len(), 2);
+    assert_eq!(marks[&pending.id].routing.as_deref(), Some("pending"));
+    assert_eq!(marks[&read.id].routing.as_deref(), Some("done"));
+    assert!(!marks[&read.id].intent_claimed);
+    assert!(
+        r.channels
+            .routing_marks("other", std::slice::from_ref(&read.id))
+            .unwrap()
+            .is_empty()
+    );
+}

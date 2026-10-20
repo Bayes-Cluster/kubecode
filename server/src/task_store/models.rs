@@ -311,6 +311,19 @@ pub struct ArchivedTask {
     pub updated_at: String,
 }
 
+/// A proposal revision shown in General and waiting for the researcher's word.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AwaitingProposal {
+    pub research_id: String,
+    pub title: String,
+    pub revision: u64,
+    /// The newest General message that showed this revision.
+    pub message_id: String,
+    /// Admitted already: the revision is a changed brief awaiting approval.
+    pub admitted: bool,
+    pub created_at: String,
+}
+
 /// Whether an action is available now, and if not, why (a code).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Availability {

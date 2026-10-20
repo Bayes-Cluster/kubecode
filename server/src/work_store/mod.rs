@@ -14,7 +14,7 @@ mod models;
 mod sync;
 
 pub(crate) use commands::{refresh_readiness, validate_reference};
-pub use decisions::DecisionRequest;
+pub use decisions::{DecisionRequest, OpenAssignment, OpenDecision};
 pub use models::*;
 
 use std::sync::Arc;

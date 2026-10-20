@@ -240,6 +240,17 @@ impl MessagePageView {
     }
 }
 
+/// How the orchestrator read a message: `routing` is `pending`, `done`, or
+/// `None` for a message that is never routed; `issue` names why it reached
+/// nobody (or not everyone it named).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct RoutingMark {
+    pub routing: Option<String>,
+    pub issue: Option<String>,
+    pub reroutes: u32,
+    pub intent_claimed: bool,
+}
+
 /// The result of claiming a message's intent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Claim {

@@ -1,3 +1,4 @@
+mod attention;
 mod composer;
 mod conversations;
 mod events;
@@ -10,6 +11,7 @@ mod revisions;
 mod runs;
 mod turns;
 
+pub use attention::{ActiveRun, Admission, LatestRun};
 pub use events::{RuntimeRunEvent, RuntimeUpdate, WorkspaceEvent, WorkspaceEventBus};
 pub use ilink::{
     ILINK_DEDUPE_KEEP, ILINK_QUICK_PROMPT_SLOTS, IlinkAccount, IlinkCredentialRecord, IlinkPeer,

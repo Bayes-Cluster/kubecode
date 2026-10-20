@@ -832,6 +832,81 @@ impl ChannelStore {
             .collect::<Result<_, _>>()?)
     }
 
+    /// The newest General message that showed each proposal revision, as
+    /// `(research id, revision) → message id`. Only the Task service keys
+    /// proposals `proposal:{id}:{revision}` (or a later `…:again:…` copy), so a
+    /// question nobody proposed never appears.
+    pub fn proposal_showings(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+    ) -> Result<HashMap<(String, u64), String>, ChannelError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT client_message_id, id FROM channel_messages
+             WHERE project_id = ?1 AND channel_id = ?2 AND thread_id IS NULL
+               AND author_kind = 'agent' AND client_message_id LIKE 'proposal:%'
+             ORDER BY seq DESC",
+        )?;
+        let rows = statement.query_map(params![project_id, channel_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut showings = HashMap::new();
+        for row in rows {
+            let (key, id) = row?;
+            let mut parts = key.split(':');
+            let (Some(_), Some(research), Some(revision)) =
+                (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            let Ok(revision) = revision.parse::<u64>() else {
+                continue;
+            };
+            showings
+                .entry((research.to_owned(), revision))
+                .or_insert(id);
+        }
+        Ok(showings)
+    }
+
+    /// How each of these messages was read by the orchestrator.
+    pub fn routing_marks(
+        &self,
+        project_id: &str,
+        ids: &[String],
+    ) -> Result<HashMap<String, RoutingMark>, ChannelError> {
+        let connection = self.connection();
+        let mut marks = HashMap::new();
+        for chunk in ids.chunks(100) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let mut statement = connection.prepare(&format!(
+                "SELECT id, routing, intent_claimed_by IS NOT NULL FROM channel_messages
+                 WHERE project_id = ?1 AND id IN ({placeholders})"
+            ))?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&project_id as &dyn rusqlite::ToSql)
+                    .chain(chunk.iter().map(|id| id as &dyn rusqlite::ToSql))
+                    .collect();
+            let rows = statement.query_map(params.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    RoutingMark {
+                        routing: row.get(1)?,
+                        issue: None,
+                        reroutes: 0,
+                        intent_claimed: row.get(2)?,
+                    },
+                ))
+            })?;
+            for row in rows {
+                let (id, mark) = row?;
+                marks.insert(id, mark);
+            }
+        }
+        Ok(marks)
+    }
+
     /// These messages of the Project, in order; unknown ids are skipped.
     pub fn messages_by_ids(
         &self,
