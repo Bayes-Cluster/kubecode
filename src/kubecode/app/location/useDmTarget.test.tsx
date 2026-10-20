@@ -57,10 +57,18 @@ describe('useDmTarget', () => {
     expect(result.current.member?.dm_conversation_id).toBe('s-p2')
   })
 
+  it('opens the conversation itself when the roster cannot be read, instead of waiting for it', async () => {
+    const opened = member({ dm_conversation_id: 's-dm' })
+    const client = api(() => Promise.resolve(opened))
+    const { result } = renderHook(() => useDmTarget(client, 'p1', 'm1', null, { rosterFailed: true }))
+    await waitFor(() => expect(result.current).toEqual({ status: 'ready', member: opened }))
+    expect(client.openMemberDm).toHaveBeenCalledTimes(1)
+  })
+
   it('reports a conversation that cannot be opened', async () => {
     const onError = vi.fn()
     const client = api(() => Promise.reject(new Error('gone')))
-    const { result } = renderHook(() => useDmTarget(client, 'p1', 'm1', [member({})], onError))
+    const { result } = renderHook(() => useDmTarget(client, 'p1', 'm1', [member({})], { onError }))
     await waitFor(() => expect(result.current.status).toBe('error'))
     expect(result.current.member).toBeNull()
     expect(onError).toHaveBeenCalledTimes(1)

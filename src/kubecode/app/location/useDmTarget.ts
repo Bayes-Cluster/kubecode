@@ -11,14 +11,16 @@ type Opened = { member: Member } | { error: unknown }
  * place holds only the member id; the Member with its conversation comes from
  * the roster when the conversation already exists, and is otherwise opened
  * once per Workspace and member. A result for another Workspace or member is
- * never shown. `roster` is `null` while it loads.
+ * never shown. `roster` is `null` while it loads; once it is known not to load
+ * (`rosterFailed`), the conversation is opened without it, so a link never
+ * waits for a roster that will not come.
  */
 export function useDmTarget(
   api: KubecodeApi,
   projectId: string | null,
   memberId: string | null,
   roster: readonly Member[] | null,
-  onError?: (cause: unknown) => void,
+  { onError, rosterFailed = false }: { onError?: (cause: unknown) => void; rosterFailed?: boolean } = {},
 ): DmTarget {
   const key = projectId && memberId ? `${projectId}|${memberId}` : null
   const known = memberId
@@ -33,7 +35,7 @@ export function useDmTarget(
     onErrorRef.current = onError
   })
 
-  const needsOpening = key !== null && known === null && roster !== null
+  const needsOpening = key !== null && known === null && (roster !== null || rosterFailed)
   useEffect(() => {
     if (!needsOpening || !key || !projectId || !memberId || requested.current.has(key)) return
     requested.current.add(key)

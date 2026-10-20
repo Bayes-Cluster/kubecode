@@ -512,6 +512,28 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
   })
 
+  it('opens a private conversation from a link even when the roster cannot be read', async () => {
+    const analyst = member({ id: 'm-analyst', role: 'specialist', name: 'Analyst', handle: 'analyst', dm_conversation_id: 's-dm' })
+    await start('#/p/project-1/dm/m-analyst', api({
+      listMembers: vi.fn().mockRejectedValue(new Error('roster down')),
+      openMemberDm: vi.fn().mockResolvedValue(analyst),
+      memberDmTurns: vi.fn().mockResolvedValue([]),
+    }))
+    expect(await screen.findByRole('heading', { name: 'Private conversation with Analyst' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst')
+  })
+
+  it('falls back to General with the error shown when neither the roster nor the conversation can be read', async () => {
+    await start('#/p/project-1/dm/m-analyst', api({
+      listMembers: vi.fn().mockRejectedValue(new Error('roster down')),
+      openMemberDm: vi.fn().mockRejectedValue(new Error('gone')),
+    }))
+    expect(await screen.findByRole('heading', { name: '# General' })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
+    expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
+    expect(document.querySelector('.kubecode-topbar-error')).toHaveAttribute('aria-label', 'gone')
+  })
+
   it('restores the remembered place, never Sessions, from a damaged link', async () => {
     storeLocations({
       lastProjectId: 'project-1',

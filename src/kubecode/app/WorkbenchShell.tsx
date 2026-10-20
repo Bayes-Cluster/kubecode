@@ -526,14 +526,17 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
 
   // A private conversation is named by its member; the Member comes from the roster or is opened.
   const dmMemberId = place.view === 'dm' ? place.member : null
-  const dmTarget = useDmTarget(api, projectId, dmMemberId, rosterMembers, (cause) => {
-    setError(errorMessage(cause, t('kubecode.error')))
-    if (projectId && dmMemberId) {
-      dispatchLocation(
-        { type: 'reconcile', projectId, facts: { removedMemberIds: new Set([dmMemberId]) } },
-        { history: 'replace' },
-      )
-    }
+  const dmTarget = useDmTarget(api, projectId, dmMemberId, rosterMembers, {
+    rosterFailed: roster.status === 'error',
+    onError: (cause) => {
+      setError(errorMessage(cause, t('kubecode.error')))
+      if (projectId && dmMemberId) {
+        dispatchLocation(
+          { type: 'reconcile', projectId, facts: { removedMemberIds: new Set([dmMemberId]) } },
+          { history: 'replace' },
+        )
+      }
+    },
   })
 
   // Execution history remembers its Session: it reopens once this Workspace's
