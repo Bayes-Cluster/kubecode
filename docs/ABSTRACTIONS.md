@@ -1137,8 +1137,11 @@ or SSE reconnect.
 
 **Pending decisions** are a server projection: the decisions only the
 researcher can make (a member's permission or input request, a question on a
-Task's work, a review, a proposal shown in General, a member's setup), each
-keyed by its decision identity so it appears once wherever it is referred to.
+Task's work, a review, a suggested change of direction, a revised brief
+awaiting approval, a proposal shown in General, a member's setup), each keyed
+by its decision identity — the key the Task panel uses too — so it appears once
+wherever it is referred to. Only an input request has a deadline; a permission
+request waits until answered or its turn stops.
 A Task's condition, a run's waiting status, or an unread message is never one.
 A source that cannot be read makes the snapshot incomplete, never empty. In the
 browser one **attention store** per Workspace holds the newest snapshot; Needs
@@ -1147,6 +1150,13 @@ for the others), the Task panel, the **Working now** strip and the Session
 prompt all read it, and an answer keeps its item **resolving** until a newer
 snapshot drops it, so every surface clears together. Each item opens the
 context that holds the decision and focuses it there. See ADR 0232.
+
+An **outbox row** is a send the server has not acknowledged, in General or a
+DM: apart from the draft, under the client message id it was first sent with,
+so Send again is the same message and nothing typed meanwhile is merged into
+it. A **route retry** re-arms a failed route the researcher originated under the
+same identity, at most three times; a review verdict its Task has moved past is
+**superseded** and never delivered late.
 
 **Working now** lists a scope's member turns (General, one DM, or a Task) with
 what they work on and what is queued. **Stop** ends one named turn now and says

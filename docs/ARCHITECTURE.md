@@ -362,21 +362,33 @@ cursor first, then the runtime's pending permission and input maps
 (`AgentRuntime::pending_requests`, never tool input; a Team leader's request
 counts once escalated, and escalation now updates the waiting entry), open
 questions on work inside a Task (`WorkStore::open_decisions`), open review
-requests, proposals the General Agent showed and nobody admitted or approved
+requests, undecided suggestions (`ResearchStore::open_proposals`), every
+admitted Task's brief revised past its approved revision
+(`TaskStore::awaiting_briefs`, the rule `TaskStore::pending` shares through
+`brief_awaiting`, with the General message when one showed it), proposals the
+General Agent showed that are not on the board yet
 (`TaskStore::awaiting_proposals` over `ChannelStore::proposal_showings`),
 members needing setup, active runs, member Sessions' latest failed turn, queued
 prompts and failed researcher-originated routes; the pure `project` keys each
-decision (`permission:`, `input:`, `question:`, `review:`,
-`proposal:<task>:<revision>`, `setup:`) so it appears once, orders and caps the
-list, and reports a failing source in `incomplete`. `attention_api.rs` serves
+decision (`permission:`, `input:`, `question:<request>`, `review:`,
+`suggestion:<entry>`, `brief:<task>:<revision>`, `proposal:<task>:<revision>`,
+`setup:`, the keys the Task detail's `pending` uses too) so it appears once,
+orders and caps the list, and reports a failing source in `incomplete`. Only
+input requests carry `deadline_ms`; a permission request has none, because the
+runtime never times it out. `attention_api.rs` serves
 `GET …/projects/{p}/attention` and `GET …/attention/summary`; decisions are
 still answered on their own endpoints. `orchestrator/delivery.rs` projects each
 researcher message from its routing mark (`routing` pending, done or `denied`,
 with `routing_issue` and `reroutes`), its routes, and the recipient Session's
 admission of `route:<route>:<recipient>` (started, queued, withdrawn):
 `GET …/deliveries?message_ids=`, a `deliveries` map on message pages,
-`POST …/routes/{id}/retry` (same route id, at most three times, researcher kinds
-only) and `POST …/messages/{m}/reroute`. Failure and denial notes are keyed
+`POST …/routes/{id}/retry` (same route id, researcher kinds only, at most three
+times with the limit inside the conditional `UPDATE`; `route_target_gone`,
+`route_needs_setup` without using a retry, `route_unavailable`, and
+`route_superseded` for a review verdict that is no longer its Task's last step
+or whose Task is archived, which `RouteDelivery.superseded` also reports) and
+`POST …/messages/{m}/reroute` (only for `manager_unavailable` and
+`member_unavailable`; `Denial.reroutable` follows the code). Failure and denial notes are keyed
 per retry or reroute and a note already written never aborts a pass. The DM
 send reports `admission`, `…/dm/pending` lists queued direct messages, and the
 Task detail adds `execution` (the round's pause policy) and `delivery_issues`.
@@ -394,23 +406,30 @@ it (10 s fallback), so Needs you, the bell, the Task panel, the strip and the
 Session prompt resolve together and nothing is removed locally.
 `attention/attentionTargets.ts` turns items into `NeedsYouEntry` (title, badge,
 detail, group, and a target with a `focus` key: `question:`/`review:` on the
-Task inspector, whose tab the shell sets first; `message:` for a proposal in
-General; `permission:`/`input:` in General's or the DM's Working-now strip, or
+Task inspector, whose tab the shell sets first, `suggestion:` in its Results and
+`brief:` in its Overview; `message:` for a proposal, or a revised brief General
+showed, in General; `permission:`/`input:` in General's or the DM's Working-now strip, or
 the Session itself; `member-setup:` on Members). The titlebar bell counts this
 Workspace's entries and the others' from `GET …/attention/summary`
 (`useAttentionSummary`, 1 s debounce); a notification click opens the waiting
-item of that Session when there is one. `PermissionPrompt` and
+item of that Session when there is one; past five entries the bell offers all of
+them in Needs you. An input request in a member's DM is titled there by who
+asks, never by what. `useNeedsYouAnnouncement` feeds the shell's always-mounted
+status region with what newly waits and what was resolved. `PermissionPrompt` and
 `ElicitationPrompt` are shared by `SessionComposer` and
 `attention/ExecutionStrip.tsx`, which lists `executions` for a scope (General's
 members, one DM, or a Task without prompts) with a `StopButton` named for the
 turn it ends (`DELETE /runs/{id}`, busy until the run leaves the snapshot), the
-scope's member prompts, and failed turns until dismissed (place memory).
+scope's member prompts (busy while their key is resolving), and failed turns
+with "Open {name} in Members" until dismissed (place memory); under 720 px it
+shows a one-line summary and caps and scrolls its body.
 General and the DM composer offer that Stop only when exactly one turn runs.
 `attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
 researcher's top-level messages on screen, again on `orchestration_updated`
 naming one of them (or `channel_updated` while one is saved or sending), and
 runs Retry (`POST …/routes/{id}/retry`) and Try again (`POST …/reroute`) once
-each in flight; `foldRoutingNotes` removes the notes a loaded delivery names
+each in flight, telling a refusal from a request that failed and dropping a
+"needs setup" refusal when a member changes; `foldRoutingNotes` removes the notes a loaded delivery names
 from the timeline and keeps their text for its Details. `dm/useDmPending.ts`
 reads `…/dm/pending` so a message queued behind a running reply stays visible.
 `tasks/TaskWork.tsx` adds `RoundPauseControl` ("Pause new work on {task}",
@@ -580,8 +599,11 @@ facts through `attention/DeliveryStatus` and notes as before), and
 (`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
 place memory under `placeKey.general(p, filter) + '#draft'`, keys its
 composer by that place, and has no message types, Thread starts, or hidden
-references; `MessageComposer` is controlled by that draft (its failure and
-Try again included) and shows the To row (`components/workspace/RecipientRow`), the
+references; `MessageComposer` is controlled by that draft and keeps each send
+in `channel/outbox.tsx`'s `useOutbox` (place memory under `… + '#outbox'`):
+the draft clears at once, a send is a row ("Sending…", or "Not sent" with Send
+again under the same client message id, Edit and Discard) until the server
+has it, and nothing is merged back into the draft. It shows the To row (`components/workspace/RecipientRow`), the
 Task and reference chips, and why Send is blocked; `MessageList` renders the
 timeline through `MessageItem` (Markdown with inert images, Reply and
 `MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
@@ -590,7 +612,8 @@ changes). Dates and times use the app locale's date locale
 (`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
 inline `$…$` as math only under remark-math's rules and never in code, and
 `renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
-`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'` and its unsent messages in the
+same outbox under `… + '#outbox'`, and `DmShareDialog` previews a
 share as General will show it before posting.
 
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the

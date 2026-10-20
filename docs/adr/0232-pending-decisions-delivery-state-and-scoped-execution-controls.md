@@ -4,7 +4,7 @@ id: "0232"
 title: "Pending decisions, message delivery state, and scoped execution controls are server projections"
 status: proposed
 date: 2026-10-20
-supersedes: "0224 §1, the sentence defining what Needs you gathers (Tasks in Review or with a request for input, and Sessions waiting for a permission answer), as carried by 0228's adapter; 0228 §1 where a permission request opens the Sessions surface, for Workspace members' Sessions; 0217 §1 where a failed route is final, for routes the researcher originated (discussion, mention, ask, request, task_review, decision); 0223 §1-2 where a message that reaches nobody is recorded only as a system note"
+supersedes: "0224 §1, the sentence defining what Needs you gathers (Tasks in Review or with a request for input, and Sessions waiting for a permission answer), as carried by 0228's adapter; 0228 §1 where a permission request opens the Sessions surface, for Workspace members' Sessions; 0217 §1 where a failed route is final, for routes the researcher originated (discussion, mention, ask, request, task_review, decision); 0223 §1-2 where a message that reaches nobody is recorded only as a system note; 0229 §6, the sentences on a failed send (it restores the whole draft, and its failure and Try again are kept with the draft): a send the server has not acknowledged is now its own outbox row"
 ---
 
 ## Context
@@ -37,13 +37,24 @@ decisions only the researcher can make:
   entry itself, not only the announced copy);
 - open questions on work inside a Task;
 - open review requests;
-- proposals the General Agent showed in General and that are not yet admitted,
-  or whose shown revision is not yet approved;
+- suggested changes of direction on a Task not yet agreed to or declined;
+- every admitted Task's brief revised past the revision the researcher
+  approved (not Done, not archived), whether or not General showed the
+  revision;
+- proposals the General Agent showed in General that are not on the board yet;
 - members that need setup.
 
-Each item is keyed by its decision identity (`permission:`, `input:`,
-`question:`, `review:`, `proposal:<task>:<revision>`, `setup:`) and appears
-once, whichever records refer to it. Task stages and conditions, a run's
+Each item is keyed by its decision identity (`permission:<request>`,
+`input:<request>`, `question:<request>`, `review:<request>`,
+`suggestion:<entry>`, `brief:<task>:<revision>`, `proposal:<task>:<revision>`,
+`setup:<member>`) and appears once, whichever records refer to it. The Task
+panel lists its pending decisions under the same keys, from the same rules.
+Only a request the server times out carries a deadline: an input request is
+declined after the pending-request timeout, while a permission request waits
+until it is answered or its turn stops and reports none. An input request in a
+member's direct message is named in project-wide lists (Needs you, the bell)
+only by who asks; what it asks is shown only in the direct message's prompt,
+because a direct message is private to the researcher and one member. Task stages and conditions, a run's
 waiting status, unread messages and drafts that were never proposed are not
 items. Items carry ids, the Task and member they concern, and short titles for
 the researcher's own UI; they never carry tool input or file content and never
@@ -58,8 +69,10 @@ gives counts per Workspace.
 
 ### 2. Each item opens the context that holds the decision
 
-The Task inspector for questions and reviews; the proposal message in General
-for proposals (admission stays words-only, ADR 0221); for a member's permission
+The Task inspector for questions and reviews, its Results for a suggestion,
+and its Overview for a revised brief General never showed; the message in
+General for a proposal or a revised brief General showed (admission and
+approval stay words-only, ADR 0221); for a member's permission
 or input request, the prompt above General's composer (public Session) or above
 the member's direct-message composer; the Session itself for other Sessions;
 the member profile for setup. The browser removes an item only when a newer
@@ -74,9 +87,13 @@ and the Session prompt all read it. Answering goes through the store: the item
 stays, marked as being updated, until a snapshot read after the answer omits
 it (ten seconds at most), so every surface clears together; a request that is
 gone (404) says it is no longer waiting. Each entry carries a focus key
-(`permission:`, `input:`, `question:`, `review:`, `message:`,
-`member-setup:`) that the destination focuses on arrival; a Task opens on the
-section that holds the decision. The Task panel never draws a second prompt: it
+(`permission:`, `input:`, `question:`, `review:`, `suggestion:`, `brief:`,
+`message:`, `member-setup:`) that the destination focuses on arrival; a Task
+opens on the section that holds the decision. What newly waits, and what the
+researcher resolved, is announced in the shell's always-mounted status region,
+so it is heard while Needs you is folded away or the navigation sheet is
+closed. A prompt answered here stays busy until the snapshot drops it, so
+neither a button nor a 1–9 key answers it twice. The Task panel never draws a second prompt: it
 says who waits for the researcher's permission, with Show. The bell counts this
 Workspace's decisions and the others' from the summary, and a notification
 opens the waiting item of its Session when there is one.
@@ -104,10 +121,17 @@ carries the message id.
 
 A failed route of kind discussion, mention, ask, request, task_review or
 decision may be re-queued under the same route identity with one conditional
-write, at most three times (`POST /projects/{p}/routes/{id}/retry`). A
-conversation route whose Session is gone is not retried. A denied message may
-be read again after setup is fixed, at most three times
-(`POST …/messages/{m}/reroute`). The runtime's admission de-duplication on the
+write that also holds the limit, at most three times
+(`POST /projects/{p}/routes/{id}/retry`). A conversation route whose Session is
+gone is not retried (`route_target_gone`). A route to a member that needs setup
+is refused without using a retry (`route_needs_setup`) and may be retried once
+setup is fixed; a recipient that could not be looked up is worth trying again
+(`route_unavailable`). A review verdict is retried only while it is the Task's
+newest step and the Task is not archived; an older one is listed as superseded
+and never delivered late (`route_superseded`). A message denied because the
+project manager or a member was not available may be read again after setup is
+fixed, at most three times (`POST …/messages/{m}/reroute`); a denial a reroute
+cannot fix (a private direct message, a refused request) is not reroutable. The runtime's admission de-duplication on the
 delivery key, and the one-route-per-source-and-target rule, make every repeat
 the same turn. Failure and denial note keys include the retry or reroute count,
 and a note already written under its key never aborts a delivery pass.
@@ -118,10 +142,15 @@ they fail.
 
 A direct message's send reports whether the member started on it or it is
 queued, and `GET …/dm/pending` lists queued direct messages so they stay
-visible, including after a reload. In the browser a General send keeps ADR
-0229's draft: it clears at once, a failure puts the words back with Try again,
-and the retry replays the same client message id, so a lost acknowledgement or
-a reconnect never posts twice. Sending is never blocked by running agents.
+visible, including after a reload. In the browser every send, in General and
+in a direct message, is its own outbox row until the server has it: the
+composer clears at once and is never filled again by that send, so nothing
+typed meanwhile is merged into it; a failed send stays as its row ("Not sent:
+why") with Send again under the same client message id, Edit (back into an
+empty composer, as a new message from then on) and Discard. A lost
+acknowledgement or a reconnect therefore never posts twice. Outbox rows live in
+place memory for the life of the page, never on disk. Sending is never blocked
+by running agents or by another send on its way.
 
 ### 6. Controls name their effect
 
@@ -135,11 +164,14 @@ lists `delivery_issues`: decisions on it that did not reach their recipient.
 
 In the browser the Working-now strip (above General's composer, above a DM's
 composer, and in the Task panel without prompts) lists each member turn with
-what it works on and what is queued, and a Stop named for the turn it ends
-("Stop Analyst's current turn", "Stop Analyst's reply") that stays busy until
-the run leaves the snapshot. The composer offers the same Stop beside Send
+what it works on and what is queued (a turn waiting with nothing the
+researcher can answer waits for its Team leader, and says so), and a Stop named
+for the turn it ends ("Stop Analyst's current turn", "Stop Analyst's reply")
+that stays busy until the run leaves the snapshot. On a narrow screen it sums
+itself up in one line and its body is capped and scrolls, so prompts never push
+the composer off screen. The composer offers the same Stop beside Send
 only when exactly one turn runs. A member's last failed turn appears once, by
-status, until dismissed. The Task panel's PauseButton keeps the name "Pause new
+status, with a way to the member in Members, until dismissed. The Task panel's PauseButton keeps the name "Pause new
 work on {task}" with its pressed state, sends the policy revision it showed,
 and on a conflict shows the current state without sending again.
 
@@ -150,10 +182,8 @@ and on a conflict shows the current state without sending again.
   resolve together.
 - General no longer shows a row per routing failure, and a failed send is
   recoverable without duplicates.
-- Not done in the browser: a separate outbox row per unsent General message
-  (ADR 0229's draft model is kept), seeding deliveries from the message page
-  (the browser reads `/deliveries` instead), and the strip's one-line phone
-  summary.
+- Not done in the browser: seeding deliveries from the message page (the
+  browser reads `/deliveries` instead).
 - Each refetch reads the runtime maps and a handful of indexed queries; the
   summary composes one snapshot per Workspace.
 - Recorded gaps: questions on work outside any Task stay on the Team surface;
