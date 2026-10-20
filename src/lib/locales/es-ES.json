@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Hilo anterior · respuestas: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Abrir hilo anterior",
   "kubecode.channel.legacyThread.title": "Hilo anterior",
-  "kubecode.channel.legacyThread.readOnly": "Este hilo es de una versión anterior y es de solo lectura. Las respuestas aquí no llegan a nadie; continúa en General.",
+  "kubecode.channel.legacyThread.readOnly": "Solo lectura: este hilo es de una versión anterior. Responde en General; aquí solo se puede cambiar su vínculo con una tarea.",
   "kubecode.channel.legacyThread.replyInGeneral": "Responder en General",
   "kubecode.members.messagePrivately": "Enviar mensaje privado a {name}",
   "kubecode.identity.specialist": "Especialista · {responsibility}",

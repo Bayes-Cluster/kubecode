@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Tópico anterior · respostas: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Abrir tópico anterior",
   "kubecode.channel.legacyThread.title": "Tópico anterior",
-  "kubecode.channel.legacyThread.readOnly": "Este tópico é de uma versão anterior e é só de leitura. As respostas aqui não chegam a ninguém; continue em Geral.",
+  "kubecode.channel.legacyThread.readOnly": "Só de leitura: este tópico é de uma versão anterior. Responda em Geral; aqui só é possível alterar a ligação dele a uma tarefa.",
   "kubecode.channel.legacyThread.replyInGeneral": "Responder em Geral",
   "kubecode.members.messagePrivately": "Enviar mensagem privada a {name}",
   "kubecode.identity.specialist": "Especialista · {responsibility}",

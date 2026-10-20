@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "早期主题串 · {count} 条回复{plural}",
   "kubecode.channel.legacyThread.action": "打开早期主题串",
   "kubecode.channel.legacyThread.title": "早期主题串",
-  "kubecode.channel.legacyThread.readOnly": "此主题串来自早期版本，为只读。在此回复不会送达任何人；请在常规中继续。",
+  "kubecode.channel.legacyThread.readOnly": "只读：此主题串来自早期版本。请在常规中回复；此处只能更改它与任务的关联。",
   "kubecode.channel.legacyThread.replyInGeneral": "在常规中回复",
   "kubecode.members.messagePrivately": "私信 {name}",
   "kubecode.identity.specialist": "专家 · {responsibility}",

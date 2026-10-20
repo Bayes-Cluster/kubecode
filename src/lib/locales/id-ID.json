@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Thread sebelumnya · {count} balasan{plural}",
   "kubecode.channel.legacyThread.action": "Buka thread sebelumnya",
   "kubecode.channel.legacyThread.title": "Thread sebelumnya",
-  "kubecode.channel.legacyThread.readOnly": "Thread ini berasal dari versi sebelumnya dan hanya dapat dibaca. Balasan di sini tidak sampai ke siapa pun; lanjutkan di Umum.",
+  "kubecode.channel.legacyThread.readOnly": "Hanya baca: thread ini berasal dari versi sebelumnya. Balas di Umum; di sini hanya tautannya ke tugas yang dapat diubah.",
   "kubecode.channel.legacyThread.replyInGeneral": "Balas di Umum",
   "kubecode.members.messagePrivately": "Kirim pesan pribadi ke {name}",
   "kubecode.identity.specialist": "Spesialis · {responsibility}",

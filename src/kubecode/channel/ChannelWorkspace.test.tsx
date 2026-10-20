@@ -510,7 +510,11 @@ describe('ChannelWorkspace earlier Threads (ADR 0229 §5)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Earlier thread · 1 reply' }))
     const pane = await screen.findByRole('complementary', { name: 'Earlier thread' })
     expect(onThreadChange).toHaveBeenLastCalledWith('t1')
-    expect(within(pane).getByText(/read-only/)).toBeInTheDocument()
+    // Read-only says where to reply and the one thing that can change; it offers no reply box.
+    expect(within(pane).getByText(
+      'Read-only: this thread is from an earlier version. Reply in General; only its link to a Task can change here.',
+    )).toBeInTheDocument()
+    expect(pane).not.toHaveTextContent('reach no one')
     expect(await within(pane).findByText('Try magnitude pruning')).toBeInTheDocument()
     expect(within(pane).queryByRole('combobox', { name: /Message/ })).not.toBeInTheDocument()
     expect(within(pane).queryByRole('button', { name: /Reply to/ })).not.toBeInTheDocument()

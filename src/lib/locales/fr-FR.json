@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Fil précédent · réponses : {count}{plural}",
   "kubecode.channel.legacyThread.action": "Ouvrir le fil précédent",
   "kubecode.channel.legacyThread.title": "Fil précédent",
-  "kubecode.channel.legacyThread.readOnly": "Ce fil provient d’une version précédente et est en lecture seule. Les réponses ici n’atteignent personne ; continuez dans Général.",
+  "kubecode.channel.legacyThread.readOnly": "Lecture seule : ce fil provient d’une version précédente. Répondez dans Général ; seul son lien avec une tâche peut être modifié ici.",
   "kubecode.channel.legacyThread.replyInGeneral": "Répondre dans Général",
   "kubecode.members.messagePrivately": "Écrire en privé à {name}",
   "kubecode.identity.specialist": "Spécialiste · {responsibility}",

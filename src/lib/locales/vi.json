@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Chuỗi trả lời cũ · {count} câu trả lời{plural}",
   "kubecode.channel.legacyThread.action": "Mở chuỗi trả lời cũ",
   "kubecode.channel.legacyThread.title": "Chuỗi trả lời cũ",
-  "kubecode.channel.legacyThread.readOnly": "Chuỗi trả lời này thuộc phiên bản cũ và chỉ có thể đọc. Câu trả lời ở đây không đến được ai; hãy tiếp tục ở Chung.",
+  "kubecode.channel.legacyThread.readOnly": "Chỉ đọc: chuỗi trả lời này thuộc phiên bản cũ. Hãy trả lời ở Chung; tại đây chỉ có thể thay đổi liên kết của nó với một tác vụ.",
   "kubecode.channel.legacyThread.replyInGeneral": "Trả lời ở Chung",
   "kubecode.members.messagePrivately": "Nhắn riêng cho {name}",
   "kubecode.identity.specialist": "Chuyên gia · {responsibility}",

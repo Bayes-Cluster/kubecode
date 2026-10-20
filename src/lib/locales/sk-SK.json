@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Staršie vlákno · Odpovede: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Otvoriť staršie vlákno",
   "kubecode.channel.legacyThread.title": "Staršie vlákno",
-  "kubecode.channel.legacyThread.readOnly": "Toto vlákno pochádza zo staršej verzie a je iba na čítanie. Odpovede tu sa k nikomu nedostanú; pokračujte v konverzácii Všeobecné.",
+  "kubecode.channel.legacyThread.readOnly": "Iba na čítanie: toto vlákno pochádza zo staršej verzie. Odpovedzte v konverzácii Všeobecné; tu sa dá zmeniť iba jeho prepojenie s úlohou.",
   "kubecode.channel.legacyThread.replyInGeneral": "Odpovedať v konverzácii Všeobecné",
   "kubecode.members.messagePrivately": "Napísať {name} súkromne",
   "kubecode.identity.specialist": "Špecialista · {responsibility}",

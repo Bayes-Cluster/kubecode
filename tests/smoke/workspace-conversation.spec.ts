@@ -155,7 +155,7 @@ test.describe('on a desktop', () => {
       await page.reload()
       await row(page, 'Should we prune the attention heads?').getByRole('button', { name: 'Earlier thread · 1 reply' }).click()
       const pane = page.getByRole('complementary', { name: 'Earlier thread' })
-      await expect(pane.getByText(/read-only/)).toBeVisible()
+      await expect(pane.getByText(/^Read-only: .* Reply in General; only its link to a Task can change here\.$/)).toBeVisible()
       await expect(pane.getByText('Start with magnitude pruning')).toBeVisible()
       await expect(pane.getByRole('combobox', { name: 'Message the Workspace' })).toHaveCount(0)
       await expect(pane.getByRole('textbox')).toHaveCount(0)

@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Ранейшы ланцужок · адказаў: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Адкрыць ранейшы ланцужок",
   "kubecode.channel.legacyThread.title": "Ранейшы ланцужок",
-  "kubecode.channel.legacyThread.readOnly": "Гэты ланцужок з ранейшай версіі і даступны толькі для чытання. Адказы тут нікому не дойдуць; працягвайце ў «Агульнае».",
+  "kubecode.channel.legacyThread.readOnly": "Толькі для чытання: гэты ланцужок з ранейшай версіі. Адказвайце ў «Агульнае»; тут можна змяніць толькі яго сувязь з задачай.",
   "kubecode.channel.legacyThread.replyInGeneral": "Адказаць у «Агульнае»",
   "kubecode.members.messagePrivately": "Напісаць {name} асабіста",
   "kubecode.identity.specialist": "Спецыяліст · {responsibility}",

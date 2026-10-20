@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Wcześniejszy wątek · odpowiedzi: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Otwórz wcześniejszy wątek",
   "kubecode.channel.legacyThread.title": "Wcześniejszy wątek",
-  "kubecode.channel.legacyThread.readOnly": "Ten wątek pochodzi z wcześniejszej wersji i jest tylko do odczytu. Odpowiedzi tutaj do nikogo nie trafią; kontynuuj w „Ogólne”.",
+  "kubecode.channel.legacyThread.readOnly": "Tylko do odczytu: ten wątek pochodzi z wcześniejszej wersji. Odpowiedz w „Ogólne”; tutaj można zmienić tylko jego powiązanie z zadaniem.",
   "kubecode.channel.legacyThread.replyInGeneral": "Odpowiedz w „Ogólne”",
   "kubecode.members.messagePrivately": "Napisz do {name} prywatnie",
   "kubecode.identity.specialist": "Specjalista · {responsibility}",

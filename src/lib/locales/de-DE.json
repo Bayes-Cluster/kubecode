@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Früherer Thread · Antworten: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Früheren Thread öffnen",
   "kubecode.channel.legacyThread.title": "Früherer Thread",
-  "kubecode.channel.legacyThread.readOnly": "Dieser Thread stammt aus einer früheren Version und ist schreibgeschützt. Antworten hier erreichen niemanden; machen Sie in Allgemein weiter.",
+  "kubecode.channel.legacyThread.readOnly": "Schreibgeschützt: Dieser Thread stammt aus einer früheren Version. Antworten Sie in Allgemein; hier lässt sich nur seine Verknüpfung mit einer Aufgabe ändern.",
   "kubecode.channel.legacyThread.replyInGeneral": "In Allgemein antworten",
   "kubecode.members.messagePrivately": "{name} privat schreiben",
   "kubecode.identity.specialist": "Spezialist · {responsibility}",

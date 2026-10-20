@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Tidigare tråd · {count} svar{plural}",
   "kubecode.channel.legacyThread.action": "Öppna tidigare tråd",
   "kubecode.channel.legacyThread.title": "Tidigare tråd",
-  "kubecode.channel.legacyThread.readOnly": "Den här tråden kommer från en tidigare version och är skrivskyddad. Svar här når ingen; fortsätt i Allmänt.",
+  "kubecode.channel.legacyThread.readOnly": "Skrivskyddad: den här tråden kommer från en tidigare version. Svara i Allmänt; här kan bara dess koppling till en uppgift ändras.",
   "kubecode.channel.legacyThread.replyInGeneral": "Svara i Allmänt",
   "kubecode.members.messagePrivately": "Skicka ett privat meddelande till {name}",
   "kubecode.identity.specialist": "Specialist · {responsibility}",

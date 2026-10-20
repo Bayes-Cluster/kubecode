@@ -2346,7 +2346,7 @@
   "kubecode.channel.legacyThread.open": "Earlier thread · {count} repl{plural}",
   "kubecode.channel.legacyThread.action": "Open earlier thread",
   "kubecode.channel.legacyThread.title": "Earlier thread",
-  "kubecode.channel.legacyThread.readOnly": "This thread is from an earlier version and is read-only. Replies here reach no one; continue in General.",
+  "kubecode.channel.legacyThread.readOnly": "Read-only: this thread is from an earlier version. Reply in General; only its link to a Task can change here.",
   "kubecode.channel.legacyThread.replyInGeneral": "Reply in General",
   "kubecode.members.messagePrivately": "Message {name} privately",
   "kubecode.identity.specialist": "Specialist · {responsibility}",

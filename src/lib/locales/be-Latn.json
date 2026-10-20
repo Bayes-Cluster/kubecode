@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Raniejšy lancužok · Adkazaŭ: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Adkryć raniejšy lancužok",
   "kubecode.channel.legacyThread.title": "Raniejšy lancužok",
-  "kubecode.channel.legacyThread.readOnly": "Hety lancužok z raniejšaj versii i dastupny tolki dla čytannia. Adkazy tut nikomu nie trapiajuć; praciahvajcie ŭ razmovie «Ahulnaje».",
+  "kubecode.channel.legacyThread.readOnly": "Tolki dla čytannia: hety lancužok z raniejšaj versii. Adkazvajcie ŭ «Ahulnaje»; tut možna zmianić tolki jaho suviaź z zadačkaj.",
   "kubecode.channel.legacyThread.replyInGeneral": "Adkazać u «Ahulnaje»",
   "kubecode.members.messagePrivately": "Napisać {name} asabista",
   "kubecode.identity.specialist": "Spiecyjalist · {responsibility}",

@@ -1845,7 +1845,7 @@
   "kubecode.channel.legacyThread.open": "Попередня гілка · Відповідей: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Відкрити попередню гілку",
   "kubecode.channel.legacyThread.title": "Попередня гілка",
-  "kubecode.channel.legacyThread.readOnly": "Ця гілка з попередньої версії й доступна лише для читання. Відповіді тут нікому не надходять; продовжуйте в розмові «Загальне».",
+  "kubecode.channel.legacyThread.readOnly": "Лише для читання: ця гілка з попередньої версії. Відповідайте в «Загальне»; тут можна змінити лише її зв’язок із завданням.",
   "kubecode.channel.legacyThread.replyInGeneral": "Відповісти в «Загальне»",
   "kubecode.members.messagePrivately": "Написати {name} особисто",
   "kubecode.identity.specialist": "Спеціаліст · {responsibility}",
