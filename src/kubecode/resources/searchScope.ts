@@ -49,6 +49,11 @@ export function sectionOf(kind: ProjectContextKind): ResourceSection | null {
   return RESOURCE_SECTION_ORDER.find((section) => RESOURCE_SECTIONS[section].kinds.includes(kind)) ?? null
 }
 
+/** The sections whose kinds the server reports it searched, in section order. */
+export function sectionsSearched(kinds: readonly ProjectContextKind[]): ResourceSection[] {
+  return RESOURCE_SECTION_ORDER.filter((section) => RESOURCE_SECTIONS[section].kinds.some((kind) => kinds.includes(kind)))
+}
+
 /** The sections in words, as a list in the app's language. */
 export function sectionList(sections: readonly ResourceSection[], t: Translator, locale: string): string {
   const names = RESOURCE_SECTION_ORDER.filter((section) => sections.includes(section))

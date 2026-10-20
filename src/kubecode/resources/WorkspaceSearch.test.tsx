@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -67,8 +67,35 @@ describe('WorkspaceSearch', () => {
     expect(search).toHaveBeenCalledWith('p1', expect.objectContaining({
       kinds: ['research', 'finding', 'experiment', 'artifact', 'import', 'thread', 'file'],
     }))
-    // Files are on: the walk's limits are said.
-    expect(screen.getByText('Hidden, Git-ignored, and generated files are skipped.')).toBeInTheDocument()
+    // Results are in and nothing was cut: the walk's limits need no note.
+    expect(screen.queryByText('Hidden, Git-ignored, and generated files are skipped.')).not.toBeInTheDocument()
+  })
+
+  it('names the scope the server says it searched, not only what was asked for', async () => {
+    const search = vi.fn().mockResolvedValue(page([item('finding', 'f1', 'Heads')], { searched: ['research', 'file'] }))
+    mount(search)
+    await screen.findByRole('option')
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('Searching Tasks and Files in Pruning lab.'))
+  })
+
+  it.each([
+    ['nothing is found', page([], { counts: { file: 0 } })],
+    ['the files were cut short', page([item('file', 'a.txt', 'a.txt')], { truncated: true, truncated_kinds: ['file'] })],
+  ])('says hidden and ignored files are skipped when %s', async (_name, result) => {
+    mount(vi.fn().mockResolvedValue(result))
+    expect(await screen.findByText('Hidden, Git-ignored, and generated files are skipped.')).toBeInTheDocument()
+  })
+
+  it('a row that gets focus hands it to the search box with that row active, so the arrow keys work', async () => {
+    const search = vi.fn().mockResolvedValue(page([item('research', 'r1', 'Prune heads'), item('finding', 'f1', 'Heads')]))
+    mount(search)
+    const [first, second] = await screen.findAllByRole('option')
+    const input = screen.getByRole('combobox')
+    act(() => second.focus())
+    expect(input).toHaveFocus()
+    expect(input).toHaveAttribute('aria-activedescendant', second.id)
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(input).toHaveAttribute('aria-activedescendant', first.id)
   })
 
   it('toggles sections, shows their matches, and says which were cut short', async () => {
@@ -80,10 +107,10 @@ describe('WorkspaceSearch', () => {
     const sections = screen.getByRole('group', { name: 'Search in' })
     expect(within(sections).getByRole('button', { name: 'Tasks, 3 matches' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(sections).getByRole('button', { name: 'Findings, more than 200 matches' })).toHaveTextContent('200+')
-    expect(within(sections).getByRole('button', { name: 'Execution history' })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(sections).getByRole('button', { name: 'History' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Only the most recent Findings were searched. Add words to narrow the search.')).toBeInTheDocument()
 
-    fireEvent.click(within(sections).getByRole('button', { name: /^Execution history/ }))
+    fireEvent.click(within(sections).getByRole('button', { name: /^History/ }))
     await waitFor(() => expect(search).toHaveBeenLastCalledWith('p1', expect.objectContaining({
       kinds: ['research', 'finding', 'experiment', 'artifact', 'import', 'thread', 'file', 'session', 'team', 'team_task', 'work', 'round'],
     })))

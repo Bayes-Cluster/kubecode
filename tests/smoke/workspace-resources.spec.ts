@@ -178,8 +178,8 @@ test.describe('on a desktop', () => {
 
       await page.goto(`${workspaceUrl}/#/p/${projectId}/resources`)
       const resources = page.getByRole('region', { name: 'Resources' })
-      await resources.getByRole('button', { name: /^Execution history/ }).click()
-      await expect(resources.getByRole('button', { name: /^Execution history/ })).toHaveAttribute('aria-pressed', 'true')
+      await resources.getByRole('group', { name: 'Search in' }).getByRole('button', { name: /^History/ }).click()
+      await expect(resources.getByRole('group', { name: 'Search in' }).getByRole('button', { name: /^History/ })).toHaveAttribute('aria-pressed', 'true')
       await resources.getByRole('combobox', { name: `Search ${projectName}` }).fill(word)
       await expect(resources.getByText(`matches “${word}”.`, { exact: false })).toBeVisible()
       await expect(resources.getByRole('option')).toHaveCount(0)

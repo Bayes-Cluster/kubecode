@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode, type Ref } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,7 @@ import {
   describeScope,
   kindsFor,
   sectionList,
+  sectionsSearched,
   type ResourceSection,
 } from './searchScope'
 import { useWorkspaceSearch, type SearchResult, type WorkspaceSearchState } from './useWorkspaceSearch'
@@ -149,6 +150,11 @@ export function WorkspaceSearch({
     sections.includes(section) && RESOURCE_SECTIONS[section].kinds.some((kind: ProjectContextKind) => search.truncatedKinds.includes(kind))
   ))
   const words = query.trim()
+  // The scope in words is what the server reports it searched; until it answers, what was asked for.
+  const reported = ready && search.searched.length > 0 ? sectionsSearched(search.searched) : sections
+  // The walk's limits matter when they could explain a missing file: nothing found, or files cut short.
+  const filesNote = sections.includes('files') && ready && (results.length === 0 || search.truncatedKinds.includes('file'))
+  const input = useRef<HTMLInputElement>(null)
 
   return (
     <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)}>
@@ -165,6 +171,7 @@ export function WorkspaceSearch({
             autoFocus={autoFocus}
             data-focus-key={inputFocusKey}
             placeholder={t('kubecode.search.placeholder')}
+            ref={input}
             role="combobox"
             value={query}
             onChange={(event) => {
@@ -242,11 +249,11 @@ export function WorkspaceSearch({
           </div>
         )}
         <p className="kubecode-ws-search-scope" id={scopeId} role="note">
-          {sections.length > 0 && <span>{describeScope(sections, workspaceName, t, locale ?? 'en')} </span>}
+          {reported.length > 0 && <span>{describeScope(reported, workspaceName, t, locale ?? 'en')} </span>}
           <span>{t('kubecode.search.scopeMatch')} </span>
           <span>{t('kubecode.search.privateExcluded')}</span>
         </p>
-        {sections.includes('files') && (
+        {filesNote && (
           <p className="kubecode-ws-search-notice">{t('kubecode.search.filesSkipped')}</p>
         )}
         {ready && truncatedSections.length > 0 && (
@@ -301,6 +308,11 @@ export function WorkspaceSearch({
                 role="option"
                 tabIndex={-1}
                 onClick={() => choose(result)}
+                onFocus={() => {
+                  // Focus returned to a row (after Back) belongs to the search box, with this row active.
+                  setActiveKey(result.key)
+                  input.current?.focus({ preventScroll: true })
+                }}
               >
                 <Icon role="identity" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
                 <span className="kubecode-resource-row-body">

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useId, useRef, useState } from 'react'
+import { useCallback, useContext, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -75,6 +75,14 @@ export function AddContextDialog({
   const [refusal, setRefusal] = useState<string | null>(null)
   const reasonId = useId()
   const searchArea = useRef<HTMLDivElement>(null)
+  const resultsList = useRef<HTMLDivElement>(null)
+  // On a narrow screen the preview replaces the results, which lose their scroll: it is put back on Back.
+  const resultsScroll = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (previewed || resultsScroll.current === null || !resultsList.current) return
+    resultsList.current.scrollTop = resultsScroll.current
+    resultsScroll.current = null
+  }, [previewed])
   const shownHere = shown && previewed && shown.kind === previewed.kind && shown.id === previewed.id ? shown : null
   const reference = shownHere && previewed ? { kind: previewed.kind, id: previewed.id, revision: shownHere.revision } : null
   const already = reference !== null && has(reference)
@@ -157,7 +165,9 @@ export function AddContextDialog({
               t={t}
               workspaceName={workspaceName}
               onAttachCurrent={(result) => void attachCurrent(result)}
+              listRef={resultsList}
               onChoose={(result) => {
+                resultsScroll.current = resultsList.current?.scrollTop ?? null
                 setRefusal(null)
                 setShown(null)
                 setPreviewed({ kind: result.item.ref.kind, id: result.item.ref.id, title: result.item.title })

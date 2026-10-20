@@ -194,6 +194,20 @@ describe('AddContextDialog', () => {
     expect(screen.getByRole('button', { name: 'Attach this version' })).toBeDisabled()
   })
 
+  it('on a narrow screen, Back returns to the results where they were scrolled, with the search box focused', async () => {
+    mount({ searchProjectContext: search([fileItem()]), readProjectContext: vi.fn().mockResolvedValue(fileDoc('aaaaaaaaaaaaaaaa')) })
+    const option = await screen.findByRole('option')
+    const results = screen.getByTestId('search-results')
+    results.scrollTop = 120
+    fireEvent.click(option)
+    await screen.findByText('model,accuracy')
+    // Hidden while the preview fills the dialog, the list loses its scroll.
+    results.scrollTop = 0
+    fireEvent.click(screen.getByRole('button', { name: 'Back to results' }))
+    await waitFor(() => expect(results.scrollTop).toBe(120))
+    expect(screen.getByRole('combobox')).toHaveFocus()
+  })
+
   it('hands the draft to Resources and says where to return', async () => {
     const { memory, navigation } = mount({ searchProjectContext: search([]) })
     fireEvent.click(screen.getByRole('button', { name: 'Browse in Resources' }))

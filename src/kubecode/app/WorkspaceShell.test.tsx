@@ -745,7 +745,7 @@ describe('Workspace navigation and routes', () => {
       searchProjectContext: vi.fn().mockResolvedValue({ items: [contextItem('work', 'w1', 'Sweep heads')], next_cursor: null }),
       readProjectContext: vi.fn().mockResolvedValue(contextDocument('work', 'w1', 'Sweep heads')),
     }))
-    fireEvent.click(await screen.findByRole('button', { name: /^Execution history/ }))
+    fireEvent.click(within(await screen.findByRole('group', { name: 'Search in' })).getByRole('button', { name: /^History/ }))
     fireEvent.click(await screen.findByRole('option', { name: /Sweep heads/ }))
     expect(await inspector('Resource details')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'evidence work:w1' })).toBeInTheDocument()
