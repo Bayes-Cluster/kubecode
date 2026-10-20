@@ -425,6 +425,32 @@ replied-to message fenced. `general_recent` reports `reply_to` and `to` (named
 members' handles through public Sessions only). The `ask`/`request` intents and
 Thread routes stay accepted for older pages.
 
+In the browser, `WorkbenchShell` reads the roster with removed members
+(`useMembers(…, { includeRemoved: true })`) into one `MemberDirectory`
+(`members/memberDirectory.ts`: by id, by current public Session for messages
+read without the projection, the live members with the manager first) and
+provides it through `MemberDirectoryContext`; views name people with
+`members/memberIdentity.ts` (`memberView`, `authorView`, `messageRecipients`,
+never "Agent") drawn by `members/Identity.tsx`, whose live-member name opens the
+profile through `useWorkspaceNavigation().inspect`. General's rules are pure
+modules under `channel/`: `generalDraft.ts` (one `GeneralDraft` of text, reply,
+Task, references, and last attempt; recipients read from the text outside
+quotes and code; `withReply`; `toNewMessage` with `{member_id}` mentions and the
+Task as the first research reference), `timeline.ts` (days, author groups,
+collapsed routine notes, denial notes attached to their message),
+`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so), and
+`mentionOptions.ts`; `references/referenceLabels.ts` names references by title
+(`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
+place memory under `placeKey.general(p, filter) + '#draft'` and has no message
+types, Thread starts, or hidden references; `MessageComposer` is controlled by
+that draft and shows the To row (`components/workspace/RecipientRow`), the
+Task and reference chips, and why Send is blocked; `MessageList` renders the
+timeline through `MessageItem` (Markdown with inert images, Reply and
+`MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
+`ThreadPane` is read-only with "Reply in General". `DmPane` keeps a per-member
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+share as General will show it before posting.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
@@ -432,8 +458,9 @@ semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
 (arrow send; a stop that names its target), and `Composer` (text, `@mention`
 combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
 the line, nothing is sent while an input method composes). It knows nothing of
-channels or Tasks: `channel/MessageComposer` supplies the mention options and
-the intent and reference controls, and General and direct messages both use it.
+channels or Tasks: `channel/MessageComposer` supplies the members to mention,
+the recipients, and the reference controls, and General and direct messages
+both use it.
 The session composer shares the send and stop buttons.
 
 Workspace visual vocabulary (ADR 0227): `src/kubecode/icons/workspaceIcons.ts`

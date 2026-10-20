@@ -1218,7 +1218,10 @@ intents and Thread posts from older pages. A message read through the API also
 names the **members** behind its author and mentions, through any public
 Session they have had; that identity is presentation and grants nothing. A
 mention may name a member, resolved to its current public Session when the
-message is written and refused when the member cannot receive. See ADR 0229.
+message is written and refused when the member cannot receive. The browser
+shows whom a message goes to before it is sent, and keeps each unsent message
+(text, reply, Task, references) with the place it was written for. See ADR
+0229.
 
 ## Route
 

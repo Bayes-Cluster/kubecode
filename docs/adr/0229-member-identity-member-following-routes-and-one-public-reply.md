@@ -127,6 +127,33 @@ Delivery states come from a replaceable source. The browser shows a failure
 only when a note establishes it, and never claims a delivery it has not been
 told about.
 
+### 8. How the browser holds these decisions
+
+- One member directory per Workspace, read by the shell with removed members
+  and shared with every view, so a message, a recipient, a mention suggestion,
+  the roster, a profile, and a direct message name a member the same way. A
+  message read without the projection falls back to the members' current
+  Sessions, then to a Session's title, then to "Unknown agent".
+- Mention suggestions list every live member by member id with their identity;
+  one that cannot receive is still offered and says so, and the draft is then
+  blocked with the reason, which the send button also states.
+- Whom a draft goes to is shown in a To row of removable recipients, a shared
+  control beside ADR 0227's vocabulary. Removing one takes the `@handle` out of
+  the text, so the text and the recipients never disagree.
+- The draft is one object per place (`#draft` under ADR 0228's place keys). Its
+  setter keeps writing after the composer is gone, so a send that fails after
+  the researcher left still restores the draft. A direct message keeps only its
+  text and last attempt, under its member's key.
+- Titles of references come from a replaceable source (local titles now,
+  server titles in the resources slice), delivery facts from another (notes
+  now, route facts in the attention slice).
+- On a coarse pointer every message shows one persistent More whose first item
+  is Reply; on a fine pointer Reply and More appear on hover and on keyboard
+  focus. Escape is never taken from the text box; a reply is cancelled with its
+  own button.
+- The Task filter stays a native select beside a removable Task chip, and the
+  conversation's header is a view header at the views' level.
+
 ## Consequences
 
 - General and its specialists stay distinguishable after Sessions are replaced
