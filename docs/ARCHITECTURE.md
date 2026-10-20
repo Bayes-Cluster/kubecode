@@ -600,7 +600,7 @@ facts through `attention/DeliveryStatus` and notes as before), and
 place memory under `placeKey.general(p, filter) + '#draft'`, keys its
 composer by that place, and has no message types, Thread starts, or hidden
 references; `MessageComposer` is controlled by that draft and keeps each send
-in `channel/outbox.tsx`'s `useOutbox` (place memory under `… + '#outbox'`):
+in `channel/outbox.ts`'s `useOutbox`, drawn by `OutboxRows` (place memory under `… + '#outbox'`):
 the draft clears at once, a send is a row ("Sending…", or "Not sent" with Send
 again under the same client message id, Edit and Discard) until the server
 has it, and nothing is merged back into the draft. It shows the To row (`components/workspace/RecipientRow`), the

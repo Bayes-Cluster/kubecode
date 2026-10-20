@@ -32,7 +32,8 @@ import {
   type GeneralDraft,
 } from './generalDraft'
 import { mentionOptions } from './mentionOptions'
-import { OutboxRows, useOutbox, type OutboxItem } from './outbox'
+import { useOutbox, type OutboxItem } from './outbox'
+import { OutboxRows } from './OutboxRows'
 
 /** What a General send carries: the message, and the draft it came from for Edit. */
 type GeneralSend = {
@@ -41,6 +42,12 @@ type GeneralSend = {
 }
 
 const MAX_REFERENCES = 16
+
+/** Hands the text box to the ref the parent gave, whichever kind it is. */
+function assignRef<T>(ref: Ref<T> | undefined, value: T) {
+  if (typeof ref === 'function') ref(value)
+  else if (ref) (ref as { current: T }).current = value
+}
 
 export type MessageComposerProps = {
   api: KubecodeApi
@@ -100,8 +107,7 @@ export function MessageComposer({
   const focusText = () => area.current?.focus()
   const setArea = (node: HTMLTextAreaElement | null) => {
     area.current = node
-    if (typeof textareaRef === 'function') textareaRef(node)
-    else if (textareaRef) textareaRef.current = node
+    assignRef(textareaRef, node)
   }
 
   const failureOf = (cause: unknown): string => {
