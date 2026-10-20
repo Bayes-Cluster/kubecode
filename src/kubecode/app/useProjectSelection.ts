@@ -21,7 +21,6 @@ export type ProjectSelectionOptions = {
   setProjects: Dispatch<Project[]>
   setProjectId: Dispatch<string | null>
   setConversationId: Dispatch<string | null>
-  setExpandedProjectIds: Dispatch<string[]>
   setConversations: Dispatch<Conversation[]>
   setTeams: Dispatch<TeamSnapshot[]>
   setTerminals: Dispatch<TerminalInfo[]>
@@ -32,6 +31,11 @@ export type ProjectSelectionOptions = {
   setDisableWorkspacesOpen: Dispatch<boolean>
   setError: Dispatch<string | null>
   applyProjectLayout: (projectId: string) => void
+  /**
+   * The Workspace to be in once one is removed, chosen as at startup (ADR
+   * 0228: the last one used if it is still registered, then the first).
+   */
+  nextWorkspace?: (remaining: Project[]) => string | null
 }
 
 export function useProjectSelection(
@@ -45,7 +49,6 @@ export function useProjectSelection(
     setProjects,
     setProjectId,
     setConversationId,
-    setExpandedProjectIds,
     setConversations,
     setTeams,
     setTerminals,
@@ -56,6 +59,7 @@ export function useProjectSelection(
     setDisableWorkspacesOpen,
     setError,
     applyProjectLayout,
+    nextWorkspace,
   } = options
 
   const project = projects.find((item) => item.id === projectId) ?? null
@@ -69,48 +73,35 @@ export function useProjectSelection(
     setTerminalsLoadedForProjectId(null)
     applyProjectLayout(nextProjectId)
     setProjectId(nextProjectId)
-    setExpandedProjectIds((current) => (
-      current.includes(nextProjectId) ? current : [...current, nextProjectId]
-    ))
-  }, [applyProjectLayout, setActiveSessionPlan, setConversationId, setConversations, setExpandedProjectIds, setProjectId, setTeams, setTerminals, setTerminalsLoadedForProjectId])
-
-  const toggleProjectExpanded = useCallback((nextProjectId: string) => {
-    setExpandedProjectIds((current) => {
-      const expanded = current.includes(nextProjectId)
-      trackEvent('kubecode_navigator_project_toggled', {
-        next_state: expanded ? 'collapsed' : 'expanded',
-      })
-      return expanded
-        ? current.filter((candidate) => candidate !== nextProjectId)
-        : [...current, nextProjectId]
-    })
-  }, [setExpandedProjectIds])
+  }, [applyProjectLayout, setActiveSessionPlan, setConversationId, setConversations, setProjectId, setTeams, setTerminals, setTerminalsLoadedForProjectId])
 
   const deleteProject = useCallback(async (targetProject = project) => {
     if (!targetProject) return
     try {
       await api.unregisterProject(targetProject.id)
       const remainingProjects = projects.filter((item) => item.id !== targetProject.id)
-      const nextProjectId = remainingProjects[0]?.id ?? null
+      const nextProjectId = nextWorkspace ? nextWorkspace(remainingProjects) : remainingProjects[0]?.id ?? null
       setProjects(remainingProjects)
       setProjectRuns((current) => {
         const next = { ...current }
         delete next[targetProject.id]
         return next
       })
+      setAllConversations((current) => current.filter((item) => item.project_id !== targetProject.id))
+      trackEvent('kubecode_project_removed')
+      // Removing another Workspace leaves the one on screen as it is.
+      if (nextProjectId === projectId) return
       setConversations([])
       setTeams([])
-      setAllConversations((current) => current.filter((item) => item.project_id !== targetProject.id))
       setConversationId(null)
       setTerminals([])
       setTerminalsLoadedForProjectId(null)
       if (nextProjectId) applyProjectLayout(nextProjectId)
       setProjectId(nextProjectId)
-      trackEvent('kubecode_project_removed')
     } catch (cause) {
       setError(errorMessage(cause, t('kubecode.error')))
     }
-  }, [api, applyProjectLayout, project, projects, setAllConversations, setConversationId, setConversations, setError, setProjectId, setProjectRuns, setProjects, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
+  }, [api, applyProjectLayout, nextWorkspace, project, projectId, projects, setAllConversations, setConversationId, setConversations, setError, setProjectId, setProjectRuns, setProjects, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
 
   const setProjectWorkspacesEnabled = useCallback(async (enabled: boolean, targetProject = project) => {
     if (!targetProject) return
@@ -137,11 +128,8 @@ export function useProjectSelection(
       setConversations([])
       setProjectId(nextProjectId)
     }
-    setExpandedProjectIds((current) => (
-      current.includes(nextProjectId) ? current : [...current, nextProjectId]
-    ))
     setConversationId(nextConversationId)
-  }, [applyProjectLayout, projectId, setActiveSessionPlan, setConversationId, setConversations, setExpandedProjectIds, setProjectId, setTerminals, setTerminalsLoadedForProjectId])
+  }, [applyProjectLayout, projectId, setActiveSessionPlan, setConversationId, setConversations, setProjectId, setTerminals, setTerminalsLoadedForProjectId])
 
   return {
     deleteProject,
@@ -149,6 +137,5 @@ export function useProjectSelection(
     project,
     selectProject,
     setProjectWorkspacesEnabled,
-    toggleProjectExpanded,
   }
 }

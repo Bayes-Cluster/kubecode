@@ -203,21 +203,16 @@ function renderSidebar(conversations: Conversation[], wechat: WeChatBinding) {
   return render(
     <SessionSidebarList
       activeConversationId={null}
-      activeProjectId="project-1"
       api={{} as KubecodeApi}
       conversations={conversations}
-      expandedProjectIds={['project-1']}
       onConversationCreated={vi.fn()}
       onConversationRemoved={vi.fn()}
       onConversationUpdated={vi.fn()}
       onError={vi.fn()}
       onNewSession={vi.fn()}
-      onProjectDelete={vi.fn()}
-      onProjectSelect={vi.fn()}
-      onProjectToggle={vi.fn()}
-      onProjectWorkspacesToggle={vi.fn()}
       onSelect={vi.fn()}
       projects={[project]}
+      scopeProjectId="project-1"
       t={t}
       wechat={wechat}
     />,

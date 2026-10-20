@@ -581,12 +581,21 @@ function escapeHtml({ text }: { text: string }): string {
     .replace(/"/g, '&quot;')
 }
 
+/** The largest size, in ems, a formula may ask for (`\\rule`, `\\kern`, sizing). */
+const MATH_MAX_SIZE_EM = 10
+/** How many macro expansions one formula may take. */
+const MATH_MAX_EXPAND = 100
+
 export function renderMathToHtml({ latex, displayMode }: MathRenderRequest): string {
   try {
     return katex.renderToString(latex, {
       displayMode,
       throwOnError: false,
       trust: false,
+      // Untrusted text (an agent's message) must not draw a page-covering
+      // block or expand macros without end.
+      maxSize: MATH_MAX_SIZE_EM,
+      maxExpand: MATH_MAX_EXPAND,
     })
   } catch {
     return escapeHtml({ text: latex })

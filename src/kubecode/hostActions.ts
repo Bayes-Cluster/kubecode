@@ -22,7 +22,7 @@ const HOST_ACTION_DEFINITIONS = [
   { id: 'new-session', handler: 'newSession', labelKey: 'kubecode.newSession', projectRequired: true },
   { id: 'open-settings', handler: 'openSettings', labelKey: 'kubecode.settings' },
   { id: 'focus-session-search', handler: 'focusSessionSearch', labelKey: 'kubecode.searchSessions' },
-  { id: 'toggle-navigator', handler: 'toggleNavigator', labelKey: 'kubecode.toggleSessions' },
+  { id: 'toggle-navigator', handler: 'toggleNavigator', labelKey: 'kubecode.toggleNavigation' },
   { id: 'toggle-context', handler: 'toggleContext', labelKey: 'kubecode.toggleContext', projectRequired: true },
   { id: 'toggle-terminal', handler: 'toggleTerminal', labelKey: 'kubecode.toggleTerminal', projectRequired: true },
 ] as const satisfies readonly HostActionDefinition[]

@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AgentDescriptor, KubecodeApi, Member, MemberDefaults } from '../api'
 import { ApiError } from '../api'
 import { MemberDefaultsPanel } from './MemberDefaultsPanel'
 import { MemberRoster } from './MemberRoster'
+import { MembersView } from './MembersView'
+import { createPlaceMemory } from '../app/location/placeMemory'
+import { PlaceMemoryProvider } from '../app/location/PlaceMemoryProvider'
+import { nextFrame, stubScrollGeometry } from '@/test/scrollGeometry'
 
 const t = ((key: string, values?: Record<string, string | number>) => (
   values ? `${key}:${JSON.stringify(values)}` : key
@@ -80,6 +84,30 @@ describe('MemberRoster', () => {
     fireEvent.click(button)
     expect(onOpenDm).toHaveBeenCalledWith(expect.objectContaining({ id: 'm-general' }))
     expect(screen.queryByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"Analyst"}' })).not.toBeInTheDocument()
+  })
+
+  it('shows each member in the shared identity, with a membership state only when it needs the researcher', async () => {
+    roster(api({
+      listMembers: vi.fn().mockResolvedValue({
+        members: [
+          member(),
+          member({ id: 'm2', role: 'specialist', template: 'analysis', name: 'Analyst', handle: 'analyst', state: 'setup_required' }),
+        ],
+        general_id: 'm-general',
+      }),
+    }))
+    const general = (await screen.findByText('General')).closest('li') as HTMLElement
+    expect(within(general).getByText('@general')).toBeInTheDocument()
+    expect(within(general).getByText('kubecode.members.template.general')).toBeInTheDocument()
+    expect(within(general).getByText('OpenCode')).toBeInTheDocument()
+    // Membership is not activity: an active member's row is its identity and provider, with no state at all.
+    expect(general).toHaveTextContent(
+      /^G\s*General\s*@general\s*kubecode\.members\.template\.general\s*OpenCode\s*kubecode\.members\.managerNote\s*kubecode\.members\.edit\s*kubecode\.members\.replaceSession$/,
+    )
+    expect(general).not.toHaveTextContent(/kubecode\.members\.state\./)
+    const analyst = screen.getByText('Analyst').closest('li') as HTMLElement
+    expect(within(analyst).getByText('kubecode.members.state.setup_required')).toBeInTheDocument()
+    expect(within(analyst).getByRole('button', { name: 'kubecode.members.retrySetup: Analyst' })).toBeInTheDocument()
   })
 
   it('shows the project manager as a manager that cannot be removed, beside specialists', async () => {
@@ -282,5 +310,48 @@ describe('MemberDefaultsPanel', () => {
     await waitFor(() => expect(saveMemberDefaults).toHaveBeenCalled())
     expect(saveMemberDefaults.mock.calls[0][1].general.config).toEqual({ model: 'fast' })
     expect(await screen.findByText('kubecode.members.defaults.saved')).toBeInTheDocument()
+  })
+})
+
+describe('MembersView keeps its place (ADR 0228 §4)', () => {
+  it('returns to where the roster was scrolled, and names each member for focus return', async () => {
+    const restore = stubScrollGeometry()
+    try {
+      const memory = createPlaceMemory()
+      const client = api({ memberDefaults: vi.fn().mockResolvedValue(defaults) })
+      const members = (
+        <PlaceMemoryProvider memory={memory}>
+          <MembersView
+            agents={agents}
+            api={client}
+            connectionState="live"
+            defaults={defaults}
+            events={[]}
+            projectId="p1"
+            scrollKey="p1|view:members"
+            t={t}
+            onDefaultsLoaded={vi.fn()}
+            onOpenDm={vi.fn()}
+            onOpenMember={vi.fn()}
+          />
+        </PlaceMemoryProvider>
+      )
+      const view = render(members)
+      const name = await screen.findByRole('button', { name: 'General' })
+      const row = name.closest('li')
+      expect(row).toHaveAttribute('data-focus-key', 'member:m-general')
+      expect(row).toHaveAttribute('data-scroll-anchor', 'member:m-general')
+      const scroller = screen.getByRole('region', { name: 'kubecode.nav.members' })
+      scroller.scrollTop = 310
+      fireEvent.scroll(scroller)
+      await act(nextFrame)
+
+      view.rerender(<PlaceMemoryProvider memory={memory}><p>General</p></PlaceMemoryProvider>)
+      view.rerender(members)
+      await screen.findByRole('button', { name: 'General' })
+      await waitFor(() => expect(screen.getByRole('region', { name: 'kubecode.nav.members' }).scrollTop).toBe(310))
+    } finally {
+      restore()
+    }
   })
 })

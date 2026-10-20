@@ -1,10 +1,9 @@
-import { type RefObject } from 'react'
+import { type ReactNode } from 'react'
 import {
   Bell,
   Circle,
   CircleAlert,
   RotateCw,
-  Search
 } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -17,7 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 
 import type { Conversation, Project } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
@@ -33,16 +31,20 @@ export type WorkbenchTitlebarProps = {
   lastSuccessfulSyncAt: number | null
   locale: string
   narrowLayout: boolean
-  navigatorQuery: string
-  navigatorSearchRef: RefObject<HTMLInputElement | null>
   onContextOpenChange: (open: boolean) => void
-  onNavigatorQueryChange: (query: string) => void
   onOpenSession: (projectId: string, conversationId: string) => void
   onRetryConnection: () => void
   onSessionSidebarOpenChange: (open: boolean) => void
   onTerminalOpenChange: (open: boolean | ((open: boolean) => boolean)) => void
+  /**
+   * The place on screen, shown as "Workspace / place". Absent on the Sessions
+   * surface, which titles itself through `titlebarTargetRef`.
+   */
+  placeLabel: string | null
   project: Project | null
   projects: Project[]
+  /** The centre of the title bar, for a search that names its own scope. */
+  searchSlot?: ReactNode
   sessionSidebarOpen: boolean
   t: Translator
   terminalOpen: boolean
@@ -58,22 +60,21 @@ export function WorkbenchTitlebar({
   lastSuccessfulSyncAt,
   locale,
   narrowLayout,
-  navigatorQuery,
-  navigatorSearchRef,
   onContextOpenChange,
-  onNavigatorQueryChange,
   onOpenSession,
   onRetryConnection,
   onSessionSidebarOpenChange,
   onTerminalOpenChange,
+  placeLabel,
   project,
   projects,
+  searchSlot,
   sessionSidebarOpen,
   t,
   terminalOpen,
   titlebarTargetRef,
 }: WorkbenchTitlebarProps) {
-  const toggleSessions = () => {
+  const toggleNavigation = () => {
     const nextOpen = togglePanel('sessions', sessionSidebarOpen)
     onSessionSidebarOpenChange(nextOpen)
     if (narrowLayout && nextOpen) onContextOpenChange(false)
@@ -91,25 +92,24 @@ export function WorkbenchTitlebar({
     <header className="kubecode-topbar">
       <div className="kubecode-topbar-leading">
         <div className="kubecode-titlebar-session-slot" ref={titlebarTargetRef}>
-          {!conversation && (
+          {placeLabel !== null ? (
+            <span className="kubecode-titlebar-project kubecode-titlebar-place">
+              {project && !narrowLayout && (
+                <>
+                  <span className="kubecode-titlebar-workspace">{project.name}</span>
+                  <span aria-hidden="true" className="kubecode-titlebar-separator">/</span>
+                </>
+              )}
+              <span>{placeLabel}</span>
+            </span>
+          ) : !conversation && (
             <span className="kubecode-titlebar-project">
               {project?.name ?? t('kubecode.appName')}
             </span>
           )}
         </div>
       </div>
-      <div className="kubecode-search">
-        <Search  size={16}/>
-        <Input
-          aria-label={t('kubecode.searchSessions')}
-          placeholder={t('kubecode.searchSessions')}
-          ref={navigatorSearchRef}
-          spellCheck={false}
-          value={navigatorQuery}
-          onChange={(event) => onNavigatorQueryChange(event.target.value)}
-        />
-        <kbd>⌘K</kbd>
-      </div>
+      <div className="kubecode-titlebar-search-slot">{searchSlot}</div>
       <div className="kubecode-topbar-actions">
         <RuntimeConnectionMenu
           connectionState={connectionState}
@@ -157,7 +157,7 @@ export function WorkbenchTitlebar({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <Button aria-label={t('kubecode.toggleSessions')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleSessions}>
+        <Button aria-label={t('kubecode.toggleNavigation')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleNavigation}>
           <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
         </Button>
         <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleTerminal}>

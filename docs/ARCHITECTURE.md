@@ -346,7 +346,8 @@ Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
 and `orchestration_updated` events and after a reconnect. `tasks/TaskBoardView.tsx`
 is the Kanban entry; `tasks/TaskInspector.tsx` fills the `inspector` slot of
-`ResearchWorkspace` in the detail pane and decides reviews through
+`ResearchWorkspace` in the Task panel of the inspector stack
+(`tasks/TaskPanel.tsx`, ADR 0228) and decides reviews through
 `POST …/review` and `…/repin`. `MessageItem` renders proposal messages and Task
 chips. The browser acceptance (`tests/smoke/research-workspace.spec.ts`) uses
 `tests/smoke/agents.ts`: the fixture provider records each Session's MCP servers
@@ -354,17 +355,52 @@ and prompts under `.local/playwright-fixtures-<port>`, and the test acts as a
 member through that Session's own MCP endpoint. The service-level counterpart is
 `server/tests/workspace_blueprint_acceptance.rs`.
 
-Workspace shell (ADR 0224): `app/WorkbenchShell.tsx` keeps one `ViewState`
-(research, channel, work, dm, resources, members) beside the selected Session,
-derives the current `WorkspaceRoute` from it, and `useWorkspaceRouteSync`
-mirrors the route into the URL hash (`app/workspaceRoute.ts` parses strictly and
-formats ids and view names only). `app/WorkspaceNav.tsx` is the Workspace
-navigation (General, Kanban, Resources, Members, Needs you, roster) fed by
-`tasks/useTaskBoard.ts` (`GET …/tasks/board` and `…/drafts`) and `useMembers`;
-Threads and questions sit under a History disclosure. The detail area is a
-slot (`ChannelWorkspace detail`, `.kubecode-with-detail`) that shows a Task's
-research workspace or a `MemberProfile`; `ResourcesView` reuses the project
-context reader in a browsing mode. A route can name a message, read by id
+Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
+Project; where the researcher is in each Workspace is a location kept by the
+pure reducer in `app/location/workspaceLocation.ts` (a place — General with an
+optional message, Task filter and Thread, Kanban, Resources, Members, a private
+conversation, execution history with its Session, or a legacy question — plus an
+inspector stack of ids), remembered per Workspace and per view and stored by
+`useWorkspaceLocation` in `kubecode:workspace-location:v1` as formatted routes
+that the strict parser validates on read. A Workspace with no remembered place
+opens General; nothing falls back to the Sessions surface, which opens only
+through `openSession` (a Session row or search result, New session, a Session
+reference, a permission entry, a notification, or a link). Startup picks a
+link's Project, then the last one used, then the first (`pickInitialWorkspace`).
+`app/location/locationRoute.ts` maps locations to `WorkspaceRoute`s and back;
+`app/workspaceRoute.ts` parses strictly and formats ids and view names only,
+with deeper inspector entries as repeated `inspect=` tokens and file evidence
+never written. `useWorkspaceRouteSync` mirrors the route into the URL hash,
+reports a link still being reached as `pending` (the main pane shows "Opening
+Workspace…", never a Session), abandons a link to an unknown Project at once,
+and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
+the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you from
+`location/needsYou.ts`, Members, then the roster and Direct messages under
+their own headings), then a collapsed History and execution section with the
+Session search across all Workspaces, this Workspace's Sessions and Teams,
+Threads and questions. Reference chips in General and rows in Resources open
+through the shell's one `openReference` (`location/references.ts`): a Task or a
+record in the inspector of the view they were chosen in, a Thread in General
+with nothing over it, a work item on Kanban with its Task, and a Session as
+execution history. The inspector (`app/inspector/`) is one stack per
+inspector-hosting view (General, Kanban, Resources, Members, a private
+conversation): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
+(`tasks/TaskPanel.tsx`, `members/MemberPanel.tsx`, `work/EvidencePanel.tsx`,
+`resources/ResourcePanel.tsx`) with the Back and Close the shell computes, keeps
+lower entries mounted under `visibility: hidden` and `inert`, and is shown beside
+the view or over it by the width of the row (`useInspectorPresentation`, a
+container rule; the navigation overlay keeps its 980px viewport rule). Slices
+move the researcher through `location/WorkspaceNavigation.ts` and never import
+the shell. `location/placeMemory.ts` keeps what a place holds besides its address
+for the life of the page and never on disk: drafts and reply targets
+(`usePlaceState`, `usePlaceRef`, keyed by `placeKey`), list scroll positions
+(`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
+General's reading position is reported by `MessageList` and folded into its
+place when General is left, and written onto General's own history entry before
+the next place is pushed, so Back lands on it. `ResourcesView` reuses the
+project context reader in a browsing mode whose search, kind filter and preview
+are place memory too. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 
@@ -414,6 +450,40 @@ replied-to message fenced. `general_recent` reports `reply_to` and `to` (named
 members' handles through public Sessions only). The `ask`/`request` intents and
 Thread routes stay accepted for older pages.
 
+In the browser, `WorkbenchShell` reads the roster with removed members
+(`useMembers(…, { includeRemoved: true })`) into one `MemberDirectory`
+(`members/memberDirectory.ts`: by id, by current public Session for messages
+read without the projection, the live members with the manager first) and
+provides it through `MemberDirectoryContext`; views name people with
+`members/memberIdentity.ts` (`memberView`, `authorView`, `messageRecipients`,
+never "Agent") drawn by `members/Identity.tsx`, whose live-member name opens the
+profile through `useWorkspaceNavigation().inspect`. General's rules are pure
+modules under `channel/`: `generalDraft.ts` (one `GeneralDraft` of text, reply,
+Task, references, last attempt, and last failure; recipients read from the
+text outside quotes and code, removed members included, and unknown until the
+directory is ready; `sendBlockedReason`; `withReply`; `toNewMessage` with `{member_id}` mentions and the
+Task as the first research reference), `timeline.ts` (days, author groups,
+collapsed routine notes, denial notes attached to their message or shown on
+their own, never collapsed),
+`delivery.ts` (`MessageDeliverySource`, a failure only when a note says so;
+`MessageItem` also draws queued and delivered as quiet text), and
+`mentionOptions.ts`; `references/referenceLabels.ts` names references by title
+(`ReferenceLabelSource`, never an id). `ChannelWorkspace` keeps the draft in
+place memory under `placeKey.general(p, filter) + '#draft'`, keys its
+composer by that place, and has no message types, Thread starts, or hidden
+references; `MessageComposer` is controlled by that draft (its failure and
+Try again included) and shows the To row (`components/workspace/RecipientRow`), the
+Task and reference chips, and why Send is blocked; `MessageList` renders the
+timeline through `MessageItem` (Markdown with inert images, Reply and
+`MoreActions`, one persistent More on coarse pointers) and `ActivityGroup`;
+`ThreadPane` is read-only with "Reply in General" (only its Task link
+changes). Dates and times use the app locale's date locale
+(`getLocaleDateLocale`), passed down as `locale`. `MarkdownContent` reads
+inline `$…$` as math only under remark-math's rules and never in code, and
+`renderMathToHtml` bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
+`PlainDraft` under `placeKey.dm(p, m) + '#draft'`, and `DmShareDialog` previews a
+share as General will show it before posting.
+
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
 tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
@@ -421,8 +491,9 @@ semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
 (arrow send; a stop that names its target), and `Composer` (text, `@mention`
 combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
 the line, nothing is sent while an input method composes). It knows nothing of
-channels or Tasks: `channel/MessageComposer` supplies the mention options and
-the intent and reference controls, and General and direct messages both use it.
+channels or Tasks: `channel/MessageComposer` supplies the members to mention,
+the recipients, and the reference controls, and General and direct messages
+both use it.
 The session composer shares the send and stop buttons.
 
 Workspace visual vocabulary (ADR 0227): `src/kubecode/icons/workspaceIcons.ts`

@@ -1218,7 +1218,10 @@ intents and Thread posts from older pages. A message read through the API also
 names the **members** behind its author and mentions, through any public
 Session they have had; that identity is presentation and grants nothing. A
 mention may name a member, resolved to its current public Session when the
-message is written and refused when the member cannot receive. See ADR 0229.
+message is written and refused when the member cannot receive. The browser
+shows whom a message goes to before it is sent, and keeps each unsent message
+(text, reply, Task, references) with the place it was written for. See ADR
+0229.
 
 ## Route
 
@@ -1288,14 +1291,23 @@ See ADRs 0225 and 0226.
 
 ## Workspace views and routes
 
-The researcher's place is a **route**: a Project, a **view** (Sessions, General,
-Kanban, Resources, Members, a private conversation, or a legacy research
-workspace), and the ids that narrow it (a message, a Task, a filter, a member).
-Exactly one view fills the main pane; a Task, a member profile, or evidence
-opens in an on-demand **detail pane** beside its list (on a phone, instead of
-it). The route is written in the URL hash, so it survives a reload, Back, and a
-shared link under any base path. Files, Git, and the terminal are tools asked
-for beside these views, not a standing column. See ADR 0224.
+The researcher's place in a Workspace is a **location**: a **place** (General,
+with an optional message, Task filter and legacy Thread; Kanban; Resources;
+Members; a private conversation; execution history with its Session; or a
+legacy research workspace) and an **inspector stack** of ids (a Task, a member,
+evidence as a Task cited it, or a live resource). Each Workspace remembers its
+current view and the last location of every view it visited, so choosing a view
+or a Workspace returns to where the researcher was; one never visited opens
+General. Execution history — Sessions and Teams — is a secondary place reached
+only on request, never a default. The inspector belongs to the view it was
+opened from: opening from the view replaces what is inspected, opening from
+inside it pushes on top, Back pops one entry and Close returns to the view. It
+sits beside the view when both fit and replaces it otherwise, and the view and
+lower entries stay mounted underneath. The location is written in the URL hash,
+so it survives a reload, Back, and a shared link under any base path; drafts,
+scroll positions, and focus are a **place memory** kept in the page, never on
+disk. Files, Git, and the terminal are tools asked for beside these views, not a
+standing column. See ADRs 0224 and 0228.
 
 ## General routing and direct messages
 

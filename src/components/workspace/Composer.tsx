@@ -1,15 +1,18 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from 'react'
 
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
+import { MemberAvatar } from './MemberIdentity'
 import {
   filterMentions,
   insertMention,
@@ -49,6 +52,14 @@ export type ComposerProps = {
   below?: ReactNode
   className?: string
   testId?: string
+  /** Names the text box for focus return (`data-focus-key`, ADR 0228 §4). */
+  focusKey?: string
+  /** The text box itself, for a caller that places the caret (after a reply). */
+  textareaRef?: Ref<HTMLTextAreaElement>
+  /** Ids of the caller's hints that describe the text box. */
+  describedBy?: string
+  /** Why the draft cannot be sent, said by the send button. */
+  sendDisabledReason?: string
 }
 
 /** A touch keyboard has no Shift key: there Enter breaks the line and the arrow sends. */
@@ -74,7 +85,9 @@ export function Composer({
   canSend,
   className,
   controls,
+  describedBy,
   disabled = false,
+  focusKey,
   label,
   mentionLabel,
   mentions = [],
@@ -82,13 +95,20 @@ export function Composer({
   onSend,
   placeholder,
   rows = 3,
+  sendDisabledReason,
   sendLabel,
   stop,
   testId,
+  textareaRef,
   value,
 }: ComposerProps) {
   const listId = useId()
   const area = useRef<HTMLTextAreaElement>(null)
+  const setArea = useCallback((node: HTMLTextAreaElement | null) => {
+    area.current = node
+    if (typeof textareaRef === 'function') textareaRef(node)
+    else if (textareaRef) textareaRef.current = node
+  }, [textareaRef])
   const composing = useRef(false)
   const submitting = useRef(false)
   const [caret, setCaret] = useState(0)
@@ -218,9 +238,23 @@ export function Composer({
                   choose(option)
                 }}
               >
-                <strong>@{option.handle}</strong>
-                <span>{option.label}</span>
-                {option.detail && <small>{option.detail}</small>}
+                {option.identity ? (
+                  <>
+                    <MemberAvatar name={option.label} role={option.identity.role} size="sm" />
+                    <span>{option.label}</span>
+                    <strong>@{option.handle}</strong>
+                    {option.identity.roleLabel && <small>{option.identity.roleLabel}</small>}
+                    {option.identity.unavailable && (
+                      <small className="kubecode-mention-unavailable">{option.identity.unavailable}</small>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <strong>@{option.handle}</strong>
+                    <span>{option.label}</span>
+                    {option.detail && <small>{option.detail}</small>}
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -230,10 +264,12 @@ export function Composer({
           aria-autocomplete={mentions.length > 0 ? 'list' : undefined}
           aria-controls={menuOpen ? listId : undefined}
           aria-expanded={mentions.length > 0 ? menuOpen : undefined}
+          aria-describedby={describedBy}
           aria-label={label}
+          data-focus-key={focusKey}
           disabled={disabled}
           placeholder={placeholder}
-          ref={area}
+          ref={setArea}
           role={mentions.length > 0 ? 'combobox' : undefined}
           rows={rows}
           value={value}
@@ -260,7 +296,13 @@ export function Composer({
       <div className="kubecode-composer-row">
         {stop && <StopButton label={stop.label} shortLabel={stop.shortLabel} onStop={stop.onStop} />}
         <div className="kubecode-composer-controls">{controls}</div>
-        <SendButton busy={busy} canSend={ready} label={sendLabel} onSend={submit} />
+        <SendButton
+          busy={busy}
+          canSend={ready}
+          disabledReason={ready ? undefined : sendDisabledReason}
+          label={sendLabel}
+          onSend={submit}
+        />
       </div>
       {/* The live region stays mounted so the change to "Sending…" is announced. */}
       {busyLabel && <span className="sr-only" role="status">{busy ? busyLabel : ''}</span>}

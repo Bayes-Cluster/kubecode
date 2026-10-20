@@ -1,81 +1,92 @@
+import { useId } from 'react'
+
 import { IconButton } from '@/components/workspace/IconButton'
+import { MemberAvatar, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
-import type { Conversation, Member, TaskCard, TaskDraft } from '../api'
+import type { Member } from '../api'
 import { Icon } from '../icons'
 import { WORKSPACE_DESTINATION_ICONS as DESTINATIONS } from '../icons/workspaceIcons'
-import { STATE_LABELS } from '../members/memberModel'
-import type { WorkspaceView } from './workspaceRoute'
+import { Identity } from '../members/Identity'
+import { memberView } from '../members/memberIdentity'
+import type { NeedsYouEntry, NeedsYouTarget } from './location/needsYou'
+import type { ViewKey } from './location/workspaceLocation'
+
+export type WorkspaceNavDestination = 'general' | 'board' | 'resources' | 'members'
 
 export type WorkspaceNavProps = {
-  /** The view on screen, so its entry is marked as current. */
-  active: WorkspaceView
+  /** The view on screen, so its entry is marked as current; nothing on execution history or a question. */
+  active: ViewKey | null
   /** Live members (the roster), General Agent first. */
-  members: Member[]
-  /** Tasks waiting for the researcher: results to review, input requested. */
-  needsYouTasks: TaskCard[]
-  /** Proposals that are not on the board: the researcher decides whether to add them. */
-  needsYouDrafts: TaskDraft[]
-  /** Sessions waiting for a permission answer. */
-  needsYouSessions: Conversation[]
+  members: readonly Member[]
+  /** Everything that waits for the researcher, each saying where it opens. */
+  needsYou: NeedsYouEntry[]
   t: Translator
   taskCount: number
-  onOpen: (view: Extract<WorkspaceView, 'general' | 'board' | 'resources' | 'members'>) => void
-  onOpenDm: (member: Member) => void
-  onOpenMember: (member: Member) => void
-  onOpenDraft: (draft: TaskDraft) => void
-  onOpenSession: (conversation: Conversation) => void
-  onOpenTask: (task: TaskCard) => void
+  onOpen: (view: WorkspaceNavDestination) => void
+  /** Opens what a Needs-you entry is about. */
+  onOpenTarget: (target: NeedsYouTarget) => void
+  /** Opens a member's profile in the inspector. */
+  onInspectMember: (memberId: string) => void
+  /** Opens the private conversation with a member. */
+  onOpenDm: (memberId: string) => void
+}
+
+/** The role a member plays, as the shared identity tones it. */
+function roleKind(member: Member): MemberRoleKind {
+  return member.role === 'general' ? 'manager' : 'specialist'
 }
 
 /**
- * The Workspace's organizing navigation: General, the Kanban board, Resources,
- * and the members, with everything that waits for the researcher gathered in
- * one place. Sessions, Teams, and Threads remain reachable below as execution
- * detail and history.
+ * The active Workspace's organizing navigation (ADR 0228 §1): General, the
+ * Kanban board, and Resources; everything that waits for the researcher,
+ * gathered in one place; Members; the members themselves under their own
+ * heading, whose names open their profiles; and the private conversations.
+ * Execution history is reachable below it, never from here.
  */
 export function WorkspaceNav({
   active,
   members,
-  needsYouDrafts,
-  needsYouSessions,
-  needsYouTasks,
+  needsYou,
+  onInspectMember,
   onOpen,
   onOpenDm,
-  onOpenMember,
-  onOpenDraft,
-  onOpenSession,
-  onOpenTask,
+  onOpenTarget,
   t,
   taskCount,
 }: WorkspaceNavProps) {
-  const entries = [
+  const places = [
     { view: 'general', icon: DESTINATIONS.general.Icon, label: t('kubecode.channel.general') },
     { view: 'board', icon: DESTINATIONS.board.Icon, label: t('kubecode.nav.board') },
     { view: 'resources', icon: DESTINATIONS.resources.Icon, label: t('kubecode.nav.resources') },
-    { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') },
   ] as const
-  const waiting = needsYouTasks.length + needsYouDrafts.length + needsYouSessions.length
+  const membersPlace = { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') } as const
+  const destination = (entry: typeof places[number] | typeof membersPlace) => (
+    <li key={entry.view}>
+      <button
+        aria-current={active === entry.view ? 'page' : undefined}
+        className="kubecode-research-nav-item"
+        type="button"
+        onClick={() => onOpen(entry.view)}
+      >
+        <Icon role="navigation" size="secondary" source={entry.icon} />
+        <span className="kubecode-research-nav-title">{entry.label}</span>
+        {entry.view === 'board' && taskCount > 0 && (
+          <StatusBadge tone="muted">{taskCount}</StatusBadge>
+        )}
+      </button>
+    </li>
+  )
+  const rosterHeading = useId()
+  const directHeading = useId()
+  const waiting = needsYou.length
+  // A private conversation shows once it exists, and while it is being opened.
+  const direct = members.filter((member) => member.dm_conversation_id !== null || active === `dm:${member.id}`)
   return (
     <section aria-label={t('kubecode.nav.workspace')} className="kubecode-workspace-nav">
       <ul className="kubecode-research-nav-list">
-        {entries.map((entry) => (
-          <li key={entry.view}>
-            <button
-              aria-current={active === entry.view ? 'page' : undefined}
-              className="kubecode-research-nav-item"
-              type="button"
-              onClick={() => onOpen(entry.view)}
-            >
-              <Icon role="navigation" size="secondary" source={entry.icon} />
-              <span className="kubecode-research-nav-title">{entry.label}</span>
-              {entry.view === 'board' && taskCount > 0 && (
-                <StatusBadge tone="muted">{taskCount}</StatusBadge>
-              )}
-            </button>
-          </li>
-        ))}
+        {places.map(destination)}
       </ul>
       <details className="kubecode-needs-you" data-waiting={waiting > 0} open={waiting > 0}>
         <summary>
@@ -85,60 +96,61 @@ export function WorkspaceNav({
         </summary>
         {waiting === 0 && <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouNone')}</p>}
         <ul className="kubecode-research-nav-list">
-          {needsYouTasks.map((task) => (
-            <li key={task.id}>
-              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenTask(task)}>
-                <span className="kubecode-research-nav-title">{task.title}</span>
-                <StatusBadge tone="warn">
-                  {task.stage === 'review'
-                    ? t('kubecode.nav.needsReview')
-                    : t('kubecode.nav.needsInput')}
-                </StatusBadge>
-              </button>
-            </li>
-          ))}
-          {needsYouDrafts.map((draft) => (
-            <li key={draft.id}>
-              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenDraft(draft)}>
-                <span className="kubecode-research-nav-title">{draft.title}</span>
-                <StatusBadge tone="info">{t('kubecode.nav.needsProposal')}</StatusBadge>
-              </button>
-            </li>
-          ))}
-          {needsYouSessions.map((session) => (
-            <li key={session.id}>
-              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenSession(session)}>
-                <span className="kubecode-research-nav-title">{session.title || t('kubecode.untitledSession')}</span>
-                <StatusBadge tone="warn">{t('kubecode.nav.needsPermission')}</StatusBadge>
+          {needsYou.map((entry) => (
+            <li key={entry.key}>
+              <button className="kubecode-research-nav-item" type="button" onClick={() => onOpenTarget(entry.target)}>
+                <span className="kubecode-research-nav-title">{entry.title}</span>
+                <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
               </button>
             </li>
           ))}
         </ul>
       </details>
+      <ul className="kubecode-research-nav-list">
+        {destination(membersPlace)}
+      </ul>
       {members.length > 0 && (
-        <ul aria-label={t('kubecode.nav.roster')} className="kubecode-nav-members">
-          {members.map((member) => (
-            <li data-state={member.state} key={member.id}>
-              <button
-                className="kubecode-research-nav-item"
-                type="button"
-                onClick={() => onOpenMember(member)}
-              >
-                <span className="kubecode-research-nav-title" title={member.name}>@{member.handle}</span>
-                {member.state !== 'active' && (
-                  <StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge>
-                )}
-              </button>
-              {member.state === 'active' && (
-                <IconButton
-                  icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
-                  label={t('kubecode.members.messagePrivately', { name: member.name })}
-                  onClick={() => onOpenDm(member)}
+        <div className="kubecode-nav-roster">
+          <h3 className="kubecode-nav-heading" id={rosterHeading}>{t('kubecode.nav.roster')}</h3>
+          <ul aria-labelledby={rosterHeading} className="kubecode-nav-members">
+            {members.map((member) => (
+              <li data-state={member.state} key={member.id}>
+                <Identity
+                  size="sm"
+                  view={memberView(member, t)}
+                  onOpen={() => onInspectMember(member.id)}
                 />
-              )}
-            </li>
-          ))}
-        </ul>
+                {member.state === 'active' && (
+                  <IconButton
+                    icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
+                    label={t('kubecode.members.messagePrivately', { name: member.name })}
+                    onClick={() => onOpenDm(member.id)}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {direct.length > 0 && (
+        <div className="kubecode-nav-direct">
+          <h3 className="kubecode-nav-heading" id={directHeading}>{t('kubecode.nav.directMessages')}</h3>
+          <ul aria-labelledby={directHeading} className="kubecode-research-nav-list">
+            {direct.map((member) => (
+              <li key={member.id}>
+                <button
+                  aria-current={active === `dm:${member.id}` ? 'page' : undefined}
+                  className="kubecode-research-nav-item"
+                  type="button"
+                  onClick={() => onOpenDm(member.id)}
+                >
+                  <MemberAvatar name={member.name} role={roleKind(member)} size="sm" />
+                  <span className="kubecode-research-nav-title">{member.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   )

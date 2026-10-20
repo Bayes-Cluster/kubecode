@@ -3,7 +3,15 @@ import { writeFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 import { launchPermissionsOf, MemberAgent, waitForPrompt } from './agents'
-import { dropEvents, installControlledEvents, openGeneral, restoreEvents, workspaceNav } from './shell'
+import {
+  closeNavigationSheet,
+  dropEvents,
+  inspector,
+  installControlledEvents,
+  openGeneral,
+  restoreEvents,
+  workspaceNav,
+} from './shell'
 
 /**
  * The Research Workspace end to end against the real Runtime under a non-root
@@ -58,7 +66,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.getByRole('option', { name: `Create ${projectPath}` }).click()
   await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible()
   // A fresh Workspace opens in General, with exactly one General Agent.
-  await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await writeFile(`${projectPath}/results.csv`, 'accuracy\n0.91\n')
   const projects = await (await request.get(`${api}/projects`)).json() as Array<{ id: string; name: string }>
   projectId = projects.find((candidate) => candidate.name === projectName)?.id
@@ -145,7 +153,10 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: claim.message_id, brief_revision: revised.revision,
   })).toContain("only the researcher's own message authorizes")
-  await say(page, '> Please add it to the Kanban.')
+  // A quoted line is shown as a quote, since messages are Markdown (ADR 0229 §7).
+  await page.getByLabel('Message the Workspace').fill('> Please add it to the Kanban.')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('log', { name: 'Messages' }).locator('blockquote').getByText('Please add it to the Kanban.', { exact: true })).toBeVisible()
   const quoted = await lastResearcherMessage(manager, 'Please add it to the Kanban.')
   expect(await manager.refused('task_admit', {
     research_id: taskId, message_id: quoted.id, brief_revision: revised.revision,
@@ -225,6 +236,14 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await waitForPrompt(generalConversation as string, (text) => text.includes('Started the sweep'))
   await manager.call('general_post', { body: 'Thanks @analyst, I will ask for your review now.', mentions: ['analyst'], task: taskId })
   await expect(page.getByText('Thanks @analyst, I will ask for your review now.')).toBeVisible()
+  // Each message names the member who wrote it and whom it went to, never "Agent" (ADR 0229 §1).
+  const managerName = (await roster()).members.find((member) => member.role === 'general') as unknown as { name: string }
+  const row = (text: string) => page.locator('article[data-message-id]').filter({ hasText: text })
+  await expect(row('Started the sweep; first results are in results.csv.')).toHaveAttribute('aria-label', 'Analyst')
+  await expect(row('Started the sweep; first results are in results.csv.')).toContainText('Handed to')
+  await expect(row('Thanks @analyst, I will ask for your review now.')).toHaveAttribute('aria-label', managerName.name)
+  await expect(row('Thanks @analyst, I will ask for your review now.')).toContainText('Analyst')
+  await expect(page.locator('article[data-message-id][aria-label="Agent"]')).toHaveCount(0)
 
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await page.getByTestId(`task-card-${taskId}`).click()
@@ -261,6 +280,14 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(review.getByText('Structured pruning kept accuracy at 0.91')).toBeVisible()
   await expect(review.getByText(/Some evidence changed after it was attached/)).toBeVisible()
   await review.getByLabel('What the result showed').selectOption({ label: 'Valid negative result' })
+  // The evidence opens over the Task (ADR 0228); Back returns to the review as it was left.
+  await review.getByRole('button', { name: 'file:results.csv' }).click()
+  const evidence = inspector(page, 'Evidence details')
+  await expect(evidence).toBeVisible()
+  await evidence.getByRole('button', { name: /^Back to / }).click()
+  await expect(evidence).toHaveCount(0)
+  await expect(review.getByLabel('What the result showed').locator('option:checked')).toHaveText('Valid negative result')
+  await expect(review.getByRole('button', { name: 'file:results.csv' })).toBeFocused()
   await expect(review.getByRole('button', { name: 'Accept results' })).toBeDisabled()
   // It cannot be accepted at its current version before it was looked at.
   await expect(review.getByRole('button', { name: 'Accept the current version' })).toBeDisabled()
@@ -305,11 +332,24 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await page.keyboard.press('Escape')
   await page.evaluate((hash) => { window.location.hash = hash }, `#/p/${projectId}/board`)
   await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
-  const viewport = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }))
-  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  const contained = async () => {
+    const viewport = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }))
+    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
+  }
+  await contained()
+  // The Task is a screen of its own over the parked board, with the way back to it.
+  await closeNavigationSheet(page)
+  await page.getByTestId(`task-card-${taskId}`).click()
+  const phoneTask = inspector(page, 'Task details')
+  await expect(phoneTask).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeHidden()
+  await contained()
+  await phoneTask.getByRole('button', { name: 'Back to Kanban' }).click()
+  await expect(page.getByRole('region', { name: 'Kanban', exact: true })).toBeVisible()
+  await contained()
   } finally {
     // Projects are only unregistered; the temporary directory goes with the test.
     if (projectId) await request.delete(`${api}/projects/${projectId}`)

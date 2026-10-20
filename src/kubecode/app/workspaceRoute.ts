@@ -8,6 +8,9 @@
  * view names appears in a route.
  */
 
+import { isRouteId, MAX_INSPECTOR_DEPTH, type InspectorEntry } from './location/inspector'
+import { formatInspectorToken, parseInspectorToken } from './location/locationRoute'
+
 export type WorkspaceView =
   /** The Sessions surface (legacy execution detail) with an optional open Session. */
   | 'sessions'
@@ -41,15 +44,18 @@ export type WorkspaceRoute = {
   member?: string
   /** A research question opened directly. */
   question?: string
+  /**
+   * Inspector entries above the legacy bottom one (`task` / `member`), bottom
+   * → top, as repeated `inspect=` parameters (ADR 0228). Only the routable
+   * prefix is ever written.
+   */
+  inspect?: InspectorEntry[]
 }
 
 const VIEWS: readonly WorkspaceView[] = ['sessions', 'general', 'board', 'resources', 'members', 'dm', 'question']
 
-/** An id as it may appear in a route: no separators, query characters, or controls. */
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
-
 function safe(value: string | null | undefined): string | undefined {
-  return value && SAFE_ID.test(value) ? value : undefined
+  return isRouteId(value) ? value : undefined
 }
 
 /** The path part, then the query: `/p/x/general/m/y?task=z`. */
@@ -73,12 +79,20 @@ export function formatWorkspaceRoute(route: WorkspaceRoute): string {
     default:
       break
   }
-  const query = new URLSearchParams()
-  if (route.task) query.set('task', route.task)
-  if (route.view === 'general' && route.filter) query.set('filter', route.filter)
-  if (route.view === 'general' && route.thread) query.set('thread', route.thread)
-  if (route.view === 'members' && route.member) query.set('member', route.member)
-  const text = query.toString()
+  const pairs: Array<[string, string]> = []
+  if (route.task) pairs.push(['task', route.task])
+  if (route.view === 'general' && route.filter) pairs.push(['filter', route.filter])
+  if (route.view === 'general' && route.thread) pairs.push(['thread', route.thread])
+  if (route.view === 'members' && route.member) pairs.push(['member', route.member])
+  for (const entry of (route.inspect ?? []).slice(0, MAX_INSPECTOR_DEPTH)) {
+    const token = formatInspectorToken(entry)
+    if (token === null) break
+    pairs.push(['inspect', token])
+  }
+  // Built by hand rather than with URLSearchParams, which would write `~` as
+  // `%7E`. For route ids both encode identically (`:` is `%3A` either way), so
+  // every route ADR 0224 wrote stays byte for byte the same.
+  const text = pairs.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
   return `/${parts.join('/')}${text ? `?${text}` : ''}`
 }
 
@@ -144,6 +158,14 @@ export function parseWorkspaceRoute(hash: string): WorkspaceRoute | null {
     const member = safe(query.get('member'))
     if (member) route.member = member
   }
+  // The longest valid prefix: a bad token drops itself and everything above it.
+  const inspect: InspectorEntry[] = []
+  for (const token of query.getAll('inspect').slice(0, MAX_INSPECTOR_DEPTH)) {
+    const entry = parseInspectorToken(token)
+    if (!entry) break
+    inspect.push(entry)
+  }
+  if (inspect.length > 0) route.inspect = inspect
   return route
 }
 

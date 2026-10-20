@@ -1,5 +1,4 @@
-import { Paperclip, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState, type Dispatch, type Ref, type SetStateAction } from 'react'
 
 import {
   Dialog,
@@ -8,235 +7,311 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
 import { IconButton } from '@/components/workspace/IconButton'
-import { extractMentions, type MentionOption } from '@/components/workspace/mentions'
+import { RecipientRow, type Recipient } from '@/components/workspace/RecipientRow'
+import { ReferenceChip } from '@/components/workspace/ReferenceChip'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import type {
-  ChannelIntent,
-  Conversation,
-  KubecodeApi,
-  NewChannelMessage,
-  ProjectContextItem,
-  ProjectContextRef,
-} from '../api'
+import { ApiError, type ChannelMessage, type KubecodeApi, type NewChannelMessage, type ProjectContextItem } from '../api'
+import { errorMessage } from '../app/errors'
 import { ComposerProjectWorkPicker } from '../ComposerProjectWorkPicker'
-import { PROJECT_CONTEXT_KIND_LABELS } from '../projectContext'
+import { Identity } from '../members/Identity'
+import { canReceive, type MemberDirectory } from '../members/memberDirectory'
+import { memberView } from '../members/memberIdentity'
+import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { newClientMessageId } from '../session/sessionModel'
-import { useAction } from '../research/useAction'
+import {
+  draftRecipients,
+  removeMention,
+  sendBlockedReason,
+  toNewMessage,
+  type GeneralDraft,
+} from './generalDraft'
+import { mentionOptions } from './mentionOptions'
 
 const MAX_REFERENCES = 16
 
 export type MessageComposerProps = {
   api: KubecodeApi
-  placeholder: string
   projectId: string
-  /** Sessions that can be asked (not Team members or subagents). */
-  sessions: Conversation[]
   t: Translator
-  threadId?: string | null
-  /**
-   * Members that `@handle` reaches; the option id is the member's Session.
-   * Mentioning is how a message addresses someone, and it is recorded with the
-   * message; it never authorizes work by itself.
-   */
-  mentionOptions?: MentionOption[]
-  /** The message the next one cites; cleared once the citing message is saved. */
-  replyTo?: { id: string; label: string; onClear: () => void } | null
+  placeholder: string
+  directory: MemberDirectory
+  labels: ReferenceLabelSource
+  /** The draft of this place (ADR 0229 §6); the setter keeps writing after the composer is gone. */
+  draft: GeneralDraft
+  onDraftChange: Dispatch<SetStateAction<GeneralDraft>>
+  /** Names the text box for focus return (`data-focus-key`). */
+  focusKey: string
+  textareaRef?: Ref<HTMLTextAreaElement>
+  /** Saves the message; resolves with it once it is stored. */
+  onSend: (message: NewChannelMessage) => Promise<ChannelMessage>
+  onSent?: (message: ChannelMessage) => void
   /** Stops one named task or agent; sending stays available while it runs. */
   stop?: { target: string; onStop: () => void }
-  /** Saves the message; resolves once it is stored. */
-  onSend: (message: NewChannelMessage) => Promise<void>
 }
 
 /**
- * Writes one message. The client message id is kept until the send succeeds, so
- * a retry after a lost response replays the same message instead of adding a
- * second one. Choosing "ask" or "request" only records the intent.
+ * Writes one General message (ADR 0229 §4–§6): the text, whom it goes to (the
+ * members it @mentions, or the project manager), the Task it is about and its
+ * references, and the message it replies to. There are no message types. A
+ * failed send puts everything back, and a retry of the same draft replays the
+ * same message.
  */
 export function MessageComposer({
   api,
+  directory,
+  draft,
+  focusKey,
+  labels,
+  onDraftChange,
   onSend,
+  onSent,
   placeholder,
   projectId,
-  sessions,
   stop,
   t,
-  threadId = null,
-  mentionOptions = [],
-  replyTo = null,
+  textareaRef,
 }: MessageComposerProps) {
-  const [body, setBody] = useState('')
-  const [intent, setIntent] = useState<ChannelIntent>('say')
-  const [askSession, setAskSession] = useState('')
-  const [references, setReferences] = useState<ProjectContextItem[]>([])
+  const hintId = useId()
+  const area = useRef<HTMLTextAreaElement | null>(null)
   const [picker, setPicker] = useState(false)
-  // The id of the last attempt and the draft it carried: a retry of the same
-  // draft replays the same message, an edited draft is a new message.
-  const attempt = useRef<{ id: string; signature: string } | null>(null)
-  const action = useAction(t)
-  const asking = intent === 'ask'
-  const ready = body.trim().length > 0 && (!asking || askSession !== '')
-
+  const [busy, setBusy] = useState(false)
+  const error = draft.failure
   const sending = useRef(false)
+  const recipients = draftRecipients(draft.body, directory)
+  const blocked = sendBlockedReason(recipients, t)
+  const ready = draft.body.trim().length > 0 && blocked === null
+  const update = (patch: Partial<GeneralDraft>) => onDraftChange((current) => ({ ...current, ...patch }))
+  const focusText = () => area.current?.focus()
+  const setArea = (node: HTMLTextAreaElement | null) => {
+    area.current = node
+    if (typeof textareaRef === 'function') textareaRef(node)
+    else if (textareaRef) textareaRef.current = node
+  }
 
   const send = async () => {
-    // A second call before the first renders must not clear the draft again or
-    // be mistaken for a failed send.
-    if (!ready || action.busy || sending.current) return
+    // A second call before the first settles must not clear the draft again.
+    if (!ready || sending.current) return
     sending.current = true
+    setBusy(true)
+    const sent = draft
+    const { message, signature } = toNewMessage(sent, recipients)
+    const id = sent.attempt?.signature === signature ? sent.attempt.id : newClientMessageId()
+    // Clear at once so what is typed next is never lost to this send; the Task
+    // stays, and so does the attempt until the send succeeds.
+    onDraftChange((current) => ({
+      ...current, body: '', reply: null, references: [], attempt: { id, signature }, failure: null,
+    }))
     try {
-      await submit()
+      const saved = await onSend({ ...message, clientMessageId: id })
+      onDraftChange((current) => ({ ...current, attempt: current.attempt?.id === id ? null : current.attempt }))
+      onSent?.(saved)
+    } catch (cause) {
+      let failure: string
+      if (cause instanceof ApiError && cause.code === 'mention_unavailable') {
+        const named = cause.memberId ? directory.byId.get(cause.memberId) : undefined
+        failure = named
+          ? t('kubecode.channel.mentionUnavailable', { name: named.name })
+          : t('kubecode.channel.mentionUnavailableUnknown')
+        directory.reload()
+      } else {
+        failure = errorMessage(cause, t('kubecode.error'))
+      }
+      // Put back what was sent, never over what the researcher has changed
+      // since: new text follows it, and a Task chosen meanwhile stays.
+      onDraftChange((current) => ({
+        ...current,
+        body: current.body === '' ? sent.body : `${sent.body}\n${current.body}`,
+        reply: current.reply ?? sent.reply,
+        references: current.references.length > 0 ? current.references : sent.references,
+        failure,
+      }))
     } finally {
       sending.current = false
+      setBusy(false)
     }
   }
 
-  const submit = async () => {
-    const draft = { body, intent, askSession, references }
-    const mentioned = extractMentions(draft.body, mentionOptions).map((option) => option.id)
-    const signature = JSON.stringify([
-      draft.body.trim(),
-      draft.intent,
-      draft.intent === 'ask' ? draft.askSession : '',
-      draft.references.map((item) => `${item.ref.kind}:${item.ref.id}`),
-      mentioned,
-      replyTo?.id ?? '',
-    ])
-    const id = attempt.current?.signature === signature
-      ? attempt.current.id
-      : newClientMessageId()
-    attempt.current = { id, signature }
-    // Clear at once so what the researcher types next is never lost to the
-    // completion of this send; put the draft back if it fails and nothing new
-    // has been typed. The client id stays until the send succeeds, so a retry
-    // replays the same message.
-    setBody('')
-    setReferences([])
-    setIntent('say')
-    setAskSession('')
-    const sent = await action.run(() => onSend({
-      body: draft.body.trim(),
-      threadId,
-      clientMessageId: id,
-      replyTo: replyTo?.id ?? null,
-      intent: draft.intent,
-      mentions: [...new Set([
-        ...(draft.intent === 'ask' ? [draft.askSession] : []),
-        ...mentioned,
-      ])].map((session_id) => ({ session_id })),
-      references: draft.references.map((item): ProjectContextRef => ({
-        kind: item.ref.kind,
-        id: item.ref.id,
-        revision: item.ref.revision ?? null,
-      })),
-    }))
-    if (sent) {
-      attempt.current = null
-      replyTo?.onClear()
-    } else {
-      setBody((current) => (current === '' ? draft.body : `${draft.body}\n${current}`))
-      setReferences((current) => (current.length === 0 ? draft.references : current))
-      setIntent(draft.intent)
-      setAskSession(draft.askSession)
-    }
+  const insertMention = () => {
+    const box = area.current
+    const caret = box?.selectionStart ?? draft.body.length
+    const before = draft.body.slice(0, caret)
+    const spaced = before === '' || /\s$/.test(before) ? '@' : ' @'
+    const body = `${before}${spaced}${draft.body.slice(caret)}`
+    update({ body })
+    const next = caret + spaced.length
+    requestAnimationFrame(() => {
+      box?.focus()
+      box?.setSelectionRange(next, next)
+    })
+    box?.focus()
   }
+
+  const pick = (item: ProjectContextItem) => {
+    setPicker(false)
+    if (item.ref.kind === 'research') {
+      update({ task: item.ref.id, taskCleared: false })
+      return
+    }
+    onDraftChange((current) => (
+      current.references.some((existing) => existing.ref.kind === item.ref.kind && existing.ref.id === item.ref.id)
+        || current.references.length >= MAX_REFERENCES
+        ? current
+        : { ...current, references: [...current.references, item] }
+    ))
+  }
+
+  const removeReference = (item: ProjectContextItem) => onDraftChange((current) => ({
+    ...current,
+    references: current.references.filter((existing) => existing.ref.kind !== item.ref.kind || existing.ref.id !== item.ref.id),
+  }))
+
+  const toRecipients: Recipient[] = recipients.kind === 'members'
+    ? [...recipients.reachable, ...recipients.unreachable.map((entry) => entry.member)].map((member) => {
+      const view = memberView(member, t)
+      return {
+        ...view,
+        removeLabel: t('kubecode.channel.removeRecipient', { name: member.name }),
+        onRemove: () => onDraftChange((current) => ({ ...current, body: removeMention(current.body, member.handle) })),
+      }
+    })
+    : []
+  const manager = recipients.kind === 'manager' ? recipients.manager : null
+  const nobody = recipients.kind === 'unknown'
+    ? recipients.status === 'loading'
+      ? <span className="kubecode-composer-hint">{t('kubecode.members.loading')}</span>
+      : (
+        <span className="kubecode-composer-warning">
+          {t('kubecode.members.loadFailed')}{' '}
+          <Button size="xs" variant="ghost" onClick={() => directory.reload()}>{t('kubecode.members.retryLoad')}</Button>
+        </span>
+      )
+    : manager && canReceive(manager)
+      ? <Identity size="sm" view={memberView(manager, t)} />
+      : <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>
+  const taskLabel = draft.task ? labels({ kind: 'research', id: draft.task }) : null
 
   return (
     <div className="kubecode-channel-composer">
       <Composer
         above={(
           <>
-            {replyTo && (
+            {draft.reply && (
               <p className="kubecode-channel-replying">
-                <span>{t('kubecode.channel.replyingTo', { author: replyTo.label })}</span>
+                <span>{t('kubecode.channel.replyingToExcerpt', { author: draft.reply.authorName, excerpt: draft.reply.excerpt })}</span>
                 <IconButton
-                  icon={<X aria-hidden size={12} />}
+                  icon={<Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.close.Icon} />}
                   label={t('kubecode.channel.clearReply')}
-                  onClick={replyTo.onClear}
+                  onClick={() => {
+                    update({ reply: null })
+                    focusText()
+                  }}
                 />
               </p>
             )}
-            {references.length > 0 && (
-          <ul className="kubecode-channel-references">
-            {references.map((item) => (
-              <li key={`${item.ref.kind}:${item.ref.id}`}>
-                <span className="kubecode-channel-reference">
-                  {t(PROJECT_CONTEXT_KIND_LABELS[item.ref.kind])}
-                  <span>{item.title}</span>
-                  <IconButton
-                    icon={<X aria-hidden size={12} />}
-                    label={t('kubecode.channel.removeReference', { title: item.title })}
-                    onClick={() => setReferences((current) => current.filter((candidate) => (
-                      candidate.ref.kind !== item.ref.kind || candidate.ref.id !== item.ref.id
-                    )))}
-                  />
-                </span>
-              </li>
-            ))}
-          </ul>
+            {(taskLabel || draft.references.length > 0) && (
+              <div className="kubecode-composer-about">
+                <span className="kubecode-composer-about-label">{t('kubecode.channel.about')}</span>
+                <ul aria-label={t('kubecode.channel.references')}>
+                  {taskLabel && (
+                    <li>
+                      <ReferenceChip
+                        kind="task"
+                        kindLabel={taskLabel.kindLabel}
+                        removeLabel={t('kubecode.channel.removeTask', { title: taskLabel.title })}
+                        title={taskLabel.title}
+                        onRemove={() => {
+                          update({ task: null, taskCleared: true })
+                          focusText()
+                        }}
+                      />
+                    </li>
+                  )}
+                  {draft.references.map((item) => {
+                    const label = labels(item.ref)
+                    const title = item.title || label.title
+                    return (
+                      <li key={`${item.ref.kind}:${item.ref.id}`}>
+                        <ReferenceChip
+                          kind={label.kind}
+                          kindLabel={label.kindLabel}
+                          removeLabel={t('kubecode.channel.removeReference', { title })}
+                          title={title}
+                          onRemove={() => {
+                            removeReference(item)
+                            focusText()
+                          }}
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
             )}
           </>
         )}
         below={(
           <>
-            {intent !== 'say' && (
-              <p className="kubecode-research-muted">{t('kubecode.channel.intent.requestHint')}</p>
+            <RecipientRow
+              empty={nobody}
+              label={t('kubecode.channel.to')}
+              recipients={toRecipients}
+              onFocusAfterLast={focusText}
+            />
+            {blocked && draft.body.trim() && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
+            <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
+            {error && (
+              <p className="kubecode-research-error" role="alert">
+                {error}{' '}
+                <Button disabled={busy} size="xs" variant="ghost" onClick={() => void send()}>
+                  {t('kubecode.vocab.command.retry')}
+                </Button>
+              </p>
             )}
-            {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
           </>
         )}
-        busy={action.busy}
+        busy={busy}
         busyLabel={t('kubecode.channel.sending')}
         canSend={ready}
         controls={(
           <>
-            <select
-              aria-label={t('kubecode.channel.intent.label')}
-              className="kubecode-channel-select"
-              value={intent}
-              onChange={(event) => setIntent(event.target.value as ChannelIntent)}
-            >
-              <option value="say">{t('kubecode.channel.intent.say')}</option>
-              <option value="ask">{t('kubecode.channel.intent.ask')}</option>
-              <option value="request">{t('kubecode.channel.intent.request')}</option>
-            </select>
-            {asking && (
-              <select
-                aria-label={t('kubecode.channel.askSession')}
-                className="kubecode-channel-select"
-                value={askSession}
-                onChange={(event) => setAskSession(event.target.value)}
-              >
-                <option value="">{t('kubecode.channel.chooseSession')}</option>
-                {sessions.map((session) => (
-                  <option key={session.id} value={session.id}>{session.title}</option>
-                ))}
-              </select>
-            )}
             <IconButton
-              disabled={references.length >= MAX_REFERENCES}
-              icon={<Paperclip aria-hidden size={16} />}
-              label={t('kubecode.channel.attach')}
+              disabled={draft.references.length >= MAX_REFERENCES}
+              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />}
+              label={t('kubecode.vocab.command.addContext')}
               onClick={() => setPicker(true)}
+            />
+            <IconButton
+              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.mention.Icon} />}
+              label={t('kubecode.vocab.command.mention')}
+              onClick={insertMention}
             />
           </>
         )}
+        describedBy={hintId}
+        focusKey={focusKey}
         label={placeholder}
         mentionLabel={t('kubecode.composer.mentions')}
-        mentions={mentionOptions}
+        mentions={mentionOptions(directory, t)}
         placeholder={placeholder}
+        sendDisabledReason={blocked ?? undefined}
         sendLabel={t('kubecode.channel.send')}
         stop={stop && { label: t('kubecode.composer.stopTarget', { target: stop.target }), onStop: stop.onStop }}
-        value={body}
-        onChange={setBody}
+        textareaRef={setArea}
+        value={draft.body}
+        // Emptied by hand: the draft is given up, so the same words later are a new message.
+        onChange={(body) => update(body.trim() === '' ? { body, attempt: null, failure: null } : { body })}
         onSend={send}
       />
       <Dialog open={picker} onOpenChange={setPicker}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('kubecode.channel.attach')}</DialogTitle>
+            <DialogTitle>{t('kubecode.vocab.command.addContext')}</DialogTitle>
             <DialogDescription>{t('kubecode.channel.attachHint')}</DialogDescription>
           </DialogHeader>
           <ComposerProjectWorkPicker
@@ -244,14 +319,7 @@ export function MessageComposer({
             conversationId=""
             projectId={projectId}
             t={t}
-            onSelect={(item) => {
-              setReferences((current) => (
-                current.some((candidate) => candidate.ref.kind === item.ref.kind && candidate.ref.id === item.ref.id)
-                  ? current
-                  : [...current, item]
-              ))
-              setPicker(false)
-            }}
+            onSelect={pick}
           />
         </DialogContent>
       </Dialog>

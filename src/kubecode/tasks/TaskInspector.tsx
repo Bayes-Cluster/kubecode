@@ -31,6 +31,11 @@ export type TaskInspectorProps = {
   taskId: string
   /** Goes to the researcher's message that added the Task, in General. */
   onShowMessage: (messageId: string) => void
+  /**
+   * Opens review evidence in the inspector, over this Task (ADR 0228 §3).
+   * Without it, evidence opens inline below its list.
+   */
+  onInspectEvidence?: (target: EvidenceTarget) => void
 }
 
 /**
@@ -40,7 +45,16 @@ export type TaskInspectorProps = {
  * accept evidence that changed since it was attached. A proposal that is not
  * on the board says so and where to put it there.
  */
-export function TaskInspector({ api, connectionState, events, onShowMessage, projectId, t, taskId }: TaskInspectorProps) {
+export function TaskInspector({
+  api,
+  connectionState,
+  events,
+  onInspectEvidence,
+  onShowMessage,
+  projectId,
+  t,
+  taskId,
+}: TaskInspectorProps) {
   const { detail, reload, status } = useTaskDetail(api, projectId, taskId, events, connectionState)
 
   if (status === 'loading') return <p className="kubecode-research-muted" role="status">{t('kubecode.task.loading')}</p>
@@ -55,13 +69,24 @@ export function TaskInspector({ api, connectionState, events, onShowMessage, pro
   if (!detail) {
     return <p className="kubecode-research-notice" role="status">{t('kubecode.task.notOnBoard')}</p>
   }
-  return <Inspector api={api} detail={detail} projectId={projectId} t={t} onChanged={reload} onShowMessage={onShowMessage} />
+  return (
+    <Inspector
+      api={api}
+      detail={detail}
+      projectId={projectId}
+      t={t}
+      onChanged={reload}
+      onInspectEvidence={onInspectEvidence}
+      onShowMessage={onShowMessage}
+    />
+  )
 }
 
 function Inspector({
   api,
   detail,
   onChanged,
+  onInspectEvidence,
   onShowMessage,
   projectId,
   t,
@@ -69,6 +94,7 @@ function Inspector({
   api: KubecodeApi
   detail: TaskDetail
   onChanged: () => void
+  onInspectEvidence?: (target: EvidenceTarget) => void
   onShowMessage: (messageId: string) => void
   projectId: string
   t: Translator
@@ -142,6 +168,7 @@ function Inspector({
           request={openRequest}
           t={t}
           onChanged={onChanged}
+          onInspectEvidence={onInspectEvidence}
         />
       )}
 
@@ -289,6 +316,7 @@ function ReviewPanel({
   api,
   detail,
   onChanged,
+  onInspectEvidence,
   projectId,
   request,
   t,
@@ -296,6 +324,7 @@ function ReviewPanel({
   api: KubecodeApi
   detail: TaskDetail
   onChanged: () => void
+  onInspectEvidence?: (target: EvidenceTarget) => void
   projectId: string
   request: TaskReviewRequest
   t: Translator
@@ -354,10 +383,15 @@ function ReviewPanel({
           {evidence.map(({ entry, target }) => (
             <li key={entry}>
               <Button
-                aria-expanded={looking?.kind === target.kind && looking?.id === target.id}
+                aria-expanded={onInspectEvidence ? undefined : looking?.kind === target.kind && looking?.id === target.id}
+                data-focus-key={`evidence:${entry}`}
                 size="xs"
                 variant="outline"
-                onClick={() => setLooking(looking?.kind === target.kind && looking?.id === target.id ? null : target)}
+                onClick={() => {
+                  // In the inspector the evidence opens over the Task, which stays mounted below it.
+                  if (onInspectEvidence) onInspectEvidence(target)
+                  else setLooking(looking?.kind === target.kind && looking?.id === target.id ? null : target)
+                }}
               >
                 {entry}
               </Button>

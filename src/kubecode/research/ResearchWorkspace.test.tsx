@@ -25,7 +25,6 @@ function mount(overrides: Partial<ResearchWorkspaceProps> = {}) {
     connectionState: 'live',
     conversations: [],
     events: [],
-    onClose: vi.fn(),
     onConversationCreated: vi.fn(),
     onOpenSession: vi.fn(),
     projectId: 'p1',
@@ -55,6 +54,28 @@ function event(id: number, kind: string, payload: Record<string, unknown> = {}):
 }
 
 describe('ResearchWorkspace', () => {
+  it('in the inspector, draws the Back and Close it is given in its one header, and reports its title', async () => {
+    const onBack = vi.fn()
+    const onCloseDetail = vi.fn()
+    const onTitle = vi.fn()
+    mount({
+      back: { label: 'Back to General', onBack },
+      close: { label: 'Close details', onClose: onCloseDetail },
+      onTitle,
+    })
+    // While loading, the way out is already there.
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
+    await waitFor(() => expect(onTitle).toHaveBeenCalledWith('Pruning'))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to General' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
+    expect(onBack).toHaveBeenCalledTimes(2)
+    expect(onCloseDetail).toHaveBeenCalledTimes(1)
+    // No way "back to Sessions" of its own: only the Back and Close it was given.
+    expect(screen.getAllByRole('button', { name: /back/i })).toHaveLength(1)
+  })
+
   it('shows loading, then the brief with its revision', async () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('kubecode.research.loading')
@@ -338,7 +359,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -428,7 +449,7 @@ describe('ResearchWorkspace', () => {
     const api = fakeApi({ getResearch })
     const props: ResearchWorkspaceProps = {
       agents, api, connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)
@@ -506,7 +527,7 @@ describe('ResearchWorkspace', () => {
     const getResearch = vi.fn().mockResolvedValue(detailFixture)
     const props: ResearchWorkspaceProps = {
       agents, api: fakeApi({ getResearch }), connectionState: 'live', conversations: [], events: [],
-      onClose: vi.fn(), onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
+      onConversationCreated: vi.fn(), onOpenSession: vi.fn(),
       projectId: 'p1', researchId: 'rq-1', t, teams: [],
     }
     const view = render(<ResearchWorkspace {...props} />)

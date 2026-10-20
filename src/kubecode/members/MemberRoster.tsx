@@ -1,6 +1,5 @@
 import { MessageCircle, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { IconButton } from '@/components/workspace/IconButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useState } from 'react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -23,9 +22,10 @@ import {
   isMemberStale,
   memberErrorMessage,
   SPECIALIST_TEMPLATES,
-  STATE_LABELS,
   TEMPLATE_LABELS,
 } from './memberModel'
+import { Identity } from './Identity'
+import { memberView } from './memberIdentity'
 import { useMembers } from './useMembers'
 
 export type MemberRosterProps = {
@@ -163,17 +163,23 @@ export function MemberRoster({
       )}
       <ul className="kubecode-member-list">
         {roster.members.map((member) => (
-          <li data-state={member.state} key={member.id}>
-            <AiAgentIcon agent={member.spec.agent_id} size={18} />
+          <li
+            data-focus-key={`member:${member.id}`}
+            data-scroll-anchor={`member:${member.id}`}
+            data-state={member.state}
+            key={member.id}
+          >
             <div className="kubecode-member-main">
-              {onOpenMember ? (
-                <Button size="xs" variant="ghost" onClick={() => onOpenMember(member)}>
-                  {member.name}
-                </Button>
-              ) : <strong>{member.name}</strong>}
-              <small>
-                @{member.handle} · {t(TEMPLATE_LABELS[member.template])} · {agentName(member.spec.agent_id)}
-              </small>
+              <Identity
+                meta={(
+                  <span className="kubecode-member-provider">
+                    <AiAgentIcon agent={member.spec.agent_id} size={14} />
+                    {agentName(member.spec.agent_id)}
+                  </span>
+                )}
+                view={memberView(member, t)}
+                onOpen={onOpenMember ? () => onOpenMember(member) : undefined}
+              />
               {member.role === 'general' && (
                 <small className="kubecode-research-muted">{t('kubecode.members.managerNote')}</small>
               )}
@@ -189,9 +195,6 @@ export function MemberRoster({
                 </small>
               )}
             </div>
-            <StatusBadge tone={member.state === 'active' ? 'ok' : 'warn'}>
-              {t(STATE_LABELS[member.state])}
-            </StatusBadge>
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}

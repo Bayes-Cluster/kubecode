@@ -1,18 +1,23 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
+import { cn } from '@/lib/utils'
+
 /**
- * The one on-demand detail area (ADR 0224). It takes focus when it opens, gives
- * it back to what opened it when it closes, and Escape closes it unless the
- * researcher is typing (an input keeps its own Escape).
+ * The aside of an on-demand detail (ADR 0224, ADR 0228). It takes focus when
+ * it opens and gives it back to what opened it when it closes. Escape is
+ * handed to `onEscape` (the inspector pops one level) unless the researcher is
+ * typing, composing, or choosing in a list: those keep their own Escape.
  */
 export function DetailPane({
   children,
+  className,
   label,
-  onClose,
+  onEscape,
 }: {
   children: ReactNode
+  className?: string
   label: string
-  onClose: () => void
+  onEscape: () => void
 }) {
   const pane = useRef<HTMLElement>(null)
 
@@ -27,7 +32,7 @@ export function DetailPane({
   return (
     <aside
       aria-label={label}
-      className="kubecode-detail-pane"
+      className={cn('kubecode-detail-pane', className)}
       ref={pane}
       tabIndex={-1}
       onKeyDown={(event) => {
@@ -35,7 +40,7 @@ export function DetailPane({
         const target = event.target as HTMLElement
         if (target.closest('input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"]')) return
         event.stopPropagation()
-        onClose()
+        onEscape()
       }}
     >
       {children}
