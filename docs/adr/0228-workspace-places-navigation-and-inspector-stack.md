@@ -105,7 +105,10 @@ When the view and the inspector fit side by side (a 480-pixel view beside a
 400-pixel inspector, after any open Files and Git column), the inspector sits
 beside the view with *Close*, plus *Back to <previous>* once something was
 opened from inside it. Otherwise, as on a phone, it replaces the view and
-offers *Back to <view>*. This is ADR 0227's header rule applied to a stack:
+offers only Back, one level at a time: *Back to <view>* on the first entry and
+*Back to <previous>* above it, with no Close. When the layout narrows so that
+the inspector comes to cover the view that had focus, focus moves to the
+inspector's heading. This is ADR 0227's header rule applied to a stack:
 Back appears where a detail replaced its list or another detail. Inspected
 content renders the one `ViewHeader` of ADR 0227 with the Back and Close the
 shell gives it, and never draws its own.

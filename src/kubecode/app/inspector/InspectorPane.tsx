@@ -141,7 +141,9 @@ export function InspectorPane({
   const close = { label: t('kubecode.nav.closeDetail'), onClose }
   const headerOf = (index: number): InspectorHeader => {
     if (index > 0) {
-      return { level: 3, back: { label: t('kubecode.inspector.backTo', { place: titleOf(index - 1) }), onBack }, close }
+      const back = { label: t('kubecode.inspector.backTo', { place: titleOf(index - 1) }), onBack }
+      // Over the view, as on a phone, the way out is Back, one level at a time (ADR 0228 §3).
+      return presentation === 'side' ? { level: 3, back, close } : { level: 3, back }
     }
     return presentation === 'side'
       ? { level: 3, close }

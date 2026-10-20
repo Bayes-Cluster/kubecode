@@ -149,11 +149,18 @@ describe('InspectorPane header', () => {
     expect(screen.queryByRole('button', { name: 'Close details' })).not.toBeInTheDocument()
   })
 
-  it('over the view, a deeper entry goes back to the one below and closes straight to the view', async () => {
+  it('over the view, a deeper entry only goes back to the one below, one level at a time', async () => {
     mount({ initial: [task, evidenceA1], presentation: 'screen' })
-    expect(await screen.findByRole('button', { name: 'Back to Pruning heads' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
-    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to Pruning heads' }))
+    expect(screen.queryByRole('button', { name: 'Close details' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'open evidence' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to General' })).toBeInTheDocument()
+  })
+
+  it('over the view, offers no Close at any depth', async () => {
+    mount({ initial: [task, evidenceA1], presentation: 'screen' })
+    await screen.findByRole('button', { name: 'Back to Pruning heads' })
+    expect(screen.queryAllByRole('button', { name: 'Close details', hidden: true })).toEqual([])
   })
 
   it('moves focus into the inspector when it comes to cover the view that had it', async () => {
