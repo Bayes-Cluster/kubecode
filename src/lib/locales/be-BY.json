@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Адказ запісаны — абнаўляем…",
   "kubecode.attention.resolved": "Вырашана: {title}",
   "kubecode.attention.newItem": "{title}: патрабуе вашай увагі",
-  "kubecode.attention.someone": "Агент",
   "kubecode.attention.setupProvider": "Яго правайдэр недаступны на гэтым серверы",
   "kubecode.attention.setupConfig": "Правайдэр адхіліў адзін з настроеных параметраў",
   "kubecode.attention.answeredElsewhere": "Гэта ўжо не чакае: на яго адказалі ў іншым месцы, скончыўся час чакання або яго ход спынены.",

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Resposta registrada — atualizando…",
   "kubecode.attention.resolved": "Resolvido: {title}",
   "kubecode.attention.newItem": "{title} aguarda você",
-  "kubecode.attention.someone": "Um agente",
   "kubecode.attention.setupProvider": "O provedor dele não está disponível neste servidor",
   "kubecode.attention.setupConfig": "O provedor rejeitou uma opção configurada",
   "kubecode.attention.answeredElsewhere": "Isto não está mais aguardando: foi respondido em outro lugar, expirou ou o turno dele foi parado.",

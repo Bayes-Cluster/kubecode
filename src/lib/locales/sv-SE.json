@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Svaret har registrerats — uppdaterar…",
   "kubecode.attention.resolved": "Löst: {title}",
   "kubecode.attention.newItem": "{title} väntar på dig",
-  "kubecode.attention.someone": "En agent",
   "kubecode.attention.setupProvider": "Dess leverantör är inte tillgänglig på den här servern",
   "kubecode.attention.setupConfig": "Leverantören avvisade ett konfigurerat alternativ",
   "kubecode.attention.answeredElsewhere": "Detta väntar inte längre: det besvarades någon annanstans, tidsgränsen löpte ut eller dess tur stoppades.",

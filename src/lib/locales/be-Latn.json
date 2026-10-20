@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Adkaz zapisany — abnaŭlajem…",
   "kubecode.attention.resolved": "Vyrašana: {title}",
   "kubecode.attention.newItem": "{title}: patrabuje vašaj uvahi",
-  "kubecode.attention.someone": "Ahent",
   "kubecode.attention.setupProvider": "Jaho pravajder niedastupny na hetym sierviery",
   "kubecode.attention.setupConfig": "Pravajder adchiliŭ adzin z naładžanych paramietraŭ",
   "kubecode.attention.answeredElsewhere": "Heta ŭžo nie čakaje: na jaho adkazali ŭ inšym miescy, skončyŭsia čas čakańnia abo jaho chod spynieny.",

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Odpoveď zaznamenaná — aktualizuje sa…",
   "kubecode.attention.resolved": "Vyriešené: {title}",
   "kubecode.attention.newItem": "{title} čaká na vás",
-  "kubecode.attention.someone": "Agent",
   "kubecode.attention.setupProvider": "Jeho poskytovateľ nie je na tomto serveri dostupný",
   "kubecode.attention.setupConfig": "Poskytovateľ odmietol nakonfigurovanú možnosť",
   "kubecode.attention.answeredElsewhere": "Toto už nečaká: odpovedalo sa inde, vypršal čas alebo sa jeho ťah zastavil.",

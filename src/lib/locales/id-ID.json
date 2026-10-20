@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Jawaban tercatat — memperbarui…",
   "kubecode.attention.resolved": "Selesai: {title}",
   "kubecode.attention.newItem": "{title} menunggu Anda",
-  "kubecode.attention.someone": "Agen",
   "kubecode.attention.setupProvider": "Penyedianya tidak tersedia di server ini",
   "kubecode.attention.setupConfig": "Penyedia menolak salah satu opsi yang dikonfigurasi",
   "kubecode.attention.answeredElsewhere": "Ini tidak lagi menunggu: sudah dijawab di tempat lain, waktunya habis, atau gilirannya dihentikan.",

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "回答已記錄 — 正在更新…",
   "kubecode.attention.resolved": "已解決：{title}",
   "kubecode.attention.newItem": "{title} 需要你處理",
-  "kubecode.attention.someone": "某個代理人",
   "kubecode.attention.setupProvider": "其提供者在此伺服器上無法使用",
   "kubecode.attention.setupConfig": "提供者拒絕了某個已設定的選項",
   "kubecode.attention.answeredElsewhere": "此項目已不再等待：已在其他地方回答、已逾時，或其回合已停止。",

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Respuesta registrada — actualizando…",
   "kubecode.attention.resolved": "Resuelto: {title}",
   "kubecode.attention.newItem": "{title} requiere tu atención",
-  "kubecode.attention.someone": "Un agente",
   "kubecode.attention.setupProvider": "Su proveedor no está disponible en este servidor",
   "kubecode.attention.setupConfig": "El proveedor rechazó una opción configurada",
   "kubecode.attention.answeredElsewhere": "Esto ya no está pendiente: se respondió en otro lugar, caducó o su turno se detuvo.",

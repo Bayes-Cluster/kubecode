@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "回答を記録しました — 更新中…",
   "kubecode.attention.resolved": "解決済み: {title}",
   "kubecode.attention.newItem": "{title} があなたの対応待ちです",
-  "kubecode.attention.someone": "エージェント",
   "kubecode.attention.setupProvider": "このサーバーではプロバイダーを利用できません",
   "kubecode.attention.setupConfig": "プロバイダーが設定済みのオプションを拒否しました",
   "kubecode.attention.answeredElsewhere": "この項目はもう待機していません。別の場所で回答されたか、タイムアウトしたか、ターンが停止しました。",

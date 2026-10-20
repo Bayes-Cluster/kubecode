@@ -24,7 +24,7 @@ export function minutesLeft(deadlineMs: number): number {
 
 /** Who asks: the member, or the Session that is no member's. */
 export function askerName(item: Pick<AttentionItem, 'member' | 'session_title'>, t: Translator): string {
-  return item.member?.name ?? item.session_title ?? t('kubecode.attention.someone')
+  return item.member?.name ?? item.session_title ?? t('kubecode.identity.unknownAgent')
 }
 
 export function setupDetail(code: string | null, t: Translator): string | undefined {
@@ -106,7 +106,11 @@ export function attentionWords(item: AttentionItem, t: Translator): Pick<NeedsYo
       }
     case 'input':
       return {
-        title: t('kubecode.attention.inputTitle', { name, message: clip(item.message, QUESTION_CHARS) }),
+        // A direct message is private to the researcher and one member (ADR 0232 §2):
+        // what it asks is shown only inside it, never in a project-wide list.
+        title: item.binding === 'dm'
+          ? t('kubecode.attention.inputTitleDm', { name })
+          : t('kubecode.attention.inputTitle', { name, message: clip(item.message, QUESTION_CHARS) }),
         reason: { label: t('kubecode.nav.needsInputRequest'), tone: 'warn' },
         detail: joined([forTask, timesOut]),
       }

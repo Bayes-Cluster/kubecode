@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Ответ записан — обновляем…",
   "kubecode.attention.resolved": "Решено: {title}",
   "kubecode.attention.newItem": "{title}: требует вашего решения",
-  "kubecode.attention.someone": "Агент",
   "kubecode.attention.setupProvider": "Его провайдер недоступен на этом сервере",
   "kubecode.attention.setupConfig": "Провайдер отклонил один из заданных параметров",
   "kubecode.attention.answeredElsewhere": "Это больше не ожидает ответа: на него ответили в другом месте, истекло время ожидания или ход был остановлен.",

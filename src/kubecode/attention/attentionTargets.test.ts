@@ -64,6 +64,7 @@ describe('Needs you from the server projection (ADR 0232)', () => {
       items: [
         permissionItem(),
         inputItem(),
+        inputItem({ request_id: 'e2', key: 'input:e2', binding: 'public', conversation_id: 's1' }),
         questionItem(),
         reviewItem(),
         suggestionItem(),
@@ -76,6 +77,8 @@ describe('Needs you from the server projection (ADR 0232)', () => {
     expect(entries.map((entry) => [entry.title, entry.reason.label, entry.detail, entry.group])).toEqual([
       // A permission request waits until answered: no deadline is shown.
       ['Analyst wants to use Run pytest -q', 'Permission', 'For Structured pruning', 'decision'],
+      // What a member asks in a private conversation stays there: Needs you names who asks, not what.
+      ['Analyst asks you something in your private conversation', 'Input requested', 'times out in 2 min', 'decision'],
       ['Analyst asks: Which split?', 'Input requested', 'times out in 2 min', 'decision'],
       ['Which ratios?', 'Question', 'In Structured pruning · asked by @analyst', 'decision'],
       ['Review the results of Structured pruning', 'Review', 'Requested by @general', 'decision'],
@@ -98,6 +101,13 @@ describe('Needs you from the server projection (ADR 0232)', () => {
   it('marks an answered decision as resolving until a newer snapshot drops it', () => {
     const [entry] = needsYouFromAttention(snapshot({ items: [questionItem()] }), new Set(['question:d1']), t, { presentation: 'screen' })
     expect(entry.state).toBe('resolving')
+  })
+
+  it('names an asker that is no member and no titled Session as #217 does: Unknown agent', () => {
+    const [entry] = needsYouFromAttention(snapshot({
+      items: [permissionItem({ member: null, session_title: null, binding: null, task: null })],
+    }), new Set(), t, { presentation: 'screen' })
+    expect(entry.title).toBe('Unknown agent wants to use Run pytest -q')
   })
 
   it('is empty without a snapshot', () => {

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Odpowiedź zapisana — aktualizowanie…",
   "kubecode.attention.resolved": "Rozwiązano: {title}",
   "kubecode.attention.newItem": "{title} wymaga Twojej uwagi",
-  "kubecode.attention.someone": "Agent",
   "kubecode.attention.setupProvider": "Jego dostawca nie jest dostępny na tym serwerze",
   "kubecode.attention.setupConfig": "Dostawca odrzucił skonfigurowaną opcję",
   "kubecode.attention.answeredElsewhere": "To już nie oczekuje: odpowiedziano gdzie indziej, upłynął limit czasu lub tura została zatrzymana.",

@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "답변이 기록됨 — 업데이트 중…",
   "kubecode.attention.resolved": "해결됨: {title}",
   "kubecode.attention.newItem": "{title} 확인 필요",
-  "kubecode.attention.someone": "에이전트",
   "kubecode.attention.setupProvider": "이 서버에서 해당 제공업체를 사용할 수 없습니다",
   "kubecode.attention.setupConfig": "제공업체가 구성된 옵션을 거부했습니다",
   "kubecode.attention.answeredElsewhere": "더 이상 대기 중이 아닙니다. 다른 곳에서 답변되었거나, 시간이 초과되었거나, 턴이 중지되었습니다.",

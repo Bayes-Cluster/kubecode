@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Đã ghi nhận câu trả lời — đang cập nhật…",
   "kubecode.attention.resolved": "Đã giải quyết: {title}",
   "kubecode.attention.newItem": "{title} cần bạn xử lý",
-  "kubecode.attention.someone": "Một tác nhân",
   "kubecode.attention.setupProvider": "Nhà cung cấp của nó không khả dụng trên máy chủ này",
   "kubecode.attention.setupConfig": "Nhà cung cấp đã từ chối một tùy chọn đã cấu hình",
   "kubecode.attention.answeredElsewhere": "Mục này không còn chờ nữa: đã được trả lời ở nơi khác, đã hết hạn, hoặc lượt của nó đã dừng.",

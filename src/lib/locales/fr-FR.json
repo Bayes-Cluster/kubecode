@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Réponse enregistrée — mise à jour…",
   "kubecode.attention.resolved": "Résolu : {title}",
   "kubecode.attention.newItem": "{title} vous attend",
-  "kubecode.attention.someone": "Un agent",
   "kubecode.attention.setupProvider": "Son fournisseur n’est pas disponible sur ce serveur",
   "kubecode.attention.setupConfig": "Le fournisseur a refusé une option configurée",
   "kubecode.attention.answeredElsewhere": "Cet élément n’est plus en attente : il a reçu une réponse ailleurs, a expiré ou son tour s’est arrêté.",

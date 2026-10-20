@@ -2593,7 +2593,6 @@
   "kubecode.attention.resolving": "Antwort gespeichert — wird aktualisiert…",
   "kubecode.attention.resolved": "Erledigt: {title}",
   "kubecode.attention.newItem": "{title} wartet auf Sie",
-  "kubecode.attention.someone": "Ein Agent",
   "kubecode.attention.setupProvider": "Sein Anbieter ist auf diesem Server nicht verfügbar",
   "kubecode.attention.setupConfig": "Der Anbieter hat eine konfigurierte Option abgelehnt",
   "kubecode.attention.answeredElsewhere": "Dies wartet nicht mehr: Es wurde anderswo beantwortet, ist abgelaufen oder der Durchlauf wurde gestoppt.",
