@@ -84,6 +84,14 @@ describe('RecordPreview', () => {
     expect(onDisplayed).not.toHaveBeenCalled()
   })
 
+  it('says a file with no text to show could not be shown, and reports it as failed', async () => {
+    const onFailed = vi.fn()
+    mount({ readProjectContext: vi.fn().mockResolvedValue(document({ sections: [], notes: ['The file is not UTF-8 text, so no content is shown.'] })) }, { onFailed })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this record.')
+    expect(screen.getByText(/not UTF-8/)).toBeInTheDocument()
+    await waitFor(() => expect(onFailed).toHaveBeenCalledWith('failed'))
+  })
+
   it('tries a failed read again', async () => {
     const readProjectContext = vi.fn()
       .mockRejectedValueOnce(new ApiError('internal', 'x', 500))

@@ -81,7 +81,9 @@ export function RecordPreview({
     onDisplayed?.({ kind: target.kind, id: target.id, revision: shownRevision, title: shownTitle })
   }, [onDisplayed, projectId, shownRevision, shownTitle, target.id, target.kind])
 
-  const failed = state.status === 'error' ? 'failed' : state.status === 'removed' ? 'removed' : null
+  // A file with no text to show (not UTF-8) was read, but nothing of it could be shown: that is a failed display.
+  const unreadable = ready !== null && !displayed
+  const failed = state.status === 'error' || unreadable ? 'failed' : state.status === 'removed' ? 'removed' : null
   useEffect(() => {
     if (failed) onFailed?.(failed)
   }, [failed, onFailed])
@@ -134,7 +136,8 @@ export function RecordPreview({
           <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
         </p>
       )}
-      {doc.sections.length === 0 && doc.notes.length === 0 && (
+      {unreadable && <p className="kubecode-research-error" role="alert">{t('kubecode.work.evidence.failed')}</p>}
+      {!unreadable && doc.sections.length === 0 && doc.notes.length === 0 && (
         <p className="kubecode-research-muted">{t('kubecode.work.evidence.empty')}</p>
       )}
       {doc.sections.map((section, index) => (
