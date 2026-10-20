@@ -2192,3 +2192,95 @@ mod conversation_routing {
         );
     }
 }
+
+#[test]
+fn a_route_that_fails_again_is_noted_again_and_never_aborts_the_delivery_pass() {
+    let r = rig();
+    let thread = r.linked_thread(true);
+    r.ask(&thread, Intent::Request, "q1", None);
+    r.orchestrator.route_intents().unwrap();
+    let sink = Recording::default();
+    sink.script(vec![
+        DeliveryOutcome::Failed("provider unavailable".into());
+        MAX_ATTEMPTS as usize
+    ]);
+    for step in 0..MAX_ATTEMPTS {
+        r.orchestrator
+            .deliver_due(&sink, i64::from(step) * 10_000)
+            .unwrap();
+    }
+    let failed = r.orchestrator.routes(r.project(), None, 1).unwrap()[0].clone();
+    assert_eq!(failed.state, RouteState::Failed);
+    // The route is armed again, one attempt from failing, and another
+    // request waits behind it in the same pass.
+    let rearm = |retries: &str| {
+        r.f.agents
+            .database()
+            .lock()
+            .unwrap()
+            .execute(
+                &format!(
+                    "UPDATE message_routes SET state = 'pending', attempts = ?2, busy = 0,
+                       next_attempt_at = 0, lease_until = 0, last_error = NULL{retries}
+                     WHERE id = ?1"
+                ),
+                params![failed.id, MAX_ATTEMPTS - 1],
+            )
+            .unwrap();
+    };
+    rearm("");
+    r.ask(&thread, Intent::Request, "q2", None);
+    r.orchestrator.route_intents().unwrap();
+    sink.script(vec![
+        DeliveryOutcome::Failed("a different reason".into()),
+        DeliveryOutcome::Delivered,
+    ]);
+    let report = r
+        .orchestrator
+        .deliver_due(&sink, 100_000)
+        .expect("a note that already exists never aborts the pass");
+    assert_eq!((report.failed, report.delivered), (1, 1));
+    assert_eq!(
+        sink.deliveries().len(),
+        1,
+        "the request behind it was delivered"
+    );
+
+    // A counted retry fails with a third reason: noted under its own key.
+    rearm(", retries = retries + 1");
+    sink.script(vec![DeliveryOutcome::Failed("a third reason".into())]);
+    r.orchestrator.deliver_due(&sink, 200_000).unwrap();
+    let note = |key: &str| {
+        r.channels
+            .by_client_message_id(r.project(), &thread.channel_id, key)
+            .unwrap()
+            .map(|message| message.body)
+    };
+    assert!(
+        note(&format!("route-failed:{}", failed.id))
+            .unwrap()
+            .contains("provider unavailable")
+    );
+    assert!(
+        note(&format!("route-failed:{}:1", failed.id))
+            .unwrap()
+            .contains("a third reason")
+    );
+    assert_eq!(
+        r.orchestrator
+            .route(r.project(), &failed.id)
+            .unwrap()
+            .retries,
+        1
+    );
+    // Writing a note again under its key, whatever the text, is not an error.
+    r.orchestrator
+        .note(
+            r.project(),
+            &thread.channel_id,
+            Some(&thread.id),
+            &format!("route-failed:{}", failed.id),
+            "something else entirely",
+        )
+        .unwrap();
+}

@@ -84,12 +84,20 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            ON message_routes(project_id, created_at);
          CREATE INDEX IF NOT EXISTS message_routes_work
            ON message_routes(work_id) WHERE work_id IS NOT NULL;",
+    )?;
+    // How often the researcher re-armed a failed route: each failure after a
+    // retry is noted under its own key (ADR 0232).
+    crate::database::ensure_column(
+        connection,
+        "message_routes",
+        "retries",
+        "INTEGER NOT NULL DEFAULT 0",
     )
 }
 
 const ROUTE_SELECT: &str = "SELECT id, project_id, kind, source_kind, source_id, target_kind,
         target_ref, thread_id, body, state, attempts, busy, last_error, recipient, created_at,
-        delivered_at, work_id
+        delivered_at, work_id, retries
     FROM message_routes";
 
 fn route_from_row(row: &Row<'_>) -> rusqlite::Result<Route> {
@@ -123,6 +131,7 @@ fn route_from_row(row: &Row<'_>) -> rusqlite::Result<Route> {
         created_at: row.get(14)?,
         delivered_at: row.get(15)?,
         work_id: row.get(16)?,
+        retries: row.get::<_, i64>(17)? as u32,
     })
 }
 
@@ -924,7 +933,9 @@ impl Orchestrator {
         )
     }
 
-    /// Posts a system note once per `key` into a Thread or channel.
+    /// Posts a system note once per `key` into a Thread or channel. A note
+    /// already written under the key (even with other words) is the note: it
+    /// is never an error, so a note can never abort a routing or delivery pass.
     fn note(
         &self,
         project_id: &str,
@@ -933,7 +944,7 @@ impl Orchestrator {
         key: &str,
         text: &str,
     ) -> Result<(), OrchestratorError> {
-        self.channels.post(
+        match self.channels.post(
             project_id,
             channel_id,
             NewMessage {
@@ -943,8 +954,10 @@ impl Orchestrator {
                 client_message_id: Some(key),
                 ..Default::default()
             },
-        )?;
-        Ok(())
+        ) {
+            Ok(_) | Err(crate::channel_store::ChannelError::KeyReuse) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     // -- Dispatch, results, handoff --------------------------------------------------------------------
@@ -1393,9 +1406,15 @@ impl Orchestrator {
         }
         report.failed += 1;
         self.announce(route, "failed");
+        // Each failure after a retry is its own note; the first keeps the
+        // key notes always had.
+        let key = match route.retries {
+            0 => format!("route-failed:{}", route.id),
+            retries => format!("route-failed:{}:{retries}", route.id),
+        };
         self.notify(
             route,
-            &format!("route-failed:{}", route.id),
+            &key,
             &format!("This could not be delivered: {}.", clip(reason, 200)),
         )?;
         self.close_failed_dispatch(route, reason)

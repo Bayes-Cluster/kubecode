@@ -120,6 +120,9 @@ pub struct Route {
     pub last_error: Option<String>,
     /// The Session that received it.
     pub recipient: Option<String>,
+    /// How often the researcher re-armed it after it failed.
+    #[serde(default)]
+    pub retries: u32,
     pub created_at: String,
     pub delivered_at: Option<String>,
 }
