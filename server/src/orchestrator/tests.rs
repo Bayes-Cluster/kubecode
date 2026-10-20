@@ -2273,9 +2273,10 @@ fn a_route_that_fails_again_is_noted_again_and_never_aborts_the_delivery_pass() 
             .retries,
         1
     );
-    // Writing a note again under its key, whatever the text, is not an error.
+    // Writing a routing note again under its key, whatever the text, is not
+    // an error; any other note keeps refusing a reused key.
     r.orchestrator
-        .note(
+        .routing_note(
             r.project(),
             &thread.channel_id,
             Some(&thread.id),
@@ -2283,6 +2284,18 @@ fn a_route_that_fails_again_is_noted_again_and_never_aborts_the_delivery_pass() 
             "something else entirely",
         )
         .unwrap();
+    assert!(
+        r.orchestrator
+            .note(
+                r.project(),
+                &thread.channel_id,
+                Some(&thread.id),
+                &format!("route-failed:{}", failed.id),
+                "something else entirely",
+            )
+            .is_err(),
+        "only routing notes treat a reused key as written"
+    );
 }
 
 // -- Delivery state of researcher messages (ADR 0232) ------------------------------------------------

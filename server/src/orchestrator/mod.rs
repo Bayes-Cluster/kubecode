@@ -518,7 +518,7 @@ impl Orchestrator {
                         clip(&error.to_string(), 200)
                     );
                     if self
-                        .note(
+                        .routing_note(
                             &message.project_id,
                             &message.channel_id,
                             message.thread_id.as_deref(),
@@ -719,7 +719,7 @@ impl Orchestrator {
                 0 => format!("{key}:{}", message.id),
                 count => format!("{key}:{}:{count}", message.id),
             };
-            self.note(
+            self.routing_note(
                 project_id,
                 &message.channel_id,
                 None,
@@ -928,7 +928,7 @@ impl Orchestrator {
                     Ok(true)
                 }
                 None => {
-                    self.note(
+                    self.routing_note(
                         &message.project_id,
                         &message.channel_id,
                         message.thread_id.as_deref(),
@@ -1060,9 +1060,9 @@ impl Orchestrator {
         )
     }
 
-    /// Posts a system note once per `key` into a Thread or channel. A note
-    /// already written under the key (even with other words) is the note: it
-    /// is never an error, so a note can never abort a routing or delivery pass.
+    /// Posts a system note once per `key` into a Thread or channel. Reusing
+    /// a key for other words is refused: a caller can rely on it (a report is
+    /// noted once).
     fn note(
         &self,
         project_id: &str,
@@ -1071,7 +1071,7 @@ impl Orchestrator {
         key: &str,
         text: &str,
     ) -> Result<(), OrchestratorError> {
-        match self.channels.post(
+        self.channels.post(
             project_id,
             channel_id,
             NewMessage {
@@ -1081,9 +1081,25 @@ impl Orchestrator {
                 client_message_id: Some(key),
                 ..Default::default()
             },
-        ) {
-            Ok(_) | Err(crate::channel_store::ChannelError::KeyReuse) => Ok(()),
-            Err(error) => Err(error.into()),
+        )?;
+        Ok(())
+    }
+
+    /// A routing or delivery note (denied, failed, delivered). One already
+    /// written under the key, even with other words, is the note: it is never
+    /// an error, so such a note can never abort a routing or delivery pass
+    /// (ADR 0232).
+    fn routing_note(
+        &self,
+        project_id: &str,
+        channel_id: &str,
+        thread_id: Option<&str>,
+        key: &str,
+        text: &str,
+    ) -> Result<(), OrchestratorError> {
+        match self.note(project_id, channel_id, thread_id, key, text) {
+            Err(OrchestratorError::Channel(crate::channel_store::ChannelError::KeyReuse)) => Ok(()),
+            other => other,
         }
     }
 
@@ -1602,7 +1618,7 @@ impl Orchestrator {
         Ok(closed)
     }
 
-    /// A system note in the conversation the route came from, if it has one.
+    /// A delivery note in the conversation the route came from, if it has one.
     fn notify(&self, route: &Route, key: &str, text: &str) -> Result<(), OrchestratorError> {
         let channel_id: Option<String> = self.connection().query_row(
             "SELECT channel_id FROM message_routes WHERE id = ?1",
@@ -1610,7 +1626,7 @@ impl Orchestrator {
             |row| row.get(0),
         )?;
         if let Some(channel_id) = channel_id {
-            self.note(
+            self.routing_note(
                 &route.project_id,
                 &channel_id,
                 route.thread_id.as_deref(),
