@@ -2171,3 +2171,42 @@ fn a_decision_and_the_status_it_implies_are_one_write() {
     );
 }
 
+#[test]
+fn questions_of_closed_work_are_not_pending() {
+    let r = rig();
+    let (id, round) = r.executing("Prune heads");
+    let work = r.internal_work(&round, "Sweep");
+    r.work
+        .request_decision(
+            r.project(),
+            &work,
+            "q1",
+            &r.general,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(r.tasks.pending(r.project(), &id).unwrap().len(), 1);
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "not needed",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let card = r.tasks.card(r.project(), &id).unwrap().unwrap();
+    assert_eq!(card.open_questions, 0);
+    assert!(
+        r.tasks.pending(r.project(), &id).unwrap().is_empty(),
+        "what waits on the researcher agrees with the card"
+    );
+}
+

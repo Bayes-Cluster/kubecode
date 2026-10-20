@@ -2333,11 +2333,12 @@ impl TaskStore {
                 });
             }
         }
+        // Only open work's questions, as the card counts them: closed work
+        // waits on no one.
         for summary in self.work.list(
             project_id,
             &WorkFilter {
                 research_id: Some(research_id.to_owned()),
-                include_closed: true,
                 limit: Some(200),
                 ..Default::default()
             },
