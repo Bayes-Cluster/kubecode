@@ -71,7 +71,11 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await page.evaluate(() => { (window as unknown as { __sessionSeen?: boolean }).__sessionSeen = false })
     await expect(page.getByRole('heading', { name: '# General' })).toBeVisible()
     await expect(page).toHaveURL(new RegExp(`#/p/${projectId}/general$`))
-    await expect(page.getByRole('button', { name: /^Back( to Sessions)?$/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /back to sessions|^back$/i })).toHaveCount(0)
+    const mainPane = page.locator('.kubecode-session-context-row')
+    for (const role of ['button', 'link'] as const) {
+      await expect(mainPane.getByRole(role, { name: /^back\b|sessions/i }).and(page.locator(':not([aria-pressed])'))).toHaveCount(0)
+    }
     await expect(page.locator('.kubecode-history-nav')).toHaveJSProperty('open', false)
     const nav = workspaceNav(page)
     const order = await Promise.all([

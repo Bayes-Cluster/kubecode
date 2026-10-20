@@ -402,7 +402,17 @@ describe('Workspace navigation and routes', () => {
       openMemberDm: vi.fn().mockResolvedValue(analyst),
       memberDmTurns: vi.fn().mockResolvedValue([]),
     }))
-    const noBack = () => expect(screen.queryAllByRole('button', { name: /^Back( to Sessions)?$/ })).toEqual([])
+    // No "Back", "Back to Sessions", or any other way back to Sessions, anywhere in the main pane.
+    const noBack = () => {
+      expect(screen.queryAllByRole('button', { name: /back to sessions|^back$/i })).toEqual([])
+      const main = document.querySelector('.kubecode-session-context-row') as HTMLElement
+      for (const role of ['button', 'link']) {
+        // A filter toggle (Resources' "Sessions" kind) is not a way anywhere.
+        const ways = within(main).queryAllByRole(role, { name: /^back\b|sessions/i })
+          .filter((control) => !control.hasAttribute('aria-pressed'))
+        expect(ways).toEqual([])
+      }
+    }
     await screen.findByRole('heading', { name: '# General' })
     noBack()
     fireEvent.click(within(nav).getByRole('button', { name: /^Kanban/ }))
@@ -424,8 +434,6 @@ describe('Workspace navigation and routes', () => {
       listConversations: vi.fn().mockResolvedValue([session]),
     }))
     await screen.findByRole('heading', { name: '# General' })
-    const expand = screen.queryByRole('button', { name: 'Expand project' })
-    if (expand) fireEvent.click(expand)
     fireEvent.click(await screen.findByRole('button', { name: /^Earlier chat/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
     expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
