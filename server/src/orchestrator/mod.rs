@@ -406,6 +406,40 @@ impl Orchestrator {
         Ok(inbound.map_or(1, |hops| hops.clamp(0, 250) as u8 + 1))
     }
 
+    /// Failed routes the researcher originated and may retry, with the Task
+    /// each concerns: a researcher's General message (discussion, mention,
+    /// ask, request), a review decision, or an answered question.
+    pub fn failed_researcher_routes(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<(RouteKind, Option<String>)>, OrchestratorError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT r.kind,
+                    CASE r.kind
+                      WHEN 'task_review' THEN
+                        (SELECT t.research_id FROM task_reviews t WHERE t.id = r.source_id)
+                      WHEN 'decision' THEN
+                        (SELECT w.research_id FROM work_items w WHERE w.id = r.work_id)
+                    END
+             FROM message_routes r
+             WHERE r.project_id = ?1 AND r.state = 'failed'
+               AND ((r.kind IN ('discussion', 'mention', 'ask', 'request')
+                     AND r.source_kind = 'message'
+                     AND EXISTS (SELECT 1 FROM channel_messages m
+                                 WHERE m.id = r.source_id AND m.author_kind = 'researcher'))
+                    OR r.kind IN ('task_review', 'decision'))",
+        )?;
+        Ok(statement
+            .query_map([project_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter_map(|(kind, research)| RouteKind::parse(&kind).map(|kind| (kind, research)))
+            .collect())
+    }
+
     /// Whether a request in `message_id` was routed to a round this Session
     /// coordinates *now*. A coordinator may answer the request that reached it;
     /// one that handed the round off may not. Returns that round.

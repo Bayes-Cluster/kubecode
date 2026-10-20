@@ -377,6 +377,7 @@ fn client_api_router(state: AppState) -> Router {
         .merge(crate::team_api::routes())
         .merge(crate::channel_api::routes())
         .merge(crate::orchestrator_api::routes())
+        .merge(crate::attention_api::routes())
         .merge(crate::work_api::routes())
         .merge(crate::member_api::routes())
         .merge(crate::dm_api::routes())
