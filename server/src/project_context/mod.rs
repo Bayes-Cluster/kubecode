@@ -1086,6 +1086,16 @@ impl ProjectContext {
         }
     }
 
+    /// One record as search lists it (title, summary, current revision), or
+    /// `None` when it does not exist in this Project.
+    pub fn item(
+        &self,
+        project_id: &str,
+        reference: &ContextRef,
+    ) -> Result<Option<ContextItem>, ContextError> {
+        self.lookup(project_id, reference)
+    }
+
     /// The availability of a reference and its current revision.
     pub fn resolve(
         &self,
@@ -1102,6 +1112,7 @@ impl ProjectContext {
                         reference: reference.clone(),
                         availability: Availability::Removed,
                         current_revision: None,
+                        title: None,
                     },
                     Some(item) => {
                         let current = item.reference.revision.clone().unwrap_or_default();
@@ -1114,6 +1125,7 @@ impl ProjectContext {
                             reference: reference.clone(),
                             availability,
                             current_revision: item.reference.revision,
+                            title: (availability != Availability::Removed).then_some(item.title),
                         }
                     }
                 })

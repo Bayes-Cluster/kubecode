@@ -35,6 +35,33 @@ impl Evidence {
         Self { context, workspace }
     }
 
+    /// What a cited record is called and the revision it has now: a file by
+    /// its path, any other record by its context title. `(None, None)` when it
+    /// is gone.
+    pub fn describe(
+        &self,
+        project_id: &str,
+        kind: &str,
+        id: &str,
+    ) -> (Option<String>, Option<String>) {
+        if kind == "file" {
+            let current = self.file_revision(project_id, id);
+            return (current.as_ref().map(|_| id.to_owned()), current);
+        }
+        let Some(context_kind) = ContextKind::parse(kind) else {
+            return (None, None);
+        };
+        match self
+            .context
+            .item(project_id, &ContextRef::new(context_kind, id))
+        {
+            Ok(Some(item)) if item.availability != Availability::Removed => {
+                (Some(item.title), item.reference.revision)
+            }
+            _ => (None, None),
+        }
+    }
+
     /// The revision a reference has *now*, or `None` if it is gone or has none.
     pub fn current_revision(&self, project_id: &str, kind: &str, id: &str) -> Option<String> {
         if kind == "file" {

@@ -135,6 +135,51 @@ pub struct TaskEventNote {
     pub created_at: String,
 }
 
+// One step of a Task's history.
+text_enum!(TaskActivityKind {
+    Proposed => "proposed",
+    Revised => "revised",
+    Admitted => "admitted",
+    RevisionApproved => "revision_approved",
+    ExecutionAuthorized => "execution_authorized",
+    ReviewRequested => "review_requested",
+    ReviewReturned => "review_returned",
+    ReviewAccepted => "review_accepted",
+    Archived => "archived",
+    Restored => "restored",
+});
+
+/// One step of a Task's history, with the General message that carried it.
+#[derive(Clone, Debug, Serialize)]
+pub struct TaskActivity {
+    pub at: String,
+    pub kind: TaskActivityKind,
+    /// `researcher`, `manager`, `member`, or `system`.
+    pub actor: &'static str,
+    /// The member who acted, through any Session it has had.
+    pub member: Option<Participant>,
+    pub brief_revision: Option<u64>,
+    /// The round, review request, or review the step is about.
+    pub ref_id: Option<String>,
+    /// The General message that carried this step.
+    pub message_id: Option<String>,
+    /// The researcher's authorizing words, shortened (admission, execution,
+    /// and approval only).
+    pub excerpt: Option<String>,
+}
+
+/// Something that waits on the researcher, under a key that stays the same
+/// while it waits: `review:{request}`, `question:{work}:{request}`,
+/// `brief:{revision}`, or `evidence:{kind:id}`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PendingDecision {
+    pub key: String,
+    /// `review`, `question`, `brief_approval`, or `evidence_changed`.
+    pub kind: &'static str,
+    pub ref_id: String,
+    pub since: String,
+}
+
 /// The record that the researcher authorized a step, and who acted on it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {

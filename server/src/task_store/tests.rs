@@ -1706,3 +1706,233 @@ fn drafts_name_the_message_that_showed_the_current_revision() {
         .unwrap();
     assert_eq!(shown(&id), Some(revised.id));
 }
+
+#[test]
+fn timeline_orders_and_links_every_step() {
+    let r = rig();
+    let (question, proposed) = r
+        .tasks
+        .propose(r.project(), &r.general, brief("Prune heads"), Some("p"))
+        .unwrap();
+    let id = question.id;
+    let (_, revised) = r
+        .tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            1,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    r.tasks.show_again(r.project(), &r.general, &id).unwrap();
+    let admit = r.say("Yes, add the pruning one to the board.");
+    r.tasks
+        .admit(r.project(), &r.general, &id, &admit.id, 2)
+        .unwrap();
+    let go = r.say("Go ahead and run it.");
+    let round = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &go.id)
+        .unwrap()
+        .0
+        .round_id;
+    let first = r.ask_review(&id, "first pass");
+    let returned = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &first.id,
+            false,
+            WorkOutcome::Unknown,
+            Some("again"),
+        )
+        .unwrap();
+    let second = r.ask_review(&id, "second pass");
+    let accepted = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &second.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+
+    let timeline = r.tasks.timeline(r.project(), &id).unwrap();
+    assert_eq!(
+        timeline.iter().map(|step| step.kind).collect::<Vec<_>>(),
+        [
+            TaskActivityKind::Proposed,
+            TaskActivityKind::Revised,
+            TaskActivityKind::Admitted,
+            TaskActivityKind::ExecutionAuthorized,
+            TaskActivityKind::ReviewRequested,
+            TaskActivityKind::ReviewReturned,
+            TaskActivityKind::ReviewRequested,
+            TaskActivityKind::ReviewAccepted,
+        ]
+    );
+    // A revision is carried by the FIRST message that showed it.
+    assert_eq!(
+        timeline[0].message_id.as_deref(),
+        Some(proposed.id.as_str())
+    );
+    assert_eq!(timeline[1].message_id.as_deref(), Some(revised.id.as_str()));
+    assert_eq!(timeline[1].brief_revision, Some(2));
+    assert_eq!(
+        (
+            timeline[0].actor,
+            timeline[0].member.as_ref().map(|m| m.handle.as_str())
+        ),
+        ("manager", Some("general"))
+    );
+    // Steps the researcher authorized carry their words.
+    assert_eq!(timeline[2].message_id.as_deref(), Some(admit.id.as_str()));
+    assert_eq!(
+        timeline[2].excerpt.as_deref(),
+        Some("Yes, add the pruning one to the board.")
+    );
+    assert_eq!(timeline[3].message_id.as_deref(), Some(go.id.as_str()));
+    assert_eq!(timeline[3].ref_id, round);
+    // Reviews carry the messages that asked for them and told General.
+    let keyed = r
+        .channels
+        .messages_by_client_ids(
+            r.project(),
+            &[
+                format!("review-request:{}", first.id),
+                format!("task-review:{}", returned.id),
+                format!("task-review:{}", accepted.id),
+            ],
+        )
+        .unwrap();
+    let message = |key: String| keyed.get(&key).map(|(id, _)| id.clone());
+    assert_eq!(
+        timeline[4].message_id,
+        message(format!("review-request:{}", first.id))
+    );
+    assert_eq!(
+        (timeline[5].actor, timeline[5].message_id.clone()),
+        (
+            "researcher",
+            message(format!("task-review:{}", returned.id))
+        )
+    );
+    assert_eq!(
+        timeline[7].message_id,
+        message(format!("task-review:{}", accepted.id))
+    );
+    assert!(timeline.iter().all(|step| step.message_id.is_some()));
+}
+
+#[test]
+fn a_legacy_task_s_history_has_no_messages() {
+    let r = rig();
+    // The Fixture's question has a Team round the researcher started: adopted
+    // as a legacy Task, with no authorizing message.
+    r.f.research
+        .round_mark_started(r.project(), &r.f.research_id, &r.f.round_id)
+        .unwrap();
+    r.tasks.adopt_legacy().unwrap();
+    let timeline = r.tasks.timeline(r.project(), &r.f.research_id).unwrap();
+    let admitted = timeline
+        .iter()
+        .find(|step| step.kind == TaskActivityKind::Admitted)
+        .expect("adopted");
+    assert_eq!(
+        (admitted.actor, admitted.message_id.as_ref()),
+        ("system", None)
+    );
+}
+
+#[test]
+fn pending_decisions_have_stable_keys() {
+    let r = rig();
+    let keys = |id: &str| -> Vec<String> {
+        r.tasks
+            .pending(r.project(), id)
+            .unwrap()
+            .into_iter()
+            .map(|pending| pending.key)
+            .collect()
+    };
+    let (id, round) = r.executing("Prune heads");
+    assert!(keys(&id).is_empty());
+    // An open question of the Task's work.
+    let work = r.internal_work(&round, "Sweep");
+    let (asked, _) = r
+        .work
+        .request_decision(
+            r.project(),
+            &work,
+            "q1",
+            &r.general,
+            "Which ratios?",
+            &[],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(keys(&id), [format!("question:{work}:{}", asked.id)]);
+    assert_eq!(keys(&id), keys(&id), "stable across reads");
+    r.work
+        .answer_decision(r.project(), &asked.id, "0.5 and 0.7", "researcher")
+        .unwrap();
+    assert!(keys(&id).is_empty(), "answered");
+    // A revised brief waiting for approval.
+    let current = r.f.research.get(r.project(), &id).unwrap().revision;
+    r.tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            current,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(keys(&id), [format!("brief:{}", current + 1)]);
+    let approve = r.say("Approve the sharper brief.");
+    r.tasks
+        .approve_revision(r.project(), &r.general, &id, &approve.id, current + 1)
+        .unwrap();
+    assert!(keys(&id).is_empty(), "approved");
+    // An open review, until it is decided.
+    r.work
+        .close(
+            r.project(),
+            &work,
+            r.work.get(r.project(), &work).unwrap().revision,
+            crate::work_store::Closure {
+                lifecycle: crate::work_store::WorkLifecycle::Canceled,
+                reason: "done differently",
+                superseded_by: None,
+            },
+            &Actor::Researcher,
+        )
+        .unwrap();
+    let request = r.ask_review(&id, "done");
+    assert_eq!(keys(&id), [format!("review:{}", request.id)]);
+    r.tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            true,
+            WorkOutcome::Supported,
+            None,
+        )
+        .unwrap();
+    assert!(keys(&id).is_empty(), "decided");
+}

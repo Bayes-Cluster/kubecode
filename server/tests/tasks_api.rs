@@ -1128,3 +1128,153 @@ async fn the_detail_links_reviews_to_general() {
     // What last happened to it is on the card.
     assert_eq!(detail["last_event"]["kind"], "review_returned");
 }
+
+#[tokio::test]
+async fn the_task_detail_lists_each_cited_evidence_once_with_every_pin() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let pinned = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    std::fs::write(task.root.join("notes.md"), "pruning helps after all").unwrap();
+    let current = env
+        .state
+        .workspace
+        .file_revision(&env.project, "notes.md")
+        .unwrap();
+    let (status, detail) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/tasks/{}", env.project, task.research_id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    let rows = detail["evidence"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "one row per cited record: {rows:?}");
+    let row = &rows[0];
+    assert_eq!(row["key"], "file:notes.md");
+    assert_eq!(row["title"], "notes.md");
+    assert_eq!(row["status"], "changed");
+    assert_eq!(row["in_review"], true);
+    assert_eq!(row["accepted"], false);
+    assert_eq!(row["current"], json!(current));
+    let cited = row["cited_by"].as_array().unwrap();
+    assert_eq!(cited.len(), 2, "{cited:?}");
+    assert!(cited.iter().any(|c| c["work_id"] == json!(task.work_id)
+        && c["result_id"] == json!(task.result_id)
+        && c["pinned"] == json!(pinned)));
+    assert!(
+        cited
+            .iter()
+            .any(|c| c["request_id"] == json!(task.request_id)
+                && c["result_id"] == "file:notes.md"
+                && c["pinned"] == json!(pinned))
+    );
+    // Kept for older pages.
+    assert_eq!(detail["stale_evidence"].as_array().unwrap().len(), 2);
+    // What waits on the researcher.
+    let keys: Vec<&str> = detail["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            format!("review:{}", task.request_id).as_str(),
+            "evidence:file:notes.md"
+        ]
+    );
+    assert_eq!(detail["actions"]["archive"]["allowed"], false);
+    assert_eq!(detail["actions"]["archive"]["reason"], "under_review");
+    assert_eq!(detail["actions"]["restore"], false);
+    assert_eq!(detail["archived"], false);
+}
+
+#[tokio::test]
+async fn a_done_task_shows_the_evidence_it_accepted() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let tasks = format!("/projects/{}/tasks/{}", env.project, task.research_id);
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{tasks}/review"),
+        json!({"request_id": task.request_id, "accept": true, "outcome": "supported"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    assert_eq!(detail["stage"], "done");
+    let row = &detail["evidence"][0];
+    assert_eq!(row["key"], "file:notes.md");
+    assert_eq!(
+        (row["accepted"].as_bool(), row["in_review"].as_bool()),
+        (Some(true), Some(false))
+    );
+    assert_eq!(row["status"], "current");
+    assert!(detail["pending"].as_array().unwrap().is_empty(), "{detail}");
+    let last = detail["timeline"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert_eq!(last["kind"], "review_accepted");
+    assert_eq!(last["actor"], "researcher");
+}
+
+#[tokio::test]
+async fn internal_work_names_its_session() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let (_, detail) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/tasks/{}", env.project, task.research_id),
+        Value::Null,
+    )
+    .await;
+    let work = &detail["internal_work"][0];
+    assert_eq!(work["id"], json!(task.work_id));
+    assert_eq!(work["conversation_id"], json!(env.specialist));
+    assert!(!work["updated_at"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_archived_task_detail_says_so() {
+    let env = env();
+    let manager = env.agent(&env.general);
+    let proposal = manager
+        .task_propose(brief("Prune heads"), Some("prune"))
+        .unwrap();
+    let admit = env.say("Add it to the board").await;
+    manager
+        .task_admit(&proposal.research_id, &admit, proposal.revision)
+        .unwrap();
+    let tasks = format!("/projects/{}/tasks/{}", env.project, proposal.research_id);
+    let (status, body) = call(&env, Method::POST, &format!("{tasks}/archive"), Value::Null).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an archived Task is still served: {detail}"
+    );
+    assert_eq!(detail["archived"], true);
+    assert_eq!(detail["stage"], "ready");
+    assert_eq!(detail["actions"]["archive"]["allowed"], false);
+    assert_eq!(detail["actions"]["archive"]["reason"], "archived");
+    assert_eq!(detail["actions"]["restore"], true);
+    let kinds: Vec<&str> = detail["timeline"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["proposed", "admitted", "archived"]);
+}
