@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::app_state::AppState;
-use crate::channel_store::{AuthorKind, ChannelError, ContextRef, Message, NewMessage};
+use crate::channel_store::{AuthorKind, ChannelError, ContextRef, MessageView, NewMessage};
 use crate::member_store::{Member, MemberError, MemberState};
 use crate::orchestrator::{DeliveryOutcome, DeliveryRequest, RouteSink, RuntimeSink};
 use crate::project_context::ContextKind;
@@ -424,7 +424,7 @@ async fn share(
     State(state): State<AppState>,
     Path((project_id, member_id)): Path<(String, String)>,
     Json(request): Json<ShareRequest>,
-) -> Result<(StatusCode, Json<Message>), DmError> {
+) -> Result<(StatusCode, Json<MessageView>), DmError> {
     check_project(&state, &project_id)?;
     let digest = request
         .digest
@@ -458,7 +458,8 @@ async fn share(
             },
         )?;
         state.orchestrator.wake();
-        Ok(posted)
+        let (message, created) = posted;
+        Ok((crate::channel_api::view(&state, message), created))
     })
     .await
     .map_err(|_| DmError::Storage)??;

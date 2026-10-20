@@ -196,13 +196,29 @@ async fn a_thread_becomes_a_research_thread_without_replacing_the_conversation()
     assert_eq!(status, StatusCode::OK);
     assert_eq!(again["id"], thread["id"]);
     let thread_id = thread["id"].as_str().unwrap();
-    call(
+    // Thread posts and legacy intents stay accepted for pages opened before
+    // the browser stopped offering them (ADR 0229 §5), and their answers carry
+    // the member identity fields old pages ignore.
+    let (status, reply) = call(
         &env,
         Method::POST,
         &format!("/projects/{}/channels/{channel}/messages", env.project_id),
         json!({"body": "Start with magnitude pruning", "thread_id": thread_id}),
     )
     .await;
+    assert_eq!(status, StatusCode::CREATED, "{reply}");
+    assert_eq!(reply["author_member_id"], Value::Null);
+    assert_eq!(reply["mention_member_ids"], json!([]));
+    let (status, request) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/channels/{channel}/messages", env.project_id),
+        json!({"body": "Please organize this", "intent": "request"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{request}");
+    assert_eq!(request["intent"], "request");
+    assert_eq!(request["mention_member_ids"], json!([]));
 
     // Create the question and link the Thread.
     let (_, question) = call(
@@ -260,6 +276,14 @@ async fn a_thread_becomes_a_research_thread_without_replacing_the_conversation()
     assert_eq!(bodies[0], "Pruning attention heads?");
     assert_eq!(bodies[1], "Start with magnitude pruning");
     assert_eq!(in_thread["messages"][2]["kind"], "system");
+    assert!(
+        in_thread["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["author_member_id"].is_null() && m["mention_member_ids"].is_array()),
+        "{in_thread}"
+    );
 }
 
 #[tokio::test]

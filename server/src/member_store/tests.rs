@@ -834,3 +834,68 @@ fn the_general_agent_s_settings_cannot_carry_a_mode() {
         .expect("the model is still owed");
     assert_eq!(pending.values, [("model".to_owned(), "fast".to_owned())]);
 }
+
+#[test]
+fn public_authors_names_every_public_session_but_never_a_dm() {
+    let r = rig();
+    let general = r
+        .members
+        .ensure_general(&r.f.project_id, YES, AgentId::OpenCode)
+        .unwrap();
+    let analyst = r
+        .members
+        .create_specialist(
+            &r.f.project_id,
+            NewMember {
+                name: "Analyst".into(),
+                template: Some(MemberTemplate::Analysis),
+                ..Default::default()
+            },
+            YES,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let writer = r
+        .members
+        .create_specialist(
+            &r.f.project_id,
+            NewMember {
+                name: "Writer".into(),
+                template: Some(MemberTemplate::Writing),
+                ..Default::default()
+            },
+            YES,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let first = analyst.public_conversation_id.clone().unwrap();
+    let replaced = r
+        .members
+        .replace_session(&r.f.project_id, &analyst.id, Binding::Public, None, YES)
+        .unwrap();
+    let second = replaced.public_conversation_id.clone().unwrap();
+    let dm = r
+        .members
+        .ensure_dm_session(&r.f.project_id, &analyst.id, YES)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let writer_session = writer.public_conversation_id.clone().unwrap();
+    r.members.remove(&r.f.project_id, &writer.id).unwrap();
+
+    let authors = r.members.public_authors(&r.f.project_id).unwrap();
+    assert_eq!(authors.get(&first), Some(&analyst.id), "an ended Session");
+    assert_eq!(authors.get(&second), Some(&analyst.id), "the current one");
+    assert_eq!(
+        authors.get(&writer_session),
+        Some(&writer.id),
+        "a removed member keeps its name"
+    );
+    assert_eq!(
+        authors.get(general.public_conversation_id.as_deref().unwrap()),
+        Some(&general.id)
+    );
+    assert!(!authors.contains_key(&dm), "a private Session never names");
+    assert_eq!(authors.len(), 4);
+    assert!(r.members.public_authors("other").unwrap().is_empty());
+}

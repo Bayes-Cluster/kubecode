@@ -2,6 +2,8 @@
 //! attributed; Threads group replies and may be linked to a research question
 //! without moving a message.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -175,6 +177,67 @@ pub struct MessagePage {
     pub messages: Vec<Message>,
     /// There are older messages than the first one returned.
     pub has_more: bool,
+}
+
+/// A message as the HTTP API shows it (ADR 0229 §1). Presentation only: it
+/// grants nothing, authority still comes from a member's *current* binding
+/// (ADR 0220 §4). Computed when read, never stored.
+#[derive(Clone, Debug, Serialize)]
+pub struct MessageView {
+    #[serde(flatten)]
+    pub message: Message,
+    /// The writing member, through any public Session it has had; `None` for
+    /// the researcher, Kubecode, or a Session that never was a member's public
+    /// Session.
+    pub author_member_id: Option<String>,
+    /// The member each mention names; same length and order as
+    /// `message.mentions`.
+    pub mention_member_ids: Vec<Option<String>>,
+}
+
+impl MessageView {
+    /// `authors` maps every public Session of the Project's members to the
+    /// member (`MemberStore::public_authors`).
+    pub fn project(message: Message, authors: &HashMap<String, String>) -> Self {
+        let author_member_id = match message.author_kind {
+            AuthorKind::Agent => message
+                .author_ref
+                .as_ref()
+                .and_then(|session| authors.get(session).cloned()),
+            AuthorKind::Researcher | AuthorKind::System => None,
+        };
+        let mention_member_ids = message
+            .mentions
+            .iter()
+            .map(|mention| authors.get(&mention.session_id).cloned())
+            .collect();
+        Self {
+            message,
+            author_member_id,
+            mention_member_ids,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MessagePageView {
+    /// Oldest first.
+    pub messages: Vec<MessageView>,
+    /// There are older messages than the first one returned.
+    pub has_more: bool,
+}
+
+impl MessagePageView {
+    pub fn project(page: MessagePage, authors: &HashMap<String, String>) -> Self {
+        Self {
+            messages: page
+                .messages
+                .into_iter()
+                .map(|message| MessageView::project(message, authors))
+                .collect(),
+            has_more: page.has_more,
+        }
+    }
 }
 
 /// The result of claiming a message's intent.

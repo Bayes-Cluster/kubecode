@@ -3,6 +3,8 @@
 //! authors `researcher` messages only: authorship is never taken from the
 //! request body, and nothing here starts an Agent.
 
+use std::collections::HashMap;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -13,8 +15,8 @@ use serde_json::json;
 
 use crate::app_state::AppState;
 use crate::channel_store::{
-    AuthorKind, Channel, ChannelError, ContextRef, Intent, Mention, Message, MessagePage,
-    MessageQuery, NewMessage, Scope, Thread,
+    AuthorKind, Channel, ChannelError, ContextRef, Intent, Mention, Message, MessagePageView,
+    MessageQuery, MessageView, NewMessage, Scope, Thread,
 };
 use crate::workspace::WorkspaceError;
 
@@ -129,6 +131,26 @@ fn check_project(state: &AppState, project_id: &str) -> Result<(), ChannelApiErr
     Ok(())
 }
 
+/// Every public Session the Project's members have had, mapped to the member:
+/// how a message names its author and mentions (ADR 0229 §1). Identity is
+/// presentation, so a failed lookup degrades to an unnamed author (shown as
+/// unknown, never as someone else) instead of failing the read.
+pub(crate) fn authors(state: &AppState, project_id: &str) -> HashMap<String, String> {
+    state
+        .members
+        .public_authors(project_id)
+        .unwrap_or_else(|error| {
+            eprintln!("WARN: message authors could not be resolved: {error}");
+            HashMap::new()
+        })
+}
+
+/// A message as the API shows it, with its member identity.
+pub(crate) fn view(state: &AppState, message: Message) -> MessageView {
+    let authors = authors(state, &message.project_id);
+    MessageView::project(message, &authors)
+}
+
 /// Created, or the stored record on a replay.
 fn created_or_ok<T: serde::Serialize>(created: bool, value: T) -> Response {
     let status = if created {
@@ -161,7 +183,7 @@ async fn list_messages(
     State(state): State<AppState>,
     Path((project_id, channel_id)): Path<(String, String)>,
     Query(query): Query<MessagesQuery>,
-) -> Result<Json<MessagePage>, ChannelApiError> {
+) -> Result<Json<MessagePageView>, ChannelApiError> {
     check_project(&state, &project_id)?;
     let scope = match (query.thread_id.as_deref(), query.task_id.as_deref()) {
         (Some(thread_id), _) => Scope::Thread(thread_id),
@@ -169,7 +191,7 @@ async fn list_messages(
         (None, Some(_)) => Scope::All,
         (None, None) => Scope::Channel,
     };
-    Ok(Json(state.channels.messages(
+    let page = state.channels.messages(
         &project_id,
         &channel_id,
         MessageQuery {
@@ -179,20 +201,24 @@ async fn list_messages(
             limit: query.limit,
             task: query.task_id.as_deref(),
         },
-    )?))
+    )?;
+    Ok(Json(MessagePageView::project(
+        page,
+        &authors(&state, &project_id),
+    )))
 }
 
 /// One message, so a link to it can land on it however old it is.
 async fn get_message(
     State(state): State<AppState>,
     Path((project_id, channel_id, message_id)): Path<(String, String, String)>,
-) -> Result<Json<Message>, ChannelApiError> {
+) -> Result<Json<MessageView>, ChannelApiError> {
     check_project(&state, &project_id)?;
     let message = state.channels.message(&project_id, &message_id)?;
     if message.channel_id != channel_id {
         return Err(ChannelError::MessageNotFound.into());
     }
-    Ok(Json(message))
+    Ok(Json(view(&state, message)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -268,7 +294,7 @@ async fn post_message(
         // for its next scheduled pass.
         state.orchestrator.wake();
     }
-    Ok(created_or_ok(created, message))
+    Ok(created_or_ok(created, view(&state, message)))
 }
 
 #[derive(Debug, Deserialize)]
