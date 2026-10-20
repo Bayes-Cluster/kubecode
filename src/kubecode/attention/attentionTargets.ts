@@ -42,6 +42,17 @@ export function attentionTarget(item: AttentionItem, presentation: InspectorPres
       return item.task
         ? { place: { view: 'board' }, inspect: { kind: 'task', id: item.task.id }, focus: `${item.kind}:${item.request_id}` }
         : { place: { view: 'board' }, focus: `${item.kind}:${item.request_id}` }
+    case 'suggestion':
+      return { place: { view: 'board' }, inspect: { kind: 'task', id: item.research_id }, focus: item.key }
+    case 'brief':
+      // A revision General showed is answered there; one it never showed, from the Task's Overview.
+      return item.message_id
+        ? {
+          place: { view: 'general', message: item.message_id },
+          ...(side ? { inspect: { kind: 'task' as const, id: item.research_id } } : {}),
+          focus: `message:${item.message_id}`,
+        }
+        : { place: { view: 'board' }, inspect: { kind: 'task', id: item.research_id }, focus: item.key }
     case 'proposal':
       return {
         place: { view: 'general', message: item.message_id },
@@ -70,6 +81,10 @@ export function attentionTarget(item: AttentionItem, presentation: InspectorPres
         focus: `member-setup:${item.member_id}`,
       }
   }
+}
+
+function forTaskIn(item: AttentionItem, t: Translator): string | undefined {
+  return item.task ? t('kubecode.attention.inTask', { task: item.task.title }) : undefined
 }
 
 function joined(parts: Array<string | null | undefined>): string | undefined {
@@ -110,10 +125,24 @@ export function attentionWords(item: AttentionItem, t: Translator): Pick<NeedsYo
         reason: { label: t('kubecode.nav.needsReview'), tone: 'info' },
         detail: item.member ? t('kubecode.attention.requestedBy', { handle: item.member.handle }) : undefined,
       }
+    case 'suggestion':
+      return {
+        title: clip(item.text, QUESTION_CHARS),
+        reason: { label: t('kubecode.nav.needsSuggestion'), tone: 'info' },
+        detail: forTaskIn(item, t),
+      }
+    case 'brief':
+      return {
+        title: item.task?.title ?? '',
+        reason: { label: t('kubecode.nav.needsRevision'), tone: 'info' },
+        detail: item.message_id
+          ? t('kubecode.attention.revisionDetail', { revision: item.revision })
+          : t('kubecode.attention.briefDetail', { revision: item.revision }),
+      }
     case 'proposal':
       return {
         title: item.task?.title ?? '',
-        reason: { label: t(item.admitted ? 'kubecode.nav.needsRevision' : 'kubecode.nav.needsProposal'), tone: 'info' },
+        reason: { label: t('kubecode.nav.needsProposal'), tone: 'info' },
         detail: t('kubecode.attention.revisionDetail', { revision: item.revision }),
       }
     case 'setup':

@@ -46,7 +46,6 @@ export function permissionItem(overrides: Partial<Kinded<'permission'>> = {}): K
       { id: 'allow', label: 'Allow once', kind: 'allow_once' },
       { id: 'reject', label: 'Reject', kind: 'reject_once' },
     ],
-    deadline_ms: 240_000,
     task: pruning,
     member: analyst,
     binding: 'public',
@@ -114,9 +113,35 @@ export function proposalItem(overrides: Partial<Kinded<'proposal'>> = {}): Kinde
     research_id: 'r2',
     revision: 1,
     message_id: 'msg1',
-    admitted: false,
     task: { id: 'r2', title: 'Quantize first' },
     member: manager,
+    ...overrides,
+  }
+}
+
+export function suggestionItem(overrides: Partial<Kinded<'suggestion'>> = {}): Kinded<'suggestion'> {
+  return {
+    ...base,
+    key: `suggestion:${overrides.entry_id ?? 'e7'}`,
+    kind: 'suggestion',
+    research_id: 'r1',
+    entry_id: 'e7',
+    text: 'Relax the single-GPU constraint',
+    task: pruning,
+    ...overrides,
+  }
+}
+
+export function briefItem(overrides: Partial<Kinded<'brief'>> = {}): Kinded<'brief'> {
+  return {
+    ...base,
+    key: `brief:${overrides.research_id ?? 'r1'}:${overrides.revision ?? 3}`,
+    kind: 'brief',
+    research_id: 'r1',
+    revision: 3,
+    approved_revision: 2,
+    message_id: null,
+    task: pruning,
     ...overrides,
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createTranslator } from '@/lib/i18n'
 
 import {
+  briefItem,
   inputItem,
   permissionItem,
   proposalItem,
@@ -10,6 +11,7 @@ import {
   reviewItem,
   setupItem,
   snapshot,
+  suggestionItem,
 } from './attentionFixtures'
 import { needsYouFromAttention } from './attentionTargets'
 
@@ -24,6 +26,9 @@ describe('Needs you from the server projection (ADR 0232)', () => {
         permissionItem({ request_id: 'q2', member: null, binding: null, conversation_id: 's9', session_title: 'Fix build', task: null }),
         questionItem(),
         reviewItem(),
+        suggestionItem(),
+        briefItem(),
+        briefItem({ research_id: 'r3', key: 'brief:r3:5', revision: 5, message_id: 'msg5', task: { id: 'r3', title: 'Shown' } }),
         proposalItem(),
         setupItem(),
       ],
@@ -34,6 +39,10 @@ describe('Needs you from the server projection (ADR 0232)', () => {
       ['permission:q2', { session: { projectId: 'p1', conversationId: 's9' }, focus: 'permission:q2' }],
       ['question:d1', { place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'question:d1' }],
       ['review:v1', { place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'review:v1' }],
+      // The Task panel's own keys: the suggestion in its Results, the unshown revision in its Overview.
+      ['suggestion:e7', { place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'suggestion:e7' }],
+      ['brief:r1:3', { place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'brief:r1:3' }],
+      ['brief:r3:5', { place: { view: 'general', message: 'msg5' }, focus: 'message:msg5' }],
       ['proposal:r2:1', { place: { view: 'general', message: 'msg1' }, focus: 'message:msg1' }],
       ['setup:m2', { place: { view: 'members' }, inspect: { kind: 'member', id: 'm2' }, focus: 'member-setup:m2' }],
     ])
@@ -57,16 +66,23 @@ describe('Needs you from the server projection (ADR 0232)', () => {
         inputItem(),
         questionItem(),
         reviewItem(),
-        proposalItem({ admitted: true, revision: 2, key: 'proposal:r2:2' }),
+        suggestionItem(),
+        briefItem(),
+        briefItem({ research_id: 'r2', key: 'brief:r2:2', revision: 2, approved_revision: 1, message_id: 'msg2', task: { id: 'r2', title: 'Quantize first' } }),
+        proposalItem(),
         setupItem(),
       ],
     }), new Set(), t, { presentation: 'screen' })
     expect(entries.map((entry) => [entry.title, entry.reason.label, entry.detail, entry.group])).toEqual([
-      ['Analyst wants to use Run pytest -q', 'Permission', 'For Structured pruning · times out in 4 min', 'decision'],
+      // A permission request waits until answered: no deadline is shown.
+      ['Analyst wants to use Run pytest -q', 'Permission', 'For Structured pruning', 'decision'],
       ['Analyst asks: Which split?', 'Input requested', 'times out in 2 min', 'decision'],
       ['Which ratios?', 'Question', 'In Structured pruning · asked by @analyst', 'decision'],
       ['Review the results of Structured pruning', 'Review', 'Requested by @general', 'decision'],
-      ['Quantize first', 'Revision proposed', 'Revision 2 · answer in General', 'decision'],
+      ['Relax the single-GPU constraint', 'Suggestion', 'In Structured pruning', 'decision'],
+      ['Structured pruning', 'Revised brief', 'Revision 3 waits for your approval', 'decision'],
+      ['Quantize first', 'Revised brief', 'Revision 2 · answer in General', 'decision'],
+      ['Quantize first', 'Proposal', 'Revision 1 · answer in General', 'decision'],
       ['Writer needs setup', 'Needs setup', 'Its provider is not available on this server', 'setup'],
     ])
   })

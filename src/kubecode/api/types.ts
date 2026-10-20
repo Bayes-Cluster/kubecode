@@ -1621,7 +1621,7 @@ type AttentionBase = {
   project_id: string
   group: 'decision' | 'setup'
   created_at: string
-  /** Milliseconds left before a permission or input request declines by itself. */
+  /** Milliseconds left before an input request declines by itself; null where the server enforces no deadline (permission requests). */
   deadline_ms: number | null
   task: AttentionTaskRef | null
   member: AttentionMemberRef | null
@@ -1644,7 +1644,12 @@ export type AttentionItem =
     impact: string | null
   }
   | AttentionBase & { kind: 'review'; request_id: string; brief_revision: number }
-  | AttentionBase & { kind: 'proposal'; research_id: string; revision: number; message_id: string; admitted: boolean }
+  /** A suggested change of direction on a Task, agreed or declined in its Results (`suggestion:<entry>`). */
+  | AttentionBase & { kind: 'suggestion'; research_id: string; entry_id: string; text: string }
+  /** An admitted Task's brief revised past its approved revision (`brief:<task>:<revision>`); `message_id` when General showed it. */
+  | AttentionBase & { kind: 'brief'; research_id: string; revision: number; approved_revision: number; message_id: string | null }
+  /** A proposal shown in General and not on the board yet (`proposal:<task>:<revision>`). */
+  | AttentionBase & { kind: 'proposal'; research_id: string; revision: number; message_id: string }
   | AttentionBase & { kind: 'setup'; member_id: string; setup_code: string | null }
 export type AttentionKind = AttentionItem['kind']
 /** A Session working now: what it works on, what is queued, and the requests it waits on. */

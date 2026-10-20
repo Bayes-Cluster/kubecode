@@ -51,6 +51,12 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     expect(store.markResolving).toHaveBeenCalledWith('question:dq1', expect.any(Function))
   })
 
+  it('gives a revised brief awaiting approval the key Needs you focuses', async () => {
+    mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [], revision: 3, approved_revision: 2 }), attentionStore())
+    const line = await panel().findByText(/The brief changed after you approved it/)
+    expect(line.closest('[data-focus-key]')).toHaveAttribute('data-focus-key', 'brief:r1:3')
+  })
+
   it('records a review decision through the attention store, on the region Needs you focuses', async () => {
     const store = attentionStore()
     const { api } = mount(taskDetail(), store)

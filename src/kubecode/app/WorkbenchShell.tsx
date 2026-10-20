@@ -515,7 +515,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const openNeedsYouTarget = useCallback((target: NeedsYouTarget) => {
     const { focus } = target
     if (projectId && target.inspect?.kind === 'task' && focus) {
-      const section = focus.startsWith('review:') ? 'results' : focus.startsWith('question:') ? 'overview' : null
+      const section = /^(review|suggestion):/.test(focus) ? 'results' : /^(question|brief):/.test(focus) ? 'overview' : null
       if (section) placeMemory.set(`${placeKey.task(projectId, target.inspect.id)}#tab`, section)
     }
     if (target.session) {
