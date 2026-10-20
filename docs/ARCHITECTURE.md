@@ -350,10 +350,15 @@ reports a link still being reached as `pending` (the main pane shows "Opening
 Workspace…", never a Session), abandons a link to an unknown Project at once,
 and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
 the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
-`app/WorkspaceNav.tsx` (General, Kanban, Resources, Members, Needs you from
-`location/needsYou.ts`, the roster, Direct messages), then a collapsed History
-and execution section with the Session search, this Workspace's Sessions and
-Teams, Threads and questions. The inspector (`app/inspector/`) is one stack per
+`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you from
+`location/needsYou.ts`, Members, then the roster and Direct messages under
+their own headings), then a collapsed History and execution section with the
+Session search across all Workspaces, this Workspace's Sessions and Teams,
+Threads and questions. Reference chips in General and rows in Resources open
+through the shell's one `openReference` (`location/references.ts`): a Task or a
+record in the inspector of the view they were chosen in, a Thread in General
+with nothing over it, a work item on Kanban with its Task, and a Session as
+execution history. The inspector (`app/inspector/`) is one stack per
 inspector-hosting view (General, Kanban, Resources, Members, a private
 conversation): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
 (`tasks/TaskPanel.tsx`, `members/MemberPanel.tsx`, `work/EvidencePanel.tsx`,
@@ -367,8 +372,10 @@ for the life of the page and never on disk: drafts and reply targets
 (`usePlaceState`, `usePlaceRef`, keyed by `placeKey`), list scroll positions
 (`useScrollMemory`, `data-scroll-anchor`), and focus return (`data-focus-key`);
 General's reading position is reported by `MessageList` and folded into its
-place when General is left. `ResourcesView` reuses the project context reader in
-a browsing mode. A route can name a message, read by id
+place when General is left, and written onto General's own history entry before
+the next place is pushed, so Back lands on it. `ResourcesView` reuses the
+project context reader in a browsing mode whose search, kind filter and preview
+are place memory too. A route can name a message, read by id
 (`GET …/channels/{c}/messages/{id}`) and landed on after a page is loaded around
 it.
 
