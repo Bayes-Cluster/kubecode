@@ -72,22 +72,42 @@ vi.mock('../research/ResearchWorkspace', () => ({
   ),
 }))
 
-vi.mock('../tasks/TaskInspector', () => ({
-  TaskInspector: ({ onInspectEvidence, onShowMessage }: {
-    onInspectEvidence?: (target: { kind: string; id: string; revision?: string | null }) => void
-    onShowMessage?: (messageId: string) => void
-  }) => (
-    <div>
-      <button type="button" onClick={() => onShowMessage?.('m1')}>Show message m1</button>
-      <button type="button" onClick={() => onInspectEvidence?.({ kind: 'artifact', id: 'a1', revision: '3f' })}>
-        Inspect artifact a1
-      </button>
-      <button type="button" onClick={() => onInspectEvidence?.({ kind: 'file', id: 'results.csv' })}>
-        Inspect results.csv
-      </button>
-    </div>
-  ),
-}))
+vi.mock('../tasks/TaskPanel', async () => {
+  const { InspectorPanel } = await import('./inspector/InspectorPanel')
+  const { useInspectorEntry, useInspectorServices } = await import('./inspector/inspectorContext')
+  const { useWorkspaceNavigation } = await import('./location/WorkspaceNavigation')
+  const { useGeneralFromTask } = await import('../tasks/taskNavigation')
+  return {
+    TaskPanel: ({ entry }: { entry: { id: string } }) => {
+      const { push } = useInspectorEntry()
+      const { t } = useInspectorServices()
+      const { openPlace } = useWorkspaceNavigation()
+      const general = useGeneralFromTask()
+      return (
+        <InspectorPanel title={t('kubecode.nav.taskDetail')}>
+          <section aria-label={`task ${entry.id}`}>
+            <button type="button" onClick={() => general({ message: 'm1' })}>Show message m1</button>
+            <button
+              type="button"
+              onClick={() => push({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { from: 'evidence:artifact:a1' })}
+            >
+              Inspect artifact a1
+            </button>
+            <button type="button" onClick={() => push({ kind: 'evidence', ref: { kind: 'file', id: 'results.csv', revision: null } })}>
+              Inspect results.csv
+            </button>
+            <button
+              type="button"
+              onClick={() => openPlace({ view: 'general', thread: 't1', filter: null }, { inspector: 'closed' })}
+            >
+              Open thread t1
+            </button>
+          </section>
+        </InspectorPanel>
+      )
+    },
+  }
+})
 
 vi.mock('../work/EvidenceViewer', () => ({
   EvidenceViewer: ({ target }: { target: { kind: string; id: string } }) => (
@@ -724,7 +744,7 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general?thread=t1'))
   })
 
-  it('shows a message from Kanban’s Task without General’s remembered Task or filter', async () => {
+  it('shows a message from Kanban’s Task beside that Task, never General’s remembered Task or filter', async () => {
     storeLocations({
       lastProjectId: 'project-1',
       seq: 2,
@@ -741,9 +761,10 @@ describe('Workspace navigation and routes', () => {
     }))
     expect(await screen.findByRole('region', { name: 'task r1' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show message m1' }))
-    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1'))
+    // Beside General the Task it came from stays open: never the Task General remembered.
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1?task=r1'))
     expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
-    expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'task r1' })).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'task r9' })).not.toBeInTheDocument()
   })
 

@@ -52,16 +52,28 @@ export function ResearchBriefPanel({
   api,
   detail,
   onChanged,
+  onDone,
+  startEditing = false,
   t,
 }: {
   api: KubecodeApi
   detail: ResearchDetail
   onChanged: () => void
+  /** Called when an edit ends (saved, cancelled, or discarded), for a host that showed the editor on request. */
+  onDone?: () => void
+  /** Opens straight into the editor (a Task's "Edit brief"). */
+  startEditing?: boolean
   t: Translator
 }) {
   // The revision the edit began from; saving sends it, so a brief that moved
   // underneath the researcher is a conflict rather than an overwrite.
-  const [editing, setEditing] = useState<{ draft: Draft; base: ResearchBrief; revision: number } | null>(null)
+  const [editing, setEditingState] = useState<{ draft: Draft; base: ResearchBrief; revision: number } | null>(() => (
+    startEditing ? { draft: toDraft(detail.brief), base: detail.brief, revision: detail.revision } : null
+  ))
+  const setEditing = (next: typeof editing) => {
+    setEditingState(next)
+    if (next === null) onDone?.()
+  }
   const [conflict, setConflict] = useState(false)
   const action = useAction(t, (cause) => {
     if (cause instanceof ApiError && cause.code === 'research_revision_conflict') setConflict(true)

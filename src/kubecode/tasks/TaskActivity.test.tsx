@@ -93,7 +93,7 @@ describe('TaskActivity', () => {
     fireEvent.click(within(rows[8]).getByRole('button', { name: 'Show in General' }))
     expect(navigation.openPlace).toHaveBeenCalledWith(
       { view: 'general', filter: 'r1', message: 'm1', thread: null },
-      { carryInspector: 'when-side' },
+      { inspector: 'keep' },
     )
   })
 
@@ -109,7 +109,7 @@ describe('TaskActivity', () => {
     fireEvent.click(await within(recent).findByRole('button', { name: /The sweep is half done\./ }))
     expect(navigation.openPlace).toHaveBeenCalledWith(
       { view: 'general', filter: 'r1', message: 'gm7', thread: null },
-      { carryInspector: 'when-side' },
+      { inspector: 'keep' },
     )
   })
 

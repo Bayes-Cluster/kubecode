@@ -122,7 +122,7 @@ describe('TaskResults', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show in General' }))
     expect(navigation.openPlace).toHaveBeenCalledWith(
       { view: 'general', filter: 'r1', message: 'gm1', thread: null },
-      { carryInspector: 'when-side' },
+      { inspector: 'keep' },
     )
   })
 
@@ -182,7 +182,7 @@ describe('TaskResults', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Show in General' })[0])
     expect(navigation.openPlace).toHaveBeenCalledWith(
       { view: 'general', filter: 'r1', message: 'gm1', thread: null },
-      { carryInspector: 'when-side' },
+      { inspector: 'keep' },
     )
   })
 
