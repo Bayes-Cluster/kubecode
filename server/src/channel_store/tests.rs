@@ -1318,3 +1318,31 @@ fn a_denial_is_a_fact_of_the_message_and_only_the_researchers_are_rerouted() {
         RerouteOutcome::NotReroutable
     );
 }
+
+/// Only a denial a reroute can fix is rerouted: a manager or a member that
+/// was not available may be by now; a private direct message, or a request
+/// that was refused, would be denied again and only use up the attempts.
+#[test]
+fn only_a_denial_that_a_reroute_can_fix_is_rerouted() {
+    let r = rig();
+    let channel = r.channel();
+    for (code, expected) in [
+        ("manager_unavailable", RerouteOutcome::Rearmed),
+        ("member_unavailable", RerouteOutcome::Rearmed),
+        ("dm_private", RerouteOutcome::NotReroutable),
+        ("request_refused", RerouteOutcome::NotReroutable),
+    ] {
+        let message = r.say(&channel, code);
+        r.channels
+            .mark_denied(r.project(), &message.id, code)
+            .unwrap();
+        assert_eq!(
+            r.channels
+                .reroute(r.project(), &channel.id, &message.id)
+                .unwrap(),
+            expected,
+            "{code}"
+        );
+        assert_eq!(crate::channel_store::reroutable(Some(code)), expected == RerouteOutcome::Rearmed);
+    }
+}

@@ -432,7 +432,8 @@ impl Orchestrator {
                             .issue
                             .clone()
                             .unwrap_or_else(|| "manager_unavailable".to_owned()),
-                        reroutable: mark.reroutes < MAX_REROUTES,
+                        reroutable: mark.reroutes < MAX_REROUTES
+                            && crate::channel_store::reroutable(mark.issue.as_deref()),
                         note_id: denial_note_keys(id, mark.reroutes)
                             .iter()
                             .rev()

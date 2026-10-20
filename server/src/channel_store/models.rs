@@ -254,6 +254,17 @@ pub struct RoutingMark {
 /// Reroutes of one message at most (ADR 0232).
 pub const MAX_REROUTES: u32 = 3;
 
+/// The denials a reroute can fix: a project manager or a member that was not
+/// available may be by now. A private direct message, or a request that was
+/// refused, would be denied again (ADR 0232).
+pub const REROUTABLE_ISSUES: [&str; 2] = ["manager_unavailable", "member_unavailable"];
+
+/// Whether a denial with this code may be read again; a denial recorded
+/// before codes were kept counts as the manager's.
+pub fn reroutable(code: Option<&str>) -> bool {
+    code.is_none_or(|code| REROUTABLE_ISSUES.contains(&code))
+}
+
 /// What a reroute did.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

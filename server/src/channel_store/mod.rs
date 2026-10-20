@@ -1291,8 +1291,9 @@ impl ChannelStore {
     }
 
     /// The researcher has a denied (or partly denied) top-level message read
-    /// again, at most `MAX_REROUTES` times; members it already reached are
-    /// never routed twice (one route per source and target).
+    /// again, at most `MAX_REROUTES` times and only for a denial a reroute can
+    /// fix ([`reroutable`]); members it already reached are never routed
+    /// twice (one route per source and target).
     pub fn reroute(
         &self,
         project_id: &str,
@@ -1309,9 +1310,18 @@ impl ChannelStore {
                  SET routing = 'pending', routing_issue = NULL, reroutes = reroutes + 1
                  WHERE id = ?1 AND project_id = ?2 AND channel_id = ?3
                    AND author_kind = 'researcher' AND thread_id IS NULL
-                   AND (routing = 'denied' OR (routing = 'done' AND routing_issue IS NOT NULL))
+                   AND ((routing = 'denied'
+                         AND (routing_issue IS NULL OR routing_issue IN (?5, ?6)))
+                        OR (routing = 'done' AND routing_issue IN (?5, ?6)))
                    AND reroutes < ?4",
-                params![message_id, project_id, channel_id, MAX_REROUTES],
+                params![
+                    message_id,
+                    project_id,
+                    channel_id,
+                    MAX_REROUTES,
+                    REROUTABLE_ISSUES[0],
+                    REROUTABLE_ISSUES[1]
+                ],
             )?;
             if changed == 0 {
                 let routing: Option<String> = tx.query_row(

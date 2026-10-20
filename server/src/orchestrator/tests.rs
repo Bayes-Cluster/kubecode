@@ -2867,11 +2867,21 @@ mod delivery_state {
             .unwrap()
             .0;
         crew.orchestrator.route_conversation().unwrap();
-        let private = mark(&r, &private);
+        let marked = mark(&r, &private);
         assert_eq!(
-            (private.routing.as_deref(), private.issue.as_deref()),
+            (marked.routing.as_deref(), marked.issue.as_deref()),
             (Some("denied"), Some("dm_private"))
         );
+        // Reading it again would deny it again: Try again is not offered.
+        let denial = crew
+            .orchestrator
+            .deliveries_for(r.project(), std::slice::from_ref(&private.id))
+            .unwrap()
+            .remove(0)
+            .denial
+            .unwrap();
+        assert_eq!(denial.code, "dm_private");
+        assert!(!denial.reroutable);
     }
 
     #[test]
