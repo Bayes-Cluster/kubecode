@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "下方有新消息",
   "kubecode.channel.today": "今天",
   "kubecode.channel.yesterday": "昨天",
-  "kubecode.channel.legacyThread.open": "早期主题串 · {count} 条回复",
+  "kubecode.channel.legacyThread.open": "早期主题串 · {count} 条回复{plural}",
   "kubecode.channel.legacyThread.action": "打开早期主题串",
   "kubecode.channel.legacyThread.title": "早期主题串",
   "kubecode.channel.legacyThread.readOnly": "此主题串来自早期版本，为只读。在此回复不会送达任何人；请在常规中继续。",

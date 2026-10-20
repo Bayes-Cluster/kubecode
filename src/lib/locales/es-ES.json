@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Mensajes nuevos abajo",
   "kubecode.channel.today": "Hoy",
   "kubecode.channel.yesterday": "Ayer",
-  "kubecode.channel.legacyThread.open": "Hilo anterior · {count} respuestas",
+  "kubecode.channel.legacyThread.open": "Hilo anterior · respuestas: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Abrir hilo anterior",
   "kubecode.channel.legacyThread.title": "Hilo anterior",
   "kubecode.channel.legacyThread.readOnly": "Este hilo es de una versión anterior y es de solo lectura. Las respuestas aquí no llegan a nadie; continúa en General.",

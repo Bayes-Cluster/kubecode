@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "下方有新訊息",
   "kubecode.channel.today": "今天",
   "kubecode.channel.yesterday": "昨天",
-  "kubecode.channel.legacyThread.open": "較早的討論串 · {count} 則回覆",
+  "kubecode.channel.legacyThread.open": "較早的討論串 · {count} 則回覆{plural}",
   "kubecode.channel.legacyThread.action": "開啟較早的討論串",
   "kubecode.channel.legacyThread.title": "較早的討論串",
   "kubecode.channel.legacyThread.readOnly": "此討論串來自較早的版本，為唯讀。在此回覆不會送達任何人；請在一般中繼續。",

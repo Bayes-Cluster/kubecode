@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Nuovi messaggi qui sotto",
   "kubecode.channel.today": "Oggi",
   "kubecode.channel.yesterday": "Ieri",
-  "kubecode.channel.legacyThread.open": "Thread precedente · {count} risposte",
+  "kubecode.channel.legacyThread.open": "Thread precedente · risposte: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Apri thread precedente",
   "kubecode.channel.legacyThread.title": "Thread precedente",
   "kubecode.channel.legacyThread.readOnly": "Questo thread proviene da una versione precedente ed è di sola lettura. Le risposte qui non raggiungono nessuno; continua in Generale.",

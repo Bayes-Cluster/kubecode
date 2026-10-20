@@ -2343,7 +2343,7 @@
   "kubecode.channel.newMessages": "New messages below",
   "kubecode.channel.today": "Today",
   "kubecode.channel.yesterday": "Yesterday",
-  "kubecode.channel.legacyThread.open": "Earlier thread · {count} replies",
+  "kubecode.channel.legacyThread.open": "Earlier thread · {count} repl{plural}",
   "kubecode.channel.legacyThread.action": "Open earlier thread",
   "kubecode.channel.legacyThread.title": "Earlier thread",
   "kubecode.channel.legacyThread.readOnly": "This thread is from an earlier version and is read-only. Replies here reach no one; continue in General.",

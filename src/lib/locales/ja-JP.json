@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "この下に新着メッセージがあります",
   "kubecode.channel.today": "今日",
   "kubecode.channel.yesterday": "昨日",
-  "kubecode.channel.legacyThread.open": "以前のスレッド · {count} 件の返信",
+  "kubecode.channel.legacyThread.open": "以前のスレッド · {count} 件の返信{plural}",
   "kubecode.channel.legacyThread.action": "以前のスレッドを開く",
   "kubecode.channel.legacyThread.title": "以前のスレッド",
   "kubecode.channel.legacyThread.readOnly": "このスレッドは以前のバージョンのもので、読み取り専用です。ここでの返信は誰にも届きません。「一般」で続けてください。",

@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Нові повідомлення нижче",
   "kubecode.channel.today": "Сьогодні",
   "kubecode.channel.yesterday": "Учора",
-  "kubecode.channel.legacyThread.open": "Попередня гілка · Відповідей: {count}",
+  "kubecode.channel.legacyThread.open": "Попередня гілка · Відповідей: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Відкрити попередню гілку",
   "kubecode.channel.legacyThread.title": "Попередня гілка",
   "kubecode.channel.legacyThread.readOnly": "Ця гілка з попередньої версії й доступна лише для читання. Відповіді тут нікому не надходять; продовжуйте в розмові «Загальне».",

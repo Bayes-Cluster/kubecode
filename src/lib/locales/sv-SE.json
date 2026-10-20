@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Nya meddelanden nedan",
   "kubecode.channel.today": "Idag",
   "kubecode.channel.yesterday": "Igår",
-  "kubecode.channel.legacyThread.open": "Tidigare tråd · {count} svar",
+  "kubecode.channel.legacyThread.open": "Tidigare tråd · {count} svar{plural}",
   "kubecode.channel.legacyThread.action": "Öppna tidigare tråd",
   "kubecode.channel.legacyThread.title": "Tidigare tråd",
   "kubecode.channel.legacyThread.readOnly": "Den här tråden kommer från en tidigare version och är skrivskyddad. Svar här når ingen; fortsätt i Allmänt.",

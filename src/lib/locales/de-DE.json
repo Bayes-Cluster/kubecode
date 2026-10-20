@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Neue Nachrichten unten",
   "kubecode.channel.today": "Heute",
   "kubecode.channel.yesterday": "Gestern",
-  "kubecode.channel.legacyThread.open": "Früherer Thread · {count} Antworten",
+  "kubecode.channel.legacyThread.open": "Früherer Thread · Antworten: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Früheren Thread öffnen",
   "kubecode.channel.legacyThread.title": "Früherer Thread",
   "kubecode.channel.legacyThread.readOnly": "Dieser Thread stammt aus einer früheren Version und ist schreibgeschützt. Antworten hier erreichen niemanden; machen Sie in Allgemein weiter.",

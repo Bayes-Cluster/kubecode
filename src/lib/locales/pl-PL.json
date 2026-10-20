@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Nowe wiadomości poniżej",
   "kubecode.channel.today": "Dzisiaj",
   "kubecode.channel.yesterday": "Wczoraj",
-  "kubecode.channel.legacyThread.open": "Wcześniejszy wątek · odpowiedzi: {count}",
+  "kubecode.channel.legacyThread.open": "Wcześniejszy wątek · odpowiedzi: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Otwórz wcześniejszy wątek",
   "kubecode.channel.legacyThread.title": "Wcześniejszy wątek",
   "kubecode.channel.legacyThread.readOnly": "Ten wątek pochodzi z wcześniejszej wersji i jest tylko do odczytu. Odpowiedzi tutaj do nikogo nie trafią; kontynuuj w „Ogólne”.",

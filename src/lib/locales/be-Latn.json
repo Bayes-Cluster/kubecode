@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Novyja paviedamleńni nižej",
   "kubecode.channel.today": "Siońnia",
   "kubecode.channel.yesterday": "Učora",
-  "kubecode.channel.legacyThread.open": "Raniejšy lancužok · Adkazaŭ: {count}",
+  "kubecode.channel.legacyThread.open": "Raniejšy lancužok · Adkazaŭ: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Adkryć raniejšy lancužok",
   "kubecode.channel.legacyThread.title": "Raniejšy lancužok",
   "kubecode.channel.legacyThread.readOnly": "Hety lancužok z raniejšaj versii i dastupny tolki dla čytannia. Adkazy tut nikomu nie trapiajuć; praciahvajcie ŭ razmovie «Ahulnaje».",

@@ -104,6 +104,14 @@ describe('MessageItem', () => {
     expect(items.map((entry) => entry.textContent)).toContain('Open earlier thread')
   })
 
+  it('counts one reply in the singular, and in other languages in a form that fits any count', () => {
+    const one = { id: 't1', reply_count: 1 } as ChannelThread
+    item({ message: channelMessage(5), author: researcherView(t), task: null, legacyThread: one })
+    expect(screen.getByRole('button', { name: 'Earlier thread · 1 reply' })).toBeInTheDocument()
+    expect(createTranslator('de-DE')('kubecode.channel.legacyThread.open', { count: 1, plural: 'y' }))
+      .toBe('Früherer Thread · Antworten: 1')
+  })
+
   it('cites what it replies to and jumps there, even when it is not loaded', () => {
     const message = channelMessage(6, { reply_to: 'm1' })
     const { on } = item({ message, author: researcherView(t), task: null, cited: { author: memberView(analyst, t), excerpt: 'Ran it' } })

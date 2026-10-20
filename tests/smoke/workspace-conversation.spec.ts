@@ -153,7 +153,7 @@ test.describe('on a desktop', () => {
       })
       expect(threadReply.ok(), await threadReply.text()).toBe(true)
       await page.reload()
-      await row(page, 'Should we prune the attention heads?').getByRole('button', { name: 'Earlier thread · 1 replies' }).click()
+      await row(page, 'Should we prune the attention heads?').getByRole('button', { name: 'Earlier thread · 1 reply' }).click()
       const pane = page.getByRole('complementary', { name: 'Earlier thread' })
       await expect(pane.getByText(/read-only/)).toBeVisible()
       await expect(pane.getByText('Start with magnitude pruning')).toBeVisible()

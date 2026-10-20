@@ -507,7 +507,7 @@ describe('ChannelWorkspace earlier Threads (ADR 0229 §5)', () => {
     s.messages.push(server().message(2, 'Try magnitude pruning', { thread_id: 't1' }))
     const onThreadChange = vi.fn()
     view(s, { props: { onThreadChange } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Earlier thread · 1 replies' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Earlier thread · 1 reply' }))
     const pane = await screen.findByRole('complementary', { name: 'Earlier thread' })
     expect(onThreadChange).toHaveBeenLastCalledWith('t1')
     expect(within(pane).getByText(/read-only/)).toBeInTheDocument()

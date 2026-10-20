@@ -200,7 +200,7 @@ export function MessageItem({
         {replies > 0 && on.openThread && (
           <button className="kubecode-legacy-thread-link" type="button" onClick={on.openThread}>
             <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS.thread.Icon} />
-            {t('kubecode.channel.legacyThread.open', { count: replies })}
+            {t('kubecode.channel.legacyThread.open', { count: replies, plural: replies === 1 ? 'y' : 'ies' })}
           </button>
         )}
         {delivery?.state === 'failed' && (

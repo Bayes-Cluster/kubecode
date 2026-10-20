@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "아래에 새 메시지가 있습니다",
   "kubecode.channel.today": "오늘",
   "kubecode.channel.yesterday": "어제",
-  "kubecode.channel.legacyThread.open": "이전 스레드 · 답글 {count}개",
+  "kubecode.channel.legacyThread.open": "이전 스레드 · 답글 {count}개{plural}",
   "kubecode.channel.legacyThread.action": "이전 스레드 열기",
   "kubecode.channel.legacyThread.title": "이전 스레드",
   "kubecode.channel.legacyThread.readOnly": "이 스레드는 이전 버전에서 만들어졌으며 읽기 전용입니다. 여기에 남긴 답글은 아무에게도 전달되지 않으니 '일반'에서 계속하세요.",

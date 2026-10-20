@@ -1842,7 +1842,7 @@
   "kubecode.channel.newMessages": "Новые сообщения ниже",
   "kubecode.channel.today": "Сегодня",
   "kubecode.channel.yesterday": "Вчера",
-  "kubecode.channel.legacyThread.open": "Прежний тред · ответов: {count}",
+  "kubecode.channel.legacyThread.open": "Прежний тред · ответов: {count}{plural}",
   "kubecode.channel.legacyThread.action": "Открыть прежний тред",
   "kubecode.channel.legacyThread.title": "Прежний тред",
   "kubecode.channel.legacyThread.readOnly": "Этот тред создан в прежней версии и доступен только для чтения. Ответы здесь никому не доставляются; продолжите в «Общее».",
