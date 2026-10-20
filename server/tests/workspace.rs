@@ -758,3 +758,203 @@ fn session_context_resolution_rejects_ancestor_and_final_symlinks() {
         );
     }
 }
+
+// -- Project files as context (#219) --------------------------------------------------
+
+fn words(query: &str) -> Vec<String> {
+    query.split_whitespace().map(str::to_lowercase).collect()
+}
+
+fn set_mtime(path: &Path, seconds: u64) {
+    let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds);
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open for mtime")
+        .set_modified(time)
+        .expect("set mtime");
+}
+
+#[cfg(unix)]
+#[test]
+fn file_search_matches_path_words_and_skips_hidden_ignored_generated_and_linked_entries() {
+    use std::os::unix::fs::symlink;
+
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("search-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    run_git(root, &["init"]);
+    fs::write(root.join(".gitignore"), "data/\n*.log\n").expect("gitignore");
+    fs::create_dir_all(root.join("results/deep")).expect("results");
+    fs::write(root.join("results/summary.csv"), "a,b\n").expect("summary");
+    fs::write(root.join("results/deep/Summary-2.csv"), "c\n").expect("nested");
+    fs::write(root.join(".env"), "TOKEN=x\n").expect("hidden");
+    fs::create_dir_all(root.join(".hidden")).expect("hidden dir");
+    fs::write(root.join(".hidden/summary.csv"), "x").expect("hidden file");
+    fs::create_dir_all(root.join("node_modules/pkg")).expect("generated");
+    fs::write(root.join("node_modules/pkg/summary.csv"), "x").expect("generated file");
+    fs::create_dir_all(root.join("data")).expect("ignored");
+    fs::write(root.join("data/summary.csv"), "x").expect("ignored file");
+    fs::write(root.join("run-summary.log"), "x").expect("ignored by pattern");
+    let outside = service.root().join("outside");
+    fs::create_dir_all(&outside).expect("outside");
+    fs::write(outside.join("summary.csv"), "secret").expect("outside file");
+    symlink(&outside, root.join("linked")).expect("dir link");
+    symlink(outside.join("summary.csv"), root.join("link-summary.csv")).expect("file link");
+
+    let found = service
+        .search_project_files(&project.id, &words("SUMMARY csv"), 5_000, 200)
+        .expect("search");
+    let mut paths: Vec<&str> = found.hits.iter().map(|hit| hit.path.as_str()).collect();
+    paths.sort_unstable();
+    assert_eq!(paths, ["results/deep/Summary-2.csv", "results/summary.csv"]);
+    assert!(!found.truncated);
+    let summary = found
+        .hits
+        .iter()
+        .find(|hit| hit.path == "results/summary.csv")
+        .unwrap();
+    assert_eq!(summary.size, 4);
+    assert!(summary.modified_unix.is_some());
+    // Every word must match the path, folders included.
+    let deep = service
+        .search_project_files(&project.id, &words("deep csv"), 5_000, 200)
+        .expect("search");
+    assert_eq!(deep.hits.len(), 1);
+    assert_eq!(deep.hits[0].path, "results/deep/Summary-2.csv");
+}
+
+#[test]
+fn file_search_lists_the_newest_files_first_and_keeps_only_the_newest_it_can_return() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("recent-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    for (name, seconds) in [("old.txt", 1_000), ("new.txt", 3_000), ("mid.txt", 2_000)] {
+        fs::write(root.join(name), name).expect("file");
+        set_mtime(&root.join(name), seconds);
+    }
+    let all = service
+        .search_project_files(&project.id, &[], 5_000, 200)
+        .expect("search");
+    let paths: Vec<&str> = all.hits.iter().map(|hit| hit.path.as_str()).collect();
+    assert_eq!(paths, ["new.txt", "mid.txt", "old.txt"]);
+    assert_eq!(all.hits[0].modified_unix, Some(3_000));
+    assert!(!all.truncated);
+    let capped = service
+        .search_project_files(&project.id, &[], 5_000, 2)
+        .expect("search");
+    let paths: Vec<&str> = capped.hits.iter().map(|hit| hit.path.as_str()).collect();
+    assert_eq!(paths, ["new.txt", "mid.txt"]);
+    assert!(capped.truncated, "a dropped match is reported");
+}
+
+#[test]
+fn file_search_stops_at_its_entry_budget_and_depth_and_says_so() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("bounded-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    for n in 0..30 {
+        fs::write(root.join(format!("f{n:02}.txt")), "x").expect("file");
+    }
+    let budgeted = service
+        .search_project_files(&project.id, &[], 10, 200)
+        .expect("search");
+    assert!(budgeted.hits.len() <= 10);
+    assert!(budgeted.truncated);
+
+    let mut deep = root.join("deep-start");
+    for level in 0..20 {
+        deep = deep.join(format!("l{level}"));
+    }
+    fs::create_dir_all(&deep).expect("deep tree");
+    fs::write(deep.join("buried.txt"), "x").expect("buried");
+    let found = service
+        .search_project_files(&project.id, &words("buried"), 5_000, 200)
+        .expect("search");
+    assert!(found.hits.is_empty(), "the depth cap stops the walk");
+    assert!(found.truncated);
+}
+
+#[test]
+fn a_text_page_is_cut_on_character_boundaries_and_carries_the_file_revision() {
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("paged-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    // "é" is two bytes: a 5-byte page of "aéé" would end inside a character.
+    fs::write(root.join("accents.txt"), "aééz").expect("file");
+    let revision = service
+        .execution_file_revision(&project.id, None, "accents.txt")
+        .expect("revision");
+
+    let first = service
+        .read_text_page(&project.id, None, "accents.txt", 0, 4)
+        .expect("first page");
+    assert_eq!(first.text, "aé");
+    assert_eq!(first.next_offset, Some(3));
+    assert_eq!(first.revision, revision);
+    assert_eq!(first.size, 6);
+    let second = service
+        .read_text_page(&project.id, None, "accents.txt", 3, 4)
+        .expect("second page");
+    assert_eq!(second.text, "éz");
+    assert_eq!(second.next_offset, None);
+    // A start inside a character moves to the next whole one.
+    let inside = service
+        .read_text_page(&project.id, None, "accents.txt", 2, 8)
+        .expect("inside");
+    assert_eq!(inside.text, "éz");
+    let past = service
+        .read_text_page(&project.id, None, "accents.txt", 99, 8)
+        .expect("past the end");
+    assert_eq!(past.text, "");
+    assert_eq!(past.next_offset, None);
+    // The legacy single read is the first page.
+    let (text, truncated, legacy) = service
+        .read_execution_text(&project.id, None, "accents.txt", 4)
+        .expect("legacy");
+    assert_eq!((text.as_str(), truncated), ("aé", true));
+    assert_eq!(legacy, revision);
+    fs::write(root.join("binary.bin"), [0xff, 0xfe, 0x00]).expect("binary");
+    assert!(matches!(
+        service.read_text_page(&project.id, None, "binary.bin", 0, 64),
+        Err(WorkspaceError::UnsupportedText)
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn file_existence_is_a_metadata_check_that_refuses_links_folders_and_escapes() {
+    use std::os::unix::fs::symlink;
+
+    let (_temp, service) = service();
+    let project = service
+        .create_project_at(service.root().join("exists-project"))
+        .expect("project");
+    let root = Path::new(&project.path);
+    fs::create_dir_all(root.join("dir")).expect("dir");
+    fs::write(root.join("dir/real.txt"), "x").expect("file");
+    symlink(root.join("dir/real.txt"), root.join("link.txt")).expect("link");
+    symlink(root.join("dir"), root.join("linked-dir")).expect("dir link");
+    assert!(service.execution_file_exists(&project.id, None, "dir/real.txt"));
+    for refused in [
+        "dir",
+        "link.txt",
+        "linked-dir/real.txt",
+        "missing.txt",
+        "../exists-project/dir/real.txt",
+        "/etc/passwd",
+    ] {
+        assert!(
+            !service.execution_file_exists(&project.id, None, refused),
+            "{refused} must not count as an existing file"
+        );
+    }
+}

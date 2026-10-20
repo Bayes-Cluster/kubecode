@@ -20,6 +20,8 @@ use crate::shared_media::{
 const MAX_EDITABLE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_SESSION_DIRECTORY_ENTRIES: usize = 512;
+/// Levels below the Project root a file search descends.
+pub const FILE_SCAN_DEPTH: usize = 16;
 const STATE_DIRECTORY: &str = ".state";
 
 #[derive(Debug, Error)]
@@ -125,6 +127,37 @@ pub struct DirectoryListing {
     pub path: String,
     pub parent: Option<String>,
     pub entries: Vec<DirectoryEntry>,
+}
+
+/// A Project file found by [`WorkspaceService::search_project_files`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileHit {
+    /// Project-relative, `/`-separated.
+    pub path: String,
+    pub size: u64,
+    pub modified_unix: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FileSearch {
+    pub hits: Vec<FileHit>,
+    /// The walk stopped at a budget, or matches were dropped by the cap.
+    pub truncated: bool,
+}
+
+/// A file search match ordered so the heap's top is the oldest match:
+/// (modification time, path, size).
+type OldestFirst = std::cmp::Reverse<(Option<u64>, std::cmp::Reverse<String>, u64)>;
+
+/// One page of a text file read by [`WorkspaceService::read_text_page`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextPage {
+    pub text: String,
+    /// The byte after the last whole character shown; `None` at the end.
+    pub next_offset: Option<u64>,
+    /// The revision of the whole file, from the same descriptor as the text.
+    pub revision: String,
+    pub size: u64,
 }
 
 pub struct WorkspaceService {
@@ -1077,65 +1110,15 @@ impl WorkspaceService {
         Ok(revision(&bytes))
     }
 
-    /// A content revision for a file under an execution root (the Project, or
-    /// a Session's worktree), used for experiment artifacts. A file larger
-    /// than the hashing cap is identified by its size and modification time
-    /// instead of being reported as missing.
-    pub fn execution_file_revision(
+    /// The path of a regular file under an execution root (the Project, or a
+    /// Session's worktree), reached through no symlink. Returns the root, the
+    /// normalized relative path, and the candidate absolute path.
+    fn execution_candidate(
         &self,
         project_id: &str,
         workspace_path: Option<&str>,
         relative: &str,
-    ) -> Result<String, WorkspaceError> {
-        if relative.contains('\0') {
-            return Err(WorkspaceError::InvalidPath(relative.to_owned()));
-        }
-        let root = self.execution_path(project_id, workspace_path)?;
-        let relative = normalize_relative(relative, false)?;
-        let mut candidate = root;
-        for component in relative.components() {
-            candidate.push(component.as_os_str());
-            if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
-                return Err(WorkspaceError::InvalidPath(path_string(&relative)));
-            }
-        }
-        let metadata = fs::symlink_metadata(&candidate)?;
-        if !metadata.is_file() {
-            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
-        }
-        if metadata.len() > MAX_ASSET_BYTES {
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0);
-            return Ok(format!("large:{}:{modified}", metadata.len()));
-        }
-        let mut bytes = Vec::new();
-        fs::File::open(&candidate)?
-            .take(MAX_ASSET_BYTES + 1)
-            .read_to_end(&mut bytes)?;
-        Ok(revision(&bytes))
-    }
-
-    /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
-    /// Project, or a Team's worktree), for read-only context (ADR 0214).
-    ///
-    /// The file is opened **once** without following a final symlink and
-    /// without blocking on a FIFO, then checked to be a regular file; the
-    /// returned content revision is computed from that same descriptor, so the
-    /// text and the revision always describe the same bytes even if the file is
-    /// replaced concurrently. Returns the text, whether it was cut, and the
-    /// revision (`execution_file_revision`'s value for the same bytes).
-    pub fn read_execution_text(
-        &self,
-        project_id: &str,
-        workspace_path: Option<&str>,
-        relative: &str,
-        max_bytes: usize,
-    ) -> Result<(String, bool, String), WorkspaceError> {
-        use std::os::unix::fs::OpenOptionsExt;
+    ) -> Result<(PathBuf, PathBuf, PathBuf), WorkspaceError> {
         if relative.contains('\0') {
             return Err(WorkspaceError::InvalidPath(relative.to_owned()));
         }
@@ -1148,7 +1131,90 @@ impl WorkspaceService {
                 return Err(WorkspaceError::InvalidPath(path_string(&relative)));
             }
         }
-        let file = OpenOptions::new()
+        Ok((root, relative, candidate))
+    }
+
+    /// A content revision for a file under an execution root (the Project, or
+    /// a Session's worktree), used for experiment artifacts. A file larger
+    /// than the hashing cap is identified by its size and modification time
+    /// instead of being reported as missing.
+    pub fn execution_file_revision(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> Result<String, WorkspaceError> {
+        let (_, relative, candidate) =
+            self.execution_candidate(project_id, workspace_path, relative)?;
+        let metadata = fs::symlink_metadata(&candidate)?;
+        if !metadata.is_file() {
+            return Err(WorkspaceError::InvalidPath(path_string(&relative)));
+        }
+        if metadata.len() > MAX_ASSET_BYTES {
+            return Ok(large_revision(&metadata));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&candidate)?
+            .take(MAX_ASSET_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        Ok(revision(&bytes))
+    }
+
+    /// Whether a regular file exists under an execution root, reached through
+    /// no symlink. A metadata check only: nothing is opened or hashed, so it
+    /// is cheap enough to run for every file and artifact on a search page.
+    pub fn execution_file_exists(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+    ) -> bool {
+        self.execution_candidate(project_id, workspace_path, relative)
+            .and_then(|(_, _, candidate)| Ok(fs::symlink_metadata(candidate)?))
+            .is_ok_and(|metadata| metadata.is_file())
+    }
+
+    /// Up to `max_bytes` of a UTF-8 text file under an execution root (the
+    /// Project, or a Team's worktree), for read-only context (ADR 0214).
+    /// Returns the text, whether it was cut, and the revision
+    /// (`execution_file_revision`'s value for the same bytes). This is the
+    /// first page of [`Self::read_text_page`].
+    pub fn read_execution_text(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+        max_bytes: usize,
+    ) -> Result<(String, bool, String), WorkspaceError> {
+        let page = self.read_text_page(project_id, workspace_path, relative, 0, max_bytes)?;
+        Ok((page.text, page.next_offset.is_some(), page.revision))
+    }
+
+    /// One page of a UTF-8 text file under an execution root, starting at byte
+    /// `offset`, for read-only context (ADR 0214, ADR 0231).
+    ///
+    /// The file is opened **once** without following a final symlink and
+    /// without blocking on a FIFO, then checked to be a regular file; the
+    /// returned content revision is computed from that same descriptor, so the
+    /// text and the revision always describe the same bytes even if the file is
+    /// replaced concurrently. A start inside a character moves to the next
+    /// whole one and the page never ends inside one; `next_offset` is the byte
+    /// after the last whole character shown, or `None` at the end of the file.
+    pub fn read_text_page(
+        &self,
+        project_id: &str,
+        workspace_path: Option<&str>,
+        relative: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<TextPage, WorkspaceError> {
+        use std::io::{Seek, SeekFrom};
+        use std::os::unix::fs::OpenOptionsExt;
+        // A page always has room for one whole character.
+        let max_bytes = max_bytes.max(4);
+        let (root, relative, candidate) =
+            self.execution_candidate(project_id, workspace_path, relative)?;
+        let mut file = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(&candidate)?;
@@ -1166,35 +1232,191 @@ impl WorkspaceService {
         if !metadata.is_file() {
             return Err(WorkspaceError::InvalidPath(path_string(&relative)));
         }
-        let mut bytes = Vec::new();
-        file.take(MAX_ASSET_BYTES + 1).read_to_end(&mut bytes)?;
-        let revision = if metadata.len() > MAX_ASSET_BYTES {
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0);
-            format!("large:{}:{modified}", metadata.len())
+        let size = metadata.len();
+        // The page plus up to three bytes of a character cut at its start.
+        let window = max_bytes as u64 + 3;
+        let (revision, bytes) = if size > MAX_ASSET_BYTES {
+            let mut bytes = Vec::new();
+            file.seek(SeekFrom::Start(offset.min(size)))?;
+            (&mut file).take(window).read_to_end(&mut bytes)?;
+            (large_revision(&metadata), bytes)
         } else {
-            revision(&bytes)
+            let mut whole = Vec::new();
+            (&mut file)
+                .take(MAX_ASSET_BYTES + 1)
+                .read_to_end(&mut whole)?;
+            let start = (offset.min(whole.len() as u64)) as usize;
+            let end = (start as u64 + window).min(whole.len() as u64) as usize;
+            (revision(&whole), whole[start..end].to_vec())
         };
-        let truncated = bytes.len() > max_bytes;
-        bytes.truncate(max_bytes);
-        // A cut can land inside a character; drop the partial tail only.
-        let text = match String::from_utf8(bytes) {
+        let skip = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| (**byte & 0b1100_0000) == 0b1000_0000)
+            .count();
+        let start = offset.min(size) + skip as u64;
+        let mut page = bytes[skip..].to_vec();
+        page.truncate(max_bytes);
+        // More of the file follows this page.
+        let cut = start + (page.len() as u64) < size;
+        let text = match String::from_utf8(page) {
             Ok(text) => text,
             Err(error) => {
+                // A cut can land inside a character; drop the partial tail only.
                 let valid = error.utf8_error().valid_up_to();
+                let incomplete = error.utf8_error().error_len().is_none();
                 let bytes = error.into_bytes();
-                if truncated && bytes.len() - valid < 4 {
+                if cut && incomplete && bytes.len() - valid < 4 {
                     String::from_utf8_lossy(&bytes[..valid]).into_owned()
                 } else {
                     return Err(WorkspaceError::UnsupportedText);
                 }
             }
         };
-        Ok((text, truncated, revision))
+        let after = start + text.len() as u64;
+        Ok(TextPage {
+            next_offset: (after < size).then_some(after),
+            text,
+            revision,
+            size,
+        })
+    }
+
+    /// Project files whose lowercase Project-relative path contains every word
+    /// (ADR 0231 §1), newest first. The walk is breadth first from the Project
+    /// root and bounded: it visits at most `scan_budget` directory entries and
+    /// `FILE_SCAN_DEPTH` levels, never follows a symlink, and skips hidden
+    /// (`.`-prefixed), generated, non-UTF-8 and Git-ignored entries before
+    /// descending into anything. At most `hit_cap` of the most recently
+    /// modified matches are kept. `truncated` says the walk or the cap left
+    /// something out.
+    pub fn search_project_files(
+        &self,
+        project_id: &str,
+        words: &[String],
+        scan_budget: usize,
+        hit_cap: usize,
+    ) -> Result<FileSearch, WorkspaceError> {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        let root = self.project_root(project_id)?;
+        let mut truncated = false;
+        let mut visited = 0usize;
+        let mut kept: BinaryHeap<OldestFirst> = BinaryHeap::new();
+        let mut level: Vec<String> = vec![String::new()];
+        let mut exhausted = false;
+        for depth in 0.. {
+            if level.is_empty() {
+                break;
+            }
+            if depth >= FILE_SCAN_DEPTH {
+                truncated = true;
+                break;
+            }
+            // (relative path, is a directory)
+            let mut entries: Vec<(String, bool)> = Vec::new();
+            'directories: for directory in &level {
+                let absolute = if directory.is_empty() {
+                    root.clone()
+                } else {
+                    root.join(directory)
+                };
+                // Every component was a real directory when it was listed;
+                // one swapped for a symlink since then is not followed.
+                if fs::canonicalize(&absolute).ok().as_ref() != Some(&absolute) {
+                    continue;
+                }
+                let Ok(listing) = fs::read_dir(&absolute) else {
+                    continue;
+                };
+                for entry in listing {
+                    if visited >= scan_budget {
+                        truncated = true;
+                        exhausted = true;
+                        break 'directories;
+                    }
+                    visited += 1;
+                    let Ok(entry) = entry else {
+                        continue;
+                    };
+                    let name = entry.file_name();
+                    let Some(name) = name.to_str() else {
+                        continue;
+                    };
+                    if name.starts_with('.') {
+                        continue;
+                    }
+                    let Ok(file_type) = entry.file_type() else {
+                        continue;
+                    };
+                    let is_directory = file_type.is_dir();
+                    if file_type.is_symlink()
+                        || (is_directory && is_generated_directory_name(name))
+                        || (!is_directory && !file_type.is_file())
+                    {
+                        continue;
+                    }
+                    let path = if directory.is_empty() {
+                        name.to_owned()
+                    } else {
+                        format!("{directory}/{name}")
+                    };
+                    entries.push((path, is_directory));
+                }
+            }
+            let ignored = if entries.is_empty() {
+                std::collections::BTreeSet::new()
+            } else {
+                git_ignored_paths(&root, entries.iter().map(|(path, _)| path.as_str()))
+            };
+            let mut next = Vec::new();
+            for (path, is_directory) in entries {
+                if ignored.contains(&path) {
+                    continue;
+                }
+                if is_directory {
+                    next.push(path);
+                    continue;
+                }
+                let lowercase = path.to_lowercase();
+                if !words.iter().all(|word| lowercase.contains(word.as_str())) {
+                    continue;
+                }
+                let Ok(metadata) = fs::symlink_metadata(root.join(&path)) else {
+                    continue;
+                };
+                if !metadata.is_file() {
+                    continue;
+                }
+                kept.push(Reverse((
+                    modified_unix(&metadata),
+                    Reverse(path),
+                    metadata.len(),
+                )));
+                if kept.len() > hit_cap {
+                    kept.pop();
+                    truncated = true;
+                }
+            }
+            if exhausted {
+                break;
+            }
+            level = next;
+        }
+        let mut hits: Vec<FileHit> = kept
+            .into_iter()
+            .map(|Reverse((modified_unix, Reverse(path), size))| FileHit {
+                modified_unix,
+                path,
+                size,
+            })
+            .collect();
+        hits.sort_by(|a, b| {
+            b.modified_unix
+                .cmp(&a.modified_unix)
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        Ok(FileSearch { hits, truncated })
     }
 
     pub fn read_asset(&self, project_id: &str, relative: &str) -> Result<Vec<u8>, WorkspaceError> {
@@ -1771,6 +1993,24 @@ fn ensure_contained_or_same(
 
 fn revision(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+fn modified_unix(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs())
+}
+
+/// A file over the hashing cap is identified by its size and modification
+/// time; work evidence pins and context revisions use the same rule.
+fn large_revision(metadata: &fs::Metadata) -> String {
+    format!(
+        "large:{}:{}",
+        metadata.len(),
+        modified_unix(metadata).unwrap_or(0)
+    )
 }
 
 #[cfg(windows)]
