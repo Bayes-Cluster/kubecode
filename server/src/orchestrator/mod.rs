@@ -22,7 +22,7 @@ mod tests;
 
 pub use delivery::{
     Denial, MAX_MANUAL_RETRIES, MAX_REROUTES, MessageDelivery, MessageDeliveryState, RETRYABLE,
-    RouteDelivery, RouteDeliveryState, SourceDelivery, aggregate,
+    RetryOutcome, RouteDelivery, RouteDeliveryState, SourceDelivery, aggregate,
 };
 pub use models::*;
 pub use sink::{

@@ -97,6 +97,15 @@ pub struct SourceDelivery {
     pub route: RouteDelivery,
 }
 
+/// What a retry did.
+#[derive(Clone, Debug)]
+pub enum RetryOutcome {
+    /// It was failed and is pending again, under the same route.
+    Requeued(Route),
+    /// It was not failed (already retried, or never failed): nothing changed.
+    AlreadyMoving(Route),
+}
+
 /// Reroutes of one denied message at most.
 pub const MAX_REROUTES: u32 = 3;
 
@@ -134,6 +143,60 @@ pub fn aggregate(mark: &RoutingMark, routes: &[RouteDelivery]) -> MessageDeliver
 }
 
 impl Orchestrator {
+    /// Re-arms a failed route the researcher originated (ADR 0232), under the
+    /// same route identity and so the same delivery key: a Session that
+    /// admitted the prompt before the failure gets the same turn, never a
+    /// second one. One conditional write; at most `MAX_MANUAL_RETRIES` times.
+    /// Each failure after a retry is noted under its own key.
+    pub fn retry_route(
+        &self,
+        project_id: &str,
+        route_id: &str,
+    ) -> Result<RetryOutcome, OrchestratorError> {
+        let route = self.route(project_id, route_id)?;
+        if !RETRYABLE.contains(&route.kind) {
+            return Err(OrchestratorError::NotRetryable);
+        }
+        if route.state != RouteState::Failed {
+            return Ok(RetryOutcome::AlreadyMoving(route));
+        }
+        // A conversation route addressed to a Session that is gone (a member
+        // removed, a plain Session deleted) cannot be retried; coordinator,
+        // decision and review routes find their recipient at delivery.
+        if let Target::Session { session_id } = &route.target
+            && matches!(
+                route.kind,
+                RouteKind::Discussion | RouteKind::Mention | RouteKind::Ask
+            )
+        {
+            let session = self
+                .member_session(&route, session_id)
+                .map_err(|_| OrchestratorError::TargetGone)?;
+            if !matches!(
+                self.agents.visible_conversation(project_id, &session),
+                Ok(Some(_))
+            ) {
+                return Err(OrchestratorError::TargetGone);
+            }
+        }
+        if route.retries >= MAX_MANUAL_RETRIES {
+            return Err(OrchestratorError::RetryLimit);
+        }
+        let changed = self.connection().execute(
+            "UPDATE message_routes SET state = 'pending', attempts = 0, busy = 0,
+               next_attempt_at = 0, lease_until = 0, last_error = NULL, retries = retries + 1
+             WHERE id = ?1 AND project_id = ?2 AND state = 'failed'",
+            rusqlite::params![route_id, project_id],
+        )?;
+        let route = self.route(project_id, route_id)?;
+        if changed == 0 {
+            return Ok(RetryOutcome::AlreadyMoving(route));
+        }
+        self.announce(&route, "retried");
+        self.wake();
+        Ok(RetryOutcome::Requeued(route))
+    }
+
     /// The delivery of one route, from its row, the recipient's admission of
     /// `route:{id}:{recipient}`, and the notes written about it.
     fn route_delivery(

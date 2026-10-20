@@ -192,6 +192,14 @@ pub enum OrchestratorError {
     NotFound,
     #[error("invalid orchestration input: {0}")]
     Invalid(&'static str),
+    /// Only routes the researcher originated are retried (ADR 0232).
+    #[error("this kind of route is not retried")]
+    NotRetryable,
+    /// The Session the route names no longer exists.
+    #[error("the Session this was for no longer exists")]
+    TargetGone,
+    #[error("this route was already retried as often as it may be")]
+    RetryLimit,
     #[error(transparent)]
     Channel(#[from] crate::channel_store::ChannelError),
     #[error(transparent)]

@@ -1059,3 +1059,168 @@ async fn deliveries_are_read_by_message_and_listed_on_researcher_messages_only()
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// A sink whose deliveries all fail.
+struct Failing;
+
+impl RouteSink for Failing {
+    fn deliver(&self, _request: &DeliveryRequest<'_>) -> DeliveryOutcome {
+        DeliveryOutcome::Failed("provider unavailable".into())
+    }
+}
+
+/// Runs delivery until every due route has used its attempts.
+fn exhaust(env: &Env) {
+    for step in 0..10 {
+        env.state
+            .orchestrator
+            .deliver_due(&Failing, 1_000_000 * (step + 1))
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn the_researcher_retries_a_failed_delivery_over_http() {
+    let env = env();
+    let crew = crew(&env).await;
+    let hello = say(&env, &crew, "hello", &[]).await;
+    env.state.orchestrator.route_conversation().unwrap();
+    exhaust(&env);
+    let routes = format!("/projects/{}/routes", env.project);
+    let (_, listed) = call(&env, Method::GET, &routes, Value::Null).await;
+    let route = listed
+        .as_array()
+        .or_else(|| listed["routes"].as_array())
+        .unwrap()
+        .iter()
+        .find(|route| route["source_id"] == hello["id"])
+        .unwrap()
+        .clone();
+    assert_eq!(route["state"], "failed", "{route}");
+    let retry = format!("{routes}/{}/retry", route["id"].as_str().unwrap());
+    let (status, body) = call(&env, Method::POST, &retry, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["retried"], true);
+    assert_eq!(body["route"]["retries"], 1);
+    assert_eq!(body["delivery"]["state"], "sending");
+    let (status, body) = call(&env, Method::POST, &retry, Value::Null).await;
+    assert_eq!(
+        (status, body["retried"].as_bool()),
+        (StatusCode::OK, Some(false))
+    );
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{routes}/missing/retry"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("route_not_found"))
+    );
+
+    // A mention of a member removed since cannot be retried.
+    let (_, writer) = call(
+        &env,
+        Method::POST,
+        &format!("/projects/{}/members", env.project),
+        json!({"name": "Writer", "template": "writing"}),
+    )
+    .await;
+    let to_writer = say(&env, &crew, "@writer draft it", &[&session(&writer)]).await;
+    env.state.orchestrator.route_conversation().unwrap();
+    call(
+        &env,
+        Method::DELETE,
+        &format!(
+            "/projects/{}/members/{}",
+            env.project,
+            writer["id"].as_str().unwrap()
+        ),
+        Value::Null,
+    )
+    .await;
+    exhaust(&env);
+    let (_, listed) = call(&env, Method::GET, &routes, Value::Null).await;
+    let gone = listed
+        .as_array()
+        .or_else(|| listed["routes"].as_array())
+        .unwrap()
+        .iter()
+        .find(|route| route["source_id"] == to_writer["id"])
+        .unwrap()
+        .clone();
+    assert_eq!(gone["state"], "failed");
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{routes}/{}/retry", gone["id"].as_str().unwrap()),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("route_target_gone")),
+        "{body}"
+    );
+
+    // An agent's hand-off is not the researcher's to retry.
+    let handoff = env
+        .state
+        .channels
+        .post(
+            &env.project,
+            &crew.channel,
+            NewMessage {
+                body: "@analyst yours",
+                author_kind: Some(AuthorKind::Agent),
+                author_ref: Some(&session(&crew.general)),
+                mentions: &[kubecode_server::channel_store::Mention {
+                    session_id: session(&crew.analyst),
+                }],
+                hops: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0;
+    env.state.orchestrator.route_conversation().unwrap();
+    exhaust(&env);
+    let (_, listed) = call(&env, Method::GET, &routes, Value::Null).await;
+    let agent_route = listed
+        .as_array()
+        .or_else(|| listed["routes"].as_array())
+        .unwrap()
+        .iter()
+        .find(|route| route["source_id"] == json!(handoff.id))
+        .unwrap()
+        .clone();
+    let (status, body) = call(
+        &env,
+        Method::POST,
+        &format!("{routes}/{}/retry", agent_route["id"].as_str().unwrap()),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("route_not_retryable"))
+    );
+
+    // Past the limit.
+    env.agents
+        .database()
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE message_routes SET state = 'failed', retries = 3 WHERE id = ?1",
+            [route["id"].as_str().unwrap()],
+        )
+        .unwrap();
+    let (status, body) = call(&env, Method::POST, &retry, Value::Null).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("retry_limit"))
+    );
+}

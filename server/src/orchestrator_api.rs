@@ -23,6 +23,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/projects/{project_id}/routes", get(list_routes))
         .route("/projects/{project_id}/deliveries", get(deliveries))
+        .route(
+            "/projects/{project_id}/routes/{route_id}/retry",
+            axum::routing::post(retry_route),
+        )
 }
 
 enum ApiError {
@@ -93,6 +97,26 @@ impl IntoResponse for ApiError {
                 "orchestration storage failed".to_owned(),
             ),
             Self::Work(error) => (StatusCode::CONFLICT, "work_state", error.to_string()),
+            Self::Orchestrator(OrchestratorError::NotFound) => (
+                StatusCode::NOT_FOUND,
+                "route_not_found",
+                "route not found".to_owned(),
+            ),
+            Self::Orchestrator(OrchestratorError::NotRetryable) => (
+                StatusCode::CONFLICT,
+                "route_not_retryable",
+                OrchestratorError::NotRetryable.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::TargetGone) => (
+                StatusCode::CONFLICT,
+                "route_target_gone",
+                OrchestratorError::TargetGone.to_string(),
+            ),
+            Self::Orchestrator(OrchestratorError::RetryLimit) => (
+                StatusCode::CONFLICT,
+                "retry_limit",
+                OrchestratorError::RetryLimit.to_string(),
+            ),
             Self::Orchestrator(error) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_routing",
@@ -225,4 +249,44 @@ async fn deliveries(
             .await
             .map_err(|_| ApiError::BadRequest("deliveries could not be read"))??;
     Ok(Json(deliveries))
+}
+
+#[derive(Debug, Serialize)]
+struct RetryResponse {
+    route: Route,
+    /// False when the route was not failed (already retried, or moving).
+    retried: bool,
+    /// The delivery of the message it carries, when it carries one.
+    delivery: Option<crate::orchestrator::MessageDelivery>,
+}
+
+/// The researcher re-arms a failed route they originated (ADR 0232).
+async fn retry_route(
+    State(state): State<AppState>,
+    Path((project_id, route_id)): Path<(String, String)>,
+) -> Result<Json<RetryResponse>, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let response = tokio::task::spawn_blocking(move || -> Result<RetryResponse, ApiError> {
+        let (route, retried) = match state.orchestrator.retry_route(&project_id, &route_id)? {
+            crate::orchestrator::RetryOutcome::Requeued(route) => (route, true),
+            crate::orchestrator::RetryOutcome::AlreadyMoving(route) => (route, false),
+        };
+        let delivery = if route.source_kind == crate::orchestrator::SourceKind::Message {
+            state
+                .orchestrator
+                .deliveries_for(&project_id, std::slice::from_ref(&route.source_id))?
+                .into_iter()
+                .next()
+        } else {
+            None
+        };
+        Ok(RetryResponse {
+            route,
+            retried,
+            delivery,
+        })
+    })
+    .await
+    .map_err(|_| ApiError::BadRequest("the route could not be retried"))??;
+    Ok(Json(response))
 }
