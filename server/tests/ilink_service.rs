@@ -373,7 +373,11 @@ async fn stale_token_expires_and_reconnect_honors_the_cooldown() {
         "POST /ilink/bot/getupdates",
         vec![MockState::fixture("updates.expired")],
     );
-    let service = ILinkService::new(Arc::clone(&env.store), fast_config(&base));
+    // The cooldown must outlast the expiry check below even on a loaded
+    // machine; 150 ms was shorter than that and made this test flaky.
+    let mut config = fast_config(&base);
+    config.stale_cooldown = Duration::from_secs(2);
+    let service = ILinkService::new(Arc::clone(&env.store), config);
     service.start_login().await.expect("start");
     assert!(
         wait_for_status(&service, ConnectionStatus::Expired, 400).await,
@@ -395,7 +399,7 @@ async fn stale_token_expires_and_reconnect_honors_the_cooldown() {
     ));
     // After the cooldown a reconnect is accepted (and will re-detect
     // expiry against the same fixture).
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
     assert!(service.reconnect().await.is_ok());
     service.shutdown().await;
 }
