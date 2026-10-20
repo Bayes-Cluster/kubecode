@@ -1263,6 +1263,15 @@ Ready / In progress / Review / Done, with waiting, blocked, paused, and needs
 input as conditions. Rounds, internal work, attempts, and experiments live
 inside the Task. See ADR 0221.
 
+A Task has one state, its **stage**; it is completed only by the researcher
+accepting its results in review, and reopened only by asking the General Agent
+to iterate. **Archiving** is separate: it hides a Task (or a proposal) from the
+board, keeping everything, and is refused while a review is open or its work is
+active; it is recorded but never moves the stage. The Task's **read model**
+carries what waits on the researcher (each under a stable key), one
+**evidence** row per cited record with every pin of it, and a **history** whose
+steps link to the General messages that carried them. See ADR 0230.
+
 ## Task board and inspector
 
 The **board** shows admitted Tasks only, in Ready, In progress, Review, and Done;

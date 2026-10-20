@@ -316,6 +316,31 @@ admission endpoint. A review request pins each `kind:id` it cites
 A question whose round the researcher already started is admitted with
 `legacy_round` origin; nothing else is admitted retroactively.
 
+Task lifecycle and read model (ADR 0230): every stage read filters
+`task_events` on one `STAGE_EVENT_KINDS` list, so the `archived`/`restored`
+events that `TaskStore::set_archived` logs never move a stage or the
+authorization watermark. `POST …/tasks/{id}/archive|restore` (204) and the
+research `archive|restore` routes share that rule: archiving is refused with
+`409 task_active` (`reason`: `under_review`, `work_active`) while a review is
+open or the Task's internal work is active, and the review check is repeated
+inside the archiving transaction (request_review checks the flag inside its
+own). An archived Task refuses admission, approval, execution, review requests
+and new internal work (`WorkStore::create`). `research/{id}/resolve|reopen`
+answer `409 task_owned` for an admitted Task; its research status is written
+only by the Task service. Every researcher re-pin names the looked-at
+`revision`. The read model adds `TaskCard.last_event`,
+`Draft.shown_message_id`, `TaskBoard.archived`, and on the detail `archived`,
+`evidence` (one row per cited `kind:id` with every pin, status and title, at
+most 64, titled through `Evidence::describe`/`ProjectContext::item`),
+`timeline` (events, approvals and brief revisions with the General message
+that carried each, at most 100), `pending` (keys `review:`, `question:`,
+`brief:`, `evidence:`), `actions`, `general_message_id` on review requests and
+verdicts (also on the `POST …/review` response), and `internal_work`
+`conversation_id`/`updated_at`. Message ids come from batched, read-only
+`ChannelStore` lookups (`messages_by_client_ids`, `proposal_messages`,
+`messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
+deprecated. `ResolvedRef` carries the record's `title`.
+
 Task board and inspector (ADR 0225): `tasks/useTaskBoard.ts` and
 `tasks/useTaskDetail.ts` read `GET …/tasks/board`, `…/tasks/drafts`, and
 `…/tasks/{id}` and refresh on `task_updated`, `research_updated`, `work_updated`,
