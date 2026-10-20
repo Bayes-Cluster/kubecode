@@ -227,6 +227,45 @@ struct AuthorizingMessage {
     created_at: String,
 }
 
+/// A review request with the General message that asked for it.
+#[derive(Debug, Serialize)]
+struct ReviewRequestView {
+    #[serde(flatten)]
+    request: ReviewRequest,
+    general_message_id: Option<String>,
+}
+
+/// A review decision with the General message that told the conversation.
+#[derive(Debug, Serialize)]
+struct ReviewView {
+    #[serde(flatten)]
+    review: TaskReview,
+    general_message_id: Option<String>,
+}
+
+/// The General messages the Task service posted for review requests
+/// (`review-request:{id}`) and decisions (`task-review:{id}`), in one lookup.
+fn review_messages(
+    state: &AppState,
+    project_id: &str,
+    requests: &[ReviewRequest],
+    reviews: &[TaskReview],
+) -> Result<std::collections::HashMap<String, (String, u64)>, ApiError> {
+    let keys: Vec<String> = requests
+        .iter()
+        .map(|request| format!("review-request:{}", request.id))
+        .chain(
+            reviews
+                .iter()
+                .map(|review| format!("task-review:{}", review.id)),
+        )
+        .collect();
+    Ok(state
+        .channels
+        .messages_by_client_ids(project_id, &keys)
+        .map_err(TaskError::from)?)
+}
+
 #[derive(Debug, Serialize)]
 struct Detail {
     #[serde(flatten)]
@@ -235,8 +274,8 @@ struct Detail {
     revisions: Vec<RevisionNote>,
     authorizations: Vec<Authorization>,
     authorizing_message: Option<AuthorizingMessage>,
-    review_requests: Vec<ReviewRequest>,
-    reviews: Vec<TaskReview>,
+    review_requests: Vec<ReviewRequestView>,
+    reviews: Vec<ReviewView>,
     internal_work: Vec<InternalWork>,
     open_questions: Vec<OpenQuestion>,
     stale_evidence: Vec<TaskStale>,
@@ -369,10 +408,26 @@ async fn detail(
                 assignee,
             });
         }
+        let requests = state.tasks.review_requests(&project_id, &research_id)?;
+        let reviews = state.tasks.reviews(&project_id, &research_id)?;
+        let messages = review_messages(&state, &project_id, &requests, &reviews)?;
+        let message_of = |key: String| messages.get(&key).map(|(id, _)| id.clone());
         Ok(Detail {
             revisions: state.tasks.revisions(&project_id, &research_id)?,
-            review_requests: state.tasks.review_requests(&project_id, &research_id)?,
-            reviews: state.tasks.reviews(&project_id, &research_id)?,
+            review_requests: requests
+                .into_iter()
+                .map(|request| ReviewRequestView {
+                    general_message_id: message_of(format!("review-request:{}", request.id)),
+                    request,
+                })
+                .collect(),
+            reviews: reviews
+                .into_iter()
+                .map(|review| ReviewView {
+                    general_message_id: message_of(format!("task-review:{}", review.id)),
+                    review,
+                })
+                .collect(),
             stale_evidence: stale_of(&state, &project_id, &research_id)?,
             card,
             brief: question.brief,
@@ -405,9 +460,9 @@ async fn review(
     State(state): State<AppState>,
     Path((project_id, research_id)): Path<(String, String)>,
     Json(body): Json<ReviewRequestBody>,
-) -> Result<Json<TaskReview>, ApiError> {
+) -> Result<Json<ReviewView>, ApiError> {
     check_project(&state, &project_id)?;
-    let review = tokio::task::spawn_blocking(move || -> Result<TaskReview, ApiError> {
+    let review = tokio::task::spawn_blocking(move || -> Result<ReviewView, ApiError> {
         let outcome = match body.outcome.as_deref() {
             None => WorkOutcome::Unknown,
             Some(value) => {
@@ -450,7 +505,18 @@ async fn review(
             }
             state.orchestrator.wake();
         }
-        Ok(review)
+        // The verdict posted to General, so the decision can link to it; none
+        // if that best-effort post (or this lookup) failed: the decision is
+        // already recorded and must not be reported as failed.
+        let general_message_id =
+            review_messages(&state, &project_id, &[], std::slice::from_ref(&review))
+                .ok()
+                .and_then(|messages| messages.into_values().next())
+                .map(|(id, _)| id);
+        Ok(ReviewView {
+            review,
+            general_message_id,
+        })
     })
     .await
     .map_err(|_| ApiError::BadRequest("the review could not be recorded"))??;

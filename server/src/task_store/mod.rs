@@ -170,6 +170,20 @@ fn request_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewRequest> 
     })
 }
 
+/// A logged event, or `None` for a kind this version does not know.
+fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<TaskEventNote>> {
+    let kind: String = row.get(1)?;
+    let Some(kind) = TaskEventKind::parse(&kind) else {
+        return Ok(None);
+    };
+    Ok(Some(TaskEventNote {
+        seq: row.get::<_, i64>(0)? as u64,
+        kind,
+        ref_id: row.get(2)?,
+        created_at: row.get(3)?,
+    }))
+}
+
 /// The instruction's own words: what is left once quoted lines are removed.
 /// A message that only quotes someone (or an agent) is not an instruction.
 pub fn instruction_text(body: &str) -> String {
@@ -542,6 +556,46 @@ impl TaskStore {
             "review_accepted" => TaskStage::Done,
             _ => TaskStage::Ready,
         }))
+    }
+
+    /// Every logged event of a Task, oldest first.
+    pub fn events(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Vec<TaskEventNote>, TaskError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT seq, kind, ref_id, created_at FROM task_events
+             WHERE project_id = ?1 AND research_id = ?2 ORDER BY seq",
+        )?;
+        Ok(statement
+            .query_map(params![project_id, research_id], event_from_row)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    /// The newest stage event: archiving is never one.
+    fn last_stage_event(
+        &self,
+        project_id: &str,
+        research_id: &str,
+    ) -> Result<Option<TaskEventNote>, TaskError> {
+        Ok(self
+            .connection()
+            .query_row(
+                &format!(
+                    "SELECT seq, kind, ref_id, created_at FROM task_events
+                     WHERE project_id = ?1 AND research_id = ?2 AND kind IN {STAGE_EVENT_KINDS}
+                     ORDER BY seq DESC LIMIT 1"
+                ),
+                params![project_id, research_id],
+                event_from_row,
+            )
+            .optional()?
+            .flatten())
     }
 
     /// The newest General message at the time of the last stage change: an
@@ -1695,6 +1749,7 @@ impl TaskStore {
             open_questions,
             review_requested: review_open,
             updated_at: question.updated_at.clone(),
+            last_event: self.last_stage_event(project_id, research_id)?,
         }))
     }
 
@@ -1921,6 +1976,16 @@ impl TaskStore {
                 .map(|revision| revision.author_kind.as_str().to_owned())
                 .unwrap_or_else(|_| "researcher".to_owned());
             let question = self.research.get(project_id, &summary.id)?;
+            // The newest showing of the current revision, first or again.
+            let exact = format!("proposal:{}:{}", summary.id, summary.revision);
+            let again = format!("{exact}:again:");
+            let shown_message_id = self
+                .channels
+                .proposal_messages(project_id, &summary.id)?
+                .into_iter()
+                .rev()
+                .find(|(key, _, _)| *key == exact || key.starts_with(&again))
+                .map(|(_, id, _)| id);
             drafts.push(Draft {
                 id: summary.id,
                 project_id: summary.project_id,
@@ -1929,6 +1994,7 @@ impl TaskStore {
                 revision: summary.revision,
                 proposed_by,
                 updated_at: summary.updated_at,
+                shown_message_id,
             });
         }
         Ok(drafts)

@@ -1583,3 +1583,126 @@ fn board_lists_archived_tasks_apart() {
         "an archived proposal is not a draft waiting for an answer"
     );
 }
+
+#[test]
+fn card_carries_the_last_stage_event() {
+    let r = rig();
+    let last = |id: &str| {
+        r.tasks
+            .card(r.project(), id)
+            .unwrap()
+            .unwrap()
+            .last_event
+            .map(|event| (event.kind, event.ref_id))
+    };
+    let (id, revision, instruction) = r.instructed("Prune heads");
+    r.tasks
+        .admit(r.project(), &r.general, &id, &instruction.id, revision)
+        .unwrap();
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::Admitted, Some(instruction.id.clone())))
+    );
+    let go = r.say("Start it");
+    let round = r
+        .tasks
+        .start_execution(r.project(), &r.general, &id, &go.id)
+        .unwrap()
+        .0
+        .round_id;
+    assert_eq!(last(&id), Some((TaskEventKind::ExecutionAuthorized, round)));
+    // Archiving and restoring in between are not what last happened to its stage.
+    r.tasks.set_archived(r.project(), &id, true).unwrap();
+    r.tasks.set_archived(r.project(), &id, false).unwrap();
+    assert_eq!(last(&id).unwrap().0, TaskEventKind::ExecutionAuthorized);
+    let request = r.ask_review(&id, "done");
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::ReviewRequested, Some(request.id.clone())))
+    );
+    let review = r
+        .tasks
+        .review(
+            r.project(),
+            &id,
+            &request.id,
+            false,
+            WorkOutcome::Unknown,
+            Some("again"),
+        )
+        .unwrap();
+    assert_eq!(
+        last(&id),
+        Some((TaskEventKind::ReviewReturned, Some(review.id)))
+    );
+    // Every event, archiving included, is in the log in order.
+    let kinds: Vec<TaskEventKind> = r
+        .tasks
+        .events(r.project(), &id)
+        .unwrap()
+        .into_iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            TaskEventKind::Admitted,
+            TaskEventKind::ExecutionAuthorized,
+            TaskEventKind::Archived,
+            TaskEventKind::Restored,
+            TaskEventKind::ReviewRequested,
+            TaskEventKind::ReviewReturned,
+        ]
+    );
+}
+
+#[test]
+fn drafts_name_the_message_that_showed_the_current_revision() {
+    let r = rig();
+    let shown = |id: &str| {
+        r.tasks
+            .drafts(r.project())
+            .unwrap()
+            .into_iter()
+            .find(|draft| draft.id == id)
+            .unwrap()
+            .shown_message_id
+    };
+    let (id, first) = r
+        .tasks
+        .propose(r.project(), &r.general, brief("Prune heads"), Some("p"))
+        .map(|(question, message)| (question.id, message))
+        .unwrap();
+    assert_eq!(shown(&id), Some(first.id.clone()));
+    let again = r.tasks.show_again(r.project(), &r.general, &id).unwrap();
+    assert_eq!(shown(&id), Some(again.id.clone()), "the newest showing");
+    // The researcher edits the brief themselves: that revision was never shown.
+    r.f.research
+        .update_brief(
+            r.project(),
+            &id,
+            1,
+            &crate::research_store::BriefPatch {
+                question: Some("A sharper question?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(shown(&id), None);
+    let (_, revised) = r
+        .tasks
+        .revise(
+            r.project(),
+            &r.general,
+            &id,
+            2,
+            &crate::research_store::BriefPatch {
+                question: Some("Sharper still?".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(shown(&id), Some(revised.id));
+}

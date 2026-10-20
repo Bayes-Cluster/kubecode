@@ -1067,3 +1067,64 @@ async fn a_task_is_completed_only_by_review() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+#[tokio::test]
+async fn the_detail_links_reviews_to_general() {
+    let env = env();
+    let task = reviewing(&env).await;
+    let tasks = format!("/projects/{}/tasks/{}", env.project, task.research_id);
+    let (status, decided) = call(
+        &env,
+        Method::POST,
+        &format!("{tasks}/review"),
+        json!({"request_id": task.request_id, "accept": false, "reason": "also try 0.7"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{decided}");
+    let verdict = decided["general_message_id"]
+        .as_str()
+        .expect("the verdict's General message")
+        .to_owned();
+    let channel = env.state.channels.default_channel(&env.project).unwrap();
+    let message = env.state.channels.message(&env.project, &verdict).unwrap();
+    assert_eq!(message.task_id.as_deref(), Some(task.research_id.as_str()));
+    assert!(
+        message.body.contains("Reason: also try 0.7"),
+        "{}",
+        message.body
+    );
+    // The Task-scoped page of General lists it.
+    let (_, page) = call(
+        &env,
+        Method::GET,
+        &format!(
+            "/projects/{}/channels/{}/messages?task_id={}",
+            env.project, channel.id, task.research_id
+        ),
+        Value::Null,
+    )
+    .await;
+    assert!(
+        page["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == json!(verdict)),
+        "{page}"
+    );
+    let (_, detail) = call(&env, Method::GET, &tasks, Value::Null).await;
+    let asked = detail["review_requests"][0]["general_message_id"]
+        .as_str()
+        .expect("the request's General message");
+    let asked = env.state.channels.message(&env.project, asked).unwrap();
+    assert!(
+        asked.body.starts_with("Ready for your review"),
+        "{}",
+        asked.body
+    );
+    assert_eq!(detail["review_requests"][0]["id"], json!(task.request_id));
+    assert_eq!(detail["reviews"][0]["general_message_id"], json!(verdict));
+    assert_eq!(detail["reviews"][0]["accepted"], false);
+    // What last happened to it is on the card.
+    assert_eq!(detail["last_event"]["kind"], "review_returned");
+}

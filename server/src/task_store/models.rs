@@ -114,6 +114,27 @@ text_enum!(TaskCondition {
     NeedsInput => "needs_input",
 });
 
+// What a task event records: the stage events, and archiving (never a stage).
+text_enum!(TaskEventKind {
+    Admitted => "admitted",
+    ExecutionAuthorized => "execution_authorized",
+    ReviewRequested => "review_requested",
+    ReviewReturned => "review_returned",
+    ReviewAccepted => "review_accepted",
+    Archived => "archived",
+    Restored => "restored",
+});
+
+/// One logged task event.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaskEventNote {
+    pub seq: u64,
+    pub kind: TaskEventKind,
+    /// The authorizing message, round, review request, or review.
+    pub ref_id: Option<String>,
+    pub created_at: String,
+}
+
 /// The record that the researcher authorized a step, and who acted on it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {
@@ -215,6 +236,8 @@ pub struct TaskCard {
     pub open_questions: usize,
     pub review_requested: bool,
     pub updated_at: String,
+    /// The newest stage event (never archiving): what last happened to it.
+    pub last_event: Option<TaskEventNote>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -261,6 +284,9 @@ pub struct Draft {
     /// Who wrote the first revision: `researcher`, `agent`, or `system`.
     pub proposed_by: String,
     pub updated_at: String,
+    /// The newest General message that showed the current revision; `None`
+    /// when it was never shown (for example after the researcher edited it).
+    pub shown_message_id: Option<String>,
 }
 
 /// One revision of a Task's brief and who wrote it, for the inspector.

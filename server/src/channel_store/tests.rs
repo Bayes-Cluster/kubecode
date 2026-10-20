@@ -1145,3 +1145,86 @@ fn by_client_message_id_finds_the_stored_message() {
         "another Project cannot read it"
     );
 }
+
+#[test]
+fn batched_lookups_find_proposals_reviews_and_messages_in_order() {
+    let r = rig();
+    let channel = r.channel();
+    let agent = r.session("manager");
+    let post = |key: &str, body: &str| {
+        r.channels
+            .post(
+                r.project(),
+                &channel.id,
+                NewMessage {
+                    body,
+                    author_kind: Some(AuthorKind::Agent),
+                    author_ref: Some(&agent),
+                    client_message_id: Some(key),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0
+    };
+    let first = post("proposal:q1:1", "first");
+    let other = post("proposal:q2:1", "another question");
+    let again = post("proposal:q1:1:again:x", "shown again");
+    let revised = post("proposal:q1:2", "revised");
+    let review = post("review-request:r1", "ready for review");
+
+    let shown = r.channels.proposal_messages(r.project(), "q1").unwrap();
+    assert_eq!(
+        shown
+            .iter()
+            .map(|(key, id, _)| (key.as_str(), id.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("proposal:q1:1", first.id.as_str()),
+            ("proposal:q1:1:again:x", again.id.as_str()),
+            ("proposal:q1:2", revised.id.as_str()),
+        ],
+        "ordered by seq, and only this question's"
+    );
+    assert!(shown.windows(2).all(|pair| pair[0].2 < pair[1].2));
+
+    let found = r
+        .channels
+        .messages_by_client_ids(
+            r.project(),
+            &[
+                "review-request:r1".into(),
+                "proposal:q2:1".into(),
+                "task-review:unknown".into(),
+            ],
+        )
+        .unwrap();
+    assert_eq!(found.len(), 2);
+    assert_eq!(found["review-request:r1"], (review.id.clone(), review.seq));
+    assert_eq!(found["proposal:q2:1"].0, other.id);
+    assert!(
+        r.channels
+            .messages_by_client_ids("other", &["review-request:r1".into()])
+            .unwrap()
+            .is_empty(),
+        "another Project sees nothing"
+    );
+
+    let messages = r
+        .channels
+        .messages_by_ids(
+            r.project(),
+            &[revised.id.clone(), "missing".into(), first.id.clone()],
+        )
+        .unwrap();
+    assert_eq!(
+        messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+        [first.id.as_str(), revised.id.as_str()]
+    );
+    assert!(
+        r.channels
+            .messages_by_ids("other", std::slice::from_ref(&first.id))
+            .unwrap()
+            .is_empty()
+    );
+}
