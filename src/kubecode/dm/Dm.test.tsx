@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createTranslator } from '@/lib/i18n'
+import { APP_LOCALES, createTranslator } from '@/lib/i18n'
 
 import type { DmTurn, KubecodeApi, Member, ResearchSummary, WorkspaceEvent } from '../api'
 import { ApiError } from '../api'
@@ -240,6 +240,18 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     }
     expect(share.mock.calls[0][2].clientMessageId).not.toBe(share.mock.calls[1][2].clientMessageId)
     expect(api.previewDmShare).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('DmPane sharing names General in each language', () => {
+  it('names General the way the language names the conversation, never in English', () => {
+    for (const locale of APP_LOCALES) {
+      const translate = createTranslator(locale)
+      const general = translate('kubecode.channel.general')
+      for (const key of ['kubecode.dm.share', 'kubecode.dm.shared', 'kubecode.dm.shareConfirm'] as const) {
+        expect(translate(key), `${locale} ${key}`).toContain(general)
+      }
+    }
   })
 })
 
