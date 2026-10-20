@@ -58,6 +58,24 @@ describe('WorkspaceNav', () => {
     }
   })
 
+  it('orders the places General, Kanban, Resources, Needs you, then Members and the members under visible headings', () => {
+    nav({ members: [member({ dm_conversation_id: 'c1' })] })
+    const group = screen.getByRole('region', { name: 'kubecode.nav.workspace' })
+    const order = [
+      within(group).getByRole('button', { name: 'kubecode.channel.general' }),
+      within(group).getByRole('button', { name: /^kubecode\.nav\.board/ }),
+      within(group).getByRole('button', { name: 'kubecode.nav.resources' }),
+      within(group).getByText('kubecode.nav.needsYou').closest('summary') as HTMLElement,
+      within(group).getByRole('button', { name: 'kubecode.nav.members' }),
+      within(group).getByRole('heading', { name: 'kubecode.nav.roster' }),
+      within(group).getByRole('list', { name: 'kubecode.nav.roster' }),
+      within(group).getByRole('heading', { name: 'kubecode.nav.directMessages' }),
+    ]
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  })
+
   it('marks nothing on execution history or a question', () => {
     nav({ active: null })
     const group = screen.getByRole('region', { name: 'kubecode.nav.workspace' })

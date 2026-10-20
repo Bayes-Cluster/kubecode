@@ -38,10 +38,11 @@ researcher to exactly where they were.
 ### 1. One navigation, with execution history secondary
 
 The navigation lists the **Workspaces**, one row per registered Project with its
-run status in words and its actions. Then come the selected Workspace's
-**General**, **Kanban**, **Resources**, **Members** and **Needs you**, followed
-by its members and **Direct messages**. A member's name opens their profile in
-the inspector; a private-message action opens the conversation.
+run status in words and its actions. Then come the selected Workspace's places in this order:
+**General**, **Kanban**, **Resources**, **Needs you**, then **Members**. Below
+them, under visible headings, are the Workspace's **Agents** (its members) and
+its **Direct messages**. A member's name opens their profile in the inspector;
+a private-message action opens the conversation.
 
 One collapsed **History and execution** section holds:
 

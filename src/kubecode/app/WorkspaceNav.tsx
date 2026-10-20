@@ -39,10 +39,10 @@ function roleKind(member: Member): MemberRoleKind {
 
 /**
  * The active Workspace's organizing navigation (ADR 0228 §1): General, the
- * Kanban board, Resources, and Members; everything that waits for the
- * researcher, gathered in one place; the members, whose names open their
- * profiles; and the private conversations. Execution history is reachable
- * below it, never from here.
+ * Kanban board, and Resources; everything that waits for the researcher,
+ * gathered in one place; Members; the members themselves under their own
+ * heading, whose names open their profiles; and the private conversations.
+ * Execution history is reachable below it, never from here.
  */
 export function WorkspaceNav({
   active,
@@ -55,12 +55,29 @@ export function WorkspaceNav({
   t,
   taskCount,
 }: WorkspaceNavProps) {
-  const entries = [
+  const places = [
     { view: 'general', icon: DESTINATIONS.general.Icon, label: t('kubecode.channel.general') },
     { view: 'board', icon: DESTINATIONS.board.Icon, label: t('kubecode.nav.board') },
     { view: 'resources', icon: DESTINATIONS.resources.Icon, label: t('kubecode.nav.resources') },
-    { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') },
   ] as const
+  const membersPlace = { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') } as const
+  const destination = (entry: typeof places[number] | typeof membersPlace) => (
+    <li key={entry.view}>
+      <button
+        aria-current={active === entry.view ? 'page' : undefined}
+        className="kubecode-research-nav-item"
+        type="button"
+        onClick={() => onOpen(entry.view)}
+      >
+        <Icon role="navigation" size="secondary" source={entry.icon} />
+        <span className="kubecode-research-nav-title">{entry.label}</span>
+        {entry.view === 'board' && taskCount > 0 && (
+          <StatusBadge tone="muted">{taskCount}</StatusBadge>
+        )}
+      </button>
+    </li>
+  )
+  const rosterHeading = useId()
   const directHeading = useId()
   const waiting = needsYou.length
   // A private conversation shows once it exists, and while it is being opened.
@@ -68,22 +85,7 @@ export function WorkspaceNav({
   return (
     <section aria-label={t('kubecode.nav.workspace')} className="kubecode-workspace-nav">
       <ul className="kubecode-research-nav-list">
-        {entries.map((entry) => (
-          <li key={entry.view}>
-            <button
-              aria-current={active === entry.view ? 'page' : undefined}
-              className="kubecode-research-nav-item"
-              type="button"
-              onClick={() => onOpen(entry.view)}
-            >
-              <Icon role="navigation" size="secondary" source={entry.icon} />
-              <span className="kubecode-research-nav-title">{entry.label}</span>
-              {entry.view === 'board' && taskCount > 0 && (
-                <StatusBadge tone="muted">{taskCount}</StatusBadge>
-              )}
-            </button>
-          </li>
-        ))}
+        {places.map(destination)}
       </ul>
       <details className="kubecode-needs-you" data-waiting={waiting > 0} open={waiting > 0}>
         <summary>
@@ -103,30 +105,36 @@ export function WorkspaceNav({
           ))}
         </ul>
       </details>
+      <ul className="kubecode-research-nav-list">
+        {destination(membersPlace)}
+      </ul>
       {members.length > 0 && (
-        <ul aria-label={t('kubecode.nav.roster')} className="kubecode-nav-members">
-          {members.map((member) => (
-            <li data-state={member.state} key={member.id}>
-              <MemberIdentity
-                attention={member.state === 'setup_required'
-                  ? { label: t(STATE_LABELS[member.state]), tone: 'warn' }
-                  : undefined}
-                handle={member.handle}
-                name={member.name}
-                role={roleKind(member)}
-                size="sm"
-                onOpen={() => onInspectMember(member.id)}
-              />
-              {member.state === 'active' && (
-                <IconButton
-                  icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
-                  label={t('kubecode.members.messagePrivately', { name: member.name })}
-                  onClick={() => onOpenDm(member.id)}
+        <div className="kubecode-nav-roster">
+          <h3 className="kubecode-nav-heading" id={rosterHeading}>{t('kubecode.nav.roster')}</h3>
+          <ul aria-labelledby={rosterHeading} className="kubecode-nav-members">
+            {members.map((member) => (
+              <li data-state={member.state} key={member.id}>
+                <MemberIdentity
+                  attention={member.state === 'setup_required'
+                    ? { label: t(STATE_LABELS[member.state]), tone: 'warn' }
+                    : undefined}
+                  handle={member.handle}
+                  name={member.name}
+                  role={roleKind(member)}
+                  size="sm"
+                  onOpen={() => onInspectMember(member.id)}
                 />
-              )}
-            </li>
-          ))}
-        </ul>
+                {member.state === 'active' && (
+                  <IconButton
+                    icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
+                    label={t('kubecode.members.messagePrivately', { name: member.name })}
+                    onClick={() => onOpenDm(member.id)}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {direct.length > 0 && (
         <div className="kubecode-nav-direct">
