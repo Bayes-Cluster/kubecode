@@ -219,11 +219,11 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await resource.getByRole('button', { name: 'Close details' }).click()
     await expect(page.getByRole('complementary', { name: 'Resource details' })).toHaveCount(0)
 
-    // 7c. Resources opens a row in its own inspector, beside the list.
+    // 7c. Resources opens a row in its own inspector, beside the list (ADR 0231 §4: choosing previews).
     await nav.getByRole('button', { name: 'Resources' }).click()
     await page.getByRole('option', { name: /Sweep notes/ }).click()
-    await page.getByRole('region', { name: 'Project work preview' }).getByRole('button', { name: 'Open' }).click()
     await expect(inspector(page, 'Resource details')).toBeVisible()
+    await expect(page.getByRole('option', { name: /Sweep notes/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
     await inspector(page, 'Resource details').getByRole('button', { name: 'Close details' }).click()
 
@@ -244,7 +244,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     }
     for (const [view, scroller] of [
       [/^Kanban/, '.kubecode-task-board'],
-      ['Resources', '[data-testid="project-work-results"]'],
+      ['Resources', '[data-testid="search-results"]'],
       ['Members', '.kubecode-members-view'],
     ] as const) {
       await go(view)
