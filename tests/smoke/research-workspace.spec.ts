@@ -131,12 +131,16 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   // No control on the proposal, the board, or the Task detail can admit or start anything.
   await expect(proposalMessage.getByRole('button', { name: /add to|admit|approve|confirm|start/i })).toHaveCount(0)
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
-  await page.getByText('Proposals not on the board (1)').click()
+  // With nothing on the board, the proposals are open above the stages.
+  await expect(page.locator('.kubecode-task-drafts')).toHaveJSProperty('open', true)
   await page.locator('.kubecode-task-drafts').getByRole('button', { name: /Structured pruning/ }).click()
   const draftDetail = page.getByRole('complementary', { name: 'Task details' })
   await expect(draftDetail.getByText(/This is a proposal and is not on the board/)).toBeVisible()
+  await expect(draftDetail.getByText('Draft', { exact: true })).toBeVisible()
+  await expect(draftDetail.getByRole('button', { name: 'Discuss in General' })).toBeVisible()
   await expect(draftDetail.getByRole('button', { name: /^Start round/ })).toHaveCount(0)
-  await expect(draftDetail.getByRole('button', { name: /add to|admit|approve|confirm/i })).toHaveCount(0)
+  await expect(draftDetail.getByRole('button', { name: /add to|admit|approve|confirm|^start/i })).toHaveCount(0)
+  await draftDetail.getByRole('button', { name: 'Close details' }).first().click()
   await openGeneral(page)
 
   // 4. Nothing authorizes yet. A specialist's words and a quoted line never do.
@@ -188,6 +192,10 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(detail.getByText(/The brief changed after you approved it/)).toBeVisible()
   await expect(detail.getByText(/Added to the board by your message/)).toBeVisible()
   await expect(detail.getByText('That looks right. Please add it to the Kanban.')).toBeVisible()
+  // One state, the stage: no research Open/Resolved, and no way to finish or reopen it here.
+  await expect(detail.getByText('Ready', { exact: true })).toBeVisible()
+  await expect(detail.getByText('Open', { exact: true })).toHaveCount(0)
+  await expect(detail.getByRole('button', { name: /mark resolved|reopen/i })).toHaveCount(0)
   await detail.getByRole('button', { name: 'Close details' }).first().click()
   await openGeneral(page)
 
@@ -250,8 +258,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   const inProgress = page.getByRole('complementary', { name: 'Task details' })
   await expect(inProgress.getByText('Pruning sweep', { exact: true })).toBeVisible()
   await expect(inProgress.getByText('@analyst', { exact: false }).first()).toBeVisible()
-  await expect(inProgress.getByText('Project manager')).toBeVisible()
-  await expect(inProgress.getByText('Specialist')).toBeVisible()
+  await expect(inProgress.getByText('Project manager', { exact: true })).toBeVisible()
+  await expect(inProgress.getByText('Specialist', { exact: true })).toBeVisible()
   const waitingOnYou = inProgress.getByRole('region', { name: 'Waiting on you' })
   await expect(waitingOnYou.getByText('Which pruning ratio first?')).toBeVisible()
   await waitingOnYou.getByRole('button', { name: '0.5', exact: true }).click()
@@ -277,34 +285,43 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await page.getByTestId(`task-card-${taskId}`).click()
   const review = page.getByRole('complementary', { name: 'Task details' }).getByRole('region', { name: 'Results for your review' })
+  // A Task under review opens on its results.
+  await expect(page.getByRole('complementary', { name: 'Task details' }).getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true')
   await expect(review.getByText('Structured pruning kept accuracy at 0.91')).toBeVisible()
-  await expect(review.getByText(/Some evidence changed after it was attached/)).toBeVisible()
-  await review.getByLabel('What the result showed').selectOption({ label: 'Valid negative result' })
+  const cited = review.getByRole('button', { name: /results\.csv/ })
+  await expect(cited).toContainText('Changed since cited')
+  await review.getByRole('radio', { name: 'Valid negative result' }).check()
+  // It cannot be accepted at its current version before that version was shown.
+  await expect(review.getByRole('button', { name: 'Accept the version you saw' })).toBeDisabled()
   // The evidence opens over the Task (ADR 0228); Back returns to the review as it was left.
-  await review.getByRole('button', { name: 'file:results.csv' }).click()
+  await cited.click()
   const evidence = inspector(page, 'Evidence details')
   await expect(evidence).toBeVisible()
+  await expect(evidence.getByText(/^Showing version /)).toBeVisible()
   await evidence.getByRole('button', { name: /^Back to / }).click()
   await expect(evidence).toHaveCount(0)
-  await expect(review.getByLabel('What the result showed').locator('option:checked')).toHaveText('Valid negative result')
-  await expect(review.getByRole('button', { name: 'file:results.csv' })).toBeFocused()
+  await expect(review.getByRole('radio', { name: 'Valid negative result' })).toBeChecked()
+  await expect(cited).toBeFocused()
   await expect(review.getByRole('button', { name: 'Accept results' })).toBeDisabled()
-  // It cannot be accepted at its current version before it was looked at.
-  await expect(review.getByRole('button', { name: 'Accept the current version' })).toBeDisabled()
-  await review.getByRole('button', { name: 'Look at it' }).click()
-  await review.getByRole('button', { name: 'Accept the current version' }).click()
-  await expect(review.getByText(/Some evidence changed after it was attached/)).toHaveCount(0)
+  await review.getByRole('button', { name: 'Accept the version you saw' }).click()
+  await expect(review.getByText('Changed since cited')).toHaveCount(0)
 
-  // 11. The researcher decides: an accepted negative finding completes the Task.
-  await review.getByLabel('Reason (required to send back)').fill('The effect did not hold at the changed baseline.')
+  // 11. The researcher decides: an accepted negative finding completes the Task, and General is told.
+  await review.getByLabel('Feedback for the team').fill('The effect did not hold at the changed baseline.')
   await review.getByRole('button', { name: 'Accept results' }).click()
+  const decided = page.getByRole('complementary', { name: 'Task details' }).getByText(/^Accepted as Valid negative result\. The General Agent was told in General\./)
+  await expect(decided).toBeVisible()
   await expect(await boardCards(page, 'Done')).toHaveCount(1)
-  await expect(page.getByTestId(`task-card-${taskId}`)).toBeVisible()
-  await page.getByTestId(`task-card-${taskId}`).click()
-  await expect(page.getByRole('complementary', { name: 'Task details' }).getByText('Valid negative result').first()).toBeVisible()
-  await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
-  await openGeneral(page)
+  await expect(page.getByTestId(`task-card-${taskId}`)).toContainText('Valid negative result')
+  // Show in General lands on the verdict, in General narrowed to the Task, with the Task beside it.
+  await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Show in General' }).first().click()
+  await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
   await expect(page.getByRole('log', { name: 'Messages' }).getByText(/accepted/i).first()).toBeVisible()
+  await expect.poll(() => page.url()).toContain(`filter=${taskId}`)
+  await page.getByRole('complementary', { name: 'Task details' }).getByRole('button', { name: 'Close details' }).first().click()
+  // The scope is visible, and lifting it shows all of General again.
+  await page.getByRole('button', { name: 'Show everything' }).first().click()
+  await expect.poll(() => page.url()).not.toContain('filter=')
   // The decision reaches the manager, who closes out (ADR 0226).
   await waitForPrompt(generalConversation as string, (text) => text.includes('accepted the results of Task'))
 
@@ -342,6 +359,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await contained()
   // The Task is a screen of its own over the parked board, with the way back to it.
   await closeNavigationSheet(page)
+  // One stage at a time: the stage picker leads to the Task's column.
+  await page.getByRole('group', { name: 'Stage' }).getByRole('button', { name: 'In progress · 1' }).click()
   await page.getByTestId(`task-card-${taskId}`).click()
   const phoneTask = inspector(page, 'Task details')
   await expect(phoneTask).toBeVisible()

@@ -144,11 +144,11 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expectUrl(page, `/general/m/${seed.citingMessageId}?task=${seed.taskId}`)
     const review = task.getByRole('region', { name: 'Results for your review' })
     await expect(review.getByText('Pruning heads kept accuracy at 0.91')).toBeVisible()
-    const outcome = review.getByLabel('What the result showed')
-    await outcome.selectOption({ label: 'Valid negative result' })
+    const outcome = review.getByRole('radio', { name: 'Valid negative result' })
+    await outcome.check()
 
     // 4. Evidence opens over the Task; its address is shareable.
-    await review.getByRole('button', { name: `research:${seed.evidenceId}` }).click()
+    await review.getByRole('button', { name: new RegExp(seed.evidenceTitle) }).click()
     const evidence = inspector(page, 'Evidence details')
     await expect(evidence).toBeVisible()
     await expectUrl(page, `inspect=evidence~research~${seed.evidenceId}`)
@@ -156,8 +156,8 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     // 5. Back returns to the Task as it was left, focus on the evidence that was opened.
     await evidence.getByRole('button', { name: /^Back to / }).click()
     await expect(task).toBeVisible()
-    await expect(outcome.locator('option:checked')).toHaveText('Valid negative result')
-    await expect(review.getByRole('button', { name: `research:${seed.evidenceId}` })).toBeFocused()
+    await expect(outcome).toBeChecked()
+    await expect(review.getByRole('button', { name: new RegExp(seed.evidenceTitle) })).toBeFocused()
 
     // 6. Closing lands on the message, with the draft and the reading place intact.
     await task.getByRole('button', { name: 'Close details' }).first().click()
@@ -228,14 +228,14 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await inspector(page, 'Resource details').getByRole('button', { name: 'Close details' }).click()
 
     // 7d. Kanban, Resources and Members each come back scrolled where they were left (a
-    // short, narrow window, where the board's columns stack and every list overflows).
+    // short, narrow window, where the board's columns pair up and every list overflows).
     for (let index = 0; index < 8; index += 1) {
       const more = await request.post(`${api}/projects/${projectId}/research/${seed.evidenceId}/imports`, {
         data: { origin: 'paste', label: `Sweep log ${index + 1}`, content: `Run ${index + 1}.`, client_request_id: `log-${stamp}-${index}` },
       })
       expect(more.ok(), await more.text()).toBe(true)
     }
-    await page.setViewportSize({ width: 900, height: 300 })
+    await page.setViewportSize({ width: 900, height: 240 })
     await closeNavigationSheet(page)
     const go = async (view: string | RegExp) => {
       await toggleNavigation(page)
@@ -264,7 +264,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     // 8. The browser's Back walks the inspector stack one level at a time.
     await cited.getByRole('button', { name: 'Task Pruning heads' }).click()
     await expect(task).toBeVisible()
-    await review.getByRole('button', { name: `research:${seed.evidenceId}` }).click()
+    await review.getByRole('button', { name: new RegExp(seed.evidenceTitle) }).click()
     await expect(evidence).toBeVisible()
     await page.goBack()
     await expect(task).toBeVisible()
@@ -309,7 +309,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(phoneTask.getByRole('button', { name: 'Close details' })).toHaveCount(0)
     await expectContained(page)
     await phoneTask.getByRole('region', { name: 'Results for your review' })
-      .getByRole('button', { name: `research:${seed.evidenceId}` }).click()
+      .getByRole('button', { name: new RegExp(seed.evidenceTitle) }).click()
     const phoneEvidence = inspector(page, 'Evidence details')
     await expect(phoneEvidence).toBeVisible()
     await expect(phoneEvidence.getByRole('button', { name: 'Close details' })).toHaveCount(0)
@@ -320,7 +320,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(page.getByRole('complementary', { name: 'Evidence details' })).toHaveCount(0)
     // So does the browser's.
     await phoneTask.getByRole('region', { name: 'Results for your review' })
-      .getByRole('button', { name: `research:${seed.evidenceId}` }).click()
+      .getByRole('button', { name: new RegExp(seed.evidenceTitle) }).click()
     await expect(phoneEvidence).toBeVisible()
     await page.goBack()
     await expect(phoneTask).toBeVisible()
