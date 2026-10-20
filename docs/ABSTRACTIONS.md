@@ -1269,9 +1269,12 @@ inside the Task. See ADR 0221.
 A Task has one state, its **stage**; it is completed only by the researcher
 accepting its results in review, and reopened only by asking the General Agent
 to iterate. **Archiving** is separate: it hides a Task (or a proposal) from the
-board, keeping everything, and is refused while a review is open or its work is
-active; it is recorded but never moves the stage. The Task's **read model**
-carries what waits on the researcher (each under a stable key), one
+board, keeping everything, and is refused while a review is open or any of its
+work is active; it is recorded but never moves the stage, and restoring makes
+every earlier instruction too old to start work. The Task's **read model**
+carries what waits on the researcher (each under a stable key: the review,
+open work's questions, suggested changes of direction, a revised brief,
+changed evidence), one
 **evidence** row per cited record with every pin of it, and a **history** whose
 steps link to the General messages that carried them. See ADR 0230.
 
@@ -1291,7 +1294,8 @@ outcome, findings, earlier reviews) and **Activity** (the history linked to
 General, recent Task-scoped messages, execution and linked records). Evidence
 that changed since it was cited is accepted only at a version the researcher was
 actually **shown** — a read that failed never counts — and every pin of it moves
-to that version. The decision (accept with what the result showed — a valid
+to that version; neither the work board's bare re-pin nor the coordinator can
+accept it. The decision (accept with what the result showed — a valid
 negative result completes the Task — or send back with feedback) is routed to
 the manager and posted in General, which the Task links to. **Discuss in
 General** opens the one General conversation narrowed to the Task; it

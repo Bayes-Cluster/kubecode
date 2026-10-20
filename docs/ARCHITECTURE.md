@@ -318,25 +318,37 @@ A question whose round the researcher already started is admitted with
 
 Task lifecycle and read model (ADR 0230): every stage read filters
 `task_events` on one `STAGE_EVENT_KINDS` list, so the `archived`/`restored`
-events that `TaskStore::set_archived` logs never move a stage or the
-authorization watermark. `POST …/tasks/{id}/archive|restore` (204) and the
-research `archive|restore` routes share that rule: archiving is refused with
-`409 task_active` (`reason`: `under_review`, `work_active`) while a review is
-open or the Task's internal work is active, and the review check is repeated
-inside the archiving transaction (request_review checks the flag inside its
-own). An archived Task refuses admission, approval, execution, review requests
-and new internal work (`WorkStore::create`). `research/{id}/resolve|reopen`
-answer `409 task_owned` for an admitted Task; its research status is written
-only by the Task service. Every researcher re-pin names the looked-at
-`revision`. The read model adds `TaskCard.last_event`,
+events that `TaskStore::set_archived` logs never move a stage. The instruction
+watermark (`WATERMARK_EVENT_KINDS`) is the stage events plus `restored`, so
+nothing said before a Task was archived starts it after it is restored; a
+retried instruction whose execute record has no round yet is checked against
+the stage and watermark like a new one. `POST …/tasks/{id}/archive|restore`
+(204) and the research `archive|restore` routes share one rule: archiving is
+refused with `409 task_active` (`reason`: `under_review`, `work_active`) while
+a review is open or any of the question's internal work is active (in any
+stage), both checked inside the archiving transaction (request_review checks
+the flag inside its own). An archived Task refuses admission, approval,
+execution, review requests and new internal work (`WorkStore::create`).
+`research/{id}/resolve|reopen` answer `409 task_owned` for an admitted Task;
+its research status is written only by the Task service, in the same
+transaction as the review or start of execution that implies it. Every
+researcher re-pin of a Task's evidence names the looked-at `revision` — on
+`…/tasks/{id}/repin` and on the work board's `repin` command for a Task's
+internal work (`400` without it, `409 work_evidence_stale` when it moved on) —
+and the coordinator's `work_repin` refuses a Task's evidence, leaving it
+flagged. A research detail carries `task_stage` (null unless admitted) and a
+work card's `research` carries `task`. The read model adds `TaskCard.last_event`,
 `Draft.shown_message_id`, `TaskBoard.archived`, and on the detail `archived`,
 `evidence` (one row per cited `kind:id` with every pin, status and title, at
 most 64, titled through `Evidence::describe`/`ProjectContext::item`),
 `timeline` (events, approvals and brief revisions with the General message
-that carried each, at most 100), `pending` (keys `review:`, `question:`,
-`brief:`, `evidence:`), `actions`, `general_message_id` on review requests and
+that carried each, at most 100), `pending` (keys `review:`, `question:` — open
+work only, as the card counts —, `suggestion:` for a suggested change of
+direction not yet decided, `brief:`, `evidence:`), `actions`,
+`authorizing_message.task_id`, `general_message_id` on review requests and
 verdicts (also on the `POST …/review` response), and `internal_work`
-`conversation_id`/`updated_at`. Message ids come from batched, read-only
+`conversation_id`/`updated_at`. The archived list is cut to the newest 50
+before stages and outcomes are read. Message ids come from batched, read-only
 `ChannelStore` lookups (`messages_by_client_ids`, `proposal_messages`,
 `messages_by_ids`) over the existing client-id index. `stale_evidence` is kept,
 deprecated. `ResolvedRef` carries the record's `title`.
@@ -367,12 +379,17 @@ never while loading, on a failure, for a removed record, a related record
 "Load more" — and the panel records it in the stack's `InspectionRecord`.
 `TaskResults` enables "Accept the version you saw" only while that revision is
 the current one, re-pins every pin of the record at it through `…/repin`,
-reloads the Task once when the displayed version is newer than the list, and
-decides through `POST …/review`; its status links to the verdict in General.
+reloads the Task once when the displayed version is newer than the list (a pin
+that fails after an earlier one moved says only part was accepted), and
+decides through `POST …/review`, holding the other decision while one is
+recorded; its status links to the verdict in General, or says the decision was
+recorded but could not be posted when no verdict message is known.
 Going to General from a Task (`tasks/taskNavigation.ts`) keeps the Task beside
 General and replaces it over a narrow view. A legacy question that is a Task
-(on the board or archived) shows its stage and links to it, without
-resolve/reopen/archive (`ResearchWorkspace` `task`). `MessageItem`
+(its research detail's `task_stage`) shows its stage and links to it, without
+resolve/reopen/archive (`ResearchWorkspace` `onOpenTask`), and a refused
+research command is shown in the catalog's words. The work inspector sends a
+Task's changed evidence to the Task's Results instead of offering its re-pin. `MessageItem`
 renders proposal messages and Task chips. The browser acceptance
 (`tests/smoke/research-workspace.spec.ts`, `tests/smoke/task-review.spec.ts`)
 uses `tests/smoke/agents.ts`: the fixture provider records each Session's MCP
