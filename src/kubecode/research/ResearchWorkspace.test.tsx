@@ -76,6 +76,29 @@ describe('ResearchWorkspace', () => {
     expect(screen.getAllByRole('button', { name: /back/i })).toHaveLength(1)
   })
 
+  it('for a Task, shows its stage and the way to it, and nothing that finishes, reopens, archives, or starts it', async () => {
+    const onOpen = vi.fn()
+    mount({ task: { stage: 'review', archived: false, onOpen } })
+    expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.stage.review')).toBeInTheDocument()
+    expect(screen.queryByText('kubecode.research.status.open')).not.toBeInTheDocument()
+    expect(screen.getByText('kubecode.task.isTask')).toBeInTheDocument()
+    for (const name of ['kubecode.research.resolve', 'kubecode.research.reopen', 'kubecode.research.archive', 'kubecode.research.restore']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    openTab('kubecode.research.tab.work')
+    expect(screen.queryByRole('button', { name: /kubecode.research.startRound/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.task.openTask' }))
+    expect(onOpen).toHaveBeenCalled()
+  })
+
+  it('says an admitted Task is finished by its review when the server refuses to resolve it', async () => {
+    const setResearchState = vi.fn().mockRejectedValue(new ApiError('task_owned', 'x', 409))
+    mount({ api: fakeApi({ setResearchState }) })
+    fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.resolve' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.task.ownedStatus')
+  })
+
   it('shows loading, then the brief with its revision', async () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('kubecode.research.loading')

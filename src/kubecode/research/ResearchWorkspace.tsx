@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -13,9 +13,12 @@ import type {
   AgentDescriptor,
   Conversation,
   KubecodeApi,
+  TaskStage,
   TeamSnapshot,
   WorkspaceEvent,
 } from '../api'
+import { ApiError } from '../api'
+import { stageLabel } from '../tasks/taskLabels'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { ResearchBriefPanel } from './ResearchBriefPanel'
 import { ResearchDiscussionPanel } from './ResearchDiscussionPanel'
@@ -37,8 +40,11 @@ export type ResearchWorkspaceProps = {
   back?: ViewHeaderProps['back']
   /** In the inspector: its Close, drawn in this header (ADR 0227 shape). */
   close?: ViewHeaderProps['close']
-  /** What the researcher decides on, shown under the title (the Task inspector). */
-  inspector?: ReactNode
+  /**
+   * The question is a Task (on the board or archived from it): its stage is
+   * its state, it is finished by its review, and it is opened as a Task.
+   */
+  task?: { stage: TaskStage; archived: boolean; onOpen: () => void } | null
   /** Whether rounds can be started here; a Task's detail leaves that to the General Agent. */
   startsRounds?: boolean
   /** The loaded title, for the inspector's "Back to …" one level up. */
@@ -71,8 +77,8 @@ export function ResearchWorkspace({
   events,
   back,
   close,
-  inspector,
-  startsRounds = true,
+  task = null,
+  startsRounds: startsRoundsProp = true,
   onConversationCreated,
   onOpenSession,
   onOpenBoard,
@@ -93,6 +99,8 @@ export function ResearchWorkspace({
   const importsState = useResearchImports(api, projectId, researchId, events, connectionState)
   const [tab, setTab] = useState<TabId>('brief')
   const state = useAction(t)
+  // A Task's work starts only when the researcher tells the General Agent (ADR 0221).
+  const startsRounds = startsRoundsProp && task === null
   const title = bundle?.detail.brief.title ?? null
 
   useEffect(() => {
@@ -140,7 +148,13 @@ export function ResearchWorkspace({
   const pendingDecisions = bundle.proposals.filter((proposal) => !proposal.review).length
     + bundle.outcomes.filter((outcome) => outcome.status === 'pending').length
   const command = (action: 'archive' | 'restore' | 'resolve' | 'reopen') => void state.run(async () => {
-    await api.setResearchState(projectId, researchId, action)
+    try {
+      await api.setResearchState(projectId, researchId, action)
+    } catch (cause) {
+      // An admitted Task's status is its lifecycle's (ADR 0230 §1).
+      if (cause instanceof ApiError && cause.code === 'task_owned') throw new Error(t('kubecode.task.ownedStatus'))
+      throw cause
+    }
     reload()
   })
 
@@ -151,9 +165,13 @@ export function ResearchWorkspace({
           {backControl}
           <h2>{detail.brief.title}</h2>
           <div className="kubecode-research-header-meta">
-            <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>
-              {detail.status === 'open' ? t('kubecode.research.status.open') : t('kubecode.research.status.resolved')}
-            </StatusBadge>
+            {task ? (
+              <StatusBadge tone={task.stage === 'done' ? 'ok' : 'info'}>{stageLabel(t, task.stage)}</StatusBadge>
+            ) : (
+              <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>
+                {detail.status === 'open' ? t('kubecode.research.status.open') : t('kubecode.research.status.resolved')}
+              </StatusBadge>
+            )}
             {detail.archived && (
               <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
             )}
@@ -163,18 +181,24 @@ export function ResearchWorkspace({
           </div>
         </div>
         <div className="kubecode-research-header-actions">
-          {detail.status === 'open'
-            ? <Button disabled={state.busy || detail.archived} size="sm" variant="outline" onClick={() => command('resolve')}>{t('kubecode.research.resolve')}</Button>
-            : <Button disabled={state.busy || detail.archived} size="sm" variant="outline" onClick={() => command('reopen')}>{t('kubecode.research.reopen')}</Button>}
-          {detail.archived
-            ? <Button disabled={state.busy} size="sm" variant="outline" onClick={() => command('restore')}>{t('kubecode.research.restore')}</Button>
-            : <Button disabled={state.busy} size="sm" variant="ghost" onClick={() => command('archive')}>{t('kubecode.research.archive')}</Button>}
+          {task ? (
+            <Button size="sm" variant="outline" onClick={task.onOpen}>{t('kubecode.task.openTask')}</Button>
+          ) : (
+            <>
+              {detail.status === 'open'
+                ? <Button disabled={state.busy || detail.archived} size="sm" variant="outline" onClick={() => command('resolve')}>{t('kubecode.research.resolve')}</Button>
+                : <Button disabled={state.busy || detail.archived} size="sm" variant="outline" onClick={() => command('reopen')}>{t('kubecode.research.reopen')}</Button>}
+              {detail.archived
+                ? <Button disabled={state.busy} size="sm" variant="outline" onClick={() => command('restore')}>{t('kubecode.research.restore')}</Button>
+                : <Button disabled={state.busy} size="sm" variant="ghost" onClick={() => command('archive')}>{t('kubecode.research.archive')}</Button>}
+            </>
+          )}
           {closeControl}
         </div>
       </header>
       {state.error && <p className="kubecode-research-error" role="alert">{state.error}</p>}
+      {task && <p className="kubecode-research-notice" role="status">{t('kubecode.task.isTask')}</p>}
       {detail.archived && <p className="kubecode-research-notice" role="status">{t('kubecode.research.archivedNotice')}</p>}
-      {inspector}
       {pendingDecisions > 0 && (
         <p className="kubecode-research-notice" role="status">
           <button type="button" onClick={() => setTab('findings')}>

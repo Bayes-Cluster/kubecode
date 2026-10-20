@@ -782,8 +782,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     sessionCatalog,
     t,
     teams,
+    locale,
+    taskBoard: { board: taskBoard.board, drafts: taskBoard.drafts, reload: taskBoard.reload },
     onConversationCreated: handleConversationCreated,
-  }), [agents, api, handleConversationCreated, reconciliation.connectionState, reconciliation.workspaceEvents, rosterMembers, sessionCatalog, t, teams])
+  }), [
+    agents, api, handleConversationCreated, locale, reconciliation.connectionState, reconciliation.workspaceEvents,
+    rosterMembers, sessionCatalog, t, taskBoard.board, taskBoard.drafts, taskBoard.reload, teams,
+  ])
 
   /** What a place is called: in the inspector's "Back to …" and the switch announcement. */
   const placeName = (shown: Place): string => {
@@ -828,6 +833,18 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const historyShown = historyOpen || historyPinned
   const inspectorBottom = location.inspector[0]
   const boardTask = inspectorBottom?.kind === 'task' ? inspectorBottom.id : null
+  // A legacy question that is a Task (on the board, or archived from it) is shown as that Task (ADR 0230 §1).
+  const questionId = place.view === 'question' ? place.question : null
+  const questionStage = questionId
+    ? taskBoard.board?.cards.find((card) => card.id === questionId)?.stage
+      ?? taskBoard.board?.archived?.find((card) => card.id === questionId)?.stage
+      ?? null
+    : null
+  const questionTask = questionId && questionStage ? {
+    stage: questionStage,
+    archived: !taskBoard.board?.cards.some((card) => card.id === questionId),
+    onOpen: () => inspect({ kind: 'task', id: questionId }),
+  } : null
   const announcement = announcedProjectId !== null && announcedProjectId === projectId && project
     ? t('kubecode.nav.placeAnnouncement', { workspace: project.name, place: placeName(place) })
     : ''
@@ -1168,6 +1185,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 projectId={projectId}
                 researchId={place.question}
                 t={t}
+                task={questionTask}
                 teams={teams}
               />
             ) : sessionsSurface}
