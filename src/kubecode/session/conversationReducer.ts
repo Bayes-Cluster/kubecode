@@ -794,7 +794,9 @@ export function applySideQuestionEvent(
 
 export function permissionFromEvent(event: TimelineEvent | AgentEvent): PendingPermission | null {
   const requestId = textValue(event.payload.request_id)
-  if (textValue(event.payload.reviewer) === 'leader') return null
+  // A Team leader or the project manager reviews these first (ADR 0237).
+  const reviewer = textValue(event.payload.reviewer)
+  if (reviewer === 'leader' || reviewer === 'manager') return null
   const optionsRaw = arrayValue(event.payload.options)
   if (!requestId || !optionsRaw) return null
   const options = optionsRaw.flatMap((value) => {

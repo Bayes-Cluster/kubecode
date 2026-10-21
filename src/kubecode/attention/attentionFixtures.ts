@@ -12,6 +12,7 @@ import type {
   AttentionSnapshot,
   ExecutionFailure,
   ExecutionView,
+  ManagerDecision,
   MessageDelivery,
   RouteDelivery,
 } from '../api'
@@ -197,6 +198,21 @@ export function snapshot(overrides: Partial<AttentionSnapshot> = {}): AttentionS
     undelivered: { general: 0, tasks: {} },
     incomplete: [],
     truncated: false,
+    manager_decisions: [],
+    ...overrides,
+  }
+}
+
+export function managerDecision(overrides: Partial<ManagerDecision> = {}): ManagerDecision {
+  return {
+    id: 'md1',
+    request_id: 'q1',
+    conversation_id: 's1',
+    member: analyst,
+    tool: 'Run pytest -q',
+    decision: 'approved',
+    reason: 'Tests only read the workspace.',
+    created_at: '2026-10-21 10:00:00',
     ...overrides,
   }
 }

@@ -5289,6 +5289,7 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-needs-you-title { overflow-wrap: anywhere; white-space: normal; }
 .kubecode-needs-you-detail { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; white-space: normal; }
 .kubecode-needs-you-row[data-state='resolving'] { opacity: 0.75; }
+.kubecode-needs-you-decision { align-items: flex-start; display: flex; gap: var(--ws-space-2); padding: var(--ws-space-1) 10px; }
 .kubecode-research-nav-note[data-tone='warn'] { color: var(--text-primary); }
 .kubecode-attention-menu-entry { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
 

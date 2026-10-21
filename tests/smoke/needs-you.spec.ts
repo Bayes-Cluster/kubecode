@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 
-import { waitForPrompt } from './agents'
+import { MemberAgent, waitForPrompt } from './agents'
 import { closeNavigationSheet, inspector, workspaceNav } from './shell'
 import { seedTaskInReview } from './taskFixtures'
 
@@ -27,6 +27,26 @@ function urls() {
 
 async function roster(request: APIRequestContext, api: string, projectId: string): Promise<Roster> {
   return (await (await request.get(`${api}/projects/${projectId}/members`)).json()) as Roster
+}
+
+/**
+ * A specialist's permission request goes to the project manager first (ADR
+ * 0237). The test plays the manager through its own tools and escalates each
+ * request, so it becomes the researcher's to answer.
+ */
+async function escalateThroughManager(request: APIRequestContext, api: string, projectId: string, count: number) {
+  const general = (await roster(request, api, projectId)).members.find((member) => member.role === 'general')!
+  const managerSession = general.public_conversation_id!
+  await waitForPrompt(managerSession, (text) => text.includes('permission_review'))
+  const manager = new MemberAgent(request, managerSession)
+  let waiting: Array<{ request_id: string }> = []
+  await expect.poll(async () => {
+    waiting = await manager.call<Array<{ request_id: string }>>('permission_reviews')
+    return waiting.length
+  }, { timeout: 30_000 }).toBe(count)
+  for (const { request_id } of waiting) {
+    await manager.call('permission_review', { request_id, decision: 'escalate', reason: 'The researcher decides when tests run.' })
+  }
 }
 
 const composer = (page: Page) => page.getByRole('combobox', { name: 'Message the Workspace' })
@@ -93,6 +113,7 @@ test.describe('on a desktop', () => {
       // 1. A member asks permission: one count, one bell entry, one prompt above the composer.
       await send(page, '@analyst [smoke:permission] run the tests')
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
+      await escalateThroughManager(request, api, projectId, 1)
       await expect(strip(page)).toContainText('Analyst is waiting for your permission', { timeout: 30_000 })
       await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1')
       // The bell has this Workspace's request and the other Workspace's review.
@@ -115,6 +136,10 @@ test.describe('on a desktop', () => {
       await expect(asked).toBeVisible({ timeout: 30_000 })
       await expect(decisions(page).getByRole('button')).toHaveCount(1)
       await expect(asked).toContainText('Permission')
+      // What the manager decided is shown too, as information.
+      const managerDecisions = needsYouView(page).getByRole('list', { name: 'Decided by the project manager' })
+      await expect(managerDecisions.getByRole('listitem')).toContainText(['Escalated to you'])
+      await expect(managerDecisions.getByRole('button')).toHaveCount(0)
       await asked.click()
       await expect.poll(() => page.url()).toMatch(/\/general$/)
       const prompt = page.getByTestId('permission-queue-card')
@@ -127,6 +152,7 @@ test.describe('on a desktop', () => {
 
       // 4. Stop names the one turn it ends; stopping it ends its request too.
       await send(page, '@analyst [smoke:permission] once more')
+      await escalateThroughManager(request, api, projectId, 1)
       await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1', { timeout: 30_000 })
       const stop = strip(page).getByRole('button', { name: "Stop Analyst's current turn" })
       await expect(stop).toBeVisible()
@@ -215,6 +241,7 @@ test.describe('on a phone', () => {
       await send(page, '@analyst @writer [smoke:permission] run the checks')
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
       await waitForPrompt(writer.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
+      await escalateThroughManager(request, api, projectId, 2)
       await expect(strip(page).getByTestId('permission-queue-card')).toHaveCount(2, { timeout: 30_000 })
 
       // The bell opens the Analyst's prompt, focused, and the navigation sheet stays closed.

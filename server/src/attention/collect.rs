@@ -184,6 +184,29 @@ pub fn collect(state: &AppState, project_id: &str) -> AttentionSnapshot {
         Ok(routes) => inputs.failed_routes = routes,
         Err(_) => failed.push(Source::Routes),
     }
+    match store.manager_reviews(project_id, crate::agent_runtime::MANAGER_DECISIONS_SHOWN) {
+        Ok(reviews) => {
+            inputs.manager_decisions = reviews
+                .into_iter()
+                .map(|review| ManagerDecisionView {
+                    member: state
+                        .members
+                        .by_conversation(project_id, &review.conversation_id)
+                        .ok()
+                        .flatten()
+                        .map(|resolved| member_ref(&resolved.member)),
+                    id: review.id,
+                    request_id: review.request_id,
+                    conversation_id: review.conversation_id,
+                    tool: review.tool,
+                    decision: review.decision,
+                    reason: review.reason,
+                    created_at: review.created_at,
+                })
+                .collect();
+        }
+        Err(_) => failed.push(Source::Runtime),
+    }
     let mut unique: Vec<Source> = Vec::new();
     for source in failed {
         if !unique.contains(&source) {

@@ -13,7 +13,8 @@ pub use self::dispatch::{
     PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
 };
 pub use self::permissions::{
-    PendingKind, PendingOptionView, PendingRequestView, SideQuestionAccepted,
+    MANAGER_DECISIONS_SHOWN, ManagerReviewError, ManagerReviewRequest, ManagerVerdict, PendingKind,
+    PendingOptionView, PendingRequestView, SideQuestionAccepted,
 };
 
 use std::collections::{HashMap, HashSet};
@@ -296,9 +297,8 @@ pub enum AgentPermissionProfile {
     Default,
     Maximum,
     ReadOnly,
-    /// The General Agent: it manages, so its provider starts without the tools
-    /// that edit files or run commands (ADR 0226). Kubecode's own management
-    /// tools and reading stay available.
+    /// The General Agent: full native permissions, its own requests granted
+    /// without asking, its mode locked (ADR 0237).
     Manager,
 }
 

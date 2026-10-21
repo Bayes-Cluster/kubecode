@@ -14,8 +14,6 @@ use crate::agents::AgentId;
 use super::{AgentPermissionProfile, RuntimeError};
 
 const OPENCODE_MAXIMUM_PERMISSION: &str = r#"{"*":"allow"}"#;
-/// The General Agent's OpenCode: editing and shell commands are denied from launch.
-const OPENCODE_MANAGER_PERMISSION: &str = r#"{"edit":"deny","bash":"deny"}"#;
 
 type AcpDebugCallback = Arc<dyn Fn(&str, LineDirection) + Send + Sync + 'static>;
 
@@ -170,14 +168,13 @@ pub(super) fn acp_agent(
         ),
         AgentId::OpenCode => {
             let environment = match permission_profile {
-                AgentPermissionProfile::Maximum => vec![EnvVariable::new(
-                    "OPENCODE_PERMISSION",
-                    OPENCODE_MAXIMUM_PERMISSION,
-                )],
-                AgentPermissionProfile::Manager => vec![EnvVariable::new(
-                    "OPENCODE_PERMISSION",
-                    OPENCODE_MANAGER_PERMISSION,
-                )],
+                // The manager runs with full permissions (ADR 0237).
+                AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager => {
+                    vec![EnvVariable::new(
+                        "OPENCODE_PERMISSION",
+                        OPENCODE_MAXIMUM_PERMISSION,
+                    )]
+                }
                 _ => Vec::new(),
             };
             (
@@ -285,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manager_opencode_session_cannot_edit_or_run_commands_from_launch() {
+    fn a_manager_opencode_session_starts_with_full_permissions() {
         let descriptor = AgentDescriptor {
             id: AgentId::OpenCode,
             available: true,
@@ -304,10 +301,10 @@ mod tests {
             .environment
             .iter()
             .find(|variable| variable.name == "OPENCODE_PERMISSION")
-            .expect("the manager's provider is restricted when it starts");
+            .expect("the manager's provider permissions are set when it starts");
         assert_eq!(
             serde_json::from_str::<Value>(&permission.value).expect("permission JSON"),
-            json!({"edit": "deny", "bash": "deny"}),
+            json!({"*": "allow"}),
         );
     }
 

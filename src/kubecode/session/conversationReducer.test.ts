@@ -10,6 +10,7 @@ import {
   mergeLiveOverHistory,
   messageFromRun,
   optimisticUserMessage,
+  permissionFromEvent,
   reduceAll,
   reduceConversation,
 } from './conversationReducer'
@@ -511,5 +512,27 @@ describe('mergeLiveOverHistory', () => {
       null,
     )
     expect(merged.messages).toHaveLength(1)
+  })
+})
+
+describe('permissionFromEvent', () => {
+  const event = (reviewer: string) => ({
+    run_id: 'run-1',
+    seq: 1,
+    kind: 'permission_requested',
+    payload: {
+      request_id: 'p1',
+      reviewer,
+      tool: 'Run command',
+      options: [{ id: 'allow', label: 'Allow once', kind: 'allow_once' }],
+    },
+    created_at: 'now',
+  })
+
+  it('shows the researcher only the requests that are theirs to answer', () => {
+    expect(permissionFromEvent(event('user'))?.requestId).toBe('p1')
+    // A Team leader or the project manager reviews these first (ADR 0237).
+    expect(permissionFromEvent(event('leader'))).toBeNull()
+    expect(permissionFromEvent(event('manager'))).toBeNull()
   })
 })

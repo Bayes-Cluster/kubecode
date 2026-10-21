@@ -146,6 +146,21 @@ pub struct UndeliveredCounts {
     pub tasks: BTreeMap<String, u32>,
 }
 
+/// A decision the project manager made on a specialist's permission request
+/// (ADR 0237), shown to the researcher as information, never as a prompt.
+#[derive(Clone, Debug, Serialize)]
+pub struct ManagerDecisionView {
+    pub id: String,
+    pub request_id: String,
+    pub conversation_id: String,
+    pub member: Option<MemberRef>,
+    pub tool: String,
+    /// `approved`, `denied`, or `escalated`.
+    pub decision: String,
+    pub reason: String,
+    pub created_at: String,
+}
+
 /// A source the snapshot could not read: never reported as "nothing waits".
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -170,6 +185,8 @@ pub struct AttentionSnapshot {
     pub undelivered: UndeliveredCounts,
     pub incomplete: Vec<Source>,
     pub truncated: bool,
+    /// The manager's latest permission decisions, newest first.
+    pub manager_decisions: Vec<ManagerDecisionView>,
 }
 
 /// Who a Session is: its member and binding, or its title.
@@ -205,4 +222,5 @@ pub struct AttentionInputs {
     /// Failed routes the researcher originated, with the Task they concern.
     pub failed_routes: Vec<(RouteKind, Option<String>)>,
     pub failed_sources: Vec<Source>,
+    pub manager_decisions: Vec<ManagerDecisionView>,
 }

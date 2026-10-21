@@ -49,6 +49,9 @@ while IFS= read -r line; do
           done
           ;;
         *'General conversation'*general_post*) ;;
+        # A specialist's permission request routed to the manager (ADR 0237):
+        # the test reviews it as the manager, through its tools.
+        *'asks permission to use a tool'*permission_review*) ;;
         *'The researcher accepted the results of Task'*|*'The researcher sent Task'*) ;;
         *) sleep 20 ;;
       esac
