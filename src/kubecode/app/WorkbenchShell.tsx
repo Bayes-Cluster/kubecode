@@ -681,10 +681,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   )
 
   const linkFollowedRef = useRef(false)
-  const applyRoute = useCallback((route: WorkspaceRoute): boolean => {
-    const target = route.project ?? projectIdRef.current
-    // An unknown Project cannot be honoured: the link is abandoned at once.
-    if (!target || !projects.some((item) => item.id === target)) return false
+  const followRoute = useCallback((target: string, route: WorkspaceRoute) => {
     if (target !== projectIdRef.current) selectProject(target)
     dispatchLocation({ type: 'applyRoute', projectId: target, location: locationFromRoute(route) })
     if (route.view === 'sessions' && route.conversation) showSessionIn(target, route.conversation)
@@ -692,8 +689,25 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     // navigation sheet makes way for the place. The first link only sets where
     // the page opens, so the sheet stays as the layout left it.
     if (linkFollowedRef.current) closeNavigatorSheet()
-    return true
-  }, [closeNavigatorSheet, dispatchLocation, projects, selectProject, showSessionIn])
+  }, [closeNavigatorSheet, dispatchLocation, selectProject, showSessionIn])
+  const applyRoute = useCallback((route: WorkspaceRoute): boolean | Promise<boolean> => {
+    const target = route.project ?? projectIdRef.current
+    if (!target) return false
+    if (projects.some((item) => item.id === target)) {
+      followRoute(target, route)
+      return true
+    }
+    // The link may name a Workspace registered elsewhere (another tab, the
+    // API) since the list was read: read it again before giving up on it.
+    // A Project that is still unknown cannot be honoured, and is abandoned.
+    if (!route.project) return false
+    return api.listProjects().then((latest) => {
+      if (!latest.some((item) => item.id === target)) return false
+      setProjects(latest)
+      followRoute(target, route)
+      return true
+    })
+  }, [api, followRoute, projects])
   const routeSync = useWorkspaceRouteSync({
     apply: applyRoute,
     current: currentRoute,
