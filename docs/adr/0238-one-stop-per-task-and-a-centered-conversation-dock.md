@@ -2,7 +2,7 @@
 type: ADR
 id: "0238"
 title: "One Stop per Task, a folded running list, and one centered conversation column"
-status: proposed
+status: accepted
 date: 2026-10-21
 supersedes: "0232 §6, the sentences on Stop in the browser: that Stop cancels one named run and leaves its Task's new work running, that the Working-now strip lists every member turn with its own Stop and sums itself up in one line on a narrow screen, and that General's and the DM's composer offer the same Stop beside Send when exactly one turn runs"
 ---
