@@ -128,6 +128,32 @@ describe('AiPanelComposer', () => {
     expect(screen.getByTestId('agent-stop')).toBeEnabled()
   })
 
+  it('keeps Stop busy while the stop is in flight, and announces one that failed', async () => {
+    let fail: (cause: Error) => void = () => undefined
+    const onStop = vi.fn(() => new Promise<void>((_resolve, reject) => { fail = reject }))
+    render(
+      <AiPanelComposer
+        agentLabel="Codex"
+        agentReadiness="ready"
+        entries={[]}
+        input=""
+        inputRef={createRef<HTMLDivElement>()}
+        isActive
+        onChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={onStop}
+      />,
+    )
+    const stop = screen.getByTestId('agent-stop')
+    fireEvent.click(stop)
+    fireEvent.click(stop)
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(stop).toHaveAttribute('aria-busy', 'true')
+    fail(new Error('nope'))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Codex could not be stopped. Try again.'))
+    expect(stop).not.toHaveAttribute('aria-busy')
+  })
+
   it('prefers the side-question send while a run is active when offered', () => {
     const onActiveSend = vi.fn()
     render(

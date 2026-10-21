@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import type { AttentionSnapshot, KubecodeApi } from '../api'
+import { ApiError, type AttentionSnapshot, type KubecodeApi } from '../api'
 import { fakeNavigation } from '../app/inspector/inspectorTesting'
 import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { AttentionContext, type AttentionStore } from './attentionContext'
@@ -37,6 +37,8 @@ function store(value: AttentionSnapshot, overrides: Partial<AttentionStore> = {}
 function strip(value: AttentionStore, props: Partial<ExecutionStripProps> = {}, api: Partial<KubecodeApi> = {}, navigation: WorkspaceNavigation | null = null) {
   const client = {
     cancelRun: vi.fn().mockResolvedValue(undefined),
+    taskDetail: vi.fn().mockResolvedValue({ id: 'r1', execution: { round_id: 'round1', round_number: 1, paused: false, policy_revision: 3 } }),
+    setRoundExecutionPolicy: vi.fn().mockResolvedValue(undefined),
     resolvePermission: vi.fn().mockResolvedValue(undefined),
     resolveElicitation: vi.fn().mockResolvedValue(undefined),
     ...api,
@@ -52,7 +54,7 @@ function strip(value: AttentionStore, props: Partial<ExecutionStripProps> = {}, 
 }
 
 describe('ExecutionStrip', () => {
-  it('names each member at work, what on, and a Stop that says whose turn it ends', async () => {
+  it('names each member at work and what on, with one Stop that stops the whole Task', async () => {
     const value = store(snapshot({ executions: [execution({ queued: 2 })] }))
     const { api } = strip(value)
     const region = screen.getByRole('region', { name: 'Working now' })
@@ -60,25 +62,110 @@ describe('ExecutionStrip', () => {
     expect(region).toHaveTextContent('2 more messages queued')
     // Work in progress shimmers, in words (AI Elements Shimmer, #232).
     expect(region.querySelector('.kubecode-ai-shimmer')).toHaveTextContent('Analyst is working on Structured pruning')
-    const stop = within(region).getByRole('button', { name: "Stop Analyst's current turn" })
-    expect(stop).toHaveAccessibleDescription(/Work assigned to Analyst stays open/)
+    // One run is one compact row, never folded behind a count.
+    expect(within(region).queryByRole('button', { name: /running/ })).not.toBeInTheDocument()
+    const stop = within(region).getByRole('button', { name: 'Stop Structured pruning' })
+    expect(stop).toHaveAccessibleDescription(/pauses new work on Structured pruning/)
     fireEvent.click(stop)
     fireEvent.click(stop)
+    // Stop pauses the Task first, so nothing new is handed out, then ends the turn.
     await waitFor(() => expect(api.cancelRun).toHaveBeenCalledTimes(1))
+    expect(api.taskDetail).toHaveBeenCalledWith('p1', 'r1')
+    expect(api.setRoundExecutionPolicy).toHaveBeenCalledWith('p1', 'round1', 3, { paused: true })
     expect(api.cancelRun).toHaveBeenCalledWith('run1')
     expect(region).toHaveTextContent('Stopping…')
+    expect(within(region).getByRole('button', { name: 'Stop Structured pruning' })).toHaveAttribute('aria-busy', 'true')
+    expect(value.reload).toHaveBeenCalled()
   })
 
-  it('names the reply it stops in a private conversation', () => {
-    const value = store(snapshot({ executions: [execution({ binding: 'dm', conversation_id: 'dm1' })] }))
-    strip(value, { scope: { binding: 'dm', memberId: 'm1' } })
-    expect(screen.getByRole('button', { name: "Stop Analyst's reply" })).toBeInTheDocument()
+  it('does not pause a Task twice when new work on it is already paused', async () => {
+    const { api } = strip(store(snapshot({ executions: [execution()] })), {}, {
+      taskDetail: vi.fn().mockResolvedValue({ id: 'r1', execution: { round_id: 'round1', round_number: 1, paused: true, policy_revision: 4 } }),
+    } as Partial<KubecodeApi>)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
+    expect(api.setRoundExecutionPolicy).not.toHaveBeenCalled()
   })
 
-  it('says a turn was stopped once it leaves the snapshot', async () => {
+  it('reads the Task again and pauses once more when its limits changed elsewhere meanwhile', async () => {
+    const setRoundExecutionPolicy = vi.fn()
+      .mockRejectedValueOnce(new ApiError('policy_revision_conflict', 'changed', 409))
+      .mockResolvedValueOnce(undefined)
+    const taskDetail = vi.fn()
+      .mockResolvedValueOnce({ id: 'r1', execution: { round_id: 'round1', round_number: 1, paused: false, policy_revision: 3 } })
+      .mockResolvedValueOnce({ id: 'r1', execution: { round_id: 'round1', round_number: 1, paused: false, policy_revision: 5 } })
+    const { api } = strip(store(snapshot({ executions: [execution()] })), {}, { setRoundExecutionPolicy, taskDetail } as Partial<KubecodeApi>)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
+    expect(setRoundExecutionPolicy).toHaveBeenLastCalledWith('p1', 'round1', 5, { paused: true })
+  })
+
+  it('does not end the turns when the Task could not be paused', async () => {
+    const { api } = strip(store(snapshot({ executions: [execution()] })), {}, {
+      setRoundExecutionPolicy: vi.fn().mockRejectedValue(new ApiError('forbidden', 'no', 403)),
+    } as Partial<KubecodeApi>)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Structured pruning could not be stopped. Try again.'))
+    expect(api.cancelRun).not.toHaveBeenCalled()
+  })
+
+  it('stops every turn on one Task from its one row', async () => {
+    const runs = [execution(), execution({ run_id: 'run2', conversation_id: 's2', member: { id: 'm2', name: 'Coder', handle: 'coder', role: 'specialist' } })]
+    const { api } = strip(store(snapshot({ executions: runs })))
+    expect(screen.getAllByRole('button', { name: 'Stop Structured pruning' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledTimes(2))
+    expect(api.setRoundExecutionPolicy).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces a Stop that failed and frees its button', async () => {
+    const value = store(snapshot({ executions: [execution()] }))
+    strip(value, {}, { cancelRun: vi.fn().mockRejectedValue(new Error('nope')) } as Partial<KubecodeApi>)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Structured pruning could not be stopped. Try again.'))
+    expect(screen.getByRole('button', { name: 'Stop Structured pruning' })).not.toHaveAttribute('aria-busy')
+    expect(value.reload).toHaveBeenCalled()
+  })
+
+  it('folds more than one running Task into one count that opens the list, each with its member and Stop', async () => {
+    const other = { id: 'r2', title: 'Quantization' }
+    const runs = [
+      execution(),
+      execution({ run_id: 'run2', conversation_id: 's2', tasks: [other], member: { id: 'm2', name: 'Coder', handle: 'coder', role: 'specialist' } }),
+      execution({ run_id: 'run3', conversation_id: 's3', tasks: [] }),
+    ]
+    const item = permissionItem()
+    strip(store(snapshot({ items: [item], executions: runs })))
+    const region = screen.getByRole('region', { name: 'Working now' })
+    expect(within(region).queryByRole('button', { name: /^Stop/ })).not.toBeInTheDocument()
+    // A decision is never folded away.
+    expect(within(region).getByTestId('permission-queue-card')).toBeVisible()
+    const toggle = within(region).getByRole('button', { name: '3 running' })
+    fireEvent.click(toggle)
+    const list = await screen.findByRole('dialog', { name: 'Working now' })
+    expect(within(list).getByText('Coder')).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: 'Stop Structured pruning' })).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: 'Stop Quantization' })).toBeInTheDocument()
+    // A turn not tied to a Task stops only its reply.
+    expect(within(list).getByRole('button', { name: "Stop Analyst's reply" })).toBeInTheDocument()
+    // Focus lands on the list, so Escape closes it at once.
+    expect(list).toHaveFocus()
+    fireEvent.keyDown(list, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('names the reply it stops in a private conversation, and only ends that reply', async () => {
+    const value = store(snapshot({ executions: [execution({ binding: 'dm', conversation_id: 'dm1', tasks: [] })] }))
+    const { api } = strip(value, { scope: { binding: 'dm', memberId: 'm1' } })
+    fireEvent.click(screen.getByRole('button', { name: "Stop Analyst's reply" }))
+    await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
+    expect(api.taskDetail).not.toHaveBeenCalled()
+  })
+
+  it('says a Task was stopped once its turn leaves the snapshot', async () => {
     const value = store(snapshot({ executions: [execution()] }))
     const { rerender } = strip(value)
-    fireEvent.click(screen.getByRole('button', { name: "Stop Analyst's current turn" }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Structured pruning' }))
     await act(async () => undefined)
     const next = store(snapshot({ cursor: 2 }))
     rerender(
@@ -88,7 +175,7 @@ describe('ExecutionStrip', () => {
         </AttentionContext.Provider>
       </WorkspaceNavigationContext.Provider>,
     )
-    expect(screen.getByRole('status')).toHaveTextContent("Stopped Analyst's turn")
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped Structured pruning')
   })
 
   it('shows the permission a member waits on, answered in place through the attention store', async () => {
@@ -121,23 +208,7 @@ describe('ExecutionStrip', () => {
     const value = store(snapshot({ items: [item], executions: [execution({ waiting_keys: [item.key] })] }))
     strip(value, { scope: { taskId: 'r1' }, prompts: false })
     expect(screen.queryByTestId('permission-queue-card')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: "Stop Analyst's current turn" })).toBeInTheDocument()
-  })
-
-  it('folds more than two quiet rows, but never one that waits on the researcher', () => {
-    const item = permissionItem()
-    const others = ['a', 'b', 'c'].map((id) => execution({
-      run_id: `run-${id}`, conversation_id: `s-${id}`, member: { id, name: `Member ${id}`, handle: id, role: 'specialist' }, tasks: [],
-    }))
-    const value = store(snapshot({
-      items: [item],
-      executions: [execution({ waiting_keys: [item.key], status: 'waiting_permission' }), ...others],
-    }))
-    strip(value)
-    const folded = screen.getByText('3 working now').closest('details') as HTMLElement
-    expect(folded).not.toHaveAttribute('open')
-    expect(within(folded).getByText('Member a is working')).toBeInTheDocument()
-    expect(folded).not.toContainElement(screen.getByTestId('permission-queue-card'))
+    expect(screen.getByRole('button', { name: 'Stop Structured pruning' })).toBeInTheDocument()
   })
 
   it('shows a member\'s failed turn once, until dismissed', () => {
@@ -189,7 +260,7 @@ describe('ExecutionStrip', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
   })
 
-  it('on a phone, sums itself up in one line and keeps its prompts in a capped, scrollable body', () => {
+  it('on a phone, keeps its prompts in a capped, scrollable body', () => {
     const first = permissionItem()
     const second = permissionItem({ request_id: 'q2', key: 'permission:q2', tool: 'Run make' })
     strip(store(snapshot({
@@ -197,8 +268,7 @@ describe('ExecutionStrip', () => {
       executions: [execution({ status: 'waiting_permission', waiting_keys: [first.key, second.key] })],
     })))
     const region = screen.getByRole('region', { name: 'Working now' })
-    expect(region.querySelector('.kubecode-execution-summary')).toHaveTextContent('Working now: 1 · Waiting for you: 2')
-    const body = within(region).getByRole('group', { name: 'Working now' })
+    const body = within(region).getByRole('group', { name: 'Waiting for you' })
     expect(body).toHaveClass('kubecode-execution-body')
     expect(within(body).getAllByTestId('permission-queue-card')).toHaveLength(2)
   })

@@ -737,7 +737,7 @@ export function AgentSessionWorkspace({
             )}
             onSend={(text) => void composer.send(text)}
             onSendSideQuestion={(text) => void composer.sendSideQuestion(text)}
-            onStop={() => void stop()}
+            onStop={stop}
             onUndoTurn={() => {
               if (run) void history.reviseAtRun(run.id)
             }}
