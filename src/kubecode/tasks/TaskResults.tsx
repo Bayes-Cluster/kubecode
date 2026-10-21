@@ -370,7 +370,8 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
       </label>
       <small className="kubecode-research-muted" id={hintId}>{t('kubecode.task.feedbackHint')}</small>
       {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-      <div className="kubecode-task-decisions">
+      <div aria-label={t('kubecode.task.decisionTitle')} className="kubecode-task-decisions" role="group">
+        <p className="kubecode-task-decisions-note">{t('kubecode.task.acceptsShownVersions')}</p>
         <DecisionButton
           busy={busy === 'accept'}
           disabledReason={acceptReason}

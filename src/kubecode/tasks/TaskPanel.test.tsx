@@ -170,6 +170,17 @@ describe('TaskPanel', () => {
     )
   })
 
+  it('keeps the header to the Task itself: Discuss in General sits with what happens next', async () => {
+    mount(taskDetail())
+    const next = await panel().findByRole('group', { name: 'What happens next' })
+    expect(within(next).getByText('Results are ready for your decision.')).toBeInTheDocument()
+    expect(within(next).getByRole('button', { name: 'Discuss in General' })).toBeInTheDocument()
+    expect(panel().getAllByRole('button', { name: 'Discuss in General' })).toHaveLength(1)
+    const header = screen.getByRole('complementary', { name: 'Task details' }).querySelector('.kubecode-view-header') as HTMLElement
+    expect(within(header).queryByRole('button', { name: 'Discuss in General' })).not.toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: 'More actions for this Task' })).toBeInTheDocument()
+  })
+
   it('discusses the Task in General, at the review request when one is open', async () => {
     const { navigation } = mount(taskDetail())
     fireEvent.click(await panel().findByRole('button', { name: 'Discuss in General' }))

@@ -69,6 +69,10 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await expect(task.getByRole('button', { name: 'Back to Kanban' })).toBeVisible()
     const review = task.getByRole('region', { name: 'Results for your review' })
     await expect(review.getByText('Pruning heads kept accuracy at 0.91')).toBeVisible()
+    // On a phone the decision stays together and in view at the bottom of the Task.
+    await expect(review.getByRole('group', { name: 'Your decision' })).toBeInViewport()
+    await expect(task.getByRole('group', { name: 'What happens next' }).getByRole('button', { name: 'Discuss in General' })).toBeVisible()
+    await expectContained(page)
     await review.getByRole('button', { name: /results\.csv/ }).click()
     const evidence = inspector(page, 'Evidence details')
     await expect(evidence.getByText(/^Showing version /)).toBeVisible()
@@ -117,6 +121,14 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await card.click()
     await expect(task.getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true')
     await expect(review.getByText('Rerun at the new baseline: accuracy 0.50.')).toBeVisible()
+    // 4b. In the desktop inspector the header keeps the Task's title and menu; Discuss sits with what happens next,
+    // and the decision stays inside the panel.
+    const heading = await task.getByRole('heading', { name: seed.taskTitle, level: 3 }).boundingBox()
+    expect(heading?.width ?? 0).toBeGreaterThan(160)
+    await expect(task.getByRole('group', { name: 'What happens next' }).getByRole('button', { name: 'Discuss in General' })).toBeVisible()
+    const panelBox = await task.boundingBox()
+    const decisionBox = await review.getByRole('group', { name: 'Your decision' }).boundingBox()
+    expect((decisionBox?.x ?? 0) + (decisionBox?.width ?? 0)).toBeLessThanOrEqual((panelBox?.x ?? 0) + (panelBox?.width ?? 0) + 1)
 
     // 5. Archiving is apart from accepting, and refused with a reason while a review is open.
     await task.getByRole('button', { name: 'More actions for this Task' }).click()

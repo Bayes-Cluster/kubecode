@@ -29,6 +29,17 @@ const draft = (overrides: Partial<TaskDraft> = {}): TaskDraft => ({
 })
 
 describe('TaskBoardView', () => {
+  it('marks the cards that wait on the researcher, so the next decisions are easy to find', () => {
+    view({
+      board: board([
+        card({ id: 'r1', title: 'Quiet' }),
+        card({ id: 'r3', title: 'Awaiting', stage: 'review', review_requested: true }),
+      ]),
+    })
+    expect(screen.getByTestId('task-card-r3')).toHaveAttribute('data-needs-you', 'true')
+    expect(screen.getByTestId('task-card-r1')).not.toHaveAttribute('data-needs-you')
+  })
+
   it('shows one lifecycle: four stages, with conditions, the action asked of you and progress on the cards', () => {
     const { onOpenTask } = view({
       board: board([
