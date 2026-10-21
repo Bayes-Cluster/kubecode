@@ -1,10 +1,11 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useRef, useState } from 'react'
 
-import { Message, MessageContent, MessageResponse, PromptInput, PromptInputBody, PromptInputFooter, Shimmer } from '@/components/ai-elements'
-import { MarkdownContent } from '@/components/MarkdownContent'
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { MessageContent } from '@/components/ai-elements/message'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Composer } from '@/components/workspace/Composer'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -18,8 +19,11 @@ import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { ExecutionStrip } from '../attention/ExecutionStrip'
 import type { PlainDraft } from '../channel/generalDraft'
 import { useOutbox, type OutboxItem } from '../channel/outbox'
+import { ConversationComposer } from '../channel/ConversationComposer'
+import { ConversationMessage } from '../channel/ConversationMessage'
+import { ConversationResponse } from '../channel/ConversationResponse'
 import { OutboxRows } from '../channel/OutboxRows'
-import { Identity } from '../members/Identity'
+import { ConversationIdentity } from '../members/ConversationIdentity'
 import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
@@ -78,18 +82,12 @@ export function DmPane({
   const lastSent = useRef<PlainDraft | null>(null)
   const [sharing, setSharing] = useState(false)
   const [shared, setShared] = useState<ChannelMessage | null>(null)
-  const log = useRef<HTMLDivElement>(null)
   const you = researcherView(t)
   const them = memberView(member, t)
   const ready = member.state === 'active'
 
-  // New turns, and the member's reply after a send, come into view.
+  // New turns, and the member's reply after a send, come into view: the Conversation follows the latest.
   const newest = turns.at(-1)
-  const newestAssistant = newest?.assistant
-  useEffect(() => {
-    const element = log.current
-    if (element) element.scrollTop = element.scrollHeight
-  }, [turns.length, newestAssistant])
 
   const failureOf = (cause: unknown): string => {
     if (cause instanceof ApiError && cause.code === 'dm_busy') return t('kubecode.dm.busyKept', { name: member.name })
@@ -122,7 +120,7 @@ export function DmPane({
   }
 
   return (
-    <section aria-label={t('kubecode.dm.title', { name: member.name })} className="kubecode-channel-workspace">
+    <section aria-label={t('kubecode.dm.title', { name: member.name })} className="kubecode-channel-workspace" data-ws-components="official">
       <div className="kubecode-channel-main">
         <ViewHeader
           actions={(
@@ -135,8 +133,8 @@ export function DmPane({
           icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.directMessage.Icon} />}
           meta={(
             <>
-              <Identity view={them} />
-              <StatusBadge tone="info">{t('kubecode.dm.privateBadge')}</StatusBadge>
+              <ConversationIdentity view={them} />
+              <Badge variant="secondary">{t('kubecode.dm.privateBadge')}</Badge>
             </>
           )}
           title={t('kubecode.dm.title', { name: member.name })}
@@ -155,52 +153,67 @@ export function DmPane({
             )}
           </p>
         )}
-        <div aria-label={t('kubecode.channel.messages')} className="kubecode-channel-messages" ref={log} role="log">
-          {status === 'loading' && (
-            <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
-          )}
-          {status === 'error' && (
-            <p className="kubecode-research-error" role="alert">
-              {t('kubecode.dm.loadFailed')}{' '}
-              <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
-            </p>
-          )}
-          {status === 'ready' && turns.length === 0 && (
-            <p className="kubecode-research-muted">{t('kubecode.dm.empty')}</p>
-          )}
-          {turns.map((turn) => (
-            <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
-              <Message aria-label={you.name} author={<span className="sr-only">{you.name}</span>} from="self">
-                <MessageContent>
-                  <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.user} images="text" /></MessageResponse>
-                </MessageContent>
-              </Message>
-              {turn.assistant && (
-                <Message aria-label={them.name} author={<Identity size="sm" view={them} />} from="member">
-                  <MessageContent>
-                    <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.assistant} images="text" /></MessageResponse>
-                  </MessageContent>
-                </Message>
+        <div className="kubecode-message-list">
+          <Conversation aria-label={t('kubecode.channel.messages')} className="kubecode-conversation" initial="instant" resize="smooth">
+            <ConversationContent className="kubecode-channel-thread" scrollClassName="kubecode-channel-messages">
+              {status === 'loading' && (
+                <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
               )}
-            </div>
-          ))}
-          {newest && !newest.assistant && (
-            <Message aria-label={them.name} author={<Identity size="sm" view={them} />} from="member" state="pending">
-              <MessageContent>
-                <p className="kubecode-dm-waiting" role="status">
-                  <Shimmer>{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
+              {status === 'error' && (
+                <p className="kubecode-research-error" role="alert">
+                  {t('kubecode.dm.loadFailed')}{' '}
+                  <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
                 </p>
-              </MessageContent>
-            </Message>
-          )}
-          {queue.pending.map((item) => (
-            <Message aria-label={you.name} author={<span className="sr-only">{you.name}</span>} from="self" key={item.client_message_id} state="pending">
-              <MessageContent>
-                <MessageResponse className="kubecode-message-body"><MarkdownContent content={item.text} images="text" /></MessageResponse>
-                <p className="kubecode-message-delivery" data-delivery="queued">{t('kubecode.dm.queued', { name: member.name })}</p>
-              </MessageContent>
-            </Message>
-          ))}
+              )}
+              {status === 'ready' && turns.length === 0 && (
+                <Empty className="kubecode-conversation-empty">
+                  <EmptyHeader><EmptyTitle>{t('kubecode.dm.empty')}</EmptyTitle></EmptyHeader>
+                </Empty>
+              )}
+              {turns.map((turn) => (
+                <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
+                  <ConversationMessage aria-label={you.name} from="self">
+                    <span className="sr-only">{you.name}</span>
+                    <MessageContent className="kubecode-message-content">
+                      <ConversationResponse className="kubecode-message-body" t={t}>{turn.user}</ConversationResponse>
+                    </MessageContent>
+                  </ConversationMessage>
+                  {turn.assistant && (
+                    <ConversationMessage aria-label={them.name} from="member">
+                      <div className="kubecode-message-header"><ConversationIdentity size="sm" view={them} /></div>
+                      <MessageContent className="kubecode-message-content">
+                        <ConversationResponse className="kubecode-message-body" t={t}>{turn.assistant}</ConversationResponse>
+                      </MessageContent>
+                    </ConversationMessage>
+                  )}
+                </div>
+              ))}
+              {newest && !newest.assistant && (
+                <ConversationMessage aria-label={them.name} from="member" state="pending">
+                  <div className="kubecode-message-header"><ConversationIdentity size="sm" view={them} /></div>
+                  <MessageContent className="kubecode-message-content">
+                    <p className="kubecode-dm-waiting" role="status">
+                      <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
+                    </p>
+                  </MessageContent>
+                </ConversationMessage>
+              )}
+              {queue.pending.map((item) => (
+                <ConversationMessage aria-label={you.name} from="self" key={item.client_message_id} state="pending">
+                  <span className="sr-only">{you.name}</span>
+                  <MessageContent className="kubecode-message-content">
+                    <ConversationResponse className="kubecode-message-body" t={t}>{item.text}</ConversationResponse>
+                    <p className="kubecode-message-delivery" data-delivery="queued">{t('kubecode.dm.queued', { name: member.name })}</p>
+                  </MessageContent>
+                </ConversationMessage>
+              ))}
+            </ConversationContent>
+            <ConversationScrollButton
+              aria-label={t('kubecode.vocab.command.latest')}
+              className="kubecode-scroll-latest"
+              title={t('kubecode.vocab.command.latest')}
+            />
+          </Conversation>
         </div>
         {/* What is under way, what did not go, and the input card, together at the foot (#232). */}
         <div className="kubecode-conversation-dock">
@@ -215,37 +228,30 @@ export function DmPane({
             } : undefined}
             onSendAgain={(item) => void deliver(item)}
           />
-          <PromptInput>
-            <PromptInputBody>
-              <Composer
-                disabled={!ready}
-                focusKey={`composer:dm:${member.id}`}
-                label={t('kubecode.dm.placeholder', { name: member.name })}
-                placeholder={t('kubecode.dm.placeholder', { name: member.name })}
-                rows={2}
-                sendLabel={t('kubecode.channel.send')}
-                value={draft.body}
-                onChange={(body) => setDraft((current) => ({ ...current, body }))}
-                onSend={send}
-              />
-            </PromptInputBody>
-            <PromptInputFooter className="kubecode-composer-footer">
-              {!ready && (
-                <p className="kubecode-composer-warning" role="status">
-                  {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
-                  {navigation && (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
-                    >
-                      {t('kubecode.dm.fixInMembers')}
-                    </Button>
-                  )}
-                </p>
-              )}
-            </PromptInputFooter>
-          </PromptInput>
+          <ConversationComposer
+            disabled={!ready}
+            focusKey={`composer:dm:${member.id}`}
+            label={t('kubecode.dm.placeholder', { name: member.name })}
+            notices={!ready ? (
+              <p className="kubecode-composer-warning" role="status">
+                {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
+                {navigation && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
+                  >
+                    {t('kubecode.dm.fixInMembers')}
+                  </Button>
+                )}
+              </p>
+            ) : undefined}
+            placeholder={t('kubecode.dm.placeholder', { name: member.name })}
+            sendLabel={t('kubecode.channel.send')}
+            value={draft.body}
+            onChange={(body) => setDraft((current) => ({ ...current, body }))}
+            onSend={send}
+          />
         </div>
       </div>
       <DmShareDialog

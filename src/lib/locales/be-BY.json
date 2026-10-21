@@ -2888,5 +2888,16 @@
   "kubecode.proto.review.olderVersion": "папярэдняя версія",
   "kubecode.resources.findInResources": "Знайсці ў рэсурсах",
   "kubecode.reference.sources": "Крыніцы ({count})",
-  "kubecode.reference.sourcesAttention": "Зменена або выдалена: {count}"
+  "kubecode.reference.sourcesAttention": "Зменена або выдалена: {count}",
+  "kubecode.markdown.copied": "Скапіявана",
+  "kubecode.markdown.copyCode": "Скапіяваць код",
+  "kubecode.markdown.copyTable": "Скапіяваць табліцу",
+  "kubecode.markdown.copyTableAsCsv": "Скапіяваць табліцу як CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Скапіяваць табліцу як Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Скапіяваць табліцу як TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Відарыс недаступны",
+  "kubecode.composer.attachFromWorkspace": "Далучыць з гэтай працоўнай прасторы…"
 }

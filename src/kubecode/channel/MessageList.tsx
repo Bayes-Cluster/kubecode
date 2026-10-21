@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ConversationEmptyState } from '@/components/ai-elements'
+import type { StickToBottomContext } from 'use-stick-to-bottom'
 
+import { Conversation as ConversationScroller, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Separator } from '@/components/ui/separator'
 import { DEFAULT_APP_LOCALE, getLocaleDateLocale, type AppLocale, type Translator } from '@/lib/i18n'
 
 import type {
@@ -117,12 +120,12 @@ export function MessageList({
   t,
   threadByRoot,
 }: MessageListProps) {
-  const scroller = useRef<HTMLDivElement>(null)
+  // The official Conversation scrolls (use-stick-to-bottom, ADR 0242); this keeps its scroller and lock.
+  const conversation = useRef<StickToBottomContext | null>(null)
+  const scrollerOf = () => conversation.current?.scrollRef.current ?? null
   const stuck = useRef(true)
   const coarse = useCoarsePointer()
   const [announcement, setAnnouncement] = useState('')
-  const [unseen, setUnseen] = useState(false)
-  const newest = feed.messages.at(-1)?.seq ?? 0
   const byId = useMemo(() => new Map(feed.messages.map((message) => [message.id, message])), [feed.messages])
   // The app's language for dates; today is when the list renders.
   const dateLocale = getLocaleDateLocale(locale)
@@ -133,7 +136,7 @@ export function MessageList({
 
   /** Scrolls to a message of this feed and, unless told not to, focuses it so the jump is announced. */
   const jump = (messageId: string, focus = true) => {
-    const target = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
+    const target = scrollerOf()?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
     if (!target) {
       onJumpMissing?.(messageId)
       return
@@ -141,6 +144,8 @@ export function MessageList({
     const group = target.closest('details')
     if (group) group.open = true
     stuck.current = false
+    // Reading a linked message is leaving the latest: the conversation stops following it.
+    conversation.current?.stopScroll()
     target.setAttribute('tabindex', '-1')
     target.scrollIntoView?.({ block: 'center' })
     if (focus) target.focus({ preventScroll: true })
@@ -151,25 +156,20 @@ export function MessageList({
   useEffect(() => { reportRef.current = onReadingPositionChange })
   const frame = useRef(0)
   useEffect(() => () => window.cancelAnimationFrame(frame.current), [])
-  const measure = () => {
-    if (!reportRef.current || frame.current) return
-    frame.current = window.requestAnimationFrame(() => {
-      frame.current = 0
-      const element = scroller.current
-      if (element) reportRef.current?.({ messageId: messageAtMiddle(element), atLatest: stuck.current })
-    })
-  }
-
-  // Following the conversation keeps the newest in view; reading back, a newer message is pointed out instead.
-  const [seenNewest, setSeenNewest] = useState(newest)
-  if (seenNewest !== newest) {
-    setSeenNewest(newest)
-    if (newest > seenNewest && !stuck.current) setUnseen(true)
-  }
   useEffect(() => {
-    const element = scroller.current
-    if (element && stuck.current) element.scrollTop = element.scrollHeight
-  }, [newest])
+    const element = scrollerOf()
+    if (!element) return undefined
+    const onScroll = () => {
+      stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
+      if (!reportRef.current || frame.current) return
+      frame.current = window.requestAnimationFrame(() => {
+        frame.current = 0
+        reportRef.current?.({ messageId: messageAtMiddle(element), atLatest: stuck.current })
+      })
+    }
+    element.addEventListener('scroll', onScroll, { passive: true })
+    return () => element.removeEventListener('scroll', onScroll)
+  }, [])
 
   const focusOnLandRef = useRef(focusOnLand)
   useEffect(() => { focusOnLandRef.current = focusOnLand })
@@ -202,104 +202,107 @@ export function MessageList({
     void copy(message.body).then((ok) => setAnnouncement(ok ? t('kubecode.channel.textCopied') : t('kubecode.channel.copyFailed')))
   }
 
-  const toLatest = () => {
-    const element = scroller.current
-    stuck.current = true
-    setUnseen(false)
-    if (element) element.scrollTop = element.scrollHeight
-  }
-
   return (
     <div className="kubecode-message-list">
-      <div
+      <ConversationScroller
         aria-label={label}
-        className="kubecode-channel-messages"
-        ref={scroller}
-        role="log"
-        onScroll={(event) => {
-          const element = event.currentTarget
-          stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
-          if (stuck.current && unseen) setUnseen(false)
-          measure()
-        }}
+        className="kubecode-conversation"
+        contextRef={conversation}
+        initial="instant"
+        resize="smooth"
       >
-        {feed.hasMore && (
-          <Button
-            disabled={feed.loadingOlder}
-            size="xs"
-            variant="ghost"
-            onClick={() => {
-              stuck.current = false
-              feed.loadOlder()
-            }}
-          >
-            {t('kubecode.channel.loadOlder')}
-          </Button>
-        )}
-        {feed.status === 'loading' && (
-          <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
-        )}
-        {feed.status === 'error' && (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.channel.loadFailed')}{' '}
-            <Button size="xs" variant="ghost" onClick={feed.reload}>{t('kubecode.retry')}</Button>
-          </p>
-        )}
-        {feed.status === 'ready' && feed.messages.length === 0 && (
-          <ConversationEmptyState icon={emptyIcon} title={emptyLabel} />
-        )}
-        {items.map((item) => {
-          if (item.kind === 'date') {
-            return <p className="kubecode-date-separator" key={item.key} role="separator">{item.label}</p>
-          }
-          if (item.kind === 'activity') return <ActivityGroup dateLocale={dateLocale} key={item.key} messages={item.messages} t={t} />
-          const { message } = item
-          const author = authorView(message, directory, sessions, t)
-          const citedMessage = message.reply_to ? byId.get(message.reply_to) : undefined
-          const taskId = message.task_id
-          const thread = threadByRoot?.get(message.id)
-          return (
-            <MessageItem
-              author={author}
-              cited={message.reply_to
-                ? citedMessage
-                  ? { author: authorView(citedMessage, directory, sessions, t), excerpt: excerptOf(citedMessage.body) }
-                  : 'missing'
-                : null}
-              coarse={coarse}
-              continued={item.continued}
-              dateLocale={dateLocale}
-              delivery={delivery(message, item.notes)}
-              filtered={filter !== null && filter === taskId}
-              key={message.id}
-              legacyThread={thread}
-              message={message}
-              recipients={messageRecipients(message, directory, sessions, t)}
-              references={displayReferences(message).map((ref) => ({ ...labels(ref), ref }))}
-              t={t}
-              task={taskId ? { id: taskId, title: research.find((entry) => entry.id === taskId)?.title ?? labels({ kind: 'research', id: taskId }).title } : null}
-              onBoard={onBoard}
-              on={{
-                reply: onReply && message.thread_id === null ? () => onReply(message, author) : undefined,
-                openTask: taskId && (onOpenTask || onFilterTask)
-                  ? () => (onOpenTask ? onOpenTask(taskId, message.id) : onFilterTask?.(taskId))
-                  : undefined,
-                filterTask: taskId && onFilterTask ? () => onFilterTask(taskId) : undefined,
-                openReference: onOpenReference,
-                openThread: thread && onOpenThread ? () => onOpenThread(thread) : undefined,
-                jump: (id) => jump(id),
-                copyLink: () => copyLink(message),
-                copyText: () => copyText(message),
+        <ConversationContent className="kubecode-channel-thread" scrollClassName="kubecode-channel-messages">
+          {feed.hasMore && (
+            <Button
+              className="kubecode-load-older"
+              disabled={feed.loadingOlder}
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                stuck.current = false
+                conversation.current?.stopScroll()
+                feed.loadOlder()
               }}
-            />
-          )
-        })}
-      </div>
-      {unseen && (
-        <Button className="kubecode-new-messages" size="xs" variant="secondary" onClick={toLatest}>
-          {t('kubecode.channel.newMessages')}
-        </Button>
-      )}
+            >
+              {t('kubecode.channel.loadOlder')}
+            </Button>
+          )}
+          {feed.status === 'loading' && (
+            <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
+          )}
+          {feed.status === 'error' && (
+            <p className="kubecode-research-error" role="alert">
+              {t('kubecode.channel.loadFailed')}{' '}
+              <Button size="xs" variant="ghost" onClick={feed.reload}>{t('kubecode.retry')}</Button>
+            </p>
+          )}
+          {feed.status === 'ready' && feed.messages.length === 0 && (
+            <Empty className="kubecode-conversation-empty">
+              <EmptyHeader>
+                {emptyIcon && <EmptyMedia aria-hidden="true" variant="icon">{emptyIcon}</EmptyMedia>}
+                <EmptyTitle>{emptyLabel}</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          )}
+          {items.map((item) => {
+            if (item.kind === 'date') {
+              return (
+                <div className="kubecode-date-separator" key={item.key} role="separator" aria-label={item.label}>
+                  <Separator className="kubecode-date-separator-rule" decorative />
+                  <span aria-hidden="true">{item.label}</span>
+                  <Separator className="kubecode-date-separator-rule" decorative />
+                </div>
+              )
+            }
+            if (item.kind === 'activity') return <ActivityGroup dateLocale={dateLocale} key={item.key} messages={item.messages} t={t} />
+            const { message } = item
+            const author = authorView(message, directory, sessions, t)
+            const citedMessage = message.reply_to ? byId.get(message.reply_to) : undefined
+            const taskId = message.task_id
+            const thread = threadByRoot?.get(message.id)
+            return (
+              <MessageItem
+                author={author}
+                cited={message.reply_to
+                  ? citedMessage
+                    ? { author: authorView(citedMessage, directory, sessions, t), excerpt: excerptOf(citedMessage.body) }
+                    : 'missing'
+                  : null}
+                coarse={coarse}
+                continued={item.continued}
+                dateLocale={dateLocale}
+                delivery={delivery(message, item.notes)}
+                filtered={filter !== null && filter === taskId}
+                key={message.id}
+                legacyThread={thread}
+                message={message}
+                recipients={messageRecipients(message, directory, sessions, t)}
+                references={displayReferences(message).map((ref) => ({ ...labels(ref), ref }))}
+                t={t}
+                task={taskId ? { id: taskId, title: research.find((entry) => entry.id === taskId)?.title ?? labels({ kind: 'research', id: taskId }).title } : null}
+                onBoard={onBoard}
+                on={{
+                  reply: onReply && message.thread_id === null ? () => onReply(message, author) : undefined,
+                  openTask: taskId && (onOpenTask || onFilterTask)
+                    ? () => (onOpenTask ? onOpenTask(taskId, message.id) : onFilterTask?.(taskId))
+                    : undefined,
+                  filterTask: taskId && onFilterTask ? () => onFilterTask(taskId) : undefined,
+                  openReference: onOpenReference,
+                  openThread: thread && onOpenThread ? () => onOpenThread(thread) : undefined,
+                  jump: (id) => jump(id),
+                  copyLink: () => copyLink(message),
+                  copyText: () => copyText(message),
+                }}
+              />
+            )
+          })}
+        </ConversationContent>
+        <ConversationScrollButton
+          aria-label={t('kubecode.vocab.command.latest')}
+          className="kubecode-scroll-latest"
+          title={t('kubecode.vocab.command.latest')}
+        />
+      </ConversationScroller>
       <span className="sr-only" role="status">{announcement}</span>
     </div>
   )

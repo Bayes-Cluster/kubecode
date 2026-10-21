@@ -81,8 +81,14 @@ const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLEleme
 const notice = () => document.querySelector('.kubecode-composer-notice') as HTMLElement
 const type = (value: string) => fireEvent.change(box(), { target: { value, selectionStart: value.length } })
 
+/** Add context is a menu (ADR 0242): attach from the Workspace, or mention someone. */
+async function addContext(item = 'Attach from this Workspace…') {
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Add context' }), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+  fireEvent.click(await screen.findByRole('menuitem', { name: item }))
+}
+
 describe('MessageComposer', () => {
-  it('has no message type, no recipient row and no hint line: the card is quiet', () => {
+  it('has no message type, no recipient row and no hint line: the card is quiet', async () => {
     render(<Harness />)
     expect(screen.queryByRole('combobox', { name: 'Message type' })).not.toBeInTheDocument()
     expect(screen.queryByText('Ask a Session')).not.toBeInTheDocument()
@@ -111,7 +117,7 @@ describe('MessageComposer', () => {
     expect(onSend.mock.calls[0][0]).not.toHaveProperty('threadId')
   })
 
-  it('blocks a draft naming a member who cannot receive, and says why on Send', () => {
+  it('blocks a draft naming a member who cannot receive, and says why on Send', async () => {
     render(<Harness />)
     type('@unready can you?')
     const send = screen.getByRole('button', { name: 'Send' })
@@ -123,7 +129,7 @@ describe('MessageComposer', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
 
-  it('blocks sending while the members load, without saying the project manager needs setup', () => {
+  it('blocks sending while the members load, without saying the project manager needs setup', async () => {
     const onSend = vi.fn()
     render(<Harness directory={memberDirectory(null, 'loading')} onSend={onSend} />)
     type('@analyst hello')
@@ -137,7 +143,7 @@ describe('MessageComposer', () => {
     expect(box().value).toBe('@analyst hello')
   })
 
-  it('blocks sending when the members could not be loaded, and offers to load them again', () => {
+  it('blocks sending when the members could not be loaded, and offers to load them again', async () => {
     const reload = vi.fn()
     const onSend = vi.fn()
     render(<Harness directory={{ ...memberDirectory(null, 'error'), reload }} onSend={onSend} />)
@@ -170,7 +176,7 @@ describe('MessageComposer', () => {
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
   })
 
-  it('blocks a draft naming a removed member instead of sending it to the project manager', () => {
+  it('blocks a draft naming a removed member instead of sending it to the project manager', async () => {
     const gone = member({ id: 'old', name: 'Old', handle: 'old', state: 'removed', public_conversation_id: null })
     const onSend = vi.fn()
     render(<Harness directory={memberDirectory({ members: [general, analyst, gone], general_id: 'g' }, 'ready')} onSend={onSend} />)
@@ -183,7 +189,7 @@ describe('MessageComposer', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it('does not send on Shift+Enter or while an input method composes', () => {
+  it('does not send on Shift+Enter or while an input method composes', async () => {
     const onSend = vi.fn()
     render(<Harness onSend={onSend} />)
     type('hello')
@@ -199,7 +205,7 @@ describe('MessageComposer', () => {
     const about = document.querySelector('.kubecode-composer-about') as HTMLElement
     expect(about).toHaveTextContent('About')
     expect(within(about).getByText('Pruning')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
     type('see this')
     fireEvent.keyDown(box(), { key: 'Enter' })
@@ -218,7 +224,7 @@ describe('MessageComposer', () => {
   it('makes a research question picked as context the Task, and adds other picks once', async () => {
     render(<Harness />)
     for (const name of ['pick results', 'pick results', 'pick plot', 'pick Quantization']) {
-      fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+      await addContext()
       fireEvent.click(await screen.findByRole('button', { name }))
     }
     const about = document.querySelector('.kubecode-composer-about') as HTMLElement
@@ -230,12 +236,12 @@ describe('MessageComposer', () => {
 
   it('names each attached reference by kind, title and version, replaces another version, and announces it', async () => {
     render(<Harness />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
     expect(screen.getByText('Added results.csv to your message.')).toBeInTheDocument()
     const about = document.querySelector('.kubecode-composer-about') as HTMLElement
     expect(within(about).getByText('v3')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
     expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(1)
     expect(within(about).getByText('v4')).toBeInTheDocument()
@@ -246,7 +252,7 @@ describe('MessageComposer', () => {
     render(<Harness />)
     type('compare with the baseline')
     box().setSelectionRange(8, 8)
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     box().setSelectionRange(0, 0)
     fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
     expect(box()).toHaveFocus()
@@ -277,31 +283,31 @@ describe('MessageComposer', () => {
     expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'artifact', id: 'a2', revision: '3' }])
   })
 
-  it('is one input surface: the reply and references head the card, and the text and its controls fill it', () => {
+  it('is one input surface: the reply and references head the card, and the text and its controls fill it', async () => {
     const initial = { ...emptyGeneralDraft('r1'), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
     render(<Harness initial={initial} />)
-    const card = document.querySelector('.kubecode-ai-prompt-input') as HTMLElement
+    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
     expect(card).not.toBeNull()
-    const header = card.querySelector('.kubecode-ai-prompt-input-header') as HTMLElement
+    const header = card.querySelector('.kubecode-composer-context') as HTMLElement
     expect(header).toHaveTextContent('Replying to Analyst: Ran it')
     expect(within(header).getByText('Pruning')).toBeInTheDocument()
-    expect(card.querySelector('.kubecode-ai-prompt-input-body')).toContainElement(box())
+    expect(card).toContainElement(box())
     expect(within(card).getByRole('button', { name: 'Add context' })).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Send' })).toBeInTheDocument()
     expect(card).not.toHaveTextContent(/never start work/)
     expect(toRow()).toBeNull()
   })
 
-  it('puts "@" at the caret for a mention', () => {
+  it('puts "@" at the caret for a mention', async () => {
     render(<Harness />)
     type('hi')
     box().setSelectionRange(2, 2)
-    fireEvent.click(screen.getByRole('button', { name: 'Mention someone' }))
+    await addContext('Mention someone')
     expect(box().value).toBe('hi @')
-    expect(box()).toHaveFocus()
+    await waitFor(() => expect(box()).toHaveFocus())
   })
 
-  it('cancels a reply with its own button and keeps Escape for the text box', () => {
+  it('cancels a reply with its own button and keeps Escape for the text box', async () => {
     const initial = { ...emptyGeneralDraft(null), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
     render(<Harness initial={initial} />)
     expect(screen.getByText('Replying to Analyst: Ran it')).toBeInTheDocument()
@@ -394,7 +400,7 @@ describe('MessageComposer', () => {
       .mockResolvedValue(saved())
     const initial: GeneralDraft = { ...emptyGeneralDraft(null), task: 'r1', taskRevision: '2' }
     render(<Harness initial={initial} onSend={onSend} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
     type('compare with v4')
     fireEvent.keyDown(box(), { key: 'Enter' })
@@ -406,7 +412,7 @@ describe('MessageComposer', () => {
     ]
     expect(onSend.mock.calls[0][0].references).toEqual(pinned)
     // Meanwhile the next message attaches the earlier version of the same file.
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
     fireEvent.click(within(unsent).getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Unsent messages' })).not.toBeInTheDocument())
@@ -425,7 +431,7 @@ describe('MessageComposer', () => {
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValue(saved())
     render(<Harness initial={{ ...emptyGeneralDraft(null), task: 'r1', taskRevision: '2' }} onSend={onSend} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
     type('first wording')
     fireEvent.keyDown(box(), { key: 'Enter' })
@@ -465,7 +471,7 @@ describe('MessageComposer', () => {
     type('in flight')
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
-    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick Quantization' }))
     fail(new Error('network down'))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not sent: network down')
@@ -510,7 +516,7 @@ describe('MessageComposer', () => {
 })
 
 describe('MessageComposer drafts kept for the place (ADR 0228 §4, ADR 0229 §6)', () => {
-  it('keeps the draft of General and of each Task-scoped General apart, across leaving and coming back', () => {
+  it('keeps the draft of General and of each Task-scoped General apart, across leaving and coming back', async () => {
     const memory = createPlaceMemory()
     const view = render(placed(memory, <Harness />))
     type('half a thought')

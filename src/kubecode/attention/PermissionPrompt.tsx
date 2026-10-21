@@ -1,12 +1,18 @@
 import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { DecisionButton } from '@/components/workspace/DecisionButton'
+import {
+  Confirmation,
+  ConfirmationActions,
+  ConfirmationRequest,
+  ConfirmationTitle,
+} from '@/components/ai-elements/confirmation'
 import type { Translator } from '@/lib/i18n'
 
 import type { PendingOption } from '../api'
 import { permissionChoiceLabel } from '../session/sessionModel'
 import { isGone } from './attentionContext'
+import { PromptDecision } from './PromptDecision'
 
 export type PermissionPromptProps = {
   requestId: string
@@ -52,13 +58,16 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
     }
   }
   return (
-    // Only changes are announced (the outcome lines below); the countdown is not.
-    <div
+    // The official Confirmation (ADR 0242), a named group rather than an alert:
+    // only changes are announced (the outcome lines below); the countdown is not.
+    <Confirmation
+      approval={{ id: requestId }}
       aria-label={`${title}: ${tool}`}
       className="kubecode-permission-dock"
       data-focus-key={`permission:${requestId}`}
       data-testid="permission-queue-card"
       role="group"
+      state="approval-requested"
       tabIndex={0}
       onKeyDown={(event) => {
         // 1–9 keyboard option select (#111).
@@ -66,15 +75,17 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         if (!Number.isNaN(digit) && digit >= 1 && digit <= options.length) void resolve(options[digit - 1].id)
       }}
     >
-      <div className="kubecode-permission-heading">
-        <ShieldAlert aria-hidden size={17} />
+      <ShieldAlert aria-hidden size={17} />
+      <ConfirmationTitle className="kubecode-permission-heading">
         <strong>{title}</strong>
         {deadlineMs !== null && <PermissionCountdown deadlineMs={deadlineMs} t={t} />}
-      </div>
-      <code className="kubecode-permission-command">{tool}</code>
-      <div className="kubecode-permission-actions">
+      </ConfirmationTitle>
+      <ConfirmationRequest>
+        <code className="kubecode-permission-command">{tool}</code>
+      </ConfirmationRequest>
+      <ConfirmationActions className="kubecode-permission-actions">
         {options.map((option, index) => (
-          <DecisionButton
+          <PromptDecision
             busy={busy === option.id || resolving}
             key={option.id}
             title={`${index + 1} — ${option.label}`}
@@ -82,13 +93,13 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
             onDecide={() => void resolve(option.id)}
           >
             {permissionChoiceLabel(option, t)}
-          </DecisionButton>
+          </PromptDecision>
         ))}
-      </div>
+      </ConfirmationActions>
       {resolving && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.resolving')}</p>}
       {outcome === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.attention.resolveFailed')}</p>}
       {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
-    </div>
+    </Confirmation>
   )
 }
 
