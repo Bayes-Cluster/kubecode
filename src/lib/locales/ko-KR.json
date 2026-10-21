@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member}님이 {tool} 사용을 요청했습니다",
   "kubecode.needsYou.managerDecisions.someone": "전문가",
   "kubecode.needsYou.managerDecisions.reason": "이유: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "프로젝트 관리자가 제시간에 결정하지 않았습니다.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "프로젝트 관리자에게 연결할 수 없었습니다.",
   "kubecode.needsYou.managerDecisions.approved": "승인됨",
   "kubecode.needsYou.managerDecisions.denied": "거부됨",
   "kubecode.needsYou.managerDecisions.escalated": "나에게 에스컬레이션됨",

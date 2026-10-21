@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} đã yêu cầu dùng {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Một chuyên gia",
   "kubecode.needsYou.managerDecisions.reason": "Lý do: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Quản lý dự án không quyết định kịp thời.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Không thể liên hệ với quản lý dự án.",
   "kubecode.needsYou.managerDecisions.approved": "Đã chấp thuận",
   "kubecode.needsYou.managerDecisions.denied": "Đã từ chối",
   "kubecode.needsYou.managerDecisions.escalated": "Đã chuyển lên bạn",

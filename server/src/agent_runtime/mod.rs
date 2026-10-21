@@ -191,6 +191,8 @@ pub struct AgentRuntime {
     session_actor_policy: SessionActorPolicy,
     session_activity_sequence: Arc<AtomicU64>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
+    /// How long a specialist's request waits on the manager (ADR 0237).
+    manager_review_timeout: Arc<Mutex<std::time::Duration>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
     pending_side_questions: Arc<Mutex<HashSet<String>>>,
     terminals: Option<Arc<TerminalManager>>,
@@ -363,6 +365,7 @@ impl AgentRuntime {
             session_actor_policy: SessionActorPolicy::default(),
             session_activity_sequence: Arc::new(AtomicU64::new(0)),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+            manager_review_timeout: Arc::new(Mutex::new(permissions::MANAGER_REVIEW_TIMEOUT)),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
             pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
             terminals: None,

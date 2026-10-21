@@ -200,6 +200,7 @@ pub fn collect(state: &AppState, project_id: &str) -> AttentionSnapshot {
                     conversation_id: review.conversation_id,
                     tool: review.tool,
                     decision: review.decision,
+                    decided_by: review.decided_by,
                     reason: review.reason,
                     created_at: review.created_at,
                 })

@@ -157,6 +157,8 @@ pub struct ManagerDecisionView {
     pub tool: String,
     /// `approved`, `denied`, or `escalated`.
     pub decision: String,
+    /// `manager`, or `system` (the reason is then a code: `timeout`, `route_failed`).
+    pub decided_by: String,
     pub reason: String,
     pub created_at: String,
 }

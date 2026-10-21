@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} meminta untuk menggunakan {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Seorang spesialis",
   "kubecode.needsYou.managerDecisions.reason": "Alasan: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Manajer proyek tidak memutuskan tepat waktu.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Manajer proyek tidak dapat dihubungi.",
   "kubecode.needsYou.managerDecisions.approved": "Disetujui",
   "kubecode.needsYou.managerDecisions.denied": "Ditolak",
   "kubecode.needsYou.managerDecisions.escalated": "Dieskalasi ke Anda",

@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} bad om att använda {tool}",
   "kubecode.needsYou.managerDecisions.someone": "En specialist",
   "kubecode.needsYou.managerDecisions.reason": "Anledning: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Projektledaren beslutade inte i tid.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Projektledaren gick inte att nå.",
   "kubecode.needsYou.managerDecisions.approved": "Godkänd",
   "kubecode.needsYou.managerDecisions.denied": "Nekad",
   "kubecode.needsYou.managerDecisions.escalated": "Eskalerad till dig",

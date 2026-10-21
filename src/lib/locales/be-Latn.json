@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} paprasiŭ vykarystać {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Spiecyjalist",
   "kubecode.needsYou.managerDecisions.reason": "Pryčyna: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Kiraŭnik prajekta nie pryniaŭ rašennie svoječasova.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Nie ŭdalosia zviazacca z kiraŭnikom prajekta.",
   "kubecode.needsYou.managerDecisions.approved": "Uchvalena",
   "kubecode.needsYou.managerDecisions.denied": "Adchilena",
   "kubecode.needsYou.managerDecisions.escalated": "Pieradadziena vam",

@@ -132,6 +132,7 @@ impl AgentStore {
                conversation_id TEXT NOT NULL,
                tool TEXT NOT NULL,
                decision TEXT NOT NULL,
+               decided_by TEXT NOT NULL,
                option_id TEXT,
                reason TEXT NOT NULL,
                created_at TEXT NOT NULL

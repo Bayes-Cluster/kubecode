@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} папрасіў выкарыстаць {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Спецыяліст",
   "kubecode.needsYou.managerDecisions.reason": "Прычына: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Кіраўнік праекта не прыняў рашэнне своечасова.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Не ўдалося звязацца з кіраўніком праекта.",
   "kubecode.needsYou.managerDecisions.approved": "Ухвалена",
   "kubecode.needsYou.managerDecisions.denied": "Адхілена",
   "kubecode.needsYou.managerDecisions.escalated": "Перададзена вам",

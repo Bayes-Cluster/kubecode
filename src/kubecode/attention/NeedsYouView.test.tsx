@@ -86,6 +86,13 @@ describe('NeedsYouView', () => {
     expect(within(list).queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('words a request the server escalated by itself, not the manager', () => {
+    view({ managerDecisions: [managerDecision({ decision: 'escalated', decided_by: 'system', reason: 'timeout' })] })
+    const row = within(screen.getByRole('list', { name: 'Decided by the project manager' })).getByRole('listitem')
+    expect(row).toHaveTextContent('Reason: The project manager did not decide in time.')
+    expect(row).toHaveTextContent('Escalated to you')
+  })
+
   it('shows no manager decisions section when there are none', () => {
     view()
     expect(screen.queryByRole('list', { name: 'Decided by the project manager' })).not.toBeInTheDocument()

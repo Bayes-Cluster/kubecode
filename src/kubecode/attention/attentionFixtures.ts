@@ -211,6 +211,7 @@ export function managerDecision(overrides: Partial<ManagerDecision> = {}): Manag
     member: analyst,
     tool: 'Run pytest -q',
     decision: 'approved',
+    decided_by: 'manager',
     reason: 'Tests only read the workspace.',
     created_at: '2026-10-21 10:00:00',
     ...overrides,

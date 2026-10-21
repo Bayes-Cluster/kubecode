@@ -1694,6 +1694,8 @@ export type ManagerDecision = {
   member: AttentionMemberRef | null
   tool: string
   decision: 'approved' | 'denied' | 'escalated'
+  /** `system` when the server escalated it by itself; `reason` is then a code (`timeout`, `route_failed`). */
+  decided_by: 'manager' | 'system'
   reason: string
   created_at: string
 }

@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} möchte {tool} verwenden",
   "kubecode.needsYou.managerDecisions.someone": "Ein Spezialist",
   "kubecode.needsYou.managerDecisions.reason": "Grund: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Die Projektleitung hat nicht rechtzeitig entschieden.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Die Projektleitung war nicht erreichbar.",
   "kubecode.needsYou.managerDecisions.approved": "Genehmigt",
   "kubecode.needsYou.managerDecisions.denied": "Abgelehnt",
   "kubecode.needsYou.managerDecisions.escalated": "An dich eskaliert",

@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} 请求使用 {tool}",
   "kubecode.needsYou.managerDecisions.someone": "一位专家",
   "kubecode.needsYou.managerDecisions.reason": "理由：{reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "项目经理未能及时作出决定。",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "无法联系到项目经理。",
   "kubecode.needsYou.managerDecisions.approved": "已批准",
   "kubecode.needsYou.managerDecisions.denied": "已拒绝",
   "kubecode.needsYou.managerDecisions.escalated": "已升级给你",

@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} požiadal o použitie {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Špecialista",
   "kubecode.needsYou.managerDecisions.reason": "Dôvod: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Projektový manažér nerozhodol včas.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Projektového manažéra sa nepodarilo kontaktovať.",
   "kubecode.needsYou.managerDecisions.approved": "Schválené",
   "kubecode.needsYou.managerDecisions.denied": "Zamietnuté",
   "kubecode.needsYou.managerDecisions.escalated": "Postúpené vám",

@@ -26,6 +26,14 @@ const DECISION_TONE: Record<ManagerDecision['decision'], StatusTone> = {
   escalated: 'warn',
 }
 
+/** The manager's own words, or the server's reason code worded here. */
+function reasonOf(decision: ManagerDecision, t: Translator): string {
+  if (decision.decided_by !== 'system') return decision.reason
+  return decision.reason === 'timeout'
+    ? t('kubecode.needsYou.managerDecisions.systemTimeout')
+    : t('kubecode.needsYou.managerDecisions.systemUnreachable')
+}
+
 /** The manager's decisions, shown afterwards as information: nothing here is answered. */
 function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: Translator }) {
   const heading = useId()
@@ -45,7 +53,7 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
                 })}
               </span>
               <span className="kubecode-needs-you-detail">
-                {t('kubecode.needsYou.managerDecisions.reason', { reason: decision.reason })}
+                {t('kubecode.needsYou.managerDecisions.reason', { reason: reasonOf(decision, t) })}
               </span>
             </span>
             <StatusBadge tone={DECISION_TONE[decision.decision]}>

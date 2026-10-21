@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} ha chiesto di usare {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Uno specialista",
   "kubecode.needsYou.managerDecisions.reason": "Motivo: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Il project manager non ha deciso in tempo.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Non è stato possibile raggiungere il project manager.",
   "kubecode.needsYou.managerDecisions.approved": "Approvata",
   "kubecode.needsYou.managerDecisions.denied": "Negata",
   "kubecode.needsYou.managerDecisions.escalated": "Inoltrata a te",

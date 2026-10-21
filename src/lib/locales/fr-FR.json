@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} a demandé à utiliser {tool}",
   "kubecode.needsYou.managerDecisions.someone": "Un spécialiste",
   "kubecode.needsYou.managerDecisions.reason": "Motif : {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "Le chef de projet n'a pas décidé à temps.",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "Le chef de projet n'a pas pu être joint.",
   "kubecode.needsYou.managerDecisions.approved": "Approuvée",
   "kubecode.needsYou.managerDecisions.denied": "Refusée",
   "kubecode.needsYou.managerDecisions.escalated": "Remontée vers vous",

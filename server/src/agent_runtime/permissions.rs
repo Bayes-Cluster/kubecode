@@ -135,6 +135,19 @@ pub struct ManagerReviewRequest {
     pub requested_at: String,
 }
 
+/// How long a specialist's request waits for the manager before it is
+/// escalated to the researcher by itself (ADR 0237).
+pub const MANAGER_REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// One decision on a waiting request, before it is recorded.
+struct ReviewOutcome {
+    tool: String,
+    decision: &'static str,
+    decided_by: &'static str,
+    option_id: Option<String>,
+    reason: String,
+}
+
 /// Longest tool input the manager is shown.
 const REVIEW_INPUT_CHARS: usize = 4_000;
 /// Longest reason the manager may record.
@@ -351,7 +364,11 @@ impl AgentRuntime {
             .members
             .by_conversation(&conversation.project_id, conversation_id)
             .ok()??;
-        if !resolved.current || resolved.member.role != crate::member_store::MemberRole::Specialist
+        // A direct message is the researcher's own conversation: its
+        // requests go straight to them.
+        if !resolved.current
+            || resolved.member.role != crate::member_store::MemberRole::Specialist
+            || resolved.binding != crate::member_store::Binding::Public
         {
             return None;
         }
@@ -397,8 +414,102 @@ impl AgentRuntime {
                 .is_ok()
         });
         if !routed {
-            let _ = self.escalate_team_permission(request_id);
+            self.system_escalate(request_id, "route_failed");
+            return;
         }
+        // Undecided in time, it goes to the researcher by itself.
+        let timeout = *self
+            .manager_review_timeout
+            .lock()
+            .expect("manager review timeout mutex poisoned");
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let runtime = self.clone();
+            let request_id = request_id.to_owned();
+            handle.spawn(async move {
+                tokio::time::sleep(timeout).await;
+                runtime.system_escalate(&request_id, "timeout");
+            });
+        }
+    }
+
+    /// Escalates a request still waiting on the manager to the researcher,
+    /// recorded as the server's decision with a reason code.
+    pub(super) fn system_escalate(&self, request_id: &str, code: &str) {
+        let (run_id, tool) = {
+            let permissions = self
+                .pending_permissions
+                .lock()
+                .expect("pending permission mutex poisoned");
+            let Some(pending) = permissions
+                .get(request_id)
+                .filter(|pending| pending.request_payload["reviewer"] == "manager")
+            else {
+                return;
+            };
+            (
+                pending.run_id.clone(),
+                text_field(&pending.request_payload, "tool", 200).unwrap_or_default(),
+            )
+        };
+        if self.escalate_team_permission(request_id).is_err() {
+            return;
+        }
+        let Ok(run) = self.store.get_run(&run_id) else {
+            return;
+        };
+        let _ = self.record_review(
+            &run,
+            request_id,
+            ReviewOutcome {
+                tool,
+                decision: "escalated",
+                decided_by: "system",
+                option_id: None,
+                reason: code.to_owned(),
+            },
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_manager_review_timeout(&self, timeout: std::time::Duration) {
+        *self
+            .manager_review_timeout
+            .lock()
+            .expect("manager review timeout mutex poisoned") = timeout;
+    }
+
+    fn record_review(
+        &self,
+        run: &AgentRun,
+        request_id: &str,
+        outcome: ReviewOutcome,
+    ) -> Result<crate::agent_store::ManagerPermissionReview, ManagerReviewError> {
+        let review = crate::agent_store::ManagerPermissionReview {
+            id: Uuid::new_v4().to_string(),
+            project_id: run.project_id.clone(),
+            request_id: request_id.to_owned(),
+            run_id: run.id.clone(),
+            conversation_id: run.conversation_id.clone(),
+            tool: outcome.tool,
+            decision: outcome.decision.to_owned(),
+            decided_by: outcome.decided_by.to_owned(),
+            option_id: outcome.option_id,
+            reason: outcome.reason,
+            created_at: crate::agent_store::utc_now(),
+        };
+        self.store.record_manager_review(&review)?;
+        let _ = self.store.append_workspace_event(
+            "permission_reviewed",
+            Some(&run.project_id),
+            Some(&run.conversation_id),
+            Some(&run.id),
+            &json!({
+                "request_id": request_id,
+                "conversation_id": run.conversation_id,
+                "decision": review.decision,
+            }),
+        );
+        Ok(review)
     }
 
     /// Specialists' permission requests in `project_id` waiting on the manager.
@@ -546,31 +657,17 @@ impl AgentRuntime {
             let _ = pending.sender.send(outcome);
             announce_wait_ended(&self.store, &run_id);
         }
-        let review = crate::agent_store::ManagerPermissionReview {
-            id: Uuid::new_v4().to_string(),
-            project_id: project_id.to_owned(),
-            request_id: request_id.to_owned(),
-            run_id: run_id.clone(),
-            conversation_id: run.conversation_id.clone(),
-            tool,
-            decision: decision.to_owned(),
-            option_id,
-            reason,
-            created_at: crate::agent_store::utc_now(),
-        };
-        self.store.record_manager_review(&review)?;
-        let _ = self.store.append_workspace_event(
-            "permission_reviewed",
-            Some(project_id),
-            Some(&run.conversation_id),
-            Some(&run_id),
-            &json!({
-                "request_id": request_id,
-                "conversation_id": run.conversation_id,
-                "decision": decision,
-            }),
-        );
-        Ok(review)
+        self.record_review(
+            &run,
+            request_id,
+            ReviewOutcome {
+                tool,
+                decision,
+                decided_by: "manager",
+                option_id,
+                reason,
+            },
+        )
     }
 
     fn require_manager(&self, project_id: &str, caller: &str) -> Result<(), ManagerReviewError> {

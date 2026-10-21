@@ -2675,6 +2675,8 @@
   "kubecode.needsYou.managerDecisions.summary": "{member} が {tool} の使用を求めました",
   "kubecode.needsYou.managerDecisions.someone": "スペシャリスト",
   "kubecode.needsYou.managerDecisions.reason": "理由: {reason}",
+  "kubecode.needsYou.managerDecisions.systemTimeout": "プロジェクトマネージャーが時間内に判断しませんでした。",
+  "kubecode.needsYou.managerDecisions.systemUnreachable": "プロジェクトマネージャーに連絡できませんでした。",
   "kubecode.needsYou.managerDecisions.approved": "承認",
   "kubecode.needsYou.managerDecisions.denied": "拒否",
   "kubecode.needsYou.managerDecisions.escalated": "あなたにエスカレーション",

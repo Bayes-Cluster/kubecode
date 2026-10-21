@@ -1398,6 +1398,7 @@ async fn a_specialist_s_permission_goes_to_the_manager_who_approves_it_with_a_re
     assert_eq!(decision.request_id, "perm-1");
     assert_eq!(decision.decision, "approved");
     assert_eq!(decision.reason, "The build directory is generated output.");
+    assert_eq!(decision.decided_by, "manager");
     assert_eq!(decision.tool, "Run rm -rf build");
     assert_eq!(
         decision
@@ -1521,4 +1522,91 @@ async fn without_a_manager_a_specialist_s_permission_goes_to_the_researcher() {
         &[("allow_once", "allow_once")],
     );
     assert_eq!(rig.runtime.pending_requests()[0].reviewer, "user");
+}
+
+#[tokio::test]
+async fn an_undecided_review_escalates_to_the_researcher_after_the_timeout() {
+    let r = review_rig();
+    r.rig
+        .runtime
+        .set_manager_review_timeout(std::time::Duration::from_millis(50));
+    let _receiver = r.ask("perm-late");
+    assert_eq!(r.rig.runtime.pending_requests()[0].reviewer, "manager");
+    let mut escalated = false;
+    for _ in 0..100 {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        if r.rig.runtime.pending_requests()[0].reviewer == "user" {
+            escalated = true;
+            break;
+        }
+    }
+    assert!(escalated, "the request reaches the researcher by itself");
+    let snapshot = crate::attention::collect(&r.rig.state, &r.rig.f.project_id);
+    assert!(
+        snapshot
+            .items
+            .iter()
+            .any(|item| item.key == "permission:perm-late")
+    );
+    let decision = &snapshot.manager_decisions[0];
+    assert_eq!(decision.decision, "escalated");
+    assert_eq!(decision.decided_by, "system");
+    assert_eq!(decision.reason, "timeout");
+    // The manager can no longer decide it.
+    let error = refused(
+        r.rig
+            .server(&r.manager_session)
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-late".into(),
+                decision: "approve".into(),
+                reason: "Too late.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert!(error.contains("no longer waiting"), "{error}");
+}
+
+#[tokio::test]
+async fn a_specialist_s_direct_message_permission_goes_straight_to_the_researcher() {
+    let r = review_rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let analyst = r
+        .rig
+        .state
+        .members
+        .find(&r.rig.f.project_id, "analyst")
+        .unwrap()
+        .unwrap();
+    let dm = r
+        .rig
+        .state
+        .members
+        .ensure_dm_session(&r.rig.f.project_id, &analyst.id, available)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let run_id = r
+        .rig
+        .f
+        .agents
+        .start_run(&dm, &r.rig.f.project_id, "Private", PermissionMode::Safe)
+        .unwrap()
+        .id;
+    let _receiver = r.rig.runtime.ask_permission_for_test(
+        &dm,
+        &run_id,
+        "perm-dm",
+        "Edit notes",
+        json!({}),
+        &[("allow_once", "allow_once")],
+    );
+    assert_eq!(r.rig.runtime.pending_requests()[0].reviewer, "user");
+    let routes = r
+        .rig
+        .state
+        .orchestrator
+        .routes(&r.rig.f.project_id, None, 50)
+        .unwrap();
+    assert!(routes.iter().all(|route| route.source_id != "perm-dm"));
 }

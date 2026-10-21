@@ -90,6 +90,9 @@ pub struct ManagerPermissionReview {
     pub tool: String,
     /// `approved`, `denied`, or `escalated`.
     pub decision: String,
+    /// `manager`, or `system` when the server escalated it by itself; a
+    /// system decision's reason is a code (`timeout`, `route_failed`).
+    pub decided_by: String,
     pub option_id: Option<String>,
     pub reason: String,
     pub created_at: String,
@@ -106,8 +109,8 @@ impl AgentStore {
             .execute(
                 "INSERT INTO manager_permission_reviews
                  (id, project_id, request_id, run_id, conversation_id, tool, decision,
-                  option_id, reason, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                  option_id, reason, created_at, decided_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     review.id,
                     review.project_id,
@@ -119,6 +122,7 @@ impl AgentStore {
                     review.option_id,
                     review.reason,
                     review.created_at,
+                    review.decided_by,
                 ],
             )?;
         Ok(())
@@ -133,7 +137,7 @@ impl AgentStore {
         let database = self.database.lock().expect("agent database mutex poisoned");
         let mut statement = database.prepare(
             "SELECT id, project_id, request_id, run_id, conversation_id, tool, decision,
-                    option_id, reason, created_at
+                    option_id, reason, created_at, decided_by
              FROM manager_permission_reviews WHERE project_id = ?1
              ORDER BY created_at DESC, rowid DESC LIMIT ?2",
         )?;
@@ -151,6 +155,7 @@ impl AgentStore {
                     option_id: row.get(7)?,
                     reason: row.get(8)?,
                     created_at: row.get(9)?,
+                    decided_by: row.get(10)?,
                 })
             },
         )?;
