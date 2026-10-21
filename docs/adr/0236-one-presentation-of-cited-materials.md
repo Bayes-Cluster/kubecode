@@ -2,7 +2,7 @@
 type: ADR
 id: "0236"
 title: "One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources"
-status: proposed
+status: accepted
 date: 2026-10-21
 ---
 

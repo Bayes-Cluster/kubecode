@@ -313,6 +313,17 @@ describe('MessageComposer', () => {
     expect(box()).toHaveFocus()
   })
 
+  it('names a dropped connection in the interface language, never the browser\'s raw fetch error', async () => {
+    const onSend = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    render(<Harness initial={emptyGeneralDraft(null)} onSend={onSend} onSent={vi.fn()} />)
+    type('hello')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    const unsent = await screen.findByRole('list', { name: 'Unsent messages' })
+    const alert = await within(unsent).findByRole('alert')
+    expect(alert).toHaveTextContent('Not sent: Something went wrong')
+    expect(alert).not.toHaveTextContent('Failed to fetch')
+  })
+
   it('keeps a failed send as its own row: Send again replays the same id, and what is typed since is never touched', async () => {
     // The first save committed on the server, but its answer was lost.
     const onSend = vi.fn()

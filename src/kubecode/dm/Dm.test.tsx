@@ -117,6 +117,14 @@ describe('DmPane', () => {
     expect(api.postChannelMessage).not.toHaveBeenCalled()
   })
 
+  it('names a dropped connection in the interface language, never the browser\'s raw fetch error', async () => {
+    setup({ sendMemberDm: vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')) })
+    await screen.findByText('is 0.91 enough?')
+    fireEvent.change(box(), { target: { value: 'hello' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not sent: Something went wrong')
+  })
+
   it('keeps a failed send as its own row, sends it again under one id, never touches what is typed since, and new words get a new id', async () => {
     const send = vi.fn()
       .mockRejectedValueOnce(new ApiError('dm_failed', 'x', 502))

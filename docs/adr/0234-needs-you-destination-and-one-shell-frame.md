@@ -2,7 +2,7 @@
 type: ADR
 id: "0234"
 title: "Needs you as a Workspace destination, one destination header, and a 360-pixel inspector"
-status: proposed
+status: accepted
 date: 2026-10-21
 supersedes: "0228 §2, the sentence listing what a place is one of (Needs you is now a place too); 0228 §1, where Needs you is a list inside the navigation (the navigation now only counts what waits); 0228 §3, the 400-pixel inspector in the side-by-side rule (now the 360-pixel inspector column)"
 ---

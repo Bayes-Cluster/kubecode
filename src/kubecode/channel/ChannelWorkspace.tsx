@@ -5,6 +5,8 @@ import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import type { AppLocale, Translator } from '@/lib/i18n'
 
 import { DestinationHeader } from '../app/DestinationHeader'
+import { Icon } from '../icons'
+import { WORKSPACE_DESTINATION_ICONS } from '../icons/workspaceIcons'
 
 import type {
   ChannelMessage,
@@ -353,6 +355,7 @@ export function ChannelWorkspace({
         <MessageList
           delivery={deliverySource}
           directory={directory}
+          emptyIcon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />}
           emptyLabel={t('kubecode.channel.empty')}
           feed={shownFeed}
           filter={taskFilter}

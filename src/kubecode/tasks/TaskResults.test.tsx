@@ -90,6 +90,8 @@ describe('TaskResults', () => {
     expect(await screen.findByText('Showing version b')).toBeInTheDocument()
     backToTask()
     expect(screen.getByText('You saw version b.')).toBeInTheDocument()
+    // A successful look returns focus to Look at it too, never to the page.
+    expect(screen.getByRole('button', { name: 'Look at it' })).toHaveFocus()
     fireEvent.click(acceptShown())
     await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledTimes(2))
     expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.objectContaining({ work_id: 'w1', result_id: 'res1' }), 'b')
@@ -107,6 +109,8 @@ describe('TaskResults', () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(acceptShown()).toBeEnabled())
     expect(load).toHaveBeenCalledTimes(2)
+    // The reload must not drop keyboard focus to the page.
+    expect(screen.getByRole('button', { name: 'Look at it' })).toHaveFocus()
     fireEvent.click(acceptShown())
     await waitFor(() => expect(api.repinTaskEvidence).toHaveBeenCalledWith('p1', 'r1', expect.anything(), 'c'))
   })
