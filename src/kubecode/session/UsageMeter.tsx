@@ -52,9 +52,11 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
       maxTokens={hasWindow ? (size as number) : used}
       open={open}
       usedTokens={used}
-      // Hover and focus never open it; a click toggles it, and dismissing
-      // (Escape, a click outside) closes it.
-      onOpenChange={(next) => { if (!next) setOpen(false) }}
+      // The element is a hover card: it asks to close whenever the pointer
+      // or focus leaves the trigger. Those requests are ignored so the
+      // meter behaves like a popover — a click toggles it, and only an
+      // explicit dismissal (Escape, a press outside) closes it.
+      onOpenChange={() => {}}
     >
       <ContextTrigger>
         <Button
@@ -83,9 +85,11 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
         data-testid="usage-meter-popover"
         data-ws-components="official"
         sideOffset={6}
+        onEscapeKeyDown={() => setOpen(false)}
         // The trigger toggles; a press on it is not a dismissal.
         onPointerDownOutside={(event) => {
           if (triggerRef.current?.contains(event.target as Node)) event.preventDefault()
+          else setOpen(false)
         }}
       >
         <ContextContentHeader>

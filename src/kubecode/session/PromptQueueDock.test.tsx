@@ -74,6 +74,15 @@ describe('PromptQueueDock', () => {
     expect(onRemove).toHaveBeenCalledWith('a')
   })
 
+  it('keeps queue actions visible without hover (touch devices)', () => {
+    renderDock([item({ id: 'a' })], vi.fn(), vi.fn(), vi.fn())
+    for (const id of ['prompt-queue-send-now', 'prompt-queue-edit', 'prompt-queue-remove']) {
+      const action = screen.getByTestId(id)
+      expect(action.className).toContain('opacity-100')
+      expect(action.className.split(/\s+/)).not.toContain('opacity-0')
+    }
+  })
+
   it('sends a queued item now', () => {
     const onSendNow = vi.fn()
     renderDock([item({ id: 'a' })], vi.fn(), vi.fn(), onSendNow)

@@ -20,8 +20,11 @@ import type { Translator } from '@/lib/i18n'
 
 import type { PromptQueueItem } from '../api'
 
-/** Queue actions stay reachable from the keyboard, not only on hover. */
-const ACTION_CLASS = 'focus-visible:opacity-100 group-focus-within:opacity-100'
+/**
+ * Queue actions are always visible: the element hides them until hover,
+ * which leaves them undiscoverable on touch devices and to the keyboard.
+ */
+const ACTION_CLASS = 'opacity-100'
 
 /**
  * Queue surface above the composer (#96) on the official Queue element
