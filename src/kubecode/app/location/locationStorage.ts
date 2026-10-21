@@ -35,7 +35,7 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-const FIXED_VIEW_KEYS: readonly string[] = ['general', 'board', 'resources', 'members', 'sessions']
+const FIXED_VIEW_KEYS: readonly string[] = ['general', 'board', 'resources', 'needs-you', 'members', 'sessions']
 
 function isViewKey(value: unknown): value is ViewKey {
   if (typeof value !== 'string') return false

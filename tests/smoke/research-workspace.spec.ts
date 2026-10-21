@@ -273,7 +273,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
     summary: 'Structured pruning kept accuracy at 0.91, within one point. A negative effect was not observed.',
     evidence: ['file:results.csv'],
   })
-  await expect(workspaceNav(page).getByRole('button', { name: /Structured pruning/ })).toBeVisible()
+  await workspaceNav(page).getByRole('button', { name: /^Needs you/ }).click()
+  await expect(page.getByRole('region', { name: 'Needs you', exact: true }).getByRole('button', { name: /Structured pruning/ })).toBeVisible()
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   await expect(await boardCards(page, 'Review')).toHaveCount(1)
   await expect(await boardCards(page, 'Ready')).toHaveCount(0)

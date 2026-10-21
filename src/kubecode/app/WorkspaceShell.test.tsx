@@ -226,6 +226,24 @@ describe('Workspace navigation and routes', () => {
     expect(window.location.hash).toBe('#/p/project-1/members')
   })
 
+  it('titles all five destinations with the same header, and none of them offers Back', async () => {
+    render(<KubecodeApp api={api()} />)
+    const nav = await screen.findByRole('region', { name: 'Workspace' })
+    for (const [name, destination] of [
+      ['General', 'general'], [/^Kanban/, 'board'], ['Resources', 'resources'], [/^Needs you/, 'needs-you'], ['Members', 'members'],
+    ] as const) {
+      fireEvent.click(within(nav).getAllByRole('button', { name })[0])
+      await waitFor(() => expect(window.location.hash).toBe(`#/p/project-1/${destination}`))
+      const header = await waitFor(() => {
+        const found = document.querySelector(`.kubecode-session-context-row header.kubecode-destination-header[data-destination="${destination}"]`)
+        expect(found).not.toBeNull()
+        return found as HTMLElement
+      })
+      expect(within(header).getByRole('heading', { level: 2 })).toBeInTheDocument()
+      expect(within(header).queryByRole('button', { name: /^Back/ })).not.toBeInTheDocument()
+    }
+  })
+
   it('lands where a link points, under the base path, and keeps the path untouched', async () => {
     window.history.replaceState(null, '', '/user/alice/kubecode/#/p/project-1/resources')
     render(<KubecodeApp api={api()} />)
@@ -248,11 +266,16 @@ describe('Workspace navigation and routes', () => {
     expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
   })
 
-  it('gathers what waits for the researcher and opens the Task from it', async () => {
+  it('gathers what waits for the researcher in Needs you, a place of its own, and opens the Task from it', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
-    const waiting = await within(nav).findByRole('button', { name: /Pruning/ })
-    expect(within(nav).getByText('Review')).toBeInTheDocument()
+    fireEvent.click(await within(nav).findByRole('button', { name: /^Needs you/ }))
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/needs-you'))
+    const view = await screen.findByRole('region', { name: 'Needs you' })
+    expect(within(view).getByRole('heading', { level: 2, name: 'Needs you' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: /^Needs you/ })).toHaveAttribute('aria-current', 'page')
+    const waiting = await within(view).findByRole('button', { name: /Pruning/ })
+    expect(within(view).getByText('Review')).toBeInTheDocument()
     fireEvent.click(waiting)
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?task=r1'))
   })
@@ -269,9 +292,10 @@ describe('Workspace navigation and routes', () => {
       }),
       memberDmTurns: vi.fn().mockResolvedValue([]),
     })
+    window.history.replaceState(null, '', '/#/p/project-1/needs-you')
     render(<KubecodeApp api={client} />)
-    const nav = await screen.findByRole('region', { name: 'Workspace' })
-    fireEvent.click(await within(nav).findByRole('button', { name: /Analyst wants to use Run pytest -q/ }))
+    const view = await screen.findByRole('region', { name: 'Needs you' })
+    fireEvent.click(await within(view).findByRole('button', { name: /Analyst wants to use Run pytest -q/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst'))
   })
 
@@ -280,8 +304,8 @@ describe('Workspace navigation and routes', () => {
     const { nav } = await start('#/p/project-1/general')
     const shellStatus = () => document.querySelector('main.kubecode-app > [role="status"]')
     await waitFor(() => expect(shellStatus()).toHaveTextContent('Review the results of Pruning needs you'))
-    // Needs you, folded away in the sheet, has no live region of its own to lose it in.
-    expect(nav.querySelector('.kubecode-needs-you [role="status"]')).toBeNull()
+    // The navigation only counts what waits: the list is the Needs you view, never folded into the sheet.
+    expect(nav.querySelector('.kubecode-needs-you-list')).toBeNull()
   })
 
   it('keeps Files and Git out of the research views until asked for', async () => {

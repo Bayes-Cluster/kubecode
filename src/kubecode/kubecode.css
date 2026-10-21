@@ -133,29 +133,6 @@
   color: var(--text-primary);
 }
 
-.kubecode-panel-toggle-icon {
-  border: 1.5px solid currentColor;
-  border-radius: 3px;
-  display: block;
-  height: 16px;
-  opacity: 0.68;
-  position: relative;
-  width: 20px;
-}
-
-.kubecode-panel-toggle-icon > span {
-  background: currentColor;
-  display: block;
-  opacity: 0.24;
-  position: absolute;
-}
-
-.kubecode-panel-toggle-icon[data-active='true'] { opacity: 1; }
-.kubecode-panel-toggle-icon[data-active='true'] > span { opacity: 0.82; }
-.kubecode-panel-toggle-icon[data-panel='left'] > span { bottom: 0; left: 0; top: 0; width: 6px; }
-.kubecode-panel-toggle-icon[data-panel='right'] > span { bottom: 0; right: 0; top: 0; width: 6px; }
-.kubecode-panel-toggle-icon[data-panel='bottom'] > span { bottom: 0; height: 5px; left: 0; right: 0; }
-
 .kubecode-search {
   background: var(--surface-app);
   border: 1px solid var(--border-subtle);
@@ -5775,4 +5752,103 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-proto-inspector { padding: var(--ws-space-3); }
   .kubecode-ai-message-content { padding-inline-start: 0; }
   .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content { margin-inline-start: 0; }
+}
+
+/*
+ * The Workspace shell (#231, ADR 0234), in the proportions of the #230
+ * prototypes: the navigation's five destinations, one header shared by every
+ * destination over a hairline, and one 360-pixel inspector beside the view
+ * (or over it, as on a phone). Later rules win over the older shell styles.
+ */
+.kubecode-session-sidebar { border-inline-end: 0.5px solid var(--ws-hairline-strong); }
+.kubecode-workspace-nav { gap: var(--ws-space-3); padding: var(--ws-space-1) var(--ws-space-1) var(--ws-space-3); }
+.kubecode-workspace-nav .kubecode-research-nav-list { display: flex; flex-direction: column; gap: 2px; padding: 0; }
+.kubecode-workspace-nav .kubecode-research-nav-item {
+  border-radius: var(--ws-radius-sm);
+  color: var(--text-secondary);
+  font: var(--ws-font-body);
+  gap: var(--ws-space-2);
+  min-height: var(--ws-touch-target);
+  padding: 0 var(--ws-space-2);
+}
+.kubecode-workspace-nav .kubecode-research-nav-item:hover { background: var(--ws-surface-quiet); color: var(--text-primary); }
+.kubecode-workspace-nav .kubecode-research-nav-item[aria-current='page'] {
+  background: var(--ws-accent-soft);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.kubecode-workspace-nav .kubecode-research-nav-item:focus-visible { box-shadow: var(--ws-focus-ring); outline: 2px solid transparent; }
+.kubecode-workspace-nav .kubecode-research-nav-item .kubecode-research-badge { margin-inline-start: auto; }
+.kubecode-workspace-nav .kubecode-nav-heading,
+.kubecode-history-nav summary {
+  color: var(--text-secondary);
+  font: var(--ws-font-meta);
+  margin: 0 0 var(--ws-space-1);
+  padding: 0 var(--ws-space-2);
+}
+.kubecode-history-nav { border-top: 0.5px solid var(--ws-hairline-strong); padding-top: var(--ws-space-2); }
+.kubecode-history-nav summary { line-height: var(--ws-touch-target); }
+.kubecode-nav-members li { border-radius: var(--ws-radius-sm); padding: 2px var(--ws-space-1) 2px var(--ws-space-2); }
+.kubecode-nav-members li:hover { background: var(--ws-surface-quiet); }
+
+.kubecode-topbar { border-bottom: 0.5px solid var(--ws-hairline-strong); }
+.kubecode-topbar-divider { background: var(--ws-hairline-strong); height: 16px; margin: 0 var(--ws-space-1); width: 1px; }
+.kubecode-layout-toggle { color: var(--text-secondary); }
+.kubecode-layout-toggle[aria-pressed='true'] { background: var(--ws-accent-soft); color: var(--text-primary); }
+
+/* One header for General, Kanban, Resources, Needs you and Members. */
+.kubecode-resources,
+.kubecode-members-view,
+.kubecode-task-board { padding-top: 0; }
+.kubecode-view-header.kubecode-destination-header {
+  background: var(--surface-app);
+  border-bottom: 0.5px solid var(--ws-hairline-strong);
+  flex: 0 0 auto;
+  padding: var(--ws-space-3) var(--ws-space-5);
+}
+.kubecode-resources > .kubecode-destination-header,
+.kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-3); }
+.kubecode-task-board > .kubecode-destination-header { margin: 0 calc(-1 * var(--ws-space-4)); }
+.kubecode-channel-main > .kubecode-destination-header { margin: -12px -16px 0; }
+.kubecode-needs-you-view {
+  background: var(--surface-app);
+  color: var(--text-primary);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+.kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-5); width: 100%; }
+.kubecode-needs-you-view .kubecode-research-nav-list { display: flex; flex-direction: column; gap: 2px; padding: 0; }
+.kubecode-needs-you-view .kubecode-needs-you-row { border-radius: var(--ws-radius-sm); font: var(--ws-font-body); padding: var(--ws-space-2); }
+.kubecode-needs-you-view .kubecode-needs-you-row:hover { background: var(--ws-surface-quiet); }
+.kubecode-needs-you-view .kubecode-nav-heading { padding: 0 var(--ws-space-2); }
+.kubecode-needs-you-view .kubecode-research-nav-note { font: var(--ws-font-body); padding: var(--ws-space-2); }
+
+/* The one inspector: a 360-pixel column beside the view, over a hairline. */
+.kubecode-detail-pane.kubecode-inspector {
+  border-left: 0;
+  border-inline-start: 0.5px solid var(--ws-hairline-strong);
+  flex: 0 0 var(--ws-panel-inspector);
+}
+.kubecode-with-detail[data-inspector-layout='screen'] > .kubecode-inspector,
+.kubecode-session-context-row[data-inspector-layout='screen'] .kubecode-channel-workspace .kubecode-inspector {
+  border-inline-start: 0;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 980px) {
+  /* On a phone the navigation is a sheet over the view: lifted, not boxed. */
+  .kubecode-workspace[data-narrow='true'] > .kubecode-session-sidebar {
+    border-inline-end: 0;
+    box-shadow: var(--ws-elevation-soft);
+  }
+}
+@media (max-width: 760px) {
+  .kubecode-view-header.kubecode-destination-header { padding: var(--ws-space-3); }
+  .kubecode-resources > .kubecode-destination-header,
+  .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-2); }
+  .kubecode-destination-body { padding: var(--ws-space-2) var(--ws-space-3); }
 }

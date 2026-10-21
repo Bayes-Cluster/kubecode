@@ -40,16 +40,18 @@ afterEach(() => {
 
 describe('useInspectorPresentation', () => {
   it('puts the inspector beside the view only when both fit, after the open tools column', () => {
-    expect(VIEW_MIN + INSPECTOR_MIN).toBe(880)
+    // The inspector is the shell's 360-pixel column (--ws-panel-inspector, ADR 0234).
+    expect(INSPECTOR_MIN).toBe(360)
+    expect(VIEW_MIN + INSPECTOR_MIN).toBe(840)
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
     const view = render(<Row />)
-    resizeTo(879)
+    resizeTo(839)
     expect(screen.getByTestId('row')).toHaveAttribute('data-presentation', 'screen')
-    resizeTo(880)
+    resizeTo(840)
     expect(screen.getByTestId('row')).toHaveAttribute('data-presentation', 'side')
     resizeTo(1300)
     expect(screen.getByTestId('row')).toHaveAttribute('data-presentation', 'side')
-    view.rerender(<Row reservedWidth={440} />)
+    view.rerender(<Row reservedWidth={480} />)
     expect(screen.getByTestId('row')).toHaveAttribute('data-presentation', 'screen')
   })
 

@@ -38,7 +38,7 @@ function nav(overrides: Partial<WorkspaceNavProps> = {}) {
 }
 
 describe('WorkspaceNav', () => {
-  it('offers the four places, marks the current one, and counts the board', () => {
+  it('offers the five places, marks the current one, and counts the board', () => {
     const handlers = nav({ taskCount: 3 })
     const group = screen.getByRole('region', { name: 'kubecode.nav.workspace' })
     expect(within(group).getByRole('button', { name: 'kubecode.channel.general' })).toHaveAttribute('aria-current', 'page')
@@ -46,6 +46,7 @@ describe('WorkspaceNav', () => {
     for (const [name, view] of [
       [/^kubecode\.nav\.board/, 'board'],
       ['kubecode.nav.resources', 'resources'],
+      [/^kubecode\.nav\.needsYou/, 'needs-you'],
       ['kubecode.nav.members', 'members'],
       ['kubecode.channel.general', 'general'],
     ] as const) {
@@ -61,7 +62,7 @@ describe('WorkspaceNav', () => {
       within(group).getByRole('button', { name: 'kubecode.channel.general' }),
       within(group).getByRole('button', { name: /^kubecode\.nav\.board/ }),
       within(group).getByRole('button', { name: 'kubecode.nav.resources' }),
-      within(group).getByText('kubecode.nav.needsYou').closest('summary') as HTMLElement,
+      within(group).getByRole('button', { name: /^kubecode\.nav\.needsYou/ }),
       within(group).getByRole('button', { name: 'kubecode.nav.members' }),
       within(group).getByRole('heading', { name: 'kubecode.nav.roster' }),
       within(group).getByRole('list', { name: 'kubecode.nav.roster' }),
@@ -78,40 +79,33 @@ describe('WorkspaceNav', () => {
     expect(within(group).queryAllByRole('button').filter((button) => button.hasAttribute('aria-current'))).toEqual([])
   })
 
-  it('lists each decision once, from the server projection, and opens where each one says', () => {
-    // One permission, asked on behalf of a Task, is one row: not a Task row and a Session row.
+  it('makes Needs you a place of its own that counts what waits, never a list folded into the navigation', () => {
     const entries = needsYouFromAttention(
       snapshot({ items: [permissionItem(), questionItem(), proposalItem()] }),
       new Set(),
       createTranslator('en'),
       { presentation: 'screen' },
     )
-    const handlers = nav({ needsYou: entries, needsYouStatus: 'ready' })
-    const summary = screen.getByText('kubecode.nav.needsYou').closest('summary')
-    expect(summary).toHaveTextContent('3')
-    expect(summary?.closest('details')).toHaveAttribute('open')
-    expect(screen.getAllByRole('button', { name: /Structured pruning|Run pytest/ })).toHaveLength(2)
+    const handlers = nav({ active: 'needs-you', needsYou: entries })
+    const place = screen.getByRole('button', { name: /^kubecode\.nav\.needsYou/ })
+    expect(place).toHaveAttribute('aria-current', 'page')
+    expect(place).toHaveTextContent('3')
+    expect(place.querySelector('[data-tone="warn"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /Run pytest/ })).not.toBeInTheDocument()
+    fireEvent.click(place)
+    expect(handlers.onOpen).toHaveBeenLastCalledWith('needs-you')
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: /Run pytest/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general' }, focus: 'permission:q1' })
-    fireEvent.click(screen.getByRole('button', { name: /Which ratios/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({
-      place: { view: 'board' }, inspect: { kind: 'task', id: 'r1' }, focus: 'question:d1',
-    })
-    fireEvent.click(screen.getByRole('button', { name: /Quantize first/ }))
-    expect(handlers.onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general', message: 'msg1' }, focus: 'message:msg1' })
+  it('counts nothing as a quiet zero while the list loads or nothing waits', () => {
+    nav({ needsYou: [] })
+    const place = screen.getByRole('button', { name: /^kubecode\.nav\.needsYou/ })
+    expect(place.querySelector('[data-tone="warn"]')).toBeNull()
   })
 
   it('says on General how many of the researcher’s messages were not delivered', () => {
     nav({ undeliveredGeneral: 2 })
     const general = screen.getByRole('button', { name: /^kubecode\.channel\.general/ })
     expect(general).toHaveTextContent('kubecode.nav.notDelivered:{"count":2}')
-  })
-
-  it('says nothing is waiting, and keeps the disclosure closed', () => {
-    nav({ needsYouStatus: 'ready' })
-    expect(screen.getByText('kubecode.nav.needsYouNone')).toBeInTheDocument()
-    expect(screen.getByText('kubecode.nav.needsYou').closest('details')).not.toHaveAttribute('open')
   })
 
   it('opens a member’s profile from their name and a private conversation from its action', () => {

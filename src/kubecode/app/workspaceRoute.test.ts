@@ -17,6 +17,7 @@ const routes: WorkspaceRoute[] = [
   { project: 'p1', view: 'board' },
   { project: 'p1', view: 'board', task: 'r1' },
   { project: 'p1', view: 'resources' },
+  { project: 'p1', view: 'needs-you' },
   { project: 'p1', view: 'members', member: 'm1' },
   { project: 'p1', view: 'dm', member: 'm1' },
   { project: 'p1', view: 'question', question: 'r1' },

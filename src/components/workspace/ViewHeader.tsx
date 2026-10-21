@@ -27,6 +27,8 @@ export type ViewHeaderProps = {
   /** Heading level; a page uses 1, views 2, details 3. */
   level?: 1 | 2 | 3
   className?: string
+  /** The Workspace destination this header titles, for the shell's shared frame. */
+  destination?: string
 }
 
 /** The one header of every Workspace view and detail (ADR 0227). */
@@ -35,6 +37,7 @@ export function ViewHeader({
   back,
   className,
   close,
+  destination,
   description,
   icon,
   level = 2,
@@ -43,7 +46,7 @@ export function ViewHeader({
 }: ViewHeaderProps) {
   const Heading = (['h1', 'h2', 'h3'] as const)[level - 1]
   return (
-    <header className={cn('kubecode-view-header', className)} data-level={level}>
+    <header className={cn('kubecode-view-header', className)} data-destination={destination} data-level={level}>
       <div className="kubecode-view-header-row">
         {back && (
           <IconButton

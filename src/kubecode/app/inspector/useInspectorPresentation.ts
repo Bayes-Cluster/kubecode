@@ -5,11 +5,11 @@ export type InspectorPresentation = 'side' | 'screen'
 
 /** The narrowest a Workspace view stays readable beside an inspector. */
 export const VIEW_MIN = 480
-/** The narrowest an inspector stays readable. */
-export const INSPECTOR_MIN = 400
+/** The inspector's column: the shell's `--ws-panel-inspector` (ADR 0234). */
+export const INSPECTOR_MIN = 360
 
 /**
- * Whether the inspector fits beside the view (ADR 0228 §3). It measures the
+ * Whether the inspector fits beside the view (ADR 0228 §3, ADR 0234). It measures the
  * row the view and the inspector share, less what the open Files and Git
  * column takes (`reservedWidth`), so a mid-size screen with tools open gets a
  * full-screen inspector rather than three cramped columns. Where the row

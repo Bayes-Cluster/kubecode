@@ -119,7 +119,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
       nav.getByRole('button', { name: 'General' }).first(),
       nav.getByRole('button', { name: /^Kanban/ }),
       nav.getByRole('button', { name: 'Resources' }),
-      nav.locator('summary', { hasText: 'Needs you' }),
+      nav.getByRole('button', { name: /^Needs you/ }),
       nav.getByRole('button', { name: 'Members' }),
     ].map(async (entry) => (await entry.boundingBox())?.y ?? Number.NaN))
     expect(order).toEqual([...order].sort((a, b) => a - b))

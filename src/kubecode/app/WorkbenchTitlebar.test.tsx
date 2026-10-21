@@ -154,4 +154,15 @@ describe('WorkbenchTitlebar', () => {
     fireEvent.click(navigation)
     expect(handlers.onSessionSidebarOpenChange).toHaveBeenCalledWith(false)
   })
+
+  it('draws each execution tool with its own glyph and names it on hover', () => {
+    const { container } = titlebar()
+    const toggles = Array.from(container.querySelectorAll('.kubecode-layout-toggle'))
+    expect(toggles.map((button) => button.querySelector('svg')?.getAttribute('class'))).toEqual([
+      expect.stringContaining('lucide-panel-left'),
+      expect.stringContaining('lucide-square-terminal'),
+      expect.stringContaining('lucide-folder-git'),
+    ])
+    expect(toggles.map((button) => button.getAttribute('title'))).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
+  })
 })

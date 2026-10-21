@@ -9,6 +9,7 @@ import type {
   MemberDefaults,
   WorkspaceEvent,
 } from '../api'
+import { DestinationHeader } from '../app/DestinationHeader'
 import { useScrollMemory } from '../app/location/placeMemory'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { MemberDefaultsPanel } from './MemberDefaultsPanel'
@@ -48,11 +49,7 @@ export function MembersView({
   useScrollMemory(scroller, scrollKey, { ready: true })
   return (
     <section aria-label={t('kubecode.nav.members')} className="kubecode-members-view" ref={scroller}>
-      <header className="kubecode-channel-header">
-        <div>
-          <h2>{t('kubecode.nav.members')}</h2>
-        </div>
-      </header>
+      <DestinationHeader description={t('kubecode.members.viewDescription')} destination="members" t={t} />
       <MemberRoster
         agents={agents}
         api={api}

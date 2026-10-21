@@ -25,6 +25,8 @@ export type Place =
   | GeneralPlace
   | { view: 'board' }
   | { view: 'resources' }
+  /** Everything that waits for the researcher (ADR 0234); it hosts no inspector. */
+  | { view: 'needs-you' }
   | { view: 'members' }
   /** A private conversation, by member id. */
   | { view: 'dm'; member: string }
@@ -33,10 +35,10 @@ export type Place =
   /** A legacy research question. */
   | { view: 'question'; question: string }
 export type InspectorHostView = 'general' | 'board' | 'resources' | 'members' | 'dm'
-/** The inspector is always `[]` on the Sessions surface and a question. */
+/** The inspector is always `[]` on the Sessions surface, Needs you, and a question. */
 export type WorkspaceLocation = { place: Place; inspector: InspectorStack }
 export type ViewKey =
-  | 'general' | 'board' | 'resources' | 'members' | 'sessions' | `dm:${string}` | `question:${string}`
+  | 'general' | 'board' | 'resources' | 'needs-you' | 'members' | 'sessions' | `dm:${string}` | `question:${string}`
 export type WorkspaceMemory = {
   current: ViewKey
   /** Most recently written last (insertion order is the views' LRU order). */
@@ -60,6 +62,7 @@ export type PlaceTarget =
   | { view: 'general'; message?: string | null; filter?: string | null; thread?: string | null }
   | { view: 'board' }
   | { view: 'resources' }
+  | { view: 'needs-you' }
   | { view: 'members' }
   | { view: 'dm'; member: string }
   | { view: 'sessions'; conversation?: string | null }
@@ -108,7 +111,7 @@ export function viewKeyOf(place: Place | PlaceTarget): ViewKey {
 }
 
 export function hostsInspector(place: Place): place is Extract<Place, { view: InspectorHostView }> {
-  return place.view !== 'sessions' && place.view !== 'question'
+  return place.view !== 'sessions' && place.view !== 'question' && place.view !== 'needs-you'
 }
 
 /** Where an entry is opened from a place that hosts no inspector. */
@@ -127,7 +130,7 @@ function defaultLocation(key: ViewKey): WorkspaceLocation {
   if (key.startsWith('question:')) {
     return { place: { view: 'question', question: key.slice('question:'.length) }, inspector: EMPTY_STACK }
   }
-  return { place: { view: key as 'board' | 'resources' | 'members' | 'sessions' }, inspector: EMPTY_STACK }
+  return { place: { view: key as 'board' | 'resources' | 'needs-you' | 'members' | 'sessions' }, inspector: EMPTY_STACK }
 }
 
 function currentKey(workspace: WorkspaceMemory | undefined): ViewKey {
