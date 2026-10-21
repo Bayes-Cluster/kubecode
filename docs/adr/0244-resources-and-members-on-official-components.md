@@ -28,11 +28,14 @@ stay as they are.
      Block's highlighter cache loads only that language. An unknown extension
      renders as plain `text`, so no language is guessed. CSV stays plain
      text. The block is one keyboard-focusable scroll region;
-   - a Markdown file (`.md`, `.markdown`, `.mdx`) and every written record
-     (Task brief, finding, thread, Session) render through **streamdown** in
-     static mode, with `HARDENED_STREAMDOWN_PROPS` from
-     `streamdown-hardening.ts`: no raw HTML, http/https/mailto links only, and
-     KaTeX math.
+   - a Markdown file (`.md`, `.markdown`, `.mdx`) renders through
+     **streamdown** in static mode, with `NO_IMAGE_STREAMDOWN_PROPS` from
+     `streamdown-hardening.ts`: no raw HTML, http/https/mailto links only,
+     KaTeX math, and no image is fetched (an image shows as its alt text). A
+     truncated section shows as plain text, since the cut can fall inside a
+     fence;
+   - a written record (Task brief, finding, thread, Session, log) is not known
+     to be Markdown, so it shows verbatim as plain `text` in the Code Block.
 2. **Resource list.** Each result row in `WorkspaceSearch` (used by Resources,
    Add context and the titlebar search) is an **Item** (`ItemMedia`,
    `ItemContent`, `ItemTitle`, `ItemDescription`) rendered as the existing
@@ -76,7 +79,8 @@ stay as they are.
 
 ## Consequences
 
-- Records read as formatted Markdown or highlighted code. The highlighter
+- Markdown files read formatted, code files highlighted, and written
+  records exactly as written. The highlighter
   loads only the language a file needs, on first view.
 - Tests address role and provider through the Select's combobox and options.
   Native `change` events no longer apply.

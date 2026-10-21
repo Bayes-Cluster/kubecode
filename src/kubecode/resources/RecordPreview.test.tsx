@@ -237,7 +237,45 @@ describe('RecordPreview', () => {
     expect(container.querySelector('[data-language]')).toHaveAttribute('data-language', 'text')
   })
 
-  it('renders a Markdown file and a written record through hardened streamdown, never raw HTML or unsafe links', async () => {
+  it('shows a written record verbatim, never parsed as markdown (review S3)', async () => {
+    const text = 'returns Vec<String> from parse()\ncosts $5 and $10\nloss_avg_step 0.1'
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'finding', id: 'f1', revision: '1' }, title: 'Heads',
+        sections: [{ heading: 'Summary', text, truncated: false }],
+      })),
+    }, { target: { kind: 'finding', id: 'f1' } })
+    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('returns Vec<String> from parse()')
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('costs $5 and $10')
+    expect(container.querySelector('.katex, em')).toBeNull()
+  })
+
+  it('shows a truncated Markdown file as text so a cut fence cannot swallow the rest (review S3)', async () => {
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'file', id: 'README.md', revision: 'a1' }, title: 'README.md',
+        sections: [{ heading: 'Content', text: '# Title\n\n```py\nx = 1', truncated: true }],
+      })),
+    }, { target: { kind: 'file', id: 'README.md' } })
+    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('# Title')
+    expect(container.querySelector('.kubecode-record-markdown')).toBeNull()
+  })
+
+  it('never fetches a remote image from a Markdown file preview (review S3)', async () => {
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'file', id: 'README.md', revision: 'a1' }, title: 'README.md',
+        sections: [{ heading: 'Content', text: '# Readme\n\n![logo](https://attacker.example/p.png?d=x)', truncated: false }],
+      })),
+    }, { target: { kind: 'file', id: 'README.md' } })
+    expect(await screen.findByRole('heading', { name: 'Readme' })).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.innerHTML).not.toContain('attacker.example')
+  })
+
+  it('renders a Markdown file through hardened streamdown, never raw HTML or unsafe links', async () => {
     const markdown = '# Findings\n\nSee [docs](javascript:alert(1)) and <b>bold</b>.'
     const readProjectContext = vi.fn().mockResolvedValue(document({
       ref: { kind: 'file', id: 'notes/README.md', revision: 'a1' }, title: 'notes/README.md',
@@ -248,13 +286,5 @@ describe('RecordPreview', () => {
     expect(container.querySelector('b')).toBeNull()
     expect(container.querySelector('a[href^="javascript"]')).toBeNull()
     unmount()
-
-    mount({
-      readProjectContext: vi.fn().mockResolvedValue(document({
-        ref: { kind: 'finding', id: 'f1', revision: '1' }, title: 'Heads',
-        sections: [{ heading: 'Summary', text: '**Pruned** four heads.', truncated: false }],
-      })),
-    }, { target: { kind: 'finding', id: 'f1' } })
-    expect(await screen.findByText('Pruned')).toHaveAttribute('data-streamdown', 'strong')
   })
 })

@@ -872,8 +872,8 @@ Workspace shell on fixture data and are built on the official parts:
 
 Resources and Members are on the official parts (ADR 0244): `RecordPreview`
 shows code and text files in the AI Elements Code Block (one Shiki language
-per file, plain text when unknown) and Markdown files and written records
-through hardened streamdown; search results and member rows are Items; member
+per file, plain text when unknown) and written records verbatim as text;
+Markdown files render through hardened streamdown with no images fetched; search results and member rows are Items; member
 forms use Field, Input and Select (`members/ProviderSelect.tsx`); the manager
 setup notice is an Alert.
 
