@@ -94,6 +94,8 @@ export function DmPane({
   const failureOf = (cause: unknown): string => {
     if (cause instanceof ApiError && cause.code === 'dm_busy') return t('kubecode.dm.busyKept', { name: member.name })
     if (cause instanceof ApiError && cause.code === 'dm_failed') return t('kubecode.dm.failed')
+    // A dropped connection rejects fetch with the browser's own, untranslated words.
+    if (cause instanceof TypeError) return t('kubecode.error')
     return errorMessage(cause, t('kubecode.error'))
   }
 

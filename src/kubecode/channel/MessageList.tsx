@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ConversationEmptyState } from '@/components/ai-elements'
 
 import { Button } from '@/components/ui/button'
 import { DEFAULT_APP_LOCALE, getLocaleDateLocale, type AppLocale, type Translator } from '@/lib/i18n'
@@ -24,6 +25,8 @@ import { useCoarsePointer } from './useCoarsePointer'
 
 type MessageListProps = {
   emptyLabel: string
+  /** Shown above the empty label, as in the #230 prototypes. */
+  emptyIcon?: ReactNode
   feed: MessageFeed
   label: string
   /** The app's language: dates and times follow it, as Today and Yesterday do. */
@@ -92,6 +95,7 @@ export function MessageList({
   delivery = notesDelivery,
   directory,
   emptyLabel,
+  emptyIcon,
   feed,
   filter = null,
   focusId = null,
@@ -242,7 +246,7 @@ export function MessageList({
           </p>
         )}
         {feed.status === 'ready' && feed.messages.length === 0 && (
-          <p className="kubecode-research-muted">{emptyLabel}</p>
+          <ConversationEmptyState icon={emptyIcon} title={emptyLabel} />
         )}
         {items.map((item) => {
           if (item.kind === 'date') {

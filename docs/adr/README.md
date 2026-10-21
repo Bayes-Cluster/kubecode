@@ -77,7 +77,7 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0230](0230-task-owned-details-review-and-displayed-evidence.md) | Task-owned details, completion only through review, separate archiving, and evidence accepted at a displayed version |
 | [0231](0231-workspace-search-file-references-and-versioned-attachments.md) | Workspace search with a named scope, Project files as references, one preview surface, and versioned references |
 | [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections |
-| [0233](0233-ai-elements-foundation-and-workspace-prototypes.md) | AI Elements as the Workspace component foundation, a Harness-aligned token layer, and fixture prototypes (proposed) |
-| [0234](0234-needs-you-destination-and-one-shell-frame.md) | Needs you as a Workspace destination, one destination header, and a 360-pixel inspector (proposed) |
-| [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources (proposed) |
+| [0233](0233-ai-elements-foundation-and-workspace-prototypes.md) | AI Elements as the Workspace component foundation, a Harness-aligned token layer, and fixture prototypes |
+| [0234](0234-needs-you-destination-and-one-shell-frame.md) | Needs you as a Workspace destination, one destination header, and a 360-pixel inspector |
+| [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources |
 | [0238](0238-one-stop-per-task-and-a-centered-conversation-dock.md) | One Stop per Task, a folded running list, and one centered conversation column |
