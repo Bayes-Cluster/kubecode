@@ -217,4 +217,44 @@ describe('RecordPreview', () => {
     await act(async () => resolveFirst(document()))
     expect(screen.queryByText('model,accuracy')).not.toBeInTheDocument()
   })
+
+  it('shows a code file in the official Code Block, highlighted for its own language only (ADR 0244)', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document({
+      ref: { kind: 'file', id: 'src/train.py', revision: 'a1' }, title: 'src/train.py',
+      sections: [{ heading: 'Content', text: 'import torch', truncated: false }],
+    }))
+    const { container } = mount({ readProjectContext }, { target: { kind: 'file', id: 'src/train.py' } })
+    expect(await screen.findByText('import torch')).toBeInTheDocument()
+    const block = container.querySelector('[data-language]')
+    expect(block).toHaveAttribute('data-language', 'python')
+    // The reader can scroll a long file from the keyboard.
+    expect(container.querySelector('.kubecode-record-code')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('shows plain text in the Code Block without guessing a language', async () => {
+    const { container } = mount({ readProjectContext: vi.fn().mockResolvedValue(document()) })
+    expect(await screen.findByText('model,accuracy')).toBeInTheDocument()
+    expect(container.querySelector('[data-language]')).toHaveAttribute('data-language', 'text')
+  })
+
+  it('renders a Markdown file and a written record through hardened streamdown, never raw HTML or unsafe links', async () => {
+    const markdown = '# Findings\n\nSee [docs](javascript:alert(1)) and <b>bold</b>.'
+    const readProjectContext = vi.fn().mockResolvedValue(document({
+      ref: { kind: 'file', id: 'notes/README.md', revision: 'a1' }, title: 'notes/README.md',
+      sections: [{ heading: 'Content', text: markdown, truncated: false }],
+    }))
+    const { container, unmount } = mount({ readProjectContext }, { target: { kind: 'file', id: 'notes/README.md' } })
+    expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
+    expect(container.querySelector('b')).toBeNull()
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    unmount()
+
+    mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'finding', id: 'f1', revision: '1' }, title: 'Heads',
+        sections: [{ heading: 'Summary', text: '**Pruned** four heads.', truncated: false }],
+      })),
+    }, { target: { kind: 'finding', id: 'f1' } })
+    expect(await screen.findByText('Pruned')).toHaveAttribute('data-streamdown', 'strong')
+  })
 })

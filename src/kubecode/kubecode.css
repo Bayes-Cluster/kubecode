@@ -6255,3 +6255,34 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-task-decisions { flex-wrap: wrap; row-gap: var(--ws-space-1); }
 .kubecode-task-decisions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
 .kubecode-task-decisions > .kubecode-decision > button { width: 100%; }
+
+/* ==== S3 Resources and Members on official components (ADR 0244) ==== */
+/* Record preview: Code Block for code and text, hardened streamdown for Markdown. */
+.kubecode-record-code { max-height: 240px; overflow: auto; }
+.kubecode-record-code:focus-visible { outline: 2px solid var(--state-focus-ring); outline-offset: 1px; }
+.kubecode-record-code pre { background: transparent !important; font-size: var(--ws-font-size-meta, 12px); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kubecode-record-code > div { overflow: visible; }
+.kubecode-record-preview-compact .kubecode-record-code { max-height: 40vh; }
+.kubecode-record-markdown { font: var(--ws-font-body); min-width: 0; overflow-wrap: anywhere; }
+.kubecode-record-markdown > div > :first-child { margin-top: 0; }
+.kubecode-record-markdown > div > :last-child { margin-bottom: 0; }
+/* Resource results and member rows are Items inside the existing lists. */
+.kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }
+.kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }
+.kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }
+.kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }
+/* Member facts are Fields; forms use Field, Select and Input. */
+.kubecode-member-facts[data-slot='field-group'] { gap: var(--ws-space-2); }
+.kubecode-member-facts [data-slot='field'] { gap: var(--ws-space-3); justify-content: space-between; }
+.kubecode-member-facts [data-slot='field-label'] { color: var(--text-secondary); font: var(--ws-font-meta); }
+.kubecode-member-form [data-slot='field'] { gap: var(--ws-space-1); }
+.kubecode-member-form [data-slot='field-label'] { font: var(--ws-font-meta); font-weight: 600; }
+.kubecode-member-form [data-slot='field-set'] { border-top: 1px solid var(--border-subtle); gap: var(--ws-space-2); padding-top: var(--ws-space-3); }
+.kubecode-member-form [data-slot='field-set'] > button { align-self: flex-start; }
+.kubecode-member-select { max-width: 100%; min-width: 12rem; }
+/* The manager setup notice is an Alert in the warning tone. */
+.kubecode-manager-setup[data-slot='alert'] { display: grid; background: var(--feedback-warning-bg); border-color: var(--feedback-warning-border); color: var(--text-primary); }
+.kubecode-manager-setup[data-slot='alert'] > svg { color: var(--feedback-warning-text); }
+.kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }
+.kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
+/* ==== end S3 ==== */

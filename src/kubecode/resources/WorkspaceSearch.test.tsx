@@ -90,6 +90,8 @@ describe('WorkspaceSearch', () => {
     const search = vi.fn().mockResolvedValue(page([item('research', 'r1', 'Prune heads'), item('finding', 'f1', 'Heads')]))
     mount(search)
     const [first, second] = await screen.findAllByRole('option')
+    // Each result is a shadcn Item that keeps the listbox option semantics (ADR 0244).
+    expect(first).toHaveAttribute('data-slot', 'item')
     const input = screen.getByRole('combobox')
     act(() => second.focus())
     expect(input).toHaveFocus()

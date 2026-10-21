@@ -59,6 +59,8 @@ describe('MemberPanel', () => {
       stack: [{ kind: 'member', id: 'g' }],
     })
     expect(screen.getByText('Execution')).toBeInTheDocument()
+    // Each fact is a shadcn Field (ADR 0244).
+    expect(screen.getByText('Execution').closest('[data-slot="field"]')).toHaveTextContent('Working')
     expect(screen.getByText('Working')).toBeInTheDocument()
     expect(screen.queryByText('Membership')).not.toBeInTheDocument()
     const restrictions = screen.getByRole('region', { name: 'Runtime restrictions' })
