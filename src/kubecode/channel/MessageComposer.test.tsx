@@ -76,29 +76,28 @@ function placed(memory: PlaceMemory, children: ReactNode) {
 // With no member to suggest, the text box is a plain textbox rather than a combobox.
 const box = () => (screen.queryByRole('combobox', { name: 'Message the Workspace' })
   ?? screen.getByRole('textbox', { name: 'Message the Workspace' })) as HTMLTextAreaElement
-const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLElement
+const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLElement | null
+// What still needs the researcher (members loading or failed, nobody can receive): shown in the card.
+const notice = () => document.querySelector('.kubecode-composer-notice') as HTMLElement
 const type = (value: string) => fireEvent.change(box(), { target: { value, selectionStart: value.length } })
 
 describe('MessageComposer', () => {
-  it('has no message type: every message is plain, and the To row says it goes to the project manager', () => {
+  it('has no message type, no recipient row and no hint line: the card is quiet', () => {
     render(<Harness />)
     expect(screen.queryByRole('combobox', { name: 'Message type' })).not.toBeInTheDocument()
     expect(screen.queryByText('Ask a Session')).not.toBeInTheDocument()
-    expect(toRow()).toHaveTextContent('To')
-    expect(toRow()).toHaveTextContent(/General.*Project manager/)
-    expect(screen.getByText(/never start work/)).toBeInTheDocument()
-    expect(box()).toHaveAccessibleDescription(/never start work/)
+    expect(toRow()).toBeNull()
+    expect(screen.queryByText(/never start work/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Project manager')).not.toBeInTheDocument()
+    expect(box()).not.toHaveAccessibleDescription(/never start work/)
   })
 
-  it('shows the mentioned members as recipients, and removing one takes the mention out of the text', async () => {
+  it('sends to the mentioned members without a recipient row in the card', async () => {
     const onSend = vi.fn().mockResolvedValue(saved())
     render(<Harness onSend={onSend} />)
-    type('@analyst please look, cc @writer thanks')
-    const recipients = within(toRow()).getByRole('list', { name: 'To' })
-    expect(recipients).toHaveTextContent(/Analyst.*Writer/)
-    fireEvent.click(screen.getByRole('button', { name: "Don't send to Writer" }))
-    expect(box().value).toBe('@analyst please look, cc thanks')
-    expect(toRow()).not.toHaveTextContent('Writer')
+    type('@analyst please look, cc thanks')
+    expect(toRow()).toBeNull()
+    expect(screen.queryByRole('list', { name: 'To' })).not.toBeInTheDocument()
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
     expect(onSend.mock.calls[0][0]).toMatchObject({
@@ -129,7 +128,7 @@ describe('MessageComposer', () => {
     const send = screen.getByRole('button', { name: 'Send' })
     expect(send).toBeDisabled()
     expect(send).toHaveAccessibleDescription('Send is available once the members have loaded, so Kubecode knows whom this goes to.')
-    expect(toRow()).toHaveTextContent('Loading members…')
+    expect(notice()).toHaveTextContent('Loading members…')
     expect(screen.queryByText(/needs setup/)).not.toBeInTheDocument()
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
@@ -145,7 +144,7 @@ describe('MessageComposer', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toHaveAccessibleDescription(reason)
     expect(screen.getAllByText(reason).some((element) => element.getAttribute('role') === 'status')).toBe(true)
     expect(screen.queryByText(/needs setup/)).not.toBeInTheDocument()
-    fireEvent.click(within(toRow()).getByRole('button', { name: 'Try again' }))
+    fireEvent.click(within(notice()).getByRole('button', { name: 'Try again' }))
     expect(reload).toHaveBeenCalledTimes(1)
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
@@ -156,7 +155,7 @@ describe('MessageComposer', () => {
     const manager = { ...general, state: 'setup_required' as const, public_conversation_id: null }
     render(<Harness directory={memberDirectory({ members: [manager, analyst], general_id: 'g' }, 'ready')} onSend={onSend} />)
     type('anyone?')
-    expect(toRow()).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
+    expect(notice()).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
     const send = screen.getByRole('button', { name: 'Send' })
     expect(send).toBeDisabled()
     expect(send).toHaveAccessibleDescription(
@@ -174,8 +173,7 @@ describe('MessageComposer', () => {
     const onSend = vi.fn()
     render(<Harness directory={memberDirectory({ members: [general, analyst, gone], general_id: 'g' }, 'ready')} onSend={onSend} />)
     type('@old are you there?')
-    expect(within(toRow()).getByRole('list', { name: 'To' })).toHaveTextContent(/Old.*Removed/)
-    expect(toRow()).not.toHaveTextContent('Project manager')
+    expect(toRow()).toBeNull()
     const send = screen.getByRole('button', { name: 'Send' })
     expect(send).toBeDisabled()
     expect(send).toHaveAccessibleDescription('Old was removed and can no longer receive messages. Remove the mention.')
@@ -277,7 +275,7 @@ describe('MessageComposer', () => {
     expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'artifact', id: 'a2', revision: '3' }])
   })
 
-  it('is one input surface: the reply and references head the card, the text and its controls fill it, and the recipients close it', () => {
+  it('is one input surface: the reply and references head the card, and the text and its controls fill it', () => {
     const initial = { ...emptyGeneralDraft('r1'), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
     render(<Harness initial={initial} />)
     const card = document.querySelector('.kubecode-ai-prompt-input') as HTMLElement
@@ -288,9 +286,8 @@ describe('MessageComposer', () => {
     expect(card.querySelector('.kubecode-ai-prompt-input-body')).toContainElement(box())
     expect(within(card).getByRole('button', { name: 'Add context' })).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Send' })).toBeInTheDocument()
-    const footer = card.querySelector('.kubecode-ai-prompt-input-footer') as HTMLElement
-    expect(footer).toContainElement(toRow())
-    expect(footer).toHaveTextContent(/never start work/)
+    expect(card).not.toHaveTextContent(/never start work/)
+    expect(toRow()).toBeNull()
   })
 
   it('puts "@" at the caret for a mention', () => {

@@ -100,6 +100,7 @@ describe('TaskBoardView', () => {
     fireEvent.click(screen.getByText('Proposals not on the board (1)'))
     fireEvent.click(within(drafts).getByRole('button', { name: /Quantize/ }))
     expect(onOpenTask).toHaveBeenCalledWith('d1')
+    expect(screen.queryByText(/These are drafts/)).not.toBeInTheDocument()
   })
 
   it('opens the proposals when nothing is on the board yet', () => {

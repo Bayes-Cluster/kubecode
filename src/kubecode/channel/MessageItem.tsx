@@ -119,20 +119,30 @@ export function MessageItem({
     <ReferenceChip kind="task" kindLabel={t('kubecode.vocab.object.task')} title={task.title} onOpen={on.openTask} />
   )
   const focusKey = `message:${message.id}`
+  const own = message.author_kind === 'researcher'
+  const time = date && (
+    <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
+  )
   return (
     <Message
       aria-label={author.name}
       author={(
         <>
-          <Identity
-            className="kubecode-message-author"
-            from={focusKey}
-            meta={date && (
-              <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
-            )}
-            size={continued ? 'sm' : 'md'}
-            view={author}
-          />
+          {own ? (
+            // The researcher's own message, on the right (ADR 0239): only the time shows.
+            <span className="kubecode-message-author kubecode-message-self-meta">
+              <span className="sr-only">{author.name}</span>
+              {time}
+            </span>
+          ) : (
+            <Identity
+              className="kubecode-message-author"
+              from={focusKey}
+              meta={time}
+              size={continued ? 'sm' : 'md'}
+              view={author}
+            />
+          )}
           {message.intent !== 'say' && (
             <StatusBadge tone="muted">
               {intentLabel(t, message.intent)}
@@ -159,7 +169,7 @@ export function MessageItem({
       data-message-id={message.id}
       data-scroll-anchor={message.id}
       data-testid={`message-${message.seq}`}
-      from={message.author_kind === 'researcher' ? 'self' : 'member'}
+      from={own ? 'self' : 'member'}
       id={`message-${message.id}`}
       state={messageState(delivery)}
     >
@@ -201,9 +211,6 @@ export function MessageItem({
         <MessageResponse className="kubecode-message-body">
           <MarkdownContent content={message.body} images="text" />
         </MessageResponse>
-        {proposal && message.task_id && onBoard && !onBoard(message.task_id) && (
-          <p className="kubecode-research-muted">{t('kubecode.task.proposalHint')}</p>
-        )}
         {references.length > 0 ? (
           // Named, versioned, and resolved against the server (ADR 0231 §5), as Sources (ADR 0236).
           <ReferenceSources

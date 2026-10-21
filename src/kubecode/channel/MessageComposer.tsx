@@ -1,10 +1,9 @@
-import { useContext, useEffect, useId, useRef, useState, type Dispatch, type Ref, type SetStateAction } from 'react'
+import { useContext, useEffect, useRef, useState, type Dispatch, type Ref, type SetStateAction } from 'react'
 
 import { PromptInput, PromptInputBody, PromptInputFooter, PromptInputHeader } from '@/components/ai-elements'
 import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
 import { IconButton } from '@/components/workspace/IconButton'
-import { RecipientRow, type Recipient } from '@/components/workspace/RecipientRow'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -14,9 +13,7 @@ import { ApiError, type ChannelMessage, type KubecodeApi, type NewChannelMessage
 import { errorMessage } from '../app/errors'
 import { placeKey, usePlaceRef } from '../app/location/placeMemory'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
-import { Identity } from '../members/Identity'
 import { canReceive, type MemberDirectory } from '../members/memberDirectory'
-import { memberView } from '../members/memberIdentity'
 import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { AddContextDialog } from '../resources/AddContextDialog'
 import { attachAnnouncement, attachToDraft, draftHas, MAX_DRAFT_REFERENCES, type DraftReference } from '../resources/draftReferences'
@@ -25,7 +22,6 @@ import { ResourceReferenceChip } from '../resources/ResourceReferenceChip'
 import { newClientMessageId } from '../session/sessionModel'
 import {
   draftRecipients,
-  removeMention,
   sendBlockedReason,
   toNewMessage,
   type GeneralDraft,
@@ -106,7 +102,6 @@ export function MessageComposer({
   textareaRef,
   workspaceName = '',
 }: MessageComposerProps) {
-  const hintId = useId()
   const area = useRef<HTMLTextAreaElement | null>(null)
   const [picker, setPicker] = useState(false)
   const outbox = useOutbox<GeneralSend>(outboxKey)
@@ -266,18 +261,9 @@ export function MessageComposer({
     })
   }
 
-  const toRecipients: Recipient[] = recipients.kind === 'members'
-    ? [...recipients.reachable, ...recipients.unreachable.map((entry) => entry.member)].map((member) => {
-      const view = memberView(member, t)
-      return {
-        ...view,
-        removeLabel: t('kubecode.channel.removeRecipient', { name: member.name }),
-        onRemove: () => onDraftChange((current) => ({ ...current, body: removeMention(current.body, member.handle) })),
-      }
-    })
-    : []
+  // No recipient row (#229): only what still needs the researcher shows in the card.
   const manager = recipients.kind === 'manager' ? recipients.manager : null
-  const nobody = recipients.kind === 'unknown'
+  const notice = recipients.kind === 'unknown'
     ? recipients.status === 'loading'
       ? <span className="kubecode-composer-hint">{t('kubecode.members.loading')}</span>
       : (
@@ -286,9 +272,9 @@ export function MessageComposer({
           <Button size="xs" variant="ghost" onClick={() => directory.reload()}>{t('kubecode.members.retryLoad')}</Button>
         </span>
       )
-    : manager && canReceive(manager)
-      ? <Identity size="sm" view={memberView(manager, t)} />
-      : <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>
+    : recipients.kind === 'manager' && !(manager && canReceive(manager))
+      ? <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>
+      : null
   const taskLabel = draft.task ? labels({ kind: 'research', id: draft.task }) : null
 
   return (
@@ -376,7 +362,6 @@ export function MessageComposer({
                 />
               </>
             )}
-            describedBy={hintId}
             focusKey={focusKey}
             label={placeholder}
             mentionLabel={t('kubecode.composer.mentions')}
@@ -393,14 +378,8 @@ export function MessageComposer({
           />
         </PromptInputBody>
         <PromptInputFooter className="kubecode-composer-footer">
-          <RecipientRow
-            empty={nobody}
-            label={t('kubecode.channel.to')}
-            recipients={toRecipients}
-            onFocusAfterLast={focusText}
-          />
+          {notice && <p className="kubecode-composer-notice">{notice}</p>}
           {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
-          <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
           {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
         </PromptInputFooter>
       </PromptInput>

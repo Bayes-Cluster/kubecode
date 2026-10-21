@@ -196,6 +196,10 @@ describe('MessageItem as a conversation message (#232)', () => {
     const { article: mine } = item({ message: own })
     expect(mine).toHaveAttribute('data-from', 'self')
     expect(mine.querySelector('script')).toBeNull()
+    // Right-aligned like a chat: only the time shows; the author stays in the accessible name.
+    expect(mine).toHaveAccessibleName('You')
+    expect(within(mine).queryByText('You', { selector: ':not(.sr-only)' })).not.toBeInTheDocument()
+    expect(mine.querySelector('time')).not.toBeNull()
   })
 
   it('marks a message that was not delivered as failed, and one still on its way as pending', () => {

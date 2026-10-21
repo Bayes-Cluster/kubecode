@@ -3880,9 +3880,9 @@
   gap: 2px;
   min-height: 120px;
   overflow-y: auto;
-  /* The scrollbar stays at the pane's edge; what it scrolls is one centered
-     column, as wide as the composer below it. */
-  padding-inline: max(var(--ws-space-3), calc((100% - var(--ws-composer-width)) / 2 + var(--ws-space-3)));
+  /* The scrollbar stays at the pane's edge; what it scrolls is the middle
+     three quarters of the pane (ADR 0239). */
+  padding-inline: max(var(--ws-space-3), calc((100% - var(--ws-thread-width)) / 2));
 }
 
 .kubecode-channel-body {
@@ -5397,6 +5397,10 @@ button.kubecode-reference-chip-open:focus-visible,
   --ws-accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
   --ws-conversation-width: 760px;
   --ws-composer-width: calc(var(--ws-conversation-width) + 32px);
+  /* ADR 0239: the thread takes the middle three quarters of the pane; the
+     composer card at most half of it, never narrower than 480px. */
+  --ws-thread-width: 75%;
+  --ws-composer-max: 50%;
   --ws-panel-nav: 248px;
   --ws-panel-inspector: 360px;
   --ws-flow-gap: 6px;
@@ -6054,6 +6058,36 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-ai-prompt-input .kubecode-composer-context { align-items: flex-start; flex-direction: column; }
 .kubecode-ai-prompt-input .kubecode-channel-replying { margin: 0; }
 .kubecode-composer-footer { display: flex; flex-direction: column; gap: var(--ws-space-1); }
+
+/* ADR 0239: a chat. The researcher's messages sit on the right as a tinted
+   bubble with no avatar; members' messages sit on the left with theirs. */
+.kubecode-channel-messages .kubecode-message,
+.kubecode-dm-turn { max-width: none; }
+.kubecode-dm-turn { width: 100%; }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] {
+  align-self: flex-end;
+  max-width: 80%;
+}
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] > .kubecode-ai-message-author { justify-content: flex-end; }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-self-meta { color: var(--text-secondary); font: var(--ws-font-meta); }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content,
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-content {
+  margin-inline-start: 0;
+  padding-inline-start: var(--ws-space-3);
+}
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-delivery { align-self: flex-end; }
+.kubecode-conversation-dock {
+  max-width: none;
+  width: min(100%, max(var(--ws-composer-max), 480px));
+}
+.kubecode-composer-notice { margin: 0; }
+
+@media (max-width: 767px) {
+  .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
+  .kubecode-channel-messages .kubecode-ai-message[data-from='self'] { max-width: 90%; }
+  .kubecode-conversation-dock { width: 100%; }
+}
 
 @media (max-width: 760px) {
   .kubecode-dm-turn .kubecode-ai-message-content,
