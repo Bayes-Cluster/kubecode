@@ -45,4 +45,14 @@ describe('hardened streamdown', () => {
     expect(container.querySelector('img')).toBeNull()
     expect(container.innerHTML).not.toContain('javascript:')
   })
+
+  it('adds no unnamed controls to tables and code (their English labels are not localized yet)', () => {
+    const { container } = render(<MessageResponse>{'| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```python\nprint(1)\n```'}</MessageResponse>)
+    expect(container.querySelector('table')).not.toBeNull()
+    for (const button of container.querySelectorAll('button')) {
+      expect(button.getAttribute('aria-label') || button.textContent?.trim()).toBeTruthy()
+    }
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+  })
 })
+

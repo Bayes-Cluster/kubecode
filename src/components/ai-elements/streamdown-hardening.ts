@@ -44,4 +44,7 @@ export const HARDENED_STREAMDOWN_PROPS = {
   rehypePlugins: STREAMDOWN_REHYPE_PLUGINS,
   skipHtml: true,
   linkSafety: { enabled: false },
+  // Table and code copy/download buttons carry streamdown's English labels
+  // as titles only; they return with localized `translations` in S1.
+  controls: false,
 } satisfies Partial<StreamdownProps>

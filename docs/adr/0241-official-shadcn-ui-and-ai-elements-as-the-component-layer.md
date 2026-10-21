@@ -122,8 +122,10 @@ dependencies.
 configuration every official surface spreads: `skipHtml`, no `rehype-raw`
 (sanitize then harden only), links and images limited to `http`, `https` and
 `mailto`, data images off, the link-safety modal off (its strings are
-English and the protocols are already limited), and KaTeX with `$…$` inline
-math as in `MarkdownContent`. A regression test renders raw HTML (it stays
+English and the protocols are already limited), streamdown's table and code
+copy/download controls off (their labels are English titles, not accessible
+names; S1 brings them back through streamdown's `translations`), and KaTeX
+with `$…$` inline math as in `MarkdownContent`. A regression test renders raw HTML (it stays
 text), `javascript:`, `data:` and `file:` links (dropped), and inline and
 display math (KaTeX). Product markdown (`MarkdownContent`, react-markdown)
 is unchanged in S0; General and DM move to `MessageResponse` in S1, the
