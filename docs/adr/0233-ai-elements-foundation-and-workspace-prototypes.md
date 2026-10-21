@@ -2,7 +2,7 @@
 type: ADR
 id: "0233"
 title: "AI Elements as the Workspace component foundation, a Harness-aligned token layer, and fixture prototypes"
-status: proposed
+status: accepted
 date: 2026-10-20
 ---
 
@@ -149,9 +149,9 @@ execution activity.
 
 ## Consequences
 
-Later slices build views from one set of compositions and tokens; a view that
+Slices #231–#235 built their views from one set of compositions and tokens, and later views do the same; a view that
 needs a message, citation, activity row, queue, or confirmation takes it from
 `src/components/ai-elements/`. Upstream AI Elements updates are not pulled
 automatically; an update is a reviewed copy with the adaptations re-applied.
-Production views are not migrated by this decision. The prototypes are a
+The prototypes themselves are a
 development route and add a lazily loaded chunk only.

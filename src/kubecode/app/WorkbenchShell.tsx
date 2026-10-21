@@ -128,6 +128,10 @@ function browserStorage(): PreferenceStorage | null {
 export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const locale = useMemo(() => resolveEffectiveLocale(null), [])
   const t = useMemo(() => createTranslator(locale), [locale])
+  // The document speaks the interface language (screen readers, hyphenation of long words).
+  useEffect(() => {
+    document.documentElement.lang = locale
+  }, [locale])
   const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])

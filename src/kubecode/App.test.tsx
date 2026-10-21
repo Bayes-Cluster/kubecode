@@ -192,6 +192,19 @@ describe('Kubecode workspace', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Kubecode notifications are ready')
   })
 
+  it('declares the language it speaks on the document, so assistive technology reads it right', async () => {
+    vi.stubGlobal('navigator', { ...navigator, languages: ['de-DE'], language: 'de-DE' })
+    document.documentElement.lang = 'en'
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([]),
+      listAgents: vi.fn().mockResolvedValue([]),
+    } as unknown as KubecodeApi
+
+    render(<KubecodeApp api={api} />)
+
+    await waitFor(() => expect(document.documentElement.lang).toBe('de-DE'))
+  })
+
   it('applies a user-selected UI font size from Appearance settings', async () => {
     const api = {
       listProjects: vi.fn().mockResolvedValue([]),
