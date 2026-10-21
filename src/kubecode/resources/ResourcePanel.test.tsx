@@ -232,8 +232,12 @@ describe('ResourcePanel', () => {
     const read = vi.fn().mockResolvedValue(finding({ availability: 'removed', sections: [] }))
     const navigation = fakeNavigation()
     mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read, navigation)
-    fireEvent.click(await screen.findByRole('button', { name: 'Find in Resources' }))
-    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'resources' }, { inspector: 'keep' })
+    // The removed state settles after the read; click the button that state renders.
+    expect(await screen.findByText('This item is no longer available.')).toBeInTheDocument()
+    await waitFor(() => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Find in Resources' })[0])
+      expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'resources' }, { inspector: 'keep' })
+    })
   })
 
   it('a record that is gone, opened from Resources itself, does not offer to go there', async () => {
