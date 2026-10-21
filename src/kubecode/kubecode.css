@@ -5971,6 +5971,8 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-member-actions { width: 100%; }
   .kubecode-member-form { padding: var(--ws-space-3); }
   .kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }
+}
+
 /*
  * General and DMs as one conversation (#232, ADR 0233): each message is an
  * AI Elements Message (the researcher's own tinted, a failed one marked at
